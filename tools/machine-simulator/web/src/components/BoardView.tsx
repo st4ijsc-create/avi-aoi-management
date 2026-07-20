@@ -50,7 +50,7 @@ export function BoardView({ points, className }: BoardViewProps) {
   if (points.length === 0) {
     return (
       <div className={className}>
-        <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-border bg-surface-subtle text-sm text-text-muted">
+        <div className="hmi-graph-paper flex h-80 items-center justify-center border border-border text-sm text-text-muted">
           {t("boardView.waiting")}
         </div>
       </div>
@@ -80,7 +80,7 @@ export function BoardView({ points, className }: BoardViewProps) {
           )}
         </div>
 
-        <div className="relative mx-auto w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-surface-subtle">
+        <div className="relative mx-auto w-full max-w-2xl overflow-hidden border border-border bg-surface-subtle">
           <svg
             viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
             className="h-auto w-full"
@@ -127,7 +127,6 @@ export function BoardView({ points, className }: BoardViewProps) {
                       y={y}
                       width={w}
                       height={h}
-                      rx={4}
                       fill={color}
                       fillOpacity={0.14}
                       stroke={color}
@@ -154,7 +153,7 @@ export function BoardView({ points, className }: BoardViewProps) {
 
           {isClean ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="flex items-center gap-2 rounded-full border border-ok/30 bg-surface-card/95 px-3 py-1.5 text-sm font-medium text-ok-text shadow-sm">
+              <div className="flex items-center gap-2 border border-ok/30 bg-surface-card/95 px-3 py-1.5 text-sm font-medium text-ok-text">
                 <CheckCircle2 className="size-4" aria-hidden="true" />
                 {t("boardView.cleanBoard")}
               </div>

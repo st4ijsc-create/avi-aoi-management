@@ -1,12 +1,14 @@
 import * as React from "react"
 import { motion } from "framer-motion"
-import { ChevronRight, Factory, Gauge, Inbox, Search, SearchX, X } from "lucide-react"
+import { ChevronRight, Gauge, Inbox, Search, SearchX, X } from "lucide-react"
 import type { VariantProps } from "class-variance-authority"
 import { Link, useLocation } from "wouter"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useFleet, useFleetIsRunning, type DeviceClass, type FleetTile } from "@/lib/api"
 import { fadeSlideUp } from "@/theme/motion"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -44,6 +46,7 @@ const ALL = "__all__"
 
 interface FilterSelectProps {
   label: string
+  labelEn: string
   value: string
   options: string[]
   optionLabel: (value: string) => string
@@ -58,14 +61,16 @@ interface FilterSelectProps {
  * option through `t()`, since these values are the enum-like device-class/status tokens, not free
  * text like the Inspector's machine/kind filters.
  */
-function FilterSelect({ label, value, options, optionLabel, onChange, allLabel }: FilterSelectProps) {
+function FilterSelect({ label, labelEn, value, options, optionLabel, onChange, allLabel }: FilterSelectProps) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">{label}</span>
+      <span className="hmi-micro">
+        {label} <span>{labelEn}</span>
+      </span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-8 border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
       >
         <option value={ALL}>{allLabel}</option>
         {options.map((option) => (
@@ -83,10 +88,11 @@ function FilterSelect({ label, value, options, optionLabel, onChange, allLabel }
  * mismatch an explicit `aria-label` with different wording than the visible caption would create. */
 function SearchField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const t = useT()
+  const gloss = useGloss()
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
-        {t("machines.search.label")}
+      <span className="hmi-micro">
+        {t("machines.search.label")} <span>{gloss("machines.search.label")}</span>
       </span>
       <div className="relative">
         <Search
@@ -104,17 +110,32 @@ function SearchField({ value, onChange }: { value: string; onChange: (v: string)
   )
 }
 
+/** Bilingual column header — primary active-language text stacked over a small uppercase gloss in
+ * the other language (spec §1/§3), the same register the HMI readouts use throughout, applied here
+ * to the roster table's own header row. */
+function BilingualHead({ vi, en, className, align }: { vi: string; en: string; className?: string; align?: "right" }) {
+  return (
+    <TableHead className={className}>
+      <span className={align === "right" ? "flex flex-col items-end" : "flex flex-col"}>
+        <span>{vi}</span>
+        <span className="hmi-micro font-normal tracking-[0.1em]">{en}</span>
+      </span>
+    </TableHead>
+  )
+}
+
 function MachinesTableHeaderRow() {
   const t = useT()
+  const gloss = useGloss()
   return (
     <TableRow>
-      <TableHead>{t("machines.table.code")}</TableHead>
-      <TableHead>{t("machines.table.type")}</TableHead>
-      <TableHead>{t("machines.table.driver")}</TableHead>
-      <TableHead>{t("machines.table.status")}</TableHead>
-      <TableHead className="text-right">{t("machines.table.passRate")}</TableHead>
-      <TableHead className="text-right">{t("machines.table.cycles")}</TableHead>
-      <TableHead>{t("machines.table.trend")}</TableHead>
+      <BilingualHead vi={t("machines.table.code")} en={gloss("machines.table.code")} />
+      <BilingualHead vi={t("machines.table.type")} en={gloss("machines.table.type")} />
+      <BilingualHead vi={t("machines.table.driver")} en={gloss("machines.table.driver")} />
+      <BilingualHead vi={t("machines.table.status")} en={gloss("machines.table.status")} />
+      <BilingualHead vi={t("machines.table.passRate")} en={gloss("machines.table.passRate")} className="text-right" align="right" />
+      <BilingualHead vi={t("machines.table.cycles")} en={gloss("machines.table.cycles")} className="text-right" align="right" />
+      <BilingualHead vi={t("machines.table.trend")} en={gloss("machines.table.trend")} />
       {/* H2 — a dedicated entry point to the machine's HMI operator panel, separate from the row's
           own click-to-detail behavior. `sr-only` label, same idiom as the trailing chevron column. */}
       <TableHead className="w-10">
@@ -142,7 +163,7 @@ function MachineRowSkeleton() {
         <Skeleton className="h-4 w-16" />
       </TableCell>
       <TableCell>
-        <Skeleton className="h-5 w-16 rounded-full" />
+        <Skeleton className="h-5 w-16" />
       </TableCell>
       <TableCell className="text-right">
         <Skeleton className="ml-auto h-4 w-10" />
@@ -198,7 +219,7 @@ function MachineRow({ machine, isRunning, onOpen }: MachineRowProps) {
       aria-label={t("machines.table.rowAria", { code: machine.code })}
       className="cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-navy-600/50"
     >
-      <TableCell className="font-medium text-text-strong">{machine.code}</TableCell>
+      <TableCell className="font-numeric font-medium text-text-strong">{machine.code}</TableCell>
       <TableCell className="text-text-body">{t(`deviceClass.${machine.deviceClass}`)}</TableCell>
       <TableCell className="text-text-body">{t(`driverKind.${machine.driverKind}`)}</TableCell>
       <TableCell>
@@ -238,30 +259,29 @@ interface EmptyStateProps {
   action?: React.ReactNode
 }
 
-/** Same visual shape as Dashboard.tsx's own `EmptyState` (dashed card, icon roundel, title+description,
- * one action) — reused here for both "fleet roster is empty" and "filters matched nothing". */
+/** Same visual shape as Dashboard.tsx's own `EmptyState` (a flat hairline panel, icon mark, title +
+ * description, one action) — reused here for both "fleet roster is empty" and "filters matched
+ * nothing". */
 function EmptyState({ icon: Icon, title, description, action }: EmptyStateProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
-      className="flex flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border bg-surface-card px-8 py-16 text-center"
-    >
-      <div className="flex size-14 items-center justify-center rounded-full bg-navy-600/10">
-        <Icon className="size-7 text-primary-text" aria-hidden="true" />
-      </div>
-      <div className="flex flex-col gap-1">
-        <p className="text-lg font-semibold text-text-strong">{title}</p>
-        <p className="max-w-sm text-sm text-text-muted">{description}</p>
-      </div>
-      {action}
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="min-h-0 flex-1">
+      <Sheet className="h-full" bodyClassName="flex h-full flex-col items-center justify-center gap-4 px-8 py-16 text-center">
+        <div className="flex size-14 items-center justify-center border border-border-strong bg-surface-card">
+          <Icon className="size-7 text-primary-text" aria-hidden="true" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-lg font-semibold text-text-strong">{title}</p>
+          <p className="max-w-sm text-sm text-text-muted">{description}</p>
+        </div>
+        {action}
+      </Sheet>
     </motion.div>
   )
 }
 
 export default function Machines() {
   const t = useT()
+  const gloss = useGloss()
   const { data, isPending, isError } = useFleet()
   const isRunning = useFleetIsRunning()
   const [, navigate] = useLocation()
@@ -324,15 +344,15 @@ export default function Machines() {
       initial="hidden"
       animate="visible"
       variants={fadeSlideUp}
-      className="flex flex-1 flex-col gap-6 p-6 lg:p-8"
+      className="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <Factory className="size-5 text-navy-600" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold text-text-strong">{t("machines.title")}</h1>
-          </div>
-          <p className="text-sm text-text-muted">{t("machines.description")}</p>
+          <h1 className="font-heading text-[26px] leading-none font-semibold tracking-tight text-text-strong">
+            {t("machines.title")}
+          </h1>
+          <p className="hmi-micro mt-1">{gloss("machines.title")}</p>
+          <p className="mt-1 max-w-2xl text-sm text-text-muted">{t("machines.description")}</p>
         </div>
         {!isPending && !isError ? (
           <StatusBadge
@@ -344,18 +364,20 @@ export default function Machines() {
       </div>
 
       {isPending ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface-card">
-          <Table>
-            <TableHeader>
-              <MachinesTableHeaderRow />
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 8 }, (_, i) => (
-                <MachineRowSkeleton key={i} />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <Sheet className="min-h-0 flex-1" bodyClassName="flex flex-1 min-h-0 flex-col p-0">
+          <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <MachinesTableHeaderRow />
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 8 }, (_, i) => (
+                  <MachineRowSkeleton key={i} />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Sheet>
       ) : isError ? (
         <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
       ) : roster.length === 0 ? (
@@ -367,11 +389,12 @@ export default function Machines() {
         />
       ) : (
         <>
-          <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-border bg-surface-card p-3">
+          <div className="flex shrink-0 flex-wrap items-end justify-between gap-3 border border-border bg-surface-card p-3">
             <div className="flex flex-wrap items-end gap-3">
               <SearchField value={search} onChange={setSearch} />
               <FilterSelect
                 label={t("machines.filters.type")}
+                labelEn={gloss("machines.filters.type")}
                 value={typeFilter}
                 options={typeOptions}
                 optionLabel={(value) => t(`deviceClass.${value}`)}
@@ -380,6 +403,7 @@ export default function Machines() {
               />
               <FilterSelect
                 label={t("machines.filters.status")}
+                labelEn={gloss("machines.filters.status")}
                 value={statusFilter}
                 options={statusOptions}
                 optionLabel={(value) => statusMetaFor(t, value).label}
@@ -420,21 +444,28 @@ export default function Machines() {
               description={t("machines.empty.noMatchDescription")}
             />
           ) : (
-            <div
-              tabIndex={0}
-              className="max-h-[36rem] overflow-y-auto rounded-xl border border-border focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-navy-600/50"
+            <Sheet
+              className="min-h-0 flex-1"
+              title={t("machines.title")}
+              titleEn={gloss("machines.title")}
+              bodyClassName="flex flex-1 min-h-0 flex-col p-0"
             >
-              <Table>
-                <TableHeader className="sticky top-0 z-10 bg-surface-card">
-                  <MachinesTableHeaderRow />
-                </TableHeader>
-                <TableBody>
-                  {filteredMachines.map((machine) => (
-                    <MachineRow key={machine.code} machine={machine} isRunning={isRunning} onOpen={openMachine} />
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+              <div
+                tabIndex={0}
+                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+              >
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-surface-card">
+                    <MachinesTableHeaderRow />
+                  </TableHeader>
+                  <TableBody>
+                    {filteredMachines.map((machine) => (
+                      <MachineRow key={machine.code} machine={machine} isRunning={isRunning} onOpen={openMachine} />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Sheet>
           )}
         </>
       )}

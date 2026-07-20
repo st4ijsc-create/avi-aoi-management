@@ -116,7 +116,7 @@ export function TelemetryChart({ series, className }: TelemetryChartProps) {
   if (!hasData) {
     return (
       <div className={className}>
-        <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border bg-surface-subtle text-sm text-text-muted">
+        <div className="hmi-graph-paper flex h-72 items-center justify-center border border-border text-sm text-text-muted">
           {t("telemetryChart.noSamples")}
         </div>
       </div>

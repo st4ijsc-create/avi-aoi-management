@@ -1,62 +1,66 @@
-import * as React from "react"
+import type { ReactNode } from "react"
 import { motion } from "framer-motion"
 
 import { cn } from "@/lib/utils"
 import { staggerItem } from "@/theme/motion"
-import { Card, CardContent } from "@/components/ui/card"
+import { Readout, Sheet, type ReadoutTone } from "@/components/industrial"
 import { Skeleton } from "@/components/ui/skeleton"
-import { StatusBadge } from "@/components/ui/status-badge"
 
 type DeltaStatus = "ok" | "warn" | "danger" | "info" | "neutral"
 
+/** Maps the KPI's own delta vocabulary onto the status-ramp `ReadoutTone` every other instrument
+ * reading in the app uses (spec §2) — `info` (a neutral connectivity-style note, not a machine
+ * state) routes to `"neutral"` rather than any ramp colour, same reasoning `ReadoutGrid`/`Hmi.tsx`
+ * already apply. */
+const DELTA_TONE: Record<DeltaStatus, ReadoutTone> = {
+  ok: "run",
+  warn: "warn",
+  danger: "fault",
+  info: "neutral",
+  neutral: "idle",
+}
+
 interface KpiTileProps {
-  icon: React.ComponentType<{ className?: string }>
   label: string
+  /** English gloss (or Vietnamese, if the active language is English) — spec §3 bilingual register.
+   * Callers own the i18n key, so they pass this via `useGloss()` themselves (same idiom
+   * `ReadoutGrid` uses for its own tiles). */
+  labelEn?: string
   value: string
   unit?: string
   delta?: { label: string; status: DeltaStatus }
-  children?: React.ReactNode
+  /** 0–100 — renders the donut gauge variant (e.g. first-pass yield), same as `<Readout>`. */
+  gaugePct?: number
+  children?: ReactNode
+  className?: string
 }
 
-/** One KPI card for the dashboard's top row — same shape as the reference showcase at `/tokens`. */
-export function KpiTile({ icon: Icon, label, value, unit, delta, children }: KpiTileProps) {
+/** One instrument panel for the dashboard's top row — a `<Sheet>` housing a single `<Readout>`
+ * (spec §5), replacing the earlier generic rounded KPI card. `delta` (if present) drives the
+ * reading's tone AND doubles as the sub-note, rather than a separate colored pill beneath the
+ * number — one state indicator per tile, not two disagreeing ones. */
+export function KpiTile({ label, labelEn, value, unit, delta, gaugePct, children, className }: KpiTileProps) {
+  const tone = delta ? DELTA_TONE[delta.status] : "neutral"
+
   return (
-    <motion.div variants={staggerItem} whileHover={{ scale: 1.01 }}>
-      <Card className="h-full">
-        <CardContent className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold tracking-wide text-text-muted uppercase">
-              {label}
-            </span>
-            <Icon className="size-4 text-navy-500" aria-hidden="true" />
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="font-numeric text-3xl font-semibold text-text-strong">{value}</span>
-            {unit ? <span className="text-sm text-text-muted">{unit}</span> : null}
-          </div>
-          {delta ? (
-            <StatusBadge status={delta.status} className="w-fit">
-              {delta.label}
-            </StatusBadge>
-          ) : null}
-          {children}
-        </CardContent>
-      </Card>
+    <motion.div variants={staggerItem} className={cn("h-full", className)}>
+      <Sheet className="h-full" bodyClassName="flex h-full flex-col justify-center gap-3">
+        <Readout value={value} unit={unit} label={label} labelEn={labelEn} sub={delta?.label} tone={tone} gaugePct={gaugePct} />
+        {children}
+      </Sheet>
     </motion.div>
   )
 }
 
 export function KpiTileSkeleton({ className }: { className?: string }) {
   return (
-    <Card className={cn("h-full", className)}>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
+    <Sheet className={cn("h-full", className)} bodyClassName="flex h-full flex-col justify-center gap-3">
+      <div className="flex items-center gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <Skeleton className="h-9 w-28" />
           <Skeleton className="h-3 w-24" />
-          <Skeleton className="size-4 rounded-full" />
         </div>
-        <Skeleton className="h-8 w-28" />
-        <Skeleton className="h-5 w-20 rounded-full" />
-      </CardContent>
-    </Card>
+      </div>
+    </Sheet>
   )
 }

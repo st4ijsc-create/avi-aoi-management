@@ -14,10 +14,12 @@ import {
 import type { VariantProps } from "class-variance-authority"
 import { Link, useParams } from "wouter"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { EngineApiError, useMachine, type DeviceClass, type MachineDetail as MachineDetailDto } from "@/lib/api"
 import { fadeSlideUp } from "@/theme/motion"
-import { Card, CardContent } from "@/components/ui/card"
+import { Sheet } from "@/components/industrial"
+import { buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StatusBadge, type statusBadgeVariants } from "@/components/ui/status-badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -71,11 +73,13 @@ function BackLink() {
   )
 }
 
-function HeaderStat({ label, value }: { label: string; value: string }) {
+function HeaderStat({ label, labelEn, value }: { label: string; labelEn: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">{label}</span>
-      <span className="font-numeric text-lg font-semibold text-text-strong">{value}</span>
+      <span className="hmi-micro">
+        {label} <span>{labelEn}</span>
+      </span>
+      <span className="font-heading text-xl leading-none font-semibold tabular-nums text-text-strong">{value}</span>
     </div>
   )
 }
@@ -86,7 +90,7 @@ function DetailSkeleton() {
       <Skeleton className="h-4 w-32" />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Skeleton className="size-11 shrink-0 rounded-full" />
+          <Skeleton className="size-11 shrink-0" />
           <div className="flex flex-col gap-1.5">
             <Skeleton className="h-6 w-32" />
             <Skeleton className="h-3.5 w-40" />
@@ -97,12 +101,10 @@ function DetailSkeleton() {
           <Skeleton className="h-10 w-16" />
         </div>
       </div>
-      <Card className="p-1">
-        <CardContent className="flex flex-col gap-4 pt-3">
-          <Skeleton className="h-8 w-72" />
-          <Skeleton className="h-72 w-full" />
-        </CardContent>
-      </Card>
+      <Sheet className="min-h-0 flex-1" bodyClassName="flex flex-col gap-4">
+        <Skeleton className="h-8 w-72" />
+        <Skeleton className="h-72 w-full" />
+      </Sheet>
     </div>
   )
 }
@@ -118,15 +120,13 @@ function NotFoundState({ code }: { code: string }) {
     >
       <BackLink />
       <div className="flex flex-1 items-center justify-center">
-        <Card className="max-w-md">
-          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-danger/10">
-              <ServerCrash className="size-6 text-danger-text" aria-hidden="true" />
-            </div>
-            <h1 className="text-lg font-semibold text-text-strong">{t("machineDetail.notFoundState.title")}</h1>
-            <p className="text-sm text-text-muted">{t("machineDetail.notFoundState.description", { code })}</p>
-          </CardContent>
-        </Card>
+        <Sheet className="max-w-md" bodyClassName="flex flex-col items-center gap-3 py-10 text-center">
+          <div className="flex size-12 items-center justify-center border border-danger/40 bg-danger/10">
+            <ServerCrash className="size-6 text-danger-text" aria-hidden="true" />
+          </div>
+          <h1 className="text-lg font-semibold text-text-strong">{t("machineDetail.notFoundState.title")}</h1>
+          <p className="text-sm text-text-muted">{t("machineDetail.notFoundState.description", { code })}</p>
+        </Sheet>
       </div>
     </motion.div>
   )
@@ -149,6 +149,7 @@ function ConnectivityErrorState() {
 
 function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
   const t = useT()
+  const gloss = useGloss()
   const statusMeta = statusMetaFor(t, machine.statusText)
   const HeaderIcon = CLASS_ICON[machine.class]
   const primaryTab = primaryTabFor(t, machine.class)
@@ -160,106 +161,121 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
       initial="hidden"
       animate="visible"
       variants={fadeSlideUp}
-      className="flex flex-1 flex-col gap-6 p-6 lg:p-8"
+      className="flex flex-1 flex-col gap-4 p-4 lg:p-6"
     >
       <BackLink />
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          {/* `bg-navy-600/10`/`text-primary-text` (not `bg-navy-50`/`text-navy-600`) — dark-mode-adaptive
-              tint, see Dashboard.tsx's EmptyState icon badge for the same fix + rationale. */}
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-navy-600/10">
+          <div className="flex size-11 shrink-0 items-center justify-center border border-border-strong bg-surface-card">
             <HeaderIcon className="size-5 text-primary-text" aria-hidden="true" />
           </div>
           <div className="flex flex-col gap-0.5">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold text-text-strong">{machine.code}</h1>
+              <h1 className="font-heading text-[28px] leading-none font-semibold tracking-tight text-text-strong">
+                {machine.code}
+              </h1>
               <StatusBadge status={statusMeta.status}>{statusMeta.label}</StatusBadge>
             </div>
-            <p className="text-sm text-text-muted">
+            <p className="hmi-micro mt-1">
               {t(`deviceClass.${machine.class}`)} · {t(`driverKind.${machine.driverKind}`)}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-6">
-          <HeaderStat label={t("machineDetail.headerCycles")} value={machine.cycles.toLocaleString()} />
+          <HeaderStat
+            label={t("machineDetail.headerCycles")}
+            labelEn={gloss("machineDetail.headerCycles")}
+            value={machine.cycles.toLocaleString()}
+          />
           <HeaderStat
             label={t("machineDetail.headerPassRate")}
+            labelEn={gloss("machineDetail.headerPassRate")}
             value={passRateApplicable ? `${(machine.passRate * 100).toFixed(1)}%` : "—"}
           />
-          {/* H2 — entry point to the machine's full-screen HMI operator panel. */}
-          <Link
-            href={`/hmi/${encodeURIComponent(machine.code)}`}
-            className="flex items-center gap-1.5 border border-border-strong px-2.5 py-1.5 text-xs font-medium text-text-body transition-colors hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] dark:hover:text-navy-200"
-          >
+          {/* H2 — entry point to the machine's full-screen HMI operator panel; the primary CTA on
+              this page, styled with the same navy-fill treatment as the app's own primary button
+              (not a quiet hairline link) — "obvious route" per spec. */}
+          <Link href={`/hmi/${encodeURIComponent(machine.code)}`} className={buttonVariants({ variant: "default" })}>
             <Gauge className="size-3.5" aria-hidden="true" />
             {t("hmi.entryButton")}
           </Link>
         </div>
       </div>
 
-      <Card className="p-1">
-        <CardContent className="pt-3">
-          <Tabs defaultValue="overview">
-            <TabsList>
-              <TabsTrigger value="overview">
-                <Gauge className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                {t("machineDetail.tabs.overview")}
-              </TabsTrigger>
-              <TabsTrigger value={primaryTab.id}>
-                <primaryTab.icon className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                {primaryTab.label}
-              </TabsTrigger>
-              <TabsTrigger value="config">
-                <RefreshCw className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                {t("machineDetail.tabs.config")}
-              </TabsTrigger>
-              <TabsTrigger value="log">
-                <History className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                {t("machineDetail.tabs.log")}
-              </TabsTrigger>
-            </TabsList>
+      <Sheet bodyClassName="p-3">
+        <Tabs defaultValue="overview">
+          <TabsList>
+            <TabsTrigger value="overview">
+              <Gauge className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              {t("machineDetail.tabs.overview")}
+            </TabsTrigger>
+            <TabsTrigger value={primaryTab.id}>
+              <primaryTab.icon className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              {primaryTab.label}
+            </TabsTrigger>
+            <TabsTrigger value="config">
+              <RefreshCw className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              {t("machineDetail.tabs.config")}
+            </TabsTrigger>
+            <TabsTrigger value="log">
+              <History className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              {t("machineDetail.tabs.log")}
+            </TabsTrigger>
+          </TabsList>
 
-            <TabsContent value="overview" className="pt-4">
-              <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-col gap-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-lg bg-surface-subtle p-4">
-                    <p className="text-xs text-text-muted">{t("machineDetail.overview.status")}</p>
+          <TabsContent value="overview" className="pt-4">
+            <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 gap-px border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="bg-surface-card p-4">
+                    <p className="text-xs text-text-muted">
+                      {t("machineDetail.overview.status")} <span className="hmi-micro">{gloss("machineDetail.overview.status")}</span>
+                    </p>
                     <StatusBadge status={statusMeta.status} className="mt-1.5">
                       {statusMeta.label}
                     </StatusBadge>
                   </div>
-                  <div className="rounded-lg bg-surface-subtle p-4">
-                    <p className="text-xs text-text-muted">{t("machineDetail.overview.driver")}</p>
-                    <p className="mt-1 text-lg font-semibold text-text-strong">
+                  <div className="bg-surface-card p-4">
+                    <p className="text-xs text-text-muted">
+                      {t("machineDetail.overview.driver")} <span className="hmi-micro">{gloss("machineDetail.overview.driver")}</span>
+                    </p>
+                    <p className="font-heading mt-1 text-xl leading-none font-semibold text-text-strong">
                       {t(`driverKind.${machine.driverKind}`)}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-surface-subtle p-4">
-                    <p className="text-xs text-text-muted">{t("machineDetail.overview.cycles")}</p>
-                    <p className="font-numeric mt-1 text-lg font-semibold text-text-strong">
+                  <div className="bg-surface-card p-4">
+                    <p className="text-xs text-text-muted">
+                      {t("machineDetail.overview.cycles")} <span className="hmi-micro">{gloss("machineDetail.overview.cycles")}</span>
+                    </p>
+                    <p className="font-heading font-numeric mt-1 text-xl leading-none font-semibold tabular-nums text-text-strong">
                       {machine.cycles.toLocaleString()}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-surface-subtle p-4">
-                    <p className="text-xs text-text-muted">{t("machineDetail.overview.passRate")}</p>
-                    <p className="font-numeric mt-1 text-lg font-semibold text-text-strong">
+                  <div className="bg-surface-card p-4">
+                    <p className="text-xs text-text-muted">
+                      {t("machineDetail.overview.passRate")} <span className="hmi-micro">{gloss("machineDetail.overview.passRate")}</span>
+                    </p>
+                    <p className="font-heading font-numeric mt-1 text-xl leading-none font-semibold tabular-nums text-text-strong">
                       {passRateApplicable ? `${(machine.passRate * 100).toFixed(1)}%` : "—"}
                     </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <Card size="sm">
-                    <CardContent className="flex flex-col gap-1.5">
-                      <h3 className="text-sm font-semibold text-text-strong">{t("machineDetail.overview.lastConfigSync")}</h3>
+                  <div className="border border-border bg-surface-card p-4">
+                    <div className="flex flex-col gap-1.5">
+                      <h3 className="font-heading text-sm font-semibold text-text-strong">
+                        {t("machineDetail.overview.lastConfigSync")}
+                      </h3>
                       <p className="font-numeric text-sm text-text-muted">{machine.driftState}</p>
-                    </CardContent>
-                  </Card>
-                  <Card size="sm">
-                    <CardContent className="flex flex-col gap-2">
-                      <h3 className="text-sm font-semibold text-text-strong">{t("machineDetail.overview.recentCycles")}</h3>
+                    </div>
+                  </div>
+                  <div className="border border-border bg-surface-card p-4">
+                    <div className="flex flex-col gap-2">
+                      <h3 className="font-heading text-sm font-semibold text-text-strong">
+                        {t("machineDetail.overview.recentCycles")}
+                      </h3>
                       {machine.cycleLog.length === 0 ? (
                         <p className="text-sm text-text-muted">{t("cycleLogTable.empty")}</p>
                       ) : (
@@ -283,8 +299,8 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
                             })}
                         </ul>
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             </TabsContent>
@@ -313,14 +329,13 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
               </motion.div>
             </TabsContent>
 
-            <TabsContent value="log" className="pt-4">
-              <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
-                <CycleLogTable rows={machine.cycleLog} />
-              </motion.div>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+          <TabsContent value="log" className="pt-4">
+            <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
+              <CycleLogTable rows={machine.cycleLog} />
+            </motion.div>
+          </TabsContent>
+        </Tabs>
+      </Sheet>
     </motion.div>
   )
 }

@@ -1,6 +1,7 @@
 import * as React from "react"
 import type { VariantProps } from "class-variance-authority"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import type { CycleLogRow } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -49,14 +50,28 @@ const MAX_VISIBLE_ROWS = 100
  * further caps the client render to the most recent 100, since a plain table this deep is a scroll
  * chore either way — the API Inspector's virtualized grid is the tool for a truly long, live-streamed
  * feed, not this one-machine summary). */
+/** Bilingual column header — primary active-language caption over a small uppercase gloss in the
+ * other language (spec §1/§3), same register `Machines.tsx`'s own roster table uses. */
+function Th({ vi, en }: { vi: string; en: string }) {
+  return (
+    <TableHead>
+      <span className="flex flex-col">
+        <span>{vi}</span>
+        <span className="hmi-micro font-normal">{en}</span>
+      </span>
+    </TableHead>
+  )
+}
+
 export function CycleLogTable({ rows, className }: CycleLogTableProps) {
   const t = useT()
+  const gloss = useGloss()
   const visible = React.useMemo(() => [...rows].reverse().slice(0, MAX_VISIBLE_ROWS), [rows])
 
   if (rows.length === 0) {
     return (
       <div className={className}>
-        <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-border bg-surface-subtle text-sm text-text-muted">
+        <div className="flex h-48 items-center justify-center border border-border bg-surface-subtle text-sm text-text-muted">
           {t("cycleLogTable.empty")}
         </div>
       </div>
@@ -70,15 +85,15 @@ export function CycleLogTable({ rows, className }: CycleLogTableProps) {
       </p>
       <div
         tabIndex={0}
-        className="max-h-[28rem] overflow-y-auto rounded-xl border border-border focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-navy-600/50"
+        className="hmi-scroll max-h-[28rem] overflow-y-auto border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
       >
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-surface-card">
             <TableRow>
-              <TableHead>{t("cycleLogTable.headers.time")}</TableHead>
-              <TableHead>{t("cycleLogTable.headers.serial")}</TableHead>
-              <TableHead>{t("cycleLogTable.headers.verdict")}</TableHead>
-              <TableHead>{t("cycleLogTable.headers.keyMetric")}</TableHead>
+              <Th vi={t("cycleLogTable.headers.time")} en={gloss("cycleLogTable.headers.time")} />
+              <Th vi={t("cycleLogTable.headers.serial")} en={gloss("cycleLogTable.headers.serial")} />
+              <Th vi={t("cycleLogTable.headers.verdict")} en={gloss("cycleLogTable.headers.verdict")} />
+              <Th vi={t("cycleLogTable.headers.keyMetric")} en={gloss("cycleLogTable.headers.keyMetric")} />
             </TableRow>
           </TableHeader>
           <TableBody>

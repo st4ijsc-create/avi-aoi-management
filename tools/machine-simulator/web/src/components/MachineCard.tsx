@@ -1,12 +1,13 @@
 import { motion } from "framer-motion"
 import type { VariantProps } from "class-variance-authority"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import type { FleetTile } from "@/lib/api"
 import { useChartTokens, type ChartTokens } from "@/theme/chartTokens"
 import { staggerItem } from "@/theme/motion"
+import { Sheet } from "@/components/industrial"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StatusBadge, type statusBadgeVariants } from "@/components/ui/status-badge"
 import { Sparkline } from "@/components/Sparkline"
@@ -100,6 +101,7 @@ interface MachineCardProps {
 
 export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
   const t = useT()
+  const gloss = useGloss()
   const meta = STATUS_META[machine.statusText]
   const status = meta?.status ?? "neutral"
   const label = meta ? t(meta.key) : machine.statusText
@@ -110,45 +112,47 @@ export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
       <button
         type="button"
         onClick={() => onOpen(machine.code)}
-        className="block w-full rounded-xl text-left outline-none focus-visible:ring-3 focus-visible:ring-navy-600/50"
+        className="block w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
       >
-        <Card className="h-full cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md">
-          <CardContent className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <StatusBadge status={status} pulse={isActive && status === "ok"}>
-                {label}
-              </StatusBadge>
-              <Badge variant="outline" className="shrink-0">
-                {t(`driverKind.${machine.driverKind}`)}
-              </Badge>
-            </div>
+        {/* Flat hairline highlight on hover/focus — no lift/shadow (ground rule §1: no drop shadows
+            outside the physical controls). */}
+        <Sheet className="h-full cursor-pointer transition-colors hover:border-navy-600/70" bodyClassName="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <StatusBadge status={status} pulse={isActive && status === "ok"}>
+              {label}
+            </StatusBadge>
+            <Badge variant="outline" className="shrink-0">
+              {t(`driverKind.${machine.driverKind}`)}
+            </Badge>
+          </div>
 
-            <div className="flex flex-col">
-              <span className="text-lg font-semibold text-text-strong">{machine.code}</span>
-              <span className="text-xs font-medium tracking-wide text-text-muted uppercase">
-                {t(`deviceClass.${machine.deviceClass}`)}
-              </span>
-            </div>
+          <div className="flex flex-col">
+            <span className="font-heading text-xl leading-none font-semibold tracking-tight text-text-strong">
+              {machine.code}
+            </span>
+            <span className="hmi-micro mt-1.5">{t(`deviceClass.${machine.deviceClass}`)}</span>
+          </div>
 
-            <div className="flex items-center gap-3">
-              <PassRateRing passRate={machine.passRate} applicable={machine.deviceClass !== "Iot"} />
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="text-[11px] text-text-muted">{t("machineCard.cycleTrend")}</span>
-                <Sparkline data={machine.spark} height={28} />
-              </div>
+          <div className="flex items-center gap-3">
+            <PassRateRing passRate={machine.passRate} applicable={machine.deviceClass !== "Iot"} />
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="hmi-micro">
+                {t("machineCard.cycleTrend")} <span>{gloss("machineCard.cycleTrend")}</span>
+              </span>
+              <Sparkline data={machine.spark} height={28} />
             </div>
+          </div>
 
-            <div className="flex flex-col gap-0.5 border-t border-border pt-2.5">
-              <span className="font-numeric text-sm font-semibold text-text-strong">
-                {machine.cycles.toLocaleString()}{" "}
-                <span className="font-sans text-xs font-normal text-text-muted">{t("machineCard.cyclesUnit")}</span>
-              </span>
-              <span className="truncate text-xs text-text-muted" title={machine.lastCycleSummary}>
-                {machine.lastCycleSummary}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="flex flex-col gap-0.5 border-t border-border pt-2.5">
+            <span className="font-numeric text-sm font-semibold text-text-strong">
+              {machine.cycles.toLocaleString()}{" "}
+              <span className="hmi-micro normal-case">{t("machineCard.cyclesUnit")}</span>
+            </span>
+            <span className="truncate text-xs text-text-muted" title={machine.lastCycleSummary}>
+              {machine.lastCycleSummary}
+            </span>
+          </div>
+        </Sheet>
       </button>
     </motion.div>
   )
@@ -156,25 +160,23 @@ export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
 
 export function MachineCardSkeleton() {
   return (
-    <Card className="h-full">
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <Skeleton className="h-5 w-14 rounded-full" />
-          <Skeleton className="h-5 w-20 rounded-full" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Skeleton className="h-5 w-24" />
-          <Skeleton className="h-3 w-16" />
-        </div>
-        <div className="flex items-center gap-3">
-          <Skeleton className="size-11 shrink-0 rounded-full" />
-          <Skeleton className="h-7 flex-1" />
-        </div>
-        <div className="flex flex-col gap-1.5 border-t border-border pt-2.5">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-3 w-32" />
-        </div>
-      </CardContent>
-    </Card>
+    <Sheet className="h-full" bodyClassName="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <Skeleton className="h-5 w-14" />
+        <Skeleton className="h-5 w-20" />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Skeleton className="h-5 w-24" />
+        <Skeleton className="h-3 w-16" />
+      </div>
+      <div className="flex items-center gap-3">
+        <Skeleton className="size-11 shrink-0" />
+        <Skeleton className="h-7 flex-1" />
+      </div>
+      <div className="flex flex-col gap-1.5 border-t border-border pt-2.5">
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-3 w-32" />
+      </div>
+    </Sheet>
   )
 }

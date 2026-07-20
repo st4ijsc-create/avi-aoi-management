@@ -76,7 +76,7 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
   if (values.length < 2) {
     return (
       <div className={className}>
-        <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-border bg-surface-subtle text-sm text-text-muted">
+        <div className="hmi-graph-paper flex h-72 items-center justify-center border border-border text-sm text-text-muted">
           {t("spcChart.waiting")}
         </div>
       </div>
@@ -157,8 +157,8 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
                 contentStyle={{
                   backgroundColor: chartTokens.surfaceCard,
                   border: `1px solid ${chartTokens.border}`,
-                  borderRadius: 8,
-                  boxShadow: "var(--shadow-md)",
+                  borderRadius: 0,
+                  boxShadow: "none",
                   fontSize: 12,
                   color: chartTokens.textBody,
                 }}
@@ -224,7 +224,7 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
             <BarChart data={histogram} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <XAxis type="number" hide domain={[0, maxCount]} />
               <YAxis type="number" dataKey="bin" domain={[domainMin, domainMax]} hide />
-              <Bar dataKey="count" fill={chartTokens.accent500} fillOpacity={0.55} radius={[0, 3, 3, 0]} isAnimationActive={false} />
+              <Bar dataKey="count" fill={chartTokens.accent500} fillOpacity={0.55} radius={[0, 0, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </div>
