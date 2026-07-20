@@ -402,12 +402,12 @@
       "oee": "实时 OEE",
       "noOee": "暂无实时数据",
       "machinesReporting": "{{count}} 台设备上报中",
-      "yield": "良率（今日）",
-      "finalYield": "最终良率",
-      "fpy": "FPY（今日）",
-      "firstPass": "一次通过率",
-      "output": "产量（今日）",
-      "inspected": "已检数量",
+      "yield": "良率",
+      "finalYield": "最终良率 · 今日",
+      "fpy": "FPY",
+      "firstPass": "一次通过率 · 今日",
+      "output": "产量",
+      "inspected": "已检数量 · 今日",
       "planAttainment": "计划达成（按进度）",
       "planRestricted": "需要生产监控权限",
       "noPlan": "今日未设定计划目标",
@@ -417,10 +417,15 @@
     "risks": {
       "title": "主要风险",
       "empty": "暂无激活的风险",
-      "untitled": "风险"
+      "untitled": "风险",
+      "acknowledge": "确认",
+      "acknowledged": "风险已确认",
+      "dismissAction": "忽略",
+      "dismissedToast": "风险已忽略"
     },
     "ai": {
       "title": "AI 摘要",
+      "lead": "高管首要结论",
       "viewFull": "完整报告",
       "empty": "暂无高管报告。",
       "emptyHint": "定时摘要将显示于此；可在管理洞察中生成一份。",
@@ -447,7 +452,9 @@
       "actionFailed": "无法完成操作",
       "confirmTitle": "批准此 AI 操作？",
       "confirmBody": "以下提议的操作将立即执行。",
-      "openItemAria": "在完整收件箱中查看：{{title}}"
+      "openItemAria": "查看：{{title}}",
+      "proposalHint": "批准以立即执行此 AI 操作，或忽略它。",
+      "deepLinkHint": "此审批需要职责分离上下文——请在完整收件箱中完成。"
     },
     "links": {
       "title": "更多",

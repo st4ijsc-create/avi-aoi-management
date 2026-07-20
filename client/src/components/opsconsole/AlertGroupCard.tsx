@@ -2,7 +2,7 @@
  * doc 67 W3 (việc 1+2a+3+4+5) — thẻ NHÓM cảnh báo đã coalesce cho War Room.
  *
  *  - Việc 1: 1 thẻ / nhóm (source+title+vị trí) + badge "×N lần" + "mới nhất
- *    Xs trước" (bản ghi MỚI NHẤT) + Collapsible xem từng bản ghi con.
+ *    Xs trước" (bản ghi MỚI NHẤT).
  *  - Việc 2a: "Xác nhận cả nhóm (N)" cho nguồn có ack; nhóm interlock/mqtt là
  *    "Xử lý cả nhóm (N)" đi qua AlertDialog confirm ở trang (ngữ nghĩa W1:
  *    resolve = đóng vĩnh viễn).
@@ -11,13 +11,19 @@
  *  - Việc 4: React.memo — gõ search/chọn checkbox ở trang không re-render 85 thẻ.
  *  - Việc 5: disable theo pendingKeys per-alert, không khóa cả trang.
  *
+ * doc 68 §3.4 (P1/P2) — thị giác:
+ *  - Chi tiết nhóm / từng bản ghi + hành động cả-nhóm chuyển sang ContextDrawer
+ *    phải (do trang sở hữu qua `onOpenDetail`), thay Collapsible bung in-place
+ *    đẩy layout. Thẻ đơn cũng mở drawer khi bấm.
+ *  - Tiêu đề nhóm line-clamp-2 (bỏ truncate cắt cụt "MA…/Throug…").
+ *  - Nút hành động xếp NGANG (flex-row flex-wrap) thay dọc.
+ *  - Badge "×N lần" hạ tông muted (bỏ font-bold border-current).
+ *
  * Touch target: nút hành động chính h-11 (44px) — persona đeo găng, panel 10.1".
  */
-import { memo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import AgeLabel from "./AgeLabel";
 import {
@@ -55,7 +61,8 @@ function ItemActions({
   const pending = pendingKeys.has(a.key);
   const h = size === "lg" ? "h-11" : "h-9";
   return (
-    <div className="flex shrink-0 flex-col gap-1">
+    // doc 68 §3.4 (P2): nút hành động xếp NGANG (wrap khi hẹp) thay dọc.
+    <div className="flex shrink-0 flex-row flex-wrap justify-end gap-1">
       {!isResolveOnly(a.source) && !a.acknowledged && (
         <Button size="sm" variant="secondary" className={h} disabled={pending} onClick={() => onAck(a)}>
           Xác nhận
@@ -77,6 +84,7 @@ export const AlertGroupCard = memo(function AlertGroupCard({
   onRequestResolve,
   onBulkAck,
   onBulkResolveRequest,
+  onOpenDetail,
 }: {
   group: AlertGroup;
   pendingKeys: Set<string>;
@@ -84,8 +92,9 @@ export const AlertGroupCard = memo(function AlertGroupCard({
   onRequestResolve: (a: DecoratedAlert) => void;
   onBulkAck: (g: AlertGroup) => void;
   onBulkResolveRequest: (g: AlertGroup) => void;
+  /** doc 68 §3.4: mở chi tiết nhóm/bản-ghi trong ContextDrawer phải do trang sở hữu. */
+  onOpenDetail: (g: AlertGroup) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const anyPending = g.items.some((i) => pendingKeys.has(i.key));
   const single = g.count === 1;
 
@@ -102,12 +111,19 @@ export const AlertGroupCard = memo(function AlertGroupCard({
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
+        {/* doc 68 §3.4: cả khối thông tin bấm được → mở drawer chi tiết (thẻ đơn lẫn nhóm). */}
+        <button
+          type="button"
+          onClick={() => onOpenDetail(g)}
+          className="min-w-0 flex-1 text-left"
+        >
           <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             {SOURCE_ICON[g.source]}
-            <span className="truncate">{g.title}</span>
+            {/* doc 68 §3.4: bỏ truncate → line-clamp-2 (hết cắt cụt tiêu đề). */}
+            <span className="line-clamp-2">{g.title}</span>
             {!single && (
-              <Badge variant="outline" className="shrink-0 border-current font-bold text-current">
+              // doc 68 §3.4: hạ tông badge "×N lần" (muted, không font-bold/border-current).
+              <Badge variant="secondary" className="shrink-0 font-normal">
                 ×{g.count} lần
               </Badge>
             )}
@@ -120,12 +136,12 @@ export const AlertGroupCard = memo(function AlertGroupCard({
             {g.unackedCount === 0 && " · ACK"}
             {!single && g.unackedCount > 0 && g.unackedCount < g.count && ` · còn ${g.unackedCount} chưa ACK`}
           </div>
-        </div>
+        </button>
 
         {single ? (
           <ItemActions a={g.items[0]} pendingKeys={pendingKeys} onAck={onAck} onRequestResolve={onRequestResolve} />
         ) : (
-          <div className="flex shrink-0 flex-col gap-1">
+          <div className="flex shrink-0 flex-row flex-wrap justify-end gap-1">
             {isResolveOnly(g.source) ? (
               <Button size="sm" variant="outline" className="h-11" disabled={anyPending} onClick={() => onBulkResolveRequest(g)}>
                 Xử lý cả nhóm ({g.count})
@@ -139,31 +155,16 @@ export const AlertGroupCard = memo(function AlertGroupCard({
         )}
       </div>
 
-      {/* Việc 1: mở rộng xem từng bản ghi con khi cần. */}
+      {/* doc 68 §3.4: "Xem N bản ghi" → mở ContextDrawer phải (thay Collapsible in-place). */}
       {!single && (
-        <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-9 w-full justify-start gap-1 px-1 text-xs font-semibold text-current hover:bg-background/20">
-              <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
-              {open ? "Thu gọn" : `Xem ${g.count} bản ghi`}
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <ul className="mt-1 space-y-1 border-t border-current/30 pt-2">
-              {g.items.map((a) => (
-                <li key={a.key} className="flex items-start justify-between gap-2 text-xs">
-                  <div className="min-w-0">
-                    <p className="line-clamp-1 opacity-90">{a.message || a.title}</p>
-                    <span className="opacity-75">
-                      <AgeLabel raisedAt={a.raisedAt} /> trước{a.acknowledged && " · ACK"}
-                    </span>
-                  </div>
-                  <ItemActions a={a} pendingKeys={pendingKeys} onAck={onAck} onRequestResolve={onRequestResolve} size="sm" />
-                </li>
-              ))}
-            </ul>
-          </CollapsibleContent>
-        </Collapsible>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-2 h-9 w-full justify-start px-1 text-xs font-semibold text-current hover:bg-background/20"
+          onClick={() => onOpenDetail(g)}
+        >
+          Xem {g.count} bản ghi
+        </Button>
       )}
     </div>
   );

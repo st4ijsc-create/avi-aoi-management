@@ -5,11 +5,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import DashboardLayoutEditor, { DashboardLayout as LayoutType } from "@/components/DashboardLayoutEditor";
+import { widgetDefinitions } from "@/components/DashboardWidgetLibrary";
+import { ContextDrawer } from "@/components/workspace/ContextDrawer";
 import AsyncBoundary from "@/components/AsyncBoundary";
 import { ConfirmDeleteDialog } from "@/components/patterns/ConfirmDeleteDialog";
 import { SYSTEM_TEMPLATES } from "@/components/EmbeddedDashboardTemplates";
@@ -22,7 +32,6 @@ import {
   Edit,
   Trash2,
   Copy,
-  Share2,
   Lock,
   Globe,
   Clock,
@@ -30,7 +39,21 @@ import {
   Star,
   StarOff,
   ExternalLink,
+  MoreHorizontal,
+  ChevronDown,
+  FileText,
 } from "lucide-react";
+
+// doc 68 §3.8 (việc 5) — màu ô mini-preview theo NHÓM widget (category), giúp
+// phân biệt loại nội dung bằng mắt thay vì khối xám đồng nhất.
+const WIDGET_CATEGORY_COLOR: Record<string, string> = {
+  metrics: "bg-blue-500/60",
+  charts: "bg-violet-500/60",
+  data: "bg-emerald-500/60",
+  utility: "bg-amber-500/60",
+};
+const widgetCategoryOf = (type: string): keyof typeof WIDGET_CATEGORY_COLOR =>
+  (widgetDefinitions.find((w) => w.type === type)?.category ?? "utility");
 
 // Map server dashboard record to client LayoutType
 function mapToLayout(d: any): LayoutType {
@@ -63,6 +86,11 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newLayoutName, setNewLayoutName] = useState("");
   const [newLayoutDesc, setNewLayoutDesc] = useState("");
+  // doc 68 §3.8 (việc 2) — ContextDrawer thuộc tính: giữ id dashboard đang mở +
+  // bản nháp tên/mô tả để sửa tại chỗ (giảm mật độ target footer card cho persona găng).
+  const [propsLayoutId, setPropsLayoutId] = useState<string | null>(null);
+  const [propsName, setPropsName] = useState("");
+  const [propsDesc, setPropsDesc] = useState("");
 
   // Queries
   const utils = trpc.useUtils();
@@ -118,6 +146,9 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
   const favoriteLayouts = filterBySearch(allMyLayouts.filter(l => favoriteIds.has(l.id)));
   // Sở hữu: id nằm trong listCustomDashboards → của tôi (dùng phân quyền action ở tab Chia sẻ).
   const myLayoutIds = new Set(allMyLayouts.map(l => l.id));
+  // doc 68 §3.8 (việc 2) — layout đang mở trong drawer, lấy TƯƠI từ query (để switch
+  // Công khai/Yêu thích phản ánh đúng sau khi toggle/invalidate).
+  const propsLayout = propsLayoutId ? allMyLayouts.find((l) => l.id === propsLayoutId) ?? null : null;
 
   const handleCreateLayout = async () => {
     if (!newLayoutName.trim()) {
@@ -239,6 +270,34 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
     }
   };
 
+  // doc 68 §3.8 (việc 2) — mở drawer thuộc tính cho 1 dashboard sở hữu.
+  const openProps = (layout: LayoutType) => {
+    setPropsLayoutId(layout.id);
+    setPropsName(layout.name);
+    setPropsDesc(layout.description || "");
+  };
+
+  // Lưu đổi tên/mô tả trong drawer (giữ nguyên widgets/gridCols/isPublic).
+  const handleSaveProps = async (layout: LayoutType) => {
+    if (!propsName.trim()) {
+      toast.error(t('dashboard.enterLayoutName'));
+      return;
+    }
+    try {
+      await updateMutation.mutateAsync({
+        id: Number(layout.id),
+        name: propsName,
+        description: propsDesc || undefined,
+        widgets: layout.widgets,
+        gridCols: layout.gridCols,
+        isPublic: layout.isPublic,
+      });
+      toast.success(t('dashboard.layoutSaved'));
+    } catch (e) {
+      toast.error(t('dashboard.saveError'));
+    }
+  };
+
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString("vi-VN", {
       day: "2-digit",
@@ -265,89 +324,109 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
 
   // Layout list view
   return (
-    <div className="space-y-6">
-      {/* Header — embedded (doc 67 W8 P3): bỏ h2+description lặp với PageHeader hub */}
-      <div className={embedded ? "flex items-center justify-end" : "flex items-center justify-between"}>
-        {!embedded && (
-          <div>
-            <h2 className="text-xl font-bold">{t('dashboard.customDashboard')}</h2>
-            <p className="text-sm text-muted-foreground">
-              {t('dashboard.customDashboardDescription')}
-            </p>
-          </div>
-        )}
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              {t('dashboard.createDashboard')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t('dashboard.createNewDashboard')}</DialogTitle>
-              <DialogDescription>
-                {t('dashboard.enterNewDashboardInfo')}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>{t('dashboard.dashboardName')} *</Label>
-                <Input
-                  value={newLayoutName}
-                  onChange={(e) => setNewLayoutName(e.target.value)}
-                  placeholder="VD: Production Overview"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t('common.description')}</Label>
-                <Textarea
-                  value={newLayoutDesc}
-                  onChange={(e) => setNewLayoutDesc(e.target.value)}
-                  placeholder={t('dashboard.descriptionPlaceholder')}
-                  rows={3}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button onClick={handleCreateLayout}>
-                {t('dashboard.createAndDesign')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+    <div className="space-y-4">
+      {/* Header — non-embedded chỉ còn title (nút Tạo đã dời lên hàng tab-strip). */}
+      {!embedded && (
+        <div>
+          <h2 className="text-xl font-bold">{t('dashboard.customDashboard')}</h2>
+          <p className="text-sm text-muted-foreground">
+            {t('dashboard.customDashboardDescription')}
+          </p>
+        </div>
+      )}
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder={t('dashboard.searchDashboard')}
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-9"
-        />
-      </div>
+      {/* doc 68 §3.8 (việc 1) — Dialog "Tạo trống" nay controlled (mở từ split-button). */}
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('dashboard.createNewDashboard')}</DialogTitle>
+            <DialogDescription>
+              {t('dashboard.enterNewDashboardInfo')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('dashboard.dashboardName')} *</Label>
+              <Input
+                value={newLayoutName}
+                onChange={(e) => setNewLayoutName(e.target.value)}
+                placeholder="VD: Production Overview"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('common.description')}</Label>
+              <Textarea
+                value={newLayoutDesc}
+                onChange={(e) => setNewLayoutDesc(e.target.value)}
+                placeholder={t('dashboard.descriptionPlaceholder')}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleCreateLayout}>
+              {t('dashboard.createAndDesign')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="my-layouts">
-            <Lock className="w-4 h-4 mr-2" />
-            {t('dashboard.mine')} ({myLayouts.length})
-          </TabsTrigger>
-          <TabsTrigger value="shared">
-            <Globe className="w-4 h-4 mr-2" />
-            {t('dashboard.shared')} ({sharedLayouts.length})
-          </TabsTrigger>
-          <TabsTrigger value="favorites">
-            <Star className="w-4 h-4 mr-2" />
-            {t('dashboard.favorites')} ({favoriteLayouts.length})
-          </TabsTrigger>
-        </TabsList>
+        {/* doc 68 §3.8 (việc 1) — GỘP HÀNG ĐẦU: tab-strip trái · search giữa · CTA phải
+            (xóa "vùng chết" dọc tab→CTA lẻ→search). */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <TabsList>
+            <TabsTrigger value="my-layouts">
+              <Lock className="w-4 h-4 mr-2" />
+              {t('dashboard.mine')}{myLayouts.length > 0 ? ` (${myLayouts.length})` : ""}
+            </TabsTrigger>
+            <TabsTrigger value="shared">
+              <Globe className="w-4 h-4 mr-2" />
+              {t('dashboard.shared')}{sharedLayouts.length > 0 ? ` (${sharedLayouts.length})` : ""}
+            </TabsTrigger>
+            <TabsTrigger value="favorites">
+              <Star className="w-4 h-4 mr-2" />
+              {t('dashboard.favorites')}{favoriteLayouts.length > 0 ? ` (${favoriteLayouts.length})` : ""}
+            </TabsTrigger>
+          </TabsList>
+
+          <div className="flex items-center gap-2 sm:ml-auto">
+            {/* Search (giữa) */}
+            <div className="relative w-full sm:w-56 md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder={t('dashboard.searchDashboard')}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            {/* CTA (phải) — split-button "Tạo mới ▾": Từ mẫu / Trống */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="shrink-0">
+                  <Plus className="w-4 h-4 mr-2" />
+                  {t('dashboard.createNew', 'Tạo mới')}
+                  <ChevronDown className="w-4 h-4 ml-1 opacity-70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setLocation('/dashboard-center?tab=dashboard-templates')}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  {t('dashboard.createFromTemplate', 'Từ mẫu')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setIsCreateOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  {t('dashboard.createBlank', 'Trống')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
 
         <TabsContent value="my-layouts" className="mt-4">
           <AsyncBoundary
@@ -391,6 +470,118 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
           </AsyncBoundary>
         </TabsContent>
       </Tabs>
+
+      {/* doc 68 §3.8 (việc 2) — ContextDrawer thuộc tính (thay 5 icon footer card). */}
+      <ContextDrawer
+        open={propsLayout !== null}
+        onOpenChange={(o) => { if (!o) setPropsLayoutId(null); }}
+        title={propsLayout?.name ?? t('dashboard.properties', 'Thuộc tính')}
+        description={t('dashboard.propertiesHint', 'Đổi tên, mô tả, chia sẻ, yêu thích, nhân bản hoặc xóa.')}
+      >
+        {propsLayout && (
+          <div className="space-y-5">
+            {/* Hành động bố cục */}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 min-h-11"
+                onClick={() => {
+                  setEditingLayout(propsLayout);
+                  setIsEditing(true);
+                  setPropsLayoutId(null);
+                }}
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                {t('dashboard.editLayout', 'Sửa bố cục')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 min-h-11"
+                disabled={duplicateMutation.isPending}
+                onClick={() => handleDuplicateLayout(propsLayout)}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                {t('dashboard.duplicate', 'Nhân bản')}
+              </Button>
+            </div>
+
+            <Separator />
+
+            {/* Đổi tên + mô tả */}
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>{t('dashboard.dashboardName')} *</Label>
+                <Input value={propsName} onChange={(e) => setPropsName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>{t('common.description')}</Label>
+                <Textarea
+                  value={propsDesc}
+                  onChange={(e) => setPropsDesc(e.target.value)}
+                  placeholder={t('dashboard.descriptionPlaceholder')}
+                  rows={3}
+                />
+              </div>
+              <Button
+                className="w-full min-h-11"
+                disabled={updateMutation.isPending}
+                onClick={() => handleSaveProps(propsLayout)}
+              >
+                {t('common.save', 'Lưu thay đổi')}
+              </Button>
+            </div>
+
+            <Separator />
+
+            {/* Công khai + Yêu thích */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  {propsLayout.isPublic ? <Globe className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                  <Label className="cursor-pointer">{t('dashboard.public', 'Công khai')}</Label>
+                </div>
+                <Switch
+                  checked={propsLayout.isPublic}
+                  disabled={togglePublicMutation.isPending}
+                  onCheckedChange={() => handleTogglePublic(propsLayout.id)}
+                  aria-label={t('dashboard.public', 'Công khai')}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Star className={`w-4 h-4 ${favoriteIds.has(propsLayout.id) ? "fill-yellow-400 text-yellow-400" : ""}`} />
+                  <Label className="cursor-pointer">{t('dashboard.favorite', 'Yêu thích')}</Label>
+                </div>
+                <Switch
+                  checked={favoriteIds.has(propsLayout.id)}
+                  disabled={toggleFavoriteMutation.isPending}
+                  onCheckedChange={() => handleToggleFavorite(propsLayout.id)}
+                  aria-label={t('dashboard.favorite', 'Yêu thích')}
+                />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Xóa */}
+            <ConfirmDeleteDialog
+              trigger={
+                <Button variant="outline" className="w-full min-h-11 text-destructive">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  {t('dashboard.delete', 'Xóa')}
+                </Button>
+              }
+              itemLabel={`dashboard "${propsLayout.name}"`}
+              onConfirm={async () => {
+                await handleDeleteLayout(propsLayout.id);
+                setPropsLayoutId(null);
+              }}
+            />
+          </div>
+        )}
+      </ContextDrawer>
     </div>
   );
 
@@ -410,28 +601,50 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
         </div>
       );
     }
+    // doc 68 §3.8 (việc 5): nhãn/màu theo NHÓM widget — chú giải các nhóm có mặt.
+    const presentCategories = Array.from(
+      new Set(layout.widgets.map((w) => widgetCategoryOf(w.type)))
+    );
+    const categoryLabel: Record<string, string> = {
+      metrics: t('widgets.category.metrics', 'Chỉ số'),
+      charts: t('widgets.category.charts', 'Biểu đồ'),
+      data: t('widgets.category.data', 'Dữ liệu'),
+      utility: t('widgets.category.utility', 'Tiện ích'),
+    };
     return (
-      <div className="h-32 bg-muted/50 border rounded-lg mb-3 p-2 overflow-hidden" aria-hidden="true">
-        <div
-          className="grid h-full gap-1"
-          style={{
-            gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-            gridAutoRows: "minmax(0, 1fr)",
-          }}
-        >
-          {layout.widgets.slice(0, 16).map((w, idx) => {
-            const x = Math.max(0, Math.min(cols - 1, w.position?.x ?? 0));
-            const span = Math.max(1, Math.min(spanBySize[w.size] ?? 2, cols - x));
-            const y = Math.max(0, Math.min(5, w.position?.y ?? idx));
-            return (
-              <div
-                key={w.id || idx}
-                className="rounded-sm bg-muted-foreground/25"
-                style={{ gridColumn: `${x + 1} / span ${span}`, gridRow: `${y + 1}` }}
-              />
-            );
-          })}
+      <div className="mb-3">
+        <div className="h-32 bg-muted/50 border rounded-lg p-2 overflow-hidden" aria-hidden="true">
+          <div
+            className="grid h-full gap-1"
+            style={{
+              gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+              gridAutoRows: "minmax(0, 1fr)",
+            }}
+          >
+            {layout.widgets.slice(0, 16).map((w, idx) => {
+              const x = Math.max(0, Math.min(cols - 1, w.position?.x ?? 0));
+              const span = Math.max(1, Math.min(spanBySize[w.size] ?? 2, cols - x));
+              const y = Math.max(0, Math.min(5, w.position?.y ?? idx));
+              return (
+                <div
+                  key={w.id || idx}
+                  className={`rounded-sm ${WIDGET_CATEGORY_COLOR[widgetCategoryOf(w.type)]}`}
+                  style={{ gridColumn: `${x + 1} / span ${span}`, gridRow: `${y + 1}` }}
+                />
+              );
+            })}
+          </div>
         </div>
+        {presentCategories.length > 0 && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
+            {presentCategories.map((cat) => (
+              <span key={cat} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span className={`inline-block w-2 h-2 rounded-sm ${WIDGET_CATEGORY_COLOR[cat]}`} />
+                {categoryLabel[cat]}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -440,22 +653,20 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
   // + nút phụ "Tạo trống" — thay vì bắt user bắt đầu từ trang trắng.
   function EmptyStateTemplates() {
     return (
-      <div className="space-y-4 py-4">
-        <div className="text-center">
-          <LayoutGrid className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
-          <h3 className="text-lg font-medium mb-1">{t('dashboard.noDashboard')}</h3>
-          <p className="text-sm text-muted-foreground">
-            Bắt đầu nhanh với một mẫu hệ thống, hoặc tạo dashboard trống.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="space-y-3 py-2">
+        {/* doc 68 §3.8 (việc 4): bỏ icon lớn + H3 trùng H1 PageHeader — 1 dòng dẫn. */}
+        <p className="text-sm font-medium text-muted-foreground">
+          {t('dashboard.quickStartPickTemplate', 'Bắt đầu nhanh — chọn một mẫu:')}
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {SYSTEM_TEMPLATES.map((template) => {
             const Icon = template.icon;
             return (
               <Card key={template.id} className="hover:shadow-md transition-shadow">
                 <CardHeader className="pb-2">
-                  <div className={`w-fit p-2 rounded-lg ${template.color} bg-opacity-10`}>
-                    <Icon className={`h-5 w-5 ${template.color.replace('bg-', 'text-')}`} />
+                  {/* doc 68 §3.8 (việc 5): chip màu nhỏ hơn + tương phản cao hơn. */}
+                  <div className={`w-fit p-1.5 rounded-md ${template.color} bg-opacity-20`}>
+                    <Icon className={`h-4 w-4 ${template.color.replace('bg-', 'text-')}`} />
                   </div>
                   <CardTitle className="text-base mt-2">{template.name}</CardTitle>
                   <CardDescription className="text-xs line-clamp-2">
@@ -480,12 +691,6 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
               </Card>
             );
           })}
-        </div>
-        <div className="text-center">
-          <Button variant="outline" className="min-h-11" onClick={() => setIsCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Tạo trống
-          </Button>
         </div>
       </div>
     );
@@ -516,7 +721,7 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
     }
 
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {layouts.map(layout => {
           // doc 67 W8 (việc 4): tab "Đã chia sẻ" chứa cả dashboard người khác —
           // chỉ mục MÌNH sở hữu mới có Sửa/Xóa/Chia sẻ; còn lại Mở + Nhân bản.
@@ -582,7 +787,8 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
                   )}
                 </div>
 
-                {/* Actions — doc 67 W8 (việc 2): 'Mở' là action chính, Sửa hạ xuống hàng phụ */}
+                {/* Actions — doc 68 §3.8 (việc 2): 'Mở' (primary) + '⋯' mở ContextDrawer
+                    thuộc tính (giảm mật độ target 5-icon cho persona găng tay). */}
                 {isOwn ? (
                   <div className="flex gap-2">
                     <Button
@@ -601,55 +807,14 @@ export default function CustomDashboardContent({ embedded = false }: { embedded?
                       variant="outline"
                       size="icon"
                       className="min-h-11 min-w-11"
-                      aria-label={t('dashboard.edit')}
+                      aria-label={t('dashboard.properties', 'Thuộc tính')}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setEditingLayout(layout);
-                        setIsEditing(true);
+                        openProps(layout);
                       }}
                     >
-                      <Edit className="w-4 h-4" />
+                      <MoreHorizontal className="w-4 h-4" />
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="min-h-11 min-w-11"
-                      aria-label="Nhân bản"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDuplicateLayout(layout);
-                      }}
-                    >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="min-h-11 min-w-11"
-                      aria-label={layout.isPublic ? "Ngừng chia sẻ" : "Chia sẻ"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTogglePublic(layout.id);
-                      }}
-                    >
-                      {layout.isPublic ? <Lock className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-                    </Button>
-                    {/* doc 67 W8 (việc 3): xóa phải qua AlertDialog xác nhận kèm TÊN dashboard */}
-                    <ConfirmDeleteDialog
-                      trigger={
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="min-h-11 min-w-11 text-destructive"
-                          aria-label="Xóa"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      }
-                      itemLabel={`dashboard "${layout.name}"`}
-                      onConfirm={() => handleDeleteLayout(layout.id)}
-                    />
                   </div>
                 ) : (
                   <div className="flex gap-2">

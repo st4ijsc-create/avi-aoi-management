@@ -10,14 +10,23 @@ import {
   tileStatus,
   agoLabel,
   isNewAndonRaise,
+  andonTileReason,
   ANDON_DEFAULT_WARN_PCT,
   ANDON_DEFAULT_CRIT_PCT,
 } from "./andonBoard";
 
 describe("parseAndonBoardParams", () => {
   it("parses the full URL contract", () => {
-    const p = parseAndonBoardParams("?cycle=30&lines=12,14&factory=2&theme=dark&warn=97&crit=92&sound=0");
-    expect(p).toEqual({ cycleSec: 30, lineIds: [12, 14], factoryId: 2, theme: "dark", warnPct: 97, critPct: 92, sound: false });
+    const p = parseAndonBoardParams("?cycle=30&lines=12,14&factory=2&theme=dark&warn=97&crit=92&sound=0&kiosk=1");
+    expect(p).toEqual({ cycleSec: 30, lineIds: [12, 14], factoryId: 2, theme: "dark", warnPct: 97, critPct: 92, sound: false, kiosk: true });
+  });
+
+  it("doc68 §3.5: kiosk defaults OFF; only 1/true enables it", () => {
+    expect(parseAndonBoardParams("").kiosk).toBe(false);
+    expect(parseAndonBoardParams("?kiosk=1").kiosk).toBe(true);
+    expect(parseAndonBoardParams("?kiosk=true").kiosk).toBe(true);
+    expect(parseAndonBoardParams("?kiosk=0").kiosk).toBe(false);
+    expect(parseAndonBoardParams("?kiosk=yes").kiosk).toBe(false);
   });
 
   it("W8: sound defaults ON; only explicit 0/false/off mutes", () => {
@@ -49,8 +58,24 @@ describe("parseAndonBoardParams", () => {
     expect(parseAndonBoardParams("")).toEqual({
       cycleSec: 0, lineIds: [], factoryId: null, theme: null,
       warnPct: ANDON_DEFAULT_WARN_PCT, critPct: ANDON_DEFAULT_CRIT_PCT,
-      sound: true,
+      sound: true, kiosk: false,
     });
+  });
+});
+
+describe("andonTileReason (doc68 §3.5 — red tile says WHY)", () => {
+  it("uses the andon title, trimmed to two words + upper-cased", () => {
+    expect(andonTileReason({ title: "Kẹt băng tải", state: "red" })).toBe("KẸT BĂNG");
+    expect(andonTileReason({ title: "Dừng khẩn cấp", state: "red" })).toBe("DỪNG KHẨN");
+  });
+  it("falls back to reason when title is empty", () => {
+    expect(andonTileReason({ title: "", reason: "Thiếu vật tư", state: "red" })).toBe("THIẾU VẬT");
+    expect(andonTileReason({ title: null, reason: "  Lỗi  cấp  liệu ", state: "call" })).toBe("LỖI CẤP");
+  });
+  it("falls back to a state word when no text at all", () => {
+    expect(andonTileReason({ state: "call" })).toBe("GỌI HỖ TRỢ");
+    expect(andonTileReason({ state: "red" })).toBe("DỪNG");
+    expect(andonTileReason({})).toBe("DỪNG");
   });
 });
 

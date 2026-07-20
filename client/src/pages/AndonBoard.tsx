@@ -48,11 +48,16 @@ import {
   nextCycleIndex,
   tileStatus,
   agoLabel,
+  andonTileReason,
   isNewAndonRaise,
   type TileStatus,
 } from "@/lib/andonBoard";
 
 const POLL_MS = 15_000;
+// doc 68 §3.5 (P1 — "không cắt-khuất line"): a wall TV has nobody to scroll, so
+// on ?kiosk we default the auto-cycle ON (each line gets its own full-screen view
+// in turn) unless the URL already sets ?cycle=. Operator/mobile keep it off.
+const DEFAULT_TV_CYCLE_SEC = 20;
 const STALE_RELOAD_MS = 5 * 60 * 1000;
 const RELOAD_GUARD_KEY = "andon_board_last_reload";
 // W8 (doc 67): burst guard — many raises within 5s → one chime + one flash.
@@ -94,6 +99,10 @@ export default function AndonBoard() {
     () => parseAndonBoardParams(typeof window === "undefined" ? "" : window.location.search),
     [],
   );
+  // doc 68 §3.5 (P1): effective cycle — explicit ?cycle= wins; else default ON for
+  // the TV persona (?kiosk) so line 3 is never clipped below the fold. Derived
+  // from the once-parsed params, so it is stable across renders (safe in deps).
+  const effCycleSec = params.cycleSec > 0 ? params.cycleSec : params.kiosk ? DEFAULT_TV_CYCLE_SEC : 0;
 
   // ── URL theme override (?theme=dark|light) — restored on unmount ─────────
   useEffect(() => {
@@ -281,8 +290,8 @@ export default function AndonBoard() {
       // to the raising line's view; the normal cycle resumes from there after
       // one full cycle period (spotlightAt holds the tick, mirror of W4
       // lastManualAt).
-      if (params.cycleSec <= 0) return;
-      if (nowMs - lastManualAt.current < params.cycleSec * 1000) return;
+      if (effCycleSec <= 0) return;
+      if (nowMs - lastManualAt.current < effCycleSec * 1000) return;
       const ls = linesRef.current;
       let idx = ev.lineId != null ? ls.findIndex((l) => l.lineId === ev.lineId) : -1;
       if (idx < 0 && ev.machineId != null) {
@@ -317,7 +326,7 @@ export default function AndonBoard() {
       socket.off("qualityGate:triggered", onDataEvent);
       releaseSharedSocket();
     };
-  }, [scheduleRefetch, chime, params.sound, params.cycleSec]);
+  }, [scheduleRefetch, chime, params.sound, effCycleSec]);
 
   // ── Stale-data safeguard: reload once if nothing fresh for > 5 min ───────
   useEffect(() => {
@@ -354,13 +363,13 @@ export default function AndonBoard() {
   // (auto-jump to a freshly raised line) holds it the same way, for ONE cycle.
   const lastManualAt = useRef(0);
   useEffect(() => {
-    if (params.cycleSec <= 0 || viewCount <= 1) return;
+    if (effCycleSec <= 0 || viewCount <= 1) return;
     const id = setInterval(() => {
-      if (Date.now() - Math.max(lastManualAt.current, spotlightAt.current) < params.cycleSec * 1000) return;
+      if (Date.now() - Math.max(lastManualAt.current, spotlightAt.current) < effCycleSec * 1000) return;
       setViewIndex((i) => nextCycleIndex(i, viewCount));
-    }, params.cycleSec * 1000);
+    }, effCycleSec * 1000);
     return () => clearInterval(id);
-  }, [params.cycleSec, viewCount]);
+  }, [effCycleSec, viewCount]);
   useEffect(() => {
     // Data shrank (filter/removal) → never point at a missing view.
     if (viewIndex >= viewCount) setViewIndex(0);
@@ -389,6 +398,17 @@ export default function AndonBoard() {
       return new Date(a.raisedAt).getTime() - new Date(b.raisedAt).getTime();
     });
     return arr;
+  }, [board?.andons]);
+
+  // doc 68 §3.5 (P1): a red/call tile shows its andon reason + age. Map machine →
+  // its active andon (first-seen wins; server lists newest-first). Line-only
+  // andons (no machineId) never reach a tile, so they are intentionally skipped.
+  const andonByMachineId = useMemo(() => {
+    const m = new Map<number, (typeof sortedAndons)[number]>();
+    for (const a of board?.andons ?? []) {
+      if (a.machineId != null && !m.has(a.machineId)) m.set(a.machineId, a);
+    }
+    return m;
   }, [board?.andons]);
 
   // W4 (doc 67) touch: hover-pause is useless on a touch panel — any pointerdown
@@ -444,22 +464,27 @@ export default function AndonBoard() {
       )}
       {/* ── Top strip: title + KPIs + health + clock ── */}
       <header className="flex items-stretch gap-[1vw] border-b-2 border-border bg-card px-[1.2vw] py-[0.8vh]">
-        <div className="flex min-w-0 flex-col justify-center">
-          <div className="flex items-center gap-2">
+        {/* doc 68 §3.5 (P1): single-row header — drop "(TV)" + the always-on
+            subtitle so it no longer clips to "BẢNG ANDON (T…" and the header is
+            thinner. Drill/filter/cycle context moves inline and only appears when
+            it actually differs from the default "all lines" view. */}
+        <div className="flex min-w-0 items-center gap-[1vw]">
+          <div className="flex min-w-0 items-center gap-2">
             <Megaphone className="size-[1.6vw] min-h-5 min-w-5 text-primary" aria-hidden />
-            {/* doc 67 W5 (việc 2) — 1 key/trang: h1 = menu = nav.andonBoard ("Bảng Andon (TV)"). */}
             <h1 className="truncate text-[clamp(1.1rem,1.8vw,2.2rem)] font-black uppercase tracking-wide">
-              {t("nav.andonBoard", "Bảng Andon (TV)")}
+              {t("andonBoard.boardTitle", "BẢNG ANDON")}
             </h1>
           </div>
-          <p className="truncate text-[clamp(0.65rem,0.9vw,1rem)] text-muted-foreground">
-            {drilled && visibleLines[0]
-              ? `${visibleLines[0].lineName ?? t("andonBoard.noLine", "Chưa gán line")} · ${visibleLines[0].factoryName ?? ""}`
-              : filterLabel
-                ? `${filterLabel} (${t("andonBoard.filtered", "đang lọc")})`
-                : t("andonBoard.allLines", "Toàn bộ line")}
-            {params.cycleSec > 0 && ` · ⟳${params.cycleSec}s`}
-          </p>
+          {(drilled || filterLabel || effCycleSec > 0) && (
+            <span className="truncate text-[clamp(0.65rem,0.9vw,1rem)] text-muted-foreground">
+              {drilled && visibleLines[0]
+                ? `${visibleLines[0].lineName ?? t("andonBoard.noLine", "Chưa gán line")}${visibleLines[0].factoryName ? ` · ${visibleLines[0].factoryName}` : ""}`
+                : filterLabel
+                  ? `${filterLabel} (${t("andonBoard.filtered", "đang lọc")})`
+                  : ""}
+              {effCycleSec > 0 && `${drilled || filterLabel ? " · " : ""}⟳${effCycleSec}s`}
+            </span>
+          )}
         </div>
 
         {/* W4 (doc 67): mobile 390px — 3-col wrap dưới sm; TV/desktop giữ 1 hàng. */}
@@ -491,7 +516,10 @@ export default function AndonBoard() {
             value={kpis ? String(kpis.ng) : "—"}
             tone={kpis && kpis.ng > 0 ? "warn" : "neutral"}
           />
+          {/* doc 68 §3.5 (P2): "Andon đang mở" = câu hỏi số 1 của bảng → hero
+              (cỡ/màu trội), các KPI còn lại là ngữ cảnh phụ. */}
           <KpiTile
+            hero
             label={t("andonBoard.activeAndons", "Andon đang mở")}
             value={kpis ? String(kpis.activeAndons) : "—"}
             sub={`${t("andonBoard.unacked", "Chưa xác nhận")}: ${board ? unackedAndons : "—"}`}
@@ -500,7 +528,9 @@ export default function AndonBoard() {
         </div>
 
         <div className="flex flex-col items-end justify-center gap-1 pl-[0.5vw]">
-          <div className="text-[clamp(1.4rem,2.6vw,3.4rem)] font-black leading-none tabular-nums">
+          {/* doc 68 §3.5 (P2): clock demoted — it was the 2nd-brightest mass on the
+              board for no reason; the hero belongs to "Andon đang mở". */}
+          <div className="text-[clamp(1.1rem,1.8vw,2.2rem)] font-bold leading-none tabular-nums text-muted-foreground">
             {/* W4 (doc 67): mobile — ẩn giây dưới md cho khỏi tràn hàng KPI. */}
             <span className="md:hidden">
               {now.toLocaleTimeString("vi-VN", { hour12: false, hour: "2-digit", minute: "2-digit" })}
@@ -525,15 +555,21 @@ export default function AndonBoard() {
                     : t("realtime.offline", "Mất kết nối")
               }
             />
-            <PollFreshness updatedAt={boardQuery.dataUpdatedAt || undefined} isFetching={boardQuery.isFetching} />
-            {/* Setup-only escape hatch — icon nhỏ nhưng hit-area ≥ 40px (W4 doc 67 touch) */}
-            <Link
-              href="/dashboard"
-              title={t("andonBoard.backToDashboard", "Về Dashboard")}
-              className="flex min-h-10 min-w-10 items-center justify-center text-muted-foreground/60 hover:text-foreground"
-            >
-              <Settings className="size-[1vw] min-h-4 min-w-4" aria-hidden />
-            </Link>
+            {/* doc 68 §3.5 (P2): ẩn chrome tương tác ở kiosk/TV (freshness + gear) —
+                một bảng treo tường không ai bấm; operator/mobile giữ nguyên. */}
+            {!params.kiosk && (
+              <PollFreshness updatedAt={boardQuery.dataUpdatedAt || undefined} isFetching={boardQuery.isFetching} />
+            )}
+            {!params.kiosk && (
+              /* Setup-only escape hatch — icon nhỏ nhưng hit-area ≥ 40px (W4 doc 67 touch) */
+              <Link
+                href="/dashboard"
+                title={t("andonBoard.backToDashboard", "Về Dashboard")}
+                className="flex min-h-10 min-w-10 items-center justify-center text-muted-foreground/60 hover:text-foreground"
+              >
+                <Settings className="size-[1vw] min-h-4 min-w-4" aria-hidden />
+              </Link>
+            )}
           </div>
         </div>
       </header>
@@ -576,7 +612,8 @@ export default function AndonBoard() {
               >
                 <span className="flex items-center gap-2 text-[clamp(0.9rem,1.5vw,1.9rem)] font-extrabold uppercase">
                   {line.andonState && (
-                    <span className={cn("size-[0.9vw] min-h-3 min-w-3 rounded-full animate-pulse", severityDotClass(line.andonState))} />
+                    // doc 68 §3.5 (P2): ≥1.6vw — 0.9vw (~17px) là vô hình từ 5–10 m.
+                    <span className={cn("size-[1.6vw] min-h-4 min-w-4 rounded-full animate-pulse", severityDotClass(line.andonState))} />
                   )}
                   {line.lineName ?? t("andonBoard.noLine", "Chưa gán line")}
                 </span>
@@ -593,10 +630,13 @@ export default function AndonBoard() {
                 </span>
               </button>
 
+              {/* doc 68 §3.5 (P2): auto-fit (not auto-fill) — a line with few
+                  machines stretches its tiles to fill the row instead of leaving
+                  4 empty cells trailing; no line reads as "half-empty". */}
               <div
                 className="grid gap-[0.6vw]"
                 style={{
-                  gridTemplateColumns: `repeat(auto-fill, minmax(${drilled ? "16vw" : "11vw"}, 1fr))`,
+                  gridTemplateColumns: `repeat(auto-fit, minmax(${drilled ? "16vw" : "11vw"}, 1fr))`,
                 }}
               >
                 {line.machines.map((m) => {
@@ -607,6 +647,9 @@ export default function AndonBoard() {
                     warnPct: params.warnPct,
                     critPct: params.critPct,
                   });
+                  // doc 68 §3.5 (P1): a red/call tile must say WHY (reason + age),
+                  // not "—" or a bare yield the eye can't parse from 5–10 m.
+                  const activeAndon = status === "andon" ? andonByMachineId.get(m.machineId) : undefined;
                   return (
                     <Link
                       key={m.machineId}
@@ -623,17 +666,33 @@ export default function AndonBoard() {
                         {/* ​ sau '-' → wrap tại ranh giới token, không gãy giữa từ (CONVEY/OR). */}
                         {/* W4 (doc 67) TV: ≥1.5vw (≈29px@FHD) — mã máy phải đọc được từ 5–10 m. */}
                         <span className="line-clamp-2 text-[clamp(0.85rem,1.5vw,1.9rem)] font-bold leading-tight [overflow-wrap:break-word]">{m.code.replace(/-/g, "-​")}</span>
-                        {status === "offline" && <MonitorOff className="size-[0.9vw] min-h-3 min-w-3 shrink-0" aria-hidden />}
+                        {/* doc 68 §3.5 (P2): dấu hiệu trạng thái ≥1.6vw — đọc được từ xa. */}
+                        {status === "offline" && <MonitorOff className="size-[1.6vw] min-h-5 min-w-5 shrink-0" aria-hidden />}
                         {m.andonState === "yellow" && status !== "andon" && (
-                          <AlertTriangle className="size-[0.9vw] min-h-3 min-w-3 shrink-0 text-warning" aria-hidden />
+                          <AlertTriangle className="size-[1.6vw] min-h-5 min-w-5 shrink-0 text-warning" aria-hidden />
                         )}
                       </div>
-                      <div className={cn(
-                        "text-[clamp(1.3rem,2.6vw,4rem)] font-black leading-none tabular-nums",
-                        status !== "andon" && YIELD_TEXT_CLASS[status],
-                      )}>
-                        {m.finalYield == null ? t("andonBoard.idle", "—") : fmtPct(m.finalYield)}
-                      </div>
+                      {status === "andon" ? (
+                        <div className="min-w-0">
+                          {/* Reason word(s) — big, high-contrast (inherits the tile's
+                              destructive-foreground). This is what the eye needs at range. */}
+                          <div className="line-clamp-2 text-[clamp(1.1rem,2.2vw,3rem)] font-black uppercase leading-none [overflow-wrap:break-word]">
+                            {andonTileReason({ title: activeAndon?.title, reason: activeAndon?.reason, state: m.andonState })}
+                          </div>
+                          {activeAndon && (
+                            <div className="mt-[0.3vh] text-[clamp(0.8rem,1.3vw,1.7rem)] font-bold leading-none tabular-nums opacity-90">
+                              {agoLabel(new Date(activeAndon.raisedAt).getTime(), now.getTime())}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className={cn(
+                          "text-[clamp(1.3rem,2.6vw,4rem)] font-black leading-none tabular-nums",
+                          YIELD_TEXT_CLASS[status],
+                        )}>
+                          {m.finalYield == null ? t("andonBoard.idle", "—") : fmtPct(m.finalYield)}
+                        </div>
+                      )}
                       <div className="mt-auto flex items-baseline justify-between text-[clamp(0.7rem,1vw,1.3rem)] font-semibold opacity-90">
                         <span>NG {m.ng}</span>
                         <span>{m.total} {t("andonBoard.boards", "bo")}</span>
@@ -718,34 +777,41 @@ export default function AndonBoard() {
                   {/* doc 37 B1: page-cited manual lookup for the alarm cause/remedy. Andon events
                       carry no vendor/nativeCode → broad search keyed off the event title + reason
                       (the fallback path; mapAlarm needs vendor+nativeCode which this shape lacks). */}
-                  <ManualHelp
-                    query={`${a.title} ${a.reason ?? ""} alarm cause remedy`.trim()}
-                    buttonLabel={t("andonBoard.lookupCode", "Tra mã")}
-                    size="sm"
-                    variant="secondary"
-                    align="end"
-                    className="text-[clamp(0.6rem,0.8vw,1rem)]"
-                  />
-                  {/* B6: acknowledge — pointerdown/hover pauses the ticker so this stays tappable */}
+                  {/* doc 68 §3.5 (P2): ẩn chrome tương tác (Tra mã) ở kiosk/TV. */}
+                  {!params.kiosk && (
+                    <ManualHelp
+                      query={`${a.title} ${a.reason ?? ""} alarm cause remedy`.trim()}
+                      buttonLabel={t("andonBoard.lookupCode", "Tra mã")}
+                      size="sm"
+                      variant="secondary"
+                      align="end"
+                      className="text-[clamp(0.6rem,0.8vw,1rem)]"
+                    />
+                  )}
+                  {/* B6: acknowledge — pointerdown/hover pauses the ticker so this stays
+                      tappable. doc 68 §3.5 (P2): hidden on the kiosk wall board (nobody
+                      acks from a TV); the "Đã xác nhận" state stays informative. */}
                   {a.status === "raised" ? (
-                    <button
-                      type="button"
-                      onClick={() => handleAck(a.id)}
-                      disabled={!canAck || ackingId != null}
-                      title={
-                        canAck
-                          ? t("andonBoard.ackHint", "Xác nhận đã tiếp nhận Andon này")
-                          : t("andonBoard.ackNoPerm", "Bạn không có quyền xác nhận Andon")
-                      }
-                      className="inline-flex min-h-10 items-center gap-1 rounded-md border border-current px-2.5 py-0.5 text-[clamp(0.6rem,0.8vw,1rem)] font-bold uppercase transition-colors hover:bg-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {ackingId === a.id ? (
-                        <Loader2 className="size-[0.9vw] min-h-3 min-w-3 animate-spin" aria-hidden />
-                      ) : (
-                        <Check className="size-[0.9vw] min-h-3 min-w-3" aria-hidden />
-                      )}
-                      {t("andonBoard.ack", "Xác nhận")}
-                    </button>
+                    !params.kiosk && (
+                      <button
+                        type="button"
+                        onClick={() => handleAck(a.id)}
+                        disabled={!canAck || ackingId != null}
+                        title={
+                          canAck
+                            ? t("andonBoard.ackHint", "Xác nhận đã tiếp nhận Andon này")
+                            : t("andonBoard.ackNoPerm", "Bạn không có quyền xác nhận Andon")
+                        }
+                        className="inline-flex min-h-10 items-center gap-1 rounded-md border border-current px-2.5 py-0.5 text-[clamp(0.6rem,0.8vw,1rem)] font-bold uppercase transition-colors hover:bg-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {ackingId === a.id ? (
+                          <Loader2 className="size-[0.9vw] min-h-3 min-w-3 animate-spin" aria-hidden />
+                        ) : (
+                          <Check className="size-[0.9vw] min-h-3 min-w-3" aria-hidden />
+                        )}
+                        {t("andonBoard.ack", "Xác nhận")}
+                      </button>
+                    )
                   ) : (
                     <span className="inline-flex items-center gap-1 text-[clamp(0.6rem,0.8vw,1rem)] font-semibold text-success">
                       <Check className="size-[0.9vw] min-h-3 min-w-3" aria-hidden />
@@ -805,22 +871,34 @@ function KpiTile({
   value,
   sub,
   tone,
+  hero = false,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone: "good" | "warn" | "crit" | "neutral" | "muted";
+  // doc 68 §3.5 (P2): hero = "câu hỏi số 1" của bảng ("Andon đang mở") — value to
+  // hơn hẳn + có khối nền/viền để neo mắt từ 5–10 m; các KPI khác là ngữ cảnh phụ.
+  hero?: boolean;
 }) {
   return (
     // W4 (doc 67): KPI row scales theo vh — chiều cao header là ràng buộc thật
     // trên TV; vw làm chữ bé đi khi màn rộng nhưng header thấp.
-    <div className="flex min-w-0 flex-col items-center justify-center px-[0.6vw] text-center">
+    <div
+      className={cn(
+        "flex min-w-0 flex-col items-center justify-center px-[0.6vw] text-center",
+        hero && "rounded-lg px-[1vw]",
+        hero && tone === "crit" && "bg-destructive/15 ring-2 ring-destructive/60",
+        hero && tone !== "crit" && "bg-success/10 ring-1 ring-success/40",
+      )}
+    >
       <span className="truncate text-[clamp(0.55rem,1.4vh,0.95rem)] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
       <span
         className={cn(
-          "text-[clamp(1.2rem,3.8vh,3rem)] font-black leading-tight tabular-nums",
+          "font-black leading-tight tabular-nums",
+          hero ? "text-[clamp(1.6rem,5.2vh,4.2rem)]" : "text-[clamp(1.2rem,3.8vh,3rem)]",
           tone === "good" && "text-success",
           tone === "warn" && "text-warning",
           tone === "crit" && "text-destructive",

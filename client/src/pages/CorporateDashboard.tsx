@@ -20,11 +20,13 @@ import {
   Activity,
   Calendar,
   Globe,
-  ArrowRight
+  ArrowRight,
+  ChevronRight
 } from "lucide-react";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import PollFreshness from "@/components/PollFreshness";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
+import { ContextDrawer } from "@/components/workspace";
 import { 
   AreaChart, 
   Area, 
@@ -53,6 +55,15 @@ export default function CorporateDashboard() {
   const canViewFederation = hasPermission("admin_system", "canView");
   const [selectedPeriod, setSelectedPeriod] = useState("month");
   const [activeTab, setActiveTab] = useState("overview");
+  // doc 68 §3.7 P1 — dòng tập đoàn click → ContextDrawer preview (KPI + so-sánh
+  // kỳ + drill), thay vì bắt executive đổi tab "Chi tiết" (có filter kỳ riêng).
+  const [drawerCorp, setDrawerCorp] = useState<{
+    name: string;
+    isUnassigned: boolean;
+    factories: number;
+    yield: number;
+    output: number;
+  } | null>(null);
 
   // W1-P0: bộ lọc kỳ KHÔNG còn là trang trí — map selectedPeriod → khoảng thời
   // gian thật truyền vào các query. startDate ổn định theo selectedPeriod (không
@@ -186,6 +197,9 @@ export default function CorporateDashboard() {
       totalMachines: overviewCounts?.machines ?? 0,
       avgYield: Math.round(avgYield * 100) / 100,
       avgOEE: realAvgOEE,
+      // doc 68 §3.7 P1 — "Sản lượng" cho hero band = tổng inspection trong kỳ
+      // (dashboardStats.total, cùng nguồn yieldRate).
+      totalOutput: dashboardStats?.total ?? 0,
     };
   }, [dashboardStats, yieldByCorp, yieldByFactory, overviewCounts, realAvgOEE]);
 
@@ -268,6 +282,10 @@ export default function CorporateDashboard() {
         };
       });
   }, [dailyStats]);
+
+  // doc 68 §3.7 P2 — chart co khi dữ liệu thưa (<3 tháng): tránh biểu đồ phình
+  // nửa card cho 1-2 điểm. Hạ ~120px (line 280→160, bar 250→140).
+  const sparseTrend = monthlyTrend.length > 0 && monthlyTrend.length < 3;
 
   // Real export (PDF / XLSX / HTML) — replaces the "coming soon" placeholder.
   const getExportConfig = (): ReportExportConfig => {
@@ -387,37 +405,15 @@ export default function CorporateDashboard() {
         {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx). */}
         <RelatedViews pageId="corporate-dashboard" />
 
-        {/* KPI Overview Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricCard
-            label={t('corporate.corporation')}
-            value={corporateOverview.totalCorporations}
-          />
-          {/* W1-P0: thay KPI "Công ty" (đếm sai — không có tầng company trong data)
-              bằng KPI trung thực: nhà máy có inspection trong kỳ đã chọn. */}
-          <MetricCard
-            label="Nhà máy có dữ liệu"
-            value={corporateOverview.factoriesWithData}
-          />
-          {/* Đếm danh mục thực thể hiện có — không lọc theo kỳ được → ghi chú trung thực. */}
-          <MetricCard
-            label={t('corporate.factory')}
-            value={corporateOverview.totalFactories}
-            delta="Toàn thời gian"
-          />
-          <MetricCard
-            label={t('corporate.productionLine')}
-            value={corporateOverview.totalLines}
-            delta="Toàn thời gian"
-          />
-          <MetricCard
-            label={t('corporate.machines')}
-            value={corporateOverview.totalMachines}
-            delta="Toàn thời gian"
-          />
+        {/* doc 68 §3.7 P1 — HERO BAND: 3 số điều hành đọc-trong-5s (Tỷ lệ đạt /
+            OEE / Sản lượng), số LỚN (MetricCard size="hero"). Tách khỏi 5 số đếm
+            (→ strip muted 1 hàng bên dưới) để khử đồng-trọng-số + neo mắt. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {/* W4: tone theo ngưỡng thật (≥98 success · ≥95 trung tính · <95 danger)
               — success vô điều kiện là "màu nói dối" khi yield xấu. */}
           <MetricCard
+            size="hero"
+            icon={<TrendingUp />}
             label={t('corporate.avgYield')}
             value={`${corporateOverview.avgYield}%`}
             tone={corporateOverview.avgYield >= 98 ? "success" : corporateOverview.avgYield >= 95 ? "default" : "danger"}
@@ -425,27 +421,52 @@ export default function CorporateDashboard() {
           {corporateOverview.avgOEE !== null ? (
             /* OEE là số ĐO TRỰC TIẾP (live MQTT) — không có lịch sử theo kỳ. */
             <MetricCard
+              size="hero"
+              icon={<Activity />}
               label={t('corporate.avgOEE')}
               value={`${corporateOverview.avgOEE}%`}
               tone="info"
               delta="Trực tiếp — không theo kỳ"
             />
           ) : (
-            <Card>
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="min-w-0">
-                  <div
-                    className="text-sm font-medium text-muted-foreground"
-                    title={t('corporate.noOeeDataSource')}
-                  >
-                    {t('corporate.noData')}
-                  </div>
-                  <div className="truncate text-xs text-muted-foreground">{t('corporate.avgOEE')}</div>
-                </div>
-              </CardContent>
-            </Card>
+            /* doc 68 §3.7 P1 — ô no-OEE dùng MetricCard chuẩn (value="—") thay Card
+               tự chế lệch chuẩn → đồng nhất hero band + hết ô mồ côi. */
+            <MetricCard
+              size="hero"
+              icon={<Activity />}
+              label={t('corporate.avgOEE')}
+              value="—"
+              tone="default"
+              delta={t('corporate.noData', 'Chưa có dữ liệu')}
+            />
           )}
+          {/* W4: "Sản lượng" (tổng inspection trong kỳ) hoàn tất bộ 3 câu-hỏi-số-1. */}
+          <MetricCard
+            size="hero"
+            icon={<BarChart3 />}
+            label={t('corporate.output')}
+            value={corporateOverview.totalOutput.toLocaleString()}
+          />
         </div>
+
+        {/* doc 68 §3.7 P1 — strip 5 số đếm MUTED 1 hàng: hạ trọng số so với hero
+            (số đếm danh mục, không phải KPI điều hành) + khử ô mồ côi. */}
+        <Card>
+          <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 p-3">
+            {[
+              { label: t('corporate.corporation'), value: corporateOverview.totalCorporations },
+              { label: 'Nhà máy có dữ liệu', value: corporateOverview.factoriesWithData },
+              { label: t('corporate.factory'), value: corporateOverview.totalFactories },
+              { label: t('corporate.productionLine'), value: corporateOverview.totalLines },
+              { label: t('corporate.machines'), value: corporateOverview.totalMachines },
+            ].map((s) => (
+              <span key={s.label} className="flex items-baseline gap-1.5">
+                <span className="text-lg font-semibold tabular-nums text-foreground">{s.value}</span>
+                <span className="text-xs text-muted-foreground">{s.label}</span>
+              </span>
+            ))}
+          </CardContent>
+        </Card>
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -479,10 +500,14 @@ export default function CorporateDashboard() {
                   <div className="space-y-4">
                     {corporationData.map((corp, index) => (
                       /* W1-P2: nhóm "Chưa gán tập đoàn" hiển thị muted, xếp cuối
-                         (sort trong corporationData) và không vào pie/bar so sánh. */
-                      <div
+                         (sort trong corporationData) và không vào pie/bar so sánh.
+                         doc 68 §3.7 P1: dòng click → ContextDrawer (KPI + so-kỳ +
+                         drill) thay vì bắt đổi tab "Chi tiết" (đứt mạch). */
+                      <button
+                        type="button"
                         key={corp.name}
-                        className={`flex items-center justify-between p-3 rounded-lg ${corp.isUnassigned ? 'bg-muted/10 opacity-70' : 'bg-muted/30'}`}
+                        onClick={() => setDrawerCorp(corp)}
+                        className={`flex w-full items-center justify-between rounded-lg p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${corp.isUnassigned ? 'bg-muted/10 opacity-70' : 'bg-muted/30'}`}
                       >
                         <div className="flex items-center gap-3">
                           <div
@@ -503,13 +528,14 @@ export default function CorporateDashboard() {
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
                           <div className="text-right">
                             <p className={`font-bold ${corp.isUnassigned ? 'text-muted-foreground' : 'text-success'}`}>{corp.yield}%</p>
                             <p className="text-xs text-muted-foreground">{t('corporate.yield')}</p>
                           </div>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </CardContent>
@@ -527,9 +553,11 @@ export default function CorporateDashboard() {
                     <p className="text-xs text-muted-foreground">Mới có {monthlyTrend.length} tháng dữ liệu</p>
                   )}
                 </CardHeader>
-                <CardContent>
+                {/* doc 68 §3.7 P2 — cân card danh sách vs chart: flex items-center
+                    giữ chart canh giữa dọc khi thưa (list bên trái cao hơn). */}
+                <CardContent className="flex items-center">
                   <div
-                    className="h-[280px]"
+                    className={`w-full ${sparseTrend ? 'h-[160px]' : 'h-[280px]'}`}
                     role="img"
                     aria-label="Xu hướng tỷ lệ đạt theo tháng — biểu đồ đường, đường tham chiếu mục tiêu 95%"
                   >
@@ -570,7 +598,7 @@ export default function CorporateDashboard() {
                 )}
               </CardHeader>
               <CardContent>
-                <div className="h-[250px]" role="img" aria-label="Sản lượng theo tháng — biểu đồ cột">
+                <div className={sparseTrend ? 'h-[140px]' : 'h-[250px]'} role="img" aria-label="Sản lượng theo tháng — biểu đồ cột">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyTrend}>
                       <CartesianGrid {...chartGridProps} />
@@ -674,6 +702,65 @@ export default function CorporateDashboard() {
             <CorporateFactoryStats />
           </TabsContent>
         </Tabs>
+
+        {/* doc 68 §3.7 P1 — ContextDrawer preview cho dòng tập đoàn: KPI + mini
+            so-sánh kỳ (vs trung bình tập đoàn / mục tiêu 95%) + CTA drill. Giữ
+            danh sách nền để so sánh liên tiếp, thay điều hướng đổi tab đứt-mạch. */}
+        <ContextDrawer
+          open={drawerCorp !== null}
+          onOpenChange={(o) => { if (!o) setDrawerCorp(null); }}
+          title={drawerCorp?.name ?? ''}
+          description={drawerCorp
+            ? `${drawerCorp.factories} ${t('corporate.factories')} · ${t(`corporate.this${selectedPeriod.charAt(0).toUpperCase()}${selectedPeriod.slice(1)}`, selectedPeriod)}`
+            : undefined}
+        >
+          {drawerCorp && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <MetricCard
+                  label={t('corporate.yield')}
+                  value={`${drawerCorp.yield}%`}
+                  tone={drawerCorp.isUnassigned ? 'default' : drawerCorp.yield >= 98 ? 'success' : drawerCorp.yield >= 95 ? 'default' : 'danger'}
+                />
+                <MetricCard label={t('corporate.output')} value={drawerCorp.output.toLocaleString()} />
+                <MetricCard label={t('corporate.factories')} value={drawerCorp.factories} />
+              </div>
+
+              {/* Mini so-sánh kỳ: yield tập đoàn này vs trung bình toàn + mục tiêu. */}
+              <div className="space-y-2 rounded-lg border p-3">
+                <p className="text-xs font-medium text-muted-foreground">So sánh trong kỳ</p>
+                {(() => {
+                  const dVsAvg = Math.round((drawerCorp.yield - corporateOverview.avgYield) * 100) / 100;
+                  const dVsTarget = Math.round((drawerCorp.yield - 95) * 100) / 100;
+                  const row = (lbl: string, d: number) => (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{lbl}</span>
+                      <span className={`font-semibold tabular-nums ${d > 0 ? 'text-success' : d < 0 ? 'text-destructive' : 'text-foreground'}`}>
+                        {d > 0 ? '+' : ''}{d} pp
+                      </span>
+                    </div>
+                  );
+                  return (
+                    <>
+                      {row('vs. Trung bình tập đoàn', dVsAvg)}
+                      {row('vs. Mục tiêu 95%', dVsTarget)}
+                    </>
+                  );
+                })()}
+              </div>
+
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() => { setDrawerCorp(null); setLocation('/drill-down'); }}
+              >
+                <Factory className="h-4 w-4" />
+                Chi tiết theo nhà máy
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </ContextDrawer>
       </div>
     </DashboardLayout>
   );

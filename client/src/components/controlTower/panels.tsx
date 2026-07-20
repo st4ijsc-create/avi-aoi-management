@@ -18,11 +18,12 @@
  *   liveAlarms    → commandCenter.recentAlerts                                            → /command-center
  */
 import * as React from "react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import {
   Building2, FileText, Sparkles, BellRing, Gauge, PackageCheck, TrendingUp,
-  Wrench, Radio, AlertTriangle, ShieldAlert, Lightbulb,
+  Wrench, Radio, AlertTriangle, ShieldAlert, Lightbulb, CheckCircle2,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -30,13 +31,17 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ContextDrawer } from "@/components/workspace/ContextDrawer";
 import { PanelShell } from "./PanelShell";
 // W7 GĐ2 (doc 67): formatter + tone lấy thẳng từ nguồn shared. Alias pct/num/int
 // giữ tên gọn quen thuộc của các panel (hành vi fmt* giữ quy ước "—" trung thực).
 import { fmtInt as int, fmtNum as num, fmtPct as pct, relTimeShort } from "@/lib/format";
 import {
   oeeTone,
+  severityTone,
   TONE_TEXT_CLASS,
+  TONE_DOT_CLASS,
   yieldTone,
   type SemanticTone,
 } from "@/components/patterns/isaStateBadges";
@@ -313,6 +318,7 @@ function TopRisksPanel(): React.JSX.Element {
       dataUpdatedAt={q.dataUpdatedAt}
       pollIntervalMs={POLL_FAST}
       preset="list"
+      emptyAllClear
       emptyText={t("controlTower.topRisks.empty", "No active insights. All clear.")}
     >
       <div className="space-y-1.5">
@@ -372,6 +378,7 @@ function AlarmHealthPanel(): React.JSX.Element {
       // dữ liệu không "kêu oan" lúc socket im ắng (không có event = không có gì mới).
       pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
       preset="stats"
+      emptyAllClear
       emptyText={t("controlTower.alarmHealth.empty", "No alarm activity in the window.")}
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -431,61 +438,112 @@ function LineOeePanel(): React.JSX.Element {
   const { t } = useTranslation();
   const q = useBriefing();
   const lines = q.data?.lines ?? [];
+
+  // doc 68 §3.2 (việc 3): click 1 line → ContextDrawer A/P/Q + downtime của line đó.
+  const [selected, setSelected] = useState<(typeof lines)[number] | null>(null);
+  const lineDowntime = selected?.topDowntime ?? [];
+
   return (
-    <PanelShell
-      icon={<Gauge className="h-4 w-4 text-primary" />}
-      title={t("controlTower.lineOee.title", "OEE by line")}
-      description={q.data?.asOf ? `${t("controlTower.asOf", "As of")} ${new Date(q.data.asOf).toLocaleTimeString()}` : undefined}
-      linkHref="/war-room"
-      isLoading={q.isLoading}
-      isError={q.isError}
-      error={q.error}
-      isEmpty={!q.isLoading && lines.length === 0}
-      onRetry={q.refetch}
-      dataUpdatedAt={q.dataUpdatedAt}
-      pollIntervalMs={POLL_SLOW}
-      preset="table"
-      emptyText={t("controlTower.lineOee.empty", "No OEE for the current shift yet.")}
-    >
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("controlTower.lineOee.line", "Line")}</TableHead>
-              {/* W4 (doc 67): A/P/Q trần khó hiểu với người mới — abbr giải nghĩa
-                  (hover/đọc màn hình), giữ header ngắn để bảng không tràn. */}
-              <TableHead className="text-right">
-                <abbr title="Availability — Khả dụng" className="no-underline">A%</abbr>
-              </TableHead>
-              <TableHead className="text-right">
-                <abbr title="Performance — Hiệu suất" className="no-underline">P%</abbr>
-              </TableHead>
-              <TableHead className="text-right">
-                <abbr title="Quality — Chất lượng" className="no-underline">Q%</abbr>
-              </TableHead>
-              <TableHead className="text-right">
-                <abbr title="Overall Equipment Effectiveness — Hiệu suất thiết bị tổng thể (A × P × Q)" className="no-underline">OEE%</abbr>
-              </TableHead>
-              <TableHead className="text-right">{t("controlTower.lineOee.output", "Output")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {lines.map((l) => (
-              <TableRow key={l.lineId}>
-                <TableCell className="font-medium">{l.lineName}</TableCell>
-                <TableCell className="text-right tabular-nums">{pct(l.availability)}</TableCell>
-                <TableCell className="text-right tabular-nums">{pct(l.performance)}</TableCell>
-                <TableCell className="text-right tabular-nums">{pct(l.quality)}</TableCell>
-                <TableCell className={cn("text-right font-semibold tabular-nums", TONE_TEXT_CLASS[oeeTone(l.oee)])}>
-                  {pct(l.oee)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">{num(l.output)}</TableCell>
+    <>
+      <PanelShell
+        icon={<Gauge className="h-4 w-4 text-primary" />}
+        title={t("controlTower.lineOee.title", "OEE by line")}
+        description={q.data?.asOf ? `${t("controlTower.asOf", "As of")} ${new Date(q.data.asOf).toLocaleTimeString()}` : undefined}
+        linkHref="/war-room"
+        isLoading={q.isLoading}
+        isError={q.isError}
+        error={q.error}
+        isEmpty={!q.isLoading && lines.length === 0}
+        onRetry={q.refetch}
+        dataUpdatedAt={q.dataUpdatedAt}
+        pollIntervalMs={POLL_SLOW}
+        preset="table"
+        emptyText={t("controlTower.lineOee.empty", "No OEE for the current shift yet.")}
+      >
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("controlTower.lineOee.line", "Line")}</TableHead>
+                {/* W4 (doc 67): A/P/Q trần khó hiểu với người mới — abbr giải nghĩa
+                    (hover/đọc màn hình), giữ header ngắn để bảng không tràn. */}
+                <TableHead className="text-right">
+                  <abbr title="Availability — Khả dụng" className="no-underline">A%</abbr>
+                </TableHead>
+                <TableHead className="text-right">
+                  <abbr title="Performance — Hiệu suất" className="no-underline">P%</abbr>
+                </TableHead>
+                <TableHead className="text-right">
+                  <abbr title="Quality — Chất lượng" className="no-underline">Q%</abbr>
+                </TableHead>
+                <TableHead className="text-right">
+                  <abbr title="Overall Equipment Effectiveness — Hiệu suất thiết bị tổng thể (A × P × Q)" className="no-underline">OEE%</abbr>
+                </TableHead>
+                <TableHead className="text-right">{t("controlTower.lineOee.output", "Output")}</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </PanelShell>
+            </TableHeader>
+            <TableBody>
+              {lines.map((l) => (
+                <TableRow
+                  key={l.lineId}
+                  onClick={() => setSelected(l)}
+                  className="cursor-pointer transition-colors hover:bg-accent/50"
+                >
+                  <TableCell className="font-medium">{l.lineName}</TableCell>
+                  <TableCell className="text-right tabular-nums">{pct(l.availability)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{pct(l.performance)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{pct(l.quality)}</TableCell>
+                  <TableCell className={cn("text-right font-semibold tabular-nums", TONE_TEXT_CLASS[oeeTone(l.oee)])}>
+                    {pct(l.oee)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{num(l.output)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </PanelShell>
+
+      <ContextDrawer
+        open={selected != null}
+        onOpenChange={(o) => { if (!o) setSelected(null); }}
+        title={selected?.lineName ?? t("controlTower.lineOee.line", "Line")}
+        description={t("controlTower.lineOee.drawerDesc", "A/P/Q + thời gian dừng của tuyến.")}
+      >
+        {selected && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Stat label={<abbr title="Availability — Khả dụng" className="no-underline">A%</abbr>} value={pct(selected.availability)} />
+              <Stat label={<abbr title="Performance — Hiệu suất" className="no-underline">P%</abbr>} value={pct(selected.performance)} />
+              <Stat label={<abbr title="Quality — Chất lượng" className="no-underline">Q%</abbr>} value={pct(selected.quality)} />
+              <Stat label="OEE%" value={pct(selected.oee)} tone={oeeTone(selected.oee)} />
+            </div>
+            <Stat label={t("controlTower.lineOee.output", "Output")} value={num(selected.output)} />
+            <div>
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t("controlTower.topDowntime.title", "Top downtime")}
+              </div>
+              {lineDowntime.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t("controlTower.topDowntime.empty", "No machine downtime in the shift.")}</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {lineDowntime.map((d, i) => (
+                    <div key={`${d.machineCode}-${i}`} className="flex flex-wrap items-center gap-x-2 rounded-md border px-2.5 py-1.5 text-sm">
+                      <span className="font-medium">{d.machineCode}</span>
+                      <span className="ml-auto shrink-0 font-semibold tabular-nums text-destructive">{Math.round(d.minutes)}′</span>
+                      {d.reason && <span className="basis-full truncate text-[11px] text-muted-foreground">{d.reason}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/war-room">{t("controlTower.openWarRoom", "Mở War Room")}</Link>
+            </Button>
+          </div>
+        )}
+      </ContextDrawer>
+    </>
   );
 }
 
@@ -647,6 +705,10 @@ function TopDowntimePanel(): React.JSX.Element {
 // OPERATIONS PANELS
 // ═════════════════════════════════════════════════════════════════════════════
 
+/** call/red/yellow → tone chuẩn (call = chuông gọi ở mức warning, ≠ sự cố đỏ). */
+const andonStateTone = (state?: string | null): SemanticTone =>
+  state === "red" ? "danger" : state === "call" ? "warning" : state === "yellow" ? "warning" : "muted";
+
 /** Andon board — active signals + open alerts (from dashboard.getAndonBoard). */
 function AndonRailPanel(): React.JSX.Element {
   const { t } = useTranslation();
@@ -661,54 +723,121 @@ function AndonRailPanel(): React.JSX.Element {
   const andons = board?.andons ?? [];
   const open = andons.filter((a) => a.status !== "resolved");
 
-  // GIỮ LOCAL có chủ đích: mapping W2 của panel này để 'call' ở mức warning (chuông
-  // gọi ≠ sự cố đỏ trong rail); severityTone shared xếp call → danger nên KHÔNG dùng
-  // ở đây (đổi mức là đổi hành vi ngoài phạm vi wave). Chỉ tone-map đổi sang chuẩn.
-  const stateTone = (state?: string | null): SemanticTone =>
-    state === "red" ? "danger" : state === "call" ? "warning" : state === "yellow" ? "warning" : "muted";
+  // doc 68 §3.2 (việc 3): click 1 dòng → ContextDrawer phải + Ack tại chỗ (thay nhảy
+  // /ops-console từng dòng). acknowledge = andon/canEdit; onSuccess refetch + đóng drawer.
+  const [selected, setSelected] = useState<(typeof open)[number] | null>(null);
+  const ackMut = trpc.andon.acknowledge.useMutation({
+    onSuccess: () => {
+      void q.refetch();
+      setSelected(null);
+    },
+  });
 
   return (
-    <PanelShell
-      icon={<Radio className="h-4 w-4 text-primary" />}
-      title={t("controlTower.andonRail.title", "Andon rail")}
-      description={
-        board
-          ? t("controlTower.andonRail.counts", "{{active}} active · {{alerts}} open alerts", {
-              active: board.kpis.activeAndons,
-              alerts: board.kpis.openAlerts,
-            })
-          : undefined
-      }
-      linkHref="/ops-console"
-      isLoading={q.isLoading}
-      isError={q.isError}
-      error={q.error}
-      isEmpty={!q.isLoading && open.length === 0}
-      onRetry={q.refetch}
-      dataUpdatedAt={q.dataUpdatedAt}
-      // W6: live → hết poll, ngưỡng stale nới theo POLL_SLOW (xem AlarmHealthPanel).
-      pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
-      preset="list"
-      emptyText={t("controlTower.andonRail.empty", "No active Andon signals. All clear.")}
-    >
-      <div className="space-y-1.5">
-        {open.slice(0, 8).map((a) => (
-          <div key={a.id} className="flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-sm">
-            <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", dotClass(a.state ?? ""))} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">{a.title || a.reason || t("controlTower.andonRail.signal", "Andon signal")}</div>
-              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className={cn("capitalize", TONE_TEXT_CLASS[stateTone(a.state)])}>{a.state}</span>
-                {a.lineName && <span>· {a.lineName}</span>}
-                {a.machineCode && <span>· {a.machineCode}</span>}
-                {a.raisedAt && <span className="ml-auto">{relTimeShort(a.raisedAt)}</span>}
+    <>
+      <PanelShell
+        icon={<Radio className="h-4 w-4 text-primary" />}
+        title={t("controlTower.andonRail.title", "Andon rail")}
+        description={
+          board
+            ? t("controlTower.andonRail.counts", "{{active}} active · {{alerts}} open alerts", {
+                active: board.kpis.activeAndons,
+                alerts: board.kpis.openAlerts,
+              })
+            : undefined
+        }
+        linkHref="/ops-console"
+        isLoading={q.isLoading}
+        isError={q.isError}
+        error={q.error}
+        isEmpty={!q.isLoading && open.length === 0}
+        onRetry={q.refetch}
+        dataUpdatedAt={q.dataUpdatedAt}
+        // W6: live → hết poll, ngưỡng stale nới theo POLL_SLOW (xem AlarmHealthPanel).
+        pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
+        preset="list"
+        emptyAllClear
+        emptyText={t("controlTower.andonRail.empty", "No active Andon signals. All clear.")}
+      >
+        <div className="space-y-1.5">
+          {open.slice(0, 8).map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setSelected(a)}
+              className="flex w-full items-start gap-2 rounded-md border px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", dotClass(a.state ?? ""))} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{a.title || a.reason || t("controlTower.andonRail.signal", "Andon signal")}</div>
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className={cn("capitalize", TONE_TEXT_CLASS[andonStateTone(a.state)])}>{a.state}</span>
+                  {a.lineName && <span>· {a.lineName}</span>}
+                  {a.machineCode && <span>· {a.machineCode}</span>}
+                  {a.raisedAt && <span className="ml-auto">{relTimeShort(a.raisedAt)}</span>}
+                </div>
               </div>
+            </button>
+          ))}
+        </div>
+      </PanelShell>
+
+      <ContextDrawer
+        open={selected != null}
+        onOpenChange={(o) => { if (!o) setSelected(null); }}
+        title={selected?.title || selected?.reason || t("controlTower.andonRail.signal", "Andon signal")}
+        description={t("controlTower.andonRail.drawerDesc", "Chi tiết cảnh báo Andon — xác nhận (Ack) tại chỗ.")}
+      >
+        {selected && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", dotClass(selected.state ?? ""))} />
+              <span className={cn("text-sm font-medium capitalize", TONE_TEXT_CLASS[andonStateTone(selected.state)])}>{selected.state}</span>
+              {selected.raisedAt && <span className="ml-auto text-xs text-muted-foreground">{relTimeShort(selected.raisedAt)}</span>}
+            </div>
+            {selected.reason && selected.reason !== selected.title && (
+              <p className="text-sm text-muted-foreground">{selected.reason}</p>
+            )}
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("controlTower.lineOee.line", "Line")}</dt>
+                <dd className="mt-0.5 font-medium">{selected.lineName ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("controlTower.topDowntime.machine", "Machine")}</dt>
+                <dd className="mt-0.5 font-medium">{selected.machineCode ?? "—"}</dd>
+              </div>
+            </dl>
+            {ackMut.isError && (
+              <p className="text-sm text-destructive">{t("controlTower.ackError", "Không thể xác nhận (có thể do quyền).")}</p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {selected.status === "acknowledged" ? (
+                <span className="inline-flex items-center gap-1 text-sm text-success">
+                  <CheckCircle2 className="h-4 w-4" /> {t("controlTower.acked", "Đã xác nhận")}
+                </span>
+              ) : (
+                <Button size="sm" onClick={() => ackMut.mutate({ id: selected.id })} disabled={ackMut.isPending}>
+                  {ackMut.isPending ? t("controlTower.acking", "Đang xác nhận…") : t("controlTower.ack", "Xác nhận")}
+                </Button>
+              )}
+              <Button asChild size="sm" variant="outline">
+                <Link href="/ops-console">{t("controlTower.openOps", "Mở Ops Console")}</Link>
+              </Button>
             </div>
           </div>
-        ))}
-      </div>
-    </PanelShell>
+        )}
+      </ContextDrawer>
+    </>
   );
+}
+
+/** SeedAlert id = `andon:<id>:<ts36>-<seq36>` (xem commandCenterService.seedId) —
+ *  tách lấy andon_events id để Ack tại chỗ; alert không phải andon → null. */
+function parseAndonId(kind: string, id: string): number | null {
+  if (kind !== "andon") return null;
+  const m = /^andon:(\d+):/.exec(id);
+  return m ? Number(m[1]) : null;
 }
 
 /** Live unified alarm rail (from commandCenter.recentAlerts; page invalidates on socket events). */
@@ -722,37 +851,100 @@ function LiveAlarmsPanel(): React.JSX.Element {
     { refetchInterval: isLive ? false : POLL_FAST, staleTime: 5_000 },
   );
   const alerts = q.data?.alerts ?? [];
+
+  // doc 68 §3.2 (việc 3): click 1 dòng → ContextDrawer chi tiết + Ack tại chỗ khi là
+  // Andon (id parse được); nguồn khác (safety…) → CTA "Mở Command Center" bước-2.
+  const [selected, setSelected] = useState<(typeof alerts)[number] | null>(null);
+  const ackMut = trpc.andon.acknowledge.useMutation({
+    onSuccess: () => {
+      void q.refetch();
+      setSelected(null);
+    },
+  });
+  const selectedAndonId = selected ? parseAndonId(selected.kind, selected.id) : null;
+
   return (
-    <PanelShell
-      icon={<ShieldAlert className="h-4 w-4 text-primary" />}
-      title={t("controlTower.liveAlarms.title", "Live alarm rail")}
-      description={t("controlTower.liveAlarms.desc", "Unified alert stream across the estate")}
-      linkHref="/command-center"
-      isLoading={q.isLoading}
-      isError={q.isError}
-      error={q.error}
-      isEmpty={!q.isLoading && alerts.length === 0}
-      onRetry={q.refetch}
-      dataUpdatedAt={q.dataUpdatedAt}
-      // W6: live → hết poll, ngưỡng stale nới theo POLL_SLOW (xem AlarmHealthPanel).
-      pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
-      preset="list"
-      emptyText={t("controlTower.liveAlarms.empty", "No active alarms. All clear.")}
-    >
-      <div className="space-y-1.5">
-        {alerts.slice(0, 10).map((a) => (
-          <div key={a.id} className="rounded-md border px-2.5 py-1.5 text-sm">
-            <div className="flex items-center gap-1.5">
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", dotClass(a.severity))} />
-              <Badge variant="outline" className="px-1 py-0 text-[10px] capitalize">{a.kind}</Badge>
-              <span className="ml-auto text-[10px] text-muted-foreground">{relTimeShort(a.ts)}</span>
+    <>
+      <PanelShell
+        icon={<ShieldAlert className="h-4 w-4 text-primary" />}
+        title={t("controlTower.liveAlarms.title", "Live alarm rail")}
+        description={t("controlTower.liveAlarms.desc", "Unified alert stream across the estate")}
+        linkHref="/command-center"
+        isLoading={q.isLoading}
+        isError={q.isError}
+        error={q.error}
+        isEmpty={!q.isLoading && alerts.length === 0}
+        onRetry={q.refetch}
+        dataUpdatedAt={q.dataUpdatedAt}
+        // W6: live → hết poll, ngưỡng stale nới theo POLL_SLOW (xem AlarmHealthPanel).
+        pollIntervalMs={isLive ? POLL_SLOW : POLL_FAST}
+        preset="list"
+        emptyAllClear
+        emptyText={t("controlTower.liveAlarms.empty", "No active alarms. All clear.")}
+      >
+        <div className="space-y-1.5">
+          {alerts.slice(0, 10).map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setSelected(a)}
+              className="w-full rounded-md border px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className={cn("h-2 w-2 shrink-0 rounded-full", dotClass(a.severity))} />
+                <Badge variant="outline" className="px-1 py-0 text-[10px] capitalize">{a.kind}</Badge>
+                <span className="ml-auto text-[10px] text-muted-foreground">{relTimeShort(a.ts)}</span>
+              </div>
+              <div className="mt-0.5 truncate font-medium leading-snug">{a.title}</div>
+              <div className="truncate text-[11px] text-muted-foreground">{a.source}</div>
+            </button>
+          ))}
+        </div>
+      </PanelShell>
+
+      <ContextDrawer
+        open={selected != null}
+        onOpenChange={(o) => { if (!o) setSelected(null); }}
+        title={selected?.title ?? t("controlTower.liveAlarms.title", "Live alarm rail")}
+        description={t("controlTower.liveAlarms.drawerDesc", "Chi tiết cảnh báo trong luồng hợp nhất.")}
+      >
+        {selected && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", TONE_DOT_CLASS[severityTone(selected.severity)])} />
+              <Badge variant="outline" className="px-1.5 py-0 text-[11px] capitalize">{selected.kind}</Badge>
+              <span className={cn("text-sm font-medium capitalize", TONE_TEXT_CLASS[severityTone(selected.severity)])}>{selected.severity}</span>
+              <span className="ml-auto text-xs text-muted-foreground">{relTimeShort(selected.ts)}</span>
             </div>
-            <div className="mt-0.5 truncate font-medium leading-snug">{a.title}</div>
-            <div className="truncate text-[11px] text-muted-foreground">{a.source}</div>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("controlTower.liveAlarms.sourceLabel", "Nguồn")}</dt>
+                <dd className="mt-0.5 font-medium">{selected.source}</dd>
+              </div>
+              {selected.scope?.machineId != null && (
+                <div>
+                  <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("controlTower.topDowntime.machine", "Machine")}</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums">#{selected.scope.machineId}</dd>
+                </div>
+              )}
+            </dl>
+            {ackMut.isError && (
+              <p className="text-sm text-destructive">{t("controlTower.ackError", "Không thể xác nhận (có thể do quyền).")}</p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {selectedAndonId != null && (
+                <Button size="sm" onClick={() => ackMut.mutate({ id: selectedAndonId })} disabled={ackMut.isPending}>
+                  {ackMut.isPending ? t("controlTower.acking", "Đang xác nhận…") : t("controlTower.ack", "Xác nhận")}
+                </Button>
+              )}
+              <Button asChild size="sm" variant="outline">
+                <Link href="/command-center">{t("controlTower.openCommandCenter", "Mở Command Center")}</Link>
+              </Button>
+            </div>
           </div>
-        ))}
-      </div>
-    </PanelShell>
+        )}
+      </ContextDrawer>
+    </>
   );
 }
 

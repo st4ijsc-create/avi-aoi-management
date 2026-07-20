@@ -86,6 +86,10 @@ import { DeferredMount } from "@/components/DeferredMount";
 import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
 import type { WidgetData } from "@/components/WidgetDataExport";
 import CustomDashboardViewer from "@/components/CustomDashboardViewer";
+// doc68 §3.3 P1 (việc 2) — chuẩn hoá "chi tiết → panel phải": chi tiết máy + drilldown
+// trạm chuyển từ Dialog che toàn màn sang ContextDrawer trượt phải (so sánh liên tiếp
+// không mất lưới nền). metricsSettings GIỮ modal (form cấu hình).
+import { ContextDrawer } from "@/components/workspace/ContextDrawer";
 import { useState, useMemo, useEffect, useCallback, useRef, memo, type CSSProperties } from "react";
 // doc 64 IA-10 S1 — truc pham vi ISA-95.
 import { useScope } from "@/components/patterns/ScopeFilterBar";
@@ -1158,6 +1162,14 @@ export default function Dashboard() {
     return grouped;
   }, [machinesStats, machineStatusFilter, onlineMachines]);
 
+  // doc68 §3.3 P1 (việc 1) — tra MachineStats đầy đủ theo id để khối hero "Máy cần
+  // chú ý" (nguồn topBottomMachines rút gọn) mở đúng drawer chi tiết (ok/ng/ntf/ảnh).
+  const machineById = useMemo(() => {
+    const map = new Map<number, MachineStats>();
+    for (const list of machinesByLine.values()) for (const m of list) map.set(m.id, m);
+    return map;
+  }, [machinesByLine]);
+
   // doc65 W1 — sự thật số liệu per-machine:
   //  - fpy: dùng trường CANONICAL từ server (true first-pass yield, getMachineStats);
   //    fallback ok/total chỉ khi server chưa trả (dữ liệu cũ trong cache).
@@ -1610,7 +1622,7 @@ export default function Dashboard() {
                       </p>
                       <TrendIndicator value={trends?.fpy} suffix="pp" />
                     </div>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {t("dashboard.finalYield")}: {statsLoading ? "..." : fmtPct(stats?.yieldRate)}
                     </p>
                     <Sparkline data={sparklineData.map((d) => ({ x: d.date, y: d.fpy }))} width={80} height={32} tone="good" showArea aria-label={t("dashboard.fpy")} />
@@ -1685,125 +1697,55 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* Yield Alert Widget + Machine Status Widget - Side by Side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Yield Alert Widget - Compact Realtime alerts */}
-          <Card className="glass-card">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className={`h-6 w-6 rounded-md flex items-center justify-center ${
-                    yieldAlerts.some(a => a.level === 'critical') ? 'bg-destructive/20' : 'bg-warning/20'
-                  }`}>
-                    <AlertTriangle className={`h-3.5 w-3.5 ${
-                      yieldAlerts.some(a => a.level === 'critical') ? 'text-destructive' : 'text-warning'
-                    }`} />
-                  </div>
-                  <span className="text-sm font-medium">{t("dashboard.yieldWarning")}</span>
-                  <Badge variant="secondary" className="text-xs h-5">{yieldAlerts.length}</Badge>
-                </div>
-                <Link href="/settings">
-                  <Button variant="ghost" size="sm" className="h-10 text-xs px-2">{t("dashboard.configuration")}</Button>
-                </Link>
-              </div>
-              {yieldAlerts.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {/* doc67 W4 (a11y/touch): Tooltip hover-only vô dụng với găng tay/touch —
-                      đổi sang Popover (click/tap/Enter mở), nội dung message/ngưỡng/target giữ nguyên. */}
-                  {yieldAlerts.map((alert, index) => (
-                    <Popover key={`${alert.type}-${alert.level}-${index}`}>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={`${t("dashboard.yieldWarning")}: ${alert.type} ${fmtPct(alert.currentValue)}`}
-                          className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
-                            alert.level === 'critical'
-                              ? 'bg-destructive/10 border border-destructive/30 text-destructive'
-                              : 'bg-warning/10 border border-warning/30 text-warning'
-                          }`}>
-                          {alert.level === 'critical'
-                            ? <XCircle aria-hidden="true" className="h-3 w-3" />
-                            : <AlertTriangle aria-hidden="true" className="h-3 w-3" />
-                          }
-                          <span className="font-medium">{alert.type}</span>
-                          <span>{fmtPct(alert.currentValue)}</span>
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent side="bottom" className="max-w-xs w-auto p-3">
-                        <p className="text-sm font-medium">{alert.message}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{t("dashboard.target")}: {alert.target}% | {t("dashboard.threshold")}: {alert.threshold}%</p>
-                      </PopoverContent>
-                    </Popover>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-4 text-muted-foreground text-sm text-center gap-1">
-                  <CheckCircle2 className="h-4 w-4 text-success" />
-                  <span>
-                    {(currentStats?.total ?? 0) > 0
-                      ? t("dashboard.noAlerts")
-                      : t("dashboard.noDataForAlerts", "No inspection data yet. Alerts will appear once production data is available.")}
-                  </span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Machine Status Widget - Compact */}
-          <Card className="glass-card">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-6 w-6 rounded-md flex items-center justify-center bg-primary/20">
-                    <Activity className="h-3.5 w-3.5 text-primary" />
-                  </div>
-                  <span className="text-sm font-medium">{t("dashboard.machineConnectionStatus")}</span>
-                </div>
-                <Link href="/machine-status">
-                  <Button variant="ghost" size="sm" className="h-10 text-xs px-2">
-                    {t("common.details")}
-                  </Button>
-                </Link>
-              </div>
-              {/* doc65 V1 (ISA-101): màu THEO GIÁ TRỊ — "Trực tuyến 0" không được tô xanh
-                  (0 máy online là tình trạng xấu nhất); "Ngoại tuyến 0" không được tô đỏ. */}
-              <div className="grid grid-cols-4 gap-2">
-                <div className="flex flex-col items-center p-2 rounded-lg bg-muted/30">
-                  <p className="text-lg font-bold">{machinesStats?.length || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">{t("common.total")}</p>
-                </div>
-                <div className={cn("flex flex-col items-center p-2 rounded-lg", onlineMachines.size > 0 ? "bg-success/10" : "bg-muted/30")}>
-                  <p className={cn("text-lg font-bold", onlineMachines.size > 0 ? "text-success" : "text-muted-foreground")}>{onlineMachines.size}</p>
-                  <p className="text-[10px] text-muted-foreground">{t("dashboard.online")}</p>
-                </div>
-                {(() => {
-                  const offlineN = Math.max(0, (machinesStats?.length || 0) - onlineMachines.size);
-                  return (
-                    <div className={cn("flex flex-col items-center p-2 rounded-lg", offlineN > 0 ? "bg-destructive/10" : "bg-muted/30")}>
-                      <p className={cn("text-lg font-bold", offlineN > 0 ? "text-destructive" : "text-muted-foreground")}>{offlineN}</p>
-                      <p className="text-[10px] text-muted-foreground">{t("dashboard.offline")}</p>
-                    </div>
-                  );
-                })()}
-                {(() => {
-                  const availPct = machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0;
-                  return (
-                    <div className={cn("flex flex-col items-center p-2 rounded-lg", availPct > 0 ? "bg-primary/10" : "bg-muted/30")}>
-                      <p className={cn("text-lg font-bold", availPct === 0 && "text-muted-foreground")}>{availPct}%</p>
-                      <p className="text-[10px] text-muted-foreground">{t("dashboard.avail")}</p>
-                    </div>
-                  );
-                })()}
-              </div>
-            </CardContent>
-          </Card>
+        {/* doc68 §3.3 P1 (việc 4) — "Trạng thái kết nối máy" NÉN thành dải nhỏ ngay
+            dưới KPI (thay card cao nửa hàng), để tab bar bám sát KPI. Màu theo GIÁ TRỊ
+            (ISA-101): online 0 không tô xanh, offline 0 không tô đỏ. Widget cảnh báo
+            tỷ-lệ-đạt + MQTT được gộp xuống đầu tab Tổng quan (việc 5). */}
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <Activity className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">{t("dashboard.machineConnectionStatus")}</span>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-md bg-muted/40 px-2 py-1 text-xs">
+              <span className="font-bold">{machinesStats?.length || 0}</span>
+              <span className="text-muted-foreground">{t("common.total")}</span>
+            </span>
+            <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs", onlineMachines.size > 0 ? "bg-success/10" : "bg-muted/40")}>
+              <span className={cn("font-bold", onlineMachines.size > 0 ? "text-success" : "text-muted-foreground")}>{onlineMachines.size}</span>
+              <span className="text-muted-foreground">{t("dashboard.online")}</span>
+            </span>
+            {(() => {
+              const offlineN = Math.max(0, (machinesStats?.length || 0) - onlineMachines.size);
+              return (
+                <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs", offlineN > 0 ? "bg-destructive/10" : "bg-muted/40")}>
+                  <span className={cn("font-bold", offlineN > 0 ? "text-destructive" : "text-muted-foreground")}>{offlineN}</span>
+                  <span className="text-muted-foreground">{t("dashboard.offline")}</span>
+                </span>
+              );
+            })()}
+            {(() => {
+              const availPct = machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0;
+              return (
+                <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs", availPct > 0 ? "bg-primary/10" : "bg-muted/40")}>
+                  <span className={cn("font-bold", availPct === 0 && "text-muted-foreground")}>{availPct}%</span>
+                  <span className="text-muted-foreground">{t("dashboard.avail")}</span>
+                </span>
+              );
+            })()}
+            <Link href="/machine-status">
+              <Button variant="ghost" size="sm" className="h-8 text-xs px-2">{t("common.details")}</Button>
+            </Link>
+          </div>
         </div>
 
         {/* Tabs for Overview and Layout */}
         {/* doc67 W8 (việc 1) — onValueChange qua handleTabChange: state + ?tab= URL (replace). */}
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           {/* doc67 W4 (mobile 390): tab tràn ngang → cuộn ngang + scroll-snap dưới sm thay vì wrap vỡ hàng */}
-          <TabsList className="flex w-full max-w-2xl flex-nowrap justify-start overflow-x-auto snap-x snap-mandatory sm:grid sm:grid-cols-4 h-auto">
+          {/* doc68 §3.3 P1 (việc 4) — tab bar STICKY: bám đỉnh vùng cuộn khi lăn qua các
+              khối dài (chart/lưới máy) để operator luôn đổi tab được mà không cuộn ngược. */}
+          <TabsList className="sticky top-0 z-20 flex w-full max-w-2xl flex-nowrap justify-start overflow-x-auto snap-x snap-mandatory bg-background/95 supports-[backdrop-filter]:bg-background/75 backdrop-blur sm:grid sm:grid-cols-4 h-auto">
             <TabsTrigger value="overview" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
               <BarChart3 className="h-4 w-4" />{t("dashboard.overviewTab")}</TabsTrigger>
             <TabsTrigger value="ng-visual" className="flex flex-none sm:flex-1 items-center gap-2 snap-start whitespace-nowrap">
@@ -1820,6 +1762,158 @@ export default function Dashboard() {
                 khe paint đầu — hero KPI/thẻ trạng thái phía trên paint được ngay thay vì
                 chờ cả cây nặng render xong (LCP ~5s → mục tiêu <2,5s). */}
             <DeferredMount placeholder={<ChartSkeleton />}>
+            {/* doc68 §3.3 P1 (việc 1) — HERO "Máy/Trạm cần chú ý": gộp máy kém nhất
+                (topBottomMachines.bottom) + trạm lỗi cao nhất (workstationSummary theo
+                ngCount) lên ĐẦU tab Tổng quan → operator trả lời "máy nào lỗi" <5s
+                (trước đây bị chôn ở tab Bố cục / cuối trang). Click máy → drawer chi
+                tiết; click trạm → drawer drilldown; "Xem lưới" → tab Bố cục. */}
+            {(() => {
+              const worstMachines = ((topBottomMachines as { bottom?: any[] } | undefined)?.bottom ?? []).slice(0, 5);
+              const worstStations = ((workstationSummary as any[] | undefined) ?? [])
+                .filter((ws) => ((ws.ngCount || 0) + (ws.ntfCount || 0)) > 0)
+                .sort((a, b) => (b.ngCount || 0) - (a.ngCount || 0))
+                .slice(0, 5);
+              if (worstMachines.length === 0 && worstStations.length === 0) return null;
+              return (
+                <Card className="border-destructive/40 bg-destructive/5">
+                  <CardHeader className="pb-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-destructive" />
+                        {t("dashboard.needsAttentionTitle", "Máy/Trạm cần chú ý")}
+                      </CardTitle>
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => handleTabChange("layout")}>
+                        <LayoutGrid className="h-3.5 w-3.5 mr-1" />{t("dashboard.viewGrid", "Xem lưới")}
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                          <ThumbsDown className="h-3.5 w-3.5 text-destructive" />{t("dashboard.worstMachinesFpy", "Máy kém nhất (FPY)")}
+                        </p>
+                        <div className="space-y-1.5">
+                          {worstMachines.map((machine, index) => (
+                            <button
+                              key={machine.id}
+                              type="button"
+                              aria-label={`${t("common.details")}: ${machine.name}`}
+                              onClick={() => openMachineDetail(machineById.get(machine.id) ?? (machine as MachineStats))}
+                              className="w-full flex items-center justify-between gap-2 p-2 rounded-lg bg-background/60 border border-destructive/20 hover:bg-background transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <span className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs font-bold text-destructive w-4 shrink-0">#{index + 1}</span>
+                                <span className="text-sm truncate">{machine.name}</span>
+                              </span>
+                              <span className="flex items-center gap-2 shrink-0">
+                                <span className="text-xs text-muted-foreground">{machine.total} {t("dashboard.pcsUnit", "pcs")}</span>
+                                <Badge variant="outline" className="text-destructive border-destructive/50">{machine.fpy}%</Badge>
+                              </span>
+                            </button>
+                          ))}
+                          {worstMachines.length === 0 && <p className="text-xs text-muted-foreground py-2">{t("dashboard.noDataYet")}</p>}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                          <Factory className="h-3.5 w-3.5 text-warning" />{t("dashboard.worstStationsNg", "Trạm lỗi cao nhất")}
+                        </p>
+                        <div className="space-y-1.5">
+                          {worstStations.map((ws, index) => {
+                            const totalDefects = (ws.ngCount || 0) + (ws.ntfCount || 0);
+                            return (
+                              <button
+                                key={`${ws.workstationId ?? "na"}-${ws.workstationCode ?? index}`}
+                                type="button"
+                                aria-label={`${t("common.details")}: ${ws.workstationName ?? ws.workstationCode}`}
+                                onClick={() => {
+                                  setSelectedWorkstationForDrilldown({ id: ws.workstationId, code: ws.workstationCode, name: ws.workstationName });
+                                  setDrilldownDialogOpen(true);
+                                }}
+                                className="w-full flex items-center justify-between gap-2 p-2 rounded-lg bg-background/60 border border-warning/20 hover:bg-background transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                <span className="flex items-center gap-2 min-w-0">
+                                  <span className="text-xs font-bold text-warning w-4 shrink-0">#{index + 1}</span>
+                                  <span className="text-sm truncate">{ws.workstationName || ws.workstationCode || "—"}</span>
+                                </span>
+                                <Badge variant="outline" className="text-destructive border-destructive/50 shrink-0">{totalDefects} {t("common.error")}</Badge>
+                              </button>
+                            );
+                          })}
+                          {worstStations.length === 0 && <p className="text-xs text-muted-foreground py-2">{t("dashboard.noDataYet")}</p>}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
+
+            {/* doc68 §3.3 P2 (việc 5) — GỘP 2 hệ cảnh báo: widget cảnh báo tỷ-lệ-đạt
+                (ngưỡng yield) dời từ trên tab xuống ĐÂY, ngay trên MQTT, để 2 hệ cảnh
+                báo đứng cạnh nhau (không còn tách trên/dưới tab bar). glass-card →
+                cardStyleProps (đồng nhất token thẻ). */}
+            <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`h-6 w-6 rounded-md flex items-center justify-center ${
+                      yieldAlerts.some(a => a.level === 'critical') ? 'bg-destructive/20' : 'bg-warning/20'
+                    }`}>
+                      <AlertTriangle className={`h-3.5 w-3.5 ${
+                        yieldAlerts.some(a => a.level === 'critical') ? 'text-destructive' : 'text-warning'
+                      }`} />
+                    </div>
+                    <span className="text-sm font-medium">{t("dashboard.yieldWarning")}</span>
+                    <Badge variant="secondary" className="text-xs h-5">{yieldAlerts.length}</Badge>
+                  </div>
+                  <Link href="/settings">
+                    <Button variant="ghost" size="sm" className="h-10 text-xs px-2">{t("dashboard.configuration")}</Button>
+                  </Link>
+                </div>
+                {yieldAlerts.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {/* doc67 W4 (a11y/touch): Popover (click/tap/Enter mở) thay Tooltip hover-only. */}
+                    {yieldAlerts.map((alert, index) => (
+                      <Popover key={`${alert.type}-${alert.level}-${index}`}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`${t("dashboard.yieldWarning")}: ${alert.type} ${fmtPct(alert.currentValue)}`}
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+                              alert.level === 'critical'
+                                ? 'bg-destructive/10 border border-destructive/30 text-destructive'
+                                : 'bg-warning/10 border border-warning/30 text-warning'
+                            }`}>
+                            {alert.level === 'critical'
+                              ? <XCircle aria-hidden="true" className="h-3 w-3" />
+                              : <AlertTriangle aria-hidden="true" className="h-3 w-3" />
+                            }
+                            <span className="font-medium">{alert.type}</span>
+                            <span>{fmtPct(alert.currentValue)}</span>
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent side="bottom" className="max-w-xs w-auto p-3">
+                          <p className="text-sm font-medium">{alert.message}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{t("dashboard.target")}: {alert.target}% | {t("dashboard.threshold")}: {alert.threshold}%</p>
+                        </PopoverContent>
+                      </Popover>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-2 py-2 text-muted-foreground text-sm text-center">
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                    <span>
+                      {(currentStats?.total ?? 0) > 0
+                        ? t("dashboard.noAlerts")
+                        : t("dashboard.noDataForAlerts", "No inspection data yet. Alerts will appear once production data is available.")}
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* MQTT Alert Widget — doc67 W6 [P1-2]: socket live → ngừng poll 30s */}
             <MqttAlertWidget socketConnected={socketConnected} />
 
@@ -2017,15 +2111,20 @@ export default function Dashboard() {
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pie Chart */}
+          {/* doc68 §3.3 P2 (việc 5) — GỘP Pie phân bố (thường ít datum) + Bar top máy
+              vào 1 thẻ 2 cột: bớt thẻ phình cho ít dữ liệu, hàng chart cân đối
+              [Phân bố · Top máy][Top 5 trạm lỗi]. */}
           <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader>
-              <CardTitle className="text-base">{t("dashboard.resultDistribution")}</CardTitle>
-              <CardDescription>{t("dashboard.resultDistributionDesc")}</CardDescription>
+              <CardTitle className="text-base">{t("dashboard.resultDistribution")} · {t("dashboard.topMachinesByOutput")}</CardTitle>
+              <CardDescription>{t("dashboard.top10MachinesDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
-              <ChartErrorBoundary>
-              <div className="h-50">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">{t("dashboard.resultDistribution")}</p>
+                <ChartErrorBoundary>
+                <div className="h-50">
                 {pieData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -2049,20 +2148,13 @@ export default function Dashboard() {
                 ) : (
                   <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
                 )}
+                </div>
+                </ChartErrorBoundary>
               </div>
-              </ChartErrorBoundary>
-            </CardContent>
-          </Card>
-
-          {/* Bar Chart - Top machines */}
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardHeader>
-              <CardTitle className="text-base">{t("dashboard.topMachinesByOutput")}</CardTitle>
-              <CardDescription>{t("dashboard.top10MachinesDesc")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartErrorBoundary>
-              <div className="h-50">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">{t("dashboard.topMachinesByOutput")}</p>
+                <ChartErrorBoundary>
+                <div className="h-50">
                 {machinesStats && (machinesStats as any[]).length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
@@ -2088,8 +2180,10 @@ export default function Dashboard() {
                 ) : (
                   <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
                 )}
+                </div>
+                </ChartErrorBoundary>
               </div>
-              </ChartErrorBoundary>
+              </div>
             </CardContent>
           </Card>
 
@@ -2796,19 +2890,16 @@ export default function Dashboard() {
         </Tabs>
       </PageContainer>
 
-      {/* Machine Detail Modal */
-      <Dialog open={machineDetailOpen} onOpenChange={setMachineDetailOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-primary" />
-              {selectedMachine?.name}
-            </DialogTitle>
-            <DialogDescription>
-              {t("dashboard.machineCode")} {selectedMachine?.code} • {selectedMachine?.lineName}
-            </DialogDescription>
-          </DialogHeader>
-
+      {/* doc68 §3.3 P1 (việc 2) — Chi tiết máy: Dialog che toàn màn (max-w-4xl) →
+          ContextDrawer trượt phải. So sánh máy liên tiếp không mất lưới thẻ nền;
+          nội dung (4 ô lọc + tab Tổng quan/Kết quả gần nhất) GIỮ nguyên. */}
+      <ContextDrawer
+        open={machineDetailOpen}
+        onOpenChange={setMachineDetailOpen}
+        className="flex w-[92vw] flex-col gap-0 p-0 sm:w-[600px] sm:max-w-[640px]"
+        title={<span className="flex items-center gap-2"><Cpu className="h-5 w-5 text-primary" />{selectedMachine?.name}</span>}
+        description={selectedMachine ? `${t("dashboard.machineCode")} ${selectedMachine.code} • ${selectedMachine.lineName ?? ""}` : undefined}
+      >
           {/* Stats Boxes at Top - Clickable to filter */}
           {/* doc67 W4: grid-cols-2 dưới sm (4 ô nén trong dialog mobile) + 4 ô lọc bấm được bằng bàn phím */}
           {selectedMachine && (
@@ -3105,9 +3196,7 @@ export default function Dashboard() {
               </ScrollArea>
             </TabsContent>
           </Tabs>
-        </DialogContent>
-      </Dialog>
-      }
+      </ContextDrawer>
       {/* Metrics Settings Dialog */}
       <Dialog open={metricsSettingsOpen} onOpenChange={setMetricsSettingsOpen}>
         <DialogContent className="sm:max-w-md">
@@ -3206,19 +3295,16 @@ export default function Dashboard() {
       </Dialog>
 
       {/* Workstation Drilldown Dialog */}
-      <Dialog open={drilldownDialogOpen} onOpenChange={setDrilldownDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Factory className="h-5 w-5 text-primary" />
-              {t("dashboard.workstationDetail")} {selectedWorkstationForDrilldown?.name}
-            </DialogTitle>
-            <DialogDescription>
-              {t("dashboard.stationCode")} {selectedWorkstationForDrilldown?.code} • {t("dashboard.dataFrom")} {ngTimeFilter === "day" ? t("dashboard.todayPeriod") : ngTimeFilter === "week" ? t("dashboard.7daysPeriod") : t("dashboard.30daysPeriod")}
-            </DialogDescription>
-          </DialogHeader>
-
-          <ScrollArea className="max-h-[60vh]">
+      {/* doc68 §3.3 P1 (việc 2) — Drilldown trạm: Dialog → ContextDrawer phải (đồng
+          mẫu với chi tiết máy). ContextDrawer tự cuộn nội dung nên bỏ ScrollArea. */}
+      <ContextDrawer
+        open={drilldownDialogOpen}
+        onOpenChange={setDrilldownDialogOpen}
+        className="flex w-[92vw] flex-col gap-0 p-0 sm:w-[540px] sm:max-w-[560px]"
+        title={<span className="flex items-center gap-2"><Factory className="h-5 w-5 text-primary" />{t("dashboard.workstationDetail")} {selectedWorkstationForDrilldown?.name}</span>}
+        description={`${t("dashboard.stationCode")} ${selectedWorkstationForDrilldown?.code ?? ""} • ${t("dashboard.dataFrom")} ${ngTimeFilter === "day" ? t("dashboard.todayPeriod") : ngTimeFilter === "week" ? t("dashboard.7daysPeriod") : t("dashboard.30daysPeriod")}`}
+      >
+          <div>
             {drilldownLoading ? (
               <div className="flex items-center justify-center h-32">
                 <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -3287,9 +3373,8 @@ export default function Dashboard() {
                 compact
               />
             )}
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+          </div>
+      </ContextDrawer>
     </DashboardLayout>
   );
 }
@@ -3370,11 +3455,31 @@ const MqttAlertWidget = memo(function MqttAlertWidget({ socketConnected }: { soc
 
   const hasCritical = (connectionAlerts?.critical || 0) > 0;
 
+  // doc68 §3.3 P1 (việc 3) — GỘP cảnh báo TRÙNG (cùng nguồn+mức+tiêu đề) thành 1
+  // dòng kèm "×N" và GIỚI HẠN 3 dòng (trước đây 5 dòng lặp chiếm gần 1 màn).
+  const groupedAlerts = (() => {
+    const map = new Map<string, { alert: (typeof combinedAlerts)[number]; count: number }>();
+    for (const a of combinedAlerts) {
+      const key = `${a.type}|${a.severity}|${a.title}`;
+      const g = map.get(key);
+      if (g) {
+        g.count += 1;
+        if (a.triggeredAt.getTime() > g.alert.triggeredAt.getTime()) g.alert = a;
+      } else {
+        map.set(key, { alert: a, count: 1 });
+      }
+    }
+    return Array.from(map.values()).sort(
+      (x, y) => y.alert.triggeredAt.getTime() - x.alert.triggeredAt.getTime(),
+    );
+  })();
+
   return (
     <Card className={`glass-card ${hasCritical ? 'border-destructive/50 bg-destructive/5' : 'border-warning/50 bg-warning/5'}`}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
+        {/* doc68 §3.3 P3 (việc 6) — mobile 390: flex-wrap để tiêu đề + 2 nút không đè nhau. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-base flex flex-wrap items-center gap-2">
             <AlertTriangle className={`w-5 h-5 ${hasCritical ? 'text-destructive' : 'text-warning'}`} />
             {t("dashboard.mqttAlerts")}
             <div className="flex gap-1 ml-2">
@@ -3416,11 +3521,11 @@ const MqttAlertWidget = memo(function MqttAlertWidget({ socketConnected }: { soc
         <CardDescription>{t("dashboard.unresolvedMqttAlerts", { total: totalAlerts })}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {combinedAlerts.slice(0, 5).map((alert) => (
+        <div className="space-y-2">
+          {groupedAlerts.slice(0, 3).map(({ alert, count }) => (
             <div
               key={alert.id}
-              className={`flex items-start gap-3 p-3 rounded-lg bg-background/50 border ${
+              className={`flex items-start gap-3 p-2.5 rounded-lg bg-background/50 border ${
                 alert.severity === 'critical' ? 'border-destructive/20' : 'border-warning/20'
               }`}
             >
@@ -3430,24 +3535,25 @@ const MqttAlertWidget = memo(function MqttAlertWidget({ socketConnected }: { soc
                 }`} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-sm">{alert.title}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-sm truncate">{alert.title}</p>
+                  {count > 1 && <Badge variant="secondary" className="text-xs h-5">×{count}</Badge>}
                   <Badge variant="outline" className="text-xs">
                     {alert.type === 'rule' ? t("dashboard.ruleType") : t("dashboard.connectionType")}
                   </Badge>
                 </div>
-                <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                   {alert.message}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {alert.triggeredAt.toLocaleString('vi-VN')}
                 </p>
               </div>
             </div>
           ))}
-          {combinedAlerts.length > 5 && (
-            <p className="text-xs text-muted-foreground text-center pt-2">
-              {t("dashboard.moreAlerts", { count: combinedAlerts.length - 5 })}
+          {groupedAlerts.length > 3 && (
+            <p className="text-xs text-muted-foreground text-center pt-1">
+              {t("dashboard.moreAlerts", { count: groupedAlerts.length - 3 })}
             </p>
           )}
         </div>

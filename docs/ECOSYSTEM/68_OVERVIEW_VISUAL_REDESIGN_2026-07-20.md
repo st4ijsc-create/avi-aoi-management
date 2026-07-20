@@ -53,21 +53,17 @@ So 3 phương án: A (phẳng, un-hide) = giữ đủ nhưng 8 row không phân 
 
 Ký hiệu: **P1** = tác động lớn, làm trước · **P2** = cân xứng/gọn · **P3** = đánh bóng. Mọi đề xuất tái dùng primitive sẵn có (ContextDrawer, MetricCard size compact/hero, EmptyState, SectionCard, StatusBadge) — không cần component mới.
 
-### 3.1 /command-center (Sơ đồ & bản sao số) — ⭐ QUYẾT ĐỊNH USER: Twin 3D LÀ CHÍNH
-**User chốt** (đảo đề xuất của agent — agent muốn nới dải cảnh báo, nhưng đây là màn "sơ đồ & bản sao số", twin MỚI là cái chính; xử lý cảnh báo đã có /ops-console riêng). Layout mới:
-- **Trái 20%**: cây phân cấp (search + "chỉ node có cảnh báo" đã có W8).
-- **Phải 80%**: **Twin 3D chiếm ưu thế** (canvas full main-row). Máy có cảnh báo **pulse đỏ ngay trên twin** (chỉ báo không gian).
-- **KHÔNG rail phải thường trực** → thẻ phải là **fly panel (ContextDrawer)** chỉ hiện khi **click đối tượng trong canvas**: chi tiết thiết bị (KPI máy + cảnh báo của riêng máy + lịch sử + CTA "Mở cockpit").
-- **Dải cảnh báo** (rail cũ): chuyển thành (a) pulse trên twin + (b) 1 **chip đếm cảnh báo nổi** góc canvas → click mở danh sách cảnh báo trong chính fly panel (hoặc deep-link /ops-console). Không còn pane thường trực.
-- **KPI strip** → **ribbon mỏng phía trên** (MetricCard compact) để nhường tối đa chiều cao cho twin.
+### 3.1 /command-center (Sơ đồ & bản sao số) — ⭐ QUYẾT ĐỊNH CUỐI CỦA USER
+**User chốt (2026-07-20, sau khi xem live)**: **GIỮ 3 CỘT như cũ** (cây | twin | dải cảnh báo), NHƯNG **thu gọn + cân xứng 2 cột bên** để twin nổi hơn và tổng thể cân đối. Nguyên nhân "mất cân đối" chính KHÔNG phải tỷ lệ pane mà là **twin canvas rỗng** (44 máy dồn cụm giữa, lề đen trống trên/dưới).
 
-Thay đổi:
-- **P1** Layout 20/80: cột trái tree 20% + twin 80%; bỏ 3-pane 3/6/3, bỏ height cố định lệch (520/420/532). `CommandCenter.tsx:1152,:727,:1207,:1298`
-- **P1** Click khối twin 3D / chip 2D / lá cây → **ContextDrawer phải** (chi tiết thiết bị; "Mở cockpit" = CTA bước-2 trong drawer). `:468,:562,:952`
-- **P1** Chip đếm cảnh báo nổi trên canvas → fly panel danh sách cảnh báo; máy-có-cảnh-báo pulse trên twin. (chuyển từ rail `:1298`)
-- **P2** KPI strip → ribbon mỏng trên twin: sửa cắt nhãn `xl:cols-7`→`xl:cols-4 2xl:cols-7` (`:1088`), MetricCard `size="compact"`, gộp 2 ô rỗng (OEE/Năng lượng) muted.
-- **P2** Bỏ nút "Làm mới" trùng trong twin (`:686`); gộp các "Cập nhật 0s trước" → 1 chấm dot.
-- Twin 80% đồng nghĩa nhãn mã máy máy-không-ok hiện thường trực (W6 đã thêm) càng quan trọng — giữ + đảm bảo đọc rõ; giữ toggle 2D/3D (2D = StatusGridFallback cũng theo layout 20/80).
+- **3 cột**: tree TRÁI (thu gọn) | **twin GIỮA (rộng hơn)** | dải cảnh báo PHẢI (thu gọn). Tỷ lệ đề xuất ~2.5/7/2.5 (thay 3/6/3) — cả 2 cột bên hẹp lại, twin nới ra.
+- **P1 — AUTO-FIT CAMERA**: khung camera/zoom lấp đầy 44 thiết bị ra toàn canvas, diệt lề đen trống (đây là fix "mất cân đối" quan trọng nhất — không chỉ đổi tỷ lệ pane).
+- **P1 — Thu gọn 2 cột bên**: tree header "Cây phân cấp hệ sinh thái" 3 dòng → 1 dòng + mô tả vào tooltip; rail cảnh báo thẻ compact 2 dòng, chip lọc gọn. Cả 2 cột giảm bề ngang, nhịp chặt hơn.
+- **P1 — Canh đáy 3 pane**: bỏ height cố định lệch (520/420/532), 3 cột cùng chiều cao. `CommandCenter.tsx:727,:1207,:1298`
+- **P1 — Click khối twin/chip 2D/lá cây → ContextDrawer phải** (overlay, chi tiết thiết bị: KPI máy + cảnh báo của máy + lịch sử; "Mở cockpit" = CTA bước-2). Đây là bổ sung fly-out, KHÔNG thay dải cảnh báo (dải giữ nguyên là cột 3). `:468,:562,:952`
+- **P2** KPI ribbon mỏng compact: sửa cắt nhãn `xl:cols-7`→`xl:cols-4 2xl:cols-7` (`:1088`), MetricCard `size="compact"`, gộp 2 ô rỗng (OEE/Năng lượng) muted.
+- **P2** Bỏ nút "Làm mới" trùng trong twin (`:686`); gộp các "Cập nhật 0s trước" → 1 chấm dot/pane.
+- Giữ máy-không-ok hiện nhãn thường trực (W6), toggle 2D/3D, pulse máy-cảnh-báo trên twin.
 
 ### 3.2 /control-tower (Tổng quan nhà máy)
 **Nửa trên màn = chrome nav** (persona-tab + RelatedViews 2 hàng + freshness + KPI strip 2 hàng đẩy panel chạm mép fold ở 800px).

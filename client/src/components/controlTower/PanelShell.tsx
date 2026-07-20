@@ -14,7 +14,7 @@
 import * as React from "react";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, Lock } from "lucide-react";
+import { ArrowUpRight, Lock, CheckCircle2 } from "lucide-react";
 import { SectionCard } from "@/components/patterns";
 import { ConnectionChip } from "@/components/patterns/ConnectionChip";
 import { AsyncBoundary, type AsyncSkeletonPreset } from "@/components/AsyncBoundary";
@@ -65,6 +65,27 @@ export function LivePill({ live }: { live: boolean }): React.JSX.Element {
   );
 }
 
+/**
+ * doc 68 §3.2 (việc 4) — pill "Cập nhật Ns trước" chỉ hiện khi STALE (amber),
+ * ẩn khi dữ liệu còn tươi (ISA-101: chrome im lặng, chỉ nói khi bất thường). Tự
+ * tick 5s để phát hiện chuyển-sang-stale mà không phải chờ panel re-render.
+ */
+function StaleOnlyFreshness({
+  updatedAt,
+  staleAfterMs,
+}: {
+  updatedAt: number;
+  staleAfterMs: number;
+}): React.JSX.Element | null {
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 5_000);
+    return () => clearInterval(id);
+  }, []);
+  if (Date.now() - updatedAt <= staleAfterMs) return null;
+  return <PollFreshness updatedAt={updatedAt} staleAfterMs={staleAfterMs} />;
+}
+
 export interface PanelShellProps {
   icon?: React.ReactNode;
   title: React.ReactNode;
@@ -98,6 +119,11 @@ export interface PanelShellProps {
   preset?: AsyncSkeletonPreset;
   /** Text shown when there is genuinely no data. */
   emptyText?: string;
+  /**
+   * doc 68 §3.2 (việc 2): empty là TIN TỐT ("tất cả ổn") — hiện 1 DÒNG gọn với
+   * CheckCircle2 xanh thay vì khối py-8 cao. Mặc định false → 1 dòng trung tính.
+   */
+  emptyAllClear?: boolean;
   errorTitle?: string;
 
   children: React.ReactNode;
@@ -121,6 +147,7 @@ export function PanelShell({
   onRetry,
   preset = "list",
   emptyText,
+  emptyAllClear = false,
   errorTitle,
   children,
   className,
@@ -153,7 +180,7 @@ export function PanelShell({
               amber chỉ khi quá 2× chu kỳ poll (poll fallback cũng đã fail). dataUpdatedAt=0
               nghĩa là chưa fetch thành công lần nào → chưa có gì để khai tuổi. */}
           {dataUpdatedAt != null && dataUpdatedAt > 0 && (
-            <PollFreshness
+            <StaleOnlyFreshness
               updatedAt={dataUpdatedAt}
               staleAfterMs={(pollIntervalMs ?? 60_000) * 2}
             />
@@ -181,9 +208,17 @@ export function PanelShell({
           errorTitle={errorTitle ?? t("controlTower.loadError", "Couldn't load this panel")}
           retryLabel={t("controlTower.retry", "Retry")}
           emptyState={
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              {emptyText ?? t("controlTower.noData", "No data yet.")}
-            </div>
+            // doc 68 §3.2 (việc 2): co lại 1 dòng (py-1.5) thay vì khối py-8 cao.
+            emptyAllClear ? (
+              <div className="flex items-center gap-2 py-1.5 text-sm text-muted-foreground">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                <span>{emptyText ?? t("controlTower.allClear", "Không có gì bất thường — ổn định.")}</span>
+              </div>
+            ) : (
+              <div className="py-1.5 text-sm text-muted-foreground">
+                {emptyText ?? t("controlTower.noData", "No data yet.")}
+              </div>
+            )
           }
         >
           {children}

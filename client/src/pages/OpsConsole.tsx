@@ -44,7 +44,8 @@ import { trpc } from "@/lib/trpc";
 import { getSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
-import { PageHeader } from "@/components/patterns";
+import { MetricCard, PageHeader } from "@/components/patterns";
+import { ContextDrawer } from "@/components/workspace/ContextDrawer";
 import { RelatedViews } from "@/components/RelatedViews";
 import PollFreshness from "@/components/PollFreshness";
 import AgeLabel from "@/components/opsconsole/AgeLabel";
@@ -570,9 +571,17 @@ export default function OpsConsole() {
   // ── War-Room: nhóm coalesce xếp theo vị trí ─────────────────────────────────
   // `groups` đã sort escalation → thứ tự chèn vào Map = vị trí có nhóm NẶNG nhất
   // đứng trước.
+  // doc 68 §3.4 (P1): dải "CẦN XỬ LÝ TRƯỚC" — nhấc nhóm nghiêm-trọng/quá-hạn ra
+  // full-width TRÊN lưới vị trí (salience đúng, không dựa may rủi vị trí ô).
+  const priorityGroups = useMemo(
+    () => groups.filter((g) => g.severity === "critical" || g.overdue),
+    [groups],
+  );
   const warRoom = useMemo(() => {
     const m = new Map<string, AlertGroup[]>();
     for (const g of groups) {
+      // Nhóm ưu tiên đã lên dải trên → loại khỏi cột vị trí để khỏi trùng.
+      if (g.severity === "critical" || g.overdue) continue;
       const arr = m.get(g.location) ?? [];
       arr.push(g);
       m.set(g.location, arr);
@@ -580,6 +589,25 @@ export default function OpsConsole() {
     return [...m.entries()];
   }, [groups]);
   const [expandedLocs, setExpandedLocs] = useState<Set<string>>(() => new Set());
+
+  // doc 68 §3.4 (P1): chi tiết nhóm / bản-ghi / 1 alert → ContextDrawer phải.
+  const [detailGroup, setDetailGroup] = useState<AlertGroup | null>(null);
+  const openAlertDetail = useCallback((a: DecoratedAlert) => {
+    setDetailGroup({
+      gkey: a.key,
+      source: a.source,
+      title: a.title,
+      location: a.group,
+      severity: a.severity,
+      items: [a],
+      latest: a,
+      count: 1,
+      unackedCount: a.acknowledged ? 0 : 1,
+      overdue: a.overdue,
+      overdueMin: a.overdueMin,
+      expired: a.expired,
+    });
+  }, []);
 
   const counts = useMemo(() => {
     const open = decorated.filter((a) => !a.resolved);
@@ -806,24 +834,56 @@ export default function OpsConsole() {
             {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx). */}
             <RelatedViews pageId="ops-console" />
 
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-              {/* W7 GĐ2: số KPI qua fmtNum chuẩn GĐ1 (tách nghìn theo locale). */}
-              <Kpi label={t("opsConsole.kpiCritical", "Critical")} value={fmtNum(counts.critical)} accent="text-destructive" />
-              <Kpi label={t("opsConsole.kpiHigh", "High")} value={fmtNum(counts.high)} accent="text-warning" />
-              <Kpi label={t("opsConsole.kpiUnacked", "Unacknowledged")} value={fmtNum(counts.unacked)} accent="text-warning" />
-              <Kpi label={t("opsConsole.kpiOpen", "Open total")} value={fmtNum(counts.total)} />
-              {/* W1: server (andonRouter.metrics) coalesce avg NULL→0 khi CHƯA có ack
-                  nào trong 24h — nên 0 là sentinel "chưa có dữ liệu", không phải MTTA
-                  0 giây thật → hiển thị "—" thay vì con số gây hiểu nhầm. Nhãn nói rõ
-                  phạm vi: chỉ đo sự kiện Andon, không gồm các nguồn cảnh báo khác. */}
-              <Kpi
-                label="MTTA Andon (24h)"
-                value={
-                  andonMetrics.data == null || !andonMetrics.data.avgMttaSeconds
-                    ? "—"
-                    : `${fmtNum(andonMetrics.data.avgMttaSeconds)}s`
-                }
-              />
+            {/* doc 68 §3.4 (P2): KPI hero — "Nghiêm trọng" chiếm 2 cột / text-4xl khi
+                >0 (câu hỏi số 1 của persona); 3 ô trùng (Cao/Chưa-ack/Đang-mở ~87=87)
+                + MTTA gộp thành DẢI PHỤ nhỏ MetricCard size compact. */}
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <Card
+                className={cn(
+                  "flex flex-col justify-center",
+                  counts.critical > 0
+                    ? "border-2 border-destructive xl:col-span-2"
+                    : "xl:col-span-1",
+                )}
+              >
+                <CardContent className="p-4">
+                  <div className="text-sm text-muted-foreground">
+                    {t("opsConsole.kpiCritical", "Critical")}
+                  </div>
+                  {/* W7 GĐ2: số KPI qua fmtNum chuẩn GĐ1 (tách nghìn theo locale). */}
+                  <div
+                    className={cn(
+                      "font-bold tabular-nums text-destructive",
+                      counts.critical > 0 ? "text-4xl" : "text-2xl",
+                    )}
+                  >
+                    {fmtNum(counts.critical)}
+                  </div>
+                </CardContent>
+              </Card>
+              <div
+                className={cn(
+                  "grid grid-cols-2 gap-2",
+                  counts.critical > 0 ? "xl:col-span-1" : "xl:col-span-2 sm:grid-cols-4",
+                )}
+              >
+                <MetricCard size="compact" tone="warning" label={t("opsConsole.kpiHigh", "High")} value={fmtNum(counts.high)} />
+                <MetricCard size="compact" tone="warning" label={t("opsConsole.kpiUnacked", "Unacknowledged")} value={fmtNum(counts.unacked)} />
+                <MetricCard size="compact" label={t("opsConsole.kpiOpen", "Open total")} value={fmtNum(counts.total)} />
+                {/* W1: server (andonRouter.metrics) coalesce avg NULL→0 khi CHƯA có ack
+                    nào trong 24h — nên 0 là sentinel "chưa có dữ liệu", không phải MTTA
+                    0 giây thật → hiển thị "—" thay vì con số gây hiểu nhầm. Nhãn nói rõ
+                    phạm vi: chỉ đo sự kiện Andon, không gồm các nguồn cảnh báo khác. */}
+                <MetricCard
+                  size="compact"
+                  label="MTTA Andon (24h)"
+                  value={
+                    andonMetrics.data == null || !andonMetrics.data.avgMttaSeconds
+                      ? "—"
+                      : `${fmtNum(andonMetrics.data.avgMttaSeconds)}s`
+                  }
+                />
+              </div>
             </div>
 
             {/* W2 (AUD-01): mất cập nhật >2 chu kỳ poll → banner mỏng cảnh báo trên
@@ -851,7 +911,7 @@ export default function OpsConsole() {
 
               {/* ── War Room ── */}
               <TabsContent value="warroom" className="mt-4 space-y-4">
-                {warRoom.length === 0 ? (
+                {groups.length === 0 ? (
                   /* W7 GĐ2 (việc 3): EmptyState allClear chuẩn GĐ1 thay khối Card
                      tự chế — "rỗng" ở war-room là TIN TỐT (ISA-101). */
                   <Card>
@@ -864,7 +924,40 @@ export default function OpsConsole() {
                     </CardContent>
                   </Card>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <>
+                    {/* doc 68 §3.4 (P1): DẢI "CẦN XỬ LÝ TRƯỚC" full-width — nhóm
+                        nghiêm-trọng/quá-hạn nhấc lên đầu, không lẫn vào cột vị trí. */}
+                    {priorityGroups.length > 0 && (
+                      <section className="rounded-lg border-2 border-destructive/60 bg-destructive/5 p-3">
+                        <h2 className="mb-2 flex items-center gap-2 text-sm font-black uppercase tracking-wide text-destructive">
+                          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                          {t("opsConsole.needsActionFirst", "Cần xử lý trước")} ({priorityGroups.length})
+                        </h2>
+                        <div className="grid content-start gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                          {priorityGroups.map((g) => (
+                            <div key={g.gkey}>
+                              <div className="mb-1 truncate text-xs font-semibold uppercase text-muted-foreground">
+                                {g.location}
+                              </div>
+                              <AlertGroupCard
+                                group={g}
+                                pendingKeys={pendingKeys}
+                                onAck={handleAck}
+                                onRequestResolve={handleRequestResolve}
+                                onBulkAck={handleBulkAck}
+                                onBulkResolveRequest={handleBulkResolveRequest}
+                                onOpenDetail={setDetailGroup}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* doc 68 §3.4 (P1): lưới vị trí — 1280 nhận 2 CỘT (hết vỡ chữ),
+                        content-start để cột ngắn không kéo giãn. */}
+                    {warRoom.length > 0 && (
+                  <div className="grid content-start gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3">
                     {warRoom.map(([location, locGroups]) => {
                       const expanded = expandedLocs.has(location);
                       const shown = expanded ? locGroups : locGroups.slice(0, WARROOM_GROUP_CAP);
@@ -888,6 +981,7 @@ export default function OpsConsole() {
                                 onRequestResolve={handleRequestResolve}
                                 onBulkAck={handleBulkAck}
                                 onBulkResolveRequest={handleBulkResolveRequest}
+                                onOpenDetail={setDetailGroup}
                               />
                             ))}
                             {(hidden > 0 || expanded) && (
@@ -908,6 +1002,8 @@ export default function OpsConsole() {
                       );
                     })}
                   </div>
+                    )}
+                  </>
                 )}
               </TabsContent>
 
@@ -1012,8 +1108,15 @@ export default function OpsConsole() {
                               </Badge>
                             </TableCell>
                             <TableCell className="max-w-[280px]">
-                              <div className="truncate font-medium">{a.title}</div>
-                              <div className="truncate text-xs text-muted-foreground">{a.message}</div>
+                              {/* doc 68 §3.4 (P1): bấm tiêu đề → ContextDrawer chi tiết 1 alert. */}
+                              <button
+                                type="button"
+                                className="block w-full text-left"
+                                onClick={() => openAlertDetail(a)}
+                              >
+                                <div className="truncate font-medium underline-offset-2 hover:underline">{a.title}</div>
+                                <div className="truncate text-xs text-muted-foreground">{a.message}</div>
+                              </button>
                             </TableCell>
                             <TableCell className="text-sm">{a.group}</TableCell>
                             <TableCell className="text-sm tabular-nums">
@@ -1099,6 +1202,77 @@ export default function OpsConsole() {
           </>
         )}
 
+        {/* doc 68 §3.4 (P1): ContextDrawer phải — chi tiết nhóm + từng bản ghi +
+            hành động cả-nhóm ở ĐÁY drawer (thay Collapsible bung in-place). Dùng
+            chung cho nhóm War-Room lẫn 1 alert bấm từ Alert Center. */}
+        <ContextDrawer
+          open={detailGroup !== null}
+          onOpenChange={(open) => { if (!open) setDetailGroup(null); }}
+          title={detailGroup?.title ?? ""}
+          description={
+            detailGroup
+              ? `${detailGroup.location} · ${
+                  detailGroup.count > 1
+                    ? t("opsConsole.nRecords", "{{n}} bản ghi", { n: detailGroup.count })
+                    : t("opsConsole.oneRecord", "1 bản ghi")
+                }`
+              : undefined
+          }
+        >
+          {detailGroup && (
+            <div className="flex h-full flex-col gap-3">
+              <ul className="space-y-2">
+                {detailGroup.items.map((a) => (
+                  <li key={a.key} className="rounded-md border p-2 text-sm">
+                    <p className="line-clamp-3">{a.message || a.title}</p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        <AgeLabel raisedAt={a.raisedAt} /> trước{a.acknowledged && " · ACK"}
+                      </span>
+                      <div className="flex flex-wrap justify-end gap-1">
+                        {!isResolveOnly(a.source) && !a.acknowledged && (
+                          <Button size="sm" variant="secondary" className="h-9" disabled={pendingKeys.has(a.key)} onClick={() => handleAck(a)}>
+                            Xác nhận
+                          </Button>
+                        )}
+                        {!isAckOnly(a.source) && (
+                          <Button size="sm" variant="outline" className="h-9" disabled={pendingKeys.has(a.key)} onClick={() => handleRequestResolve(a)}>
+                            Xử lý xong
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {/* Hành động CẢ-NHÓM ở đáy drawer (chỉ khi nhóm >1). */}
+              {detailGroup.count > 1 && (
+                <div className="mt-auto flex flex-wrap gap-2 border-t pt-3">
+                  {isResolveOnly(detailGroup.source) ? (
+                    <Button
+                      className="h-11 flex-1"
+                      variant="outline"
+                      disabled={detailGroup.items.some((i) => pendingKeys.has(i.key))}
+                      onClick={() => handleBulkResolveRequest(detailGroup)}
+                    >
+                      Xử lý cả nhóm ({detailGroup.count})
+                    </Button>
+                  ) : detailGroup.unackedCount > 0 ? (
+                    <Button
+                      className="h-11 flex-1"
+                      disabled={detailGroup.items.some((i) => pendingKeys.has(i.key))}
+                      onClick={() => handleBulkAck(detailGroup)}
+                    >
+                      Xác nhận cả nhóm ({detailGroup.unackedCount})
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          )}
+        </ContextDrawer>
+
         {/* W1: interlock/MQTT chỉ có mutation RESOLVE (đóng vĩnh viễn, server không
             có ack riêng) → hành động phải qua bước xác nhận tường minh — W3 mở rộng
             cho cả-nhóm/bulk (nhiều id một lượt). */}
@@ -1137,16 +1311,5 @@ export default function OpsConsole() {
         </AlertDialog>
       </div>
     </DashboardLayout>
-  );
-}
-
-function Kpi({ label, value, accent }: { label: string; value: number | string; accent?: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-sm text-muted-foreground">{label}</div>
-        <div className={`text-2xl font-bold ${accent ?? ""}`}>{value}</div>
-      </CardContent>
-    </Card>
   );
 }

@@ -402,12 +402,12 @@
       "oee": "Live OEE",
       "noOee": "No live telemetry",
       "machinesReporting": "{{count}} machines reporting",
-      "yield": "Yield (today)",
-      "finalYield": "Final yield",
-      "fpy": "FPY (today)",
-      "firstPass": "First-pass yield",
-      "output": "Output (today)",
-      "inspected": "Units inspected",
+      "yield": "Yield",
+      "finalYield": "Final yield · today",
+      "fpy": "FPY",
+      "firstPass": "First-pass yield · today",
+      "output": "Output",
+      "inspected": "Units inspected · today",
       "planAttainment": "Plan attainment (on pace)",
       "planRestricted": "Requires production-monitoring access",
       "noPlan": "No plan target set for today",
@@ -417,10 +417,15 @@
     "risks": {
       "title": "Top risks",
       "empty": "No active risks flagged",
-      "untitled": "Risk"
+      "untitled": "Risk",
+      "acknowledge": "Acknowledge",
+      "acknowledged": "Risk acknowledged",
+      "dismissAction": "Dismiss",
+      "dismissedToast": "Risk dismissed"
     },
     "ai": {
       "title": "AI summary",
+      "lead": "Executive headline",
       "viewFull": "Full report",
       "empty": "No executive report yet.",
       "emptyHint": "Scheduled summaries appear here; generate one in Management Insight.",
@@ -447,7 +452,9 @@
       "actionFailed": "Could not complete the action",
       "confirmTitle": "Approve this AI action?",
       "confirmBody": "The proposed action below will be executed immediately.",
-      "openItemAria": "Review in full inbox: {{title}}"
+      "openItemAria": "Review: {{title}}",
+      "proposalHint": "Approve to run this AI action now, or dismiss it.",
+      "deepLinkHint": "This approval needs segregation-of-duties context — complete it in the full inbox."
     },
     "links": {
       "title": "More",

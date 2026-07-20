@@ -35,6 +35,7 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import DashboardLayout from "@/components/DashboardLayout";
 import { RelatedViews } from "@/components/RelatedViews";
+import { ContextDrawer } from "@/components/workspace/ContextDrawer";
 import {
   useEcosystemEvents,
   type EcosystemEvent,
@@ -44,9 +45,8 @@ import {
   MetricCard,
   EmptyState,
   SectionCard,
+  Sparkline,
   chartTooltipStyle,
-  chartGridProps,
-  chartAxisTick,
 } from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -78,13 +78,9 @@ import {
   BarChart3,
   Info,
   Crosshair,
+  ExternalLink,
 } from "lucide-react";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   PieChart,
@@ -230,6 +226,8 @@ export default function DrillDownDashboard(): React.JSX.Element {
   //    Đổi kỳ chỉ ghi URL (replace, GIỮ nguyên drill params) → không rác history.
   const range = params.range;
   const rangeFrom = drillRangeFrom(range);
+  // doc 68 §3.6 (việc 5): nhãn kỳ trùng Select đã bỏ; chuỗi kỳ vẫn dùng làm nhãn
+  // kỳ cho khối KPI trong ContextDrawer máy (KPI ăn theo kỳ đã chọn).
   const rangeLabel = DRILL_RANGE_LABELS[range];
   // Input kỳ truyền xuống cả 4 tầng (máy cũng nhận — thiếu thì tổng các tầng lệch).
   const periodInput = rangeFrom ? { from: rangeFrom } : {};
@@ -470,6 +468,49 @@ export default function DrillDownDashboard(): React.JSX.Element {
   const openLineView = useCallback((lineId: number) => setLocation(`/line-view/${lineId}`), [setLocation]);
   const openCockpit = useCallback((machineId: number) => setLocation(`/machine/${machineId}`), [setLocation]);
 
+  // ── doc 68 §3.6 (việc 2): tầng máy click → ContextDrawer preview (thay hard-
+  //    navigate rời trang). Drawer hiện KPI máy (từ row đã có) + sparkline lịch
+  //    sử NG theo kỳ + top điểm-đo lỗi; "Mở buồng lái" = CTA bước-2. Giữ danh
+  //    sách rank phía sau để so sánh máy liên tiếp. ────────────────────────────
+  const [previewMachine, setPreviewMachine] = useState<DrillRow | null>(null);
+  const previewMachineId = previewMachine?.id ?? null;
+
+  // Cửa sổ sparkline độc lập với KPI-range: KPI ăn theo kỳ đã chọn (từ row), còn
+  // sparkline luôn cần ≥7 ngày để đọc được XU HƯỚNG (kỳ "Hôm nay" 1 điểm là vô
+  // nghĩa). Memo theo range → chuỗi ISO ổn định giữa các render (không refetch
+  // loạn). Trần 30 ngày, an toàn dưới ràng buộc ≤90 ngày của endpoint.
+  const previewWindow = useMemo(() => {
+    const days = range === "30d" || range === "all" ? 30 : 7;
+    const end = new Date();
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (days - 1));
+    return { days, startDate: start.toISOString(), endDate: end.toISOString() };
+  }, [range]);
+
+  // Chỉ fetch khi drawer mở & máy có id thật. retry:false + xử lý lỗi tại chỗ
+  // (endpoint analytics có canary-gate: non-admin ngoài rollout → FORBIDDEN;
+  // honest-degradation thay vì spinner treo). Số liệu là inspection thật.
+  const previewTrendQ = trpc.aiInspectionAnalytics.defectTrend.useQuery(
+    { machineId: previewMachineId ?? 0, startDate: previewWindow.startDate, endDate: previewWindow.endDate },
+    { enabled: previewMachineId != null, retry: false, staleTime: 60_000 },
+  );
+  const previewParetoQ = trpc.aiInspectionAnalytics.defectPareto.useQuery(
+    { machineId: previewMachineId ?? 0, startDate: previewWindow.startDate, endDate: previewWindow.endDate },
+    { enabled: previewMachineId != null, retry: false, staleTime: 60_000 },
+  );
+  // Chuỗi NG theo ngày (sparkline) + top-5 điểm-đo lỗi (Pareto theo TÊN điểm đo).
+  const previewTrend = previewTrendQ.data ?? [];
+  const previewTrendNg = previewTrend.map((p) => p.fail);
+  const previewTrendNgTotal = previewTrendNg.reduce((a, b) => a + b, 0);
+  const previewPareto = (previewParetoQ.data ?? []).slice(0, 5);
+  const previewParetoMax = Math.max(...previewPareto.map((p) => p.count), 1);
+  const openPreviewCockpit = useCallback(() => {
+    const id = previewMachine?.id;
+    setPreviewMachine(null);
+    if (id != null) openCockpit(id);
+  }, [previewMachine, openCockpit]);
+
   // ── Current level's rows + rollup ──
   const rows = useMemo<DrillRow[]>(() => {
     let data: AnyStat[] = [];
@@ -498,8 +539,20 @@ export default function DrillDownDashboard(): React.JSX.Element {
               "Kết quả kiểm tra có mã nhà máy không khớp danh mục (hoặc thiếu) — gán trong Quản lý dữ liệu.",
           };
         })
-        // W1: xếp các bucket "chưa gán" xuống cuối (sort ổn định — giữ thứ tự theo total).
-        .sort((a, b) => Number(a.isUnassigned ?? false) - Number(b.isUnassigned ?? false))
+        // doc 68 §3.6 (việc 1) — RANK THEO MỨC XẤU: job của trang là "yield tụt ở
+        // ĐÂU", nên node tệ nhất phải nổi lên ĐẦU danh sách (không phải quét từng
+        // dòng theo total). Thứ tự: (1) bucket "chưa gán" luôn cuối; (2) node
+        // KHÔNG sản lượng (total≤0) chìm dưới node đang chạy — 0% không phải
+        // "yield tệ" mà là "đứng im"; (3) trong nhóm đã-gán & có sản lượng: yield
+        // TĂNG DẦN (thấp nhất = tụt nhất lên đầu), hoà thì NG nhiều hơn lên trước.
+        .sort((a, b) => {
+          const ua = Number(a.isUnassigned ?? false) - Number(b.isUnassigned ?? false);
+          if (ua !== 0) return ua;
+          const pa = Number(a.total <= 0) - Number(b.total <= 0);
+          if (pa !== 0) return pa;
+          if (a.yieldRate !== b.yieldRate) return a.yieldRate - b.yieldRate;
+          return b.ng - a.ng;
+        })
     );
   }, [drillState.level, corporateStats, factoryStats, lineStats, machineStats]);
 
@@ -621,6 +674,12 @@ export default function DrillDownDashboard(): React.JSX.Element {
   // W4: donut center total + legend figures (outer labels overflowed the card
   // edge and collided with the chat FAB).
   const pieSum = pieData.reduce((acc, d) => acc + d.value, 0);
+  // doc 68 §3.6 (việc 5): donut co lại khi THƯA (≤2 lát, ví dụ chỉ OK/NG) —
+  // vòng nhỏ 250→180px hết phình nửa card cho 1-2 điểm dữ liệu.
+  const donutSparse = pieData.length <= 2;
+  const donutHeight = donutSparse ? 180 : 240;
+  const donutInner = donutSparse ? 46 : 60;
+  const donutOuter = donutSparse ? 64 : 80;
 
   // ── Level presentation (title + node icon + how a row behaves) ──
   const levelMeta = {
@@ -655,11 +714,12 @@ export default function DrillDownDashboard(): React.JSX.Element {
     // Riêng tầng corporate, "Chưa gán tập đoàn" VẪN drill được (server hiểu
     // sentinel 'Unknown' = corporateCode NULL).
     if (row.isUnassigned && drillState.level !== "corporate") {
-      return { onDrill: undefined, leafAction: undefined };
+      return { onDrill: undefined, onPreview: undefined, leafAction: undefined };
     }
     if (drillState.level === "line") {
       return {
         onDrill: () => drillInto(row),
+        onPreview: undefined,
         leafAction:
           row.id != null
             ? {
@@ -671,21 +731,17 @@ export default function DrillDownDashboard(): React.JSX.Element {
       };
     }
     if (drillState.level === "machine") {
-      // Leaf tier: the whole row opens the cockpit (no deeper drill).
+      // doc 68 §3.6: tầng lá — click hàng mở ContextDrawer preview (KPI +
+      // sparkline NG + top điểm-đo lỗi) thay vì hard-navigate; "Mở buồng lái"
+      // là CTA trong drawer. Máy chưa có id thật → không mở preview được.
       return {
         onDrill: undefined,
-        leafAction:
-          row.id != null
-            ? {
-                label: t("dashboard.drill.openCockpit", "Open Cockpit"),
-                ariaLabel: t("dashboard.drill.openCockpitAria", "Open cockpit for {{name}}", { name: row.name }),
-                onClick: () => openCockpit(row.id!),
-              }
-            : undefined,
+        onPreview: row.id != null ? () => setPreviewMachine(row) : undefined,
+        leafAction: undefined,
       };
     }
     // corporate / factory: click continues drilling, no leaf-out.
-    return { onDrill: () => drillInto(row), leafAction: undefined };
+    return { onDrill: () => drillInto(row), onPreview: undefined, leafAction: undefined };
   };
 
   return (
@@ -705,20 +761,17 @@ export default function DrillDownDashboard(): React.JSX.Element {
           connected={liveConnected}
         />
 
-        {/* doc 67 W5 (việc 6) — rail 2-chiều từ map tập trung (RelatedViews.tsx). */}
-        <RelatedViews pageId="drill-down" />
-
-        {/* doc 67 W6 — bộ chọn kỳ dữ liệu + nhãn kỳ ngay cạnh 4 MetricCard tổng:
-            số liệu bên dưới LUÔN khai rõ thuộc kỳ nào (trước đây là "toàn bộ
-            lịch sử cắt 50k" không khai kỳ). State kỳ nằm trong URL (?range=). */}
+        {/* doc 68 §3.6 (việc 5) — bộ chọn kỳ dữ liệu: BỎ nhãn "Kỳ: {rangeLabel}"
+            trùng giá trị đang hiện trong Select (chỉ giữ caption tĩnh + Select).
+            RelatedViews đã đẩy xuống chân trang (rail phụ, không phải đường chính).
+            State kỳ nằm trong URL (?range=). */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">
-            Kỳ dữ liệu:{" "}
-            <span className="font-medium text-foreground">{rangeLabel}</span>
-          </p>
+          <label htmlFor="drill-range" className="text-sm text-muted-foreground">
+            {t("dashboard.dataPeriod", "Kỳ dữ liệu")}
+          </label>
           <Select value={range} onValueChange={handleRangeChange}>
             {/* W4 touch: min-h-11 (44px) — operator panel-PC với găng tay. */}
-            <SelectTrigger className="min-h-11 w-[180px]" aria-label="Chọn kỳ dữ liệu">
+            <SelectTrigger id="drill-range" className="min-h-11 w-[180px]" aria-label="Chọn kỳ dữ liệu">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -776,6 +829,24 @@ export default function DrillDownDashboard(): React.JSX.Element {
               icon={<BarChart3 className="h-5 w-5" />}
               title={levelMeta.title}
               description={levelMeta.hint}
+              // doc 68 §3.6 (việc 4): "Đi tới điểm xấu nhất" NỔI ở cạnh tiêu đề
+              // danh sách (trước chôn trong Quick-stats outline/sm) — đây là hành
+              // động chính của job "yield tụt ở đâu": tự drill nhánh yield thấp
+              // nhất tới tầng máy của line xấu nhất.
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  className="min-h-11 shrink-0 gap-1.5"
+                  onClick={() => void goToWorstPath()}
+                  disabled={walkingToWorst || isLoading || worstRow == null}
+                >
+                  <Crosshair className="h-4 w-4" />
+                  <span className="hidden sm:inline">
+                    {walkingToWorst ? "Đang tìm điểm xấu nhất…" : "Đi tới điểm xấu nhất"}
+                  </span>
+                </Button>
+              }
             >
               {isLoading ? (
                 <div className="space-y-4">
@@ -797,6 +868,7 @@ export default function DrillDownDashboard(): React.JSX.Element {
                         maxNg={maxNg}
                         icon={levelMeta.icon}
                         onDrill={behaviour.onDrill}
+                        onPreview={behaviour.onPreview}
                         leafAction={behaviour.leafAction}
                         // W8 (việc 3): deep-link ?focus=<machineCode> / node xấu nhất → ring 5s.
                         highlighted={highlightCode != null && row.code === highlightCode}
@@ -818,16 +890,17 @@ export default function DrillDownDashboard(): React.JSX.Element {
                   {t("common.noData", "No data")}
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height={250}>
+                <ResponsiveContainer width="100%" height={donutHeight}>
                   {/* W4: bỏ label ngoài + labelLine (tràn mép card, bị FAB chat đè) —
-                      tổng vào tâm donut, số liệu từng phần vào Legend. */}
+                      tổng vào tâm donut, số liệu từng phần vào Legend.
+                      doc 68 §3.6: bán kính co theo mật độ dữ liệu (donutSparse). */}
                   <PieChart>
                     <Pie
                       data={pieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
+                      innerRadius={donutInner}
+                      outerRadius={donutOuter}
                       paddingAngle={5}
                       dataKey="value"
                       label={false}
@@ -898,51 +971,163 @@ export default function DrillDownDashboard(): React.JSX.Element {
                     <Badge variant="outline">—</Badge>
                   )}
                 </div>
-                {/* W8 (việc 2): tự drill theo nhánh yield thấp nhất qua các tầng
-                    (corporate→factory→line), dừng ở tầng máy của line xấu nhất. */}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="min-h-11 w-full gap-1.5"
-                  onClick={() => void goToWorstPath()}
-                  disabled={walkingToWorst || isLoading || worstRow == null}
-                >
-                  <Crosshair className="h-4 w-4" />
-                  {walkingToWorst ? "Đang tìm điểm xấu nhất…" : "Đi tới điểm xấu nhất"}
-                </Button>
+                {/* doc 68 §3.6 (việc 4): nút "Đi tới điểm xấu nhất" đã chuyển lên
+                    cạnh tiêu đề danh sách (nổi hơn) — Quick-stats chỉ còn số liệu. */}
               </div>
             </SectionCard>
           </div>
         </div>
 
-        {/* Bar chart comparison — W4: nói rõ khi chỉ vẽ 10/N hàng đầu (slice(0,10)). */}
-        <SectionCard
-          title={t("dashboard.productionComparison", "Production comparison")}
-          description={rows.length > 10 ? `Top 10 / ${rows.length}` : undefined}
-        >
-          {isLoading ? (
-            <Skeleton className="h-80 w-full" />
-          ) : rows.length === 0 ? (
-            <div className="flex h-80 items-center justify-center text-muted-foreground">
-              {t("common.noData", "No data")}
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={rows.slice(0, 10)}>
-                <CartesianGrid {...chartGridProps} />
-                <XAxis dataKey="name" tick={chartAxisTick} interval={0} angle={-45} textAnchor="end" height={80} />
-                <YAxis tick={chartAxisTick} />
-                <Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => value.toLocaleString()} />
-                <Legend />
-                <Bar dataKey="ok" name="OK" fill="var(--success)" />
-                <Bar dataKey="ng" name="NG" fill="var(--destructive)" />
-                <Bar dataKey="ntf" name="NTF" fill="var(--warning)" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </SectionCard>
+        {/* doc 68 §3.6 (việc 3): ĐÃ BỎ bar chart đáy — nó lặp lại đúng progress
+            bar OK/NG đã có trong mỗi DrillNode. Danh sách giờ RANK theo mức xấu
+            (việc 1) + sparkline NG trong drawer máy (việc 2) đã phục vụ trọn câu
+            hỏi "yield tụt ở đâu", nên khối trùng này chỉ tổ nhiễu → gỡ hẳn. */}
+
+        {/* doc 68 §3.6 (việc 5): RelatedViews xuống chân trang — rail 2-chiều là
+            lối tắt PHỤ, không chiếm vùng đắt giá đầu trang nữa. */}
+        <RelatedViews pageId="drill-down" />
       </div>
+
+      {/* doc 68 §3.6 (việc 2): ContextDrawer preview máy — click hàng máy mở
+          overlay phải (KPI + sparkline NG lịch sử + top điểm-đo lỗi), giữ danh
+          sách rank phía sau để so sánh máy liên tiếp. "Mở buồng lái" = CTA bước-2. */}
+      <ContextDrawer
+        open={previewMachine != null}
+        onOpenChange={(open) => {
+          if (!open) setPreviewMachine(null);
+        }}
+        title={
+          <span className="flex items-center gap-2">
+            <Cpu className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate">{previewMachine?.name}</span>
+          </span>
+        }
+        description={
+          previewMachine
+            ? [previewMachine.code, drillState.lineName].filter(Boolean).join(" · ")
+            : undefined
+        }
+      >
+        {previewMachine && (
+          <div className="space-y-5">
+            {/* KPI máy — ăn theo KỲ đã chọn (từ row rollup, không fetch thêm). */}
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t("dashboard.machineKpiPeriod", "KPI · kỳ {{period}}", { period: rangeLabel })}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <MetricCard
+                  size="compact"
+                  label={t("dashboard.totalProduction", "Output")}
+                  value={previewMachine.total.toLocaleString()}
+                  icon={<Activity className="h-4 w-4" />}
+                  tone="info"
+                />
+                <MetricCard
+                  size="compact"
+                  label={t("dashboard.okProducts", "OK")}
+                  value={previewMachine.ok.toLocaleString()}
+                  icon={<CheckCircle2 className="h-4 w-4" />}
+                  tone="good"
+                />
+                <MetricCard
+                  size="compact"
+                  label={t("dashboard.ngProducts", "NG")}
+                  value={previewMachine.ng.toLocaleString()}
+                  icon={<XCircle className="h-4 w-4" />}
+                  tone="danger"
+                />
+                <MetricCard
+                  size="compact"
+                  label={t("dashboard.yieldRate", "Yield")}
+                  value={`${previewMachine.yieldRate.toFixed(1)}%`}
+                  icon={<TrendingUp className="h-4 w-4" />}
+                  tone={previewMachine.yieldRate >= 95 ? "good" : previewMachine.yieldRate >= 90 ? "warning" : "danger"}
+                />
+              </div>
+            </div>
+
+            {/* Sparkline lịch sử NG theo ngày — cửa sổ ≥7 ngày để đọc XU HƯỚNG. */}
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {t("dashboard.ngHistoryDays", "NG {{n}} ngày gần đây", { n: previewWindow.days })}
+                </p>
+                {!previewTrendQ.isLoading && !previewTrendQ.isError && previewTrend.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {t("dashboard.ngTotalShort", "Tổng NG {{n}}", { n: previewTrendNgTotal.toLocaleString() })}
+                  </span>
+                )}
+              </div>
+              {previewTrendQ.isLoading ? (
+                <Skeleton className="h-12 w-full" />
+              ) : previewTrendQ.isError ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("dashboard.analyticsUnavailable", "Phân tích không khả dụng cho tài khoản này.")}
+                </p>
+              ) : previewTrend.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("dashboard.noNgInPeriod", "Không có NG trong kỳ.")}
+                </p>
+              ) : (
+                <Sparkline
+                  data={previewTrendNg}
+                  tone="critical"
+                  showArea
+                  showEndDot
+                  width={372}
+                  height={48}
+                  className="w-full"
+                  aria-label={t("dashboard.ngHistoryAria", "Lịch sử NG {{n}} ngày", { n: previewWindow.days })}
+                />
+              )}
+            </div>
+
+            {/* Top điểm-đo lỗi (Pareto theo TÊN điểm đo) — "tụt ở ĐÂU trên board". */}
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t("dashboard.topDefectPoints", "Top điểm-đo lỗi")}
+              </p>
+              {previewParetoQ.isLoading ? (
+                <Skeleton className="h-20 w-full" />
+              ) : previewParetoQ.isError ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("dashboard.analyticsUnavailable", "Phân tích không khả dụng cho tài khoản này.")}
+                </p>
+              ) : previewPareto.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("dashboard.noDefectPoints", "Không có điểm-đo lỗi trong kỳ.")}
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {previewPareto.map((p, i) => (
+                    <li key={`${p.defectType}-${i}`} className="space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="min-w-0 truncate">{p.defectType}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {p.count.toLocaleString()} · {p.percentage.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-destructive"
+                          style={{ width: `${(p.count / previewParetoMax) * 100}%` }}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* CTA bước-2: mở buồng lái đầy đủ (đóng drawer rồi điều hướng). */}
+            <Button className="min-h-11 w-full gap-1.5" onClick={openPreviewCockpit}>
+              {t("dashboard.drill.openCockpit", "Open Cockpit")}
+              <ExternalLink className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </ContextDrawer>
     </DashboardLayout>
   );
 }

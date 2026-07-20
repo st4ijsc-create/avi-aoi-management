@@ -46,9 +46,10 @@ export interface MetricCardProps {
   /**
    * Kích thước card (doc 40 §13.3 content-first). `default` giữ nguyên bản gốc
    * (~110px). `compact` thu gọn padding / cỡ số / icon để trả không gian dọc cho
-   * nội dung chính. Mặc định `default` → không phá caller hiện tại.
+   * nội dung chính. `hero` (doc 68 §3.7) phóng số LỚN (text-4xl→5xl) cho dải chỉ
+   * số điều hành đọc-trong-5s. Mặc định `default` → không phá caller hiện tại.
    */
-  size?: "default" | "compact";
+  size?: "default" | "compact" | "hero";
   className?: string;
 }
 
@@ -63,32 +64,35 @@ export function MetricCard({
 }: MetricCardProps) {
   const toneCls = TONE_CLASS[tone];
   const compact = size === "compact";
+  const hero = size === "hero";
+  // Byte-identical với bản cũ cho default/compact; chỉ `hero` mở nhánh mới.
+  const contentCls = hero
+    ? "flex items-center gap-4 p-5"
+    : compact
+      ? "flex items-center gap-2.5 p-2.5"
+      : "flex items-center gap-3 p-4";
+  const iconCls = hero
+    ? "flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary [&_svg]:h-6 [&_svg]:w-6"
+    : compact
+      ? "flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary [&_svg]:h-4 [&_svg]:w-4"
+      : "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary";
+  const valueCls = hero ? "text-4xl md:text-5xl" : compact ? "text-lg" : "text-2xl";
+  const labelCls = hero
+    ? "truncate text-sm font-medium text-muted-foreground"
+    : "truncate text-xs text-muted-foreground";
   return (
     <Card className={className}>
-      <CardContent
-        className={
-          compact ? "flex items-center gap-2.5 p-2.5" : "flex items-center gap-3 p-4"
-        }
-      >
+      <CardContent className={contentCls}>
         {icon != null && (
-          <div
-            aria-hidden="true"
-            className={
-              compact
-                ? "flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary [&_svg]:h-4 [&_svg]:w-4"
-                : "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-            }
-          >
+          <div aria-hidden="true" className={iconCls}>
             {icon}
           </div>
         )}
         <div className="min-w-0">
-          <div
-            className={`${compact ? "text-lg" : "text-2xl"} font-bold tabular-nums ${toneCls}`}
-          >
+          <div className={`${valueCls} font-bold tabular-nums ${toneCls}`}>
             {value}
           </div>
-          <div className="truncate text-xs text-muted-foreground">{label}</div>
+          <div className={labelCls}>{label}</div>
           {delta != null && (
             <div className="truncate text-xs text-muted-foreground">{delta}</div>
           )}

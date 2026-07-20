@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronRight, ExternalLink, PanelRightOpen } from "lucide-react";
 
 /** Normalised KPI row shared by every drill tier. */
 export interface DrillRow {
@@ -55,6 +55,13 @@ export interface DrillNodeProps {
   maxNg?: number;
   /** Continue drilling into this node's children. Undefined for a leaf tier. */
   onDrill?: () => void;
+  /**
+   * doc 68 §3.6 (việc 2): tầng máy (lá) — click hàng KHÔNG rời trang nữa mà mở
+   * ContextDrawer preview (KPI + sparkline NG + top điểm-đo lỗi) để so sánh máy
+   * liên tiếp trên nền danh sách. "Mở buồng lái" là CTA bước-2 TRONG drawer.
+   * Ưu tiên thấp hơn onDrill (tầng còn drill được vẫn drill), cao hơn leafAction.
+   */
+  onPreview?: () => void;
   /** Explicit leaf-out action (Open Line View / Open Cockpit). */
   leafAction?: DrillNodeLeafAction;
   /** Small tier icon shown before the name. */
@@ -79,12 +86,14 @@ export function DrillNode({
   maxValue,
   maxNg,
   onDrill,
+  onPreview,
   leafAction,
   icon,
   highlighted,
 }: DrillNodeProps): React.JSX.Element {
-  // Whole-row click: prefer continuing the drill; otherwise (leaf) open the cockpit.
-  const primary = onDrill ?? leafAction?.onClick;
+  // Whole-row click: prefer continuing the drill; else open the preview drawer
+  // (leaf/machine tier); else fall back to the explicit leaf-out action.
+  const primary = onDrill ?? onPreview ?? leafAction?.onClick;
   const interactive = typeof primary === "function";
 
   // W8 (việc 3): khi được highlight (deep-link Andon/alarm) tự cuộn node vào
@@ -145,6 +154,8 @@ export function DrillNode({
         <div className="flex shrink-0 items-center gap-2">
           <Badge variant={yieldTone(data.yieldRate)}>{data.yieldRate.toFixed(1)}%</Badge>
           {onDrill && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          {/* doc 68 §3.6: tầng máy — icon "mở panel phải" báo hiệu click = preview drawer. */}
+          {!onDrill && onPreview && <PanelRightOpen className="h-4 w-4 text-muted-foreground" />}
         </div>
       </div>
 

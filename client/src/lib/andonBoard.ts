@@ -24,6 +24,11 @@ export interface AndonBoardParams {
   warnPct: number;
   critPct: number;
   sound: boolean; // W8: chime on new andon raise (default true, ?sound=0 off)
+  // doc 68 §3.5: wall-TV persona (?kiosk=1|true — same flag useKioskMode reads).
+  // The board hides interactive chrome (lookup/ack/gear/freshness) and defaults
+  // the auto-cycle ON so no line is ever clipped below the fold with nobody to
+  // scroll. Operator/mobile (no ?kiosk) keep the interactive chrome + static view.
+  kiosk: boolean;
 }
 
 export const ANDON_DEFAULT_WARN_PCT = 95;
@@ -59,7 +64,29 @@ export function parseAndonBoardParams(search: string): AndonBoardParams {
   const soundRaw = params.get("sound");
   const sound = !(soundRaw === "0" || soundRaw === "false" || soundRaw === "off");
 
-  return { cycleSec, lineIds, factoryId, theme, warnPct, critPct, sound };
+  // doc 68 §3.5: same flag useKioskMode reads ("1"/"true").
+  const kioskRaw = params.get("kiosk");
+  const kiosk = kioskRaw === "1" || kioskRaw === "true";
+
+  return { cycleSec, lineIds, factoryId, theme, warnPct, critPct, sound, kiosk };
+}
+
+/**
+ * doc 68 §3.5 (P1): a red/call andon tile must say WHY it is red — readable from
+ * 5–10 m — not a yield number or "—". Prefer the andon title/reason (already a
+ * human phrase like "Kẹt băng tải"), trimmed to the first two words and
+ * upper-cased so it fits a small tile; fall back to a state word when the event
+ * carries no text. `red` = a stop, `call` = an assistance call.
+ */
+export function andonTileReason(input: {
+  title?: string | null;
+  reason?: string | null;
+  state?: "call" | "red" | "yellow" | string | null;
+}): string {
+  const raw = (input.title ?? "").trim() || (input.reason ?? "").trim();
+  if (raw) return raw.split(/\s+/).slice(0, 2).join(" ").toUpperCase();
+  if (input.state === "call") return "GỌI HỖ TRỢ";
+  return "DỪNG";
 }
 
 /**

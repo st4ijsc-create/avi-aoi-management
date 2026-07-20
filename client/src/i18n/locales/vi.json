@@ -402,12 +402,12 @@
       "oee": "OEE trực tiếp",
       "noOee": "Chưa có dữ liệu trực tiếp",
       "machinesReporting": "{{count}} máy đang báo",
-      "yield": "Tỷ lệ đạt (hôm nay)",
-      "finalYield": "Tỷ lệ đạt cuối",
-      "fpy": "FPY (hôm nay)",
-      "firstPass": "Đạt lần đầu",
-      "output": "Sản lượng (hôm nay)",
-      "inspected": "Sản phẩm đã kiểm",
+      "yield": "Tỷ lệ đạt",
+      "finalYield": "Tỷ lệ đạt cuối · hôm nay",
+      "fpy": "FPY",
+      "firstPass": "Đạt lần đầu · hôm nay",
+      "output": "Sản lượng",
+      "inspected": "Sản phẩm đã kiểm · hôm nay",
       "planAttainment": "Đạt kế hoạch (theo tiến độ)",
       "planRestricted": "Cần quyền giám sát sản xuất",
       "noPlan": "Chưa đặt mục tiêu kế hoạch hôm nay",
@@ -417,10 +417,15 @@
     "risks": {
       "title": "Rủi ro hàng đầu",
       "empty": "Không có rủi ro nào đang hoạt động",
-      "untitled": "Rủi ro"
+      "untitled": "Rủi ro",
+      "acknowledge": "Xác nhận",
+      "acknowledged": "Đã xác nhận rủi ro",
+      "dismissAction": "Bỏ qua",
+      "dismissedToast": "Đã bỏ qua rủi ro"
     },
     "ai": {
       "title": "Tóm tắt AI",
+      "lead": "Câu điều hành hàng đầu",
       "viewFull": "Báo cáo đầy đủ",
       "empty": "Chưa có báo cáo điều hành.",
       "emptyHint": "Báo cáo theo lịch sẽ hiện ở đây; tạo một báo cáo trong Insight Quản lý.",
@@ -447,7 +452,9 @@
       "actionFailed": "Không thể hoàn tất hành động",
       "confirmTitle": "Duyệt hành động AI này?",
       "confirmBody": "Hành động đề xuất bên dưới sẽ được thực thi ngay.",
-      "openItemAria": "Xem trong hộp thư đầy đủ: {{title}}"
+      "openItemAria": "Xem: {{title}}",
+      "proposalHint": "Duyệt để chạy hành động AI này ngay, hoặc bỏ qua.",
+      "deepLinkHint": "Phê duyệt này cần ngữ cảnh phân tách nhiệm vụ — hoàn tất trong hộp thư đầy đủ."
     },
     "links": {
       "title": "Thêm",

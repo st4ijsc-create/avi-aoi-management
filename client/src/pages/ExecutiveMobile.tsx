@@ -59,6 +59,7 @@ import { OfflineBanner } from "@/components/OfflineBanner";
 import { PollFreshness } from "@/components/PollFreshness";
 import { RelatedViews } from "@/components/RelatedViews";
 import { EmptyState } from "@/components/EmptyState";
+import { ContextDrawer } from "@/components/workspace/ContextDrawer";
 import { fmtInt, fmtIntCompact, fmtPct } from "@/lib/format";
 import {
   oeeTone,
@@ -565,6 +566,37 @@ export default function ExecutiveMobile(): React.JSX.Element {
     [dismissM, t, invalidateAiInbox],
   );
 
+  // ── doc 68 §3.9 (P2) — right-side ContextDrawer for risk / approval detail ────
+  // Clicking a risk or approval row opens the shared ContextDrawer (Sheet, right)
+  // INSTEAD of hard-navigating to /approvals-inbox — the exec reads (and, where the
+  // action is safe, acts) without losing the briefing behind it. Risks acknowledge
+  // in place via the EXISTING aiInsight.setStatus (advisory, no SoD). AI proposals
+  // keep the 1-tap Duyệt/Bỏ qua (reusing the same confirm/dismiss flow). Threshold +
+  // deploy stay deep-link only (SoD / step-up-2FA live in the full inbox); each
+  // drawer surfaces an "Open full inbox" CTA as the step-2.
+  const [riskDrawer, setRiskDrawer] = useState<(typeof topRisks)[number] | null>(null);
+  const [approvalDrawer, setApprovalDrawer] = useState<(typeof approvalItems)[number] | null>(null);
+  const insightStatusM = trpc.aiInsight.setStatus.useMutation();
+  const riskActionBusy = insightStatusM.isPending;
+  const setRiskStatus = useCallback(
+    async (id: number, status: "acknowledged" | "dismissed") => {
+      try {
+        await insightStatusM.mutateAsync({ id, status });
+        toast.success(
+          status === "acknowledged"
+            ? t("executiveMobile.risks.acknowledged", "Risk acknowledged")
+            : t("executiveMobile.risks.dismissedToast", "Risk dismissed"),
+        );
+      } catch {
+        toast.error(t("executiveMobile.approvals.actionFailed", "Could not complete the action"));
+      } finally {
+        void utils.aiInsight.list.invalidate();
+        setRiskDrawer(null);
+      }
+    },
+    [insightStatusM, t, utils],
+  );
+
   const approvalsLoading =
     (canViewThresholds && thresholdQ.isLoading) ||
     aiInboxQ.isLoading ||
@@ -644,6 +676,30 @@ export default function ExecutiveMobile(): React.JSX.Element {
             trang đã rút khỏi menu, đường về Tổng quan nhà máy + Tổng quan tập đoàn. */}
         <RelatedViews pageId="executive" />
 
+        {/* ── LEAD (doc 68 §3.9 P1) — the AI's single #1 executive sentence lifted
+            OUT of the AI card to a full-width hero band above the grid / first in
+            the mobile DOM. The exec anchors on it in 5-10s; the full AI narrative
+            (highlights/risks) still renders in the card below. Only on a clean,
+            non-degenerate headline (looksDegenerate already filtered cleanHeadline). */}
+        {cleanHeadline && (
+          <section
+            aria-label={t("executiveMobile.ai.lead", "Executive headline")}
+            className="min-w-0"
+          >
+            <div className="flex items-start gap-3 rounded-lg border bg-muted/40 p-4">
+              <span
+                aria-hidden
+                className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+              >
+                <Sparkles className="h-5 w-5" />
+              </span>
+              <p className="min-w-0 text-base font-semibold leading-relaxed sm:text-lg">
+                {cleanHeadline}
+              </p>
+            </div>
+          </section>
+        )}
+
         <div className="flex flex-col gap-6 lg:grid lg:grid-cols-2 lg:items-start">
 
         {/* ── (1) KPI briefing ─────────────────────────────────────────────── */}
@@ -690,29 +746,31 @@ export default function ExecutiveMobile(): React.JSX.Element {
             />
             <KpiTile
               icon={<Percent />}
-              label={t("executiveMobile.kpi.yield", "Yield (today)")}
+              label={t("executiveMobile.kpi.yield", "Yield")}
               value={yieldRate != null ? fmtPct(yieldRate) : null}
               /* W7 GĐ2: 95/85 local → yieldTone shared 95/90 (ngưỡng đổi đã duyệt). */
               tone={yieldTone(yieldRate)}
               loading={statsQ.isLoading}
-              sub={t("executiveMobile.kpi.finalYield", "Final yield")}
+              /* doc 68 §3.9 (P1): "(today)" moved off the truncating headline label
+                 down to the sub line so the big label no longer clips on mobile. */
+              sub={t("executiveMobile.kpi.finalYield", "Final yield · today")}
             />
             <KpiTile
               icon={<Target />}
-              label={t("executiveMobile.kpi.fpy", "FPY (today)")}
+              label={t("executiveMobile.kpi.fpy", "FPY")}
               value={fpy != null ? fmtPct(fpy) : null}
               /* W7 GĐ2: 95/85 local → yieldTone shared 95/90 (ngưỡng đổi đã duyệt). */
               tone={yieldTone(fpy)}
               loading={statsQ.isLoading}
-              sub={t("executiveMobile.kpi.firstPass", "First-pass yield")}
+              sub={t("executiveMobile.kpi.firstPass", "First-pass yield · today")}
             />
             <KpiTile
               icon={<Package />}
-              label={t("executiveMobile.kpi.output", "Output (today)")}
+              label={t("executiveMobile.kpi.output", "Output")}
               value={outputToday != null ? fmtIntCompact(outputToday, i18n.language) : null}
               tone="info"
               loading={statsQ.isLoading}
-              sub={t("executiveMobile.kpi.inspected", "Units inspected")}
+              sub={t("executiveMobile.kpi.inspected", "Units inspected · today")}
             />
           </div>
 
@@ -800,7 +858,9 @@ export default function ExecutiveMobile(): React.JSX.Element {
                       <li key={r.id}>
                         <button
                           type="button"
-                          onClick={() => setLocation(`/approvals-inbox?focus=insight-${r.id}`)}
+                          /* doc 68 §3.9 P2: open the right-side ContextDrawer (read +
+                             ack in place) instead of leaving the briefing. */
+                          onClick={() => setRiskDrawer(r)}
                           className="flex min-h-11 w-full items-start gap-2.5 rounded-md border p-2.5 text-left hover:bg-accent"
                         >
                           <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${TONE_TEXT_CLASS[tone]}`} aria-hidden />
@@ -824,113 +884,13 @@ export default function ExecutiveMobile(): React.JSX.Element {
           </Card>
         </section>
 
-        {/* ── (2) AI executive summary ─────────────────────────────────────── */}
-        <section
-          aria-label={t("executiveMobile.ai.title", "AI summary")}
-          className="min-w-0 lg:col-start-2 lg:row-start-1"
-        >
-          <SectionTitle
-            icon={<Sparkles />}
-            right={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-11"
-                onClick={() => setLocation("/management-insight")}
-              >
-                {t("executiveMobile.ai.viewFull", "Full report")}
-                <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
-              </Button>
-            }
-          >
-            {t("executiveMobile.ai.title", "AI summary")}
-          </SectionTitle>
-          <Card>
-            <CardContent className="space-y-3 p-4">
-              {summaryQ.isError ? (
-                /* AUD-01: a failed fetch is NOT "no report yet". */
-                <ErrorInline onRetry={() => void summaryQ.refetch()} />
-              ) : summaryQ.isLoading ? (
-                <>
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-2/3" />
-                </>
-              ) : !summary ? (
-                /* W7 GĐ2: empty tự chế → EmptyState compact. KHÔNG allClear — "chưa
-                   có báo cáo" là thiếu dữ liệu, không phải tin tốt. Icon Sparkles giữ
-                   ngữ nghĩa AI của bản cũ; điều kiện chỉ-khi-success W2 giữ nguyên. */
-                <EmptyState
-                  compact
-                  icon={Sparkles}
-                  title={t("executiveMobile.ai.empty", "No executive report yet.")}
-                  description={t("executiveMobile.ai.emptyHint", "Scheduled summaries appear here; generate one in Management Insight.")}
-                />
-              ) : (
-                <>
-                  {/* Meta row: period + generated time + honest source badge. */}
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    {report?.period && (
-                      <Badge variant="outline" className="h-5 py-0 text-[10px] capitalize">{report.period}</Badge>
-                    )}
-                    {summary.generatedAt && (
-                      <span>{t("executiveMobile.ai.generatedAt", "As of {{time}}", { time: new Date(summary.generatedAt).toLocaleString() })}</span>
-                    )}
-                    {summaryOffline && (
-                      <Badge variant="secondary" className="h-5 gap-1 py-0 text-[10px]">
-                        <Info className="h-3 w-3" aria-hidden />
-                        {t("executiveMobile.ai.offlineMode", "Rule-based")}
-                      </Badge>
-                    )}
-                  </div>
-
-                  {/* Honest degradation note (FE-W0.3 guardrail fell back to rules,
-                      or we detected a degenerate narrative client-side). */}
-                  {summaryDegraded && (
-                    <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-                      {t("executiveMobile.ai.degraded", "AI narrative unavailable — showing a rule-based summary from real KPIs.")}
-                    </div>
-                  )}
-
-                  {cleanHeadline && (
-                    <div className="rounded-md bg-muted/40 p-3 text-sm font-medium leading-relaxed">
-                      {cleanHeadline}
-                    </div>
-                  )}
-
-                  {cleanHighlights.length > 0 && (
-                    <div>
-                      <div className="mb-1 flex items-center gap-1.5 text-sm font-medium">
-                        <TrendingUp className="h-4 w-4 text-success" aria-hidden />
-                        {t("executiveMobile.ai.highlights", "Highlights")}
-                      </div>
-                      <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                        {cleanHighlights.map((h, i) => <li key={i}>{h}</li>)}
-                      </ul>
-                    </div>
-                  )}
-
-                  {cleanRisks.length > 0 && (
-                    <div>
-                      <div className="mb-1 flex items-center gap-1.5 text-sm font-medium">
-                        <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />
-                        {t("executiveMobile.ai.risks", "Risks")}
-                      </div>
-                      <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                        {cleanRisks.map((r, i) => <li key={i}>{r}</li>)}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-
-        {/* ── (3) Pending approvals ────────────────────────────────────────── */}
+        {/* ── (2) Pending approvals ────────────────────────────────────────────
+            doc 68 §3.9 P1/P3: decisions BEFORE the narrative. On desktop this sits
+            at col2/row1 (level with the KPI briefing); on mobile it now precedes the
+            AI summary in DOM order (act first, read the story after). */}
         <section
           aria-label={t("executiveMobile.approvals.title", "Pending approvals")}
-          className="min-w-0 lg:col-start-2 lg:row-start-2"
+          className="min-w-0 lg:col-start-2 lg:row-start-1"
         >
           <SectionTitle icon={<ClipboardCheck />}>{t("executiveMobile.approvals.title", "Pending approvals")}</SectionTitle>
           <Card>
@@ -964,9 +924,11 @@ export default function ExecutiveMobile(): React.JSX.Element {
                         <li key={it.key} className="overflow-hidden rounded-md border">
                           <button
                             type="button"
-                            onClick={() => setLocation(it.href)}
+                            /* doc 68 §3.9 P2: open the right-side ContextDrawer (keeps
+                               the briefing behind it); its step-2 CTA deep-links. */
+                            onClick={() => setApprovalDrawer(it)}
                             className="flex h-11 w-full min-w-0 items-center gap-2 px-3 text-left hover:bg-accent"
-                            aria-label={t("executiveMobile.approvals.openItemAria", "Review in full inbox: {{title}}", { title: it.label })}
+                            aria-label={t("executiveMobile.approvals.openItemAria", "Review: {{title}}", { title: it.label })}
                           >
                             <Badge variant="outline" className="h-5 shrink-0 py-0 text-[10px]">{it.kind}</Badge>
                             <span className="min-w-0 flex-1 truncate text-sm">{it.label}</span>
@@ -1063,7 +1025,235 @@ export default function ExecutiveMobile(): React.JSX.Element {
             </AlertDialogContent>
           </AlertDialog>
         </section>
+
+        {/* ── (3) AI executive summary ─────────────────────────────────────────
+            doc 68 §3.9 P1: the headline is lifted out to the LEAD band above; this
+            card carries only the fuller narrative (highlights + risks). Desktop:
+            col2/row2 (level with Top risks); mobile: after the approvals decisions. */}
+        <section
+          aria-label={t("executiveMobile.ai.title", "AI summary")}
+          className="min-w-0 lg:col-start-2 lg:row-start-2"
+        >
+          <SectionTitle
+            icon={<Sparkles />}
+            right={
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-11"
+                onClick={() => setLocation("/management-insight")}
+              >
+                {t("executiveMobile.ai.viewFull", "Full report")}
+                <ArrowRight className="ml-1 h-4 w-4" aria-hidden />
+              </Button>
+            }
+          >
+            {t("executiveMobile.ai.title", "AI summary")}
+          </SectionTitle>
+          <Card>
+            <CardContent className="space-y-3 p-4">
+              {summaryQ.isError ? (
+                /* AUD-01: a failed fetch is NOT "no report yet". */
+                <ErrorInline onRetry={() => void summaryQ.refetch()} />
+              ) : summaryQ.isLoading ? (
+                <>
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                </>
+              ) : !summary ? (
+                /* W7 GĐ2: empty tự chế → EmptyState compact. KHÔNG allClear — "chưa
+                   có báo cáo" là thiếu dữ liệu, không phải tin tốt. Icon Sparkles giữ
+                   ngữ nghĩa AI của bản cũ; điều kiện chỉ-khi-success W2 giữ nguyên. */
+                <EmptyState
+                  compact
+                  icon={Sparkles}
+                  title={t("executiveMobile.ai.empty", "No executive report yet.")}
+                  description={t("executiveMobile.ai.emptyHint", "Scheduled summaries appear here; generate one in Management Insight.")}
+                />
+              ) : (
+                <>
+                  {/* Meta row: period + generated time + honest source badge. */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    {report?.period && (
+                      <Badge variant="outline" className="h-5 py-0 text-[10px] capitalize">{report.period}</Badge>
+                    )}
+                    {summary.generatedAt && (
+                      <span>{t("executiveMobile.ai.generatedAt", "As of {{time}}", { time: new Date(summary.generatedAt).toLocaleString() })}</span>
+                    )}
+                    {summaryOffline && (
+                      <Badge variant="secondary" className="h-5 gap-1 py-0 text-[10px]">
+                        <Info className="h-3 w-3" aria-hidden />
+                        {t("executiveMobile.ai.offlineMode", "Rule-based")}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Honest degradation note (FE-W0.3 guardrail fell back to rules,
+                      or we detected a degenerate narrative client-side). */}
+                  {summaryDegraded && (
+                    <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                      {t("executiveMobile.ai.degraded", "AI narrative unavailable — showing a rule-based summary from real KPIs.")}
+                    </div>
+                  )}
+
+                  {/* doc 68 §3.9 P1: the headline is now the full-width LEAD band
+                      above the grid — the card keeps highlights + risks only. */}
+                  {cleanHighlights.length > 0 && (
+                    <div>
+                      <div className="mb-1 flex items-center gap-1.5 text-sm font-medium">
+                        <TrendingUp className="h-4 w-4 text-success" aria-hidden />
+                        {t("executiveMobile.ai.highlights", "Highlights")}
+                      </div>
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                        {cleanHighlights.map((h, i) => <li key={i}>{h}</li>)}
+                      </ul>
+                    </div>
+                  )}
+
+                  {cleanRisks.length > 0 && (
+                    <div>
+                      <div className="mb-1 flex items-center gap-1.5 text-sm font-medium">
+                        <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />
+                        {t("executiveMobile.ai.risks", "Risks")}
+                      </div>
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                        {cleanRisks.map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </section>
         </div>
+
+        {/* ── doc 68 §3.9 P2 — Risk detail ContextDrawer (right, overlay) ───────
+            Read the flagged risk WITHOUT leaving the briefing; acknowledge/dismiss
+            in place via the EXISTING aiInsight.setStatus (advisory — no SoD). The
+            step-2 CTA deep-links into the full inbox for the wider context. */}
+        <ContextDrawer
+          open={riskDrawer != null}
+          onOpenChange={(o) => { if (!o) setRiskDrawer(null); }}
+          title={riskDrawer?.title || t("executiveMobile.risks.untitled", "Risk")}
+          description={riskDrawer?.machineCode ?? undefined}
+        >
+          {riskDrawer && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {riskDrawer.machineCode && (
+                  <Badge variant="outline">{riskDrawer.machineCode}</Badge>
+                )}
+                {riskDrawer.severity && (
+                  <Badge variant="secondary" className="capitalize">{riskDrawer.severity}</Badge>
+                )}
+              </div>
+              {riskDrawer.body && (
+                <p className="text-sm leading-relaxed text-muted-foreground">{riskDrawer.body}</p>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  className="h-11 flex-1"
+                  disabled={riskActionBusy}
+                  onClick={() => void setRiskStatus(riskDrawer.id, "acknowledged")}
+                >
+                  <CheckCircle2 className="mr-1 h-4 w-4" aria-hidden />
+                  {t("executiveMobile.risks.acknowledge", "Acknowledge")}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-11 flex-1"
+                  disabled={riskActionBusy}
+                  onClick={() => void setRiskStatus(riskDrawer.id, "dismissed")}
+                >
+                  <XCircle className="mr-1 h-4 w-4" aria-hidden />
+                  {t("executiveMobile.risks.dismissAction", "Dismiss")}
+                </Button>
+              </div>
+              <Button
+                variant="outline"
+                className="h-11 w-full justify-between"
+                onClick={() => setLocation(`/approvals-inbox?focus=insight-${riskDrawer.id}`)}
+              >
+                {t("executiveMobile.approvals.open", "Open full inbox")}
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
+          )}
+        </ContextDrawer>
+
+        {/* ── doc 68 §3.9 P2 — Approval detail ContextDrawer (right, overlay) ───
+            AI proposals keep the 1-tap Duyệt/Bỏ qua here too (Duyệt routes through
+            the SAME one-step confirm dialog). Threshold + deploy stay deep-link only
+            — their SoD / step-up-2FA flow lives in the full inbox (the step-2 CTA). */}
+        <ContextDrawer
+          open={approvalDrawer != null}
+          onOpenChange={(o) => { if (!o) setApprovalDrawer(null); }}
+          title={approvalDrawer?.label || t("executiveMobile.approvals.title", "Pending approvals")}
+          description={approvalDrawer?.kind}
+        >
+          {approvalDrawer && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{approvalDrawer.kind}</Badge>
+                {approvalDrawer.title && (
+                  <span className="text-sm text-muted-foreground">{approvalDrawer.title}</span>
+                )}
+              </div>
+              {approvalDrawer.proposal ? (
+                <>
+                  {approvalDrawer.proposal.tool && (
+                    <Badge variant="outline" className="font-mono text-[10px]">{approvalDrawer.proposal.tool}</Badge>
+                  )}
+                  <p className="text-sm text-muted-foreground">
+                    {t("executiveMobile.approvals.proposalHint", "Approve to run this AI action now, or dismiss it.")}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      className="h-11 flex-1"
+                      disabled={aiActionBusy}
+                      onClick={() => {
+                        const p = approvalDrawer.proposal!;
+                        const label = approvalDrawer.label;
+                        setApprovalDrawer(null);
+                        setConfirmTarget({ ...p, label });
+                      }}
+                    >
+                      <CheckCircle2 className="mr-1 h-4 w-4" aria-hidden />
+                      {t("executiveMobile.approvals.approve", "Approve")}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-11 flex-1"
+                      disabled={aiActionBusy}
+                      onClick={() => {
+                        const actionId = approvalDrawer.proposal!.actionId;
+                        setApprovalDrawer(null);
+                        void dismissProposal(actionId);
+                      }}
+                    >
+                      <XCircle className="mr-1 h-4 w-4" aria-hidden />
+                      {t("executiveMobile.approvals.dismiss", "Dismiss")}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {t("executiveMobile.approvals.deepLinkHint", "This approval needs segregation-of-duties context — complete it in the full inbox.")}
+                </p>
+              )}
+              <Button
+                variant="outline"
+                className="h-11 w-full justify-between"
+                onClick={() => setLocation(approvalDrawer.href)}
+              >
+                {t("executiveMobile.approvals.open", "Open full inbox")}
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
+          )}
+        </ContextDrawer>
 
         {/* ── Quick links to the full-desktop surfaces ─────────────────────── */}
         <nav aria-label={t("executiveMobile.links.title", "More")} className="space-y-1.5">
