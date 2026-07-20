@@ -38,7 +38,7 @@ export function CollapsibleSection({
   const panelId = React.useId()
 
   return (
-    <div className={cn("overflow-hidden rounded-lg border border-border", className)}>
+    <div className={cn("overflow-hidden rounded-none border border-border", className)}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
