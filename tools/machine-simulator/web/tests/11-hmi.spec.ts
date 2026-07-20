@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
-import { setFleetRunning } from "./support/engine"
+import { pullMachineConfig, resetEstop, setFleetRunning } from "./support/engine"
 import { gotoHmi } from "./support/screens"
 import { primeAppStorage, type Theme } from "./support/theme"
 import { vi as viDict } from "../src/i18n/vi"
@@ -18,12 +18,29 @@ import { vi as viDict } from "../src/i18n/vi"
  * regardless of what the immediately-preceding test left behind (the E-STOP test below stops it);
  * `afterEach` restores that same running state so this file leaves the shared engine exactly as it
  * found it.
+ *
+ * Branch-review I-15 — `beforeEach` also PULLS AOI-01's MODEL-A config every time (idempotent — see
+ * `pullMachineConfig`'s own doc comment). Before this, the AOI visual baselines were only reproducible
+ * as part of the FULL ordered suite: `02-machine-detail.spec.ts` happens to click a real "Pull" on
+ * AOI-01/MODEL-A, which mutates MODEL-A's local point set from the pristine seed (8 points, v3) to the
+ * post-pull state (the ecosystem's deliberately-diverged copy) — a mutation this file's own baselines
+ * were captured against. Running `11-hmi.spec.ts` alone (no `02` beforehand) left MODEL-A pristine, so
+ * the AOI schematic's dot COUNT and POSITIONS differed from the baseline PNG's, and `.hmi-aoi-point`'s
+ * per-dot masks (covering only each dot's CURRENT position) couldn't paper over dots baked into the
+ * baseline at DIFFERENT positions — reproduced live as a 166px diff. This file now establishes its own
+ * precondition instead of inheriting one from file order, so it holds standalone too.
  */
 test.describe("HMI operator panel", () => {
   test.beforeEach(async ({ request }) => {
+    await pullMachineConfig(request, "AOI-01", "MODEL-A")
+    await resetEstop(request)
     await setFleetRunning(request, true)
   })
   test.afterEach(async ({ request }) => {
+    // Defensive: clear a latch BEFORE trying to restart — StartLocked refuses while EstopEngaged
+    // (see `FleetHost.cs`), so a test that leaves E-STOP engaged would otherwise silently leave the
+    // fleet stopped for every test that runs after it.
+    await resetEstop(request)
     await setFleetRunning(request, true)
   })
 
@@ -112,6 +129,74 @@ test.describe("HMI operator panel", () => {
     await expect(page.getByText(viDict.hmi.log.estopReset)).toBeVisible()
   })
 
+  test("C-1: the panel resyncs from every poll, not just the first — a fleet stop from elsewhere is reflected live, no reload needed", async ({
+    page,
+    request,
+  }) => {
+    await gotoHmi(page, "SCRW-01")
+    const schematicGroup = page.locator('svg[role="img"] > g').first()
+    const header = page.locator("header")
+    await expect(header.getByText(viDict.hmi.status.sub.run)).toBeVisible()
+    await expect(schematicGroup).toHaveClass(/hmi-schematic-run/)
+
+    // Simulate a fleet-state change from ANYWHERE ELSE — another HMI panel, another browser tab, the
+    // REST API, the engine itself — by calling the stop endpoint directly through `request` (a
+    // separate HTTP client from the page's own fetches), never touching THIS page's UI at all.
+    await setFleetRunning(request, false)
+
+    // The pre-fix bug: `FleetRuntimeProvider` accepted only the FIRST `/v1/fleet` snapshot, so this
+    // page would keep asserting "running" (green lamp, live schematic, START disabled) indefinitely
+    // — reproduced live as an idle lamp reading "Chờ lệnh" while `isRunning: true` and cycles climbed
+    // server-side. Now every ~1s poll is the source of truth, so this page must resync within a few
+    // poll intervals with NO navigation/reload.
+    await expect(header.getByText(viDict.hmi.status.sub.idle)).toBeVisible({ timeout: 5_000 })
+    await expect(schematicGroup).not.toHaveClass(/hmi-schematic-run/)
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeEnabled()
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.pause })).toBeDisabled()
+
+    // And it resyncs back the other way too — started from elsewhere, this page follows without any
+    // action of its own.
+    await setFleetRunning(request, true)
+    await expect(header.getByText(viDict.hmi.status.sub.run)).toBeVisible({ timeout: 5_000 })
+    await expect(schematicGroup).toHaveClass(/hmi-schematic-run/)
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeDisabled()
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.pause })).toBeEnabled()
+  })
+
+  test("C-2: E-STOP latch is server-owned — survives navigating to another machine's panel AND a reload; only RESET clears it", async ({
+    page,
+  }) => {
+    await gotoHmi(page, "SCRW-01")
+    await page.getByRole("button", { name: viDict.hmi.controls.estop }).click()
+    await expect(page.getByText(viDict.hmi.controls.estopBanner)).toBeVisible()
+
+    // Navigate to a DIFFERENT machine's panel — in a real cell, a second operator station. The
+    // pre-fix bug (component-local React state) silently dropped the latch here: no banner, START
+    // enabled, as if the emergency never happened.
+    await gotoHmi(page, "AOI-01")
+    await expect(page.getByText(viDict.hmi.controls.estopBanner)).toBeVisible()
+    await expect(page.getByText(viDict.hmi.status.estop, { exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeDisabled()
+
+    // A full page reload — the pre-fix bug cleared client-only state here too.
+    await page.reload()
+    await expect(page.getByRole("heading", { name: "AOI-01", level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(viDict.hmi.controls.estopBanner)).toBeVisible()
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeDisabled()
+
+    // RESET (from THIS panel — a different one than where E-STOP was pressed) is what actually
+    // clears the shared, server-owned latch.
+    await page.getByRole("button", { name: viDict.hmi.controls.reset }).click()
+    await expect(page.getByText(viDict.hmi.controls.estopBanner)).toHaveCount(0)
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeEnabled()
+
+    // And the latch being gone is ALSO visible back on the original machine's panel — one shared
+    // fault state, not two disagreeing ones.
+    await gotoHmi(page, "SCRW-01")
+    await expect(page.getByText(viDict.hmi.controls.estopBanner)).toHaveCount(0)
+    await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeEnabled()
+  })
+
   test("keyboard: every control is reachable and visibly focused", async ({ page }) => {
     await gotoHmi(page, "SCRW-01")
     const pause = page.getByRole("button", { name: viDict.hmi.controls.pause })
@@ -122,54 +207,104 @@ test.describe("HMI operator panel", () => {
   })
 
   const THEMES: Theme[] = ["light", "dark"]
-  for (const theme of THEMES) {
-    test(`visual — ${theme}`, async ({ page }) => {
-      await primeAppStorage(page, { theme })
-      await gotoHmi(page, "AOI-01")
-      // H4 job 3 — Playwright's built-in `animations: "disabled"` (the config default this suite
-      // relies on) freezes CSS transitions and FINITE animations reliably, but `index.css`'s
-      // `.hmi-schematic-run` keyframes (gantry sweep, camera sweep, belt-tick dash, etc. — all
-      // `animation-iteration-count: infinite`) are a documented Playwright edge case: forcing
-      // `animation-duration: 0s` on an INFINITE-iteration animation doesn't reliably land every
-      // element on the same deterministic frame across runs in headless Chromium, reproduced live as
-      // a ~1px sub-pixel shift bleeding into unmasked, otherwise-completely-static sibling text (the
-      // "Tốc độ chu kỳ / Cycle Rate" micro-label) once the suite's tolerance was tightened — not a
-      // hypothetical flake, caught 3/3 times on repeated fresh runs before this fix. `animation: none`
-      // is a stronger, unambiguous override than duration:0 for infinite animations (no "which frame
-      // did a 0-duration infinite loop land on" ambiguity — the element just renders its unanimated
-      // base state), applied here rather than in the app's own CSS so production keeps its real
-      // motion.
-      await page.addStyleTag({ content: ".hmi-schematic-run * { animation: none !important; }" })
-      // H2b: the ORIGINAL mask list here (`.hmi-graph-paper`, `.hmi-readout-grid` — the whole
-      // schematic body and the whole readout panel) is exactly why the live review's flaws (schematic
-      // marooned in ~25% of its sheet, a dead band under the readouts) slipped past this baseline —
-      // masking the entire live region also hides any STRUCTURAL regression inside it. Tightened to
-      // mask only the sub-elements that are genuinely non-deterministic run-to-run against the shared
-      // `FleetHost` singleton (a live status word/color, a cycle counter, a defect's result color, a
-      // ticking clock, the scrolling log) via stable `hmi-*` class hooks each component sets on
-      // exactly that live node — see `Readout.tsx`'s/`AoiSchematic.tsx`'s/`Nameplate.tsx`'s own
-      // comments on each hook. Everything else (registration corners, the schematic's drawing/
-      // dimension lines/graph-paper ground, the readout grid's borders/dividers/micro-labels, panel
-      // titles) stays UNmasked, so a regression like H2's (the drawing shrinking back into a small
-      // island, or the readout grid losing its border/height-fill) is actually caught by the pixel
-      // diff instead of being invisible under a mask block.
-      await expect(page).toHaveScreenshot(`hmi-aoi-${theme}.png`, {
-        mask: [
-          page.locator(".hmi-clock"),
-          page.locator(".hmi-nameplate-lamp"),
-          page.locator(".hmi-aoi-point"),
-          page.locator(".hmi-aoi-caption"),
-          page.locator(".hmi-readout-value"),
-          page.getByRole("log"),
-          page.locator(".hmi-production-progress"),
-        ],
-      })
-    })
 
-    test(`a11y (axe, wcag2a/2aa/21aa) — ${theme}`, async ({ page }) => {
-      await primeAppStorage(page, { theme })
-      await gotoHmi(page, "AOI-01")
-      await assertNoSeriousA11yViolations(page)
-    })
+  // Branch-review C-5 — the suite's tolerance was tightened specifically so structural schematic
+  // regressions would be caught, but only the AOI class ever had a baseline: C-4 (both animated
+  // schematics rotating/scaling about the viewBox centre instead of their own) shipped through a
+  // green suite for exactly this reason. One case per machine class now, each with its own mask list
+  // built the same way the AOI one always was — narrow, stable `hmi-*` hooks on the genuinely live
+  // sub-elements (see each schematic's own comments), everything else (frame, rails, dimension
+  // lines, graph paper) left UNmasked so a regression like C-4's is actually caught.
+  const SCHEMATIC_CASES: { slug: string; code: string; mask: (page: Page) => Locator[] }[] = [
+    {
+      slug: "aoi",
+      code: "AOI-01",
+      mask: (page) => [
+        page.locator(".hmi-clock"),
+        page.locator(".hmi-nameplate-lamp"),
+        page.locator(".hmi-aoi-points-group"),
+        page.locator(".hmi-aoi-caption"),
+        page.locator(".hmi-readout-value"),
+        page.getByRole("log"),
+        page.locator(".hmi-production-progress"),
+      ],
+    },
+    {
+      slug: "automation",
+      code: "SCRW-01",
+      mask: (page) => [
+        page.locator(".hmi-clock"),
+        page.locator(".hmi-nameplate-lamp"),
+        page.locator(".hmi-feeder-live"),
+        page.locator(".hmi-readout-value"),
+        page.getByRole("log"),
+        page.locator(".hmi-production-progress"),
+      ],
+    },
+    {
+      slug: "iot",
+      code: "IOT-01",
+      mask: (page) => [
+        page.locator(".hmi-clock"),
+        page.locator(".hmi-nameplate-lamp"),
+        page.locator(".hmi-iot-reading"),
+        page.locator(".hmi-readout-value"),
+        page.getByRole("log"),
+        page.locator(".hmi-production-progress"),
+      ],
+    },
+  ]
+
+  for (const { slug, code, mask } of SCHEMATIC_CASES) {
+    for (const theme of THEMES) {
+      test(`visual — ${slug} — ${theme}`, async ({ page }) => {
+        await primeAppStorage(page, { theme })
+        await gotoHmi(page, code)
+        // H4 job 3 — Playwright's built-in `animations: "disabled"` (the config default this suite
+        // relies on) freezes CSS transitions and FINITE animations reliably, but `index.css`'s
+        // `.hmi-schematic-run` keyframes (gantry sweep, camera sweep, belt-tick dash, signal pulse,
+        // packet travel, etc. — all `animation-iteration-count: infinite`) are a documented
+        // Playwright edge case: forcing `animation-duration: 0s` on an INFINITE-iteration animation
+        // doesn't reliably land every element on the same deterministic frame across runs in headless
+        // Chromium, reproduced live as a ~1px sub-pixel shift bleeding into unmasked, otherwise-
+        // completely-static sibling text (the "Tốc độ chu kỳ / Cycle Rate" micro-label) once the
+        // suite's tolerance was tightened — not a hypothetical flake, caught 3/3 times on repeated
+        // fresh runs before this fix. `animation: none` is a stronger, unambiguous override than
+        // duration:0 for infinite animations (no "which frame did a 0-duration infinite loop land on"
+        // ambiguity — the element just renders its unanimated base state), applied here rather than in
+        // the app's own CSS so production keeps its real motion.
+        await page.addStyleTag({ content: ".hmi-schematic-run * { animation: none !important; }" })
+        // Belt-and-suspenders against the exact flake the comment above describes: force layout/paint
+        // to settle on the style injection AND on web-font readiness before the pixel comparison,
+        // rather than relying solely on `toHaveScreenshot`'s own internal stability retries (which
+        // compare successive screenshots to EACH OTHER, not to the saved baseline — they can agree
+        // with each other on a still-slightly-off sub-pixel snap and call that "stable").
+        await page.evaluate(() => document.fonts.ready)
+        // Two RAF round-trips: waits for the style-injection's layout/paint to actually land (not
+        // just for the promise above to resolve) before the pixel comparison — the standard
+        // Playwright idiom for "let a just-applied style mutation finish settling."
+        await page.evaluate(
+          () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        )
+        // H2b: the ORIGINAL mask list here (`.hmi-graph-paper`, `.hmi-readout-grid` — the whole
+        // schematic body and the whole readout panel) is exactly why the live review's flaws
+        // (schematic marooned in ~25% of its sheet, a dead band under the readouts, and later C-4's
+        // rotating-about-the-wrong-origin bug) slipped past this baseline — masking the entire live
+        // region also hides any STRUCTURAL regression inside it. Tightened to mask only the
+        // sub-elements that are genuinely non-deterministic run-to-run against the shared `FleetHost`
+        // singleton via stable `hmi-*` class hooks each component sets on exactly that live node.
+        // Everything else (registration corners, the schematic's drawing/dimension lines/graph-paper
+        // ground, the readout grid's borders/dividers/micro-labels, panel titles) stays UNmasked, so a
+        // regression is actually caught by the pixel diff instead of being invisible under a mask
+        // block.
+        await expect(page).toHaveScreenshot(`hmi-${slug}-${theme}.png`, { mask: mask(page) })
+      })
+
+      test(`a11y (axe, wcag2a/2aa/21aa) — ${slug} — ${theme}`, async ({ page }) => {
+        await primeAppStorage(page, { theme })
+        await gotoHmi(page, code)
+        await assertNoSeriousA11yViolations(page)
+      })
+    }
   }
 })

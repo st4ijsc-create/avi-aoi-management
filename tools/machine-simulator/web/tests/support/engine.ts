@@ -17,6 +17,15 @@ export async function setFleetRunning(request: APIRequestContext, running: boole
   if (!res.ok()) throw new Error(`POST ${path} failed: ${res.status()}`)
 }
 
+/** C-2 — clears the engine-owned E-STOP latch (`FleetHost.ResetEstop`), idempotent (a no-op if
+ * nothing is latched). `StartLocked` refuses to start the fleet while latched (defense in depth, see
+ * `FleetHost.cs`), so any spec that engages E-STOP MUST clear it before `setFleetRunning(true)` can
+ * work again — used defensively in `afterEach` hooks for that reason. */
+export async function resetEstop(request: APIRequestContext): Promise<void> {
+  const res = await request.post(`${ENGINE_URL}/v1/fleet/estop/reset`)
+  if (!res.ok()) throw new Error(`POST /v1/fleet/estop/reset failed: ${res.status()}`)
+}
+
 /** Resets the shared scenario config back to the "normal" preset — used defensively at the start/end
  * of specs that apply a different preset, so a Scenario-screen assertion elsewhere in the suite (or a
  * re-run) doesn't inherit an unexpected active preset. */
@@ -31,4 +40,20 @@ export async function resetScenarioToNormal(request: APIRequestContext): Promise
 export async function resetSettingsLanguage(request: APIRequestContext): Promise<void> {
   const res = await request.put(`${ENGINE_URL}/v1/settings`, { data: { language: "vi" } })
   if (!res.ok()) throw new Error(`reset settings language failed: ${res.status()}`)
+}
+
+/**
+ * Branch-review I-15 — pulls `productCode`'s config onto `machineCode`'s LOCAL `ProductConfigStore`
+ * (`POST /v1/machines/{code}/config/pull`, the same call `02-machine-detail.spec.ts`'s "Pull" button
+ * click makes). Idempotent — re-running against an already-in-sync product still reports success,
+ * just 0 changes — so any spec that needs a DETERMINISTIC point set for a product (not "whatever
+ * `08`/`02`/`09` happened to leave it at") can call this itself instead of depending on file order.
+ * `11-hmi.spec.ts` uses this so its AOI schematic/visual baselines hold whether the full suite ran
+ * first or the file is run standalone.
+ */
+export async function pullMachineConfig(request: APIRequestContext, machineCode: string, productCode: string): Promise<void> {
+  const res = await request.post(`${ENGINE_URL}/v1/machines/${encodeURIComponent(machineCode)}/config/pull`, {
+    data: { productCode },
+  })
+  if (!res.ok()) throw new Error(`pull config for ${machineCode}/${productCode} failed: ${res.status()}`)
 }
