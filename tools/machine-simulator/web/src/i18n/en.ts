@@ -1009,6 +1009,8 @@ export const en: Dictionary = {
       noLocalVersion: "none",
       imageIdentityLabel: "Reference image identity",
       imageIdentityNone: "No reference image yet.",
+      pointsChecksumLocalLabel: "Local content checksum",
+      pointsChecksumEcosystemLabel: "Ecosystem content checksum",
       pullBtn: "Pull to machine",
       pulling: "Pulling…",
       pullFailed: "Couldn't pull config.",

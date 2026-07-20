@@ -171,6 +171,68 @@ public sealed class ConfigSyncEngineTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Checksum-first drift (Task C8) — fixes the real bug a pure version comparison had: two
+    // independently-bumped versions that land on the SAME number but carry DIFFERENT content used to
+    // read "in_sync"; conversely, byte-identical content should read "in_sync" even under a different
+    // version LABEL (checksum is authoritative whenever both sides have one — mirrors the server's own
+    // computeDriftState).
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Check_reports_drift_when_versions_coincide_but_content_differs()
+    {
+        var (local, _, engine) = CreateHarness();
+
+        // MODEL-B: local seed starts at v1, the ecosystem's own seed divergence is already at v2
+        // (Q03's upperLimit tweaked — see SimulatedEcosystem.DivergeModelB). Editing a DIFFERENT local
+        // point (Q01) bumps the LOCAL version 1 -> 2 too, so both sides land on version 2 — but the
+        // actual content genuinely differs (local has an edited Q01 the ecosystem never saw; the
+        // ecosystem has an edited Q03 the local copy never saw).
+        var q01 = local.GetAllPoints("MODEL-B").First(p => p.Code == "Q01");
+        q01.Name = "J1 Pin Pitch (local edit)";
+        local.UpsertPoint("MODEL-B", q01);
+        var localAfterEdit = local.GetProduct("MODEL-B")!;
+        Assert.Equal(2, localAfterEdit.PointsConfigVersion);
+
+        var check = await engine.CheckAsync(AoiMachine, "MODEL-B", default);
+        var entry = Assert.Single(check.Products);
+
+        Assert.Equal(2, entry.LocalVersion);
+        Assert.Equal(2, entry.EcosystemVersion); // SAME version number on both sides...
+        Assert.NotNull(entry.LocalChecksum);
+        Assert.NotNull(entry.EcosystemChecksum);
+        Assert.NotEqual(entry.LocalChecksum, entry.EcosystemChecksum); // ...but genuinely different content.
+        Assert.Equal("drift", entry.DriftState); // a pure version comparison would have said "in_sync" here.
+    }
+
+    [Fact]
+    public async Task Check_reports_in_sync_when_content_is_identical_even_under_a_different_version_label()
+    {
+        var (local, _, engine) = CreateHarness();
+
+        // Pull MODEL-A so the local copy is a byte-identical clone of the ecosystem's (content AND
+        // version, v5).
+        await engine.PullAsync(AoiMachine, "MODEL-A", default);
+        var pulled = local.GetProduct("MODEL-A")!;
+        Assert.Equal(5, pulled.PointsConfigVersion);
+
+        // Now relabel ONLY the local version number (UpsertProduct is a whole-aggregate replace that
+        // deliberately leaves versioning to the caller — see its own doc comment) — the points
+        // themselves are untouched, so content is still byte-identical to the ecosystem's.
+        pulled.PointsConfigVersion = 999;
+        local.UpsertProduct(pulled);
+
+        var check = await engine.CheckAsync(AoiMachine, "MODEL-A", default);
+        var entry = Assert.Single(check.Products);
+
+        Assert.Equal(999, entry.LocalVersion);
+        Assert.Equal(5, entry.EcosystemVersion); // version labels genuinely differ...
+        Assert.NotNull(entry.LocalChecksum);
+        Assert.Equal(entry.LocalChecksum, entry.EcosystemChecksum); // ...but content is identical.
+        Assert.Equal("in_sync", entry.DriftState); // checksum wins over the mismatched version label.
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Governance — threshold gate blocks limit edits on non-development products.
     // ─────────────────────────────────────────────────────────────────────
 

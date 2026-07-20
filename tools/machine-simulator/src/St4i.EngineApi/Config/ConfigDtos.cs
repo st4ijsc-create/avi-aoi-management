@@ -95,11 +95,31 @@ public sealed record SyncPointsResultDto(
     IReadOnlyList<SyncPointOutcomeDto> Points);
 
 // ── Sync: check-points-version ──────────────────────────────────────────
-public sealed record ProductVersionDto(string ProductModelCode, int PointsConfigVersion, int? ImageWidth, int? ImageHeight);
+/// <summary><see cref="PointsChecksum"/> (Task C8) is the ecosystem's <c>ConfigChecksum.ComputePointsChecksum</c>
+/// over its ACTIVE points for this product — null when the backend can't produce one (the real
+/// server's <c>check-points-version</c> endpoint per CONFIG_SYNC_SERVER_CONTRACT.md returns version
+/// only, no checksum, so <see cref="LiveConfigSyncBackend"/> always leaves this null; only
+/// <see cref="SimulatedEcosystem"/> (Demo) computes a real one). See <see cref="ProductDriftDto"/>'s
+/// doc comment for how this feeds the checksum-first drift decision.</summary>
+public sealed record ProductVersionDto(string ProductModelCode, int PointsConfigVersion, int? ImageWidth, int? ImageHeight, string? PointsChecksum = null);
 
-/// <summary><c>DriftState</c> is one of <c>in_sync|drift|unknown</c> (<c>unknown</c> = the local machine
-/// has never seen this product at all).</summary>
-public sealed record ProductDriftDto(string ProductModelCode, int? LocalVersion, int EcosystemVersion, string DriftState);
+/// <summary>
+/// <c>DriftState</c> is one of <c>in_sync|drift|unknown</c> (<c>unknown</c> = the local machine has
+/// never seen this product at all).
+///
+/// Task C8: <see cref="LocalChecksum"/>/<see cref="EcosystemChecksum"/> are the points-content
+/// checksums (<c>ConfigChecksum.ComputePointsChecksum</c>) each side computed — surfaced here so the
+/// panel can show WHY a given <see cref="DriftState"/> was reached, and so a byte-exact content match
+/// is visible even when <see cref="LocalVersion"/>/<see cref="EcosystemVersion"/> differ (checksum is
+/// authoritative over version whenever both sides have one — see <c>ConfigSyncEngine.CheckAsync</c>'s
+/// own remarks). Null on either side when a checksum wasn't available (no local copy yet, or a Live
+/// backend whose check-points-version response doesn't carry one) — <see cref="DriftState"/> then
+/// falls back to plain version equality, exactly like this project's own server-side
+/// <c>computeDriftState</c>.
+/// </summary>
+public sealed record ProductDriftDto(
+    string ProductModelCode, int? LocalVersion, int EcosystemVersion, string DriftState,
+    string? LocalChecksum = null, string? EcosystemChecksum = null);
 
 /// <summary><c>ResolvedBy</c> mirrors the contract's System A <c>resolvedBy:"machine|machineType|none"</c>.</summary>
 public sealed record RecipeDriftDto(string Code, int? LocalVersion, int EcosystemVersion, string DriftState, string ResolvedBy);

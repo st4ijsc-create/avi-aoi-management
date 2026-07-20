@@ -1020,6 +1020,8 @@ export const vi = {
       noLocalVersion: "chưa có",
       imageIdentityLabel: "Định danh ảnh tham chiếu",
       imageIdentityNone: "Chưa có ảnh tham chiếu.",
+      pointsChecksumLocalLabel: "Checksum nội dung (cục bộ)",
+      pointsChecksumEcosystemLabel: "Checksum nội dung (hệ thống)",
       pullBtn: "Kéo về máy",
       pulling: "Đang kéo…",
       pullFailed: "Kéo cấu hình thất bại.",

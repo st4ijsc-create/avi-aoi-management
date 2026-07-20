@@ -55,8 +55,9 @@ public sealed class ConfigSyncEngine
                 {
                     var local = _localStore.GetProduct(v.ProductModelCode);
                     var localVersion = local?.PointsConfigVersion;
-                    var state = localVersion is null ? "unknown" : localVersion == v.PointsConfigVersion ? "in_sync" : "drift";
-                    return new ProductDriftDto(v.ProductModelCode, localVersion, v.PointsConfigVersion, state);
+                    var localChecksum = local is null ? null : ConfigChecksum.ComputePointsChecksum(local.Points);
+                    var state = ComputePointsDriftState(localVersion, v.PointsConfigVersion, localChecksum, v.PointsChecksum);
+                    return new ProductDriftDto(v.ProductModelCode, localVersion, v.PointsConfigVersion, state, localChecksum, v.PointsChecksum);
                 })
                 .ToList();
 
@@ -73,6 +74,34 @@ public sealed class ConfigSyncEngine
         var recipeState = localRecipe is null ? "unknown" : localRecipe.Version == recipeCheck.Version ? "in_sync" : "drift";
         var recipeDto = new RecipeDriftDto(recipeCheck.Code, localRecipe?.Version, recipeCheck.Version, recipeState, recipeCheck.ResolvedBy);
         return new MachineConfigCheckDto(machine.Code, "recipe", Array.Empty<ProductDriftDto>(), recipeDto);
+    }
+
+    /// <summary>
+    /// Task C8 — checksum-first drift verdict for a points-config product, mirroring this project's OWN
+    /// server-side <c>computeDriftState</c> (server/services/configDriftService.ts) EXACTLY: "unknown"
+    /// when the local machine has never seen this product at all; when BOTH sides carry a points-content
+    /// checksum it is AUTHORITATIVE (byte-exact — ignores <paramref name="localVersion"/>/<paramref
+    /// name="ecosystemVersion"/> entirely, so identical content reads <c>in_sync</c> even under
+    /// different version LABELS, and matching version labels over DIFFERENT content still reads
+    /// <c>drift</c>); otherwise falls back to plain version equality (the only signal available, e.g.
+    /// against a Live backend whose check-points-version response carries no checksum per
+    /// CONFIG_SYNC_SERVER_CONTRACT.md).
+    ///
+    /// This replaces a real bug a pure version comparison had: two independent version bumps (a local
+    /// edit and an unrelated ecosystem edit) that happen to land on the SAME version NUMBER but carry
+    /// genuinely different point content used to read "in_sync" — silently hiding real drift from the
+    /// operator. See <c>ConfigSyncEngineTests</c>'s checksum-drift tests for the exact repro.
+    /// </summary>
+    private static string ComputePointsDriftState(int? localVersion, int ecosystemVersion, string? localChecksum, string? ecosystemChecksum)
+    {
+        if (localVersion is null) return "unknown";
+
+        if (localChecksum is not null && ecosystemChecksum is not null)
+        {
+            return localChecksum == ecosystemChecksum ? "in_sync" : "drift";
+        }
+
+        return localVersion == ecosystemVersion ? "in_sync" : "drift";
     }
 
     // ─────────────────────────────────────────────────────────────────────

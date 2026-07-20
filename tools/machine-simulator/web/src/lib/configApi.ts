@@ -280,14 +280,22 @@ export interface ProductVersionDto {
   pointsConfigVersion: number
   imageWidth?: number | null
   imageHeight?: number | null
+  /** Task C8 — the ecosystem's points-content checksum, null when the backend can't produce one
+   * (e.g. Live's check-points-version response, which per the contract carries version only). */
+  pointsChecksum?: string | null
 }
 
-/** `driftState`: `in_sync | drift | unknown`. */
+/** `driftState`: `in_sync | drift | unknown`. Task C8: `localChecksum`/`ecosystemChecksum` are the
+ * points-content checksums each side computed — when both are present they're what actually decided
+ * `driftState` (checksum-first, mirroring the server's own `computeDriftState`); null on either side
+ * falls back to plain version comparison. */
 export interface ProductDriftDto {
   productModelCode: string
   localVersion?: number | null
   ecosystemVersion: number
   driftState: string
+  localChecksum?: string | null
+  ecosystemChecksum?: string | null
 }
 
 /** `resolvedBy`: `machine | machineType | none`. */

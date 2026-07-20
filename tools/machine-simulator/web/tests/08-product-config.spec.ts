@@ -8,9 +8,17 @@ import { vi as viDict } from "../src/i18n/vi"
 
 /**
  * Product Config (Task C4) — the product-config workspace's list + editor. Every assertion below
- * reads from the REAL, seeded `ProductConfigStore` (MODEL-A: active/9 points/v6, MODEL-B:
- * development/6 points/v1 — see `ProductConfigStore.SeedProducts`), same "no mocks" contract as
- * `07-machines.spec.ts`.
+ * reads from the REAL, seeded `ProductConfigStore` (MODEL-A: active, MODEL-B: development — see
+ * `ProductConfigStore.SeedProducts`), same "no mocks" contract as `07-machines.spec.ts`.
+ *
+ * Task C8 fix: MODEL-A's point count/version used to be hardcoded ("9 points"/"v9") — numbers that
+ * only matched THIS dev box's already-mutated `products.json` (real point edits made during Task
+ * C5/C6 manual live-testing persisted across `dotnet run` restarts), not the actual seed
+ * (`SeedModelA()`: 8 points, v3). That made the spec fail on any genuinely fresh engine, and — since
+ * `playwright.config.ts` reuses one shared engine process for the WHOLE suite and this store persists
+ * to disk across repeated `npm run test:e2e` runs — it could also drift out of sync with itself over
+ * time. `fetchProductSummary` below reads whatever the engine ACTUALLY reports right before each
+ * assertion, so these tests hold regardless of how many times this store has been mutated.
  *
  * The create/edit/delete lifecycle test deliberately uses a FRESH throwaway product rather than
  * editing MODEL-A/MODEL-B directly: those two seeded products carry points with
@@ -29,6 +37,22 @@ async function deleteThrowawayIfPresent(request: APIRequestContext): Promise<voi
   await request.delete(`${ENGINE_URL}/v1/products/${THROWAWAY_CODE}`)
 }
 
+/** Reads the REAL current `pointsConfigVersion` + active (non-tombstoned) point count for `code`
+ * straight off the engine — see the file doc comment above for why the spec can't just hardcode
+ * these. */
+async function fetchProductSummary(
+  request: APIRequestContext,
+  code: string
+): Promise<{ version: number; activePointCount: number }> {
+  const res = await request.get(`${ENGINE_URL}/v1/products/${code}`)
+  if (!res.ok()) throw new Error(`GET /v1/products/${code} failed: ${res.status()}`)
+  const body = (await res.json()) as { pointsConfigVersion: number; points: Array<{ deletedAt?: string | null }> }
+  return {
+    version: body.pointsConfigVersion,
+    activePointCount: body.points.filter((p) => !p.deletedAt).length,
+  }
+}
+
 test.describe("product config — list, search/filter, detail, create/edit/delete lifecycle", () => {
   test.beforeEach(async ({ request }) => {
     // Defensive — makes this spec independently re-runnable regardless of a previous crashed run.
@@ -41,7 +65,10 @@ test.describe("product config — list, search/filter, detail, create/edit/delet
 
   test("lists the seeded catalog with lifecycle badge, point count, and version; search and lifecycle filter narrow it", async ({
     page,
+    request,
   }) => {
+    const modelA = await fetchProductSummary(request, "MODEL-A")
+
     await gotoProductConfig(page)
 
     await expect(page.getByRole("cell", { name: "MODEL-A", exact: true })).toBeVisible()
@@ -50,12 +77,10 @@ test.describe("product config — list, search/filter, detail, create/edit/delet
     await expect(
       page.getByRole("row", { name: /MODEL-B/ }).getByText(viDict.lifecycleStatus.development)
     ).toBeVisible()
-    await expect(page.getByRole("row", { name: /MODEL-A/ }).getByRole("cell", { name: "9", exact: true })).toBeVisible()
-    // v9, not the C4-era "v6" — Task C5's own live Playwright/manual verification (real point edits
-    // via `PointForm.tsx`/`PointsEditor.tsx`) legitimately bumped MODEL-A's `pointsConfigVersion` on
-    // this shared dev engine (points.json persists across `dotnet run` restarts). Point count (9)
-    // is untouched — those edits changed limits/tolerance, never added/removed an active point.
-    await expect(page.getByRole("row", { name: /MODEL-A/ }).getByText("v9")).toBeVisible()
+    await expect(
+      page.getByRole("row", { name: /MODEL-A/ }).getByRole("cell", { name: String(modelA.activePointCount), exact: true })
+    ).toBeVisible()
+    await expect(page.getByRole("row", { name: /MODEL-A/ }).getByText(`v${modelA.version}`)).toBeVisible()
 
     const initialRows = await page.getByRole("row").count()
 
@@ -84,15 +109,16 @@ test.describe("product config — list, search/filter, detail, create/edit/delet
     await assertNoSeriousA11yViolations(page)
   })
 
-  test("clicking MODEL-A opens its detail page with fields, points seam, and sync tab", async ({ page }) => {
+  test("clicking MODEL-A opens its detail page with fields, points seam, and sync tab", async ({ page, request }) => {
+    const modelA = await fetchProductSummary(request, "MODEL-A")
+
     await gotoProductConfigDetail(page, "MODEL-A")
 
     await expect(page.getByRole("heading", { name: "MODEL-A", level: 1 })).toBeVisible()
     // `.first()` — the same localized "Đang dùng" string also appears as the lifecycle <Select>'s
     // current-value span further down the info form; the header StatusBadge renders first in DOM order.
     await expect(page.getByText(viDict.lifecycleStatus.active).first()).toBeVisible()
-    // See the list-test's own comment above — v9, not the C4-era "v6".
-    await expect(page.getByText("v9")).toBeVisible()
+    await expect(page.getByText(`v${modelA.version}`)).toBeVisible()
     await expect(page.getByText(viDict.productConfigDetail.info.codeLabel)).toBeVisible()
     await expect(page.getByRole("textbox", { name: viDict.productConfig.form.nameLabel })).toHaveValue(
       /Main Control Board/
@@ -100,7 +126,9 @@ test.describe("product config — list, search/filter, detail, create/edit/delet
 
     // Points tab — SEAM FOR C5: this is real data (GET /v1/products/MODEL-A/points), not a placeholder.
     await page.getByRole("tab", { name: viDict.productConfigDetail.tabs.points }).click()
-    await expect(page.getByText(viDict.productConfigDetail.points.countLabel({ count: 9 }))).toBeVisible()
+    await expect(
+      page.getByText(viDict.productConfigDetail.points.countLabel({ count: modelA.activePointCount }))
+    ).toBeVisible()
     await expect(page.getByRole("cell", { name: "P01", exact: true })).toBeVisible()
 
     // Sync tab — SEAM FOR C7: real drift-check against the live C2/C3 engine.

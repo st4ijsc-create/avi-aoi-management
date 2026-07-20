@@ -132,6 +132,11 @@ public sealed class LiveConfigSyncBackend : IConfigSyncBackend, IDisposable
         var parsed = Deserialize<CheckPointsVersionWire>(body);
         if (parsed?.ProductModels is null) return Array.Empty<ProductVersionDto>();
 
+        // Task C8: no PointsChecksum here (stays null) — the real check-points-version response per
+        // CONFIG_SYNC_SERVER_CONTRACT.md carries version only, never a points-content checksum.
+        // ConfigSyncEngine.CheckAsync's drift decision falls back to plain version equality whenever
+        // either side's checksum is unavailable, so this is a correct, honest "don't know" rather than
+        // fabricating one.
         return parsed.ProductModels
             .Select(p => new ProductVersionDto(p.ProductModelCode, p.PointsConfigVersion, p.ImageWidth, p.ImageHeight))
             .ToList();

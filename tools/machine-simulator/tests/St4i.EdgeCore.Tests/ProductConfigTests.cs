@@ -254,6 +254,89 @@ public class ProductConfigTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // ConfigChecksum.ComputePointsChecksum (Task C8) — the content-checksum drift key.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private static MeasurementPoint MakePoint(string code, double lowerLimit, DateTimeOffset? lastModifiedAt = null) => new()
+    {
+        Code = code,
+        Name = $"Point {code}",
+        MeasurementType = MeasurementType.Dimension,
+        Unit = "mm",
+        LowerLimit = lowerLimit,
+        UpperLimit = lowerLimit + 1,
+        PositionX = 10,
+        PositionY = 20,
+        OrderIndex = 0,
+        IsActive = true,
+        LastModifiedAt = lastModifiedAt ?? DateTimeOffset.UtcNow,
+    };
+
+    [Fact]
+    public void ComputePointsChecksum_is_order_independent()
+    {
+        var a = new List<MeasurementPoint> { MakePoint("P01", 1), MakePoint("P02", 2) };
+        var b = new List<MeasurementPoint> { MakePoint("P02", 2), MakePoint("P01", 1) };
+
+        Assert.Equal(ConfigChecksum.ComputePointsChecksum(a), ConfigChecksum.ComputePointsChecksum(b));
+    }
+
+    [Fact]
+    public void ComputePointsChecksum_ignores_LastModifiedAt()
+    {
+        var a = new List<MeasurementPoint> { MakePoint("P01", 1, DateTimeOffset.UtcNow) };
+        var b = new List<MeasurementPoint> { MakePoint("P01", 1, DateTimeOffset.UtcNow.AddDays(-30)) };
+
+        // Same spec content, different edit timestamps — a no-op re-save or a resurrect-by-repush must
+        // NOT look like drift.
+        Assert.Equal(ConfigChecksum.ComputePointsChecksum(a), ConfigChecksum.ComputePointsChecksum(b));
+    }
+
+    [Fact]
+    public void ComputePointsChecksum_changes_when_a_spec_field_changes()
+    {
+        var a = new List<MeasurementPoint> { MakePoint("P01", 1) };
+        var b = new List<MeasurementPoint> { MakePoint("P01", 1.5) }; // different lowerLimit
+
+        Assert.NotEqual(ConfigChecksum.ComputePointsChecksum(a), ConfigChecksum.ComputePointsChecksum(b));
+    }
+
+    [Fact]
+    public void ComputePointsChecksum_excludes_tombstoned_points()
+    {
+        var active = MakePoint("P01", 1);
+        var tombstoned = MakePoint("P02", 2);
+        tombstoned.DeletedAt = DateTimeOffset.UtcNow;
+        tombstoned.DeletedAtVersion = 7;
+
+        var withTombstone = new List<MeasurementPoint> { active, tombstoned };
+        var withoutTombstone = new List<MeasurementPoint> { active };
+
+        // A tombstoned point contributes nothing — the checksum is over ACTIVE points only, matching
+        // ProductModel.ActivePoints.
+        Assert.Equal(ConfigChecksum.ComputePointsChecksum(withTombstone), ConfigChecksum.ComputePointsChecksum(withoutTombstone));
+    }
+
+    [Fact]
+    public void ComputePointsChecksum_is_deterministic_and_looks_like_a_sha256_hex_digest()
+    {
+        var points = new List<MeasurementPoint> { MakePoint("P01", 1), MakePoint("P02", 2) };
+
+        var first = ConfigChecksum.ComputePointsChecksum(points);
+        var second = ConfigChecksum.ComputePointsChecksum(points);
+
+        Assert.Equal(first, second);
+        Assert.Equal(64, first.Length);
+        Assert.Equal(first, first.ToLowerInvariant());
+    }
+
+    [Fact]
+    public void ComputePointsChecksum_of_an_empty_set_is_stable()
+    {
+        Assert.Equal(ConfigChecksum.ComputePointsChecksum(new List<MeasurementPoint>()), ConfigChecksum.ComputePointsChecksum(new List<MeasurementPoint>()));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Version bump.
     // ─────────────────────────────────────────────────────────────────────
 

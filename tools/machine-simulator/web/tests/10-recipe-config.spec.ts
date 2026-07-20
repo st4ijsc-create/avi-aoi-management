@@ -9,8 +9,15 @@ import { vi as viDict } from "../src/i18n/vi"
 /**
  * Recipe Config (Task C6) — the System A (automation/IoT machine parameters) recipe workspace's list
  * + editor. Every assertion below reads from the REAL, seeded `ProductConfigStore` (`SCREWDRIVE-M4`:
- * active/v2, torque/speed payload — see `ProductConfigStore.SeedRecipes`), same "no mocks" contract as
+ * active, torque/speed payload — see `ProductConfigStore.SeedRecipes`), same "no mocks" contract as
  * `08-product-config.spec.ts`.
+ *
+ * Task C8 fix: `SCREWDRIVE-M4`'s version used to be hardcoded ("v2") — matching the raw seed value
+ * (`SeedRecipes()`: version 2) ONLY as long as nobody had ever saved a real edit to it on this dev
+ * engine's `recipes.json` (which — same as `08-product-config.spec.ts`'s own MODEL-A issue — persists
+ * across `dotnet run` restarts and across repeated `npm run test:e2e` runs against a reused engine
+ * process). `fetchRecipeVersion` below reads the ACTUAL current version right before each assertion,
+ * so this spec holds regardless of the store's mutation history.
  *
  * The create/edit/save/delete lifecycle test uses a FRESH throwaway recipe rather than editing
  * `SCREWDRIVE-M4` directly, so this spec never depends on (or mutates) the shared seeded catalog's
@@ -20,6 +27,24 @@ const THROWAWAY_CODE = "E2E-C6-TEST"
 
 async function deleteThrowawayIfPresent(request: APIRequestContext): Promise<void> {
   await request.delete(`${ENGINE_URL}/v1/recipes/${THROWAWAY_CODE}`)
+}
+
+/** Reads the REAL current `version` + `payload` for recipe `code` straight off the engine — see the
+ * file doc comment above for why the spec can't just hardcode these. `payload` values in particular
+ * are NOT just a dev-mutation risk: `02-machine-detail.spec.ts`'s own SCRW-01 test legitimately PULLS
+ * this exact recipe from the (deliberately diverged) simulated ecosystem as part of its real Task C7
+ * coverage — since every spec file shares ONE engine process for the whole suite run (workers: 1,
+ * fixed numeric file order — see `playwright.config.ts`'s own doc comment) and `02-*` runs before
+ * `10-*`, `torqueTarget` is 1.40 (the ecosystem's value), not the raw seed's 1.35, by the time this
+ * spec's own tests run — a fresh engine included, not just a mutated dev box. */
+async function fetchRecipe(
+  request: APIRequestContext,
+  code: string
+): Promise<{ version: number; payload: Record<string, unknown> }> {
+  const res = await request.get(`${ENGINE_URL}/v1/recipes/${code}`)
+  if (!res.ok()) throw new Error(`GET /v1/recipes/${code} failed: ${res.status()}`)
+  const body = (await res.json()) as { version: number; payload: Record<string, unknown> }
+  return { version: body.version, payload: body.payload }
 }
 
 test.describe("recipe config — list, search/filter, detail, create/edit/save/delete lifecycle", () => {
@@ -33,13 +58,16 @@ test.describe("recipe config — list, search/filter, detail, create/edit/save/d
 
   test("lists the seeded catalog with status badge, machine type, version, and checksum; search and status filter narrow it", async ({
     page,
+    request,
   }) => {
+    const { version } = await fetchRecipe(request, "SCREWDRIVE-M4")
+
     await gotoRecipeConfig(page)
 
     await expect(page.getByRole("cell", { name: "SCREWDRIVE-M4", exact: true })).toBeVisible()
     await expect(page.getByRole("row", { name: /SCREWDRIVE-M4/ }).getByText(viDict.recipeStatus.active)).toBeVisible()
     await expect(page.getByRole("row", { name: /SCREWDRIVE-M4/ }).getByRole("cell", { name: "SCREWDRIVE", exact: true })).toBeVisible()
-    await expect(page.getByRole("row", { name: /SCREWDRIVE-M4/ }).getByText("v2")).toBeVisible()
+    await expect(page.getByRole("row", { name: /SCREWDRIVE-M4/ }).getByText(`v${version}`)).toBeVisible()
 
     const initialRows = await page.getByRole("row").count()
 
@@ -64,18 +92,23 @@ test.describe("recipe config — list, search/filter, detail, create/edit/save/d
 
   test("clicking SCREWDRIVE-M4 opens its editor with typed payload fields populated, an 'other' field, and a sync tab", async ({
     page,
+    request,
   }) => {
+    const { version, payload } = await fetchRecipe(request, "SCREWDRIVE-M4")
+
     await gotoRecipeConfigDetail(page, "SCREWDRIVE-M4")
 
     await expect(page.getByRole("heading", { name: "SCREWDRIVE-M4", level: 1 })).toBeVisible()
     await expect(page.getByText(viDict.recipeStatus.active).first()).toBeVisible()
-    await expect(page.getByText("v2")).toBeVisible()
+    await expect(page.getByText(`v${version}`)).toBeVisible()
 
-    // Typed SCREWDRIVE fields — real values from the seed (speedRpm 450, torqueTarget 1.35, …).
-    await expect(page.getByRole("spinbutton", { name: /Tốc độ/ })).toHaveValue("450")
-    await expect(page.getByRole("spinbutton", { name: /Mô-men xiết mục tiêu/ })).toHaveValue("1.35")
-    await expect(page.getByRole("spinbutton", { name: /Dung sai mô-men xiết/ })).toHaveValue("0.15")
-    await expect(page.getByRole("textbox", { name: /Đơn vị mô-men xiết/ })).toHaveValue("Nm")
+    // Typed SCREWDRIVE fields — real ACTUAL values (not the raw seed's) since this recipe may have
+    // already been pulled from the ecosystem's deliberately-diverged copy by an earlier spec in this
+    // same suite run — see fetchRecipe's own doc comment.
+    await expect(page.getByRole("spinbutton", { name: /Tốc độ/ })).toHaveValue(String(payload.speedRpm))
+    await expect(page.getByRole("spinbutton", { name: /Mô-men xiết mục tiêu/ })).toHaveValue(String(payload.torqueTarget))
+    await expect(page.getByRole("spinbutton", { name: /Dung sai mô-men xiết/ })).toHaveValue(String(payload.torqueTolerance))
+    await expect(page.getByRole("textbox", { name: /Đơn vị mô-men xiết/ })).toHaveValue(String(payload.torqueUnit))
 
     // "notes" has no typed spec — it renders in the generic "other fields" grid instead.
     await expect(page.getByText("notes", { exact: true })).toBeVisible()

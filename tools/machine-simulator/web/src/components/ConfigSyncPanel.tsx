@@ -716,6 +716,25 @@ function ProductSyncDetail({ machineCode, productCode }: { machineCode: string; 
           </p>
         ) : null}
 
+        {/* Task C8 — the checksum-first drift key the engine actually decided `drift.driftState`
+            with (byte-exact when both sides have one; a version-only fallback otherwise). */}
+        {drift?.localChecksum || drift?.ecosystemChecksum ? (
+          <dl className="grid w-fit grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+            <div className="flex flex-col gap-0.5">
+              <dt className="text-text-muted">{t("configSyncPanel.detail.pointsChecksumLocalLabel")}</dt>
+              <dd className="font-mono text-text-strong" title={drift?.localChecksum ?? undefined}>
+                {drift?.localChecksum ? shortChecksum(drift.localChecksum) : t("configSyncPanel.diff.noValue")}
+              </dd>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <dt className="text-text-muted">{t("configSyncPanel.detail.pointsChecksumEcosystemLabel")}</dt>
+              <dd className="font-mono text-text-strong" title={drift?.ecosystemChecksum ?? undefined}>
+                {drift?.ecosystemChecksum ? shortChecksum(drift.ecosystemChecksum) : t("configSyncPanel.diff.noValue")}
+              </dd>
+            </div>
+          </dl>
+        ) : null}
+
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" onClick={handlePull} disabled={pull.isPending}>

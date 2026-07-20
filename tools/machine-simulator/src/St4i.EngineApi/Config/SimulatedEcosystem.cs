@@ -74,9 +74,15 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
                 ? _products.Values
                 : _products.TryGetValue(productModelCode, out var one) ? new[] { one } : Enumerable.Empty<ProductModel>();
 
+            // Task C8 — the Demo backend actually HAS the full point set in-process (unlike a real
+            // server's check-points-version, which per the contract returns version only), so it
+            // computes a real checksum-first drift key here instead of leaving callers stuck with
+            // version-only comparison. See ConfigChecksum.ComputePointsChecksum's own doc comment.
             IReadOnlyList<ProductVersionDto> result = source
                 .OrderBy(p => p.Code, StringComparer.OrdinalIgnoreCase)
-                .Select(p => new ProductVersionDto(p.Code, p.PointsConfigVersion, p.ImageWidth, p.ImageHeight))
+                .Select(p => new ProductVersionDto(
+                    p.Code, p.PointsConfigVersion, p.ImageWidth, p.ImageHeight,
+                    ConfigChecksum.ComputePointsChecksum(p.Points)))
                 .ToList();
             return Task.FromResult(result);
         }

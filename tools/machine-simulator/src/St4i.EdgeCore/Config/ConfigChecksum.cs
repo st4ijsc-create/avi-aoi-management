@@ -66,6 +66,63 @@ public static class ConfigChecksum
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
+    /// <summary>
+    /// Task C8 — deterministic, ORDER-INDEPENDENT content checksum for a product's ACTIVE measurement
+    /// points: the checksum-first drift key (docs/CONFIG_SYNC_STANDARDS_RESEARCH.md §5 — "adopt a
+    /// content hash as binary identity, like OPC UA's <c>InternalId</c>... surface it as the drift key,
+    /// matching CFX's checksum-first drift comparison"), mirroring this project's OWN server-side
+    /// <c>computeDriftState</c> (server/services/configDriftService.ts: "when BOTH carry a checksum it
+    /// is authoritative (byte-exact); otherwise fall back to (code, version) equality").
+    ///
+    /// Points are canonicalized — filtered to non-tombstoned (<see cref="MeasurementPoint.IsDeleted"/>
+    /// false) and sorted by <see cref="MeasurementPoint.Code"/> (ordinal) — before hashing, so the SAME
+    /// active-point SET always checksums identically no matter what order the caller's list (or each
+    /// point's <see cref="MeasurementPoint.OrderIndex"/>) happens to be in; callers do not need to
+    /// pre-filter or pre-sort.
+    ///
+    /// <see cref="MeasurementPoint.LastModifiedAt"/>/<see cref="MeasurementPoint.DeletedAt"/>/
+    /// <see cref="MeasurementPoint.DeletedAtVersion"/> are stripped from each point before hashing —
+    /// audit/tombstone metadata, not spec content. Without this, two points with byte-identical spec
+    /// but different edit timestamps (e.g. a no-op re-save, or a push that resurrects a previously
+    /// tombstoned point) would checksum differently and look like drift when nothing observable
+    /// actually changed.
+    /// </summary>
+    public static string ComputePointsChecksum(IEnumerable<MeasurementPoint> points)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+
+        using var doc = JsonSerializer.SerializeToDocument(
+            points.Where(p => !p.IsDeleted).OrderBy(p => p.Code, StringComparer.Ordinal).ToList(),
+            SerializeOptions);
+
+        var canonicalPoints = doc.RootElement.EnumerateArray().Select(StripAuditFields).ToList();
+        return Compute(canonicalPoints);
+    }
+
+    private static readonly HashSet<string> AuditFieldNames = new(StringComparer.Ordinal)
+    {
+        nameof(MeasurementPoint.LastModifiedAt),
+        nameof(MeasurementPoint.DeletedAt),
+        nameof(MeasurementPoint.DeletedAtVersion),
+    };
+
+    /// <summary>Re-shapes one already-serialized point <see cref="JsonElement"/> into a plain
+    /// string-keyed dictionary with <see cref="AuditFieldNames"/> removed, so <see cref="Compute(object?)"/>
+    /// can hash the result like any other input (a fresh <see cref="JsonSerializer.SerializeToDocument"/>
+    /// round-trip on a filtered/re-typed clone would be needlessly expensive — this just walks the
+    /// object's own properties once).</summary>
+    private static Dictionary<string, JsonElement> StripAuditFields(JsonElement point)
+    {
+        var dict = new Dictionary<string, JsonElement>();
+        foreach (var prop in point.EnumerateObject())
+        {
+            if (AuditFieldNames.Contains(prop.Name)) continue;
+            dict[prop.Name] = prop.Value;
+        }
+
+        return dict;
+    }
+
     private static void StableStringify(JsonElement el, StringBuilder sb)
     {
         switch (el.ValueKind)
