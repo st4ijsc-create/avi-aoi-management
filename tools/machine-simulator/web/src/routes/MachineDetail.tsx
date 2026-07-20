@@ -301,7 +301,7 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
 
             <TabsContent value="config" className="pt-4">
               <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
-                <ConfigSyncPanel code={machine.code} driftState={machine.driftState} className="max-w-xl" />
+                <ConfigSyncPanel code={machine.code} deviceClass={machine.class} className="max-w-4xl" />
               </motion.div>
             </TabsContent>
 

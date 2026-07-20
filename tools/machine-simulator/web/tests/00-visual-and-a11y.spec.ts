@@ -5,6 +5,7 @@ import {
   gotoDashboard,
   gotoInspector,
   gotoMachineDetail,
+  gotoMachineDetailConfig,
   gotoMachines,
   gotoOnboarding,
   gotoProductConfig,
@@ -67,6 +68,20 @@ const SCREENS: ScreenCase[] = [
     visit: async (page, theme) => {
       await primeAppStorage(page, { theme })
       await gotoMachineDetail(page, "SCRW-01")
+    },
+  },
+  {
+    // Task C7 — per-machine config-sync panel: AOI-01 (AoiAvi) so the pristine, deterministic seed
+    // divergence (`SimulatedEcosystem`'s doc comment: MODEL-A local v3 vs ecosystem v5) renders a real,
+    // non-trivial diff (changed/removed/added points) on the very first pull — the richest, most
+    // representative state for this screen's baseline. Read-only visit (no pull/push click) so this
+    // stays a pristine snapshot like every other screen here, and doesn't mutate the shared
+    // `SimulatedEcosystem`/`ProductConfigStore` state later specs (02-machine-detail.spec.ts's own
+    // config-tab tests) rely on starting from.
+    slug: "machine-detail-config",
+    visit: async (page, theme) => {
+      await primeAppStorage(page, { theme })
+      await gotoMachineDetailConfig(page, "AOI-01")
     },
   },
   {

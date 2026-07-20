@@ -33,10 +33,18 @@ test.describe("machine detail", () => {
     await expect(page.getByText(viDict.spcChart.mean).first()).toBeVisible()
     await expect(page.locator(".recharts-surface").first()).toBeVisible()
 
-    // Config tab — fires a real sync-config round trip against the engine.
+    // Config tab — Task C7's real per-machine config-sync panel. SCRW-01 is Automation (System A,
+    // recipe) — the engine auto-resolves SCREWDRIVE-M4 by machine type (`ConfigSyncEngine.CheckAsync`),
+    // Pull applies it, and the pull result panel renders a real applied version.
     await page.getByRole("tab", { name: viDict.machineDetail.tabs.config }).click()
-    await page.getByRole("button", { name: viDict.configSyncPanel.syncBtn }).click()
-    await expect(page.getByText(viDict.configSyncPanel.lastResult)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole("button", { name: viDict.configSyncPanel.recipe.pullBtn })).toBeVisible({
+      timeout: 15_000,
+    })
+    await page.getByRole("button", { name: viDict.configSyncPanel.recipe.pullBtn }).click()
+    await expect(page.getByText(viDict.configSyncPanel.pullResult.title)).toBeVisible({ timeout: 10_000 })
+    // Recipe machines don't get a push affordance from this panel (server: recipes are human-authored
+    // in SYNAPSE) — the honest "not available here" note plus a link to the Demo-only authoring page.
+    await expect(page.getByText(viDict.configSyncPanel.recipe.pushUnavailable)).toBeVisible()
 
     // Log tab — real cycle rows, newest first (header row + at least one data row).
     await page.getByRole("tab", { name: viDict.machineDetail.tabs.log }).click()
@@ -54,6 +62,47 @@ test.describe("machine detail", () => {
     // why); either is correct depending on whether AOI-01 has produced an NG yet, so this matches on
     // the shared aria-label instead of pinning one specific role.
     await expect(page.locator('[aria-label*="Sơ đồ bo mạch"]')).toBeVisible()
+    await assertNoSeriousA11yViolations(page)
+  })
+
+  test("AOI/AVI machine (AOI-01): Config tab — diff, pull, push (guarded) and sync history render real data", async ({
+    page,
+  }) => {
+    await gotoMachineDetail(page, "AOI-01")
+    await page.getByRole("tab", { name: viDict.machineDetail.tabs.config }).click()
+
+    // Products-drift overview (every product the ecosystem knows — an AOI/AVI machine doesn't own a
+    // single fixed product, see `ConfigSyncEngine.CheckAsync`'s own doc comment) renders past its
+    // skeleton and auto-selects one product into the detail panel below, which fetches a real
+    // field-level diff BEFORE anything is applied.
+    await expect(page.getByRole("heading", { name: viDict.configSyncPanel.products.title, level: 3 })).toBeVisible({
+      timeout: 15_000,
+    })
+    // Not `getByText` — the panel's own description paragraph contains this same phrase as a
+    // substring ("...xem khác biệt trước khi áp dụng..."), which makes a plain text locator ambiguous
+    // (strict-mode violation); the diff section's own `<h4>` heading is unambiguous.
+    await expect(page.getByRole("heading", { name: viDict.configSyncPanel.diff.title, level: 4 })).toBeVisible({
+      timeout: 15_000,
+    })
+
+    // Pull applies whatever the ecosystem currently holds for the selected product — idempotent to
+    // re-run (a pull on an already-in-sync product still reports `applied: true`, just 0 changes).
+    await page.getByRole("button", { name: viDict.configSyncPanel.detail.pullBtn }).click()
+    await expect(page.getByText(viDict.configSyncPanel.pullResult.title)).toBeVisible({ timeout: 10_000 })
+
+    // Push opens the guarded confirm dialog — Demo mode by default (no live-server warning) — then,
+    // once confirmed, surfaces a real result panel (never a silent no-op).
+    await page.getByRole("button", { name: viDict.configSyncPanel.detail.pushBtn }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByText(viDict.configSyncPanel.pushConfirm.demoNote)).toBeVisible()
+    await dialog.getByRole("button", { name: viDict.configSyncPanel.pushConfirm.submit }).click()
+    await expect(page.getByText(viDict.configSyncPanel.pushResult.title)).toBeVisible({ timeout: 10_000 })
+
+    // Sync history — the audit trail — gains rows for both operations just performed.
+    await expect(page.getByText(viDict.configSyncPanel.history.title)).toBeVisible()
+    await expect.poll(() => page.getByRole("row").count(), { timeout: 10_000 }).toBeGreaterThan(1)
+
     await assertNoSeriousA11yViolations(page)
   })
 

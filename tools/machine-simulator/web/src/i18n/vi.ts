@@ -981,20 +981,174 @@ export const vi = {
       `Sơ đồ bo mạch — ${vars.defectCount} vị trí lỗi được đánh dấu trên ${vars.total} điểm kiểm tra`,
   },
 
+  // Task C7 — per-machine config-sync workspace (replaces the old generic "sync recipe" stub):
+  // version/drift header, field-level diff BEFORE apply, pull/push with a guarded confirm, governance
+  // + conflict surfacing (never a plain "success" when limits were blocked), sync history. Points
+  // (AOI/AVI, System B) vs recipe (Automation/IoT, System A) share this one namespace.
   configSyncPanel: {
-    title: "Đồng bộ recipe / cấu hình",
-    description: "Lấy recipe và cấu hình mapping mới nhất cho máy này từ máy chủ, và báo cáo nếu có thay đổi.",
-    currentState: "Trạng thái hiện tại",
-    syncBtn: "Đồng bộ recipe",
-    syncing: "Đang đồng bộ…",
-    syncFailed: (vars: Vars) => `Đồng bộ thất bại: ${vars.message}`,
-    lastResult: "Kết quả đồng bộ gần nhất",
-    changed: "Đã thay đổi",
-    version: "Phiên bản",
-    applied: "Đã áp dụng",
-    yes: "Có",
-    no: "Không",
-    unknownError: "lỗi không xác định",
+    title: "Đồng bộ cấu hình",
+    description:
+      "Kéo (pull) cấu hình từ hệ sinh thái về máy hoặc đẩy (push) thay đổi cục bộ lên — xem khác biệt trước khi áp dụng, kiểm tra quản trị ngưỡng/xung đột và lịch sử đầy đủ.",
+    modeLabel: "Đang đồng bộ với",
+    mode: {
+      Live: "Live — máy chủ ST4I thật",
+      Demo: "Demo — hệ sinh thái mô phỏng",
+      Auto: "Tự động — Demo dự phòng (chưa cấu hình máy chủ/khóa)",
+    },
+    refreshBtn: "Làm mới",
+    refreshing: "Đang làm mới…",
+    checkFailed: "Kiểm tra đồng bộ thất bại.",
+    connectivityError: "Không thể kiểm tra đồng bộ — kiểm tra kết nối engine.",
+
+    products: {
+      title: "Phiên bản theo sản phẩm",
+      empty: "Hệ sinh thái chưa có sản phẩm nào để đồng bộ.",
+      localVersionShort: (vars: Vars) => `Cục bộ v${vars.version}`,
+      localVersionNone: "Máy chưa có",
+      ecosystemVersionShort: (vars: Vars) => `Hệ thống v${vars.version}`,
+      selectAria: (vars: Vars) => `Xem chi tiết đồng bộ sản phẩm ${vars.code}`,
+    },
+
+    driftState: {
+      in_sync: "Đã đồng bộ",
+      drift: "Lệch phiên bản",
+      unknown: "Máy chưa từng nhận",
+    },
+
+    detail: {
+      versionHeading: (vars: Vars) => `${vars.code} — cục bộ ${vars.local} → hệ thống v${vars.eco}`,
+      noLocalVersion: "chưa có",
+      imageIdentityLabel: "Định danh ảnh tham chiếu",
+      imageIdentityNone: "Chưa có ảnh tham chiếu.",
+      pullBtn: "Kéo về máy",
+      pulling: "Đang kéo…",
+      pullFailed: "Kéo cấu hình thất bại.",
+      pushBtn: "Đẩy lên hệ thống",
+      pushDisabledHint: "Máy chưa có sản phẩm này — kéo về trước khi đẩy lên.",
+    },
+
+    diff: {
+      title: "Khác biệt trước khi áp dụng",
+      loading: "Đang tải khác biệt…",
+      failed: "Không tải được khác biệt.",
+      upToDate: "Không có khác biệt — cấu hình đã đồng bộ với hệ thống.",
+      versionSame: "Cùng phiên bản",
+      versionEcosystemAhead: (vars: Vars) => `Hệ thống trước ${vars.count} phiên bản`,
+      versionLocalAhead: (vars: Vars) => `Cục bộ trước ${vars.count} phiên bản (đã sửa cục bộ, chưa đẩy lên)`,
+      addedTitle: (vars: Vars) => `Điểm mới (${vars.count})`,
+      addedHint: "Chỉ có trên hệ thống — sẽ được thêm vào máy khi kéo về.",
+      removedTitle: (vars: Vars) => `Điểm đã xóa (${vars.count})`,
+      removedHint: "Đã bị đánh dấu xóa trên hệ thống — sẽ bị xóa khỏi máy khi kéo về.",
+      changedTitle: (vars: Vars) => `Điểm thay đổi (${vars.count})`,
+      fieldColumn: "Trường",
+      localColumn: "Cục bộ (máy)",
+      ecosystemColumn: "Hệ thống",
+      noValue: "—",
+      yes: "Có",
+      no: "Không",
+      imageBefore: "Ảnh cục bộ",
+      imageAfter: "Ảnh hệ thống",
+      fields: {
+        name: "Tên",
+        description: "Mô tả",
+        lowerLimit: "Giới hạn dưới (LSL)",
+        upperLimit: "Giới hạn trên (USL)",
+        nominalValue: "Giá trị danh nghĩa",
+        positionX: "Vị trí X",
+        positionY: "Vị trí Y",
+        normalizedX: "Vị trí X (chuẩn hóa)",
+        normalizedY: "Vị trí Y (chuẩn hóa)",
+        shape: "Hình dạng",
+        isActive: "Đang hoạt động",
+        referenceImageUrl: "Ảnh tham chiếu",
+        geometry: "Hình học (JSON)",
+      },
+    },
+
+    pullResult: {
+      title: "Kết quả kéo về",
+      summary: (vars: Vars) => `Đã áp dụng: v${vars.from} → v${vars.to}`,
+      pointsApplied: "Điểm đang hoạt động",
+      pointsRemoved: "Điểm đã xóa",
+      notApplied: "Chưa áp dụng.",
+    },
+
+    pushConfirm: {
+      title: (vars: Vars) => `Đẩy "${vars.code}" lên hệ thống?`,
+      liveWarning: "Chế độ LIVE — thao tác này GHI vào hệ sinh thái ST4I THẬT, không thể hoàn tác từ máy này.",
+      autoNote:
+        "Chế độ Tự động — có thể đang ghi vào máy chủ ST4I thật nếu đã cấu hình máy chủ/khóa; nếu chưa, sẽ ghi vào hệ sinh thái Demo mô phỏng.",
+      demoNote: "Chế độ Demo — thao tác chỉ ghi vào hệ sinh thái mô phỏng cục bộ, an toàn để thử.",
+      summary: (vars: Vars) =>
+        `Sẽ đẩy toàn bộ ${vars.count} điểm đo đang hoạt động của "${vars.code}" (phiên bản cục bộ v${vars.version}) lên hệ thống.`,
+      governanceNote:
+        "Nếu sản phẩm không ở trạng thái “Đang phát triển”, thay đổi giới hạn (LSL/USL) có thể bị quản trị ngưỡng chặn — chỉ hình học và ảnh được đồng bộ trong trường hợp đó.",
+      cancel: "Hủy",
+      submit: "Xác nhận đẩy lên",
+      submitting: "Đang đẩy…",
+    },
+
+    pushResult: {
+      title: "Kết quả đẩy lên",
+      versionBump: (vars: Vars) => `v${vars.from} → v${vars.to}`,
+      created: "Đã tạo",
+      updated: "Đã cập nhật",
+      pointsFailed: "Lỗi",
+      staleConflicts: "Xung đột (ghi cũ)",
+      blindOverwrites: "Ghi đè không khóa phiên bản",
+      limitBlockedBanner:
+        "Giới hạn đã duyệt (LSL/USL) bị quản trị ngưỡng CHẶN — chỉ hình học/ảnh/tên được đồng bộ. Sửa giới hạn phải qua quy trình duyệt trong SYNAPSE.",
+      conflictBanner: (vars: Vars) => `${vars.count} điểm bị xung đột ghi cũ (stale write) — không bị ghi đè.`,
+      notConfirmed: "Đẩy lên cần xác nhận — không có gì được gửi đi.",
+      pointsTitle: "Kết quả theo điểm",
+      pointStatus: {
+        created: "Đã tạo",
+        updated: "Đã cập nhật",
+        conflict: "Xung đột",
+        failed: "Lỗi",
+      },
+      pointLimitBlocked: "Giới hạn bị chặn",
+    },
+
+    history: {
+      title: "Lịch sử đồng bộ",
+      empty: "Chưa có lần đồng bộ nào cho máy này.",
+      columnOp: "Thao tác",
+      columnCode: "Mã",
+      columnVersion: "Phiên bản",
+      columnStatus: "Trạng thái",
+      columnTime: "Thời gian",
+      op: {
+        pull: "Kéo về",
+        push: "Đẩy lên",
+      },
+      status: {
+        success: "Thành công",
+        failed: "Thất bại",
+      },
+      versionCell: (vars: Vars) => `v${vars.from} → v${vars.to}`,
+      detailsLabel: "Chi tiết kỹ thuật",
+      loading: "Đang tải lịch sử…",
+      failed: "Không tải được lịch sử.",
+    },
+
+    recipe: {
+      versionHeading: (vars: Vars) => `${vars.code} — cục bộ ${vars.local} → hệ thống v${vars.eco}`,
+      resolvedByLabel: "Phân giải theo",
+      resolvedBy: {
+        machine: "Riêng theo máy",
+        machineType: "Theo loại máy",
+        none: "Không có",
+      },
+      checksumLabel: "Checksum (bản cục bộ)",
+      noneResolved: "Chưa có recipe/thông số nào phân giải được cho loại máy của máy này.",
+      pullBtn: "Kéo về máy",
+      pulling: "Đang kéo…",
+      pullFailed: "Kéo recipe thất bại.",
+      pushUnavailable:
+        "Đẩy recipe lên hệ thống thật không khả dụng — recipe do người soạn trong SYNAPSE (duyệt 2 người). Có thể thử đẩy ở chế độ Demo trong khu vực soạn recipe.",
+      viewRecipeLink: (vars: Vars) => `Xem recipe ${vars.code}`,
+    },
   },
 
   cycleLogTable: {
@@ -1056,8 +1210,11 @@ export const vi = {
     settingsSaved: "Đã lưu cài đặt.",
     settingsSaveFailed: "Không thể lưu cài đặt.",
     onboardingKeyStored: (vars: Vars) => `Đã lưu khóa cho ${vars.code}.`,
-    configSynced: (vars: Vars) => `Đã đồng bộ cấu hình cho ${vars.code}.`,
-    configSyncFailed: "Đồng bộ cấu hình thất bại.",
+    configPulled: (vars: Vars) => `Đã kéo cấu hình cho ${vars.code} (v${vars.version}).`,
+    configPullFailed: "Kéo cấu hình thất bại.",
+    configPushed: (vars: Vars) => `Đã đẩy cấu hình cho ${vars.code} (v${vars.version}).`,
+    configPushBlocked: (vars: Vars) => `Đã đẩy cấu hình cho ${vars.code} — một số giới hạn bị quản trị ngưỡng chặn.`,
+    configPushFailed: "Đẩy cấu hình thất bại.",
     keyCopied: "Đã sao chép khóa.",
     productCreated: (vars: Vars) => `Đã tạo sản phẩm ${vars.code}.`,
     productSaved: "Đã lưu sản phẩm.",

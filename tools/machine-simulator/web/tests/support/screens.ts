@@ -37,6 +37,18 @@ export async function gotoMachineDetail(page: Page, code: string): Promise<void>
   await waitForEngineConnected(page)
 }
 
+/** Machine detail, "Config" tab — Task C7's per-machine config-sync panel (products-drift table +
+ * diff/pull/push detail + sync history for AOI/AVI, or the recipe check/pull card for Automation/IoT).
+ * Waits past the tab switch and the drift-check query's own loading skeleton — the products table only
+ * renders once `useMachineConfigCheck()` has resolved at least once. */
+export async function gotoMachineDetailConfig(page: Page, code: string): Promise<void> {
+  await gotoMachineDetail(page, code)
+  await page.getByRole("tab", { name: viDict.machineDetail.tabs.config }).click()
+  await expect(page.getByRole("heading", { name: viDict.configSyncPanel.products.title, level: 3 })).toBeVisible({
+    timeout: 15_000,
+  })
+}
+
 export async function gotoInspector(page: Page): Promise<void> {
   await page.goto("/inspector")
   await expect(page.getByRole("heading", { name: viDict.inspector.title, level: 1 })).toBeVisible()

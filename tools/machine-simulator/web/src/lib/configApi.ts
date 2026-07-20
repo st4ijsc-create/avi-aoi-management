@@ -661,6 +661,12 @@ export function useMachineConfigHistory(machineCode: string | undefined): UseQue
   })
 }
 
+/** Task C7: pull writes into the LOCAL `ProductConfigStore` (`ConfigSyncEngine.PullAsync` calls
+ * `_localStore.UpsertProduct`/`UpsertRecipe`), so beyond this machine's own check/diff/history, the
+ * product/recipe AUTHORING screens (`ProductConfigDetail.tsx`, `PointsEditor.tsx`, `RecipeConfigDetail.tsx`)
+ * need to catch up too — invalidating the broad `"configProduct"`/`"configPoints"`/`"configRecipe"`
+ * prefixes (not just this one product's key) is cheap here (small local dataset) and correct regardless
+ * of which product/recipe code the pull actually touched. */
 export function useMachineConfigPull() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -668,11 +674,20 @@ export function useMachineConfigPull() {
       endpoints.machineConfigPull(machineCode, body),
     onSuccess: (_data, { machineCode }) => {
       queryClient.invalidateQueries({ queryKey: ["machineConfigCheck", machineCode] })
+      queryClient.invalidateQueries({ queryKey: ["machineConfigDiff", machineCode] })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.machineConfigHistory(machineCode) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.products })
+      queryClient.invalidateQueries({ queryKey: ["configProduct"] })
+      queryClient.invalidateQueries({ queryKey: ["configPoints"] })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.recipes })
+      queryClient.invalidateQueries({ queryKey: ["configRecipe"] })
     },
   })
 }
 
+/** Push doesn't touch the local store (only the ecosystem's version advances — see
+ * `ConfigSyncEngine.PushAsync`'s own doc comment: it reads local points but never calls
+ * `_localStore.Upsert*`), so only the check/diff/history queries need to catch up here. */
 export function useMachineConfigPush() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -680,6 +695,7 @@ export function useMachineConfigPush() {
       endpoints.machineConfigPush(machineCode, body),
     onSuccess: (_data, { machineCode }) => {
       queryClient.invalidateQueries({ queryKey: ["machineConfigCheck", machineCode] })
+      queryClient.invalidateQueries({ queryKey: ["machineConfigDiff", machineCode] })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.machineConfigHistory(machineCode) })
     },
   })
