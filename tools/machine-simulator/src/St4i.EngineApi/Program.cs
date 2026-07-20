@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.FileProviders;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
@@ -91,6 +92,27 @@ builder.Services.AddSingleton(sp => new ConfigSyncCoordinator(
 
 builder.Services.AddSingleton<ConfigSyncEngine>();
 
+// H4 job 1 fix — WebApplicationBuilder's default WebRootPath is `{ContentRootPath}/wwwroot`, and
+// ContentRootPath defaults to the CURRENT WORKING DIRECTORY, which under `dotnet run` is the PROJECT
+// SOURCE directory (confirmed via the "Content root path:" startup log line) — NOT the build output
+// directory the St4i.EngineApi.csproj Content/None items above actually copy `wwwroot/` into. That
+// mismatch is exactly why the seeded products' `assets/products/model-a-board.png` etc. 404'd under
+// `npm run dev` + `dotnet run` even after being added to the csproj: the files were sitting in
+// `bin/<config>/<tfm>/wwwroot/`, a directory this host was never looking in. Repointing WebRootPath at
+// `AppContext.BaseDirectory` (always the directory containing the loaded assembly — bin output for
+// `dotnet run`, the publish directory for the published single-file build; SAME convention FleetHost
+// already uses for fleet.json/mapping/*.json, see its own AppContext.BaseDirectory doc comment) makes
+// both modes resolve the SAME physical wwwroot the build actually populates. Setting the STRING alone
+// is not enough — `WebApplication.CreateBuilder` already constructed `WebRootFileProvider` from the
+// default path before this line runs, and `UseStaticFiles`/`UseDefaultFiles` read that file provider,
+// not the path string, so it has to be rebuilt against the corrected path too (verified live: without
+// this second line, Kestrel logs "The WebRootPath was not found" for the CORRECT path and 404s anyway).
+var webRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+Directory.CreateDirectory(webRootPath); // PhysicalFileProvider throws if the root doesn't exist yet (a
+                                         // truly fresh build output before any Content items have run).
+builder.Environment.WebRootPath = webRootPath;
+builder.Environment.WebRootFileProvider = new PhysicalFileProvider(webRootPath);
+
 var app = builder.Build();
 
 // Task 9 — serve the built web UI (`web/dist`, copied into `wwwroot/` at build time — see the
@@ -100,8 +122,11 @@ var app = builder.Build();
 // hashed JS/CSS/asset files vite emitted; `MapFallbackToFile` (registered after the API endpoints below,
 // lowest routing priority) sends any other GET that doesn't match an API route or a real static file to
 // `index.html` too, so the SPA's client-side router (wouter) handles deep links / refreshes on routes
-// like `/machines/aoi-01` instead of 404ing. Harmless no-op in dev (`wwwroot` doesn't exist there — Vite
-// serves the UI on :5173 instead, per Task 3/9's dev-mode split).
+// like `/machines/aoi-01` instead of 404ing. In dev, `wwwroot/index.html` itself still won't exist
+// unless `npm run build` has already run once (Vite serves the UI on :5173 instead, per Task 3/9's
+// dev-mode split) — but `wwwroot/assets/products/*.png` (the WebRootPath fix above) is copied
+// unconditionally, so the reference board images resolve from THIS engine (:5199, where
+// `resolveProductImageUrl` points in dev too) even on a bare `dotnet run` with no prior web build.
 app.UseDefaultFiles();
 app.UseStaticFiles();
 

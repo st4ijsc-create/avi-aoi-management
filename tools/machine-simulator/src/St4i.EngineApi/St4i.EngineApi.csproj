@@ -26,6 +26,16 @@
          extra configuration. -->
     <None Include="..\..\fleet.json" CopyToOutputDirectory="PreserveNewest" Link="fleet.json" />
     <None Include="..\..\mapping\*.json" CopyToOutputDirectory="PreserveNewest" Link="mapping\%(Filename)%(Extension)" />
+    <!-- H4 job 1 — reference board images (ProductConfigStore.SeedModelA/B's "assets/products/model-a
+         -board.png"/"model-b-board.png"). Copied straight from the web project's public/ folder into
+         wwwroot/assets/products at BUILD time, same "always present regardless of what else has been
+         built" pattern as fleet.json/mapping above — deliberately NOT routed through the web/dist copy
+         below (that ItemGroup is conditioned on `web/dist` existing, i.e. `npm run build` having already
+         run). This way a dev session that only runs `dotnet run` here, with Vite serving the UI
+         separately on :5173, still gets working board images from this engine at :5199 (BoardCanvas
+         resolves image URLs against the engine origin, not Vite's). The published single-file build
+         carries its own copy too, since Vite bundles public/ verbatim into web/dist. -->
+    <None Include="..\..\web\public\assets\products\*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="wwwroot\assets\products\%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup Condition="Exists('..\..\web\dist')">
     <!-- Task 9 — copies the ALREADY-BUILT web UI bundle (run `npm run build` in ../../web first; this
