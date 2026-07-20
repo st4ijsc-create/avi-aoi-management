@@ -2,10 +2,11 @@ import * as React from "react"
 import { Loader2, Plus, Target, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useDeletePoint, useProductPoints, type MeasurementPoint, type ProductModel } from "@/lib/configApi"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StatusBadge } from "@/components/ui/status-badge"
@@ -51,7 +52,7 @@ function PointsListTable({
 
   if (points.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border py-8 text-center">
+      <div className="flex flex-col items-center gap-1.5 border border-dashed border-border py-8 text-center">
         <p className="text-sm font-medium text-text-strong">{t("productConfigDetail.points.empty.title")}</p>
         <p className="text-sm text-text-muted">{t("productConfigDetail.points.empty.description")}</p>
       </div>
@@ -59,7 +60,7 @@ function PointsListTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
+    <div className="overflow-hidden border border-border-strong">
       <Table>
         <TableHeader>
           <TableRow>
@@ -99,7 +100,7 @@ function PointsListTable({
                   selected && "bg-navy-50 dark:bg-navy-800/40"
                 )}
               >
-                <TableCell className="font-medium text-text-strong">
+                <TableCell className="font-numeric font-medium text-text-strong">
                   <span className="inline-flex flex-wrap items-center gap-1.5">
                     {point.code}
                     {!point.isActive && !deleted ? <StatusBadge status="neutral">{t("pointsEditor.list.inactiveTag")}</StatusBadge> : null}
@@ -191,6 +192,7 @@ function DeletePointDialog({
 
 export function PointsEditor({ product }: { product: ProductModel }) {
   const t = useT()
+  const gloss = useGloss()
   const [includeDeleted, setIncludeDeleted] = React.useState(false)
   const { data: points, isPending, isFetching, isError } = useProductPoints(product.code, includeDeleted)
   const [selectedCode, setSelectedCode] = React.useState<string | null>(null)
@@ -241,68 +243,77 @@ export function PointsEditor({ product }: { product: ProductModel }) {
   const formKey = newSeed ? "new" : (selectedCode ?? "none")
 
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Target className="size-4 text-navy-600" aria-hidden="true" />
-              <h2 className="text-sm font-semibold text-text-strong">{t("pointsEditor.title")}</h2>
+    <div className="flex flex-col gap-4">
+      {/* Title-less Sheet (registration-corner frame only) — the section heading below stays a
+          literal `<h2>` (NOT `<Sheet title>`'s own `<h3>`) so the page's heading hierarchy holds
+          h1 (product code) → h2 (this section) → h3 (fiducials/variants panels below), matching
+          what `09-points-editor.spec.ts` asserts (`level: 2`). */}
+      <Sheet bodyClassName="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Target className="size-4 text-primary-text" aria-hidden="true" />
+            <h2 className="font-heading text-[15px] font-semibold tracking-tight text-text-strong">{t("pointsEditor.title")}</h2>
+            <span className="hmi-micro" aria-hidden="true">
+              {gloss("pointsEditor.title")}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusBadge status="neutral">{t("productConfigDetail.points.countLabel", { count: activeCount })}</StatusBadge>
+            <StatusBadge status="neutral">{t("productConfigDetail.versionBadge", { version: product.pointsConfigVersion })}</StatusBadge>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {/* No `aria-label` on the Switch — the wrapping <label>'s own visible text already
+              gives it an accessible name via implicit association; adding one too doubled the
+              computed name ("Hiện điểm đã xóa Hiện điểm đã xóa"), caught live via Playwright's
+              `getByRole("switch", { name })` resolving an unexpectedly long accessible name. */}
+          <label className="flex items-center gap-2 text-xs text-text-muted">
+            <Switch checked={includeDeleted} onCheckedChange={setIncludeDeleted} />
+            {t("pointsEditor.includeDeletedLabel")}
+          </label>
+          <Button type="button" size="sm" onClick={handleAddCenter}>
+            <Plus className="size-3.5" aria-hidden="true" />
+            {t("pointsEditor.addBtn")}
+          </Button>
+        </div>
+
+        {isPending ? (
+          <Skeleton className="aspect-[4/3] w-full" />
+        ) : isError ? (
+          <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <div className="flex min-w-0 flex-col gap-4">
+              <BoardCanvas
+                referenceImageUrl={product.referenceImageUrl}
+                imageWidth={product.imageWidth}
+                imageHeight={product.imageHeight}
+                points={points ?? []}
+                fiducials={product.fiducials}
+                selectedCode={selectedCode}
+                onSelectPoint={handleSelectPoint}
+                onAddPointAt={handleAddAt}
+                productName={product.name}
+              />
+              <PointsListTable points={points ?? []} selectedCode={selectedCode} onSelect={handleSelectPoint} onDelete={setDeleteTarget} />
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <StatusBadge status="neutral">{t("productConfigDetail.points.countLabel", { count: activeCount })}</StatusBadge>
-              <StatusBadge status="neutral">{t("productConfigDetail.versionBadge", { version: product.pointsConfigVersion })}</StatusBadge>
-              {/* No `aria-label` on the Switch — the wrapping <label>'s own visible text already
-                  gives it an accessible name via implicit association; adding one too doubled the
-                  computed name ("Hiện điểm đã xóa Hiện điểm đã xóa"), caught live via Playwright's
-                  `getByRole("switch", { name })` resolving an unexpectedly long accessible name. */}
-              <label className="flex items-center gap-2 text-xs text-text-muted">
-                <Switch checked={includeDeleted} onCheckedChange={setIncludeDeleted} />
-                {t("pointsEditor.includeDeletedLabel")}
-              </label>
-              <Button type="button" size="sm" onClick={handleAddCenter}>
-                <Plus className="size-3.5" aria-hidden="true" />
-                {t("pointsEditor.addBtn")}
-              </Button>
+
+            <div className="min-w-0">
+              <PointForm
+                key={formKey}
+                product={product}
+                point={selectedPoint}
+                newSeed={newSeed}
+                existingCodes={existingCodes}
+                onSaved={handleSaved}
+                onCancelNew={handleCancelNew}
+                onRequestDelete={setDeleteTarget}
+              />
             </div>
           </div>
-
-          {isPending ? (
-            <Skeleton className="aspect-[4/3] w-full rounded-xl" />
-          ) : isError ? (
-            <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
-          ) : (
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <div className="flex min-w-0 flex-col gap-4">
-                <BoardCanvas
-                  referenceImageUrl={product.referenceImageUrl}
-                  imageWidth={product.imageWidth}
-                  imageHeight={product.imageHeight}
-                  points={points ?? []}
-                  fiducials={product.fiducials}
-                  selectedCode={selectedCode}
-                  onSelectPoint={handleSelectPoint}
-                  onAddPointAt={handleAddAt}
-                />
-                <PointsListTable points={points ?? []} selectedCode={selectedCode} onSelect={handleSelectPoint} onDelete={setDeleteTarget} />
-              </div>
-
-              <div className="min-w-0">
-                <PointForm
-                  key={formKey}
-                  product={product}
-                  point={selectedPoint}
-                  newSeed={newSeed}
-                  existingCodes={existingCodes}
-                  onSaved={handleSaved}
-                  onCancelNew={handleCancelNew}
-                  onRequestDelete={setDeleteTarget}
-                />
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </Sheet>
 
       <ProductFiducialsPanel product={product} />
       <ProductVariantsPanel product={product} />

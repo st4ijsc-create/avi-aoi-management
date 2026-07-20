@@ -521,6 +521,8 @@ export const en: Dictionary = {
       unplacedNote: (vars: Vars) => `${vars.count} point${vars.count === 1 ? "" : "s"} not yet positioned on the image — edit them in the list below.`,
       ariaLabel: (vars: Vars) => `Points map — ${vars.count} point${vars.count === 1 ? "" : "s"} shown`,
       pointAria: (vars: Vars) => `Point ${vars.code} — ${vars.name}`,
+      figTitle: "FIG. 02 — BOARD REFERENCE MAP",
+      dimensionUnit: "PX",
     },
     list: {
       actionsHeader: "Actions",

@@ -5,6 +5,7 @@ import type { VariantProps } from "class-variance-authority"
 import { toast } from "sonner"
 import { useLocation } from "wouter"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import {
   useProducts,
@@ -14,6 +15,7 @@ import {
   type ProductSummary,
 } from "@/lib/configApi"
 import { fadeSlideUp } from "@/theme/motion"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
 import { ConfigModeToggle } from "@/components/ConfigModeToggle"
 import {
@@ -50,7 +52,9 @@ const LIFECYCLE_ORDER: ProductLifecycleStatus[] = ["development", "active", "eol
 const ALL = "__all__"
 
 interface FilterSelectProps {
+  id: string
   label: string
+  labelEn: string
   value: string
   options: string[]
   optionLabel: (value: string) => string
@@ -60,15 +64,25 @@ interface FilterSelectProps {
 
 /** Plain native `<select>`, not the Base UI Select primitive — same idiom as Machines.tsx's own
  * `FilterSelect` (duplicated locally rather than shared, matching this codebase's established
- * convention for small single-screen filter helpers). */
-function FilterSelect({ label, value, options, optionLabel, onChange, allLabel }: FilterSelectProps) {
+ * convention for small single-screen filter helpers). Stacked bilingual label (spec §3), `id`/
+ * `htmlFor` explicit — see Machines.tsx's `FilterSelect` doc comment for why the gloss must be a
+ * sibling OUTSIDE the `<label>` rather than a hidden descendant of it. */
+function FilterSelect({ id, label, labelEn, value, options, optionLabel, onChange, allLabel }: FilterSelectProps) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">{label}</span>
+    <div className="flex flex-col gap-1">
+      <span className="flex flex-col gap-0.5">
+        <label htmlFor={id} className="truncate text-[13px] leading-tight font-medium text-text-body">
+          {label}
+        </label>
+        <span className="hmi-micro truncate" aria-hidden="true">
+          {labelEn}
+        </span>
+      </span>
       <select
+        id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-8 border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
       >
         <option value={ALL}>{allLabel}</option>
         {options.map((option) => (
@@ -77,16 +91,22 @@ function FilterSelect({ label, value, options, optionLabel, onChange, allLabel }
           </option>
         ))}
       </select>
-    </label>
+    </div>
   )
 }
 
 function SearchField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const t = useT()
+  const gloss = useGloss()
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
-        {t("productConfig.search.label")}
+    <div className="flex flex-col gap-1">
+      <span className="flex flex-col gap-0.5">
+        <label htmlFor="product-search" className="truncate text-[13px] leading-tight font-medium text-text-body">
+          {t("productConfig.search.label")}
+        </label>
+        <span className="hmi-micro truncate" aria-hidden="true">
+          {gloss("productConfig.search.label")}
+        </span>
       </span>
       <div className="relative">
         <Search
@@ -94,28 +114,48 @@ function SearchField({ value, onChange }: { value: string; onChange: (v: string)
           aria-hidden="true"
         />
         <Input
+          id="product-search"
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={t("productConfig.search.placeholder")}
           className="h-8 w-56 pl-7"
         />
       </div>
-    </label>
+    </div>
+  )
+}
+
+function BilingualHead({ vi, en, className, align }: { vi: string; en: string; className?: string; align?: "right" }) {
+  return (
+    <TableHead className={className}>
+      <span className={align === "right" ? "flex flex-col items-end" : "flex flex-col"}>
+        <span>{vi}</span>
+        <span className="hmi-micro font-normal tracking-[0.1em]" aria-hidden="true">
+          {en}
+        </span>
+      </span>
+    </TableHead>
   )
 }
 
 function ProductsTableHeaderRow() {
   const t = useT()
+  const gloss = useGloss()
   return (
     <TableRow>
       <TableHead className="w-14">
         <span className="sr-only">{t("productConfig.table.image")}</span>
       </TableHead>
-      <TableHead>{t("productConfig.table.code")}</TableHead>
-      <TableHead>{t("productConfig.table.name")}</TableHead>
-      <TableHead>{t("productConfig.table.lifecycle")}</TableHead>
-      <TableHead className="text-right">{t("productConfig.table.points")}</TableHead>
-      <TableHead>{t("productConfig.table.version")}</TableHead>
+      <BilingualHead vi={t("productConfig.table.code")} en={gloss("productConfig.table.code")} />
+      <BilingualHead vi={t("productConfig.table.name")} en={gloss("productConfig.table.name")} />
+      <BilingualHead vi={t("productConfig.table.lifecycle")} en={gloss("productConfig.table.lifecycle")} />
+      <BilingualHead
+        vi={t("productConfig.table.points")}
+        en={gloss("productConfig.table.points")}
+        className="text-right"
+        align="right"
+      />
+      <BilingualHead vi={t("productConfig.table.version")} en={gloss("productConfig.table.version")} />
       <TableHead className="w-8">
         <span className="sr-only">{t("productConfig.table.viewAction")}</span>
       </TableHead>
@@ -127,7 +167,7 @@ function ProductRowSkeleton() {
   return (
     <TableRow>
       <TableCell>
-        <Skeleton className="size-9 rounded-md" />
+        <Skeleton className="size-9" />
       </TableCell>
       <TableCell>
         <Skeleton className="h-4 w-20" />
@@ -136,7 +176,7 @@ function ProductRowSkeleton() {
         <Skeleton className="h-4 w-40" />
       </TableCell>
       <TableCell>
-        <Skeleton className="h-5 w-20 rounded-full" />
+        <Skeleton className="h-5 w-20" />
       </TableCell>
       <TableCell className="text-right">
         <Skeleton className="ml-auto h-4 w-8" />
@@ -180,10 +220,10 @@ function ProductRow({ product, onOpen }: ProductRowProps) {
         <ProductImageThumb
           url={product.referenceImageUrl}
           alt={t("productConfig.table.rowAria", { code: product.code })}
-          className="size-9 rounded-md border border-border"
+          className="size-9 border border-border-strong"
         />
       </TableCell>
-      <TableCell className="font-medium text-text-strong">{product.code}</TableCell>
+      <TableCell className="font-numeric font-medium text-text-strong">{product.code}</TableCell>
       <TableCell className="text-text-body">{product.name}</TableCell>
       <TableCell>
         <StatusBadge status={LIFECYCLE_BADGE[product.lifecycleStatus]}>
@@ -208,24 +248,22 @@ interface EmptyStateProps {
   action?: React.ReactNode
 }
 
-/** Same visual shape as Machines.tsx's own `EmptyState` (dashed card, icon roundel, title+description,
- * one action) — reused here for both "catalog is empty" and "filters matched nothing". */
+/** Same visual shape as Machines.tsx's own `EmptyState` (blueprint sheet, square icon mark,
+ * title+description, one action) — reused here for both "catalog is empty" and "filters matched
+ * nothing". */
 function EmptyState({ icon: Icon, title, description, action }: EmptyStateProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
-      className="flex flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border bg-surface-card px-8 py-16 text-center"
-    >
-      <div className="flex size-14 items-center justify-center rounded-full bg-navy-600/10">
-        <Icon className="size-7 text-primary-text" aria-hidden="true" />
-      </div>
-      <div className="flex flex-col gap-1">
-        <p className="text-lg font-semibold text-text-strong">{title}</p>
-        <p className="max-w-sm text-sm text-text-muted">{description}</p>
-      </div>
-      {action}
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="min-h-0 flex-1">
+      <Sheet className="h-full" bodyClassName="flex h-full flex-col items-center justify-center gap-4 px-8 py-16 text-center">
+        <div className="flex size-14 items-center justify-center border border-border-strong bg-surface-card">
+          <Icon className="size-7 text-primary-text" aria-hidden="true" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-lg font-semibold text-text-strong">{title}</p>
+          <p className="max-w-sm text-sm text-text-muted">{description}</p>
+        </div>
+        {action}
+      </Sheet>
     </motion.div>
   )
 }
@@ -325,7 +363,10 @@ function CreateProductDialog({ open, onOpenChange, existingCodes }: CreateProduc
             <DialogDescription>{t("productConfig.createDialog.description")}</DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[60vh] overflow-y-auto pr-0.5">
+          <div
+            tabIndex={0}
+            className="hmi-scroll max-h-[60vh] overflow-y-auto pr-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+          >
             <div className="flex flex-col gap-4">
               <FormField
                 label={t("productConfig.createDialog.codeLabel")}
@@ -374,6 +415,7 @@ function CreateProductDialog({ open, onOpenChange, existingCodes }: CreateProduc
 
 export default function ProductConfig() {
   const t = useT()
+  const gloss = useGloss()
   const { data, isPending, isError } = useProducts()
   const [, navigate] = useLocation()
 
@@ -422,16 +464,19 @@ export default function ProductConfig() {
       initial="hidden"
       animate="visible"
       variants={fadeSlideUp}
-      className="flex flex-1 flex-col gap-6 p-6 lg:p-8"
+      className="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-2">
-          <ConfigModeToggle current="products" />
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <ConfigModeToggle current="products" className="mb-1" />
           <div className="flex items-center gap-2">
-            <Boxes className="size-5 text-navy-600" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold text-text-strong">{t("productConfig.title")}</h1>
+            <Boxes className="size-5 text-primary-text" aria-hidden="true" />
+            <h1 className="font-heading text-[26px] leading-none font-semibold tracking-tight text-text-strong">
+              {t("productConfig.title")}
+            </h1>
           </div>
-          <p className="text-sm text-text-muted">{t("productConfig.description")}</p>
+          <p className="hmi-micro mt-1">{gloss("productConfig.title")}</p>
+          <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("productConfig.description")}</p>
         </div>
         <div className="flex items-center gap-3">
           {!isPending && !isError ? (
@@ -445,18 +490,20 @@ export default function ProductConfig() {
       </div>
 
       {isPending ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface-card">
-          <Table>
-            <TableHeader>
-              <ProductsTableHeaderRow />
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 4 }, (_, i) => (
-                <ProductRowSkeleton key={i} />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <Sheet className="min-h-0 flex-1" bodyClassName="flex flex-1 min-h-0 flex-col p-0">
+          <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <ProductsTableHeaderRow />
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 4 }, (_, i) => (
+                  <ProductRowSkeleton key={i} />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Sheet>
       ) : isError ? (
         <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
       ) : products.length === 0 ? (
@@ -473,11 +520,13 @@ export default function ProductConfig() {
         />
       ) : (
         <>
-          <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-border bg-surface-card p-3">
+          <div className="flex shrink-0 flex-wrap items-end justify-between gap-3 border border-border bg-surface-card p-3">
             <div className="flex flex-wrap items-end gap-3">
               <SearchField value={search} onChange={setSearch} />
               <FilterSelect
+                id="product-filter-lifecycle"
                 label={t("productConfig.filters.lifecycle")}
+                labelEn={gloss("productConfig.filters.lifecycle")}
                 value={lifecycleFilter}
                 options={lifecycleOptions}
                 optionLabel={(value) => t(`lifecycleStatus.${value}`)}
@@ -515,18 +564,28 @@ export default function ProductConfig() {
               description={t("productConfig.empty.noMatchDescription")}
             />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border">
-              <Table>
-                <TableHeader className="bg-surface-card">
-                  <ProductsTableHeaderRow />
-                </TableHeader>
-                <TableBody>
-                  {filteredProducts.map((product) => (
-                    <ProductRow key={product.code} product={product} onOpen={openProduct} />
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <Sheet
+              className="min-h-0 flex-1"
+              title={t("productConfig.title")}
+              titleEn={gloss("productConfig.title")}
+              bodyClassName="flex flex-1 min-h-0 flex-col p-0"
+            >
+              <div
+                tabIndex={0}
+                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+              >
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-surface-card">
+                    <ProductsTableHeaderRow />
+                  </TableHeader>
+                  <TableBody>
+                    {filteredProducts.map((product) => (
+                      <ProductRow key={product.code} product={product} onOpen={openProduct} />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Sheet>
           )}
         </>
       )}

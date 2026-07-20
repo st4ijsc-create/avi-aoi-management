@@ -5,11 +5,13 @@ import type { VariantProps } from "class-variance-authority"
 import { toast } from "sonner"
 import { useLocation } from "wouter"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useRecipes, useSaveRecipe, type Recipe, type RecipeStatus, type RecipeSummary } from "@/lib/configApi"
 import { DEFAULT_RECIPE_MACHINE_TYPE } from "@/lib/machineTypes"
 import { shortChecksum } from "@/lib/utils"
 import { fadeSlideUp } from "@/theme/motion"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
 import { ConfigModeToggle } from "@/components/ConfigModeToggle"
 import {
@@ -41,7 +43,9 @@ const STATUS_ORDER: RecipeStatus[] = ["draft", "active", "archived"]
 const ALL = "__all__"
 
 interface FilterSelectProps {
+  id: string
   label: string
+  labelEn: string
   value: string
   options: string[]
   optionLabel: (value: string) => string
@@ -50,15 +54,25 @@ interface FilterSelectProps {
 }
 
 /** Plain native `<select>` — same locally-duplicated filter idiom as `ProductConfig.tsx`'s own
- * `FilterSelect` (that component's doc comment explains why this isn't shared). */
-function FilterSelect({ label, value, options, optionLabel, onChange, allLabel }: FilterSelectProps) {
+ * `FilterSelect` (that component's doc comment explains why this isn't shared). Stacked bilingual
+ * label, explicit `id`/`htmlFor` — see `Machines.tsx`'s `FilterSelect` doc comment for why the gloss
+ * must sit OUTSIDE the `<label>` element rather than a hidden descendant of it. */
+function FilterSelect({ id, label, labelEn, value, options, optionLabel, onChange, allLabel }: FilterSelectProps) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">{label}</span>
+    <div className="flex flex-col gap-1">
+      <span className="flex flex-col gap-0.5">
+        <label htmlFor={id} className="truncate text-[13px] leading-tight font-medium text-text-body">
+          {label}
+        </label>
+        <span className="hmi-micro truncate" aria-hidden="true">
+          {labelEn}
+        </span>
+      </span>
       <select
+        id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-8 border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
       >
         <option value={ALL}>{allLabel}</option>
         {options.map((option) => (
@@ -67,16 +81,22 @@ function FilterSelect({ label, value, options, optionLabel, onChange, allLabel }
           </option>
         ))}
       </select>
-    </label>
+    </div>
   )
 }
 
 function SearchField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const t = useT()
+  const gloss = useGloss()
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
-        {t("recipeConfig.search.label")}
+    <div className="flex flex-col gap-1">
+      <span className="flex flex-col gap-0.5">
+        <label htmlFor="recipe-search" className="truncate text-[13px] leading-tight font-medium text-text-body">
+          {t("recipeConfig.search.label")}
+        </label>
+        <span className="hmi-micro truncate" aria-hidden="true">
+          {gloss("recipeConfig.search.label")}
+        </span>
       </span>
       <div className="relative">
         <Search
@@ -84,26 +104,41 @@ function SearchField({ value, onChange }: { value: string; onChange: (v: string)
           aria-hidden="true"
         />
         <Input
+          id="recipe-search"
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={t("recipeConfig.search.placeholder")}
           className="h-8 w-56 pl-7"
         />
       </div>
-    </label>
+    </div>
+  )
+}
+
+function BilingualHead({ vi, en, className }: { vi: string; en: string; className?: string }) {
+  return (
+    <TableHead className={className}>
+      <span className="flex flex-col">
+        <span>{vi}</span>
+        <span className="hmi-micro font-normal tracking-[0.1em]" aria-hidden="true">
+          {en}
+        </span>
+      </span>
+    </TableHead>
   )
 }
 
 function RecipesTableHeaderRow() {
   const t = useT()
+  const gloss = useGloss()
   return (
     <TableRow>
-      <TableHead>{t("recipeConfig.table.code")}</TableHead>
-      <TableHead>{t("recipeConfig.table.name")}</TableHead>
-      <TableHead>{t("recipeConfig.table.machineType")}</TableHead>
-      <TableHead>{t("recipeConfig.table.status")}</TableHead>
-      <TableHead>{t("recipeConfig.table.version")}</TableHead>
-      <TableHead>{t("recipeConfig.table.checksum")}</TableHead>
+      <BilingualHead vi={t("recipeConfig.table.code")} en={gloss("recipeConfig.table.code")} />
+      <BilingualHead vi={t("recipeConfig.table.name")} en={gloss("recipeConfig.table.name")} />
+      <BilingualHead vi={t("recipeConfig.table.machineType")} en={gloss("recipeConfig.table.machineType")} />
+      <BilingualHead vi={t("recipeConfig.table.status")} en={gloss("recipeConfig.table.status")} />
+      <BilingualHead vi={t("recipeConfig.table.version")} en={gloss("recipeConfig.table.version")} />
+      <BilingualHead vi={t("recipeConfig.table.checksum")} en={gloss("recipeConfig.table.checksum")} />
       <TableHead className="w-8">
         <span className="sr-only">{t("recipeConfig.table.viewAction")}</span>
       </TableHead>
@@ -124,7 +159,7 @@ function RecipeRowSkeleton() {
         <Skeleton className="h-4 w-24" />
       </TableCell>
       <TableCell>
-        <Skeleton className="h-5 w-16 rounded-full" />
+        <Skeleton className="h-5 w-16" />
       </TableCell>
       <TableCell>
         <Skeleton className="h-4 w-8" />
@@ -163,7 +198,7 @@ function RecipeRow({ recipe, onOpen }: RecipeRowProps) {
       aria-label={t("recipeConfig.table.rowAria", { code: recipe.code })}
       className="cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-navy-600/50"
     >
-      <TableCell className="font-medium text-text-strong">{recipe.code}</TableCell>
+      <TableCell className="font-numeric font-medium text-text-strong">{recipe.code}</TableCell>
       <TableCell className="text-text-body">{recipe.name}</TableCell>
       <TableCell className="text-text-body">{recipe.machineType ?? "—"}</TableCell>
       <TableCell>
@@ -188,20 +223,17 @@ interface EmptyStateProps {
 /** Same visual shape as `ProductConfig.tsx`'s own `EmptyState`. */
 function EmptyState({ icon: Icon, title, description, action }: EmptyStateProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
-      className="flex flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border bg-surface-card px-8 py-16 text-center"
-    >
-      <div className="flex size-14 items-center justify-center rounded-full bg-navy-600/10">
-        <Icon className="size-7 text-primary-text" aria-hidden="true" />
-      </div>
-      <div className="flex flex-col gap-1">
-        <p className="text-lg font-semibold text-text-strong">{title}</p>
-        <p className="max-w-sm text-sm text-text-muted">{description}</p>
-      </div>
-      {action}
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="min-h-0 flex-1">
+      <Sheet className="h-full" bodyClassName="flex h-full flex-col items-center justify-center gap-4 px-8 py-16 text-center">
+        <div className="flex size-14 items-center justify-center border border-border-strong bg-surface-card">
+          <Icon className="size-7 text-primary-text" aria-hidden="true" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-lg font-semibold text-text-strong">{title}</p>
+          <p className="max-w-sm text-sm text-text-muted">{description}</p>
+        </div>
+        {action}
+      </Sheet>
     </motion.div>
   )
 }
@@ -293,7 +325,10 @@ function CreateRecipeDialog({ open, onOpenChange, existingCodes }: CreateRecipeD
             <DialogDescription>{t("recipeConfig.createDialog.description")}</DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[60vh] overflow-y-auto pr-0.5">
+          <div
+            tabIndex={0}
+            className="hmi-scroll max-h-[60vh] overflow-y-auto pr-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+          >
             <div className="flex flex-col gap-4">
               <FormFieldCode value={code} onChange={setCode} />
               <RecipeFormFields values={form} onChange={updateForm} idPrefix="create-recipe" />
@@ -348,6 +383,7 @@ function FormFieldCode({ value, onChange }: { value: string; onChange: (v: strin
 
 export default function RecipeConfig() {
   const t = useT()
+  const gloss = useGloss()
   const { data, isPending, isError } = useRecipes()
   const [, navigate] = useLocation()
 
@@ -399,16 +435,19 @@ export default function RecipeConfig() {
       initial="hidden"
       animate="visible"
       variants={fadeSlideUp}
-      className="flex flex-1 flex-col gap-6 p-6 lg:p-8"
+      className="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-2">
-          <ConfigModeToggle current="recipes" />
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <ConfigModeToggle current="recipes" className="mb-1" />
           <div className="flex items-center gap-2">
-            <Wrench className="size-5 text-navy-600" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold text-text-strong">{t("recipeConfig.title")}</h1>
+            <Wrench className="size-5 text-primary-text" aria-hidden="true" />
+            <h1 className="font-heading text-[26px] leading-none font-semibold tracking-tight text-text-strong">
+              {t("recipeConfig.title")}
+            </h1>
           </div>
-          <p className="max-w-2xl text-sm text-text-muted">{t("recipeConfig.description")}</p>
+          <p className="hmi-micro mt-1">{gloss("recipeConfig.title")}</p>
+          <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("recipeConfig.description")}</p>
         </div>
         <div className="flex items-center gap-3">
           {!isPending && !isError ? (
@@ -421,23 +460,25 @@ export default function RecipeConfig() {
         </div>
       </div>
 
-      <p className="rounded-lg border border-info/20 bg-info/10 px-3 py-2 text-xs text-info-text">
+      <p className="shrink-0 border border-info/20 bg-info/10 px-3 py-2 text-xs text-info-text">
         {t("recipeConfig.demoOnlyNote")}
       </p>
 
       {isPending ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface-card">
-          <Table>
-            <TableHeader>
-              <RecipesTableHeaderRow />
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 3 }, (_, i) => (
-                <RecipeRowSkeleton key={i} />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <Sheet className="min-h-0 flex-1" bodyClassName="flex flex-1 min-h-0 flex-col p-0">
+          <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <RecipesTableHeaderRow />
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 3 }, (_, i) => (
+                  <RecipeRowSkeleton key={i} />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Sheet>
       ) : isError ? (
         <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
       ) : recipes.length === 0 ? (
@@ -454,11 +495,13 @@ export default function RecipeConfig() {
         />
       ) : (
         <>
-          <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-border bg-surface-card p-3">
+          <div className="flex shrink-0 flex-wrap items-end justify-between gap-3 border border-border bg-surface-card p-3">
             <div className="flex flex-wrap items-end gap-3">
               <SearchField value={search} onChange={setSearch} />
               <FilterSelect
+                id="recipe-filter-status"
                 label={t("recipeConfig.filters.status")}
+                labelEn={gloss("recipeConfig.filters.status")}
                 value={statusFilter}
                 options={statusOptions}
                 optionLabel={(value) => t(`recipeStatus.${value}`)}
@@ -487,18 +530,28 @@ export default function RecipeConfig() {
           {filteredRecipes.length === 0 ? (
             <EmptyState icon={SearchX} title={t("recipeConfig.empty.noMatchTitle")} description={t("recipeConfig.empty.noMatchDescription")} />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border">
-              <Table>
-                <TableHeader className="bg-surface-card">
-                  <RecipesTableHeaderRow />
-                </TableHeader>
-                <TableBody>
-                  {filteredRecipes.map((recipe) => (
-                    <RecipeRow key={recipe.code} recipe={recipe} onOpen={openRecipe} />
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <Sheet
+              className="min-h-0 flex-1"
+              title={t("recipeConfig.title")}
+              titleEn={gloss("recipeConfig.title")}
+              bodyClassName="flex flex-1 min-h-0 flex-col p-0"
+            >
+              <div
+                tabIndex={0}
+                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+              >
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-surface-card">
+                    <RecipesTableHeaderRow />
+                  </TableHeader>
+                  <TableBody>
+                    {filteredRecipes.map((recipe) => (
+                      <RecipeRow key={recipe.code} recipe={recipe} onOpen={openRecipe} />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Sheet>
           )}
         </>
       )}

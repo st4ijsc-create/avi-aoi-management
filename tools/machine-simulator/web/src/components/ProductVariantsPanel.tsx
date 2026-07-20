@@ -2,10 +2,11 @@ import * as React from "react"
 import { GitBranch, Loader2, Plus, Save } from "lucide-react"
 import { toast } from "sonner"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useSaveProduct, type ProductModel, type ProductVariant } from "@/lib/configApi"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { StatusBadge } from "@/components/ui/status-badge"
@@ -103,60 +104,66 @@ function AddVariantDialog({ open, onOpenChange, product }: { open: boolean; onOp
  * aren't invisible/unmanaged from the web UI, not to replace a dedicated variant-override editor. */
 export function ProductVariantsPanel({ product }: { product: ProductModel }) {
   const t = useT()
+  const gloss = useGloss()
   const [open, setOpen] = React.useState(false)
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <GitBranch className="size-4 text-navy-600" aria-hidden="true" />
-            <h2 className="text-sm font-semibold text-text-strong">{t("pointsEditor.variants.title")}</h2>
-          </div>
-          <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
-            <Plus className="size-3.5" aria-hidden="true" />
-            {t("pointsEditor.variants.addBtn")}
-          </Button>
+    // Title-less Sheet — see PointsEditor.tsx's own comment: this section's heading must stay a
+    // literal `<h2>` (spec/e2e both expect `level: 2`), not `<Sheet title>`'s `<h3>`.
+    <Sheet bodyClassName="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <GitBranch className="size-4 text-primary-text" aria-hidden="true" />
+          <h2 className="font-heading text-[15px] font-semibold tracking-tight text-text-strong">
+            {t("pointsEditor.variants.title")}
+          </h2>
+          <span className="hmi-micro" aria-hidden="true">
+            {gloss("pointsEditor.variants.title")}
+          </span>
         </div>
-        <p className="text-sm text-text-muted">{t("pointsEditor.variants.description")}</p>
+        <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+          <Plus className="size-3.5" aria-hidden="true" />
+          {t("pointsEditor.variants.addBtn")}
+        </Button>
+      </div>
+      <p className="text-sm text-text-muted">{t("pointsEditor.variants.description")}</p>
 
-        {product.variants.length === 0 ? (
-          <p className="text-sm text-text-muted">{t("pointsEditor.variants.empty")}</p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("pointsEditor.variants.table.code")}</TableHead>
-                  <TableHead>{t("pointsEditor.variants.table.name")}</TableHead>
-                  <TableHead>{t("pointsEditor.variants.table.base")}</TableHead>
-                  <TableHead className="text-right">{t("pointsEditor.variants.table.version")}</TableHead>
-                  <TableHead className="text-right">{t("pointsEditor.variants.table.overrides")}</TableHead>
+      {product.variants.length === 0 ? (
+        <p className="text-sm text-text-muted">{t("pointsEditor.variants.empty")}</p>
+      ) : (
+        <div className="overflow-hidden border border-border-strong">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("pointsEditor.variants.table.code")}</TableHead>
+                <TableHead>{t("pointsEditor.variants.table.name")}</TableHead>
+                <TableHead>{t("pointsEditor.variants.table.base")}</TableHead>
+                <TableHead className="text-right">{t("pointsEditor.variants.table.version")}</TableHead>
+                <TableHead className="text-right">{t("pointsEditor.variants.table.overrides")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {product.variants.map((v) => (
+                <TableRow key={v.code}>
+                  <TableCell className="font-numeric font-medium text-text-strong">{v.code}</TableCell>
+                  <TableCell className="text-text-body">{v.name ?? "—"}</TableCell>
+                  <TableCell>
+                    {v.isBase ? (
+                      <StatusBadge status="info">{t("pointsEditor.variants.baseYes")}</StatusBadge>
+                    ) : (
+                      <span className="text-text-muted">{t("pointsEditor.variants.baseNo")}</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-numeric text-right text-text-muted">v{v.pointsConfigVersion}</TableCell>
+                  <TableCell className="font-numeric text-right text-text-muted">{v.overrides.length}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {product.variants.map((v) => (
-                  <TableRow key={v.code}>
-                    <TableCell className="font-medium text-text-strong">{v.code}</TableCell>
-                    <TableCell className="text-text-body">{v.name ?? "—"}</TableCell>
-                    <TableCell>
-                      {v.isBase ? (
-                        <StatusBadge status="info">{t("pointsEditor.variants.baseYes")}</StatusBadge>
-                      ) : (
-                        <span className="text-text-muted">{t("pointsEditor.variants.baseNo")}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-numeric text-right text-text-muted">v{v.pointsConfigVersion}</TableCell>
-                    <TableCell className="font-numeric text-right text-text-muted">{v.overrides.length}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <AddVariantDialog open={open} onOpenChange={setOpen} product={product} />
-    </Card>
+    </Sheet>
   )
 }

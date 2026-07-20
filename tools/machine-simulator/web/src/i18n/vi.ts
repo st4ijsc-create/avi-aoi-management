@@ -529,6 +529,8 @@ export const vi = {
       unplacedNote: (vars: Vars) => `${vars.count} điểm chưa xác định vị trí trên ảnh — chỉnh trong danh sách bên dưới.`,
       ariaLabel: (vars: Vars) => `Bản đồ điểm đo — ${vars.count} điểm đang hiển thị`,
       pointAria: (vars: Vars) => `Điểm đo ${vars.code} — ${vars.name}`,
+      figTitle: "HÌNH 02 — SƠ ĐỒ THAM CHIẾU BO MẠCH",
+      dimensionUnit: "PX",
     },
     list: {
       actionsHeader: "Thao tác",

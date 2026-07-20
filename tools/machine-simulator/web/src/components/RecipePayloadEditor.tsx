@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Plus, Trash2 } from "lucide-react"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { getRecipePayloadFieldSpecs } from "@/lib/recipePayloadFields"
 import { Button } from "@/components/ui/button"
@@ -91,6 +92,7 @@ export interface RecipePayloadEditorProps {
  */
 export function RecipePayloadEditor({ machineType, initialPayload, onChange, idPrefix }: RecipePayloadEditorProps) {
   const t = useT()
+  const gloss = useGloss()
   const [rows, setRows] = React.useState<PayloadRow[]>(() => rowsFromPayload(initialPayload))
   const [newKey, setNewKey] = React.useState("")
   const [newValue, setNewValue] = React.useState("")
@@ -153,9 +155,14 @@ export function RecipePayloadEditor({ machineType, initialPayload, onChange, idP
     <div className="flex flex-col gap-5">
       {specs.length > 0 ? (
         <div className="flex flex-col gap-4">
-          <h3 className="text-xs font-semibold tracking-wide text-text-muted uppercase">
-            {t("recipeConfigDetail.payload.typedTitle")}
-          </h3>
+          <span className="flex flex-col gap-0">
+            <h3 className="text-xs font-semibold tracking-wide text-text-muted uppercase">
+              {t("recipeConfigDetail.payload.typedTitle")}
+            </h3>
+            <span className="hmi-micro" aria-hidden="true">
+              {gloss("recipeConfigDetail.payload.typedTitle")}
+            </span>
+          </span>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {specs.map((spec) => {
               const row = rows.find((r) => r.key === spec.key)
@@ -181,9 +188,14 @@ export function RecipePayloadEditor({ machineType, initialPayload, onChange, idP
       ) : null}
 
       <div className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold tracking-wide text-text-muted uppercase">
-          {t("recipeConfigDetail.payload.otherTitle")}
-        </h3>
+        <span className="flex flex-col gap-0">
+          <h3 className="text-xs font-semibold tracking-wide text-text-muted uppercase">
+            {t("recipeConfigDetail.payload.otherTitle")}
+          </h3>
+          <span className="hmi-micro" aria-hidden="true">
+            {gloss("recipeConfigDetail.payload.otherTitle")}
+          </span>
+        </span>
         {extraRows.length === 0 ? (
           <p className="text-sm text-text-muted">{t("recipeConfigDetail.payload.otherEmpty")}</p>
         ) : (
@@ -191,7 +203,7 @@ export function RecipePayloadEditor({ machineType, initialPayload, onChange, idP
             {extraRows.map((row) => (
               <div key={row.id} className="flex items-center gap-2">
                 <span
-                  className="font-mono w-40 shrink-0 truncate rounded-md bg-surface-subtle px-2.5 py-1 text-xs text-text-strong"
+                  className="font-mono w-40 shrink-0 truncate border border-border-strong bg-surface-muted px-2.5 py-1 text-xs text-text-strong"
                   title={row.key}
                 >
                   {row.key}
@@ -216,7 +228,7 @@ export function RecipePayloadEditor({ machineType, initialPayload, onChange, idP
           </div>
         )}
 
-        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-border p-3">
+        <div className="flex flex-wrap items-end gap-2 border border-dashed border-border-strong p-3">
           <FormField
             label={t("recipeConfigDetail.payload.addKeyLabel")}
             htmlFor={`${idPrefix}-payload-new-key`}

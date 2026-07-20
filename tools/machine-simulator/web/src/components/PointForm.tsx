@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import {
   useSavePoint,
@@ -27,8 +28,8 @@ import {
   type ToleranceMode,
 } from "@/lib/configApi"
 import { cn } from "@/lib/utils"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { CollapsibleSection } from "@/components/ui/collapsible-section"
 import { Input } from "@/components/ui/input"
 import {
@@ -52,7 +53,7 @@ const TOLERANCE_NONE = "__none__"
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 const TEXTAREA_CLASS =
-  "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm text-text-body transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+  "w-full min-w-0 border border-border-strong bg-surface-muted px-2.5 py-1.5 text-sm text-text-body transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
 
 /** Prefills a brand-new point's normalized position from a `BoardCanvas` click (or the header
  * "+ Add point" button's center default) — `PointsEditor.tsx`'s seam into this form. */
@@ -505,6 +506,7 @@ interface PointFormProps {
  */
 export function PointForm({ product, point, newSeed, existingCodes, onSaved, onCancelNew, onRequestDelete }: PointFormProps) {
   const t = useT()
+  const gloss = useGloss()
   const savePoint = useSavePoint()
   const isNew = point == null
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -579,15 +581,13 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
 
   if (!point && !newSeed) {
     return (
-      <Card className="h-full">
-        <CardContent className="flex h-full min-h-64 flex-col items-center justify-center gap-2 py-10 text-center">
-          <div className="flex size-11 items-center justify-center rounded-full bg-navy-600/10">
-            <MousePointerClick className="size-5 text-primary-text" aria-hidden="true" />
-          </div>
-          <p className="text-sm font-medium text-text-strong">{t("pointsEditor.form.noSelection.title")}</p>
-          <p className="max-w-xs text-sm text-text-muted">{t("pointsEditor.form.noSelection.description")}</p>
-        </CardContent>
-      </Card>
+      <Sheet className="h-full" bodyClassName="flex h-full min-h-64 flex-col items-center justify-center gap-2 py-10 text-center">
+        <div className="flex size-11 items-center justify-center border border-border-strong bg-surface-card">
+          <MousePointerClick className="size-5 text-primary-text" aria-hidden="true" />
+        </div>
+        <p className="text-sm font-medium text-text-strong">{t("pointsEditor.form.noSelection.title")}</p>
+        <p className="max-w-xs text-sm text-text-muted">{t("pointsEditor.form.noSelection.description")}</p>
+      </Sheet>
     )
   }
 
@@ -613,17 +613,16 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
   const isUploadedImage = form.referenceImageUrl.startsWith("data:")
 
   return (
-    <Card className="h-full">
-      <CardContent>
-        {/* `noValidate` — this form owns validation entirely via `buildPayload`'s inline
-            errors (below), which show styled messages under the offending field. Without it, the
-            browser's native constraint validation silently blocks submission (no console error, no
-            network request, no visible feedback) whenever a numeric field's `step`/`min`/`max` hint
-            doesn't match the actual value — e.g. `normalizedRadius`'s `step="0.001"` against a seeded
-            value like `0.00875` (not a multiple of 0.001). Found live: clicking "Lưu điểm đo" on P02
-            (real seed data) did nothing, no error, no request — root-caused via
-            `form.checkValidity()` in the browser console. */}
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+    <Sheet className="h-full">
+      {/* `noValidate` — this form owns validation entirely via `buildPayload`'s inline
+          errors (below), which show styled messages under the offending field. Without it, the
+          browser's native constraint validation silently blocks submission (no console error, no
+          network request, no visible feedback) whenever a numeric field's `step`/`min`/`max` hint
+          doesn't match the actual value — e.g. `normalizedRadius`'s `step="0.001"` against a seeded
+          value like `0.00875` (not a multiple of 0.001). Found live: clicking "Lưu điểm đo" on P02
+          (real seed data) did nothing, no error, no request — root-caused via
+          `form.checkValidity()` in the browser console. */}
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="flex flex-col gap-0.5">
               <h2 className="text-sm font-semibold text-text-strong">
@@ -652,10 +651,16 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
             ) : null}
           </div>
 
-          <CollapsibleSection title={t("pointsEditor.form.sections.basic")} icon={Info} defaultOpen>
+          <CollapsibleSection
+            title={t("pointsEditor.form.sections.basic")}
+            titleEn={gloss("pointsEditor.form.sections.basic")}
+            icon={Info}
+            defaultOpen
+          >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormField
                 label={t("pointsEditor.form.codeLabel")}
+                labelEn={gloss("pointsEditor.form.codeLabel")}
                 htmlFor="point-code"
                 hint={!isNew ? t("pointsEditor.form.codeLocked") : undefined}
               >
@@ -674,7 +679,7 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
                   </p>
                 ) : null}
               </FormField>
-              <FormField label={t("pointsEditor.form.nameLabel")} htmlFor="point-name">
+              <FormField label={t("pointsEditor.form.nameLabel")} labelEn={gloss("pointsEditor.form.nameLabel")} htmlFor="point-name">
                 <Input
                   id="point-name"
                   value={form.name}
@@ -744,7 +749,12 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
             </div>
           </CollapsibleSection>
 
-          <CollapsibleSection title={t("pointsEditor.form.sections.limits")} icon={Ruler} defaultOpen>
+          <CollapsibleSection
+            title={t("pointsEditor.form.sections.limits")}
+            titleEn={gloss("pointsEditor.form.sections.limits")}
+            icon={Ruler}
+            defaultOpen
+          >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <NumField
                 id="point-nominal"
@@ -811,7 +821,12 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
             </div>
           </CollapsibleSection>
 
-          <CollapsibleSection title={t("pointsEditor.form.sections.position")} icon={Move} defaultOpen>
+          <CollapsibleSection
+            title={t("pointsEditor.form.sections.position")}
+            titleEn={gloss("pointsEditor.form.sections.position")}
+            icon={Move}
+            defaultOpen
+          >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumField
                 id="point-nx"
@@ -921,7 +936,12 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
             </FormField>
           </CollapsibleSection>
 
-          <CollapsibleSection title={t("pointsEditor.form.sections.threeD")} icon={Box} defaultOpen={hasThreeD}>
+          <CollapsibleSection
+            title={t("pointsEditor.form.sections.threeD")}
+            titleEn={gloss("pointsEditor.form.sections.threeD")}
+            icon={Box}
+            defaultOpen={hasThreeD}
+          >
             <NumField
               id="point-pz"
               label={t("pointsEditor.form.threeD.positionZLabel")}
@@ -1052,13 +1072,18 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
             </FormField>
           </CollapsibleSection>
 
-          <CollapsibleSection title={t("pointsEditor.form.sections.image")} icon={ImageIcon} defaultOpen={Boolean(form.referenceImageUrl)}>
+          <CollapsibleSection
+            title={t("pointsEditor.form.sections.image")}
+            titleEn={gloss("pointsEditor.form.sections.image")}
+            icon={ImageIcon}
+            defaultOpen={Boolean(form.referenceImageUrl)}
+          >
             <div className="flex flex-col gap-2.5">
               <div className="flex items-center gap-3">
                 <ProductImageThumb
                   url={form.referenceImageUrl}
                   alt={t("pointsEditor.form.image.previewAlt")}
-                  className="size-16 shrink-0 rounded-lg border border-border"
+                  className="size-16 shrink-0 border border-border-strong"
                 />
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   {isUploadedImage ? (
@@ -1100,6 +1125,7 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
 
           <CollapsibleSection
             title={t("pointsEditor.form.sections.lighting")}
+            titleEn={gloss("pointsEditor.form.sections.lighting")}
             icon={Sun}
             defaultOpen={form.lighting.length > 0}
             badge={form.lighting.length > 0 ? <StatusBadge status="neutral">{form.lighting.length}</StatusBadge> : undefined}
@@ -1109,7 +1135,7 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
                 <p className="text-sm text-text-muted">{t("pointsEditor.form.lighting.empty")}</p>
               ) : (
                 form.lighting.map((shot, index) => (
-                  <div key={index} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+                  <div key={index} className="flex flex-col gap-3 border border-border-strong p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold text-text-strong">
                         {t("pointsEditor.form.lighting.shotTitle", { index: index + 1 })}
@@ -1220,8 +1246,7 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
               </Button>
             ) : null}
           </div>
-        </form>
-      </CardContent>
-    </Card>
+      </form>
+    </Sheet>
   )
 }

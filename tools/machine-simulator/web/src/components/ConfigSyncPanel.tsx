@@ -20,6 +20,7 @@ import type { VariantProps } from "class-variance-authority"
 import { toast } from "sonner"
 import { Link } from "wouter"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useMode, type DeviceClass, type TransportMode } from "@/lib/api"
 import {
@@ -40,9 +41,9 @@ import {
   type UseQueryResult,
 } from "@/lib/configApi"
 import { cn, shortChecksum } from "@/lib/utils"
+import { Sheet } from "@/components/industrial"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -170,9 +171,7 @@ function ModeIndicator() {
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
-        {t("configSyncPanel.modeLabel")}
-      </span>
+      <span className="hmi-micro">{t("configSyncPanel.modeLabel")}</span>
       <StatusBadge status={MODE_BADGE[mode]}>{t(`configSyncPanel.mode.${mode}`)}</StatusBadge>
     </div>
   )
@@ -194,7 +193,7 @@ function DiffValueCell({ field, value, imageAlt }: { field: string; value: strin
         <ProductImageThumb
           url={value}
           alt={imageAlt}
-          className="size-10 rounded-md border border-border"
+          className="size-10 border border-border-strong"
           fallbackIconClassName="size-3.5"
         />
       </span>
@@ -202,7 +201,7 @@ function DiffValueCell({ field, value, imageAlt }: { field: string; value: strin
   }
   const isJson = JSON_DIFF_FIELDS.has(field)
   return (
-    <span className={cn("py-1 break-words", isJson && "font-mono text-[10px] break-all")}>
+    <span className={cn("py-1 font-mono break-words tabular-nums", isJson ? "text-[10px] break-all" : "text-[11px]")}>
       {formatDiffScalar(t, field, value)}
     </span>
   )
@@ -212,7 +211,7 @@ function DiffFieldRow({ change }: { change: PointFieldChangeDto }) {
   const t = useT()
   return (
     <>
-      <span className="py-1 pr-2 font-medium text-text-body">{fieldLabel(t, change.field)}</span>
+      <span className="py-1 pr-2 font-mono text-[11px] font-medium text-text-body">{fieldLabel(t, change.field)}</span>
       <DiffValueCell field={change.field} value={change.localValue} imageAlt={t("configSyncPanel.diff.imageBefore")} />
       <DiffValueCell field={change.field} value={change.ecosystemValue} imageAlt={t("configSyncPanel.diff.imageAfter")} />
     </>
@@ -221,7 +220,7 @@ function DiffFieldRow({ change }: { change: PointFieldChangeDto }) {
 
 function ChangedPointCard({ point }: { point: ChangedPointDto }) {
   return (
-    <div className="flex flex-col gap-1.5 rounded-md border border-border bg-surface-subtle/60 p-2.5">
+    <div className="flex flex-col gap-1.5 border border-border-strong bg-surface-subtle p-2.5">
       <div className="flex flex-wrap items-baseline gap-1.5 text-xs font-medium text-text-strong">
         <span className="font-numeric">{point.code}</span>
         <span className="text-text-muted">· {point.name}</span>
@@ -245,10 +244,10 @@ function ProductDiffView({
   const t = useT()
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
+    <div className="flex flex-col gap-3 border border-border-strong p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="flex items-center gap-1.5 text-sm font-semibold text-text-strong">
-          <GitCompareArrows className="size-4 text-navy-600" aria-hidden="true" />
+          <GitCompareArrows className="size-4 text-primary-text" aria-hidden="true" />
           {t("configSyncPanel.diff.title")}
         </h4>
         {diff.data ? (
@@ -347,7 +346,7 @@ function ProductDiffView({
 function PullResultPanel({ result }: { result: MachineConfigPullResultDto }) {
   const t = useT()
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-ok/30 bg-ok/5 p-3" role="status">
+    <div className="flex flex-col gap-2 border border-ok/30 bg-ok/5 p-3" role="status">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ok-text">
         <ArrowDownToLine className="size-4" aria-hidden="true" />
         {t("configSyncPanel.pullResult.title")}
@@ -394,7 +393,7 @@ function PushResultPanel({ result }: { result: MachineConfigPushResultDto }) {
   const notConfirmed = !result.success && result.previousVersion == null && result.newVersion == null && result.points.length === 0
   if (notConfirmed) {
     return (
-      <div className="flex flex-col gap-1 rounded-lg border border-border p-3" role="status">
+      <div className="flex flex-col gap-1 border border-border-strong p-3" role="status">
         <p className="text-sm text-text-muted">{t("configSyncPanel.pushResult.notConfirmed")}</p>
       </div>
     )
@@ -412,7 +411,7 @@ function PushResultPanel({ result }: { result: MachineConfigPushResultDto }) {
   }
 
   return (
-    <div className={cn("flex flex-col gap-3 rounded-lg border p-3", toneClasses[tone].border)} role="status">
+    <div className={cn("flex flex-col gap-3 border p-3", toneClasses[tone].border)} role="status">
       <div className={cn("flex flex-wrap items-center gap-1.5 text-sm font-semibold", toneClasses[tone].text)}>
         <ArrowUpFromLine className="size-4 shrink-0" aria-hidden="true" />
         {t("configSyncPanel.pushResult.title")}
@@ -448,7 +447,7 @@ function PushResultPanel({ result }: { result: MachineConfigPushResultDto }) {
       {result.limitChangesBlocked ? (
         <p
           role="alert"
-          className="flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 px-2.5 py-2 text-xs font-medium text-warn-text"
+          className="flex items-start gap-2 border border-warn/30 bg-warn/10 px-2.5 py-2 text-xs font-medium text-warn-text"
         >
           <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           {t("configSyncPanel.pushResult.limitBlockedBanner")}
@@ -458,7 +457,7 @@ function PushResultPanel({ result }: { result: MachineConfigPushResultDto }) {
       {result.staleConflicts > 0 ? (
         <p
           role="alert"
-          className="flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 px-2.5 py-2 text-xs font-medium text-warn-text"
+          className="flex items-start gap-2 border border-warn/30 bg-warn/10 px-2.5 py-2 text-xs font-medium text-warn-text"
         >
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           {t("configSyncPanel.pushResult.conflictBanner", { count: result.staleConflicts })}
@@ -473,10 +472,10 @@ function PushResultPanel({ result }: { result: MachineConfigPushResultDto }) {
               <span
                 key={point.code}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                  "inline-flex items-center gap-1 border px-2 py-0.5 font-mono text-[11px] font-medium",
                   point.limitBlocked
                     ? "border-warn/30 bg-warn/10 text-warn-text"
-                    : "border-border bg-surface-subtle text-text-body"
+                    : "border-border-strong bg-surface-subtle text-text-body"
                 )}
               >
                 <span className="font-numeric">{point.code}</span>
@@ -556,7 +555,7 @@ function PushConfirmDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <p className={cn("flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs font-medium", noteClasses[noteTone])}>
+        <p className={cn("flex items-start gap-2 border px-2.5 py-2 text-xs font-medium", noteClasses[noteTone])}>
           {noteTone === "info" ? (
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           ) : (
@@ -600,77 +599,78 @@ function ProductsDriftTable({
   onSelect: (code: string) => void
 }) {
   const t = useT()
+  const gloss = useGloss()
   const check = useMachineConfigCheck(machineCode)
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Boxes className="size-4 text-navy-600" aria-hidden="true" />
-            <h3 className="text-sm font-semibold text-text-strong">{t("configSyncPanel.products.title")}</h3>
-          </div>
+    <Sheet
+      title={t("configSyncPanel.products.title")}
+      titleEn={gloss("configSyncPanel.products.title")}
+      headerRight={
+        <>
+          <Boxes className="size-4 text-primary-text" aria-hidden="true" />
           <Button type="button" variant="outline" size="sm" onClick={() => void check.refetch()} disabled={check.isFetching}>
             <RefreshCw className={cn("size-3.5", check.isFetching && "animate-spin")} aria-hidden="true" />
             {check.isFetching ? t("configSyncPanel.refreshing") : t("configSyncPanel.refreshBtn")}
           </Button>
+        </>
+      }
+      bodyClassName="flex flex-col gap-3"
+    >
+      {check.isPending ? (
+        <Skeleton className="h-24 w-full" />
+      ) : check.isError ? (
+        <p role="alert" className="text-sm text-danger-text">
+          {t("configSyncPanel.checkFailed")}
+        </p>
+      ) : !check.data || check.data.products.length === 0 ? (
+        <p className="text-sm text-text-muted">{t("configSyncPanel.products.empty")}</p>
+      ) : (
+        <div className="overflow-hidden border border-border-strong">
+          <Table>
+            <TableBody>
+              {check.data.products.map((product) => {
+                const isSelected = product.productModelCode.toLowerCase() === (selected ?? "").toLowerCase()
+                return (
+                  <TableRow
+                    key={product.productModelCode}
+                    onClick={() => onSelect(product.productModelCode)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        onSelect(product.productModelCode)
+                      }
+                    }}
+                    tabIndex={0}
+                    aria-current={isSelected ? "true" : undefined}
+                    aria-label={t("configSyncPanel.products.selectAria", { code: product.productModelCode })}
+                    className={cn(
+                      "cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-navy-600/50",
+                      isSelected && "bg-navy-50 dark:bg-navy-800/40"
+                    )}
+                  >
+                    <TableCell className="font-numeric font-medium text-text-strong">{product.productModelCode}</TableCell>
+                    <TableCell className="font-numeric text-text-muted">
+                      {product.localVersion != null
+                        ? t("configSyncPanel.products.localVersionShort", { version: product.localVersion })
+                        : t("configSyncPanel.products.localVersionNone")}
+                    </TableCell>
+                    <TableCell className="font-numeric text-text-muted">
+                      {t("configSyncPanel.products.ecosystemVersionShort", { version: product.ecosystemVersion })}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <StatusBadge status={DRIFT_BADGE[product.driftState] ?? "neutral"}>
+                        {t(`configSyncPanel.driftState.${product.driftState}`)}
+                      </StatusBadge>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         </div>
-
-        {check.isPending ? (
-          <Skeleton className="h-24 w-full" />
-        ) : check.isError ? (
-          <p role="alert" className="text-sm text-danger-text">
-            {t("configSyncPanel.checkFailed")}
-          </p>
-        ) : !check.data || check.data.products.length === 0 ? (
-          <p className="text-sm text-text-muted">{t("configSyncPanel.products.empty")}</p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <Table>
-              <TableBody>
-                {check.data.products.map((product) => {
-                  const isSelected = product.productModelCode.toLowerCase() === (selected ?? "").toLowerCase()
-                  return (
-                    <TableRow
-                      key={product.productModelCode}
-                      onClick={() => onSelect(product.productModelCode)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault()
-                          onSelect(product.productModelCode)
-                        }
-                      }}
-                      tabIndex={0}
-                      aria-current={isSelected ? "true" : undefined}
-                      aria-label={t("configSyncPanel.products.selectAria", { code: product.productModelCode })}
-                      className={cn(
-                        "cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-navy-600/50",
-                        isSelected && "bg-navy-50 dark:bg-navy-800/40"
-                      )}
-                    >
-                      <TableCell className="font-medium text-text-strong">{product.productModelCode}</TableCell>
-                      <TableCell className="font-numeric text-text-muted">
-                        {product.localVersion != null
-                          ? t("configSyncPanel.products.localVersionShort", { version: product.localVersion })
-                          : t("configSyncPanel.products.localVersionNone")}
-                      </TableCell>
-                      <TableCell className="font-numeric text-text-muted">
-                        {t("configSyncPanel.products.ecosystemVersionShort", { version: product.ecosystemVersion })}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <StatusBadge status={DRIFT_BADGE[product.driftState] ?? "neutral"}>
-                          {t(`configSyncPanel.driftState.${product.driftState}`)}
-                        </StatusBadge>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </Sheet>
   )
 }
 
@@ -744,77 +744,75 @@ function ProductSyncDetail({ machineCode, productCode }: { machineCode: string; 
   const canPush = drift?.driftState !== "unknown"
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-text-strong">
-            {t("configSyncPanel.detail.versionHeading", {
-              code: productCode,
-              local: localVersionLabel,
-              eco: drift?.ecosystemVersion ?? "—",
-            })}
-          </h3>
-          {drift ? (
-            <StatusBadge status={DRIFT_BADGE[drift.driftState] ?? "neutral"}>
-              {t(`configSyncPanel.driftState.${drift.driftState}`)}
-            </StatusBadge>
-          ) : null}
-        </div>
-
-        {localProduct.data?.imageHash ? (
-          <p className="font-mono text-[11px] text-text-muted" title={localProduct.data.imageHash}>
-            {t("configSyncPanel.detail.imageIdentityLabel")}: {shortChecksum(localProduct.data.imageHash)}
-          </p>
+    <Sheet bodyClassName="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-heading text-[15px] font-semibold tracking-tight text-text-strong">
+          {t("configSyncPanel.detail.versionHeading", {
+            code: productCode,
+            local: localVersionLabel,
+            eco: drift?.ecosystemVersion ?? "—",
+          })}
+        </h3>
+        {drift ? (
+          <StatusBadge status={DRIFT_BADGE[drift.driftState] ?? "neutral"}>
+            {t(`configSyncPanel.driftState.${drift.driftState}`)}
+          </StatusBadge>
         ) : null}
+      </div>
 
-        {/* Task C8 — the checksum-first drift key the engine actually decided `drift.driftState`
-            with (byte-exact when both sides have one; a version-only fallback otherwise). */}
-        {drift?.localChecksum || drift?.ecosystemChecksum ? (
-          <dl className="grid w-fit grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
-            <div className="flex flex-col gap-0.5">
-              <dt className="text-text-muted">{t("configSyncPanel.detail.pointsChecksumLocalLabel")}</dt>
-              <dd className="font-mono text-text-strong" title={drift?.localChecksum ?? undefined}>
-                {drift?.localChecksum ? shortChecksum(drift.localChecksum) : t("configSyncPanel.diff.noValue")}
-              </dd>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <dt className="text-text-muted">{t("configSyncPanel.detail.pointsChecksumEcosystemLabel")}</dt>
-              <dd className="font-mono text-text-strong" title={drift?.ecosystemChecksum ?? undefined}>
-                {drift?.ecosystemChecksum ? shortChecksum(drift.ecosystemChecksum) : t("configSyncPanel.diff.noValue")}
-              </dd>
-            </div>
-          </dl>
-        ) : null}
+      {localProduct.data?.imageHash ? (
+        <p className="font-mono text-[11px] text-text-muted" title={localProduct.data.imageHash}>
+          {t("configSyncPanel.detail.imageIdentityLabel")}: {shortChecksum(localProduct.data.imageHash)}
+        </p>
+      ) : null}
 
-        <div className="flex flex-col gap-1.5">
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={handlePull} disabled={pull.isPending}>
-              {pull.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <ArrowDownToLine className="size-3.5" aria-hidden="true" />
-              )}
-              {pull.isPending ? t("configSyncPanel.detail.pulling") : t("configSyncPanel.detail.pullBtn")}
-            </Button>
-            <Button type="button" onClick={() => setConfirmOpen(true)} disabled={push.isPending || !canPush}>
-              <ArrowUpFromLine className="size-3.5" aria-hidden="true" />
-              {t("configSyncPanel.detail.pushBtn")}
-            </Button>
+      {/* Task C8 — the checksum-first drift key the engine actually decided `drift.driftState`
+          with (byte-exact when both sides have one; a version-only fallback otherwise). */}
+      {drift?.localChecksum || drift?.ecosystemChecksum ? (
+        <dl className="grid w-fit grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+          <div className="flex flex-col gap-0.5">
+            <dt className="text-text-muted">{t("configSyncPanel.detail.pointsChecksumLocalLabel")}</dt>
+            <dd className="font-mono text-text-strong" title={drift?.localChecksum ?? undefined}>
+              {drift?.localChecksum ? shortChecksum(drift.localChecksum) : t("configSyncPanel.diff.noValue")}
+            </dd>
           </div>
-          {!canPush ? <p className="text-[11px] text-text-muted">{t("configSyncPanel.detail.pushDisabledHint")}</p> : null}
+          <div className="flex flex-col gap-0.5">
+            <dt className="text-text-muted">{t("configSyncPanel.detail.pointsChecksumEcosystemLabel")}</dt>
+            <dd className="font-mono text-text-strong" title={drift?.ecosystemChecksum ?? undefined}>
+              {drift?.ecosystemChecksum ? shortChecksum(drift.ecosystemChecksum) : t("configSyncPanel.diff.noValue")}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
+      <div className="flex flex-col gap-1.5">
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={handlePull} disabled={pull.isPending}>
+            {pull.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <ArrowDownToLine className="size-3.5" aria-hidden="true" />
+            )}
+            {pull.isPending ? t("configSyncPanel.detail.pulling") : t("configSyncPanel.detail.pullBtn")}
+          </Button>
+          <Button type="button" onClick={() => setConfirmOpen(true)} disabled={push.isPending || !canPush}>
+            <ArrowUpFromLine className="size-3.5" aria-hidden="true" />
+            {t("configSyncPanel.detail.pushBtn")}
+          </Button>
         </div>
+        {!canPush ? <p className="text-[11px] text-text-muted">{t("configSyncPanel.detail.pushDisabledHint")}</p> : null}
+      </div>
 
-        {pull.isError ? (
-          <p role="alert" className="text-sm text-danger-text">
-            {t("configSyncPanel.detail.pullFailed")}
-          </p>
-        ) : null}
+      {pull.isError ? (
+        <p role="alert" className="text-sm text-danger-text">
+          {t("configSyncPanel.detail.pullFailed")}
+        </p>
+      ) : null}
 
-        {pullResult ? <PullResultPanel result={pullResult} /> : null}
-        {pushResult ? <PushResultPanel result={pushResult} /> : null}
+      {pullResult ? <PullResultPanel result={pullResult} /> : null}
+      {pushResult ? <PushResultPanel result={pushResult} /> : null}
 
-        <ProductDiffView diff={diff} localProduct={localProduct.data} />
-      </CardContent>
+      <ProductDiffView diff={diff} localProduct={localProduct.data} />
 
       <PushConfirmDialog
         open={confirmOpen}
@@ -826,7 +824,7 @@ function ProductSyncDetail({ machineCode, productCode }: { machineCode: string; 
         pending={push.isPending}
         onConfirm={handlePushConfirmed}
       />
-    </Card>
+    </Sheet>
   )
 }
 
@@ -885,80 +883,77 @@ function RecipeSyncSection({ machineCode }: { machineCode: string }) {
   }
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <Wrench className="size-4 text-navy-600" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-text-strong">{t("configSyncPanel.title")}</h3>
-        </div>
+    <Sheet
+      title={t("configSyncPanel.title")}
+      headerRight={<Wrench className="size-4 text-primary-text" aria-hidden="true" />}
+      bodyClassName="flex flex-col gap-4"
+    >
+      {check.isPending ? (
+        <Skeleton className="h-20 w-full" />
+      ) : check.isError ? (
+        <p role="alert" className="text-sm text-danger-text">
+          {t("configSyncPanel.checkFailed")}
+        </p>
+      ) : !recipeDrift ? (
+        <p className="text-sm text-text-muted">{t("configSyncPanel.recipe.noneResolved")}</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h4 className="font-heading text-sm font-semibold tracking-tight text-text-strong">
+              {t("configSyncPanel.recipe.versionHeading", {
+                code: recipeDrift.code,
+                local: recipeDrift.localVersion ?? t("configSyncPanel.detail.noLocalVersion"),
+                eco: recipeDrift.ecosystemVersion,
+              })}
+            </h4>
+            <StatusBadge status={DRIFT_BADGE[recipeDrift.driftState] ?? "neutral"}>
+              {t(`configSyncPanel.driftState.${recipeDrift.driftState}`)}
+            </StatusBadge>
+          </div>
 
-        {check.isPending ? (
-          <Skeleton className="h-20 w-full" />
-        ) : check.isError ? (
-          <p role="alert" className="text-sm text-danger-text">
-            {t("configSyncPanel.checkFailed")}
-          </p>
-        ) : !recipeDrift ? (
-          <p className="text-sm text-text-muted">{t("configSyncPanel.recipe.noneResolved")}</p>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h4 className="text-sm font-medium text-text-strong">
-                {t("configSyncPanel.recipe.versionHeading", {
-                  code: recipeDrift.code,
-                  local: recipeDrift.localVersion ?? t("configSyncPanel.detail.noLocalVersion"),
-                  eco: recipeDrift.ecosystemVersion,
-                })}
-              </h4>
-              <StatusBadge status={DRIFT_BADGE[recipeDrift.driftState] ?? "neutral"}>
-                {t(`configSyncPanel.driftState.${recipeDrift.driftState}`)}
-              </StatusBadge>
+          <dl className="grid w-fit grid-cols-2 gap-x-6 gap-y-2 text-xs">
+            <div className="flex flex-col gap-0.5">
+              <dt className="text-text-muted">{t("configSyncPanel.recipe.resolvedByLabel")}</dt>
+              <dd className="font-medium text-text-strong">
+                {t(`configSyncPanel.recipe.resolvedBy.${recipeDrift.resolvedBy}`)}
+              </dd>
             </div>
-
-            <dl className="grid w-fit grid-cols-2 gap-x-6 gap-y-2 text-xs">
+            {localRecipe.data?.checksum ? (
               <div className="flex flex-col gap-0.5">
-                <dt className="text-text-muted">{t("configSyncPanel.recipe.resolvedByLabel")}</dt>
-                <dd className="font-medium text-text-strong">
-                  {t(`configSyncPanel.recipe.resolvedBy.${recipeDrift.resolvedBy}`)}
+                <dt className="text-text-muted">{t("configSyncPanel.recipe.checksumLabel")}</dt>
+                <dd className="font-mono text-text-strong" title={localRecipe.data.checksum}>
+                  {shortChecksum(localRecipe.data.checksum)}
                 </dd>
               </div>
-              {localRecipe.data?.checksum ? (
-                <div className="flex flex-col gap-0.5">
-                  <dt className="text-text-muted">{t("configSyncPanel.recipe.checksumLabel")}</dt>
-                  <dd className="font-mono text-text-strong" title={localRecipe.data.checksum}>
-                    {shortChecksum(localRecipe.data.checksum)}
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
+            ) : null}
+          </dl>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="button" variant="outline" onClick={handlePull} disabled={pull.isPending}>
-                {pull.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <ArrowDownToLine className="size-3.5" aria-hidden="true" />
-                )}
-                {pull.isPending ? t("configSyncPanel.recipe.pulling") : t("configSyncPanel.recipe.pullBtn")}
-              </Button>
-              <Link
-                href={`/recipes/${recipeDrift.code}`}
-                className="inline-flex items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline"
-              >
-                {t("configSyncPanel.recipe.viewRecipeLink", { code: recipeDrift.code })}
-                <ExternalLink className="size-3" aria-hidden="true" />
-              </Link>
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" variant="outline" onClick={handlePull} disabled={pull.isPending}>
+              {pull.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <ArrowDownToLine className="size-3.5" aria-hidden="true" />
+              )}
+              {pull.isPending ? t("configSyncPanel.recipe.pulling") : t("configSyncPanel.recipe.pullBtn")}
+            </Button>
+            <Link
+              href={`/recipes/${recipeDrift.code}`}
+              className="inline-flex items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline"
+            >
+              {t("configSyncPanel.recipe.viewRecipeLink", { code: recipeDrift.code })}
+              <ExternalLink className="size-3" aria-hidden="true" />
+            </Link>
+          </div>
 
-            {pullResult ? <PullResultPanel result={pullResult} /> : null}
+          {pullResult ? <PullResultPanel result={pullResult} /> : null}
 
-            <p className="rounded-lg border border-info/20 bg-info/10 px-3 py-2 text-xs text-info-text">
-              {t("configSyncPanel.recipe.pushUnavailable")}
-            </p>
-          </>
-        )}
-      </CardContent>
-    </Card>
+          <p className="border border-info/20 bg-info/10 px-3 py-2 text-xs text-info-text">
+            {t("configSyncPanel.recipe.pushUnavailable")}
+          </p>
+        </>
+      )}
+    </Sheet>
   )
 }
 
@@ -977,11 +972,11 @@ function HistoryRow({ entry }: { entry: ConfigSyncHistoryEntryDto }) {
     <TableRow>
       <TableCell className="text-text-body">
         <span className="inline-flex items-center gap-1.5">
-          <OpIcon className="size-3.5 text-navy-600" aria-hidden="true" />
+          <OpIcon className="size-3.5 text-primary-text" aria-hidden="true" />
           {opLabel}
         </span>
       </TableCell>
-      <TableCell className="font-medium text-text-strong">{entry.code}</TableCell>
+      <TableCell className="font-numeric font-medium text-text-strong">{entry.code}</TableCell>
       <TableCell className="font-numeric text-text-muted">
         {t("configSyncPanel.history.versionCell", { from: entry.fromVersion ?? "—", to: entry.toVersion ?? "—" })}
       </TableCell>
@@ -995,46 +990,48 @@ function HistoryRow({ entry }: { entry: ConfigSyncHistoryEntryDto }) {
 
 function SyncHistoryCard({ machineCode }: { machineCode: string }) {
   const t = useT()
+  const gloss = useGloss()
   const history = useMachineConfigHistory(machineCode)
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <History className="size-4 text-navy-600" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-text-strong">{t("configSyncPanel.history.title")}</h3>
+    <Sheet
+      title={t("configSyncPanel.history.title")}
+      titleEn={gloss("configSyncPanel.history.title")}
+      headerRight={<History className="size-4 text-primary-text" aria-hidden="true" />}
+      bodyClassName="flex flex-col gap-3"
+    >
+      {history.isPending ? (
+        <Skeleton className="h-20 w-full" />
+      ) : history.isError ? (
+        <p role="alert" className="text-sm text-danger-text">
+          {t("configSyncPanel.history.failed")}
+        </p>
+      ) : !history.data || history.data.length === 0 ? (
+        <p className="text-sm text-text-muted">{t("configSyncPanel.history.empty")}</p>
+      ) : (
+        <div
+          tabIndex={0}
+          className="hmi-scroll overflow-x-auto border border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("configSyncPanel.history.columnOp")}</TableHead>
+                <TableHead>{t("configSyncPanel.history.columnCode")}</TableHead>
+                <TableHead>{t("configSyncPanel.history.columnVersion")}</TableHead>
+                <TableHead>{t("configSyncPanel.history.columnStatus")}</TableHead>
+                <TableHead>{t("configSyncPanel.history.columnTime")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {history.data.map((entry) => (
+                <HistoryRow key={entry.seq} entry={entry} />
+              ))}
+            </TableBody>
+          </Table>
         </div>
-
-        {history.isPending ? (
-          <Skeleton className="h-20 w-full" />
-        ) : history.isError ? (
-          <p role="alert" className="text-sm text-danger-text">
-            {t("configSyncPanel.history.failed")}
-          </p>
-        ) : !history.data || history.data.length === 0 ? (
-          <p className="text-sm text-text-muted">{t("configSyncPanel.history.empty")}</p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("configSyncPanel.history.columnOp")}</TableHead>
-                  <TableHead>{t("configSyncPanel.history.columnCode")}</TableHead>
-                  <TableHead>{t("configSyncPanel.history.columnVersion")}</TableHead>
-                  <TableHead>{t("configSyncPanel.history.columnStatus")}</TableHead>
-                  <TableHead>{t("configSyncPanel.history.columnTime")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {history.data.map((entry) => (
-                  <HistoryRow key={entry.seq} entry={entry} />
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </Sheet>
   )
 }
 
@@ -1054,14 +1051,18 @@ export interface ConfigSyncPanelProps {
 
 export function ConfigSyncPanel({ code, deviceClass, className }: ConfigSyncPanelProps) {
   const t = useT()
+  const gloss = useGloss()
   const isPoints = deviceClass === "AoiAvi"
 
   return (
-    <div className={cn("flex flex-col gap-5", className)}>
+    <div className={cn("flex flex-col gap-4", className)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h2 className="text-sm font-semibold text-text-strong">{t("configSyncPanel.title")}</h2>
-          <p className="max-w-2xl text-sm text-text-muted">{t("configSyncPanel.description")}</p>
+          <h2 className="font-heading text-lg leading-none font-semibold tracking-tight text-text-strong">
+            {t("configSyncPanel.title")}
+          </h2>
+          <p className="hmi-micro mt-1">{gloss("configSyncPanel.title")}</p>
+          <p className="mt-1 max-w-2xl text-sm text-text-muted">{t("configSyncPanel.description")}</p>
         </div>
         <ModeIndicator />
       </div>

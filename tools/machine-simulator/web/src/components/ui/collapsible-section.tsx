@@ -5,6 +5,10 @@ import { cn } from "@/lib/utils"
 
 interface CollapsibleSectionProps {
   title: string
+  /** Uppercase gloss in the inactive language, stacked beneath `title` (spec §3 bilingual
+   * micro-label) — same idiom `<Sheet titleEn>` uses for its own header. Optional; a section title
+   * still renders fine without it. */
+  titleEn?: string
   icon?: React.ComponentType<{ className?: string }>
   /** Whether the section starts expanded. Only read on mount — callers that want a section to
    * "auto-open because this record already has data in it" compute the boolean once from the loaded
@@ -28,6 +32,7 @@ interface CollapsibleSectionProps {
  */
 export function CollapsibleSection({
   title,
+  titleEn,
   icon: Icon,
   defaultOpen = false,
   badge,
@@ -38,26 +43,33 @@ export function CollapsibleSection({
   const panelId = React.useId()
 
   return (
-    <div className={cn("overflow-hidden rounded-none border border-border", className)}>
+    <div className={cn("overflow-hidden border border-border-strong", className)}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-semibold text-text-strong outline-none transition-colors hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy-600"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left outline-none transition-colors hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
       >
-        <span className="flex min-w-0 items-center gap-2">
-          {Icon ? <Icon className="size-4 shrink-0 text-navy-600" aria-hidden="true" /> : null}
-          <span className="truncate">{title}</span>
+        <span className="flex min-w-0 items-baseline gap-2">
+          {Icon ? <Icon className="size-4 shrink-0 self-center text-primary-text" aria-hidden="true" /> : null}
+          <span className="flex min-w-0 flex-col gap-0">
+            <span className="truncate text-sm font-semibold text-text-strong">{title}</span>
+            {titleEn ? (
+              <span className="hmi-micro truncate" aria-hidden="true">
+                {titleEn}
+              </span>
+            ) : null}
+          </span>
           {badge}
         </span>
         <ChevronDown
-          className={cn("size-4 shrink-0 text-text-muted transition-transform duration-150", open && "rotate-180")}
+          className={cn("size-4 shrink-0 self-center text-text-muted transition-transform duration-150", open && "rotate-180")}
           aria-hidden="true"
         />
       </button>
       {open ? (
-        <div id={panelId} role="region" aria-label={title} className="flex flex-col gap-4 border-t border-border px-3 py-3.5">
+        <div id={panelId} role="region" aria-label={title} className="flex flex-col gap-4 border-t border-border-strong px-3 py-3.5">
           {children}
         </div>
       ) : null}

@@ -27,8 +27,8 @@ import {
   type ProductModel,
 } from "@/lib/configApi"
 import { fadeSlideUp } from "@/theme/motion"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -96,24 +96,22 @@ function BackLink() {
 
 function DetailSkeleton() {
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
+    <div className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
       <Skeleton className="h-4 w-40" />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Skeleton className="size-11 shrink-0 rounded-full" />
+          <Skeleton className="size-11 shrink-0" />
           <div className="flex flex-col gap-1.5">
             <Skeleton className="h-6 w-32" />
             <Skeleton className="h-3.5 w-48" />
           </div>
         </div>
-        <Skeleton className="h-6 w-28 rounded-full" />
+        <Skeleton className="h-6 w-28" />
       </div>
-      <Card className="p-1">
-        <CardContent className="flex flex-col gap-4 pt-3">
-          <Skeleton className="h-8 w-72" />
-          <Skeleton className="h-64 w-full" />
-        </CardContent>
-      </Card>
+      <Sheet className="min-h-0 flex-1" bodyClassName="flex flex-col gap-4">
+        <Skeleton className="h-8 w-72" />
+        <Skeleton className="h-64 w-full" />
+      </Sheet>
     </div>
   )
 }
@@ -121,18 +119,16 @@ function DetailSkeleton() {
 function NotFoundState({ code }: { code: string }) {
   const t = useT()
   return (
-    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
+    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
       <BackLink />
       <div className="flex flex-1 items-center justify-center">
-        <Card className="max-w-md">
-          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-danger/10">
-              <ServerCrash className="size-6 text-danger-text" aria-hidden="true" />
-            </div>
-            <h1 className="text-lg font-semibold text-text-strong">{t("productConfigDetail.notFoundState.title")}</h1>
-            <p className="text-sm text-text-muted">{t("productConfigDetail.notFoundState.description", { code })}</p>
-          </CardContent>
-        </Card>
+        <Sheet className="max-w-md" bodyClassName="flex flex-col items-center gap-3 py-10 text-center">
+          <div className="flex size-12 items-center justify-center border border-danger/40 bg-danger/10">
+            <ServerCrash className="size-6 text-danger-text" aria-hidden="true" />
+          </div>
+          <h1 className="text-lg font-semibold text-text-strong">{t("productConfigDetail.notFoundState.title")}</h1>
+          <p className="text-sm text-text-muted">{t("productConfigDetail.notFoundState.description", { code })}</p>
+        </Sheet>
       </div>
     </motion.div>
   )
@@ -141,7 +137,7 @@ function NotFoundState({ code }: { code: string }) {
 function ConnectivityErrorState() {
   const t = useT()
   return (
-    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
+    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
       <BackLink />
       <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
     </motion.div>
@@ -250,57 +246,59 @@ function ProductInfoTab({ product, pointCount }: { product: ProductModel; pointC
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <Info className="size-4 text-navy-600" aria-hidden="true" />
-            <h2 className="text-sm font-semibold text-text-strong">{t("productConfigDetail.info.title")}</h2>
-          </div>
+    <div className="flex flex-col gap-4">
+      {/* Title-less Sheet — kept as a literal `<h2>` below (not `<Sheet title>`'s own `<h3>`) so this
+          tab's heading hierarchy stays h1 (page) → h2 (this section), same pattern as
+          PointsEditor.tsx's own fix. */}
+      <Sheet bodyClassName="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <Info className="size-4 text-primary-text" aria-hidden="true" />
+          <h2 className="font-heading text-[15px] font-semibold tracking-tight text-text-strong">
+            {t("productConfigDetail.info.title")}
+          </h2>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-text-body">{t("productConfigDetail.info.codeLabel")}</span>
+          <span className="font-numeric w-fit border border-border-strong bg-surface-muted px-2.5 py-1 text-sm text-text-strong">
+            {product.code}
+          </span>
+        </div>
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-text-body">{t("productConfigDetail.info.codeLabel")}</span>
-            <span className="font-numeric w-fit rounded-md bg-surface-subtle px-2.5 py-1 text-sm text-text-strong">
-              {product.code}
-            </span>
-          </div>
+        <ProductFormFields values={form} onChange={updateForm} idPrefix="edit-product" />
+        {nameError ? (
+          <p role="alert" className="text-sm text-danger-text">
+            {nameError}
+          </p>
+        ) : null}
 
-          <ProductFormFields values={form} onChange={updateForm} idPrefix="edit-product" />
-          {nameError ? (
-            <p role="alert" className="text-sm text-danger-text">
-              {nameError}
-            </p>
-          ) : null}
-
-          <div className="flex items-center gap-3 pt-1">
-            <Button type="button" onClick={handleSave} disabled={!dirty || saveProduct.isPending}>
-              {saveProduct.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <Save className="size-3.5" aria-hidden="true" />
-              )}
-              {saveProduct.isPending ? t("productConfigDetail.info.saving") : t("productConfigDetail.info.save")}
-            </Button>
-            <span className="text-xs text-text-muted">
-              {dirty ? t("productConfigDetail.info.dirty") : t("productConfigDetail.info.clean")}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <Trash2 className="size-4 text-danger-text" aria-hidden="true" />
-            <h2 className="text-sm font-semibold text-text-strong">{t("productConfigDetail.info.dangerZoneTitle")}</h2>
-          </div>
-          <p className="text-sm text-text-muted">{t("productConfigDetail.info.dangerZoneHint")}</p>
-          <Button type="button" variant="destructive" onClick={() => setDeleteOpen(true)} className="w-fit">
-            <Trash2 className="size-3.5" aria-hidden="true" />
-            {t("productConfigDetail.info.deleteBtn")}
+        <div className="flex items-center gap-3 pt-1">
+          <Button type="button" onClick={handleSave} disabled={!dirty || saveProduct.isPending}>
+            {saveProduct.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Save className="size-3.5" aria-hidden="true" />
+            )}
+            {saveProduct.isPending ? t("productConfigDetail.info.saving") : t("productConfigDetail.info.save")}
           </Button>
-        </CardContent>
-      </Card>
+          <span className="text-xs text-text-muted">
+            {dirty ? t("productConfigDetail.info.dirty") : t("productConfigDetail.info.clean")}
+          </span>
+        </div>
+      </Sheet>
+
+      <Sheet bodyClassName="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <Trash2 className="size-4 text-danger-text" aria-hidden="true" />
+          <h2 className="font-heading text-[15px] font-semibold tracking-tight text-text-strong">
+            {t("productConfigDetail.info.dangerZoneTitle")}
+          </h2>
+        </div>
+        <p className="text-sm text-text-muted">{t("productConfigDetail.info.dangerZoneHint")}</p>
+        <Button type="button" variant="destructive" onClick={() => setDeleteOpen(true)} className="w-fit">
+          <Trash2 className="size-3.5" aria-hidden="true" />
+          {t("productConfigDetail.info.deleteBtn")}
+        </Button>
+      </Sheet>
 
       <DeleteProductDialog open={deleteOpen} onOpenChange={setDeleteOpen} product={product} pointCount={pointCount} />
     </div>
@@ -348,89 +346,82 @@ function ProductSyncTab({ code }: { code: string }) {
   }
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <RefreshCw className="size-4 text-navy-600" aria-hidden="true" />
-          <h2 className="text-sm font-semibold text-text-strong">{t("productConfigDetail.sync.title")}</h2>
-        </div>
-        <p className="text-sm text-text-muted">{t("productConfigDetail.sync.description")}</p>
+    <Sheet bodyClassName="flex flex-col gap-4">
+      <div className="flex items-center gap-2">
+        <RefreshCw className="size-4 text-primary-text" aria-hidden="true" />
+        <h2 className="font-heading text-[15px] font-semibold tracking-tight text-text-strong">
+          {t("productConfigDetail.sync.title")}
+        </h2>
+      </div>
+      <p className="text-sm text-text-muted">{t("productConfigDetail.sync.description")}</p>
 
-        {!fleetPending && aoiMachines.length === 0 ? (
-          <p className="text-sm text-text-muted">{t("productConfigDetail.sync.noMachines")}</p>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1">
-                <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
-                  {t("productConfigDetail.sync.machineLabel")}
-                </span>
-                <select
-                  value={selectedMachine}
-                  onChange={(event) => handleMachineChange(event.target.value)}
-                  className="h-8 w-48 rounded-lg border border-input bg-transparent px-2 text-sm text-text-body outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                >
-                  <option value="">{t("productConfigDetail.sync.machinePlaceholder")}</option>
-                  {aoiMachines.map((machine) => (
-                    <option key={machine.code} value={machine.code}>
-                      {machine.code}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleCheckClick}
-                disabled={!selectedMachine || check.isFetching}
+      {!fleetPending && aoiMachines.length === 0 ? (
+        <p className="text-sm text-text-muted">{t("productConfigDetail.sync.noMachines")}</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="hmi-micro">{t("productConfigDetail.sync.machineLabel")}</span>
+              <select
+                value={selectedMachine}
+                onChange={(event) => handleMachineChange(event.target.value)}
+                className="h-8 w-48 border border-border-strong bg-surface-muted px-2 text-sm text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
               >
-                {check.isFetching ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <RefreshCw className="size-3.5" aria-hidden="true" />
-                )}
-                {check.isFetching ? t("productConfigDetail.sync.checking") : t("productConfigDetail.sync.checkBtn")}
-              </Button>
-            </div>
+                <option value="">{t("productConfigDetail.sync.machinePlaceholder")}</option>
+                {aoiMachines.map((machine) => (
+                  <option key={machine.code} value={machine.code}>
+                    {machine.code}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button type="button" variant="outline" onClick={handleCheckClick} disabled={!selectedMachine || check.isFetching}>
+              {check.isFetching ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="size-3.5" aria-hidden="true" />
+              )}
+              {check.isFetching ? t("productConfigDetail.sync.checking") : t("productConfigDetail.sync.checkBtn")}
+            </Button>
+          </div>
 
-            {check.isError ? (
-              <p role="alert" className="text-sm text-danger-text">
-                {t("productConfigDetail.sync.checkFailed")}
-              </p>
-            ) : null}
+          {check.isError ? (
+            <p role="alert" className="text-sm text-danger-text">
+              {t("productConfigDetail.sync.checkFailed")}
+            </p>
+          ) : null}
 
-            {hasChecked && drift ? (
-              <div className="flex flex-col gap-3 rounded-lg border border-border p-3" role="status">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-text-muted">{t("productConfigDetail.sync.resultState")}</span>
-                  <StatusBadge status={DRIFT_BADGE[drift.driftState] ?? "neutral"}>
-                    {t(`productConfigDetail.sync.driftState.${drift.driftState}`)}
-                  </StatusBadge>
-                </div>
-                <dl className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="flex flex-col gap-0.5">
-                    <dt className="text-text-muted">{t("productConfigDetail.sync.resultLocalVersion")}</dt>
-                    <dd className="font-numeric font-medium text-text-strong">{drift.localVersion ?? "—"}</dd>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <dt className="text-text-muted">{t("productConfigDetail.sync.resultEcosystemVersion")}</dt>
-                    <dd className="font-numeric font-medium text-text-strong">{drift.ecosystemVersion}</dd>
-                  </div>
-                </dl>
-                <Link
-                  href={`/machines/${selectedMachine}`}
-                  className="text-sm text-primary-text underline-offset-4 hover:underline"
-                >
-                  {t("productConfigDetail.sync.viewMachineLink", { code: selectedMachine })}
-                </Link>
+          {hasChecked && drift ? (
+            <div className="flex flex-col gap-3 border border-border p-3" role="status">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-text-muted">{t("productConfigDetail.sync.resultState")}</span>
+                <StatusBadge status={DRIFT_BADGE[drift.driftState] ?? "neutral"}>
+                  {t(`productConfigDetail.sync.driftState.${drift.driftState}`)}
+                </StatusBadge>
               </div>
-            ) : null}
+              <dl className="grid grid-cols-2 gap-3 text-xs">
+                <div className="flex flex-col gap-0.5">
+                  <dt className="text-text-muted">{t("productConfigDetail.sync.resultLocalVersion")}</dt>
+                  <dd className="font-numeric font-medium text-text-strong">{drift.localVersion ?? "—"}</dd>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <dt className="text-text-muted">{t("productConfigDetail.sync.resultEcosystemVersion")}</dt>
+                  <dd className="font-numeric font-medium text-text-strong">{drift.ecosystemVersion}</dd>
+                </div>
+              </dl>
+              <Link
+                href={`/machines/${selectedMachine}`}
+                className="text-sm text-primary-text underline-offset-4 hover:underline"
+              >
+                {t("productConfigDetail.sync.viewMachineLink", { code: selectedMachine })}
+              </Link>
+            </div>
+          ) : null}
 
-            <p className="text-[11px] text-text-muted">{t("productConfigDetail.sync.seamNote")}</p>
-          </>
-        )}
-      </CardContent>
-    </Card>
+          <p className="text-[11px] text-text-muted">{t("productConfigDetail.sync.seamNote")}</p>
+        </>
+      )}
+    </Sheet>
   )
 }
 
@@ -449,26 +440,28 @@ function ProductConfigDetailBody({ product }: { product: ProductModel }) {
       initial="hidden"
       animate="visible"
       variants={fadeSlideUp}
-      className="flex flex-1 flex-col gap-6 p-6 lg:p-8"
+      className="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6"
     >
       <BackLink />
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <ProductImageThumb
             url={product.referenceImageUrl}
             alt={product.name}
-            className="size-11 shrink-0 rounded-full border border-border"
+            className="size-11 shrink-0 border border-border-strong"
             fallbackIconClassName="size-5"
           />
           <div className="flex flex-col gap-0.5">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold text-text-strong">{product.code}</h1>
+              <h1 className="font-heading text-[28px] leading-none font-semibold tracking-tight text-text-strong">
+                {product.code}
+              </h1>
               <StatusBadge status={LIFECYCLE_BADGE[product.lifecycleStatus]}>
                 {t(`lifecycleStatus.${product.lifecycleStatus}`)}
               </StatusBadge>
             </div>
-            <p className="text-sm text-text-muted">
+            <p className="hmi-micro mt-1">
               {product.name} · {t(`coordinateMode.${product.coordinateMode}`)}
             </p>
           </div>
@@ -479,44 +472,57 @@ function ProductConfigDetailBody({ product }: { product: ProductModel }) {
         </StatusBadge>
       </div>
 
-      <Card className="p-1">
-        <CardContent className="pt-3">
-          <Tabs defaultValue="info">
-            <TabsList>
-              <TabsTrigger value="info">
-                <Info className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                {t("productConfigDetail.tabs.info")}
-              </TabsTrigger>
-              <TabsTrigger value="points">
-                <Target className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                {t("productConfigDetail.tabs.points")}
-              </TabsTrigger>
-              <TabsTrigger value="sync">
-                <RefreshCw className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-                {t("productConfigDetail.tabs.sync")}
-              </TabsTrigger>
-            </TabsList>
+      <Sheet className="min-h-0 flex-1" bodyClassName="flex flex-1 min-h-0 flex-col p-3">
+        <Tabs defaultValue="info" className="min-h-0 flex-1">
+          <TabsList className="shrink-0">
+            <TabsTrigger value="info">
+              <Info className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              {t("productConfigDetail.tabs.info")}
+            </TabsTrigger>
+            <TabsTrigger value="points">
+              <Target className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              {t("productConfigDetail.tabs.points")}
+            </TabsTrigger>
+            <TabsTrigger value="sync">
+              <RefreshCw className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              {t("productConfigDetail.tabs.sync")}
+            </TabsTrigger>
+          </TabsList>
 
-            <TabsContent value="info" className="pt-4">
-              <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
+          <TabsContent value="info" className="min-h-0 flex-1 pt-4">
+            <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="h-full min-h-0">
+              <div
+                tabIndex={0}
+                className="hmi-scroll h-full overflow-x-hidden overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+              >
                 <ProductInfoTab product={product} pointCount={pointCount} />
-              </motion.div>
-            </TabsContent>
+              </div>
+            </motion.div>
+          </TabsContent>
 
-            <TabsContent value="points" className="pt-4">
-              <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
+          <TabsContent value="points" className="min-h-0 flex-1 pt-4">
+            <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="h-full min-h-0">
+              <div
+                tabIndex={0}
+                className="hmi-scroll h-full overflow-x-hidden overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+              >
                 <PointsEditor product={product} />
-              </motion.div>
-            </TabsContent>
+              </div>
+            </motion.div>
+          </TabsContent>
 
-            <TabsContent value="sync" className="pt-4">
-              <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
+          <TabsContent value="sync" className="min-h-0 flex-1 pt-4">
+            <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="h-full min-h-0">
+              <div
+                tabIndex={0}
+                className="hmi-scroll h-full overflow-x-hidden overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+              >
                 <ProductSyncTab code={product.code} />
-              </motion.div>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+              </div>
+            </motion.div>
+          </TabsContent>
+        </Tabs>
+      </Sheet>
     </motion.div>
   )
 }

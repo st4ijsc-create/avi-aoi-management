@@ -2,10 +2,11 @@ import * as React from "react"
 import { Crosshair, Loader2, Pencil, Plus, Save, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useSaveProduct, type Fiducial, type ProductModel } from "@/lib/configApi"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -242,6 +243,7 @@ function DeleteFiducialDialog({
  * for positioning a fiducial on the canvas is editable). */
 export function ProductFiducialsPanel({ product }: { product: ProductModel }) {
   const t = useT()
+  const gloss = useGloss()
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Fiducial | null>(null)
   const [deleteTarget, setDeleteTarget] = React.useState<Fiducial | null>(null)
@@ -256,79 +258,84 @@ export function ProductFiducialsPanel({ product }: { product: ProductModel }) {
   }
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Crosshair className="size-4 text-navy-600" aria-hidden="true" />
-            <h2 className="text-sm font-semibold text-text-strong">{t("pointsEditor.fiducials.title")}</h2>
-          </div>
-          <Button type="button" size="sm" variant="outline" onClick={openAdd}>
-            <Plus className="size-3.5" aria-hidden="true" />
-            {t("pointsEditor.fiducials.addBtn")}
-          </Button>
+    // Title-less Sheet — see PointsEditor.tsx's own comment: this section's heading must stay a
+    // literal `<h2>` (spec/e2e both expect `level: 2`), not `<Sheet title>`'s `<h3>`.
+    <Sheet bodyClassName="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Crosshair className="size-4 text-primary-text" aria-hidden="true" />
+          <h2 className="font-heading text-[15px] font-semibold tracking-tight text-text-strong">
+            {t("pointsEditor.fiducials.title")}
+          </h2>
+          <span className="hmi-micro" aria-hidden="true">
+            {gloss("pointsEditor.fiducials.title")}
+          </span>
         </div>
-        <p className="text-sm text-text-muted">{t("pointsEditor.fiducials.description")}</p>
+        <Button type="button" size="sm" variant="outline" onClick={openAdd}>
+          <Plus className="size-3.5" aria-hidden="true" />
+          {t("pointsEditor.fiducials.addBtn")}
+        </Button>
+      </div>
+      <p className="text-sm text-text-muted">{t("pointsEditor.fiducials.description")}</p>
 
-        {product.fiducials.length === 0 ? (
-          <p className="text-sm text-text-muted">{t("pointsEditor.fiducials.empty")}</p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("pointsEditor.fiducials.table.code")}</TableHead>
-                  <TableHead>{t("pointsEditor.fiducials.table.name")}</TableHead>
-                  <TableHead>{t("pointsEditor.fiducials.table.type")}</TableHead>
-                  <TableHead>{t("pointsEditor.fiducials.table.position")}</TableHead>
-                  <TableHead className="w-16">
-                    <span className="sr-only">{t("pointsEditor.fiducials.table.actions")}</span>
-                  </TableHead>
+      {product.fiducials.length === 0 ? (
+        <p className="text-sm text-text-muted">{t("pointsEditor.fiducials.empty")}</p>
+      ) : (
+        <div className="overflow-hidden border border-border-strong">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("pointsEditor.fiducials.table.code")}</TableHead>
+                <TableHead>{t("pointsEditor.fiducials.table.name")}</TableHead>
+                <TableHead>{t("pointsEditor.fiducials.table.type")}</TableHead>
+                <TableHead>{t("pointsEditor.fiducials.table.position")}</TableHead>
+                <TableHead className="w-16">
+                  <span className="sr-only">{t("pointsEditor.fiducials.table.actions")}</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {product.fiducials.map((f) => (
+                <TableRow key={f.code}>
+                  <TableCell className="font-numeric font-medium text-text-strong">{f.code}</TableCell>
+                  <TableCell className="text-text-body">{f.name ?? "—"}</TableCell>
+                  <TableCell className="text-text-body">{f.type ?? "—"}</TableCell>
+                  <TableCell className="font-numeric text-text-muted">
+                    {f.normalizedX != null && f.normalizedY != null ? `${f.normalizedX.toFixed(3)}, ${f.normalizedY.toFixed(3)}` : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => openEdit(f)}
+                        aria-label={t("pointsEditor.fiducials.editAria", { code: f.code })}
+                      >
+                        <Pencil className="size-3.5" aria-hidden="true" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setDeleteTarget(f)}
+                        aria-label={t("pointsEditor.fiducials.deleteAria", { code: f.code })}
+                      >
+                        <Trash2 className="size-3.5 text-danger-text" aria-hidden="true" />
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {product.fiducials.map((f) => (
-                  <TableRow key={f.code}>
-                    <TableCell className="font-medium text-text-strong">{f.code}</TableCell>
-                    <TableCell className="text-text-body">{f.name ?? "—"}</TableCell>
-                    <TableCell className="text-text-body">{f.type ?? "—"}</TableCell>
-                    <TableCell className="font-numeric text-text-muted">
-                      {f.normalizedX != null && f.normalizedY != null ? `${f.normalizedX.toFixed(3)}, ${f.normalizedY.toFixed(3)}` : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => openEdit(f)}
-                          aria-label={t("pointsEditor.fiducials.editAria", { code: f.code })}
-                        >
-                          <Pencil className="size-3.5" aria-hidden="true" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => setDeleteTarget(f)}
-                          aria-label={t("pointsEditor.fiducials.deleteAria", { code: f.code })}
-                        >
-                          <Trash2 className="size-3.5 text-danger-text" aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <FiducialDialog open={dialogOpen} onOpenChange={setDialogOpen} product={product} editing={editing} />
       {deleteTarget ? (
         <DeleteFiducialDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)} product={product} fiducial={deleteTarget} />
       ) : null}
-    </Card>
+    </Sheet>
   )
 }

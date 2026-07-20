@@ -12,7 +12,7 @@ interface ConfigModeToggleProps {
 }
 
 const SEGMENT_CLASS =
-  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50"
+  "flex items-center gap-1.5 border border-transparent px-2.5 py-1.5 text-[11px] font-semibold tracking-wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50"
 
 /**
  * Task C6 — segmented switch between the two config-sync authoring domains sharing this workspace:
@@ -32,14 +32,16 @@ export function ConfigModeToggle({ current, className }: ConfigModeToggleProps) 
   return (
     <nav
       aria-label={t("configModeToggle.ariaLabel")}
-      className={cn("inline-flex items-center gap-0.5 rounded-lg border border-border bg-surface-card p-0.5", className)}
+      className={cn("inline-flex w-fit items-center border border-border-strong bg-surface-muted p-0.5", className)}
     >
       <Link
         href="/products"
         aria-current={current === "products" ? "page" : undefined}
         className={cn(
           SEGMENT_CLASS,
-          current === "products" ? "bg-navy-600 text-white shadow-sm" : "text-text-body hover:bg-navy-50 hover:text-navy-700"
+          current === "products"
+            ? "border-navy-800 bg-navy-700 text-white dark:border-navy-300 dark:bg-[var(--color-accent)] dark:text-navy-900"
+            : "text-text-body hover:border-border-strong hover:bg-surface-card"
         )}
       >
         <Boxes className="size-3.5" aria-hidden="true" />
@@ -50,7 +52,9 @@ export function ConfigModeToggle({ current, className }: ConfigModeToggleProps) 
         aria-current={current === "recipes" ? "page" : undefined}
         className={cn(
           SEGMENT_CLASS,
-          current === "recipes" ? "bg-navy-600 text-white shadow-sm" : "text-text-body hover:bg-navy-50 hover:text-navy-700"
+          current === "recipes"
+            ? "border-navy-800 bg-navy-700 text-white dark:border-navy-300 dark:bg-[var(--color-accent)] dark:text-navy-900"
+            : "text-text-body hover:border-border-strong hover:bg-surface-card"
         )}
       >
         <Wrench className="size-3.5" aria-hidden="true" />

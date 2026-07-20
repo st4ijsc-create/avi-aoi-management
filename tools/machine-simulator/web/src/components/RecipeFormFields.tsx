@@ -1,3 +1,4 @@
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import type { RecipeStatus } from "@/lib/configApi"
 import { RECIPE_MACHINE_TYPE_GROUPS } from "@/lib/machineTypes"
@@ -44,10 +45,15 @@ interface RecipeFormFieldsProps {
  */
 export function RecipeFormFields({ values, onChange, idPrefix }: RecipeFormFieldsProps) {
   const t = useT()
+  const gloss = useGloss()
 
   return (
     <div className="flex flex-col gap-4">
-      <FormField label={t("recipeConfig.form.nameLabel")} htmlFor={`${idPrefix}-name`}>
+      <FormField
+        label={t("recipeConfig.form.nameLabel")}
+        labelEn={gloss("recipeConfig.form.nameLabel")}
+        htmlFor={`${idPrefix}-name`}
+      >
         <Input
           id={`${idPrefix}-name`}
           value={values.name}
@@ -57,7 +63,11 @@ export function RecipeFormFields({ values, onChange, idPrefix }: RecipeFormField
       </FormField>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormField label={t("recipeConfig.form.machineTypeLabel")} htmlFor={`${idPrefix}-machine-type`}>
+        <FormField
+          label={t("recipeConfig.form.machineTypeLabel")}
+          labelEn={gloss("recipeConfig.form.machineTypeLabel")}
+          htmlFor={`${idPrefix}-machine-type`}
+        >
           <Select
             value={values.machineType || NONE_MACHINE_TYPE}
             onValueChange={(value) => value && onChange("machineType", value === NONE_MACHINE_TYPE ? "" : value)}
@@ -87,7 +97,11 @@ export function RecipeFormFields({ values, onChange, idPrefix }: RecipeFormField
           </Select>
         </FormField>
 
-        <FormField label={t("recipeConfig.form.statusLabel")} htmlFor={`${idPrefix}-status`}>
+        <FormField
+          label={t("recipeConfig.form.statusLabel")}
+          labelEn={gloss("recipeConfig.form.statusLabel")}
+          htmlFor={`${idPrefix}-status`}
+        >
           <Select<RecipeStatus> value={values.status} onValueChange={(value) => value && onChange("status", value)}>
             <SelectTrigger id={`${idPrefix}-status`}>
               <SelectValue>{t(`recipeStatus.${values.status}`)}</SelectValue>

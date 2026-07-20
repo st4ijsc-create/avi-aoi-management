@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Upload, X } from "lucide-react"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import type { CoordinateMode, ProductLifecycleStatus } from "@/lib/configApi"
 import { Button } from "@/components/ui/button"
@@ -46,6 +47,7 @@ interface ProductFormFieldsProps {
  */
 export function ProductFormFields({ values, onChange, idPrefix }: ProductFormFieldsProps) {
   const t = useT()
+  const gloss = useGloss()
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [imageError, setImageError] = React.useState<string | null>(null)
 
@@ -74,7 +76,11 @@ export function ProductFormFields({ values, onChange, idPrefix }: ProductFormFie
 
   return (
     <div className="flex flex-col gap-4">
-      <FormField label={t("productConfig.form.nameLabel")} htmlFor={`${idPrefix}-name`}>
+      <FormField
+        label={t("productConfig.form.nameLabel")}
+        labelEn={gloss("productConfig.form.nameLabel")}
+        htmlFor={`${idPrefix}-name`}
+      >
         <Input
           id={`${idPrefix}-name`}
           value={values.name}
@@ -84,7 +90,11 @@ export function ProductFormFields({ values, onChange, idPrefix }: ProductFormFie
       </FormField>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormField label={t("productConfig.form.lifecycleLabel")} htmlFor={`${idPrefix}-lifecycle`}>
+        <FormField
+          label={t("productConfig.form.lifecycleLabel")}
+          labelEn={gloss("productConfig.form.lifecycleLabel")}
+          htmlFor={`${idPrefix}-lifecycle`}
+        >
           <Select<ProductLifecycleStatus>
             value={values.lifecycleStatus}
             onValueChange={(value) => value && onChange("lifecycleStatus", value)}
@@ -106,7 +116,11 @@ export function ProductFormFields({ values, onChange, idPrefix }: ProductFormFie
           </Select>
         </FormField>
 
-        <FormField label={t("productConfig.form.coordinateModeLabel")} htmlFor={`${idPrefix}-coordinate-mode`}>
+        <FormField
+          label={t("productConfig.form.coordinateModeLabel")}
+          labelEn={gloss("productConfig.form.coordinateModeLabel")}
+          htmlFor={`${idPrefix}-coordinate-mode`}
+        >
           <Select<CoordinateMode>
             value={values.coordinateMode}
             onValueChange={(value) => value && onChange("coordinateMode", value)}
@@ -130,7 +144,11 @@ export function ProductFormFields({ values, onChange, idPrefix }: ProductFormFie
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormField label={t("productConfig.form.imageWidthLabel")} htmlFor={`${idPrefix}-image-width`}>
+        <FormField
+          label={t("productConfig.form.imageWidthLabel")}
+          labelEn={gloss("productConfig.form.imageWidthLabel")}
+          htmlFor={`${idPrefix}-image-width`}
+        >
           <Input
             id={`${idPrefix}-image-width`}
             type="number"
@@ -140,7 +158,11 @@ export function ProductFormFields({ values, onChange, idPrefix }: ProductFormFie
             onChange={(e) => onChange("imageWidth", e.target.value)}
           />
         </FormField>
-        <FormField label={t("productConfig.form.imageHeightLabel")} htmlFor={`${idPrefix}-image-height`}>
+        <FormField
+          label={t("productConfig.form.imageHeightLabel")}
+          labelEn={gloss("productConfig.form.imageHeightLabel")}
+          htmlFor={`${idPrefix}-image-height`}
+        >
           <Input
             id={`${idPrefix}-image-height`}
             type="number"
@@ -152,13 +174,17 @@ export function ProductFormFields({ values, onChange, idPrefix }: ProductFormFie
         </FormField>
       </div>
 
-      <FormField label={t("productConfig.form.referenceImageLabel")} htmlFor={`${idPrefix}-image-url`}>
+      <FormField
+        label={t("productConfig.form.referenceImageLabel")}
+        labelEn={gloss("productConfig.form.referenceImageLabel")}
+        htmlFor={`${idPrefix}-image-url`}
+      >
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-3">
             <ProductImageThumb
               url={values.referenceImageUrl}
               alt={t("productConfig.form.previewAlt")}
-              className="size-14 rounded-lg border border-border"
+              className="size-14 border border-border-strong"
             />
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               {isUploadedImage ? (
