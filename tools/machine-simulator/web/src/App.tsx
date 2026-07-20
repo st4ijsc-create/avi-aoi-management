@@ -3,6 +3,7 @@ import { Route, Switch } from "wouter"
 
 import { LanguageProvider } from "@/i18n"
 import { FleetRuntimeProvider } from "@/lib/api"
+import Hmi from "@/routes/Hmi"
 import TokensShowcase from "@/routes/_tokens"
 import { Shell } from "@/shell/Shell"
 import { Toaster } from "@/components/ui/sonner"
@@ -31,6 +32,9 @@ function App() {
           <FleetRuntimeProvider>
             <Switch>
               <Route path="/tokens" component={TokensShowcase} />
+              {/* H2 — the HMI operator panel renders as a genuine full-screen kiosk, OUTSIDE <Shell>'s
+                  sidebar/topbar chrome (docs/HMI_DESIGN_SPEC.md §8), same reasoning as /tokens above. */}
+              <Route path="/hmi/:code" component={Hmi} />
               <Route>
                 <Shell />
               </Route>

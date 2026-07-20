@@ -188,6 +188,14 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
             label={t("machineDetail.headerPassRate")}
             value={passRateApplicable ? `${(machine.passRate * 100).toFixed(1)}%` : "—"}
           />
+          {/* H2 — entry point to the machine's full-screen HMI operator panel. */}
+          <Link
+            href={`/hmi/${encodeURIComponent(machine.code)}`}
+            className="flex items-center gap-1.5 border border-border-strong px-2.5 py-1.5 text-xs font-medium text-text-body transition-colors hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] dark:hover:text-navy-200"
+          >
+            <Gauge className="size-3.5" aria-hidden="true" />
+            {t("hmi.entryButton")}
+          </Link>
         </div>
       </div>
 

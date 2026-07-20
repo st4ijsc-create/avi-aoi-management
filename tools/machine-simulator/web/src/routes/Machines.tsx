@@ -1,8 +1,8 @@
 import * as React from "react"
 import { motion } from "framer-motion"
-import { ChevronRight, Factory, Inbox, Search, SearchX, X } from "lucide-react"
+import { ChevronRight, Factory, Gauge, Inbox, Search, SearchX, X } from "lucide-react"
 import type { VariantProps } from "class-variance-authority"
-import { useLocation } from "wouter"
+import { Link, useLocation } from "wouter"
 
 import { useT } from "@/i18n"
 import { useFleet, useFleetIsRunning, type DeviceClass, type FleetTile } from "@/lib/api"
@@ -115,6 +115,11 @@ function MachinesTableHeaderRow() {
       <TableHead className="text-right">{t("machines.table.passRate")}</TableHead>
       <TableHead className="text-right">{t("machines.table.cycles")}</TableHead>
       <TableHead>{t("machines.table.trend")}</TableHead>
+      {/* H2 — a dedicated entry point to the machine's HMI operator panel, separate from the row's
+          own click-to-detail behavior. `sr-only` label, same idiom as the trailing chevron column. */}
+      <TableHead className="w-10">
+        <span className="sr-only">{t("hmi.entryButton")}</span>
+      </TableHead>
       {/* Trailing chevron column carries no data of its own — `sr-only` label so the column still has
           an accessible name instead of a silently-empty header cell. */}
       <TableHead className="w-8">
@@ -147,6 +152,9 @@ function MachineRowSkeleton() {
       </TableCell>
       <TableCell>
         <Skeleton className="h-5 w-20" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="size-7" />
       </TableCell>
       <TableCell>
         <Skeleton className="size-4" />
@@ -204,6 +212,17 @@ function MachineRow({ machine, isRunning, onOpen }: MachineRowProps) {
       <TableCell className="font-numeric text-right text-text-body">{machine.cycles.toLocaleString()}</TableCell>
       <TableCell className="w-24">
         <Sparkline data={machine.spark} height={22} />
+      </TableCell>
+      {/* H2 — stops the row's own click-to-detail handler so this is a genuinely separate action. */}
+      <TableCell onClick={(event) => event.stopPropagation()}>
+        <Link
+          href={`/hmi/${encodeURIComponent(machine.code)}`}
+          aria-label={t("hmi.entryButtonAria", { code: machine.code })}
+          title={t("hmi.entryButton")}
+          className="flex size-7 items-center justify-center border border-border-strong text-text-muted transition-colors hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] dark:hover:text-navy-200"
+        >
+          <Gauge className="size-3.5" aria-hidden="true" />
+        </Link>
       </TableCell>
       <TableCell className="text-text-muted">
         <ChevronRight className="size-4" aria-hidden="true" />

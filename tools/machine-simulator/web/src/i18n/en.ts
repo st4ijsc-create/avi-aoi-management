@@ -1227,6 +1227,87 @@ export const en: Dictionary = {
     passRateAria: (vars: Vars) => `Pass rate ${vars.pct}%`,
   },
 
+  hmi: {
+    entryButton: "Machine HMI",
+    entryButtonAria: (vars: Vars) => `Open machine HMI for ${vars.code}`,
+    back: "Back to machine detail",
+    pageTitle: (vars: Vars) => `Machine HMI — ${vars.code}`,
+    shift: (vars: Vars) => `SHIFT ${vars.n}`,
+
+    status: {
+      estop: "E-STOP ENGAGED",
+    },
+
+    controls: {
+      title: "PHYSICAL CONTROLS",
+      titleEn: "Điều khiển vật lý",
+      start: "START",
+      pause: "PAUSE",
+      reset: "RESET",
+      estop: "E-STOP",
+      estopBanner: "E-STOP ENGAGED",
+      estopHint: "Press RESET to unlock the controls",
+      locked: "Controls locked",
+    },
+
+    log: {
+      title: "SYSTEM LOG",
+      titleEn: "Nhật ký hệ thống",
+      empty: "No events yet.",
+      estopEngaged: "E-STOP — fleet stopped, controls locked",
+      estopReset: "RESET — E-STOP cleared",
+      fleetStarted: "Fleet started",
+      fleetPaused: "Fleet paused",
+    },
+
+    progress: {
+      title: "PRODUCTION PROGRESS",
+      titleEn: "Tiến độ sản xuất",
+      okLabel: "OK",
+      ngLabel: "NG",
+      totalLabel: "TOTAL",
+      packetsLabel: "PACKETS",
+    },
+
+    schematic: {
+      figAutomation: "FIG. 01 — AUTOMATION / SCREWDRIVE CELL",
+      figAoi: "FIG. 01 — AOI / AVI CELL",
+      figIot: "FIG. 01 — IOT SENSOR NODE",
+      idleNote: "Machine stopped — static drawing",
+      feeder: "FEEDER",
+      remaining: "REMAINING",
+      zAxis: "Z-AXIS",
+      conveyor: "CONVEYOR",
+      camera: "CAMERA HEAD",
+      board: "PCB",
+      node: "SENSOR NODE",
+      uplink: "UPLINK",
+      noProduct: "No product config linked",
+      pointsSynced: (vars: Vars) => `${vars.count} points`,
+    },
+
+    readout: {
+      cycles: "Cycles",
+      passRate: "Pass Rate",
+      cycleRate: "Cycle Rate",
+      cycleTime: "Cycle Time",
+      metric: "Process Metric",
+      driver: "Driver",
+      configState: "Config State",
+      boards: "Boards",
+      pointsInspected: "Points Inspected",
+      fpy: "FPY",
+      defects: "Defects",
+      lastDefect: "Last Defect",
+      product: "Product",
+      packets: "Packets",
+      sampleRate: "Sample Rate",
+      signal: "Signal",
+      observedSpan: "Observed Span",
+      status: "Status",
+    },
+  },
+
   toast: {
     fleetStarted: "Fleet started.",
     fleetStartFailed: "Couldn't start the fleet.",

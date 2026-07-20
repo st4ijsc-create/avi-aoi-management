@@ -123,6 +123,15 @@ export async function gotoScenario(page: Page): Promise<void> {
   })
 }
 
+/** H2 — the HMI operator panel (`/hmi/:code`) also renders standalone, OUTSIDE `<Shell>` (its own
+ * kiosk shell, no sidebar/TopBar) — so there's no `waitForEngineConnected` health dot to wait on here
+ * either. The `<Nameplate>`'s own `<h1>` only renders once `useMachine(code)` has resolved past its
+ * loading/error states, so waiting on it is the equivalent "real data is in" signal. */
+export async function gotoHmi(page: Page, code: string): Promise<void> {
+  await page.goto(`/hmi/${code}`)
+  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible({ timeout: 15_000 })
+}
+
 /**
  * `/tokens` renders standalone (`App.tsx` routes it OUTSIDE `<Shell>`), so there's no TopBar/health
  * dot to wait on. Its dark-mode toggle is also a page-LOCAL `useState` (`_tokens.tsx`'s

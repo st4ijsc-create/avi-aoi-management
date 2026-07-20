@@ -499,4 +499,62 @@
       animation: none;
     }
   }
+
+  /* Non-scaling stroke for wireframe schematic SVGs (spec §7) — a hairline drawing that stays a
+     hairline regardless of the viewBox scale factor. */
+  .hmi-wire {
+    vector-effect: non-scaling-stroke;
+  }
+
+  /* ==========================================================================
+     Living schematic animations (spec §7) — H2. Every rule lives INSIDE the
+     `no-preference` media query, so `prefers-reduced-motion: reduce` kills every
+     one of them at the source, unconditionally. Idle/static is the DEFAULT: an
+     element only animates once its schematic root also carries `.hmi-schematic-run`
+     (applied by React only while `fleetIsRunning && !estopEngaged`), so a
+     stopped/faulted machine renders a genuinely static drawing, not a paused one.
+     ========================================================================== */
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes hmi-kf-gantry-sweep {
+      0%, 100% { transform: translateX(0); }
+      50% { transform: translateX(var(--hmi-sweep-x, 220px)); }
+    }
+    @keyframes hmi-kf-bit-spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes hmi-kf-z-stroke {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(12px); }
+    }
+    @keyframes hmi-kf-camera-sweep {
+      0%, 100% { transform: translateX(0); }
+      50% { transform: translateX(var(--hmi-sweep-x, 150px)); }
+    }
+    @keyframes hmi-kf-belt-dash {
+      to { stroke-dashoffset: -32px; }
+    }
+    @keyframes hmi-kf-signal-pulse {
+      0% { transform: scale(0.35); opacity: 0.75; }
+      100% { transform: scale(1.7); opacity: 0; }
+    }
+    @keyframes hmi-kf-packet-travel {
+      0% { transform: translateX(0); opacity: 0; }
+      8% { opacity: 1; }
+      92% { opacity: 1; }
+      100% { transform: translateX(var(--hmi-sweep-x, 260px)); opacity: 0; }
+    }
+    @keyframes hmi-kf-tick-blip {
+      0%, 100% { opacity: 0.25; }
+      50% { opacity: 1; }
+    }
+
+    .hmi-schematic-run .hmi-gantry-head { animation: hmi-kf-gantry-sweep 3.4s ease-in-out infinite; }
+    .hmi-schematic-run .hmi-gantry-bit { animation: hmi-kf-bit-spin 0.5s linear infinite; transform-origin: center; }
+    .hmi-schematic-run .hmi-gantry-zmarker { animation: hmi-kf-z-stroke 1.7s ease-in-out infinite; }
+    .hmi-schematic-run .hmi-aoi-camera { animation: hmi-kf-camera-sweep 3s ease-in-out infinite; }
+    .hmi-schematic-run .hmi-aoi-belt-ticks { animation: hmi-kf-belt-dash 0.9s linear infinite; }
+    .hmi-schematic-run .hmi-iot-arc { animation: hmi-kf-signal-pulse 2.2s ease-out infinite; transform-origin: center; }
+    .hmi-schematic-run .hmi-iot-packet { animation: hmi-kf-packet-travel 2.4s linear infinite; }
+    .hmi-schematic-run .hmi-iot-tick { animation: hmi-kf-tick-blip 1s ease-in-out infinite; }
+  }
 }

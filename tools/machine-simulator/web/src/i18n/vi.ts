@@ -1238,6 +1238,91 @@ export const vi = {
     passRateAria: (vars: Vars) => `Tỷ lệ đạt ${vars.pct}%`,
   },
 
+  // H2 — Machine HMI operator panel (`/hmi/:code`, docs/HMI_DESIGN_SPEC.md). `readout`/`schematic`
+  // labels are read directly (not swapped) — Readout/Sheet's `labelEn`/`titleEn` are resolved by
+  // looking this SAME key up in the other dictionary (see `components/hmi/bilingual.ts`), the same
+  // idiom Sidebar.tsx's `resolveLabel` already uses for nav gloss.
+  hmi: {
+    entryButton: "Bảng điều khiển máy",
+    entryButtonAria: (vars: Vars) => `Mở bảng điều khiển máy ${vars.code}`,
+    back: "Về chi tiết máy",
+    pageTitle: (vars: Vars) => `Bảng điều khiển máy ${vars.code}`,
+    shift: (vars: Vars) => `CA ${vars.n}`,
+
+    status: {
+      estop: "DỪNG KHẨN CẤP",
+    },
+
+    controls: {
+      title: "Điều khiển vật lý",
+      titleEn: "PHYSICAL CONTROLS",
+      start: "BẮT ĐẦU",
+      pause: "TẠM DỪNG",
+      reset: "ĐẶT LẠI",
+      estop: "DỪNG KHẨN",
+      estopBanner: "ĐANG DỪNG KHẨN CẤP",
+      estopHint: "Nhấn ĐẶT LẠI để gỡ khóa điều khiển",
+      locked: "Điều khiển đã khóa",
+    },
+
+    log: {
+      title: "Nhật ký hệ thống",
+      titleEn: "SYSTEM LOG",
+      empty: "Chưa có sự kiện nào.",
+      estopEngaged: "DỪNG KHẨN — đã dừng fleet, khóa điều khiển",
+      estopReset: "ĐẶT LẠI — đã gỡ khóa dừng khẩn cấp",
+      fleetStarted: "Đã khởi động fleet",
+      fleetPaused: "Đã tạm dừng fleet",
+    },
+
+    progress: {
+      title: "Tiến độ sản xuất",
+      titleEn: "PRODUCTION PROGRESS",
+      okLabel: "ĐẠT",
+      ngLabel: "LỖI",
+      totalLabel: "TỔNG",
+      packetsLabel: "GÓI TIN",
+    },
+
+    schematic: {
+      figAutomation: "HÌNH 01 — TRẠM TỰ ĐỘNG / GẮN VÍT",
+      figAoi: "HÌNH 01 — TRẠM AOI / AVI",
+      figIot: "HÌNH 01 — NÚT CẢM BIẾN IoT",
+      idleNote: "Máy đang dừng — sơ đồ tĩnh",
+      feeder: "CẤP VÍT",
+      remaining: "CÒN LẠI",
+      zAxis: "TRỤC Z",
+      conveyor: "BĂNG TẢI",
+      camera: "ĐẦU CAMERA",
+      board: "BO MẠCH",
+      node: "NÚT CẢM BIẾN",
+      uplink: "TRẠM THU",
+      noProduct: "Chưa gán sản phẩm cấu hình",
+      pointsSynced: (vars: Vars) => `${vars.count} điểm đo`,
+    },
+
+    readout: {
+      cycles: "Chu kỳ",
+      passRate: "Tỷ lệ đạt",
+      cycleRate: "Tốc độ chu kỳ",
+      cycleTime: "Thời gian chu kỳ",
+      metric: "Chỉ số quy trình",
+      driver: "Driver",
+      configState: "Trạng thái cấu hình",
+      boards: "Số bo mạch",
+      pointsInspected: "Điểm đã kiểm",
+      fpy: "FPY",
+      defects: "Số lỗi",
+      lastDefect: "Lỗi gần nhất",
+      product: "Sản phẩm",
+      packets: "Gói tin",
+      sampleRate: "Tốc độ mẫu",
+      signal: "Tín hiệu",
+      observedSpan: "Khoảng quan sát",
+      status: "Trạng thái",
+    },
+  },
+
   toast: {
     fleetStarted: "Đã chạy fleet.",
     fleetStartFailed: "Không thể chạy fleet.",

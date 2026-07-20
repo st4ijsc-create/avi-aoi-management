@@ -39,7 +39,7 @@ export function Sheet({
   ...props
 }: SheetProps) {
   return (
-    <div className={cn("sheet bg-surface-card", className)} {...props}>
+    <div className={cn("sheet flex flex-col bg-surface-card", className)} {...props}>
       <span className="corner tl" aria-hidden="true" />
       <span className="corner tr" aria-hidden="true" />
       <span className="corner bl" aria-hidden="true" />

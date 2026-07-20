@@ -100,7 +100,11 @@ export function ControlButton({ variant, label, labelEn, className, disabled, st
       <span className={cn("font-heading leading-none font-semibold tracking-wide uppercase", variant === "estop" ? "text-sm" : "text-xs")}>
         {label}
       </span>
-      {labelEn ? <span className="text-[9px] leading-none font-medium tracking-wider uppercase opacity-80">{labelEn}</span> : null}
+      {/* Full opacity, not a dimmed `opacity-80` gloss — the PAUSE variant's amber-on-tint palette
+          measured 3.52:1 at 80% opacity (axe, H2), under the 4.5:1 AA floor. Full-opacity text in the
+          variant's own already-appropriate color (white on start/estop, warn-text on pause, body text
+          on reset) reads correctly at every variant without a per-variant contrast exception. */}
+      {labelEn ? <span className="text-[9px] leading-none font-medium tracking-wider uppercase">{labelEn}</span> : null}
     </button>
   )
 }
