@@ -151,6 +151,11 @@ Nguyên tắc: **navbar trước (rẻ, đúng khiếu nại) → chuẩn hóa C
 - ✅ command-center: 3 cột 2.5/7/2.5 (2 bên gọn, twin rộng); KPI ribbon gộp ô rỗng muted; ContextDrawer chi tiết thiết bị khi click.
 - ✅ 7 màn còn lại: Hero + ContextDrawer + cân xứng theo §3 (corporate hero-3-số, dashboard Máy-cần-chú-ý, ops-console 2-cột+dải-ưu-tiên, andon tile-lý-do, drill-down rank, executive LEAD, dashboard-center card+drawer).
 
-**Nợ còn lại (thành thật)**: TWIN CANVAS 3D vẫn còn khoảng đen nửa dưới (thiết bị dồn nửa trên, sàn foreground trải trống) — auto-fit căn tâm nhưng góc nghiêng thấp chưa fix trọn "mất cân đối". → pass riêng chỉnh góc camera dốc hơn + zoom sát cụm + thu ground plane (đang thực thi). Mục nhỏ: control-tower persona-tab hero-band; đánh bóng typography sâu.
+**Twin 3D "mất cân đối" — ĐÃ GIẢI QUYẾT (3 bước, user chốt hướng)**:
+1. `1c9ea716` camera pitch 45°→52° + zoom 1.08× + ground plane bó theo cụm → cải thiện nhưng chưa trọn.
+2. Nguyên nhân gốc: thiết bị dùng TỌA ĐỘ KHÔNG GIAN thật (line-3 + máy lẻ nằm xa) → bounding box giãn → khoảng đen. Không phải camera.
+3. `89cf2c8c` **user chốt XẾP LƯỚI GỌN**: `gridPositions` lưới đều 8×6 (cols=ceil(√(n*1.4)), spacing 2.2u, sort ổn định stationId→code→id) thay tọa độ rải rác → auto-fit tự lấp đầy. **Live: twin lấp đầy ~75% canvas, cân đối.** Đánh đổi: không còn phản ánh vị trí vật lý thật (thành lưới thiết bị trực quan) — user chấp nhận.
+
+Mục nhỏ còn lại: đánh bóng typography sâu; row cuối lưới (44=8×5+4) hơi lệch trái (chấp nhận được).
 
 > Nguồn đầy đủ (wireframe ASCII + file:line từng màn): 10 báo cáo agent design-critique + 9 báo cáo agent thực thi trong session.
