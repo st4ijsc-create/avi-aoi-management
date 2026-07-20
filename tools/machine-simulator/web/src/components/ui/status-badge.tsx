@@ -13,14 +13,14 @@ import { cn } from "@/lib/utils"
  * label — it's an idle/disabled indicator, never conveyed by color alone.
  */
 const statusBadgeVariants = cva(
-  "inline-flex h-5 w-fit shrink-0 items-center gap-1.5 rounded-full border px-2 text-xs font-medium whitespace-nowrap",
+  "inline-flex h-5 w-fit shrink-0 items-center gap-1.5 rounded-none border px-2 text-[11px] font-semibold tracking-wide uppercase whitespace-nowrap",
   {
     variants: {
       status: {
-        ok: "border-ok/20 bg-ok/10 text-ok-text",
-        warn: "border-warn/20 bg-warn/10 text-warn-text",
-        danger: "border-danger/20 bg-danger/10 text-danger-text",
-        info: "border-info/20 bg-info/10 text-info-text",
+        ok: "border-ok/30 bg-ok/10 text-ok-text",
+        warn: "border-warn/30 bg-warn/10 text-warn-text",
+        danger: "border-danger/30 bg-danger/10 text-danger-text",
+        info: "border-info/30 bg-info/10 text-info-text",
         neutral: "border-border bg-surface-muted text-text-body",
       },
     },

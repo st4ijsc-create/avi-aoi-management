@@ -10,7 +10,9 @@ import {
 } from "lucide-react"
 import { Link, useLocation } from "wouter"
 
-import { useT } from "@/i18n"
+import { useLanguage, useT } from "@/i18n"
+import { en } from "@/i18n/en"
+import { vi, type Dictionary } from "@/i18n/vi"
 import { cn } from "@/lib/utils"
 
 export interface NavItem {
@@ -36,23 +38,39 @@ function isNavItemActive(location: string, path: string): boolean {
   return location === path || location.startsWith(`${path}/`)
 }
 
+/** Looks up a dot-path key against a specific dictionary (not the active one) — used to render the
+ * inactive-language gloss beside a nav label, same bilingual register `<MicroLabel>` uses
+ * elsewhere. Nav labels are always plain strings (no interpolation vars), so no `Vars` handling. */
+function resolveLabel(dict: Dictionary, key: string): string {
+  const parts = key.split(".")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let node: any = dict
+  for (const part of parts) {
+    if (node == null || typeof node !== "object") return key
+    node = node[part]
+  }
+  return typeof node === "string" ? node : key
+}
+
 export function Sidebar() {
   const [location] = useLocation()
   const t = useT()
+  const { language } = useLanguage()
+  const glossDict = language === "vi" ? en : vi
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-sidebar">
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-navy-600 text-sm font-bold text-white">
+    <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-sidebar">
+      <div className="flex items-center gap-2.5 border-b border-border px-4 py-4">
+        <div className="flex size-8 shrink-0 items-center justify-center border border-navy-800 bg-navy-700 font-heading text-sm font-bold text-white">
           S4
         </div>
         <div className="flex flex-col leading-tight">
-          <span className="text-sm font-semibold text-text-strong">ST4I</span>
-          <span className="text-[11px] text-text-muted">{t("shell.sidebar.brandSubtitle")}</span>
+          <span className="font-heading text-sm font-semibold tracking-tight text-text-strong">ST4I</span>
+          <span className="hmi-micro">{t("shell.sidebar.brandSubtitle")}</span>
         </div>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 px-3" aria-label="Main">
+      <nav className="hmi-scroll flex flex-1 flex-col gap-px overflow-y-auto px-2 py-2" aria-label="Main">
         {NAV_ITEMS.map((item) => {
           const active = isNavItemActive(location, item.path)
           const Icon = item.icon
@@ -61,22 +79,27 @@ export function Sidebar() {
               key={item.path}
               href={item.path}
               className={cn(
-                "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50",
+                "flex items-center gap-2.5 border-l-2 px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
                 active
-                  ? "bg-navy-600 text-white shadow-sm"
-                  : "text-text-body hover:bg-navy-50 hover:text-navy-700"
+                  ? "border-l-[var(--color-accent)] bg-navy-700 text-white"
+                  : "border-l-transparent text-text-body hover:border-l-border-strong hover:bg-surface-muted hover:text-text-strong"
               )}
               aria-current={active ? "page" : undefined}
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
-              {t(item.labelKey)}
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate">{t(item.labelKey)}</span>
+                <span className={cn("hmi-micro truncate", active && "!text-white/80")}>
+                  {resolveLabel(glossDict, item.labelKey)}
+                </span>
+              </span>
             </Link>
           )
         })}
       </nav>
 
-      <div className="border-t border-border px-5 py-3">
-        <p className="text-[11px] text-text-muted">EngineApi · localhost:5199</p>
+      <div className="border-t border-border px-4 py-3">
+        <p className="hmi-micro font-mono normal-case">EngineApi · localhost:5199</p>
       </div>
     </aside>
   )

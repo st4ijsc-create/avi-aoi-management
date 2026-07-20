@@ -86,7 +86,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <DialogOverlay />
         <DialogContent
           showCloseButton={false}
-          className="top-[18%] max-w-md translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-md"
+          className="top-[18%] max-w-md translate-y-0 gap-0 p-0 sm:max-w-md"
           aria-label={t("shell.commandPalette.dialogAria")}
         >
           <div className="flex items-center gap-2 border-b border-border px-3.5 py-2.5">
@@ -105,7 +105,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               aria-activedescendant={results[activeIndex] ? optionId(results[activeIndex].path) : undefined}
               className="h-6 w-full bg-transparent text-sm text-text-strong outline-none placeholder:text-text-muted"
             />
-            <kbd className="rounded border border-border bg-surface-subtle px-1.5 py-0.5 text-[10px] text-text-muted">
+            <kbd className="border border-border bg-surface-subtle px-1.5 py-0.5 font-mono text-[10px] text-text-muted">
               Esc
             </kbd>
           </div>
@@ -114,7 +114,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               real DOM focus off the input; the highlighted option is announced via
               aria-activedescendant instead, the standard "listbox popup" combobox pattern. A nested
               <button> inside role="option" is two interactive elements in one (axe: nested-interactive). */}
-          <ul id={LISTBOX_ID} role="listbox" aria-label={t("shell.commandPalette.listboxAria")} className="max-h-72 overflow-y-auto p-1.5">
+          <ul id={LISTBOX_ID} role="listbox" aria-label={t("shell.commandPalette.listboxAria")} className="hmi-scroll max-h-72 overflow-y-auto p-1">
             {results.length === 0 ? (
               <li className="px-3 py-6 text-center text-sm text-text-muted">
                 {t("shell.commandPalette.noResults", { query })}
@@ -132,8 +132,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     onClick={() => go(item.path)}
                     onMouseEnter={() => setActiveIndex(index)}
                     className={cn(
-                      "flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                      active ? "bg-navy-600 text-white" : "text-text-body hover:bg-surface-subtle"
+                      "flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
+                      active ? "bg-navy-700 text-white" : "text-text-body hover:bg-surface-muted"
                     )}
                   >
                     <Icon className={cn("size-4 shrink-0", active ? "text-white" : "text-navy-500")} aria-hidden="true" />

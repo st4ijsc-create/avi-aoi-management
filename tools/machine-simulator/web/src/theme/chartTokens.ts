@@ -42,25 +42,28 @@ const lightTokens: ChartTokens = {
   danger: status.danger,
   info: status.info,
   neutral: status.neutral,
-  line: navy[600],
+  line: navy[700],
   chartSeries: chartSeriesLight,
 }
 
+// Mirrors index.css's :root[data-theme="dark"] block — "control room" ground, navy lifts to
+// --color-accent (#7f9be0) for legibility, status ramp stays fixed (spec §2: safety-meaning colors
+// never shift between themes).
 const darkTokens: ChartTokens = {
-  surfaceCard: "#10254a", // navy-800
-  border: "#24345c",
-  textMuted: "#94a3b8",
-  textBody: "#cbd5e1",
-  textStrong: "#f8fafc",
-  accent500: "#14b8c4",
-  accent600: "#45cdd7",
-  ok: "#4ade80",
-  warn: "#fbbf24",
-  danger: "#f87171",
-  info: "#60a5fa",
-  neutral: "#94a3b8",
-  line: "#6f8ddb", // dark mode --chart-1 — a lighter blue that reads clearly on navy-800/900
-  chartSeries: ["#6f8ddb", "#14b8c4", "#a78bfa", "#4ade80", "#fbbf24", "#7b93d6"],
+  surfaceCard: "#1e2126", // --color-surface (dark)
+  border: "color-mix(in srgb, #e9eaec 16%, transparent)",
+  textMuted: "#9a9da2",
+  textBody: "#c7c9cc",
+  textStrong: "#e9eaec",
+  accent500: "#7f9be0",
+  accent600: "#97abdc",
+  ok: status.ok,
+  warn: status.warn,
+  danger: status.danger,
+  info: "#7f9be0",
+  neutral: status.neutral,
+  line: "#7f9be0", // dark mode --color-accent — the lifted navy that reads on a near-black ground
+  chartSeries: ["#7f9be0", navy[300], navy[200], status.ok, status.warn, "#97abdc"],
 }
 
 export function useChartTokens(): ChartTokens {

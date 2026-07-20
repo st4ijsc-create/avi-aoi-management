@@ -1,160 +1,196 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/inter";
+
+/* Industrial HMI type system — Barlow Condensed (signage/headings/readouts) + Barlow (body/UI).
+   Self-hosted via @fontsource, Vietnamese subset bundled automatically (each weight file below
+   ships latin + latin-ext + vietnamese @font-face blocks) — never resolves to fonts.googleapis.com.
+   See docs/HMI_DESIGN_SPEC.md §3. */
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/500.css";
+@import "@fontsource/barlow/700.css";
+@import "@fontsource/barlow-condensed/600.css";
 
 @custom-variant dark (&:is([data-theme="dark"] *));
 
 /* ==========================================================================
-   ST4I Design System — white-dominant + navy
-   Single source of truth: Doc 65 §2 (docs/ECOSYSTEM/65_SIMULATOR_UI_WEB_UPGRADE_PLAN)
+   ST4I Industrial HMI Design System — "Bản vẽ kỹ thuật sống" (living blueprint)
+   Single source of truth: docs/HMI_DESIGN_SPEC.md (H1 foundation, doc 69/H1)
    Raw palette lives in :root / :root[data-theme="dark"] below; the @theme
    block only maps those custom properties onto Tailwind utility names.
    NEVER hardcode a hex value in a component — use these tokens.
+
+   Ground rules (spec §1, non-negotiable): radius 0 everywhere · hairline
+   dividers, no drop shadows (except physical controls, §6) · tabular
+   numerals on every number · bilingual micro-labels · flat fills · offline
+   fonts only.
    ========================================================================== */
 
 :root {
-  /* Surfaces (white-dominant) */
-  --surface-base: #ffffff;
-  --surface-subtle: #f8fafc;
-  --surface-muted: #f1f5f9;
-  --surface-card: #ffffff;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
+  /* ---- Blueprint base (spec §2) ---- */
+  --color-bg: #f2f2f3; /* cool paper ground */
+  --color-surface: #e9e9ea; /* panel, sits slightly sunken vs. the paper ground */
+  --color-text: #1d1f20; /* ink */
+  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+  --color-divider-strong: color-mix(in srgb, #1d1f20 30%, transparent);
 
-  /* Navy — brand + primary */
-  --navy-50: #f4f7fc;
-  --navy-100: #e8eef9;
-  --navy-500: #2749a8;
-  --navy-600: #1e3a8a;
-  --navy-700: #163561;
-  --navy-800: #10254a;
-  --navy-900: #0b1b34;
+  /* ---- Surfaces (component-facing names — same tiers as --color-bg/-surface above, kept
+     so existing components that already consume the bg-surface- and border- utilities need no
+     renaming). ---- */
+  --surface-base: var(--color-surface);
+  --surface-subtle: var(--color-bg);
+  --surface-muted: #e2e2e3; /* one notch darker than --surface-base — input/chip fill */
+  --surface-card: var(--color-surface);
+  --border: var(--color-divider);
+  --border-strong: var(--color-divider-strong);
 
-  /* Text */
-  --text-strong: #0b1b34;
-  --text-body: #334155;
-  /* Doc 65's #64748b clears AA (4.76:1) on surface-base/subtle but drops to
-     4.34:1 on surface-muted — a real pairing that occurs (e.g. inline code
-     chips, muted captions on a muted panel). Darkened just enough to hold
-     4.5:1 against surface-muted too (axe-verified); still reads as the same
-     "muted" tier, clearly lighter than text-body. */
-  --text-muted: #5e6d85;
+  /* ---- Navy — ST4I brand accent ramp (spec §2, fixed across themes; only --color-accent shifts) ---- */
+  --navy-50: #f0f3fa;
+  --navy-100: #dde4f4;
+  --navy-200: #c0cdea;
+  --navy-300: #97abdc;
+  --navy-400: #6b84c8;
+  --navy-500: #4762ae;
+  --navy-600: #30498f;
+  --navy-700: #1e3a8a; /* BASE brand navy */
+  --navy-800: #16295f;
+  --navy-900: #0f1c42;
+  --color-accent: var(--navy-700);
 
-  /* Accent (teal) */
-  --accent-100: #e2f5f6;
-  --accent-500: #0e9aa7;
-  --accent-600: #0b7e89;
+  /* ---- Text ---- */
+  --text-strong: var(--color-text);
+  --text-body: #3a3d40;
+  /* Solid hex (not the transparent --color-divider mix) so it holds AA 4.5:1 as real text —
+     tuned against --surface-subtle (#f2f2f3, the lightest ground it appears on). */
+  --text-muted: #55585c;
 
-  /* Status — solid hue (dots/borders/tint fills, ≥3:1 non-text contrast on white) */
-  --ok: #16a34a;
-  --warn: #d97706;
-  --danger: #dc2626;
-  --info: #2563eb;
-  --neutral: #94a3b8;
-  /* Status text — AA-safe (≥4.5:1) variant for colored labels on their own
-     10% tint fill (axe-verified against the *composited* tint, not pure
-     white — a same-hue tint background lowers the effective contrast, so
-     e.g. plain `--danger` text on `--danger`/10 only clears 4.13:1 even
-     though it clears 4.83:1 on pure white). Never set `neutral` as text
-     color — it's an idle/disabled indicator only, always paired with a
-     normal-contrast text label. */
-  --ok-text: #166534;
-  /* Was #b45309 (amber-700) — computed to exactly 4.50:1 against the composited bg-warn/10 tint,
-     i.e. right on the AA boundary; real browser/axe rounding measured it as low as 4.05–4.37:1 in
-     practice (Task 10 — every `StatusBadge status="warn"` in the app, e.g. Dashboard's "watch" FPY
-     delta, BoardView's NTF legend, the tokens showcase). amber-800 gives real margin (6.36:1). */
-  --warn-text: #92400e;
-  --danger-text: #b91c1c;
-  --info-text: #1d4ed8;
+  /* ---- Secondary accent — repointed onto the navy family (was independent teal); still its own
+     name so chart/legacy consumers that reference accent-500/600 read navy instead of teal. ---- */
+  --accent-100: var(--navy-100);
+  --accent-500: var(--navy-500);
+  --accent-600: var(--navy-600);
 
-  /* Radius */
-  --radius: 0.5rem; /* 8px — controls (button/input) */
-  --radius-card: 0.75rem; /* 12px — card/dialog */
-  --radius-pill: 999px;
+  /* ---- Status ramp (spec §2 — identical in both themes, carries safety meaning; state only,
+     never decorative). ---- */
+  --status-run: #2f8f5a;
+  --status-warn: #c98a1a;
+  --status-fault: #c0392b;
+  --status-idle: #7a7a7d;
+  /* AA-safe text-on-tint variants (status hue composited on its own ~10% tint fill). */
+  --status-run-text: #1f6b41;
+  /* #8a5c0e measured 4.38:1 on a status-badge's warn/10 tint composited inside a Card (axe) — just
+     under the 4.5:1 floor once real rounding is involved. Darkened for margin (~5.4:1). */
+  --status-warn-text: #79500c;
+  --status-fault-text: #96271b;
+  --status-idle-text: var(--text-muted);
 
-  /* Shadow — navy-tinted, not pure black, for a calmer/cohesive elevation */
+  --ok: var(--status-run);
+  --warn: var(--status-warn);
+  --danger: var(--status-fault);
+  --neutral: var(--status-idle);
+  --ok-text: var(--status-run-text);
+  --warn-text: var(--status-warn-text);
+  --danger-text: var(--status-fault-text);
+  /* "info" is not a machine state (the spec ramp is run/warn/fault/idle only) — routed onto the
+     navy accent instead of the status ramp, for things like mode badges / connectivity chips. */
+  --info: var(--navy-600);
+  --info-text: var(--navy-700);
+
+  /* ---- Radius — 0 everywhere (spec §1). Downstream --radius-sm..4xl below all derive from these
+     two, so every rounded-* Tailwind utility in the app collapses to square without per-component
+     edits (the badge atom rounded-4xl class → --radius-pill, etc.). rounded-full is NOT
+     theme-driven in Tailwind v4 — components using it must drop the class explicitly (done in the
+     restyled atoms/shell). ---- */
+  --radius: 0;
+  --radius-card: 0;
+  --radius-pill: 0;
+
+  /* ---- Shadows — none by ground rule, except physical controls (spec §6), which set their own
+     box-shadow inline rather than through this scale. ---- */
   --shadow-color: 220 45% 12%;
-  --shadow-2xs: 0 1px 1px 0 hsl(var(--shadow-color) / 0.03);
-  --shadow-xs: 0 1px 2px 0 hsl(var(--shadow-color) / 0.05);
-  --shadow-sm: 0 1px 2px 0 hsl(var(--shadow-color) / 0.06), 0 1px 1px -1px hsl(var(--shadow-color) / 0.04);
-  --shadow-md: 0 6px 16px -4px hsl(var(--shadow-color) / 0.1), 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
-  --shadow-lg: 0 16px 40px -12px hsl(var(--shadow-color) / 0.18), 0 6px 12px -4px hsl(var(--shadow-color) / 0.08);
-  --shadow-xl: 0 28px 64px -16px hsl(var(--shadow-color) / 0.22), 0 10px 20px -8px hsl(var(--shadow-color) / 0.1);
-  --shadow-2xl: 0 40px 96px -20px hsl(var(--shadow-color) / 0.28);
+  --shadow-2xs: none;
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-2xl: none;
 
   /* --- shadcn semantic tokens, repointed onto the palette above --- */
   --background: var(--surface-base);
   --foreground: var(--text-strong);
   --card: var(--surface-card);
   --card-foreground: var(--text-strong);
-  --popover: #ffffff;
+  --popover: var(--surface-base);
   --popover-foreground: var(--text-strong);
-  --primary: var(--navy-600);
+  --primary: var(--navy-700);
   --primary-foreground: #ffffff;
-  /* --primary tuned as a *button fill* (white text on top). Used bare as
-     *text* on a surface (Button/Badge "link" variant, brand-accent labels)
-     it's plenty safe in light mode (navy-600 on white = 10:1) but not in
-     dark mode (see override below) — always use --primary-text for text. */
   --primary-text: var(--primary);
   --secondary: var(--navy-100);
-  --secondary-foreground: var(--navy-700);
+  --secondary-foreground: var(--navy-800);
   --muted: var(--surface-muted);
   --muted-foreground: var(--text-muted);
   --accent: var(--accent-100);
   --accent-foreground: var(--accent-600);
-  /* Button/Badge "destructive" variants render this as text on a bg-destructive/10
-     tint of itself — plain --danger only clears 4.13:1 there (axe-verified), so
-     this semantic token uses the tint-safe --danger-text instead. Borders/rings
-     that reference --destructive stay just as legible with the darker red. */
   --destructive: var(--danger-text);
   --input: var(--border);
-  --ring: var(--navy-600);
-  --chart-1: var(--navy-600);
-  --chart-2: var(--accent-500);
-  --chart-3: #7c3aed;
+  --ring: var(--navy-700);
+  --chart-1: var(--navy-700);
+  --chart-2: var(--navy-400);
+  --chart-3: var(--navy-300);
   --chart-4: var(--ok);
   --chart-5: var(--warn);
   --sidebar: var(--surface-subtle);
   --sidebar-foreground: var(--text-strong);
-  --sidebar-primary: var(--navy-600);
+  --sidebar-primary: var(--navy-700);
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: var(--navy-100);
-  --sidebar-accent-foreground: var(--navy-700);
+  --sidebar-accent-foreground: var(--navy-800);
   --sidebar-border: var(--border);
-  --sidebar-ring: var(--navy-600);
+  --sidebar-ring: var(--navy-700);
 }
 
 :root[data-theme="dark"] {
-  /* Dark surfaces built from the navy scale, not a generic gray dark mode —
-     keeps the brand identity when the operator flips to dark. */
-  --surface-base: var(--navy-900);
-  --surface-subtle: var(--navy-800);
-  --surface-muted: #16264a;
-  --surface-card: var(--navy-800);
-  --border: #24345c;
-  --border-strong: #35477a;
+  /* Dark ("control room") — spec §2. */
+  --color-bg: #15171a;
+  --color-surface: #1e2126;
+  --color-text: #e9eaec;
+  --color-divider: color-mix(in srgb, #e9eaec 16%, transparent);
+  --color-divider-strong: color-mix(in srgb, #e9eaec 30%, transparent);
 
-  --text-strong: #f8fafc;
-  --text-body: #cbd5e1;
-  --text-muted: #94a3b8;
+  --surface-base: var(--color-surface);
+  --surface-subtle: var(--color-bg);
+  --surface-muted: #262a30;
+  --surface-card: var(--color-surface);
+  --border: var(--color-divider);
+  --border-strong: var(--color-divider-strong);
 
-  --accent-100: #123338;
-  --accent-500: #14b8c4;
-  --accent-600: #45cdd7;
+  /* Navy base is too dark to read on a near-black ground — accent lifts (spec §2). Never place
+     navy-700 text on the dark ground. */
+  --color-accent: #7f9be0;
 
-  --ok: #4ade80;
-  --warn: #fbbf24;
-  --danger: #f87171;
-  --info: #60a5fa;
-  --neutral: #94a3b8;
-  /* Mostly light enough against navy-800/900 to read as text directly —
-     except `danger` composited into its own bg-destructive/10 button tint,
-     which measured 4.17:1 (axe); bumped to red-300 (5.2:1+) to clear it. */
-  --ok-text: var(--ok);
-  --warn-text: var(--warn);
-  --danger-text: #fca5a5;
-  --info-text: var(--info);
+  --text-strong: var(--color-text);
+  --text-body: #c7c9cc;
+  --text-muted: #9a9da2;
+
+  --accent-100: #1c2c54;
+  --accent-500: #7f9be0;
+  --accent-600: #97abdc;
+
+  /* Status ramp stays IDENTICAL to light (spec §2 — safety meaning must stay stable); only the
+     text-on-tint pairing lifts for legibility on a dark surface. Tuned against the DESTRUCTIVE
+     button's resting dark fill (bg-destructive/20 over --surface-card, ~#452f31) — the most
+     saturated tint any of these sit on — not just a 10% badge tint (axe-verified 4.5:1+ there). */
+  --status-run-text: #7ad9a3;
+  --status-warn-text: #f0bf6b;
+  --status-fault-text: #f0968a;
+  --status-idle-text: var(--text-muted);
+
+  --ok-text: var(--status-run-text);
+  --warn-text: var(--status-warn-text);
+  --danger-text: var(--status-fault-text);
+  --info: var(--color-accent);
+  --info-text: var(--color-accent);
 
   --shadow-color: 220 60% 2%;
 
@@ -162,15 +198,11 @@
   --foreground: var(--text-strong);
   --card: var(--surface-card);
   --card-foreground: var(--text-strong);
-  --popover: var(--navy-800);
+  --popover: var(--surface-base);
   --popover-foreground: var(--text-strong);
-  --primary: #4a6cc4;
-  --primary-foreground: #f8fafc;
-  /* #4a6cc4 is tuned as a button fill (4.96:1 with white text) — too dark
-     to use bare as text on a navy-800/900 surface (3.05:1, axe-verified).
-     Lighter indigo for text-only usage (Button/Badge "link" variant,
-     brand-accent labels); 5:1+ against navy-800. */
-  --primary-text: #7b93d6;
+  --primary: var(--color-accent);
+  --primary-foreground: #10142a;
+  --primary-text: var(--color-accent);
   --secondary: #1c2c54;
   --secondary-foreground: #dbe4fa;
   --muted: var(--surface-muted);
@@ -179,25 +211,30 @@
   --accent-foreground: var(--accent-600);
   --destructive: var(--danger-text);
   --input: var(--border);
-  --ring: #6f8ddb;
-  --chart-1: #6f8ddb;
-  --chart-2: var(--accent-500);
-  --chart-3: #a78bfa;
+  --ring: var(--color-accent);
+  --chart-1: var(--color-accent);
+  --chart-2: var(--navy-300);
+  --chart-3: var(--navy-200);
   --chart-4: var(--ok);
   --chart-5: var(--warn);
-  --sidebar: var(--navy-900);
+  --sidebar: var(--surface-subtle);
   --sidebar-foreground: var(--text-strong);
-  --sidebar-primary: #4a6cc4;
-  --sidebar-primary-foreground: #f8fafc;
+  --sidebar-primary: var(--color-accent);
+  --sidebar-primary-foreground: #10142a;
   --sidebar-accent: #1c2c54;
   --sidebar-accent-foreground: #dbe4fa;
   --sidebar-border: var(--border);
-  --sidebar-ring: #6f8ddb;
+  --sidebar-ring: var(--color-accent);
 }
 
 @theme inline {
-  --font-heading: var(--font-sans);
-  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* Typography (spec §3) — fixed across themes, so declared directly here rather than via a
+     :root custom property (a self-referential `--font-heading: var(--font-heading)` inside this
+     `@theme inline` block would be an invalid CSS cycle). */
+  --font-heading: "Barlow Condensed", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body);
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
 
   /* Surfaces */
   --color-surface-base: var(--surface-base);
@@ -207,9 +244,20 @@
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
 
+  /* Blueprint base — direct spec token names, for primitives that want them literally */
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+  --color-divider: var(--color-divider);
+  --color-divider-strong: var(--color-divider-strong);
+  --color-accent-brand: var(--color-accent);
+
   /* Navy scale */
   --color-navy-50: var(--navy-50);
   --color-navy-100: var(--navy-100);
+  --color-navy-200: var(--navy-200);
+  --color-navy-300: var(--navy-300);
+  --color-navy-400: var(--navy-400);
   --color-navy-500: var(--navy-500);
   --color-navy-600: var(--navy-600);
   --color-navy-700: var(--navy-700);
@@ -226,6 +274,12 @@
   --color-accent-500: var(--accent-500);
   --color-accent-600: var(--accent-600);
 
+  /* Status ramp */
+  --color-status-run: var(--status-run);
+  --color-status-warn: var(--status-warn);
+  --color-status-fault: var(--status-fault);
+  --color-status-idle: var(--status-idle);
+
   /* Status — solid hue: dots, borders, chart series, ≥10% tint fills */
   --color-ok: var(--ok);
   --color-warn: var(--warn);
@@ -239,7 +293,7 @@
   --color-danger-text: var(--danger-text);
   --color-info-text: var(--info-text);
 
-  /* Radius */
+  /* Radius — all 0 (spec §1) */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -288,13 +342,82 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    font-variant-numeric: tabular-nums;
   }
   html {
     @apply font-sans;
   }
   ::selection {
-    background-color: var(--navy-100);
+    background-color: var(--navy-200);
     color: var(--navy-900);
+  }
+  :root[data-theme="dark"] ::selection {
+    background-color: var(--navy-700);
+    color: #f0f3fa;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .font-heading {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer components {
+  /* ==========================================================================
+     Blueprint registration corners — spec §4. The `.sheet` signature: four
+     L-shaped marks that OVERHANG the panel border. `<Sheet>` (industrial/Sheet.tsx)
+     is the only place that should render `.corner` spans — never hand-write them
+     at a call site. Because the marks sit outside the box, a `.sheet` must never
+     live inside `overflow:hidden`.
+     ========================================================================== */
+  .sheet {
+    position: relative;
+    border: 1px solid var(--color-divider);
+    border-radius: 0;
+  }
+  .sheet > .corner {
+    position: absolute;
+    width: 11px;
+    height: 11px;
+    color: color-mix(in srgb, var(--color-text) 55%, transparent);
+    pointer-events: none;
+  }
+  .sheet > .corner::before,
+  .sheet > .corner::after {
+    content: "";
+    position: absolute;
+    background: currentColor;
+  }
+  .sheet > .corner::before {
+    left: 5px;
+    top: 0;
+    width: 1px;
+    height: 100%;
+  }
+  .sheet > .corner::after {
+    top: 5px;
+    left: 0;
+    width: 100%;
+    height: 1px;
+  }
+  .sheet > .corner.tl {
+    top: -6px;
+    left: -6px;
+  }
+  .sheet > .corner.tr {
+    top: -6px;
+    right: -6px;
+  }
+  .sheet > .corner.bl {
+    bottom: -6px;
+    left: -6px;
+  }
+  .sheet > .corner.br {
+    bottom: -6px;
+    right: -6px;
   }
 }
 
@@ -303,5 +426,77 @@
   .font-numeric {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
+  }
+
+  /* Micro-label — the bilingual workhorse (spec §3): uppercase, tracked out, muted. */
+  .hmi-micro {
+    font-size: 10px;
+    line-height: 1.3;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+
+  /* Thin square scrollbar — spec §5. Panels scroll internally; the shell page never scrolls. */
+  .hmi-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .hmi-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .hmi-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .hmi-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 0;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .hmi-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: var(--text-muted);
+  }
+
+  /* 28px graph-paper ground — spec §5/§7, backdrop for schematic/canvas areas. */
+  .hmi-graph-paper {
+    background-image: repeating-linear-gradient(
+        0deg,
+        var(--color-divider) 0,
+        var(--color-divider) 1px,
+        transparent 1px,
+        transparent 28px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        var(--color-divider) 0,
+        var(--color-divider) 1px,
+        transparent 1px,
+        transparent 28px
+      );
+    background-color: var(--color-bg);
+  }
+
+  /* Pulsing "live" dot — spec §5 StatusLamp. Killed by prefers-reduced-motion. */
+  @keyframes hmi-blip {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.85);
+    }
+  }
+  .hmi-blip {
+    animation: hmi-blip 1.6s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hmi-blip {
+      animation: none;
+    }
   }
 }

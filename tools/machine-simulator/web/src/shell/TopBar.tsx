@@ -1,7 +1,9 @@
+import * as React from "react"
 import { Command, Loader2, Play, Square } from "lucide-react"
 import { toast } from "sonner"
 import { useLocation } from "wouter"
 
+import { StatusLamp } from "@/components/industrial"
 import { useT } from "@/i18n"
 import {
   useFleetIsRunning,
@@ -37,7 +39,7 @@ function ModeSwitch() {
     <div
       role="radiogroup"
       aria-label={t("shell.topBar.transportModeAria")}
-      className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-subtle p-0.5"
+      className="flex items-center gap-px border border-border-strong bg-surface-muted p-0.5"
     >
       {MODE_OPTIONS.map((option) => {
         const selected = current === option.value
@@ -50,9 +52,9 @@ function ModeSwitch() {
             disabled={isPending}
             onClick={() => setMode.mutate(option.value)}
             className={cn(
-              "h-6 rounded-[6px] px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50",
+              "h-6 px-2.5 text-[11px] font-semibold tracking-wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
               selected
-                ? "bg-navy-600 text-white shadow-sm"
+                ? "bg-navy-700 text-white"
                 : "text-text-muted hover:text-text-strong"
             )}
           >
@@ -64,30 +66,39 @@ function ModeSwitch() {
   )
 }
 
-function ServerStatusDot() {
+function EngineStatusLamp() {
   const t = useT()
   const { isError, isPending } = useHealth()
-  const state = isPending ? "pending" : isError ? "down" : "up"
+  const state = isPending ? "idle" : isError ? "fault" : "run"
 
   return (
-    <div className="flex items-center gap-1.5 text-xs text-text-muted">
-      <span
-        className={cn(
-          "size-2 rounded-full",
-          state === "up" && "bg-ok",
-          state === "down" && "bg-danger",
-          state === "pending" && "bg-neutral"
-        )}
-        aria-hidden="true"
-      />
-      <span>
-        {state === "up"
+    <StatusLamp
+      state={state}
+      live={state === "run"}
+      label={
+        state === "run"
           ? t("shell.topBar.engineConnected")
-          : state === "down"
+          : state === "fault"
             ? t("shell.topBar.engineOffline")
-            : t("shell.topBar.connecting")}
-      </span>
-    </div>
+            : t("shell.topBar.connecting")
+      }
+      sub="ENGINEAPI"
+    />
+  )
+}
+
+/** Live HH:MM:SS clock, ticking once a second — part of the nameplate header (spec §8). */
+function Clock() {
+  const [now, setNow] = React.useState(() => new Date())
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+  const formatted = now.toLocaleTimeString(undefined, { hour12: false })
+  return (
+    <span className="font-mono text-[13px] tabular-nums text-text-body" suppressHydrationWarning>
+      {formatted}
+    </span>
   )
 }
 
@@ -102,10 +113,11 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
   const startFleet = useStartFleet()
   const stopFleet = useStopFleet()
   const { data: modeData } = useMode()
-  // Same query key/cadence ServerStatusDot polls (TanStack Query dedupes — not a second network poll).
-  // ServerStatusDot only ever reflects connectivity (isError/isPending); `.ok` is a DIFFERENT signal —
-  // a reachable engine whose fleet pipeline itself faulted (M-3/E1: FleetHost.LastError set) — so it
-  // gets its own small, unobtrusive badge rather than overloading the connection dot.
+  // Same query key/cadence EngineStatusLamp polls (TanStack Query dedupes — not a second network
+  // poll). EngineStatusLamp only ever reflects connectivity (isError/isPending); `.ok` is a
+  // DIFFERENT signal — a reachable engine whose fleet pipeline itself faulted (M-3/E1:
+  // FleetHost.LastError set) — so it gets its own small, unobtrusive badge rather than overloading
+  // the connection lamp.
   const { data: healthData } = useHealth()
   const showEngineFaulted = healthData?.ok === false
 
@@ -128,14 +140,16 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
   const showDemoFallback = modeData?.mode === "Auto"
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface-base px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface-base px-5">
       <div className="flex min-w-0 items-center gap-3">
-        <h2 className="truncate text-sm font-semibold text-text-strong">{pageTitle}</h2>
+        <h2 className="truncate font-heading text-base leading-none font-semibold tracking-tight text-text-strong">
+          {pageTitle}
+        </h2>
         {showDemoFallback ? <StatusBadge status="warn">{t("shell.topBar.demoFallback")}</StatusBadge> : null}
         {showEngineFaulted ? <StatusBadge status="danger">{t("shell.topBar.engineFaulted")}</StatusBadge> : null}
       </div>
 
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex shrink-0 items-center gap-4">
         <ModeSwitch />
 
         <div className="flex items-center gap-1.5">
@@ -175,9 +189,13 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
           </Button>
         </div>
 
-        <div className="h-6 w-px bg-border" aria-hidden="true" />
+        <div className="h-7 w-px bg-border" aria-hidden="true" />
 
-        <ServerStatusDot />
+        <EngineStatusLamp />
+
+        <div className="h-7 w-px bg-border" aria-hidden="true" />
+
+        <Clock />
 
         <ThemeToggle />
 
@@ -185,10 +203,10 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
           type="button"
           onClick={onOpenPalette}
           aria-label={t("shell.topBar.paletteAria")}
-          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-subtle px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-navy-50 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50"
+          className="flex items-center gap-1.5 border border-border-strong bg-surface-muted px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-navy-50 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] dark:hover:bg-navy-800/40 dark:hover:text-navy-200"
         >
           <Command className="size-3.5" aria-hidden="true" />
-          <kbd className="font-numeric">K</kbd>
+          <kbd className="font-mono tabular-nums">K</kbd>
         </button>
       </div>
     </header>

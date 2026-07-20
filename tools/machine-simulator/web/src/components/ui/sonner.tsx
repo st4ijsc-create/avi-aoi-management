@@ -30,8 +30,9 @@ function Toaster({ ...props }: ToasterProps) {
         } as CSSProperties
       }
       toastOptions={{
+        unstyled: false,
         classNames: {
-          toast: "shadow-lg rounded-xl",
+          toast: "!rounded-none !border !shadow-none",
         },
       }}
       {...props}
