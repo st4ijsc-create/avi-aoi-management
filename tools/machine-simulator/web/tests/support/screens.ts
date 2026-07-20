@@ -76,6 +76,22 @@ export async function gotoProductConfigPoints(page: Page, code: string): Promise
   await expect(page.getByRole("group", { name: /Bản đồ điểm đo/ })).toBeVisible({ timeout: 15_000 })
 }
 
+export async function gotoRecipeConfig(page: Page): Promise<void> {
+  await page.goto("/recipes")
+  await expect(page.getByRole("heading", { name: viDict.recipeConfig.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  // Past the skeleton — the table header only renders once `useRecipes()` has resolved at least once.
+  await expect(page.getByRole("columnheader", { name: viDict.recipeConfig.table.code })).toBeVisible()
+}
+
+export async function gotoRecipeConfigDetail(page: Page, code: string): Promise<void> {
+  await page.goto(`/recipes/${code}`)
+  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible({ timeout: 15_000 })
+  await waitForEngineConnected(page)
+  // Past the skeleton — the tab strip only renders once `useRecipe(code)` has resolved at least once.
+  await expect(page.getByRole("tab", { name: viDict.recipeConfigDetail.tabs.recipe })).toBeVisible()
+}
+
 export async function gotoSettings(page: Page): Promise<void> {
   await page.goto("/settings")
   await expect(page.getByRole("heading", { name: viDict.settings.title, level: 1 })).toBeVisible()

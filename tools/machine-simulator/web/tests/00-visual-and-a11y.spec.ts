@@ -10,6 +10,8 @@ import {
   gotoProductConfig,
   gotoProductConfigDetail,
   gotoProductConfigPoints,
+  gotoRecipeConfig,
+  gotoRecipeConfigDetail,
   gotoScenario,
   gotoSettings,
   gotoTokens,
@@ -115,6 +117,22 @@ const SCREENS: ScreenCase[] = [
     visit: async (page, theme) => {
       await primeAppStorage(page, { theme })
       await gotoProductConfigPoints(page, "MODEL-A")
+    },
+  },
+  {
+    // Task C6 — recipe (System A) catalog list.
+    slug: "recipe-config",
+    visit: async (page, theme) => {
+      await primeAppStorage(page, { theme })
+      await gotoRecipeConfig(page)
+    },
+  },
+  {
+    // Task C6 — recipe editor: typed payload fields + generic key/value rows, seeded `SCREWDRIVE-M4`.
+    slug: "recipe-config-detail",
+    visit: async (page, theme) => {
+      await primeAppStorage(page, { theme })
+      await gotoRecipeConfigDetail(page, "SCREWDRIVE-M4")
     },
   },
   {

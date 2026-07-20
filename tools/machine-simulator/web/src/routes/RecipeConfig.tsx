@@ -1,18 +1,14 @@
 import * as React from "react"
 import { motion } from "framer-motion"
-import { Boxes, ChevronRight, Inbox, Plus, Search, SearchX, X } from "lucide-react"
+import { ChevronRight, Inbox, Plus, Search, SearchX, Wrench, X } from "lucide-react"
 import type { VariantProps } from "class-variance-authority"
 import { toast } from "sonner"
 import { useLocation } from "wouter"
 
 import { useT } from "@/i18n"
-import {
-  useProducts,
-  useSaveProduct,
-  type ProductLifecycleStatus,
-  type ProductModel,
-  type ProductSummary,
-} from "@/lib/configApi"
+import { useRecipes, useSaveRecipe, type Recipe, type RecipeStatus, type RecipeSummary } from "@/lib/configApi"
+import { DEFAULT_RECIPE_MACHINE_TYPE } from "@/lib/machineTypes"
+import { shortChecksum } from "@/lib/utils"
 import { fadeSlideUp } from "@/theme/motion"
 import { Button } from "@/components/ui/button"
 import { ConfigModeToggle } from "@/components/ConfigModeToggle"
@@ -25,27 +21,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { RecipeFormFields, type RecipeFormValues } from "@/components/RecipeFormFields"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StatusBadge, type statusBadgeVariants } from "@/components/ui/status-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { FormField } from "@/components/FormField"
-import { ProductFormFields, type ProductFormValues } from "@/components/ProductFormFields"
-import { ProductImageThumb } from "@/components/ProductImageThumb"
 
 type BadgeStatus = NonNullable<VariantProps<typeof statusBadgeVariants>["status"]>
 
-// development = still being authored (info, neutral-attention); active = in production use (ok);
-// eol = sunsetting, still valid but on the way out (warn); archived = retired, no color urgency.
-const LIFECYCLE_BADGE: Record<ProductLifecycleStatus, BadgeStatus> = {
-  development: "info",
+// draft = still being authored (info, neutral-attention); active = the version machines resolve to
+// (ok); archived = retired, no color urgency — mirrors ProductConfig.tsx's LIFECYCLE_BADGE idiom.
+const STATUS_BADGE: Record<RecipeStatus, BadgeStatus> = {
+  draft: "info",
   active: "ok",
-  eol: "warn",
   archived: "neutral",
 }
 
-// Canonical display order for the lifecycle filter — deterministic, not alphabetical (mirrors
-// Machines.tsx's own DEVICE_CLASS_ORDER/STATUS_ORDER idiom).
-const LIFECYCLE_ORDER: ProductLifecycleStatus[] = ["development", "active", "eol", "archived"]
+const STATUS_ORDER: RecipeStatus[] = ["draft", "active", "archived"]
 
 const ALL = "__all__"
 
@@ -58,9 +49,8 @@ interface FilterSelectProps {
   allLabel: string
 }
 
-/** Plain native `<select>`, not the Base UI Select primitive — same idiom as Machines.tsx's own
- * `FilterSelect` (duplicated locally rather than shared, matching this codebase's established
- * convention for small single-screen filter helpers). */
+/** Plain native `<select>` — same locally-duplicated filter idiom as `ProductConfig.tsx`'s own
+ * `FilterSelect` (that component's doc comment explains why this isn't shared). */
 function FilterSelect({ label, value, options, optionLabel, onChange, allLabel }: FilterSelectProps) {
   return (
     <label className="flex flex-col gap-1">
@@ -86,7 +76,7 @@ function SearchField({ value, onChange }: { value: string; onChange: (v: string)
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
-        {t("productConfig.search.label")}
+        {t("recipeConfig.search.label")}
       </span>
       <div className="relative">
         <Search
@@ -96,7 +86,7 @@ function SearchField({ value, onChange }: { value: string; onChange: (v: string)
         <Input
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder={t("productConfig.search.placeholder")}
+          placeholder={t("recipeConfig.search.placeholder")}
           className="h-8 w-56 pl-7"
         />
       </div>
@@ -104,45 +94,43 @@ function SearchField({ value, onChange }: { value: string; onChange: (v: string)
   )
 }
 
-function ProductsTableHeaderRow() {
+function RecipesTableHeaderRow() {
   const t = useT()
   return (
     <TableRow>
-      <TableHead className="w-14">
-        <span className="sr-only">{t("productConfig.table.image")}</span>
-      </TableHead>
-      <TableHead>{t("productConfig.table.code")}</TableHead>
-      <TableHead>{t("productConfig.table.name")}</TableHead>
-      <TableHead>{t("productConfig.table.lifecycle")}</TableHead>
-      <TableHead className="text-right">{t("productConfig.table.points")}</TableHead>
-      <TableHead>{t("productConfig.table.version")}</TableHead>
+      <TableHead>{t("recipeConfig.table.code")}</TableHead>
+      <TableHead>{t("recipeConfig.table.name")}</TableHead>
+      <TableHead>{t("recipeConfig.table.machineType")}</TableHead>
+      <TableHead>{t("recipeConfig.table.status")}</TableHead>
+      <TableHead>{t("recipeConfig.table.version")}</TableHead>
+      <TableHead>{t("recipeConfig.table.checksum")}</TableHead>
       <TableHead className="w-8">
-        <span className="sr-only">{t("productConfig.table.viewAction")}</span>
+        <span className="sr-only">{t("recipeConfig.table.viewAction")}</span>
       </TableHead>
     </TableRow>
   )
 }
 
-function ProductRowSkeleton() {
+function RecipeRowSkeleton() {
   return (
     <TableRow>
       <TableCell>
-        <Skeleton className="size-9 rounded-md" />
-      </TableCell>
-      <TableCell>
-        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-4 w-24" />
       </TableCell>
       <TableCell>
         <Skeleton className="h-4 w-40" />
       </TableCell>
       <TableCell>
-        <Skeleton className="h-5 w-20 rounded-full" />
+        <Skeleton className="h-4 w-24" />
       </TableCell>
-      <TableCell className="text-right">
-        <Skeleton className="ml-auto h-4 w-8" />
+      <TableCell>
+        <Skeleton className="h-5 w-16 rounded-full" />
       </TableCell>
       <TableCell>
         <Skeleton className="h-4 w-8" />
+      </TableCell>
+      <TableCell>
+        <Skeleton className="h-4 w-20" />
       </TableCell>
       <TableCell>
         <Skeleton className="size-4" />
@@ -151,49 +139,38 @@ function ProductRowSkeleton() {
   )
 }
 
-interface ProductRowProps {
-  product: ProductSummary
+interface RecipeRowProps {
+  recipe: RecipeSummary
   onOpen: (code: string) => void
 }
 
-/** One catalog row. Whole-row click/keyboard target, same pattern as Machines.tsx's `MachineRow` —
- * see that component's own doc comment for why `tabIndex`+`onKeyDown` rather than `role="button"`. */
-function ProductRow({ product, onOpen }: ProductRowProps) {
+/** One catalog row — whole-row click/keyboard target, same pattern as `ProductConfig.tsx`'s `ProductRow`. */
+function RecipeRow({ recipe, onOpen }: RecipeRowProps) {
   const t = useT()
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTableRowElement>) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
-      onOpen(product.code)
+      onOpen(recipe.code)
     }
   }
 
   return (
     <TableRow
-      onClick={() => onOpen(product.code)}
+      onClick={() => onOpen(recipe.code)}
       onKeyDown={handleKeyDown}
       tabIndex={0}
-      aria-label={t("productConfig.table.rowAria", { code: product.code })}
+      aria-label={t("recipeConfig.table.rowAria", { code: recipe.code })}
       className="cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-navy-600/50"
     >
+      <TableCell className="font-medium text-text-strong">{recipe.code}</TableCell>
+      <TableCell className="text-text-body">{recipe.name}</TableCell>
+      <TableCell className="text-text-body">{recipe.machineType ?? "—"}</TableCell>
       <TableCell>
-        <ProductImageThumb
-          url={product.referenceImageUrl}
-          alt={t("productConfig.table.rowAria", { code: product.code })}
-          className="size-9 rounded-md border border-border"
-        />
+        <StatusBadge status={STATUS_BADGE[recipe.status]}>{t(`recipeStatus.${recipe.status}`)}</StatusBadge>
       </TableCell>
-      <TableCell className="font-medium text-text-strong">{product.code}</TableCell>
-      <TableCell className="text-text-body">{product.name}</TableCell>
-      <TableCell>
-        <StatusBadge status={LIFECYCLE_BADGE[product.lifecycleStatus]}>
-          {t(`lifecycleStatus.${product.lifecycleStatus}`)}
-        </StatusBadge>
-      </TableCell>
-      <TableCell className="font-numeric text-right text-text-body">{product.pointCount}</TableCell>
-      <TableCell className="font-numeric text-text-muted">
-        {t("productConfig.versionShort", { version: product.pointsConfigVersion })}
-      </TableCell>
+      <TableCell className="font-numeric text-text-muted">{t("recipeConfig.versionShort", { version: recipe.version })}</TableCell>
+      <TableCell className="font-mono text-xs text-text-muted">{shortChecksum(recipe.checksum)}</TableCell>
       <TableCell className="text-text-muted">
         <ChevronRight className="size-4" aria-hidden="true" />
       </TableCell>
@@ -208,8 +185,7 @@ interface EmptyStateProps {
   action?: React.ReactNode
 }
 
-/** Same visual shape as Machines.tsx's own `EmptyState` (dashed card, icon roundel, title+description,
- * one action) — reused here for both "catalog is empty" and "filters matched nothing". */
+/** Same visual shape as `ProductConfig.tsx`'s own `EmptyState`. */
 function EmptyState({ icon: Icon, title, description, action }: EmptyStateProps) {
   return (
     <motion.div
@@ -234,30 +210,27 @@ function EmptyState({ icon: Icon, title, description, action }: EmptyStateProps)
 // Create dialog
 // ─────────────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM: ProductFormValues = {
+const EMPTY_FORM: RecipeFormValues = {
   name: "",
-  lifecycleStatus: "development",
-  coordinateMode: "pixel",
-  imageWidth: "",
-  imageHeight: "",
-  referenceImageUrl: "",
+  machineType: DEFAULT_RECIPE_MACHINE_TYPE,
+  status: "draft",
 }
 
-interface CreateProductDialogProps {
+interface CreateRecipeDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   existingCodes: Set<string>
 }
 
-function CreateProductDialog({ open, onOpenChange, existingCodes }: CreateProductDialogProps) {
+function CreateRecipeDialog({ open, onOpenChange, existingCodes }: CreateRecipeDialogProps) {
   const t = useT()
-  const saveProduct = useSaveProduct()
+  const saveRecipe = useSaveRecipe()
   const [code, setCode] = React.useState("")
-  const [form, setForm] = React.useState<ProductFormValues>(EMPTY_FORM)
+  const [form, setForm] = React.useState<RecipeFormValues>(EMPTY_FORM)
   const [error, setError] = React.useState<string | null>(null)
 
-  // Reset to a blank form every time the dialog re-opens — a half-filled leftover from a cancelled
-  // attempt would be confusing to find still sitting there next time.
+  // Reset to a blank form every time the dialog re-opens — same idiom as ProductConfig.tsx's
+  // CreateProductDialog, so a half-filled leftover from a cancelled attempt never lingers.
   React.useEffect(() => {
     if (open) {
       setCode("")
@@ -266,7 +239,7 @@ function CreateProductDialog({ open, onOpenChange, existingCodes }: CreateProduc
     }
   }, [open])
 
-  function updateForm<K extends keyof ProductFormValues>(key: K, value: ProductFormValues[K]) {
+  function updateForm<K extends keyof RecipeFormValues>(key: K, value: RecipeFormValues[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -276,42 +249,37 @@ function CreateProductDialog({ open, onOpenChange, existingCodes }: CreateProduc
     const trimmedName = form.name.trim()
 
     if (!trimmedCode) {
-      setError(t("productConfig.createDialog.codeRequired"))
+      setError(t("recipeConfig.createDialog.codeRequired"))
       return
     }
     if (existingCodes.has(trimmedCode.toLowerCase())) {
-      setError(t("productConfig.createDialog.codeDuplicate", { code: trimmedCode }))
+      setError(t("recipeConfig.createDialog.codeDuplicate", { code: trimmedCode }))
       return
     }
     if (!trimmedName) {
-      setError(t("productConfig.createDialog.nameRequired"))
+      setError(t("recipeConfig.createDialog.nameRequired"))
       return
     }
     setError(null)
 
-    const body: ProductModel = {
+    const body: Recipe = {
       code: trimmedCode,
       name: trimmedName,
-      lifecycleStatus: form.lifecycleStatus,
-      coordinateMode: form.coordinateMode,
-      imageWidth: form.imageWidth.trim() ? Number(form.imageWidth) : null,
-      imageHeight: form.imageHeight.trim() ? Number(form.imageHeight) : null,
-      imageHash: null,
-      referenceImageUrl: form.referenceImageUrl.trim() || null,
-      pointsConfigVersion: 1,
-      fiducials: [],
-      variants: [],
-      points: [],
+      machineType: form.machineType || null,
+      version: 1,
+      payload: {},
+      checksum: null,
+      status: form.status,
     }
 
-    saveProduct.mutate(
-      { code: trimmedCode, product: body },
+    saveRecipe.mutate(
+      { code: trimmedCode, recipe: body },
       {
         onSuccess: (data) => {
-          toast.success(t("toast.productCreated", { code: data.code }))
+          toast.success(t("toast.recipeCreated", { code: data.code }))
           onOpenChange(false)
         },
-        onError: () => toast.error(t("productConfig.createDialog.createFailed")),
+        onError: () => toast.error(t("recipeConfig.createDialog.createFailed")),
       }
     )
   }
@@ -321,28 +289,14 @@ function CreateProductDialog({ open, onOpenChange, existingCodes }: CreateProduc
       <DialogContent className="sm:max-w-lg">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>{t("productConfig.createDialog.title")}</DialogTitle>
-            <DialogDescription>{t("productConfig.createDialog.description")}</DialogDescription>
+            <DialogTitle>{t("recipeConfig.createDialog.title")}</DialogTitle>
+            <DialogDescription>{t("recipeConfig.createDialog.description")}</DialogDescription>
           </DialogHeader>
 
           <div className="max-h-[60vh] overflow-y-auto pr-0.5">
             <div className="flex flex-col gap-4">
-              <FormField
-                label={t("productConfig.createDialog.codeLabel")}
-                htmlFor="create-product-code"
-                hint={t("productConfig.createDialog.codeHint")}
-              >
-                <Input
-                  id="create-product-code"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder={t("productConfig.createDialog.codePlaceholder")}
-                  maxLength={40}
-                  autoFocus
-                />
-              </FormField>
-
-              <ProductFormFields values={form} onChange={updateForm} idPrefix="create-product" />
+              <FormFieldCode value={code} onChange={setCode} />
+              <RecipeFormFields values={form} onChange={updateForm} idPrefix="create-recipe" />
             </div>
           </div>
 
@@ -354,12 +308,10 @@ function CreateProductDialog({ open, onOpenChange, existingCodes }: CreateProduc
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              {t("productConfig.createDialog.cancel")}
+              {t("recipeConfig.createDialog.cancel")}
             </Button>
-            <Button type="submit" disabled={saveProduct.isPending}>
-              {saveProduct.isPending
-                ? t("productConfig.createDialog.submitting")
-                : t("productConfig.createDialog.submit")}
+            <Button type="submit" disabled={saveRecipe.isPending}>
+              {saveRecipe.isPending ? t("recipeConfig.createDialog.submitting") : t("recipeConfig.createDialog.submit")}
             </Button>
           </DialogFooter>
         </form>
@@ -368,53 +320,78 @@ function CreateProductDialog({ open, onOpenChange, existingCodes }: CreateProduc
   )
 }
 
+/** Small standalone wrapper (not `FormField` re-imported at call site just for one field) for the
+ * create dialog's `code` input — kept local since only this dialog needs it, same as
+ * `ProductConfig.tsx`'s `CreateProductDialog` inlines its own code field rather than folding it into
+ * `RecipeFormFields` (code is immutable-after-create, so it doesn't belong in the shared edit form). */
+function FormFieldCode({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useT()
+  return (
+    <label className="flex flex-col gap-1.5" htmlFor="create-recipe-code">
+      <span className="text-xs font-medium text-text-body">{t("recipeConfig.createDialog.codeLabel")}</span>
+      <Input
+        id="create-recipe-code"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={t("recipeConfig.createDialog.codePlaceholder")}
+        maxLength={40}
+        autoFocus
+      />
+      <span className="text-[11px] text-text-muted">{t("recipeConfig.createDialog.codeHint")}</span>
+    </label>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Route
 // ─────────────────────────────────────────────────────────────────────────
 
-export default function ProductConfig() {
+export default function RecipeConfig() {
   const t = useT()
-  const { data, isPending, isError } = useProducts()
+  const { data, isPending, isError } = useRecipes()
   const [, navigate] = useLocation()
 
   const [search, setSearch] = React.useState("")
-  const [lifecycleFilter, setLifecycleFilter] = React.useState(ALL)
+  const [statusFilter, setStatusFilter] = React.useState(ALL)
   const [createOpen, setCreateOpen] = React.useState(false)
 
-  const products = React.useMemo(() => data ?? [], [data])
-  const existingCodes = React.useMemo(
-    () => new Set(products.map((p) => p.code.toLowerCase())),
-    [products]
-  )
-  const openProduct = React.useCallback((code: string) => navigate(`/products/${code}`), [navigate])
+  const recipes = React.useMemo(() => data ?? [], [data])
+  const existingCodes = React.useMemo(() => new Set(recipes.map((r) => r.code.toLowerCase())), [recipes])
+  const openRecipe = React.useCallback((code: string) => navigate(`/recipes/${code}`), [navigate])
 
-  const lifecycleOptions = React.useMemo(
-    () => LIFECYCLE_ORDER.filter((s) => products.some((p) => p.lifecycleStatus === s)),
-    [products]
+  const statusOptions = React.useMemo(
+    () => STATUS_ORDER.filter((s) => recipes.some((r) => r.status === s)),
+    [recipes]
   )
 
-  // Same self-correcting idiom as Machines.tsx's statusFilter effect — a selected lifecycle filter can
-  // fall out of the option set if every product carrying it gets edited/deleted out from under it.
+  // Self-correcting idiom mirroring ProductConfig.tsx's lifecycleFilter effect — a selected status can
+  // fall out of the option set if every recipe carrying it gets edited/deleted out from under it.
   React.useEffect(() => {
-    if (lifecycleFilter !== ALL && !lifecycleOptions.includes(lifecycleFilter as ProductLifecycleStatus)) {
-      setLifecycleFilter(ALL)
+    if (statusFilter !== ALL && !statusOptions.includes(statusFilter as RecipeStatus)) {
+      setStatusFilter(ALL)
     }
-  }, [lifecycleFilter, lifecycleOptions])
+  }, [statusFilter, statusOptions])
 
-  const filtersActive = search.trim() !== "" || lifecycleFilter !== ALL
+  const filtersActive = search.trim() !== "" || statusFilter !== ALL
 
-  const filteredProducts = React.useMemo(() => {
+  const filteredRecipes = React.useMemo(() => {
     const query = search.trim().toLowerCase()
-    return products.filter((p) => {
-      if (query && !p.code.toLowerCase().includes(query) && !p.name.toLowerCase().includes(query)) return false
-      if (lifecycleFilter !== ALL && p.lifecycleStatus !== lifecycleFilter) return false
+    return recipes.filter((r) => {
+      if (
+        query &&
+        !r.code.toLowerCase().includes(query) &&
+        !r.name.toLowerCase().includes(query) &&
+        !(r.machineType ?? "").toLowerCase().includes(query)
+      )
+        return false
+      if (statusFilter !== ALL && r.status !== statusFilter) return false
       return true
     })
-  }, [products, search, lifecycleFilter])
+  }, [recipes, search, statusFilter])
 
   const clearFilters = React.useCallback(() => {
     setSearch("")
-    setLifecycleFilter(ALL)
+    setStatusFilter(ALL)
   }, [])
 
   return (
@@ -426,48 +403,52 @@ export default function ProductConfig() {
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-2">
-          <ConfigModeToggle current="products" />
+          <ConfigModeToggle current="recipes" />
           <div className="flex items-center gap-2">
-            <Boxes className="size-5 text-navy-600" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold text-text-strong">{t("productConfig.title")}</h1>
+            <Wrench className="size-5 text-navy-600" aria-hidden="true" />
+            <h1 className="text-2xl font-semibold text-text-strong">{t("recipeConfig.title")}</h1>
           </div>
-          <p className="text-sm text-text-muted">{t("productConfig.description")}</p>
+          <p className="max-w-2xl text-sm text-text-muted">{t("recipeConfig.description")}</p>
         </div>
         <div className="flex items-center gap-3">
           {!isPending && !isError ? (
-            <StatusBadge status="neutral">{t("productConfig.countLabel", { count: products.length })}</StatusBadge>
+            <StatusBadge status="neutral">{t("recipeConfig.countLabel", { count: recipes.length })}</StatusBadge>
           ) : null}
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="size-3.5" aria-hidden="true" />
-            {t("productConfig.createBtn")}
+            {t("recipeConfig.createBtn")}
           </Button>
         </div>
       </div>
+
+      <p className="rounded-lg border border-info/20 bg-info/10 px-3 py-2 text-xs text-info-text">
+        {t("recipeConfig.demoOnlyNote")}
+      </p>
 
       {isPending ? (
         <div className="overflow-hidden rounded-xl border border-border bg-surface-card">
           <Table>
             <TableHeader>
-              <ProductsTableHeaderRow />
+              <RecipesTableHeaderRow />
             </TableHeader>
             <TableBody>
-              {Array.from({ length: 4 }, (_, i) => (
-                <ProductRowSkeleton key={i} />
+              {Array.from({ length: 3 }, (_, i) => (
+                <RecipeRowSkeleton key={i} />
               ))}
             </TableBody>
           </Table>
         </div>
       ) : isError ? (
         <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
-      ) : products.length === 0 ? (
+      ) : recipes.length === 0 ? (
         <EmptyState
           icon={Inbox}
-          title={t("productConfig.empty.noProductsTitle")}
-          description={t("productConfig.empty.noProductsDescription")}
+          title={t("recipeConfig.empty.noRecipesTitle")}
+          description={t("recipeConfig.empty.noRecipesDescription")}
           action={
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="size-3.5" aria-hidden="true" />
-              {t("productConfig.createBtn")}
+              {t("recipeConfig.createBtn")}
             </Button>
           }
         />
@@ -477,52 +458,43 @@ export default function ProductConfig() {
             <div className="flex flex-wrap items-end gap-3">
               <SearchField value={search} onChange={setSearch} />
               <FilterSelect
-                label={t("productConfig.filters.lifecycle")}
-                value={lifecycleFilter}
-                options={lifecycleOptions}
-                optionLabel={(value) => t(`lifecycleStatus.${value}`)}
-                onChange={setLifecycleFilter}
-                allLabel={t("productConfig.filters.all")}
+                label={t("recipeConfig.filters.status")}
+                value={statusFilter}
+                options={statusOptions}
+                optionLabel={(value) => t(`recipeStatus.${value}`)}
+                onChange={setStatusFilter}
+                allLabel={t("recipeConfig.filters.all")}
               />
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
               <div className="text-sm">
-                <span className="font-numeric font-semibold text-text-strong">
-                  {filteredProducts.length.toLocaleString()}
-                </span>
-                <span className="text-text-muted"> {t("productConfig.shownLabel")}</span>
+                <span className="font-numeric font-semibold text-text-strong">{filteredRecipes.length.toLocaleString()}</span>
+                <span className="text-text-muted"> {t("recipeConfig.shownLabel")}</span>
                 {filtersActive ? (
-                  <span className="font-numeric text-text-muted">
-                    {" "}
-                    {t("productConfig.ofTotal", { count: products.length })}
-                  </span>
+                  <span className="font-numeric text-text-muted"> {t("recipeConfig.ofTotal", { count: recipes.length })}</span>
                 ) : null}
               </div>
               {filtersActive ? (
                 <Button size="sm" variant="outline" onClick={clearFilters}>
                   <X className="size-3.5" aria-hidden="true" />
-                  {t("productConfig.filters.clear")}
+                  {t("recipeConfig.filters.clear")}
                 </Button>
               ) : null}
             </div>
           </div>
 
-          {filteredProducts.length === 0 ? (
-            <EmptyState
-              icon={SearchX}
-              title={t("productConfig.empty.noMatchTitle")}
-              description={t("productConfig.empty.noMatchDescription")}
-            />
+          {filteredRecipes.length === 0 ? (
+            <EmptyState icon={SearchX} title={t("recipeConfig.empty.noMatchTitle")} description={t("recipeConfig.empty.noMatchDescription")} />
           ) : (
             <div className="overflow-hidden rounded-xl border border-border">
               <Table>
                 <TableHeader className="bg-surface-card">
-                  <ProductsTableHeaderRow />
+                  <RecipesTableHeaderRow />
                 </TableHeader>
                 <TableBody>
-                  {filteredProducts.map((product) => (
-                    <ProductRow key={product.code} product={product} onOpen={openProduct} />
+                  {filteredRecipes.map((recipe) => (
+                    <RecipeRow key={recipe.code} recipe={recipe} onOpen={openRecipe} />
                   ))}
                 </TableBody>
               </Table>
@@ -531,7 +503,7 @@ export default function ProductConfig() {
         </>
       )}
 
-      <CreateProductDialog open={createOpen} onOpenChange={setCreateOpen} existingCodes={existingCodes} />
+      <CreateRecipeDialog open={createOpen} onOpenChange={setCreateOpen} existingCodes={existingCodes} />
     </motion.div>
   )
 }

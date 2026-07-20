@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Palette, Search } from "lucide-react"
+import { Palette, Search, Wrench } from "lucide-react"
 import { useLocation } from "wouter"
 
 import { useT } from "@/i18n"
@@ -7,8 +7,14 @@ import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogPortal, DialogOverlay } from "@/components/ui/dialog"
 import { NAV_ITEMS, type NavItem } from "@/shell/Sidebar"
 
+// `/recipes` (Task C6) is reachable here and via `ConfigModeToggle` (rendered in both
+// `ProductConfig.tsx`'s and `RecipeConfig.tsx`'s own headers) rather than as a `Sidebar.tsx`
+// `NAV_ITEMS` entry — same "real route, kept off the sidebar rail" treatment `/tokens` already gets
+// below, so this doesn't grow the sidebar for a second config-authoring domain living in the same
+// workspace as Product Config.
 const EXTRA_ITEMS: NavItem[] = [
   { labelKey: "shell.commandPalette.designTokens", path: "/tokens", icon: Palette },
+  { labelKey: "shell.commandPalette.recipeConfig", path: "/recipes", icon: Wrench },
 ]
 
 const ALL_ITEMS: NavItem[] = [...NAV_ITEMS, ...EXTRA_ITEMS]

@@ -50,12 +50,21 @@ export const vi = {
     },
     commandPalette: {
       designTokens: "Bảng thiết kế (tham khảo)",
+      recipeConfig: "Recipe (Automation/IoT)",
       searchPlaceholder: "Tới màn hình…",
       searchAria: "Tìm màn hình",
       dialogAria: "Bảng lệnh",
       listboxAria: "Màn hình",
       noResults: (vars: Vars) => `Không tìm thấy màn hình nào khớp “${vars.query}”.`,
     },
+  },
+
+  // Task C6 — segmented nav switch between Product Config (`/products`) and Recipe Config
+  // (`/recipes`), rendered atop both workspaces' list pages.
+  configModeToggle: {
+    ariaLabel: "Chuyển đổi khu vực cấu hình",
+    products: "Sản phẩm (AOI/AVI)",
+    recipes: "Recipe (Automation/IoT)",
   },
 
   deviceClass: {
@@ -107,6 +116,14 @@ export const vi = {
     ring: "Vành khuyên",
     mask: "Mặt nạ",
     array: "Mảng (lưới)",
+  },
+
+  // draft = đang soạn thảo (chưa có máy nào dùng); active = phiên bản máy phân giải tới; archived =
+  // đã lưu trữ, không còn hiệu lực — mirrors `lifecycleStatus`'s own enum-label block above.
+  recipeStatus: {
+    draft: "Bản nháp",
+    active: "Đang dùng",
+    archived: "Lưu trữ",
   },
 
   status: {
@@ -344,6 +361,159 @@ export const vi = {
       },
       viewMachineLink: (vars: Vars) => `Xem máy ${vars.code}`,
       seamNote: "Kéo/đẩy đầy đủ với xem khác biệt và lịch sử đồng bộ ở trang chi tiết máy.",
+    },
+  },
+
+  // Task C6 — recipe (System A: automation/IoT machine parameters) catalog list + create dialog,
+  // `RecipeConfig.tsx`. Sibling workspace to `productConfig` above — same list/filter/create idioms,
+  // reached via `ConfigModeToggle` rather than a second sidebar entry (see that component's own doc
+  // comment).
+  recipeConfig: {
+    title: "Recipe (Automation/IoT)",
+    description:
+      "Thông số vận hành cho máy Automation/IoT — tốc độ, mô-men xiết, ngưỡng cảm biến… Bấm vào một recipe để chỉnh sửa.",
+    countLabel: (vars: Vars) => `${vars.count} recipe`,
+    createBtn: "Tạo recipe",
+    demoOnlyNote:
+      "Đẩy (push) recipe lên hệ thống thật CHỈ mô phỏng ở chế độ Demo — máy chủ AVI/AOI thật chỉ cho phép kéo (pull) recipe xuống máy (recipe do người soạn trong SYNAPSE, duyệt 2 người). Xem chi tiết ở trang từng recipe.",
+    search: {
+      label: "Tìm recipe",
+      placeholder: "Tìm theo mã, tên hoặc loại máy…",
+    },
+    filters: {
+      status: "Trạng thái",
+      all: "Tất cả",
+      clear: "Xóa bộ lọc",
+    },
+    shownLabel: "hiển thị",
+    ofTotal: (vars: Vars) => `trên ${vars.count} recipe`,
+    table: {
+      code: "Mã recipe",
+      name: "Tên recipe",
+      machineType: "Loại máy",
+      status: "Trạng thái",
+      version: "Phiên bản",
+      checksum: "Checksum",
+      viewAction: "Xem chi tiết",
+      rowAria: (vars: Vars) => `Xem chi tiết recipe ${vars.code}`,
+    },
+    versionShort: (vars: Vars) => `v${vars.version}`,
+    empty: {
+      noRecipesTitle: "Chưa có recipe nào",
+      noRecipesDescription: "Danh mục recipe hiện chưa có bản ghi nào. Tạo recipe đầu tiên để bắt đầu cấu hình thông số.",
+      noMatchTitle: "Không tìm thấy recipe phù hợp",
+      noMatchDescription: "Không có recipe nào khớp với tìm kiếm hoặc bộ lọc hiện tại — thử xóa bộ lọc.",
+    },
+    createDialog: {
+      title: "Tạo recipe mới",
+      description: "Tạo một recipe Automation/IoT mới — có thể chỉnh payload thông số sau khi tạo.",
+      codeLabel: "Mã recipe",
+      codePlaceholder: "vd: SCREWDRIVE-M5",
+      codeHint: "Định danh duy nhất, không phân biệt hoa/thường — không thể đổi sau khi tạo.",
+      codeRequired: "Cần nhập mã recipe.",
+      codeDuplicate: (vars: Vars) => `Mã "${vars.code}" đã tồn tại.`,
+      nameLabel: "Tên recipe",
+      nameRequired: "Cần nhập tên recipe.",
+      cancel: "Hủy",
+      submit: "Tạo recipe",
+      submitting: "Đang tạo…",
+      createFailed: "Tạo recipe thất bại.",
+    },
+    form: {
+      nameLabel: "Tên recipe",
+      machineTypeLabel: "Loại máy",
+      machineTypeNone: "— Chưa đặt —",
+      statusLabel: "Trạng thái",
+    },
+  },
+
+  recipeConfigDetail: {
+    back: "Về danh sách recipe",
+    versionBadge: (vars: Vars) => `Phiên bản v${vars.version}`,
+    checksumLabel: "Checksum:",
+    noChecksum: "Chưa có checksum — lưu để engine tính.",
+    demoOnlyNote:
+      "Đẩy (push) recipe này lên hệ thống thật CHỈ mô phỏng ở chế độ Demo — máy chủ AVI/AOI thật chỉ cho phép kéo (pull) recipe xuống (recipe do người soạn trong SYNAPSE, duyệt 2 người, không cho máy tự đẩy lên). Việc kéo recipe thật diễn ra ở bảng đồng bộ theo máy (trang chi tiết máy, tab Cấu hình).",
+    notFoundState: {
+      title: "Không tìm thấy recipe",
+      description: (vars: Vars) => `Không có recipe với mã ${vars.code}. Có thể đã bị xóa, hoặc mã đã gõ sai.`,
+    },
+    tabs: {
+      recipe: "Recipe",
+      sync: "Đồng bộ",
+    },
+    info: {
+      title: "Thông tin recipe",
+      codeLabel: "Mã recipe",
+      save: "Lưu thay đổi",
+      saving: "Đang lưu…",
+      dirty: "Có thay đổi chưa lưu.",
+      clean: "Đã lưu.",
+      saveFailed: "Lưu recipe thất bại.",
+      nameRequired: "Cần nhập tên recipe.",
+      dangerZoneTitle: "Xóa recipe",
+      dangerZoneHint: "Xóa vĩnh viễn recipe này — máy đang phân giải tới recipe này sẽ không còn thấy nó.",
+      deleteBtn: "Xóa recipe",
+      deleteConfirmTitle: (vars: Vars) => `Xóa recipe ${vars.code}?`,
+      deleteConfirmDescription: (vars: Vars) => `Thao tác này xóa vĩnh viễn "${vars.name}". Không thể hoàn tác.`,
+      deleteConfirmCancel: "Hủy",
+      deleteConfirmSubmit: "Xóa vĩnh viễn",
+      deleting: "Đang xóa…",
+      deleteFailed: "Xóa recipe thất bại.",
+    },
+    payload: {
+      title: "Thông số (payload)",
+      description:
+        "Thông số vận hành thực tế của recipe — trường có kiểu riêng theo loại máy, cộng bảng khóa/giá trị chung cho các trường khác.",
+      typedTitle: "Trường theo loại máy",
+      otherTitle: "Trường khác",
+      otherEmpty: "Chưa có trường tùy chỉnh nào.",
+      otherValueAria: (vars: Vars) => `Giá trị của ${vars.key}`,
+      otherRemoveAria: (vars: Vars) => `Xóa trường ${vars.key}`,
+      addKeyLabel: "Khóa mới",
+      addKeyPlaceholder: "vd: notes",
+      addValueLabel: "Giá trị",
+      addValuePlaceholder: "Giá trị…",
+      addBtn: "Thêm trường",
+      addKeyRequired: "Cần nhập tên khóa.",
+      addKeyDuplicate: (vars: Vars) => `Khóa "${vars.key}" đã tồn tại trong payload này.`,
+      fields: {
+        speedRpm: "Tốc độ",
+        angleTarget: "Góc xiết mục tiêu",
+        torqueTarget: "Mô-men xiết mục tiêu",
+        torqueTolerance: "Dung sai mô-men xiết",
+        torqueUnit: "Đơn vị mô-men xiết",
+        screwCount: "Số vít",
+        clampTimeMs: "Thời gian giữ kẹp",
+        sampleIntervalMs: "Chu kỳ lấy mẫu",
+        thresholdLow: "Ngưỡng dưới",
+        thresholdHigh: "Ngưỡng trên",
+      },
+    },
+    sync: {
+      title: "Kiểm tra đồng bộ theo máy",
+      description: "Chọn một máy Automation/IoT để xem recipe hệ thống mô phỏng đang phân giải cho loại máy đó.",
+      machineLabel: "Máy",
+      machinePlaceholder: "Chọn máy…",
+      checkBtn: "Kiểm tra",
+      checking: "Đang kiểm tra…",
+      checkFailed: "Kiểm tra đồng bộ thất bại.",
+      noMachines: "Đội máy hiện chưa có máy Automation/IoT nào để kiểm tra.",
+      resultState: "Trạng thái",
+      resultResolvedCode: "Recipe phân giải được",
+      resultResolvedBy: "Phân giải theo",
+      resolvedBy: {
+        machine: "Riêng theo máy",
+        machineType: "Theo loại máy",
+        none: "Không có",
+      },
+      resultLocalVersion: "Phiên bản cục bộ (máy)",
+      resultEcosystemVersion: "Phiên bản hệ thống",
+      differentCodeNote: (vars: Vars) =>
+        `Máy ${vars.machineCode} phân giải tới recipe "${vars.resolvedCode}" — khác với recipe đang xem.`,
+      noRecipeResolved: "Máy này chưa phân giải được recipe nào.",
+      viewMachineLink: (vars: Vars) => `Xem máy ${vars.code}`,
+      seamNote: "Kéo đầy đủ với lịch sử đồng bộ ở trang chi tiết máy.",
     },
   },
 
@@ -892,6 +1062,9 @@ export const vi = {
     productCreated: (vars: Vars) => `Đã tạo sản phẩm ${vars.code}.`,
     productSaved: "Đã lưu sản phẩm.",
     productDeleted: (vars: Vars) => `Đã xóa sản phẩm ${vars.code}.`,
+    recipeCreated: (vars: Vars) => `Đã tạo recipe ${vars.code}.`,
+    recipeSaved: "Đã lưu recipe.",
+    recipeDeleted: (vars: Vars) => `Đã xóa recipe ${vars.code}.`,
     pointCreated: (vars: Vars) => `Đã tạo điểm đo ${vars.code}.`,
     pointSaved: "Đã lưu điểm đo.",
     pointSaveFailed: "Lưu điểm đo thất bại.",

@@ -16,3 +16,12 @@ export function formatMetric(value: number): string {
   if (abs < 100) return value.toFixed(2)
   return value.toFixed(1)
 }
+
+/** Truncates a sha256 hex checksum (`ConfigChecksum.Compute`) to a short display form — Task C6's
+ * recipe list/detail show this instead of the full 64-char hex string, matching how git/docker
+ * shorten a hash for a UI chip. `null`/empty renders as an em dash (a brand-new draft recipe with no
+ * saved payload yet has no checksum to show). */
+export function shortChecksum(checksum: string | null | undefined): string {
+  if (!checksum) return "—"
+  return checksum.length <= 12 ? checksum : `${checksum.slice(0, 10)}…`
+}

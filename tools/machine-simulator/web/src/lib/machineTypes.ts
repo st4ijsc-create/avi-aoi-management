@@ -44,3 +44,15 @@ export const MACHINE_TYPES: readonly string[] = MACHINE_TYPE_GROUPS.flatMap((gro
 /** Sensible default selection for a freshly-opened wizard — a real inspection type (AOI), not the
  * generic catch-all, so a first-time visitor immediately sees a concrete, correctly-cased example. */
 export const DEFAULT_MACHINE_TYPE = "AOI"
+
+/** Automation + IoT groups only — Task C6's recipe (System A) `machineType` picker. Per
+ * `CONFIG_SYNC_SERVER_CONTRACT.md`'s simulator mapping ("Recipe ↔ Automation machines. device_settings
+ * ↔ IoT.") an inspection type (AOI/AVI/…) never carries a recipe — those machines sync System B
+ * (points/spec/images) instead — so the inspection group is deliberately excluded here. */
+export const RECIPE_MACHINE_TYPE_GROUPS: readonly MachineTypeGroup[] = MACHINE_TYPE_GROUPS.filter(
+  (group) => group.id !== "inspection"
+)
+
+/** Default selection for a freshly-opened recipe create dialog — matches the seeded `SCREWDRIVE-M4`
+ * demo recipe, a concrete real example rather than the generic `"AUTOMATION"` catch-all. */
+export const DEFAULT_RECIPE_MACHINE_TYPE = "SCREWDRIVE"
