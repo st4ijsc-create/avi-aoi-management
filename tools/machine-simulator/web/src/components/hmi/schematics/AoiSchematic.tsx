@@ -18,10 +18,24 @@ export interface AoiSchematicPoint {
   result?: BoardResult
 }
 
-const BOARD_X = 175
-const BOARD_Y = 56
-const BOARD_W = 230
-const BOARD_H = 100
+// Frame footprint deliberately mirrors `AutomationSchematic.tsx`'s uprights/rails exactly (78/468,
+// 24/152) — H2c: the two machine classes should read as the SAME drawing LANGUAGE (a real cell with a
+// frame), not two unrelated visual styles, even though what happens inside the frame differs.
+const FRAME_LEFT = 78
+const FRAME_RIGHT = 468
+const FRAME_TOP = 24
+const FRAME_BASE = 152
+
+const BOARD_W = 190
+const BOARD_X = 165 // centered on the 520-wide viewBox
+const BOARD_H = 40
+const CONVEYOR_TOP = 118 // belt-deck top edge — the board's bottom edge rests exactly here
+const BOARD_Y = CONVEYOR_TOP - BOARD_H
+
+const GANTRY_RAIL_Y = 30
+const GANTRY_RAIL_X1 = 150
+const GANTRY_RAIL_X2 = 398
+
 /** Caption truncation — H2b: an unbounded product name (e.g. "Bo mạch điều khiển chính (Main
  * Control Board)") wrapped nowhere in SVG text and ran straight through the camera head glyph
  * above the board. Truncated visually; the full name still reaches assistive tech via `<title>`. */
@@ -41,10 +55,18 @@ interface AoiSchematicProps {
 }
 
 /**
- * AOI/AVI inspection cell (spec §7, "make this the strongest one"): conveyor with a camera head
- * sweeping the board, and the product's REAL measurement points (real `normalizedX`/`normalizedY`
- * config, fetched from `/v1/products/{code}/points`) plotted at their true positions, lit green/red
- * as OK/NG results arrive.
+ * AOI/AVI inspection cell (spec §7, "make this the strongest one"): a real machine — portal frame,
+ * a conveyor BODY (belt deck, end rollers, guide rails) carrying the PCB, a camera head traveling a
+ * visible overhead gantry rail with a ring light around the lens — sweeping the board, with the
+ * product's REAL measurement points (real `normalizedX`/`normalizedY` config, fetched from
+ * `/v1/products/{code}/points`) plotted at their true positions, lit green/red as OK/NG results
+ * arrive.
+ *
+ * H2c rebuild: H2/H2b's version was scattered parts on a sheet — no frame, the conveyor was a bare
+ * dashed line with one circle at each far edge, and the board floated in a gap above it instead of
+ * riding on anything. This composes the same drawing vocabulary `AutomationSchematic.tsx` already
+ * established (portal frame with feet, dimension callouts directly beneath what they measure) so the
+ * two machine classes read as one design system, not two unrelated styles.
  *
  * Honest disclosure on the point↔result correspondence: this build's AOI simulator
  * (`AoiInspectorSim.cs`) always inspects a fixed set of generic points (`PT-001`…`PT-020`) that don't
@@ -62,56 +84,129 @@ export function AoiSchematic({ isRunning, productName, points, className }: AoiS
   const fullCaption = `${productName ?? "—"} · ${t("hmi.schematic.pointsSynced", { count: points.length })}`
   const captionLabel = points.length > 0 ? truncateText(productName ?? "—", CAPTION_MAX_CHARS) : null
 
+  // Camera sweeps the gantry rail from its left end to its right end and back — the CSS keyframe
+  // (`hmi-kf-camera-sweep`) is `translateX(0)` at rest, `translateX(var(--hmi-sweep-x))` at the
+  // midpoint, so the assembly's OWN drawn (rest) position must already sit at the rail's left end.
+  const railClearSpan = GANTRY_RAIL_X2 - GANTRY_RAIL_X1
+  const cameraRestX = GANTRY_RAIL_X1 + 12
+  const sweepX = railClearSpan - 24
+
   return (
-    // viewBox tightened to the artwork's real bounding box AND widened (~2.64:1) to roughly match
-    // this panel's own rendered aspect ratio at the operator-panel sizes the spec cares about — see
-    // `AutomationSchematic.tsx`'s doc comment for the full reasoning (H2b: fill 85-90% of the sheet,
-    // not float in a much smaller `meet`-letterboxed island inside it).
+    // viewBox width matches `AutomationSchematic.tsx`'s (520 wide) — both cells share the same frame
+    // footprint and fill the sheet the same way (H2b's fill-the-sheet fix, kept). A touch taller
+    // (520x204, aspect 2.55 vs. automation's 2.65) makes room for two dimension callouts stacked
+    // under the frame's base rail PLUS the caption row beneath them, while staying close enough to
+    // the panel's own ~2.6:1 rendered aspect that `meet` scaling only letterboxes a few px per side.
     <svg
-      viewBox="20 6 560 218"
+      viewBox="0 0 520 204"
       preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
       aria-label={`${t("hmi.schematic.figAoi")} — ${gloss("hmi.schematic.figAoi")}`}
     >
       <g className={isRunning ? "hmi-schematic-run" : undefined}>
-        {/* Conveyor rollers + belt — BELOW the dimension line/caption band (H2b: the belt used to
-            sit directly under the board, with the caption squeezed inside the belt's own solid/dashed
-            rail pair — collided with the dashed tick line at every panel size). */}
-        <circle cx={40} cy={196} r={10} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
-        <circle cx={560} cy={196} r={10} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
-        <line x1={40} y1={186} x2={560} y2={186} stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
+        {/* Portal frame: uprights, top rail, base rail, feet — same drawing language as the
+            automation cell's frame. */}
+        <g stroke="var(--text-muted)" strokeWidth={1.5} fill="none">
+          <line className="hmi-wire" x1={FRAME_LEFT} y1={FRAME_TOP} x2={FRAME_LEFT} y2={FRAME_BASE} />
+          <line className="hmi-wire" x1={FRAME_RIGHT} y1={FRAME_TOP} x2={FRAME_RIGHT} y2={FRAME_BASE} />
+          <line className="hmi-wire" x1={FRAME_LEFT - 13} y1={FRAME_TOP} x2={FRAME_RIGHT + 13} y2={FRAME_TOP} />
+          <line className="hmi-wire" x1={FRAME_LEFT - 52} y1={FRAME_BASE} x2={FRAME_RIGHT + 47} y2={FRAME_BASE} />
+          <rect className="hmi-wire" x={FRAME_LEFT - 8} y={FRAME_BASE} width={16} height={6} />
+          <rect className="hmi-wire" x={FRAME_RIGHT - 8} y={FRAME_BASE} width={16} height={6} />
+        </g>
+
+        {/* Overhead gantry rail — static; only the camera assembly below travels along it (the
+            "visible gantry" the review asked for, same idiom as the automation cell's carriage
+            riding its own static rail). Support struts tie it back to the frame's top rail. */}
+        <g stroke="var(--text-muted)" strokeWidth={1} fill="none" className="hmi-wire" opacity={0.85}>
+          <line x1={GANTRY_RAIL_X1} y1={FRAME_TOP} x2={GANTRY_RAIL_X1} y2={GANTRY_RAIL_Y} />
+          <line x1={GANTRY_RAIL_X2} y1={FRAME_TOP} x2={GANTRY_RAIL_X2} y2={GANTRY_RAIL_Y} />
+        </g>
         <line
-          className="hmi-aoi-belt-ticks hmi-wire"
-          x1={40}
-          y1={196}
-          x2={560}
-          y2={196}
+          x1={GANTRY_RAIL_X1}
+          y1={GANTRY_RAIL_Y}
+          x2={GANTRY_RAIL_X2}
+          y2={GANTRY_RAIL_Y}
           stroke="var(--text-muted)"
           strokeWidth={1.5}
-          strokeDasharray="8 8"
+          className="hmi-wire"
         />
 
-        {/* Camera stand + head, sweeps horizontally across the board while running */}
-        <line x1={290} y1={16} x2={290} y2={36} stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
-        <g className="hmi-aoi-camera" style={{ ["--hmi-sweep-x" as string]: "200px" } as React.CSSProperties}>
-          <path
-            d="M 278 36 L 302 36 L 310 54 L 270 54 Z"
+        {/* Camera assembly — mount drop, head, ring light and focus beam ALL move together as one
+            group (H2c fix for "camera mount must travel with the camera head": H2/H2b drew the mount
+            stand as a SIBLING of the sweeping `.hmi-aoi-camera` group rather than a child of it, so
+            it stayed fixed at center while the head swept away — the head read as detached and
+            floating mid-sweep.
+
+            GOTCHA (caught live via screenshot, not just read from code — the exact bug
+            `AutomationSchematic.tsx`'s own doc comment already warns about): a CSS `transform` from
+            the sweep animation REPLACES an SVG element's own `transform` XML ATTRIBUTE outright
+            rather than composing with it. Putting `transform="translate(...)"` and the animated
+            `.hmi-aoi-camera` class on the SAME `<g>` (my first attempt) made the static rest
+            position vanish the instant the animation started, rendering the whole assembly near the
+            viewBox origin. Fix: the static rest-position translate lives on its own non-animated
+            ANCESTOR `<g>`; the CSS-animated class goes on a CHILD `<g>` with no competing `transform`
+            attribute of its own. */}
+        <g transform={`translate(${cameraRestX}, 0)`}>
+          <g className="hmi-aoi-camera" style={{ ["--hmi-sweep-x" as string]: `${sweepX}px` } as React.CSSProperties}>
+            <line x1={0} y1={GANTRY_RAIL_Y} x2={0} y2={42} stroke="var(--color-accent)" strokeWidth={2} className="hmi-wire" />
+            <path
+              d="M -12 42 L 12 42 L 17 57 L -17 57 Z"
+              fill="var(--color-accent)"
+              stroke="var(--color-accent)"
+              strokeWidth={1.5}
+              className="hmi-wire"
+            />
+            {/* Ring light around the lens */}
+            <circle cx={0} cy={61} r={11} fill="none" stroke="var(--color-accent)" strokeWidth={1.5} strokeDasharray="3 3" className="hmi-wire" />
+            {/* Focus beam down to the board */}
+            <line x1={0} y1={72} x2={0} y2={BOARD_Y} stroke="var(--color-accent)" strokeWidth={1} strokeDasharray="2 3" className="hmi-wire" />
+          </g>
+        </g>
+
+        {/* Conveyor body — belt deck, end rollers, guide rails, moving belt ticks. The PCB rests
+            directly on the deck's top edge (H2c: was floating in a gap above a bare dashed line). */}
+        <g>
+          {/* Guide rails — the raised edge strips the board's edges actually ride inside */}
+          <line x1={116} y1={CONVEYOR_TOP - 4} x2={404} y2={CONVEYOR_TOP - 4} stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" opacity={0.6} />
+          {/* Belt deck body */}
+          <rect
+            x={106}
+            y={CONVEYOR_TOP}
+            width={308}
+            height={18}
             fill="none"
-            stroke="var(--color-accent)"
+            stroke="var(--text-muted)"
             strokeWidth={1.5}
             className="hmi-wire"
           />
-          <line x1={290} y1={54} x2={290} y2={BOARD_Y} stroke="var(--color-accent)" strokeWidth={1} strokeDasharray="2 3" className="hmi-wire" />
+          {/* Moving belt ticks — animates only while running */}
+          <line
+            className="hmi-aoi-belt-ticks hmi-wire"
+            x1={120}
+            y1={CONVEYOR_TOP + 9}
+            x2={400}
+            y2={CONVEYOR_TOP + 9}
+            stroke="var(--text-muted)"
+            strokeWidth={1.5}
+            strokeDasharray="8 8"
+            opacity={0.8}
+          />
+          {/* End rollers — protrude above/below the deck, the belt visibly wraps them */}
+          <circle cx={112} cy={CONVEYOR_TOP + 9} r={13} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
+          <circle cx={408} cy={CONVEYOR_TOP + 9} r={13} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
         </g>
 
-        {/* PCB outline */}
+        {/* PCB — a solid card (fill `--color-surface`, distinct from the graph-paper `--color-bg`
+            ground), bottom edge exactly on the belt deck's top edge, no gap — H2c: it used to be a
+            transparent outline floating in open space above the conveyor. */}
         <rect
           x={BOARD_X}
           y={BOARD_Y}
           width={BOARD_W}
           height={BOARD_H}
-          fill="none"
+          fill="var(--color-surface)"
           stroke="var(--text-muted)"
           strokeWidth={1.5}
           className="hmi-wire"
@@ -157,17 +252,18 @@ export function AoiSchematic({ isRunning, productName, points, className }: AoiS
         </text>
       ) : null}
 
-      <DimensionLine x1={BOARD_X} x2={BOARD_X + BOARD_W} y={BOARD_Y + BOARD_H + 16} label={`${BOARD_W}`} />
+      {/* Dimension callouts, directly below the frame's base rail, x-aligned to what they measure —
+          same idiom `AutomationSchematic.tsx`'s "80"/"390" callouts already use (spec §7, "attached
+          to what they measure"). */}
+      <DimensionLine x1={BOARD_X} x2={BOARD_X + BOARD_W} y={170} label={`${BOARD_W}`} />
+      <DimensionLine x1={FRAME_LEFT} x2={FRAME_RIGHT} y={184} label="390" />
 
-      {/* Caption sits BELOW the whole cell — board, dimension line AND the conveyor (H2b, two
-          rounds): H2's version sat directly above the board, at the same height band as the camera
-          head glyph, and collided with it whenever the product name ran long; the first H2b fix
-          moved it just under the board but that put it inside the conveyor belt's own solid/dashed
-          rail band, colliding with the dashed tick line instead. Below EVERYTHING is clear at any
-          panel size regardless of camera or belt position, and reads like a real drawing's title
-          block. Truncated visually; `<title>` carries the untruncated name. */}
+      {/* Caption sits below everything — board, conveyor, dimension lines (H2b's collision fix,
+          kept: the caption used to sit above the board at the same height as the camera glyph, then
+          inside the belt's own tick band; below everything is clear at any panel size). Truncated
+          visually; `<title>` carries the untruncated name. */}
       {captionLabel !== null ? (
-        <text x={BOARD_X} y={222} fontSize={8} fill="var(--text-muted)" fontFamily="var(--font-mono)" className="hmi-aoi-caption">
+        <text x={BOARD_X} y={198} fontSize={8} fill="var(--text-muted)" fontFamily="var(--font-mono)" className="hmi-aoi-caption">
           <title>{fullCaption}</title>
           {captionLabel} · {t("hmi.schematic.pointsSynced", { count: points.length })}
         </text>

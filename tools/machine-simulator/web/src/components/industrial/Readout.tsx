@@ -86,9 +86,14 @@ export function Readout({
           </span>
           {unit ? <span className="hmi-micro pb-1 normal-case">{unit}</span> : null}
         </div>
-        <div className="mt-1 flex items-baseline gap-1.5">
-          <span className="hmi-micro">{label}</span>
-          {labelEn ? <span className="hmi-micro text-text-muted/70">{labelEn}</span> : null}
+        {/* H2c: flex items default to `min-width: auto` (content-sized), which blocks shrinking —
+            without `min-w-0` on EACH span, a long primary label (e.g. Vietnamese "TRẠNG THÁI CẤU
+            HÌNH") couldn't compress and wrapped to a second line in the narrowest tiles at 1280px
+            instead of truncating. Primary label gets the remaining space and truncates; the gloss
+            stays fixed-width (won't itself wrap) and is the first thing dropped when space is tight. */}
+        <div className="mt-1 flex min-w-0 items-baseline gap-1.5 overflow-hidden">
+          <span className="hmi-micro min-w-0 flex-1 truncate">{label}</span>
+          {labelEn ? <span className="hmi-micro shrink-0 truncate text-text-muted/70">{labelEn}</span> : null}
         </div>
         {sub ? <div className="mt-0.5 truncate text-[11px] text-text-muted">{sub}</div> : null}
       </div>

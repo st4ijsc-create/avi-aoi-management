@@ -21,17 +21,6 @@ import {
 } from "@/lib/api"
 import { useMachineConfigCheck, useProduct, useProductPoints } from "@/lib/configApi"
 
-// Same StatusText → lamp-state map every other screen in this app already carries its own copy of
-// (see MachineDetail.tsx/Machines.tsx/MachineCard.tsx's identical comment on their own copies) — the
-// engine's own verdict label (MachineState.cs), not re-derived.
-const STATUS_KEY: Record<string, string> = {
-  Idle: "status.idle",
-  OK: "status.ok",
-  WARN: "status.warn",
-  FAIL: "status.fail",
-  TELEMETRY: "status.telemetry",
-}
-
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n))
 }
@@ -94,10 +83,24 @@ export default function Hmi() {
   }, [code])
 
   const isAoi = machine?.class === "AoiAvi"
-  const configCheck = useMachineConfigCheck(isAoi ? code : undefined)
+  // H2c: enabled for EVERY class now, not just AOI — `ConfigSyncEngine.CheckAsync` resolves
+  // `configKind` (`points` for AOI/AVI, `recipe` for Automation/IoT) off the machine's own
+  // `DeviceClass` server-side, so this single call already covers all three; the CONFIG STATE tile
+  // below was permanently "—" before this pass precisely because nothing populated it for the two
+  // non-AOI classes (and `machine.driftState` itself only reflects a manual sync-config action THIS
+  // session, not the real always-on checksum drift this hook exposes).
+  const configCheck = useMachineConfigCheck(code)
   const productCode = configCheck.data?.products?.[0]?.productModelCode
   const product = useProduct(productCode)
   const productPoints = useProductPoints(productCode)
+
+  // Real checksum-based config-sync drift (`in_sync | drift | unknown`) — `ConfigDtos.cs`'s
+  // `MachineConfigCheckDto`: exactly one of `products`/`recipe` is populated per `configKind`.
+  const configDriftState: string | null = configCheck.data
+    ? configCheck.data.configKind === "points"
+      ? (configCheck.data.products[0]?.driftState ?? null)
+      : (configCheck.data.recipe?.driftState ?? null)
+    : null
 
   const aoiPoints = React.useMemo<AoiSchematicPoint[]>(() => {
     if (!productPoints.data) return []
@@ -157,26 +160,19 @@ export default function Hmi() {
   }
   if (!machine) return <LoadingKiosk />
 
-  const lampState: StatusLampState = estopEngaged
-    ? "fault"
-    : !fleetIsRunning
-      ? "idle"
-      : machine.statusText === "FAIL"
-        ? "fault"
-        : machine.statusText === "WARN"
-          ? "warn"
-          : machine.statusText === "OK" || machine.statusText === "TELEMETRY"
-            ? "run"
-            : "idle"
-
-  const lampLabel = estopEngaged ? t("hmi.status.estop") : t(STATUS_KEY[machine.statusText] ?? "status.idle")
-  // The nameplate lamp's sub-line (H2b, spec §"lamp + state + sub-line") is deliberately keyed off
-  // OPERATIONAL state (is the fleet actually turning) rather than `lampState`'s QUALITY color —
-  // those are two different axes. A last-cycle FAIL result colors the lamp "fault" (correctly — the
-  // operator needs to see red) but the fleet is very much still running; a sub-line derived from
-  // `lampState` alone would misreport that as "Đã dừng" (Stopped) even while cycles keep landing.
-  // Only a genuine E-STOP is actually "stopped".
-  const lampSub = estopEngaged ? t("hmi.status.sub.fault") : running ? t("hmi.status.sub.run") : t("hmi.status.sub.idle")
+  // H2c SAFETY FIX — spec §2: "Status colours are for state only." The nameplate lamp is the ONE
+  // glance-able safety indicator on the whole screen; it must reflect whether the MACHINE ITSELF is
+  // faulted (E-STOP), not the QUALITY VERDICT of whatever board/cycle it last judged. The previous
+  // version keyed `lampState` off `machine.statusText` (Idle/OK/WARN/FAIL/TELEMETRY — the LAST
+  // CYCLE'S pass/fail result, same enum the "Status" readout tile below uses) — a machine that just
+  // judged one NG board wore the fault-red dome and the label "Lỗi" while its own sub-line correctly
+  // said "Đang vận hành" (Running), a direct contradiction an operator must never see: red means
+  // "stop, this machine needs help," not "the last part happened to fail inspection." The last
+  // cycle's verdict still needs a home — it lives in the readout grid (`ReadoutGrid.tsx`'s "Status"/
+  // AOI's now-added verdict tile), never on the lamp.
+  const lampState: StatusLampState = estopEngaged ? "fault" : running ? "run" : "idle"
+  const lampLabel = estopEngaged ? t("hmi.status.estop") : running ? t("hmi.status.sub.run") : t("hmi.status.sub.idle")
+  const lampSub = estopEngaged ? t("hmi.status.sub.fault") : undefined
 
   const lastRow = machine.cycleLog.length > 0 ? machine.cycleLog[machine.cycleLog.length - 1] : undefined
   const parsedIotMetric = lastRow ? parseKeyMetric(lastRow.keyMetric) : null
@@ -215,7 +211,11 @@ export default function Hmi() {
               tabIndex={0}
               className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
             >
-              <ReadoutGrid machine={machine} productLabel={isAoi ? (product.data?.name ?? productCode ?? null) : undefined} />
+              <ReadoutGrid
+                machine={machine}
+                productLabel={isAoi ? (product.data?.name ?? productCode ?? null) : undefined}
+                configDriftState={configDriftState}
+              />
             </div>
           </Sheet>
         </div>

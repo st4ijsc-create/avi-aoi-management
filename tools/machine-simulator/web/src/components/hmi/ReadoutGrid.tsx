@@ -29,6 +29,23 @@ function passRateTone(passRate: number): ReadoutTone {
   return "fault"
 }
 
+/** H2c: the CONFIG STATE tile's real drift→tone mapping — `in_sync → run, drift → warn, unknown →
+ * idle` (the status ramp, per spec §2, used for what it's actually for: state). */
+const CONFIG_DRIFT_TONE: Record<string, ReadoutTone> = {
+  in_sync: "run",
+  drift: "warn",
+  unknown: "idle",
+}
+
+/** Reuses the SAME driftState copy the machine's own Config Sync panel already shows
+ * (`configSyncPanel.driftState.*`) rather than inventing HMI-local wording for `in_sync`/`drift`/
+ * `unknown` — one vocabulary for this concept across the whole app. */
+const CONFIG_DRIFT_LABEL_KEY: Record<string, string> = {
+  in_sync: "configSyncPanel.driftState.in_sync",
+  drift: "configSyncPanel.driftState.drift",
+  unknown: "configSyncPanel.driftState.unknown",
+}
+
 interface TileDef {
   key: string
   value: ReactNode
@@ -46,6 +63,14 @@ interface ReadoutGridProps {
   machine: MachineDetailDto
   /** AOI/AVI only — the product currently plotted on the schematic, for the "Product" tile. */
   productLabel?: string | null
+  /**
+   * H2c: the real checksum-based config-sync drift (`in_sync | drift | unknown`), computed by the
+   * caller from `useMachineConfigCheck` — NOT `machine.driftState` (that field only reflects the
+   * outcome of the last MANUAL sync-config call this session and reads "—" until one has run, which
+   * is why the CONFIG STATE tile was permanently dead before this pass). `null` while the check
+   * hasn't resolved yet.
+   */
+  configDriftState?: string | null
   className?: string
 }
 
@@ -53,7 +78,7 @@ interface ReadoutGridProps {
  * honestly-labeled client derivation (`derive.ts`); a metric that doesn't apply to this class renders
  * an explicit em dash rather than a misleading zero (mirrors `machineDetail.overview.passRate`'s own
  * existing "—" convention for IoT). */
-export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridProps) {
+export function ReadoutGrid({ machine, productLabel, configDriftState, className }: ReadoutGridProps) {
   const t = useT()
   const gloss = useGloss()
 
@@ -64,6 +89,8 @@ export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridPro
   const span = observedSpanLabel(machine.cycleLog)
   const statusKey = STATUS_KEY[machine.statusText] ?? "status.idle"
   const statusTone = STATUS_TONE[machine.statusText] ?? "idle"
+  const configStateValue = configDriftState ? t(CONFIG_DRIFT_LABEL_KEY[configDriftState] ?? configDriftState) : "—"
+  const configStateTone: ReadoutTone = configDriftState ? (CONFIG_DRIFT_TONE[configDriftState] ?? "idle") : "idle"
 
   let tiles: TileDef[]
 
@@ -110,15 +137,22 @@ export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridPro
       },
       {
         key: "configState",
-        value: machine.driftState,
+        value: configStateValue,
         labelKey: "hmi.readout.configState",
-        tone: "neutral",
+        tone: configStateTone,
         valueType: "text",
       },
     ]
   } else if (machine.class === "AoiAvi") {
     const ngPoints = machine.boardPoints.filter((p) => p.result === "NG")
     const lastDefect = ngPoints.length > 0 ? ngPoints[ngPoints.length - 1] : undefined
+    // H2c: cumulative NG-board count, computed with the EXACT SAME formula `ProductionProgress`'s
+    // footer strip uses (`okCount = round(cycles*passRate)`, `ngCount = cycles - okCount`) — this
+    // tile previously counted only the CURRENT board's NG points (0 or 1 per cycle), which visibly
+    // disagreed with the footer's cumulative "399 LỖI · 665 TỔNG" on the very same screen. Two
+    // numbers claiming to be "the defect count" must agree; this one now IS the footer's number.
+    const okCount = Math.round(machine.cycles * machine.passRate)
+    const cumulativeNg = Math.max(0, machine.cycles - okCount)
     tiles = [
       { key: "boards", value: machine.cycles.toLocaleString(), labelKey: "hmi.readout.boards", tone: "neutral" },
       {
@@ -137,16 +171,23 @@ export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridPro
       },
       {
         key: "defects",
-        value: machine.boardPoints.length > 0 ? ngPoints.length.toLocaleString() : "—",
+        value: machine.cycles > 0 ? cumulativeNg.toLocaleString() : "—",
         labelKey: "hmi.readout.defects",
-        tone: ngPoints.length > 0 ? "fault" : "run",
+        tone: cumulativeNg > 0 ? "fault" : "run",
       },
       {
-        key: "lastDefect",
-        value: lastDefect?.defectCode ?? "—",
-        labelKey: "hmi.readout.lastDefect",
-        tone: lastDefect ? "fault" : "idle",
+        // H2c: was "Last Defect" (the current board's defect CODE only — "—" whenever the last
+        // board happened to be OK, easy to misread as "no data yet"). Repurposed as the SAME
+        // STATUS_KEY/STATUS_TONE verdict word Automation/IoT already show in their own "Status"
+        // tile (now true parity across all three classes) — this is where the last inspection
+        // verdict now lives, moved OFF the nameplate lamp (see Hmi.tsx's safety fix). The specific
+        // defect code survives as this tile's sub-note when the verdict is NG.
+        key: "status",
+        value: t(statusKey),
+        labelKey: "hmi.readout.status",
+        tone: statusTone,
         valueType: "text",
+        sub: lastDefect?.defectCode ?? undefined,
       },
       {
         key: "product",
@@ -164,9 +205,9 @@ export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridPro
       },
       {
         key: "configState",
-        value: machine.driftState,
+        value: configStateValue,
         labelKey: "hmi.readout.configState",
-        tone: "neutral",
+        tone: configStateTone,
         valueType: "text",
       },
     ]
@@ -201,9 +242,9 @@ export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridPro
       },
       {
         key: "configState",
-        value: machine.driftState,
+        value: configStateValue,
         labelKey: "hmi.readout.configState",
-        tone: "neutral",
+        tone: configStateTone,
         valueType: "text",
       },
     ]
