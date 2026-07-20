@@ -302,7 +302,7 @@ public sealed class LiveConfigSyncBackend : IConfigSyncBackend, IDisposable
     // System A — recipe / device_settings, pull-only, flag-gated on a real server.
     // ─────────────────────────────────────────────────────────────────────
 
-    public async Task<RecipeCheckResultDto> CheckRecipeAsync(string? code, string? machineType, CancellationToken ct)
+    public async Task<RecipeCheckResultDto> CheckRecipeAsync(string? code, string? machineType, string configKind, CancellationToken ct)
     {
         // machineType is accepted for IConfigSyncBackend shape-parity with SimulatedEcosystem (which
         // uses it to resolve a recipe locally) but has no matching query param on the real contract's
@@ -313,8 +313,12 @@ public sealed class LiveConfigSyncBackend : IConfigSyncBackend, IDisposable
         var none = new RecipeCheckResultDto(false, null, 0, null, "none");
         if (!IsConfigured) return none;
 
+        // Task review #4 — configKind is now threaded from the caller (ConfigSyncEngine.ResolveConfigKind,
+        // off the machine's DeviceClass) instead of always being the literal "recipe" — an IoT machine's
+        // device_settings now actually requests device_settings, matching CONFIG_SYNC_SERVER_CONTRACT.md's
+        // "Recipe ↔ Automation machines. device_settings ↔ IoT."
         var url = _serverUrl + "/api/machine/config-sync/check" + BuildQuery(
-            ("configKind", "recipe"), ("machineCode", _machineCode), ("configCode", code));
+            ("configKind", configKind), ("machineCode", _machineCode), ("configCode", code));
         var (status, body) = await GetAsync(url, ct).ConfigureAwait(false);
 
         if (status == 500)
@@ -333,13 +337,13 @@ public sealed class LiveConfigSyncBackend : IConfigSyncBackend, IDisposable
         return new RecipeCheckResultDto(true, parsed.Code, version, parsed.Checksum, parsed.ResolvedBy ?? "none");
     }
 
-    public async Task<Recipe?> GetRecipeAsync(string code, CancellationToken ct)
+    public async Task<Recipe?> GetRecipeAsync(string code, string configKind, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrEmpty(code);
         if (!IsConfigured) return null;
 
         var url = _serverUrl + "/api/machine/config-sync/get" + BuildQuery(
-            ("configKind", "recipe"), ("machineCode", _machineCode), ("configCode", code));
+            ("configKind", configKind), ("machineCode", _machineCode), ("configCode", code));
         var (status, body) = await GetAsync(url, ct).ConfigureAwait(false);
 
         if (status == 500)
@@ -363,6 +367,39 @@ public sealed class LiveConfigSyncBackend : IConfigSyncBackend, IDisposable
             Status = RecipeStatus.Active,
             Payload = ToPayloadDict(parsed.Payload),
         };
+    }
+
+    /// <summary>Task review #4 — real POST of the contract's drift-shadow endpoint. "Friendly, never
+    /// throws" like every other Live call here: not-configured, network-unreachable, the
+    /// CONFIG_SYNC_GENERIC_ENABLED flag-off HTTP 500, and any other non-2xx all collapse to
+    /// <c>Success:false</c> with <see cref="AckResultDto.DriftState"/> left null (an honest "don't
+    /// know"), never an exception — this endpoint is best-effort telemetry, not something that should be
+    /// able to fail a caller's otherwise-successful pull.</summary>
+    public async Task<AckResultDto> AckAsync(string configKind, string? code, int? version, string? checksum, CancellationToken ct)
+    {
+        var none = new AckResultDto(false, null, configKind, null);
+        if (!IsConfigured) return none;
+
+        var url = _serverUrl + "/api/machine/config-sync/ack";
+        var reqBody = new AckRequestWire(configKind, _machineCode, code, version, checksum);
+        var (status, body) = await PostAsync(url, reqBody, ct).ConfigureAwait(false);
+
+        if (status == 500)
+        {
+            // Same CONFIG_SYNC_GENERIC_ENABLED flag-off state as CheckRecipeAsync/GetRecipeAsync.
+            return none;
+        }
+
+        if (!IsOk(status, body)) return none;
+
+        var parsed = Deserialize<AckResponseWire>(body);
+        if (parsed is null) return none;
+
+        return new AckResultDto(
+            parsed.Success,
+            parsed.MachineId?.ToString(CultureInfo.InvariantCulture),
+            parsed.ConfigKind ?? configKind,
+            parsed.DriftState);
     }
 
     // ─────────────────────────────────────────────────────────────────────

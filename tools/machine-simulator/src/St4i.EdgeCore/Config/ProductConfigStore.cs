@@ -309,10 +309,23 @@ public sealed class ProductConfigStore
     {
         var productsPath = Path.Combine(RootDirectory, ProductsFileName);
         var recipesPath = Path.Combine(RootDirectory, RecipesFileName);
-        File.WriteAllText(productsPath, JsonSerializer.Serialize(
+        WriteAllTextAtomic(productsPath, JsonSerializer.Serialize(
             _products.Values.OrderBy(p => p.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
-        File.WriteAllText(recipesPath, JsonSerializer.Serialize(
+        WriteAllTextAtomic(recipesPath, JsonSerializer.Serialize(
             _recipes.Values.OrderBy(r => r.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
+    }
+
+    /// <summary>Task review #6 — <c>File.WriteAllText</c> writes IN PLACE: a crash/power-loss mid-write
+    /// can leave a truncated/corrupt <c>products.json</c>/<c>recipes.json</c> that fails the next
+    /// <see cref="Load"/>. Writes the full content to a temp file in the SAME directory (same-volume, so
+    /// the rename below is atomic on Windows/NTFS) then <see cref="File.Move(string, string, bool)"/>s it
+    /// over the real target: <paramref name="path"/> is always either the complete OLD content or the
+    /// complete NEW content, never a partial write.</summary>
+    private static void WriteAllTextAtomic(string path, string content)
+    {
+        var tempPath = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        File.WriteAllText(tempPath, content);
+        File.Move(tempPath, path, overwrite: true);
     }
 
     private static T DeepClone<T>(T value) =>

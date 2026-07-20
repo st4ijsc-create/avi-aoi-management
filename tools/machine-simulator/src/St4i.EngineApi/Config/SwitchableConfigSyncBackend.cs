@@ -67,9 +67,12 @@ public sealed class SwitchableConfigSyncBackend : IConfigSyncBackend
     public Task<bool> SyncPointImageAsync(string productModelCode, string pointCode, string? imageBase64, string? imageUrl, CancellationToken ct) =>
         Inner.SyncPointImageAsync(productModelCode, pointCode, imageBase64, imageUrl, ct);
 
-    public Task<RecipeCheckResultDto> CheckRecipeAsync(string? code, string? machineType, CancellationToken ct) =>
-        Inner.CheckRecipeAsync(code, machineType, ct);
+    public Task<RecipeCheckResultDto> CheckRecipeAsync(string? code, string? machineType, string configKind, CancellationToken ct) =>
+        Inner.CheckRecipeAsync(code, machineType, configKind, ct);
 
-    public Task<Recipe?> GetRecipeAsync(string code, CancellationToken ct) =>
-        Inner.GetRecipeAsync(code, ct);
+    public Task<Recipe?> GetRecipeAsync(string code, string configKind, CancellationToken ct) =>
+        Inner.GetRecipeAsync(code, configKind, ct);
+
+    public Task<AckResultDto> AckAsync(string configKind, string? code, int? version, string? checksum, CancellationToken ct) =>
+        Inner.AckAsync(configKind, code, version, checksum, ct);
 }

@@ -337,6 +337,86 @@ public class ProductConfigTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Task review #1/#2 — ConfigChecksum.CanonicalizePoint / PointContentEquals, the shared
+    // canonicalization the field-level diff (ConfigSyncEngine.DiffFields) and the no-op-push detection
+    // (SimulatedEcosystem.SyncPointsAsync) both build on.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CanonicalizePoint_includes_full_spec_fields_the_old_hand_written_diff_list_omitted()
+    {
+        var point = BuildFullySpeccedProduct().Points[0]; // PFULL — every 3D/solder/x-ray/tolerance field set
+        var canonical = ConfigChecksum.CanonicalizePoint(point);
+
+        // A representative sample of fields the PRE-fix DiffFields (~13 hand-picked Cmp calls) did NOT
+        // compare at all — these must be part of the canonical field set now, or the diff/checksum could
+        // disagree again.
+        foreach (var field in new[]
+        {
+            "Unit", "MeasurementType", "MeasurementTypeCode", "ToleranceMode", "TolPlus", "TolMinus",
+            "Radius", "NormalizedRadius", "CropWidth", "CropHeight", "OrderIndex", "PositionZ",
+            "HeightMin", "HeightMax", "HeightNominal", "HeightUnit",
+            "AreaMin", "AreaMax", "AreaNominal", "AreaUnit",
+            "VolumeMin", "VolumeMax", "VolumeNominal", "VolumeUnit",
+            "CoplanarityMax", "WarpageMax", "VoidPctMax", "OffsetXMax", "OffsetYMax", "TiltMax",
+            "ThicknessMin", "ThicknessMax", "Criteria", "Lighting", "Cells",
+        })
+        {
+            Assert.True(canonical.ContainsKey(field), $"expected canonical field set to include '{field}'");
+        }
+    }
+
+    [Fact]
+    public void CanonicalizePoint_strips_the_audit_fields_ComputePointsChecksum_also_strips()
+    {
+        var point = BuildFullySpeccedProduct().Points[0];
+        var canonical = ConfigChecksum.CanonicalizePoint(point);
+
+        Assert.False(canonical.ContainsKey("LastModifiedAt"));
+        Assert.False(canonical.ContainsKey("DeletedAt"));
+        Assert.False(canonical.ContainsKey("DeletedAtVersion"));
+    }
+
+    [Fact]
+    public void PointContentEquals_is_true_for_identical_spec_content_with_only_LastModifiedAt_differing()
+    {
+        var a = MakePoint("P01", 1, DateTimeOffset.UtcNow);
+        var b = MakePoint("P01", 1, DateTimeOffset.UtcNow.AddDays(-30));
+
+        // A push merge always refreshes LastModifiedAt to "now" even on a genuine no-op — that alone
+        // must never make PointContentEquals report a change (else EVERY re-push would look like an
+        // update, defeating the whole point of the review #2 fix).
+        Assert.True(ConfigChecksum.PointContentEquals(a, b));
+    }
+
+    [Fact]
+    public void PointContentEquals_is_false_when_a_spec_field_differs()
+    {
+        var a = MakePoint("P01", 1);
+        var b = MakePoint("P01", 1.5); // different lowerLimit
+
+        Assert.False(ConfigChecksum.PointContentEquals(a, b));
+    }
+
+    [Fact]
+    public void PointContentEquals_is_false_across_a_tombstone_resurrection()
+    {
+        var stillTombstoned = MakePoint("P01", 1);
+        stillTombstoned.DeletedAt = DateTimeOffset.UtcNow;
+        stillTombstoned.DeletedAtVersion = 5;
+
+        var resurrected = MakePoint("P01", 1); // same spec content, no tombstone
+
+        // Unlike ComputePointsChecksum (which deliberately excludes DeletedAt/DeletedAtVersion as
+        // "audit" — see ComputePointsChecksum_excludes_tombstoned_points above — so a resurrection never
+        // looks like drift there), PointContentEquals treats resurrecting a tombstoned point as a REAL,
+        // observable change: a push doing this should count toward PointsUpdated/BumpVersion, not be
+        // silently treated as a no-op. The two comparisons deliberately use different audit-field
+        // boundaries for exactly this reason (see ConfigChecksum.PointContentEquals's own doc comment).
+        Assert.False(ConfigChecksum.PointContentEquals(stillTombstoned, resurrected));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Version bump.
     // ─────────────────────────────────────────────────────────────────────
 
@@ -484,6 +564,64 @@ public class ProductConfigTests
         Assert.Contains(store2.ListProducts(), p => p.Code == "MODEL-A");
         Assert.Contains(store2.ListProducts(), p => p.Code == "MODEL-B");
         Assert.Contains(store2.ListRecipes(), r => r.Code == "SCREWDRIVE-M4");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Task review #6 — atomic persistence (temp-write + rename, not File.WriteAllText in place).
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Store_Save_leaves_no_leftover_temp_file_and_a_fresh_instance_still_reloads_everything()
+    {
+        var dir = TempDir();
+        var store1 = new ProductConfigStore(dir);
+
+        // Several mutations -> several Save() calls, each going through the temp-write-then-rename path.
+        store1.UpsertPoint("MODEL-A", new MeasurementPoint
+        {
+            Code = "ATOMIC-1", Name = "Atomic write check", MeasurementType = MeasurementType.Visual,
+            PositionX = 1, PositionY = 1, OrderIndex = 50,
+        });
+        store1.SoftDeletePoint("MODEL-A", "ATOMIC-1");
+        store1.UpsertRecipe(new Recipe { Code = "ATOMIC-RECIPE", Name = "Atomic recipe", Payload = new() { ["x"] = 1 } });
+
+        // The atomic-write helper's temp file is named "<target>.tmp-<guid>" (never ends in ".json") and
+        // is renamed away immediately — none should survive to be visible on disk after Save() returns.
+        var leftoverTempFiles = Directory.GetFiles(dir, "*.tmp-*");
+        Assert.Empty(leftoverTempFiles);
+        Assert.True(File.Exists(Path.Combine(dir, "products.json")));
+        Assert.True(File.Exists(Path.Combine(dir, "recipes.json")));
+
+        // A crash-mid-write would have left a truncated file that fails THIS reload — round-tripping
+        // cleanly through a fresh instance is the actual behavioral guarantee the atomic write protects.
+        var store2 = new ProductConfigStore(dir);
+        var reloadedPoint = store2.GetAllPoints("MODEL-A").Single(p => p.Code == "ATOMIC-1");
+        Assert.True(reloadedPoint.IsDeleted);
+        Assert.NotNull(store2.GetRecipe("ATOMIC-RECIPE"));
+    }
+
+    [Fact]
+    public void Store_Save_reload_survives_many_rapid_sequential_writes()
+    {
+        // Not a concurrency stress test (the store's own coarse lock already guarantees no torn READS
+        // in-process) — this is about the atomic-write MECHANISM itself surviving many temp-file
+        // create/rename cycles in the same directory without ever leaving a stray/renamed-over file
+        // behind, which would indicate a filename collision or an unhandled rename failure.
+        var dir = TempDir();
+        var store = new ProductConfigStore(dir);
+
+        for (var i = 0; i < 25; i++)
+        {
+            store.UpsertPoint("MODEL-B", new MeasurementPoint
+            {
+                Code = $"RAPID-{i}", Name = $"Rapid {i}", MeasurementType = MeasurementType.Visual,
+                PositionX = i, PositionY = i, OrderIndex = 100 + i,
+            });
+        }
+
+        Assert.Empty(Directory.GetFiles(dir, "*.tmp-*"));
+        var reloaded = new ProductConfigStore(dir);
+        Assert.Equal(25, reloaded.GetAllPoints("MODEL-B").Count(p => p.Code.StartsWith("RAPID-")));
     }
 
     [Fact]

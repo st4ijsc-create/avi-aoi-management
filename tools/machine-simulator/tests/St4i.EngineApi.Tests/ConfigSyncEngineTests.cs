@@ -82,6 +82,37 @@ public sealed class ConfigSyncEngineTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Task review #2 — a re-push of byte-identical content (e.g. pull, then immediately push everything
+    // straight back with no edits) doesn't inflate the ecosystem version or count as an "update".
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Push_of_byte_identical_content_after_a_pull_does_not_bump_version_or_count_as_updated()
+    {
+        var (_, ecosystem, engine) = CreateHarness();
+
+        await engine.PullAsync(AoiMachine, "MODEL-A", default); // local is now byte-identical to the ecosystem
+        var beforeVersion = (await ecosystem.CheckPointsVersionAsync("MODEL-A", default)).Single().PointsConfigVersion;
+        var historyCountBefore = engine.History("AOI-01").Count;
+
+        var result = await engine.PushAsync(AoiMachine, "MODEL-A", confirm: true, default);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.PointsCreated);
+        Assert.Equal(0, result.PointsUpdated); // every point content-matched what was already stored
+        Assert.Equal(result.PreviousVersion, result.NewVersion); // no version bump on a genuine no-op
+
+        var afterVersion = (await ecosystem.CheckPointsVersionAsync("MODEL-A", default)).Single().PointsConfigVersion;
+        Assert.Equal(beforeVersion, afterVersion);
+
+        // A push attempt is still worth an audit trail entry (see PushPointsAsync's own remarks) — just
+        // a TRUTHFUL one (0 created, 0 updated, unchanged version), never a misleading "vN->vN+1" row.
+        var history = engine.History("AOI-01");
+        Assert.Equal(historyCountBefore + 1, history.Count);
+        Assert.Equal(history[0].FromVersion, history[0].ToVersion);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Pull applies the seeded divergence
     // ─────────────────────────────────────────────────────────────────────
 
@@ -146,6 +177,86 @@ public sealed class ConfigSyncEngineTests
     {
         var (_, _, engine) = CreateHarness();
         await Assert.ThrowsAsync<InvalidOperationException>(() => engine.DiffAsync(ScrewMachine, "MODEL-A", default));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Task review #1 (Important) — full-spec diff: a point differing ONLY in a field the OLD ~13-field
+    // hand-written DiffFields list never compared (3D/solder, tolerance) must show up as "changed" here,
+    // in agreement with the checksum-based drift badge (CheckAsync) — never "up to date" in one and
+    // "drift" in the other.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Diff_reports_a_solder_field_change_the_old_field_list_missed_and_agrees_with_drift_state()
+    {
+        var (local, _, engine) = CreateHarness();
+
+        // Sync local to the ecosystem first so the ONLY subsequent difference is the one THIS test
+        // introduces — isolates the review #1 fix from the harness's own seeded P05/P08/P09 divergence.
+        await engine.PullAsync(AoiMachine, "MODEL-A", default);
+        var inSync = await engine.CheckAsync(AoiMachine, "MODEL-A", default);
+        Assert.Equal("in_sync", Assert.Single(inSync.Products).DriftState);
+
+        // P02 ("Solder Joint J3 Volume") carries the 3D/solder fields the pre-fix DiffFields never
+        // compared at all — change ONLY voidPctMax, nothing else.
+        var p02 = local.GetAllPoints("MODEL-A").First(p => p.Code == "P02");
+        Assert.Equal(25.0, p02.VoidPctMax);
+        p02.VoidPctMax = 40.0;
+        local.UpsertPoint("MODEL-A", p02);
+
+        // The checksum-based drift badge (hashes the WHOLE point) already correctly says "drift".
+        var check = await engine.CheckAsync(AoiMachine, "MODEL-A", default);
+        Assert.Equal("drift", Assert.Single(check.Products).DriftState);
+
+        // The diff must AGREE — pre-fix, this would have shown zero changed points ("up to date") while
+        // the badge above said "drift": a direct contradiction. Post-fix it reports the exact field.
+        var diff = await engine.DiffAsync(AoiMachine, "MODEL-A", default);
+        var changedP02 = Assert.Single(diff.ChangedPoints, c => c.Code == "P02");
+        var voidField = Assert.Single(changedP02.Fields, f => f.Field == "voidPctMax");
+        Assert.NotEqual(voidField.LocalValue, voidField.EcosystemValue);
+    }
+
+    [Fact]
+    public async Task Diff_reports_a_toleranceMode_only_change_the_old_field_list_missed()
+    {
+        var (local, _, engine) = CreateHarness();
+
+        await engine.PullAsync(AoiMachine, "MODEL-A", default);
+
+        // P01 ("C1 Height") seeds with ToleranceMode.Range and is untouched by the ecosystem's own seed
+        // divergence — flip ONLY its toleranceMode locally.
+        var p01 = local.GetAllPoints("MODEL-A").First(p => p.Code == "P01");
+        Assert.Equal(ToleranceMode.Range, p01.ToleranceMode);
+        p01.ToleranceMode = ToleranceMode.Bilateral;
+        local.UpsertPoint("MODEL-A", p01);
+
+        Assert.Equal("drift", Assert.Single((await engine.CheckAsync(AoiMachine, "MODEL-A", default)).Products).DriftState);
+
+        var diff = await engine.DiffAsync(AoiMachine, "MODEL-A", default);
+        var changedP01 = Assert.Single(diff.ChangedPoints, c => c.Code == "P01");
+        Assert.Contains(changedP01.Fields, f => f.Field == "toleranceMode");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Task review #3 (Minor) — a point present locally but entirely ABSENT from the ecosystem (never
+    // pushed, never tombstoned there) must still be reported "removed": a pull's wholesale
+    // UpsertProduct(ecoProduct) replace drops it locally regardless, so the diff undercounted before.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Diff_reports_a_local_only_point_absent_from_the_ecosystem_as_removed()
+    {
+        var (local, _, engine) = CreateHarness();
+
+        local.UpsertPoint("MODEL-A", new MeasurementPoint
+        {
+            Code = "LOCAL-ONLY", Name = "Local-only point", MeasurementType = MeasurementType.Visual,
+            PositionX = 1, PositionY = 1, OrderIndex = 99, IsActive = true,
+        });
+
+        var diff = await engine.DiffAsync(AoiMachine, "MODEL-A", default);
+
+        Assert.Contains("LOCAL-ONLY", diff.RemovedPointCodes);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -377,6 +488,118 @@ public sealed class ConfigSyncEngineTests
 
         var pull = await engine.PullAsync(IotMachine, null, default);
         Assert.False(pull.Applied);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Task review #4 — the wire-level configKind ConfigSyncEngine resolves from DeviceClass (recipe for
+    // Automation, device_settings for IoT — CONFIG_SYNC_SERVER_CONTRACT.md's own "Recipe ↔ Automation
+    // machines. device_settings ↔ IoT."), and the best-effort drift-shadow ack fired after a successful
+    // recipe pull. RecordingConfigSyncBackend wraps a real SimulatedEcosystem so behavior stays correct
+    // while recording what the engine actually sent.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Recipe_pull_for_an_Automation_machine_uses_recipe_configKind_and_acks_after_a_successful_pull()
+    {
+        var local = new ProductConfigStore(TempDir());
+        var recording = new RecordingConfigSyncBackend(new SimulatedEcosystem(TempDir()));
+        var engine = new ConfigSyncEngine(local, recording);
+
+        var result = await engine.PullAsync(ScrewMachine, null, default);
+
+        Assert.True(result.Applied);
+        Assert.Equal(new[] { "recipe" }, recording.CheckRecipeConfigKinds);
+        Assert.Equal(new[] { "recipe" }, recording.GetRecipeConfigKinds);
+        var ack = Assert.Single(recording.Acks);
+        Assert.Equal("recipe", ack.ConfigKind);
+        Assert.Equal("SCREWDRIVE-M4", ack.Code);
+        Assert.Equal(3, ack.Version); // pulled recipe's version, per SimulatedEcosystem's own seed divergence
+    }
+
+    [Fact]
+    public async Task Recipe_check_for_an_IoT_machine_uses_device_settings_configKind()
+    {
+        var local = new ProductConfigStore(TempDir());
+        var recording = new RecordingConfigSyncBackend(new SimulatedEcosystem(TempDir()));
+        var engine = new ConfigSyncEngine(local, recording);
+
+        await engine.CheckAsync(IotMachine, null, default);
+
+        Assert.Equal(new[] { "device_settings" }, recording.CheckRecipeConfigKinds);
+    }
+
+    [Fact]
+    public async Task Recipe_pull_with_no_matching_recipe_never_calls_Ack()
+    {
+        var local = new ProductConfigStore(TempDir());
+        var recording = new RecordingConfigSyncBackend(new SimulatedEcosystem(TempDir()));
+        var engine = new ConfigSyncEngine(local, recording);
+
+        var pull = await engine.PullAsync(IotMachine, null, default); // no device_settings recipe seeded for IOT_SENSOR
+
+        Assert.False(pull.Applied);
+        Assert.Empty(recording.Acks);
+    }
+
+    /// <summary>Thin decorator over a real <see cref="SimulatedEcosystem"/> — delegates every call so
+    /// behavior is genuinely correct (no hand-rolled fake logic to drift from the real thing), but
+    /// records the <c>configKind</c> <see cref="ConfigSyncEngine"/> actually passed to
+    /// <see cref="CheckRecipeAsync"/>/<see cref="GetRecipeAsync"/> and every <see cref="AckAsync"/> call,
+    /// so tests can assert on DeviceClass -> configKind resolution and the post-pull ack wiring without
+    /// needing a real Live server.</summary>
+    private sealed class RecordingConfigSyncBackend : IConfigSyncBackend
+    {
+        private readonly SimulatedEcosystem _inner;
+
+        public RecordingConfigSyncBackend(SimulatedEcosystem inner) => _inner = inner;
+
+        public List<string> CheckRecipeConfigKinds { get; } = new();
+        public List<string> GetRecipeConfigKinds { get; } = new();
+        public List<(string ConfigKind, string? Code, int? Version, string? Checksum)> Acks { get; } = new();
+
+        public string Name => _inner.Name;
+
+        public Task<IReadOnlyList<ProductVersionDto>> CheckPointsVersionAsync(string? productModelCode, CancellationToken ct) =>
+            _inner.CheckPointsVersionAsync(productModelCode, ct);
+
+        public Task<ProductModel?> GetPointsAsync(string productModelCode, string? variantCode, CancellationToken ct) =>
+            _inner.GetPointsAsync(productModelCode, variantCode, ct);
+
+        public Task<PointsDeltaResultDto> DeltaSyncPointsAsync(string productModelCode, int sinceVersion, CancellationToken ct) =>
+            _inner.DeltaSyncPointsAsync(productModelCode, sinceVersion, ct);
+
+        public Task<SyncPointsResultDto> SyncPointsAsync(string productModelCode, SyncPointsRequestDto request, CancellationToken ct) =>
+            _inner.SyncPointsAsync(productModelCode, request, ct);
+
+        public Task<(bool Found, string? ImageUrl)> GetProductImageAsync(string productModelCode, CancellationToken ct) =>
+            _inner.GetProductImageAsync(productModelCode, ct);
+
+        public Task<bool> SyncProductImageAsync(string productModelCode, string? imageBase64, string? imageUrl, string? imageMimeType, CancellationToken ct) =>
+            _inner.SyncProductImageAsync(productModelCode, imageBase64, imageUrl, imageMimeType, ct);
+
+        public Task<(bool Found, string? ImageUrl)> GetPointImageAsync(string productModelCode, string pointCode, CancellationToken ct) =>
+            _inner.GetPointImageAsync(productModelCode, pointCode, ct);
+
+        public Task<bool> SyncPointImageAsync(string productModelCode, string pointCode, string? imageBase64, string? imageUrl, CancellationToken ct) =>
+            _inner.SyncPointImageAsync(productModelCode, pointCode, imageBase64, imageUrl, ct);
+
+        public Task<RecipeCheckResultDto> CheckRecipeAsync(string? code, string? machineType, string configKind, CancellationToken ct)
+        {
+            CheckRecipeConfigKinds.Add(configKind);
+            return _inner.CheckRecipeAsync(code, machineType, configKind, ct);
+        }
+
+        public Task<Recipe?> GetRecipeAsync(string code, string configKind, CancellationToken ct)
+        {
+            GetRecipeConfigKinds.Add(configKind);
+            return _inner.GetRecipeAsync(code, configKind, ct);
+        }
+
+        public Task<AckResultDto> AckAsync(string configKind, string? code, int? version, string? checksum, CancellationToken ct)
+        {
+            Acks.Add((configKind, code, version, checksum));
+            return _inner.AckAsync(configKind, code, version, checksum, ct);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

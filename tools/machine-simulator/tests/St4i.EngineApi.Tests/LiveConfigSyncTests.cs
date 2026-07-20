@@ -188,7 +188,7 @@ public sealed class LiveConfigSyncTests
         };
         using var backend = Backend(h, machineCode: "SCRW-01");
 
-        var result = await backend.CheckRecipeAsync(null, "SCREWDRIVE", default);
+        var result = await backend.CheckRecipeAsync(null, "SCREWDRIVE", "recipe", default);
 
         Assert.Equal(HttpMethod.Get, h.LastRequest!.Method);
         var url = h.LastRequest.RequestUri!.ToString();
@@ -203,6 +203,104 @@ public sealed class LiveConfigSyncTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // config-sync/check — Task review #4: an IoT machine's configKind is "device_settings", not always
+    // the hardcoded "recipe" the pre-fix code always sent regardless of caller.
+    // ─────────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task CheckRecipeAsync_for_an_IoT_machine_sends_device_settings_configKind()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, _) => (HttpStatusCode.OK, """{"success":false,"resolvedBy":"none"}"""),
+        };
+        using var backend = Backend(h, machineCode: "IOT-01");
+
+        await backend.CheckRecipeAsync(null, "IOT_SENSOR", "device_settings", default);
+
+        var url = h.LastRequest!.RequestUri!.ToString();
+        Assert.Contains("configKind=device_settings", url);
+    }
+
+    [Fact]
+    public async Task GetRecipeAsync_sends_the_configKind_it_was_given()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, _) => (HttpStatusCode.OK, """
+                {"success":true,"configKind":"device_settings","code":"IOT-SETTINGS-1","name":"IoT settings",
+                 "version":"1","checksum":"abc","payload":{"reportIntervalSec":30}}
+                """),
+        };
+        using var backend = Backend(h, machineCode: "IOT-01");
+
+        var recipe = await backend.GetRecipeAsync("IOT-SETTINGS-1", "device_settings", default);
+
+        var url = h.LastRequest!.RequestUri!.ToString();
+        Assert.Contains("configKind=device_settings", url);
+        Assert.NotNull(recipe);
+        Assert.Equal("IOT-SETTINGS-1", recipe!.Code);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // config-sync/ack — Task review #4: real POST, friendly (never throws) on every non-2xx/not-configured
+    // path, matching every other Live call's error-handling shape.
+    // ─────────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task AckAsync_posts_configKind_code_version_checksum_and_parses_driftState()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, _) => (HttpStatusCode.OK, """
+                {"success":true,"machineId":42,"configKind":"recipe","driftState":"in_sync"}
+                """),
+        };
+        using var backend = Backend(h, machineCode: "SCRW-01");
+
+        var result = await backend.AckAsync("recipe", "SCREWDRIVE-M4", 3, "abc123", default);
+
+        Assert.Equal(HttpMethod.Post, h.LastRequest!.Method);
+        Assert.Equal("http://synapse.local/api/machine/config-sync/ack", h.LastRequest.RequestUri!.ToString());
+        var body = h.LastBody!;
+        Assert.Contains("\"configKind\":\"recipe\"", body);
+        Assert.Contains("\"code\":\"SCREWDRIVE-M4\"", body);
+        Assert.Contains("\"version\":3", body);
+        Assert.Contains("\"checksum\":\"abc123\"", body);
+
+        Assert.True(result.Success);
+        Assert.Equal("42", result.MachineId);
+        Assert.Equal("in_sync", result.DriftState);
+    }
+
+    [Fact]
+    public async Task AckAsync_with_no_mkKey_returns_friendly_result_not_throw()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, _) => throw new InvalidOperationException("handler must never be reached — not configured"),
+        };
+        var backend = LiveConfigSyncBackend.ForMachine("http://synapse.local", mkKey: null, machineCode: "SCRW-01", verifyTls: true, handler: h);
+
+        var result = await backend.AckAsync("recipe", "SCREWDRIVE-M4", 3, "abc123", default);
+
+        Assert.False(result.Success);
+        Assert.Null(h.LastRequest);
+    }
+
+    [Fact]
+    public async Task AckAsync_with_HTTP_500_flag_off_returns_friendly_result_not_throw()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, _) => (HttpStatusCode.InternalServerError, """{"error":"config-sync disabled"}"""),
+        };
+        using var backend = Backend(h, machineCode: "SCRW-01");
+
+        var result = await backend.AckAsync("recipe", "SCREWDRIVE-M4", 3, "abc123", default);
+
+        Assert.False(result.Success);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // HTTP 500 on config-sync/get (CONFIG_SYNC_GENERIC_ENABLED off) — friendly disabled state, no throw.
     // ─────────────────────────────────────────────────────────────────────
     [Fact]
@@ -214,7 +312,7 @@ public sealed class LiveConfigSyncTests
         };
         using var backend = Backend(h, machineCode: "SCRW-01");
 
-        var recipe = await backend.GetRecipeAsync("SCREWDRIVE-M4", default);
+        var recipe = await backend.GetRecipeAsync("SCREWDRIVE-M4", "recipe", default);
 
         Assert.Null(recipe);
         Assert.Equal("http://synapse.local/api/machine/config-sync/get", h.LastRequest!.RequestUri!.GetLeftPart(UriPartial.Path));
@@ -229,7 +327,7 @@ public sealed class LiveConfigSyncTests
         };
         using var backend = Backend(h, machineCode: "SCRW-01");
 
-        var result = await backend.CheckRecipeAsync(null, "SCREWDRIVE", default);
+        var result = await backend.CheckRecipeAsync(null, "SCREWDRIVE", "recipe", default);
 
         Assert.False(result.Success);
         Assert.Null(result.Code);

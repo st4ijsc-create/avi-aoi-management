@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
 
@@ -64,7 +65,8 @@ public sealed class ConfigSyncEngine
             return new MachineConfigCheckDto(machine.Code, "points", drift, null);
         }
 
-        var recipeCheck = await _backend.CheckRecipeAsync(null, machine.MachineType, ct).ConfigureAwait(false);
+        var configKind = ResolveConfigKind(machine.DeviceClass);
+        var recipeCheck = await _backend.CheckRecipeAsync(null, machine.MachineType, configKind, ct).ConfigureAwait(false);
         if (!recipeCheck.Success || recipeCheck.Code is null)
         {
             return new MachineConfigCheckDto(machine.Code, "recipe", Array.Empty<ProductDriftDto>(), null);
@@ -75,6 +77,24 @@ public sealed class ConfigSyncEngine
         var recipeDto = new RecipeDriftDto(recipeCheck.Code, localRecipe?.Version, recipeCheck.Version, recipeState, recipeCheck.ResolvedBy);
         return new MachineConfigCheckDto(machine.Code, "recipe", Array.Empty<ProductDriftDto>(), recipeDto);
     }
+
+    /// <summary>
+    /// Task review #4 — the wire-level <c>configKind</c> the SERVER's own contract distinguishes
+    /// (CONFIG_SYNC_SERVER_CONTRACT.md: "Recipe ↔ Automation machines. device_settings ↔ IoT.") — separate
+    /// from <see cref="MachineConfigCheckDto.ConfigKind"/>/<see cref="MachineConfigPullResultDto.ConfigKind"/>,
+    /// which deliberately keep using the umbrella term "recipe" for BOTH at this engine's own outward
+    /// /v1 surface (see <see cref="MachineConfigCheckDto"/>'s doc comment — a UI simplification, not a
+    /// wire-protocol detail). This is what actually goes out on <see cref="IConfigSyncBackend.CheckRecipeAsync"/>/
+    /// <see cref="IConfigSyncBackend.GetRecipeAsync"/>'s <c>configKind</c> query param against a real Live
+    /// server, so an IoT machine's <c>device_settings</c> resolves correctly instead of always asking for
+    /// a <c>recipe</c> that will never match it. <see cref="DeviceClass.AoiAvi"/> never reaches this
+    /// (points, not recipe/device_settings) — the "recipe" fallback below is just documentation of that.
+    /// </summary>
+    private static string ResolveConfigKind(DeviceClass deviceClass) => deviceClass switch
+    {
+        DeviceClass.Iot => "device_settings",
+        _ => "recipe",
+    };
 
     /// <summary>
     /// Task C8 — checksum-first drift verdict for a points-config product, mirroring this project's OWN
@@ -141,7 +161,8 @@ public sealed class ConfigSyncEngine
         }
         else
         {
-            var recipeCheck = await _backend.CheckRecipeAsync(null, machine.MachineType, ct).ConfigureAwait(false);
+            var configKind = ResolveConfigKind(machine.DeviceClass);
+            var recipeCheck = await _backend.CheckRecipeAsync(null, machine.MachineType, configKind, ct).ConfigureAwait(false);
             if (!recipeCheck.Success || recipeCheck.Code is null)
             {
                 return new MachineConfigPullResultDto(
@@ -150,13 +171,22 @@ public sealed class ConfigSyncEngine
                     Message: $"No recipe/device_settings found for machine type '{machine.MachineType}'.");
             }
 
-            var ecoRecipe = await _backend.GetRecipeAsync(recipeCheck.Code, ct).ConfigureAwait(false)
+            var ecoRecipe = await _backend.GetRecipeAsync(recipeCheck.Code, configKind, ct).ConfigureAwait(false)
                 ?? throw new KeyNotFoundException($"Recipe '{recipeCheck.Code}' reported by check but not found by get.");
 
             var localBefore = _localStore.GetRecipe(recipeCheck.Code);
             _localStore.UpsertRecipe(ecoRecipe);
 
             RecordHistory(machine.Code, "pull", "success", recipeCheck.Code, localBefore?.Version, ecoRecipe.Version, "recipe payload applied");
+
+            // Task review #4 — best-effort drift-shadow ack after a successful recipe/device_settings
+            // pull: tells the server what this machine now believes its resolved config state is
+            // (CONFIG_SYNC_SERVER_CONTRACT.md's POST .../config-sync/ack, "writes drift-shadow only,
+            // never real config"). Fire-and-forget in spirit but still awaited so a Live failure surfaces
+            // in logs/tests rather than racing the response — never allowed to fail the pull itself
+            // (both IConfigSyncBackend implementations are "friendly, never throws" for this method, same
+            // as every other read-ish backend call, so no try/catch is needed here).
+            await _backend.AckAsync(configKind, ecoRecipe.Code, ecoRecipe.Version, ecoRecipe.Checksum, ct).ConfigureAwait(false);
 
             return new MachineConfigPullResultDto(
                 machine.Code, "recipe", recipeCheck.Code,
@@ -208,6 +238,13 @@ public sealed class ConfigSyncEngine
         var request = new SyncPointsRequestDto(machine.Code, productCode, null, null, null, null, points);
         var result = await _backend.SyncPointsAsync(productCode, request, ct).ConfigureAwait(false);
 
+        // Task review #2 — still recorded unconditionally (an operator attempting a push, even a no-op
+        // one, is itself worth an audit trail entry — e.g. "confirmed nothing needed pushing"), but now
+        // TRUTHFULLY: SimulatedEcosystem/a real server only counts a point toward PointsUpdated when its
+        // content genuinely changed (ConfigChecksum.PointContentEquals) and only bumps the version when
+        // created+updated > 0, so a redundant re-push of byte-identical content records "0 created, 0
+        // updated" against an UNCHANGED "vN -> vN" — never the misleading "vN -> vN+1" bump a naive
+        // re-push used to produce.
         RecordHistory(machine.Code, "push", result.Success ? "success" : "failed", productCode, result.PreviousVersion, result.NewVersion,
             $"{result.PointsCreated} created, {result.PointsUpdated} updated, {result.StaleConflicts} conflicts, limitBlocked={result.LimitChangesBlocked}");
 
@@ -280,8 +317,15 @@ public sealed class ConfigSyncEngine
             .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        // Task review #3 — "removed" means "a pull would remove/tombstone this locally", which is true
+        // in TWO cases, not just one: (1) the usual tombstoned-on-the-ecosystem case (the point still
+        // exists there, just soft-deleted); AND (2) the point is in localActive but the ecosystem has NO
+        // record of it at all (never existed there, or was hard-removed rather than tombstoned) — case
+        // (2) used to be silently dropped from this diff even though PullAsync's wholesale
+        // UpsertProduct(ecoProduct) (a whole-aggregate REPLACE, not a merge) drops that point locally too,
+        // so the diff under-reported what a pull would actually do.
         var removed = localActive.Keys
-            .Where(c => ecoTombstoned.Contains(c))
+            .Where(c => ecoTombstoned.Contains(c) || !ecoActive.ContainsKey(c))
             .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -300,34 +344,73 @@ public sealed class ConfigSyncEngine
             added, removed, changed);
     }
 
+    /// <summary>
+    /// Task review #1 — full-spec, generic property-by-property diff, driven off the SAME canonicalized
+    /// serialization <see cref="ConfigChecksum.ComputePointsChecksum"/> uses (via
+    /// <see cref="ConfigChecksum.CanonicalizePoint(MeasurementPoint)"/>: serialize, strip the audit fields
+    /// LastModifiedAt/DeletedAt/DeletedAtVersion) instead of a hand-maintained list of ~13 <c>Cmp(...)</c>
+    /// calls. This is the fix for the Important finding: the old list omitted unit/measurementType/
+    /// toleranceMode/tolPlus/tolMinus/radius/normalizedRadius/crop/orderIndex/positionZ/every 3D-solder-
+    /// x-ray field/criteria/lighting/cells, so a point differing ONLY in one of those showed "up to date"
+    /// in this diff while the checksum-based drift badge (which hashes the whole point) simultaneously
+    /// read "drift" — a contradiction between the two truthfulness surfaces. Driving both off the exact
+    /// same canonicalization makes that contradiction structurally impossible: whatever field set the
+    /// checksum hashes is exactly the field set this diff compares, always in lockstep.
+    /// </summary>
     private static List<PointFieldChangeDto> DiffFields(MeasurementPoint a, MeasurementPoint b)
     {
+        var canonicalA = ConfigChecksum.CanonicalizePoint(a);
+        var canonicalB = ConfigChecksum.CanonicalizePoint(b);
+
         var changes = new List<PointFieldChangeDto>();
-
-        void Cmp<T>(string field, T? x, T? y)
+        foreach (var field in canonicalA.Keys.Union(canonicalB.Keys, StringComparer.Ordinal)
+                     .Where(f => f != nameof(MeasurementPoint.Code)) // the join key, not a "changed field"
+                     .OrderBy(f => f, StringComparer.Ordinal))
         {
-            if (!Equals(x, y)) changes.Add(new PointFieldChangeDto(field, x?.ToString(), y?.ToString()));
+            canonicalA.TryGetValue(field, out var va);
+            canonicalB.TryGetValue(field, out var vb);
+            if (JsonRawEquals(va, vb)) continue;
+
+            changes.Add(new PointFieldChangeDto(ToCamelCase(field), FormatFieldValue(va), FormatFieldValue(vb)));
         }
-
-        Cmp("name", a.Name, b.Name);
-        Cmp("description", a.Description, b.Description);
-        Cmp("lowerLimit", a.LowerLimit, b.LowerLimit);
-        Cmp("upperLimit", a.UpperLimit, b.UpperLimit);
-        Cmp("nominalValue", a.NominalValue, b.NominalValue);
-        Cmp("positionX", a.PositionX, b.PositionX);
-        Cmp("positionY", a.PositionY, b.PositionY);
-        Cmp("normalizedX", a.NormalizedX, b.NormalizedX);
-        Cmp("normalizedY", a.NormalizedY, b.NormalizedY);
-        Cmp("shape", a.Shape, b.Shape);
-        Cmp("isActive", a.IsActive, b.IsActive);
-        Cmp("referenceImageUrl", a.ReferenceImageUrl, b.ReferenceImageUrl);
-
-        var geomA = a.Geometry?.GetRawText();
-        var geomB = b.Geometry?.GetRawText();
-        if (geomA != geomB) changes.Add(new PointFieldChangeDto("geometry", geomA, geomB));
 
         return changes;
     }
+
+    /// <summary>Raw-JSON-text equality — the same notion of "equal" <see cref="ConfigChecksum"/>'s own
+    /// stable-stringify hashing uses (numbers/strings/booleans compare by their serialized form; objects/
+    /// arrays like geometry/cells/criteria/lighting compare structurally via their exact text). A missing
+    /// key on either side (shouldn't happen — both canonicalizations come from the SAME POCO shape — but
+    /// handled defensively) is treated via <see cref="JsonValueKind.Undefined"/>, never thrown on.</summary>
+    private static bool JsonRawEquals(JsonElement a, JsonElement b)
+    {
+        var rawA = a.ValueKind == JsonValueKind.Undefined ? null : a.GetRawText();
+        var rawB = b.ValueKind == JsonValueKind.Undefined ? null : b.GetRawText();
+        return rawA == rawB;
+    }
+
+    /// <summary>Legible display value for one side of a changed field — unwraps a JSON string to its
+    /// plain text (e.g. <c>circle</c>, not <c>"circle"</c>), a bool to <c>True</c>/<c>False</c> (matches
+    /// this project's previous <c>bool.ToString()</c>-based formatting the web layer's
+    /// <c>formatDiffScalar</c> already special-cases for <c>isActive</c>), null/missing to a plain null
+    /// (the web layer renders its own em-dash placeholder for that), and everything else (numbers,
+    /// objects/arrays like geometry/cells/criteria/lighting) as raw JSON text.</summary>
+    private static string? FormatFieldValue(JsonElement el) => el.ValueKind switch
+    {
+        JsonValueKind.Undefined or JsonValueKind.Null => null,
+        JsonValueKind.String => el.GetString(),
+        JsonValueKind.True => bool.TrueString,
+        JsonValueKind.False => bool.FalseString,
+        _ => el.GetRawText(),
+    };
+
+    /// <summary>"LowerLimit" -> "lowerLimit" — every <see cref="MeasurementPoint"/> property name is
+    /// simple PascalCase (no acronyms/digits needing special handling), so lower-casing just the first
+    /// character reproduces the contract's camelCase wire field name exactly (matches the previous
+    /// hand-written field key list byte-for-byte for the 13 fields it already covered, e.g.
+    /// "ReferenceImageUrl" -> "referenceImageUrl", "PositionX" -> "positionX").</summary>
+    private static string ToCamelCase(string pascal) =>
+        string.IsNullOrEmpty(pascal) ? pascal : char.ToLowerInvariant(pascal[0]) + pascal[1..];
 
     // ─────────────────────────────────────────────────────────────────────
     // Wire conversion (local domain model → contract-shaped push DTO).

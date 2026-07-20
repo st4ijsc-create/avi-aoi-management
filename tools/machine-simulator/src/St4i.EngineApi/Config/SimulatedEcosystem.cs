@@ -235,8 +235,16 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
                 }
                 else
                 {
+                    // Task review #2 — a re-push whose merged result is content-IDENTICAL (full spec,
+                    // ignoring only the always-refreshed LastModifiedAt — but INCLUDING the tombstone
+                    // fields, since resurrecting a previously-deleted point via re-push IS a real,
+                    // observable change; see ConfigChecksum.PointContentEquals's own doc comment) to
+                    // what's already stored is NOT counted toward `updated`, so a redundant push of
+                    // byte-identical content doesn't inflate the version number (below) or leave a
+                    // misleading "pushed vN->vN+1" history/audit row when nothing actually changed.
+                    var contentChanged = !ConfigChecksum.PointContentEquals(product.Points[existingIndex], merged);
                     product.Points[existingIndex] = merged;
-                    updated++;
+                    if (contentChanged) updated++;
                 }
 
                 outcomes.Add(new SyncPointOutcomeDto(incoming.Code, isNew ? "created" : "updated", limitBlocked,
@@ -325,7 +333,11 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
     // System A — recipe / device_settings (pull-only on a real server)
     // ─────────────────────────────────────────────────────────────────────
 
-    public Task<RecipeCheckResultDto> CheckRecipeAsync(string? code, string? machineType, CancellationToken ct)
+    /// <summary><paramref name="configKind"/> is accepted for <see cref="IConfigSyncBackend"/> shape
+    /// parity (Task review #4) but otherwise IGNORED — this Demo store stores every recipe uniformly
+    /// regardless of the calling machine's device class; only <see cref="LiveConfigSyncBackend"/> actually
+    /// sends it on to a real server.</summary>
+    public Task<RecipeCheckResultDto> CheckRecipeAsync(string? code, string? machineType, string configKind, CancellationToken ct)
     {
         lock (_gate)
         {
@@ -351,13 +363,23 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
         }
     }
 
-    public Task<Recipe?> GetRecipeAsync(string code, CancellationToken ct)
+    /// <summary>See <see cref="CheckRecipeAsync"/>'s doc comment — <paramref name="configKind"/> is
+    /// accepted but ignored here.</summary>
+    public Task<Recipe?> GetRecipeAsync(string code, string configKind, CancellationToken ct)
     {
         lock (_gate)
         {
             return Task.FromResult(_recipes.TryGetValue(code, out var r) ? DeepClone(r) : null);
         }
     }
+
+    /// <summary>Task review #4 — friendly no-op/record for the Demo backend: there's no real
+    /// drift-shadow bookkeeping to write locally (that's a real-server-only concept per the contract), so
+    /// this just acknowledges the call succeeded without fabricating a driftState verdict this store
+    /// isn't actually in a position to compute (it doesn't know what the CALLING MACHINE's local store
+    /// currently holds — only <see cref="ConfigSyncEngine"/>, one layer up, knows both sides).</summary>
+    public Task<AckResultDto> AckAsync(string configKind, string? code, int? version, string? checksum, CancellationToken ct) =>
+        Task.FromResult(new AckResultDto(true, "demo-machine", configKind, "unknown"));
 
     // ─────────────────────────────────────────────────────────────────────
     // Merge helpers — governed/lock-aware application of an incoming SyncPointDto onto a stored point.
@@ -481,10 +503,23 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
     {
         var productsPath = Path.Combine(RootDirectory, ProductsFileName);
         var recipesPath = Path.Combine(RootDirectory, RecipesFileName);
-        File.WriteAllText(productsPath, JsonSerializer.Serialize(
+        WriteAllTextAtomic(productsPath, JsonSerializer.Serialize(
             _products.Values.OrderBy(p => p.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
-        File.WriteAllText(recipesPath, JsonSerializer.Serialize(
+        WriteAllTextAtomic(recipesPath, JsonSerializer.Serialize(
             _recipes.Values.OrderBy(r => r.Code, StringComparer.OrdinalIgnoreCase).ToList(), PersistenceOptions));
+    }
+
+    /// <summary>Task review #6 — <c>File.WriteAllText</c> writes IN PLACE: a crash/power-loss mid-write
+    /// (a real risk for an exhibition kiosk someone might just unplug) can leave a truncated/corrupt file
+    /// that fails the next <see cref="Load"/>. Writes the full content to a temp file in the SAME
+    /// directory (same-volume, so the rename below is atomic on Windows/NTFS — no cross-volume copy) then
+    /// <see cref="File.Move(string, string, bool)"/>s it over the real target: <paramref name="path"/> is
+    /// always either the complete OLD content or the complete NEW content, never a partial write.</summary>
+    private static void WriteAllTextAtomic(string path, string content)
+    {
+        var tempPath = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        File.WriteAllText(tempPath, content);
+        File.Move(tempPath, path, overwrite: true);
     }
 
     private static T DeepClone<T>(T value) =>

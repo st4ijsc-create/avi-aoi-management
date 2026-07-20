@@ -45,7 +45,26 @@ public interface IConfigSyncBackend
     Task<bool> SyncPointImageAsync(string productModelCode, string pointCode, string? imageBase64, string? imageUrl, CancellationToken ct);
 
     // ── System A: recipe / device_settings — pull-only, flag-gated on a real server ────────────
-    Task<RecipeCheckResultDto> CheckRecipeAsync(string? code, string? machineType, CancellationToken ct);
+    /// <param name="configKind">Task review #4 — the contract's own <c>recipe|device_settings</c>
+    /// distinction (CONFIG_SYNC_SERVER_CONTRACT.md: "Recipe ↔ Automation machines. device_settings ↔
+    /// IoT."), resolved by <c>ConfigSyncEngine.ResolveConfigKind</c> from the calling
+    /// <see cref="St4i.EdgeCore.Models.MachineDescriptor.DeviceClass"/>. Only meaningful to
+    /// <see cref="LiveConfigSyncBackend"/> (goes out as the real <c>configKind</c> query param);
+    /// <see cref="SimulatedEcosystem"/>'s Demo store doesn't distinguish the two — all "recipes" there
+    /// regardless of the calling machine's device class.</param>
+    Task<RecipeCheckResultDto> CheckRecipeAsync(string? code, string? machineType, string configKind, CancellationToken ct);
 
-    Task<Recipe?> GetRecipeAsync(string code, CancellationToken ct);
+    /// <param name="configKind">See <see cref="CheckRecipeAsync"/>'s own doc comment.</param>
+    Task<Recipe?> GetRecipeAsync(string code, string configKind, CancellationToken ct);
+
+    /// <summary>Task review #4 — the contract's drift-shadow endpoint: <c>POST
+    /// /api/machine/config-sync/ack {configKind, machineCode|apiKey, code?, version?, checksum?}</c> →
+    /// <c>{success, machineId, configKind, driftState}</c> ("writes drift-shadow only, never real
+    /// config" per CONFIG_SYNC_SERVER_CONTRACT.md). Lets the server know what a machine currently
+    /// believes its resolved recipe/device_settings state is, independent of any actual pull —
+    /// <see cref="ConfigSyncEngine"/> calls this best-effort right after a successful recipe pull.
+    /// <see cref="SimulatedEcosystem"/>'s Demo implementation is a friendly no-op (there's no real
+    /// drift-shadow to write locally); <see cref="LiveConfigSyncBackend"/> POSTs it for real, "friendly,
+    /// never throws" like every other Live read/report call.</summary>
+    Task<AckResultDto> AckAsync(string configKind, string? code, int? version, string? checksum, CancellationToken ct);
 }

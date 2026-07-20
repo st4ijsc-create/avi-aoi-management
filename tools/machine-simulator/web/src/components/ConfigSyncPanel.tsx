@@ -72,21 +72,66 @@ const MODE_BADGE: Record<TransportMode, BadgeStatus> = {
   Auto: "info",
 }
 
+// Task review #1/#7 — the backend's diff (ConfigSyncEngine.DiffFields) now drives its field set off the
+// SAME canonicalization the checksum-based drift badge uses, so it covers the FULL point spec, not just
+// ~13 hand-picked fields. This set is kept in sync with that full field list purely to give every field an
+// i18n LABEL (configSyncPanel.diff.fields.*) — `fieldLabel` below already falls back to the raw field name
+// for anything NOT in this set, so a future backend field the frontend hasn't caught up on yet still
+// renders (unlabeled, but never silently dropped) instead of breaking.
 const DIFF_FIELD_KEYS = new Set([
   "name",
   "description",
+  "measurementType",
+  "measurementTypeCode",
+  "unit",
   "lowerLimit",
   "upperLimit",
   "nominalValue",
+  "toleranceMode",
+  "tolPlus",
+  "tolMinus",
   "positionX",
   "positionY",
+  "radius",
   "normalizedX",
   "normalizedY",
-  "shape",
+  "normalizedRadius",
+  "cropWidth",
+  "cropHeight",
+  "orderIndex",
   "isActive",
-  "referenceImageUrl",
+  "shape",
   "geometry",
+  "cells",
+  "positionZ",
+  "heightMin",
+  "heightMax",
+  "heightNominal",
+  "heightUnit",
+  "areaMin",
+  "areaMax",
+  "areaNominal",
+  "areaUnit",
+  "volumeMin",
+  "volumeMax",
+  "volumeNominal",
+  "volumeUnit",
+  "coplanarityMax",
+  "warpageMax",
+  "voidPctMax",
+  "offsetXMax",
+  "offsetYMax",
+  "tiltMax",
+  "thicknessMin",
+  "thicknessMax",
+  "criteria",
+  "lighting",
+  "referenceImageUrl",
 ])
+
+// Fields whose raw value is JSON (object/array), not a scalar — rendered monospace/break-all like
+// `geometry` always was, since these are equally illegible as un-styled prose text.
+const JSON_DIFF_FIELDS = new Set(["geometry", "cells", "criteria", "lighting"])
 
 const POINT_STATUS_KEYS = new Set(["created", "updated", "conflict", "failed"])
 
@@ -155,9 +200,9 @@ function DiffValueCell({ field, value, imageAlt }: { field: string; value: strin
       </span>
     )
   }
-  const isGeometry = field === "geometry"
+  const isJson = JSON_DIFF_FIELDS.has(field)
   return (
-    <span className={cn("py-1 break-words", isGeometry && "font-mono text-[10px] break-all")}>
+    <span className={cn("py-1 break-words", isJson && "font-mono text-[10px] break-all")}>
       {formatDiffScalar(t, field, value)}
     </span>
   )
@@ -672,10 +717,16 @@ function ProductSyncDetail({ machineCode, productCode }: { machineCode: string; 
         onSuccess: (data) => {
           setPushResult(data)
           setConfirmOpen(false)
+          // Task review #5 — `data.success` alone overstates: it stays true when `staleConflicts>0`
+          // (a conflict is rejected-not-overwritten, not counted as `failed`), so a plain green "pushed"
+          // toast would misrepresent a push that actually left some points un-synced. Branch the SAME way
+          // `PushResultPanel`'s persistent banner already does (governance block OR conflicts -> warn).
           if (!data.success) {
             toast.error(t("toast.configPushFailed"))
           } else if (data.limitChangesBlocked) {
             toast.warning(t("toast.configPushBlocked", { code: productCode }))
+          } else if (data.staleConflicts > 0) {
+            toast.warning(t("toast.configPushConflicts", { code: productCode, count: data.staleConflicts }))
           } else {
             toast.success(t("toast.configPushed", { code: productCode, version: data.newVersion ?? "—" }))
           }

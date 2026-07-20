@@ -188,6 +188,12 @@ public sealed record ConfigSyncHistoryEntryDto(
 /// <summary><c>ResolvedBy</c> is <c>machine|machineType|none</c> per the contract.</summary>
 public sealed record RecipeCheckResultDto(bool Success, string? Code, int Version, string? Checksum, string ResolvedBy);
 
+/// <summary>Task review #4 — response shape of the contract's <c>POST /api/machine/config-sync/ack</c>
+/// drift-shadow endpoint. <c>DriftState</c> is <c>in_sync|drift|unknown</c> per the contract when
+/// present; <see cref="SimulatedEcosystem"/>'s Demo backend (no real drift-shadow to compute) always
+/// reports <c>unknown</c> — an honest "don't know", not a fabricated verdict.</summary>
+public sealed record AckResultDto(bool Success, string? MachineId, string ConfigKind, string? DriftState);
+
 public sealed record PointsDeltaResultDto(
     bool HasChanges,
     IReadOnlyList<MeasurementPoint> Points,

@@ -95,7 +95,7 @@ public static class ConfigChecksum
             points.Where(p => !p.IsDeleted).OrderBy(p => p.Code, StringComparer.Ordinal).ToList(),
             SerializeOptions);
 
-        var canonicalPoints = doc.RootElement.EnumerateArray().Select(StripAuditFields).ToList();
+        var canonicalPoints = doc.RootElement.EnumerateArray().Select(el => StripFields(el, AuditFieldNames)).ToList();
         return Compute(canonicalPoints);
     }
 
@@ -106,18 +106,78 @@ public static class ConfigChecksum
         nameof(MeasurementPoint.DeletedAtVersion),
     };
 
+    /// <summary>Just <see cref="MeasurementPoint.LastModifiedAt"/> — the ONE field a push merge always
+    /// refreshes to "now" even when nothing else about the point changed. Deliberately narrower than
+    /// <see cref="AuditFieldNames"/>: <see cref="PointContentEquals"/> uses this set (not the full audit
+    /// set) because a tombstone resurrection/deletion (<see cref="MeasurementPoint.DeletedAt"/>/
+    /// <see cref="MeasurementPoint.DeletedAtVersion"/> changing) IS a real, observable content change for
+    /// "did this push actually do anything" purposes — unlike for the checksum/diff's drift-key purpose,
+    /// where those two are correctly excluded (see <see cref="ComputePointsChecksum"/>'s own doc
+    /// comment).</summary>
+    private static readonly HashSet<string> TimestampOnlyFieldName = new(StringComparer.Ordinal)
+    {
+        nameof(MeasurementPoint.LastModifiedAt),
+    };
+
+    /// <summary>
+    /// Task review #1 — canonicalizes ONE point the exact same way <see cref="ComputePointsChecksum"/>
+    /// canonicalizes each point in a set (serialize, then strip <see cref="AuditFieldNames"/>), WITHOUT
+    /// hashing — so a caller needing an apples-to-apples FULL-SPEC, property-by-property comparison of two
+    /// points (the field-level diff, <c>ConfigSyncEngine.DiffFields</c> in <c>St4i.EngineApi</c>)
+    /// reuses the exact same field set the drift-key checksum uses. This is what guarantees the diff and
+    /// the checksum-based drift badge can never disagree about what counts as "the spec": if a field is
+    /// (or isn't) part of the hash, it's (or isn't) part of the diff too, by construction — there is no
+    /// separate, hand-maintained field list to fall out of sync.
+    /// </summary>
+    public static IReadOnlyDictionary<string, JsonElement> CanonicalizePoint(MeasurementPoint point) =>
+        CanonicalizePoint(point, AuditFieldNames);
+
+    /// <summary>
+    /// Task review #2 — "did a re-push actually change this point's content", the check
+    /// <c>SimulatedEcosystem.SyncPointsAsync</c> needs before counting a point toward
+    /// <c>PointsUpdated</c>/bumping the product version: a redundant push of BYTE-IDENTICAL content must
+    /// not inflate the version number or leave a misleading "pushed vN→vN+1" history row. Compares the
+    /// FULL spec (same field set <see cref="CanonicalizePoint(MeasurementPoint)"/> uses) PLUS the
+    /// tombstone fields (<see cref="MeasurementPoint.DeletedAt"/>/<see cref="MeasurementPoint.DeletedAtVersion"/>)
+    /// — only <see cref="MeasurementPoint.LastModifiedAt"/> is excluded, since a push merge always
+    /// refreshes it to "now" even on a genuine no-op and would otherwise make every comparison report
+    /// "changed". Excluding the tombstone fields too (like the checksum/diff do) would WRONGLY treat
+    /// resurrecting a previously-deleted point as a no-op.
+    /// </summary>
+    public static bool PointContentEquals(MeasurementPoint a, MeasurementPoint b)
+    {
+        var canonicalA = CanonicalizePoint(a, TimestampOnlyFieldName);
+        var canonicalB = CanonicalizePoint(b, TimestampOnlyFieldName);
+        return Compute(canonicalA) == Compute(canonicalB);
+    }
+
+    private static IReadOnlyDictionary<string, JsonElement> CanonicalizePoint(MeasurementPoint point, HashSet<string> excludeFields)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+        using var doc = JsonSerializer.SerializeToDocument(point, SerializeOptions);
+        return StripFields(doc.RootElement, excludeFields);
+    }
+
     /// <summary>Re-shapes one already-serialized point <see cref="JsonElement"/> into a plain
-    /// string-keyed dictionary with <see cref="AuditFieldNames"/> removed, so <see cref="Compute(object?)"/>
+    /// string-keyed dictionary with <paramref name="excludeFields"/> removed, so <see cref="Compute(object?)"/>
     /// can hash the result like any other input (a fresh <see cref="JsonSerializer.SerializeToDocument"/>
     /// round-trip on a filtered/re-typed clone would be needlessly expensive — this just walks the
-    /// object's own properties once).</summary>
-    private static Dictionary<string, JsonElement> StripAuditFields(JsonElement point)
+    /// object's own properties once). Each kept value is <see cref="JsonElement.Clone"/>d: the source
+    /// <paramref name="point"/> comes from a <c>using var doc = JsonSerializer.SerializeToDocument(...)</c>
+    /// the caller disposes at the end of ITS OWN method (see <see cref="CanonicalizePoint(MeasurementPoint, HashSet{string})"/>)
+    /// — <see cref="CanonicalizePoint(MeasurementPoint)"/>/<see cref="PointContentEquals"/> hand this
+    /// dictionary back to code OUTSIDE that scope (e.g. <c>ConfigSyncEngine.DiffFields</c>, one assembly
+    /// over), so an un-cloned <see cref="JsonElement"/> would throw <see cref="ObjectDisposedException"/>
+    /// the moment anything tries to read it after the source document is gone. Cloning makes every
+    /// returned value independently alive, matching the "hand out something the caller can hold onto"
+    /// contract an <c>IReadOnlyDictionary</c> return type implies.</summary>
+    private static Dictionary<string, JsonElement> StripFields(JsonElement point, HashSet<string> excludeFields)
     {
         var dict = new Dictionary<string, JsonElement>();
         foreach (var prop in point.EnumerateObject())
         {
-            if (AuditFieldNames.Contains(prop.Name)) continue;
-            dict[prop.Name] = prop.Value;
+            if (excludeFields.Contains(prop.Name)) continue;
+            dict[prop.Name] = prop.Value.Clone();
         }
 
         return dict;

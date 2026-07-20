@@ -88,3 +88,8 @@ internal sealed record ConfigSyncGetWire(
 internal sealed record SyncProductImageWire(string ProductModelCode, string? ImageBase64, string? ImageUrl, string? ImageMimeType, int? ImageWidth, int? ImageHeight);
 
 internal sealed record SyncPointImageWire(string ProductModelCode, string PointCode, string? ImageBase64, string? ImageUrl);
+
+// ── POST /api/machine/config-sync/ack request/response (Task review #4, drift-shadow only) ────────
+internal sealed record AckRequestWire(string ConfigKind, string? MachineCode, string? Code, int? Version, string? Checksum);
+
+internal sealed record AckResponseWire(bool Success, long? MachineId, string? ConfigKind, string? DriftState);
