@@ -102,10 +102,12 @@ test.describe("onboarding — register → approve → claim → done → joins 
     await expect(page.getByText(viDict.toast.keyCopied)).toBeVisible()
     await expect(page.getByText(viDict.onboarding.done.copied)).toBeVisible()
 
-    // Activity log accumulated one entry per step above (register, poll, claim) — each a direct
-    // child <div> of the role="log" region; the empty state renders a <p> instead, so this count is
-    // 0 until real entries exist.
-    await expect.poll(() => page.getByRole("log").locator("> div").count()).toBeGreaterThanOrEqual(3)
+    // Activity log accumulated one entry per step above (register, poll, claim) — each an <li> in the
+    // <ul> inside the role="log" region (H3c: OnboardingLog now renders a real list, matching the HMI
+    // operator panel's own SystemLog register, instead of the earlier bare motion.div-per-entry
+    // markup this assertion originally targeted); the empty state renders a <p> instead, so this
+    // count is 0 until real entries exist.
+    await expect.poll(() => page.getByRole("log").getByRole("listitem").count()).toBeGreaterThanOrEqual(3)
 
     await assertNoSeriousA11yViolations(page)
 

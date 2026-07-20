@@ -45,6 +45,7 @@ const STATUS_ORDER = ["Idle", "OK", "WARN", "FAIL", "TELEMETRY"]
 const ALL = "__all__"
 
 interface FilterSelectProps {
+  id: string
   label: string
   labelEn: string
   value: string
@@ -60,14 +61,31 @@ interface FilterSelectProps {
  * 2-usage, ~15-line presentational helper (YAGNI). `optionLabel` (not a raw string) routes each
  * option through `t()`, since these values are the enum-like device-class/status tokens, not free
  * text like the Inspector's machine/kind filters.
+ *
+ * Explicit `id`/`htmlFor` (not the `<label>`-wraps-the-`<select>` idiom this used to use) — the
+ * `<label>` needs to wrap ONLY the primary-language `label` text, with the `aria-hidden` gloss as a
+ * sibling OUTSIDE it. `aria-hidden` alone isn't enough: Playwright's `getByLabel` resolves an
+ * associated `<label>` by its raw DOM text rather than the ARIA accessible-name algorithm, so a
+ * hidden-but-still-present gloss inside the `<label>` still counted for that lookup (H3c a11y fix —
+ * see `FormField.tsx`'s doc comment for the concrete "two fields, one collided name" bug this caused).
  */
-function FilterSelect({ label, labelEn, value, options, optionLabel, onChange, allLabel }: FilterSelectProps) {
+function FilterSelect({ id, label, labelEn, value, options, optionLabel, onChange, allLabel }: FilterSelectProps) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="hmi-micro">
-        {label} <span>{labelEn}</span>
+    <div className="flex flex-col gap-1">
+      {/* Stacked bilingual label — vi primary on its own line, uppercase EN gloss beneath (same
+          register `BilingualHead` uses for the table's own header row below). Previously both
+          languages sat inline inside one `hmi-micro` span ("TÌM MÁY SEARCH MACHINES") and read as a
+          single garbled string — H3c leftover fix. */}
+      <span className="flex flex-col gap-0.5">
+        <label htmlFor={id} className="truncate text-[13px] leading-tight font-medium text-text-body">
+          {label}
+        </label>
+        <span className="hmi-micro truncate" aria-hidden="true">
+          {labelEn}
+        </span>
       </span>
       <select
+        id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="h-8 border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
@@ -79,20 +97,25 @@ function FilterSelect({ label, labelEn, value, options, optionLabel, onChange, a
           </option>
         ))}
       </select>
-    </label>
+    </div>
   )
 }
 
-/** Implicit label association only (the wrapping `<label>`'s own visible caption, no separate
- * `aria-label`) — matches `ApiInspector.tsx`'s `FilterSelect` idiom, and avoids a "Label in Name"
- * mismatch an explicit `aria-label` with different wording than the visible caption would create. */
+/** Explicit `id`/`htmlFor` (see `FilterSelect`'s doc comment above for why: the `<label>` must wrap
+ * only the primary-language caption, with the `aria-hidden` gloss as a sibling outside it, not a
+ * `<label>` descendant — a raw-DOM-text `getByLabel` lookup still "sees" an `aria-hidden` descendant). */
 function SearchField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const t = useT()
   const gloss = useGloss()
   return (
-    <label className="flex flex-col gap-1">
-      <span className="hmi-micro">
-        {t("machines.search.label")} <span>{gloss("machines.search.label")}</span>
+    <div className="flex flex-col gap-1">
+      <span className="flex flex-col gap-0.5">
+        <label htmlFor="machines-search" className="truncate text-[13px] leading-tight font-medium text-text-body">
+          {t("machines.search.label")}
+        </label>
+        <span className="hmi-micro truncate" aria-hidden="true">
+          {gloss("machines.search.label")}
+        </span>
       </span>
       <div className="relative">
         <Search
@@ -100,13 +123,14 @@ function SearchField({ value, onChange }: { value: string; onChange: (v: string)
           aria-hidden="true"
         />
         <Input
+          id="machines-search"
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={t("machines.search.placeholder")}
           className="h-8 w-56 pl-7"
         />
       </div>
-    </label>
+    </div>
   )
 }
 
@@ -118,7 +142,11 @@ function BilingualHead({ vi, en, className, align }: { vi: string; en: string; c
     <TableHead className={className}>
       <span className={align === "right" ? "flex flex-col items-end" : "flex flex-col"}>
         <span>{vi}</span>
-        <span className="hmi-micro font-normal tracking-[0.1em]">{en}</span>
+        {/* `aria-hidden` — the EN gloss is a visual register (spec §1), not a second accessible name;
+            left exposed it doubles what a screen reader announces for every column header. */}
+        <span className="hmi-micro font-normal tracking-[0.1em]" aria-hidden="true">
+          {en}
+        </span>
       </span>
     </TableHead>
   )
@@ -352,7 +380,9 @@ export default function Machines() {
             {t("machines.title")}
           </h1>
           <p className="hmi-micro mt-1">{gloss("machines.title")}</p>
-          <p className="mt-1 max-w-2xl text-sm text-text-muted">{t("machines.description")}</p>
+          {/* `max-w-3xl` (not `max-w-2xl`) — at 1600px the row still had plenty of free width, but a
+              672px cap wrapped "…để xem chi tiết." onto its own line regardless (H3c leftover fix). */}
+          <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("machines.description")}</p>
         </div>
         {!isPending && !isError ? (
           <StatusBadge
@@ -393,6 +423,7 @@ export default function Machines() {
             <div className="flex flex-wrap items-end gap-3">
               <SearchField value={search} onChange={setSearch} />
               <FilterSelect
+                id="machines-filter-type"
                 label={t("machines.filters.type")}
                 labelEn={gloss("machines.filters.type")}
                 value={typeFilter}
@@ -402,6 +433,7 @@ export default function Machines() {
                 allLabel={t("machines.filters.all")}
               />
               <FilterSelect
+                id="machines-filter-status"
                 label={t("machines.filters.status")}
                 labelEn={gloss("machines.filters.status")}
                 value={statusFilter}

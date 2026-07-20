@@ -76,8 +76,11 @@ function BackLink() {
 function HeaderStat({ label, labelEn, value }: { label: string; labelEn: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="hmi-micro">
-        {label} <span>{labelEn}</span>
+      {/* Stacked, not inline — same H3c fix as Machines.tsx's filter labels: both languages uppercase
+          on one line read as a single garbled string. */}
+      <span className="flex flex-col gap-0">
+        <span className="truncate text-[11px] leading-tight font-medium text-text-body">{label}</span>
+        <span className="hmi-micro truncate">{labelEn}</span>
       </span>
       <span className="font-heading text-xl leading-none font-semibold tabular-nums text-text-strong">{value}</span>
     </div>

@@ -136,8 +136,11 @@ export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
           <div className="flex items-center gap-3">
             <PassRateRing passRate={machine.passRate} applicable={machine.deviceClass !== "Iot"} />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <span className="hmi-micro">
-                {t("machineCard.cycleTrend")} <span>{gloss("machineCard.cycleTrend")}</span>
+              {/* Stacked, not inline — same H3c fix as Machines.tsx's filter labels: both languages
+                  uppercase in one line read as a single garbled string. */}
+              <span className="flex flex-col gap-0.5">
+                <span className="truncate text-[11px] leading-tight font-medium text-text-body">{t("machineCard.cycleTrend")}</span>
+                <span className="hmi-micro truncate">{gloss("machineCard.cycleTrend")}</span>
               </span>
               <Sparkline data={machine.spark} height={28} />
             </div>

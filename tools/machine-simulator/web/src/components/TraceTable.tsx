@@ -2,6 +2,7 @@ import * as React from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { motion, useReducedMotion } from "framer-motion"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { traceStatusTone, type TraceRow } from "@/lib/inspector"
@@ -67,21 +68,30 @@ function DupErrorCell({ row }: { row: TraceRow }) {
 }
 
 interface HeaderCellProps {
+  /** Active-language column name. */
   children: React.ReactNode
+  /** Uppercase EN gloss, stacked beneath — same bilingual header treatment as `Machines.tsx`'s own
+   * `BilingualHead` (spec §3), so this table's column row matches the app's one approved standard. */
+  en: React.ReactNode
   align?: "left" | "right" | "center"
 }
 
-function HeaderCell({ children, align = "left" }: HeaderCellProps) {
+function HeaderCell({ children, en, align = "left" }: HeaderCellProps) {
   return (
     <div
       role="columnheader"
       className={cn(
-        "flex items-center py-2 text-[11px] font-semibold tracking-wide text-text-muted uppercase",
-        align === "right" && "justify-end text-right",
-        align === "center" && "justify-center text-center"
+        "flex flex-col justify-center py-1.5 text-[11px] font-semibold tracking-wide text-text-muted uppercase",
+        align === "right" && "items-end text-right",
+        align === "center" && "items-center text-center"
       )}
     >
-      {children}
+      <span>{children}</span>
+      {/* `aria-hidden` — visual gloss register only (spec §1), not a second accessible name; left
+          exposed it doubles what a screen reader announces for every column header. */}
+      <span className="hmi-micro font-normal tracking-[0.1em]" aria-hidden="true">
+        {en}
+      </span>
     </div>
   )
 }
@@ -106,6 +116,7 @@ interface TraceTableProps {
  */
 export function TraceTable({ rows, emptyMessage, className }: TraceTableProps) {
   const t = useT()
+  const gloss = useGloss()
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const reduceMotion = useReducedMotion()
 
@@ -119,13 +130,12 @@ export function TraceTable({ rows, emptyMessage, className }: TraceTableProps) {
 
   const virtualItems = virtualizer.getVirtualItems()
 
+  // No self-owned border/corners here — the registration-corner `.sheet` frame is rendered ONLY by
+  // the `<Sheet>` primitive (spec §4), and `.sheet`'s marks sit 6px outside the box, so they must
+  // never share an element with `overflow: hidden` (this table's own scroll container needs exactly
+  // that). `ApiInspector.tsx` wraps this component in a `<Sheet>` instead.
   return (
-    <div
-      className={cn(
-        "flex flex-col overflow-hidden rounded-xl border border-border bg-surface-card",
-        className
-      )}
-    >
+    <div className={cn("flex flex-col overflow-hidden bg-surface-card", className)}>
       <div
         ref={scrollRef}
         role="table"
@@ -147,15 +157,21 @@ export function TraceTable({ rows, emptyMessage, className }: TraceTableProps) {
               "sticky top-0 z-10 border-b border-border bg-surface-subtle px-3"
             )}
           >
-            <HeaderCell>{t("inspector.table.time")}</HeaderCell>
-            <HeaderCell>{t("inspector.table.machine")}</HeaderCell>
-            <HeaderCell>{t("inspector.table.kind")}</HeaderCell>
-            <HeaderCell>{t("inspector.table.method")}</HeaderCell>
-            <HeaderCell>{t("inspector.table.path")}</HeaderCell>
-            <HeaderCell align="center">{t("inspector.table.status")}</HeaderCell>
-            <HeaderCell align="right">{t("inspector.table.latency")}</HeaderCell>
-            <HeaderCell align="center">{t("inspector.table.mode")}</HeaderCell>
-            <HeaderCell>{t("inspector.table.dupError")}</HeaderCell>
+            <HeaderCell en={gloss("inspector.table.time")}>{t("inspector.table.time")}</HeaderCell>
+            <HeaderCell en={gloss("inspector.table.machine")}>{t("inspector.table.machine")}</HeaderCell>
+            <HeaderCell en={gloss("inspector.table.kind")}>{t("inspector.table.kind")}</HeaderCell>
+            <HeaderCell en={gloss("inspector.table.method")}>{t("inspector.table.method")}</HeaderCell>
+            <HeaderCell en={gloss("inspector.table.path")}>{t("inspector.table.path")}</HeaderCell>
+            <HeaderCell align="center" en={gloss("inspector.table.status")}>
+              {t("inspector.table.status")}
+            </HeaderCell>
+            <HeaderCell align="right" en={gloss("inspector.table.latency")}>
+              {t("inspector.table.latency")}
+            </HeaderCell>
+            <HeaderCell align="center" en={gloss("inspector.table.mode")}>
+              {t("inspector.table.mode")}
+            </HeaderCell>
+            <HeaderCell en={gloss("inspector.table.dupError")}>{t("inspector.table.dupError")}</HeaderCell>
           </div>
 
           {rows.length === 0 ? (

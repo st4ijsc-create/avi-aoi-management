@@ -118,7 +118,10 @@ export async function gotoScenario(page: Page): Promise<void> {
   await waitForEngineConnected(page)
   // Not `getByText` — the subtitle paragraph ("Thanh trượt + preset trình diễn — …") contains this
   // same string as a case-insensitive substring, making a plain text locator ambiguous.
-  await expect(page.getByRole("heading", { name: viDict.scenario.presetsTitle, level: 2 })).toBeVisible({
+  // `level: 3` (not 2) — H3c moved this section into a `<Sheet>` panel (spec §4/§5), whose own title
+  // always renders as `<h3>` (see `Sheet.tsx`), matching the level every other Sheet-titled heading
+  // in this suite already asserts (e.g. `gotoMachineDetailConfig`'s `configSyncPanel.products.title`).
+  await expect(page.getByRole("heading", { name: viDict.scenario.presetsTitle, level: 3 })).toBeVisible({
     timeout: 15_000,
   })
 }

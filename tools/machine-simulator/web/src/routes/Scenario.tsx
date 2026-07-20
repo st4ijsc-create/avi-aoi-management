@@ -14,6 +14,7 @@ import {
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import {
   useApplyScenario,
@@ -24,8 +25,8 @@ import {
 } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { fadeSlideUp } from "@/theme/motion"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
 import { StatusBadge } from "@/components/ui/status-badge"
@@ -78,7 +79,7 @@ function SliderRow({ label, displayValue, value, min, max, step, ariaLabel, onVa
             dark override, so on a dark navy-800 card it measured 1.23:1 (axe `color-contrast`, nearly
             invisible). `--primary-text` is this design system's own token for brand-accent text that
             stays readable on both surfaces (index.css). */}
-        <span className="font-numeric text-sm font-semibold text-primary-text">{displayValue}</span>
+        <span className="font-heading font-numeric text-base font-semibold text-primary-text">{displayValue}</span>
       </div>
       <Slider
         min={min}
@@ -113,19 +114,21 @@ function PresetCard({ name, active, pending, onApply }: PresetCardProps) {
       disabled={pending}
       aria-pressed={active}
       className={cn(
-        "flex flex-col items-start gap-2 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50 disabled:cursor-not-allowed disabled:opacity-60",
+        "flex flex-col items-start gap-2 border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50 disabled:cursor-not-allowed disabled:opacity-60",
         // `bg-navy-600/10` (not `bg-navy-50`) — a translucent tint over whatever surface it sits on,
         // so the "selected" card reads as a subtle brand tint in both themes instead of `navy-50`'s
         // flat near-white fill, which stayed near-white even under dark mode (no dark override on the
         // raw navy scale) — a jarring light card floating in the dark UI.
-        active ? "border-navy-600 bg-navy-600/10" : "border-border bg-surface-base hover:bg-surface-subtle"
+        active ? "border-navy-600 bg-navy-600/10" : "border-border-strong bg-surface-base hover:bg-surface-subtle"
       )}
     >
       <div className="flex w-full items-center justify-between">
         <Icon className={cn("size-4", active ? "text-primary-text" : "text-text-muted")} aria-hidden="true" />
         {pending ? <Loader2 className="size-3.5 animate-spin text-primary-text" aria-hidden="true" /> : null}
       </div>
-      <span className={cn("text-sm font-semibold", active ? "text-primary-text" : "text-text-strong")}>{label}</span>
+      <span className={cn("font-heading text-sm font-semibold tracking-wide uppercase", active ? "text-primary-text" : "text-text-strong")}>
+        {label}
+      </span>
       {/* `text-primary-text` (not `text-text-muted`) when active — same fix/reasoning as this
           button's own className comment above and Settings.tsx's ModeSelector hint span: axe
           measured 4.4:1 for `text-text-muted` on the active `bg-navy-600/10` tint (Task 10). */}
@@ -150,6 +153,7 @@ function ScenarioSkeleton() {
 
 export default function Scenario() {
   const t = useT()
+  const gloss = useGloss()
   const scenarioQuery = useScenario()
   const applyScenario = useApplyScenario()
   const applyPreset = useApplyScenarioPreset()
@@ -274,8 +278,8 @@ export default function Scenario() {
 
   if (scenarioQuery.isError) {
     return (
-      <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
-        <h1 className="text-2xl font-semibold text-text-strong">{t("scenario.title")}</h1>
+      <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
+        <h1 className="font-heading text-[26px] leading-none font-semibold tracking-tight text-text-strong">{t("scenario.title")}</h1>
         <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
       </motion.div>
     )
@@ -285,132 +289,148 @@ export default function Scenario() {
   const presets = scenarioQuery.data?.presets ?? []
 
   return (
-    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold text-text-strong">{t("scenario.title")}</h1>
-        <p className="text-sm text-text-muted">{t("scenario.subtitle")}</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={fadeSlideUp}
+      className="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6"
+    >
+      <div className="flex shrink-0 flex-col gap-1">
+        <h1 className="font-heading text-[26px] leading-none font-semibold tracking-tight text-text-strong">
+          {t("scenario.title")}
+        </h1>
+        <p className="hmi-micro mt-1">{gloss("scenario.title")}</p>
+        <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("scenario.subtitle")}</p>
       </div>
 
-      <Card>
-        <CardContent className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">{t("scenario.currentState")}</span>
-            <span className="font-numeric text-sm text-text-body">{current?.statusLine ?? "—"}</span>
-            {hotFolderStatus ? <span className="text-xs text-text-muted">{hotFolderStatus}</span> : null}
-          </div>
-          {current ? <StatusBadge status={current.activePreset === "burst" ? "warn" : "info"}>{current.activePreset}</StatusBadge> : null}
-        </CardContent>
-      </Card>
+      {/* Everything below the header scrolls INSIDE this one wrapper (spec §8 — the page itself never
+          scrolls); the shell's own `<main>` carries `overflow-y-auto` (Shell.tsx), so without an
+          `h-full min-h-0` root constraining this route to the shell's available height, the route grows
+          past the viewport and `<main>` scrolls the whole page instead — the H3c bug this fixes (the
+          preset cards clipped at the bottom at 1280×800 with no way to reach them). Same pattern as
+          `Dashboard.tsx`/`Machines.tsx`'s own `hmi-scroll min-h-0 flex-1 overflow-y-auto` body wrapper. */}
+      <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-4">
+          {/* Live fleet state — the status ramp used here is a genuine state readout (the active
+              preset's own consequence on the running fleet), not decoration (spec §2). */}
+          <Sheet bodyClassName="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[13px] leading-tight font-medium text-text-body">{t("scenario.currentState")}</span>
+              <span className="hmi-micro">{gloss("scenario.currentState")}</span>
+              <span className="font-numeric mt-1 text-sm text-text-body">{current?.statusLine ?? "—"}</span>
+              {hotFolderStatus ? <span className="text-xs text-text-muted">{hotFolderStatus}</span> : null}
+            </div>
+            {current ? <StatusBadge status={current.activePreset === "burst" ? "warn" : "info"}>{current.activePreset}</StatusBadge> : null}
+          </Sheet>
 
-      <Card>
-        <CardContent className="flex flex-col gap-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-text-strong">{t("scenario.liveAdjust.title")}</h2>
-            <p className="text-xs text-text-muted">{t("scenario.liveAdjust.hint")}</p>
-          </div>
+          <Sheet
+            title={t("scenario.liveAdjust.title")}
+            titleEn={gloss("scenario.liveAdjust.title")}
+            headerRight={<span className="max-w-52 text-right text-xs text-text-muted">{t("scenario.liveAdjust.hint")}</span>}
+            bodyClassName="flex flex-col gap-5"
+          >
+            <SliderRow
+              label={t("scenario.cycleRate")}
+              displayValue={formatMultiplier(cycleRate)}
+              value={cycleRate}
+              min={0.25}
+              max={8}
+              step={0.05}
+              ariaLabel="Cycle rate multiplier"
+              onValueChange={(v) => {
+                setCycleRate(v)
+                applyDebounced({ cycleRate: v })
+              }}
+              onValueCommitted={(v) => {
+                setCycleRate(v)
+                applyImmediate({ cycleRate: v })
+              }}
+            />
 
-          <SliderRow
-            label={t("scenario.cycleRate")}
-            displayValue={formatMultiplier(cycleRate)}
-            value={cycleRate}
-            min={0.25}
-            max={8}
-            step={0.05}
-            ariaLabel="Cycle rate multiplier"
-            onValueChange={(v) => {
-              setCycleRate(v)
-              applyDebounced({ cycleRate: v })
-            }}
-            onValueCommitted={(v) => {
-              setCycleRate(v)
-              applyImmediate({ cycleRate: v })
-            }}
-          />
+            <SliderRow
+              label={t("scenario.defectRate")}
+              displayValue={formatPercent(defectRate)}
+              value={defectRate}
+              min={0}
+              max={1}
+              step={0.01}
+              ariaLabel="Extra defect rate"
+              onValueChange={(v) => {
+                setDefectRate(v)
+                applyDebounced({ defectRate: v })
+              }}
+              onValueCommitted={(v) => {
+                setDefectRate(v)
+                applyImmediate({ defectRate: v })
+              }}
+            />
 
-          <SliderRow
-            label={t("scenario.defectRate")}
-            displayValue={formatPercent(defectRate)}
-            value={defectRate}
-            min={0}
-            max={1}
-            step={0.01}
-            ariaLabel="Extra defect rate"
-            onValueChange={(v) => {
-              setDefectRate(v)
-              applyDebounced({ defectRate: v })
-            }}
-            onValueCommitted={(v) => {
-              setDefectRate(v)
-              applyImmediate({ defectRate: v })
-            }}
-          />
+            <SliderRow
+              label={t("scenario.faultRate")}
+              displayValue={formatPercent(faultRate)}
+              value={faultRate}
+              min={0}
+              max={1}
+              step={0.01}
+              ariaLabel="Fault rate"
+              onValueChange={(v) => {
+                setFaultRate(v)
+                applyDebounced({ faultRate: v })
+              }}
+              onValueCommitted={(v) => {
+                setFaultRate(v)
+                applyImmediate({ faultRate: v })
+              }}
+            />
 
-          <SliderRow
-            label={t("scenario.faultRate")}
-            displayValue={formatPercent(faultRate)}
-            value={faultRate}
-            min={0}
-            max={1}
-            step={0.01}
-            ariaLabel="Fault rate"
-            onValueChange={(v) => {
-              setFaultRate(v)
-              applyDebounced({ faultRate: v })
-            }}
-            onValueCommitted={(v) => {
-              setFaultRate(v)
-              applyImmediate({ faultRate: v })
-            }}
-          />
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              <label htmlFor="scenario-network-outage" className="flex items-center gap-2.5">
+                {networkOutage ? (
+                  <WifiOff className="size-4 text-danger-text" aria-hidden="true" />
+                ) : (
+                  <Wifi className="size-4 text-text-muted" aria-hidden="true" />
+                )}
+                <span className="flex flex-col">
+                  <span className="text-sm font-medium text-text-body">{t("scenario.networkOutage")}</span>
+                  <span className="text-[11px] text-text-muted">{t("scenario.networkOutageHint")}</span>
+                </span>
+                <Switch
+                  id="scenario-network-outage"
+                  checked={networkOutage}
+                  onCheckedChange={(checked) => {
+                    setNetworkOutage(checked)
+                    applyImmediate({ networkOutage: checked })
+                  }}
+                />
+              </label>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-            <label htmlFor="scenario-network-outage" className="flex items-center gap-2.5">
-              {networkOutage ? (
-                <WifiOff className="size-4 text-danger-text" aria-hidden="true" />
-              ) : (
-                <Wifi className="size-4 text-text-muted" aria-hidden="true" />
-              )}
-              <span className="flex flex-col">
-                <span className="text-sm font-medium text-text-body">{t("scenario.networkOutage")}</span>
-                <span className="text-[11px] text-text-muted">{t("scenario.networkOutageHint")}</span>
-              </span>
-              <Switch
-                id="scenario-network-outage"
-                checked={networkOutage}
-                onCheckedChange={(checked) => {
-                  setNetworkOutage(checked)
-                  applyImmediate({ networkOutage: checked })
-                }}
-              />
-            </label>
+              <Button type="button" variant="outline" onClick={handleBurst} disabled={burst.isPending}>
+                {burst.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Zap className="size-3.5" aria-hidden="true" />}
+                {t("scenario.burst")}
+              </Button>
+            </div>
+          </Sheet>
 
-            <Button type="button" variant="outline" onClick={handleBurst} disabled={burst.isPending}>
-              {burst.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Zap className="size-3.5" aria-hidden="true" />}
-              {t("scenario.burst")}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-sm font-semibold text-text-strong">{t("scenario.presetsTitle")}</h2>
-            <p className="text-xs text-text-muted">{t("scenario.presetsHint")}</p>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {presets.map((preset) => (
-              <PresetCard
-                key={preset.name}
-                name={preset.name}
-                active={current?.activePreset === preset.name}
-                pending={pendingPreset === preset.name && applyPreset.isPending}
-                onApply={() => handlePreset(preset.name)}
-              />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+          <Sheet
+            title={t("scenario.presetsTitle")}
+            titleEn={gloss("scenario.presetsTitle")}
+            headerRight={<span className="max-w-64 text-right text-xs text-text-muted">{t("scenario.presetsHint")}</span>}
+            bodyClassName="flex flex-col gap-4"
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {presets.map((preset) => (
+                <PresetCard
+                  key={preset.name}
+                  name={preset.name}
+                  active={current?.activePreset === preset.name}
+                  pending={pendingPreset === preset.name && applyPreset.isPending}
+                  onApply={() => handlePreset(preset.name)}
+                />
+              ))}
+            </div>
+          </Sheet>
+        </div>
+      </div>
     </motion.div>
   )
 }

@@ -57,7 +57,12 @@ function Th({ vi, en }: { vi: string; en: string }) {
     <TableHead>
       <span className="flex flex-col">
         <span>{vi}</span>
-        <span className="hmi-micro font-normal">{en}</span>
+        {/* `aria-hidden` — visual gloss register only (spec §1), not a second accessible name; see
+            `FormField.tsx`'s doc comment (H3c a11y fix) for the concrete collision an exposed gloss
+            caused inside a labelling element. */}
+        <span className="hmi-micro font-normal" aria-hidden="true">
+          {en}
+        </span>
       </span>
     </TableHead>
   )

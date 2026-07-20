@@ -1,15 +1,16 @@
 import * as React from "react"
 import { motion } from "framer-motion"
-import { Download, Pause, Play, Terminal, Trash2 } from "lucide-react"
+import { Download, Pause, Play, Trash2 } from "lucide-react"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
-import { cn } from "@/lib/utils"
 import {
   traceStatusBucket,
   useInspectorStream,
   type StreamConnectionState,
 } from "@/lib/inspector"
 import { fadeSlideUp } from "@/theme/motion"
+import { Sheet, StatusLamp } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
 import { TraceTable } from "@/components/TraceTable"
 
@@ -58,21 +59,41 @@ function downloadJson(data: unknown, filename: string) {
 }
 
 interface FilterSelectProps {
+  id: string
   label: string
+  labelEn: string
   value: string
   options: string[]
   onChange: (value: string) => void
   allLabel: string
 }
 
-function FilterSelect({ label, value, options, onChange, allLabel }: FilterSelectProps) {
+/** Same stacked-bilingual idiom as `Machines.tsx`'s own `FilterSelect` (spec §3) — vi primary on its
+ * own line, uppercase EN gloss beneath, never inline on one `hmi-micro` span (that reads as a single
+ * garbled string — see the H3c leftover fix on `Machines.tsx`).
+ *
+ * Explicit `id`/`htmlFor` (not the `<label>`-wraps-the-`<select>` idiom this used to use) — the
+ * `<label>` needs to wrap ONLY the primary-language `label` text, with the `aria-hidden` gloss as a
+ * sibling OUTSIDE it. `aria-hidden` alone isn't enough here: Playwright's `getByLabel` resolves an
+ * associated `<label>` by its raw DOM text rather than the ARIA accessible-name algorithm, so a
+ * hidden-but-still-present gloss inside the `<label>` still counted for that lookup (H3c a11y fix —
+ * see `FormField.tsx`'s doc comment for the concrete "two fields, one collided name" bug this caused). */
+function FilterSelect({ id, label, labelEn, value, options, onChange, allLabel }: FilterSelectProps) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">{label}</span>
+    <div className="flex flex-col gap-1">
+      <span className="flex flex-col gap-0.5">
+        <label htmlFor={id} className="truncate text-[13px] leading-tight font-medium text-text-body">
+          {label}
+        </label>
+        <span className="hmi-micro truncate" aria-hidden="true">
+          {labelEn}
+        </span>
+      </span>
       <select
+        id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-8 border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
       >
         <option value={ALL}>{allLabel}</option>
         {options.map((option) => (
@@ -81,7 +102,7 @@ function FilterSelect({ label, value, options, onChange, allLabel }: FilterSelec
           </option>
         ))}
       </select>
-    </label>
+    </div>
   )
 }
 
@@ -91,20 +112,14 @@ interface StreamStatusIndicatorProps {
   eventsPerSecond: number
 }
 
-/** Mirrors `TopBar`'s `ServerStatusDot` idiom (dot + short label) rather than inventing a new status
- * affordance — this is the same "is the live connection healthy" question, just for the inspector's
- * own socket instead of the polled HTTP health check. */
+/** Same `StatusLamp` primitive as `TopBar`'s own `EngineStatusLamp` (spec §5) — this is the same "is
+ * the live connection healthy" question, just for the inspector's own WS trace socket instead of the
+ * polled HTTP health check, so it reads as the same instrument rather than a bespoke dot. */
 function StreamStatusIndicator({ connectionState, paused, eventsPerSecond }: StreamStatusIndicatorProps) {
   const t = useT()
   const live = !paused && connectionState === "open"
 
-  const dotClass = paused
-    ? "bg-warn"
-    : connectionState === "open"
-      ? "bg-ok"
-      : connectionState === "connecting"
-        ? "bg-neutral"
-        : "bg-danger"
+  const state = paused ? "warn" : connectionState === "open" ? "run" : connectionState === "connecting" ? "idle" : "fault"
 
   const label = paused
     ? t("inspector.status.paused")
@@ -115,18 +130,19 @@ function StreamStatusIndicator({ connectionState, paused, eventsPerSecond }: Str
         : t("inspector.status.reconnecting")
 
   return (
-    <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-card px-2.5 py-1.5 text-xs text-text-muted">
-      <span className={cn("size-2 rounded-full", live && "animate-pulse", dotClass)} aria-hidden="true" />
-      <span className="font-medium text-text-body">{label}</span>
-      {live ? (
-        <span className="font-numeric tabular-nums text-text-muted">· {eventsPerSecond.toFixed(1)}/s</span>
-      ) : null}
-    </div>
+    <StatusLamp
+      state={state}
+      live={live}
+      label={label}
+      sub={live ? `${eventsPerSecond.toFixed(1)}/s` : undefined}
+      className="border border-border-strong bg-surface-card px-2.5 py-1.5"
+    />
   )
 }
 
 export default function ApiInspector() {
   const t = useT()
+  const gloss = useGloss()
   const stream = useInspectorStream()
   const [filterMachine, setFilterMachine] = React.useState(ALL)
   const [filterKind, setFilterKind] = React.useState(ALL)
@@ -186,14 +202,16 @@ export default function ApiInspector() {
       : t("inspector.emptyNoMatch")
 
   return (
-    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex min-h-0 flex-1 flex-col gap-4 p-6 lg:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <Terminal className="size-5 text-navy-600" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold text-text-strong">{t("inspector.title")}</h1>
-          </div>
-          <p className="text-sm text-text-muted">{t("inspector.subtitle", { count: stream.totalCount.toLocaleString() })}</p>
+          <h1 className="font-heading text-[26px] leading-none font-semibold tracking-tight text-text-strong">
+            {t("inspector.title")}
+          </h1>
+          <p className="hmi-micro mt-1">{gloss("inspector.title")}</p>
+          <p className="mt-1 max-w-3xl text-sm text-text-muted">
+            {t("inspector.subtitle", { count: stream.totalCount.toLocaleString() })}
+          </p>
         </div>
         <StreamStatusIndicator
           connectionState={stream.connectionState}
@@ -202,24 +220,30 @@ export default function ApiInspector() {
         />
       </div>
 
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-border bg-surface-card p-3">
+      <div className="flex shrink-0 flex-wrap items-end justify-between gap-3 border border-border bg-surface-card p-3">
         <div className="flex flex-wrap items-end gap-3">
           <FilterSelect
+            id="inspector-filter-machine"
             label={t("inspector.filters.machine")}
+            labelEn={gloss("inspector.filters.machine")}
             value={filterMachine}
             options={machineOptions}
             onChange={setFilterMachine}
             allLabel={t("inspector.filters.all")}
           />
           <FilterSelect
+            id="inspector-filter-kind"
             label={t("inspector.filters.kind")}
+            labelEn={gloss("inspector.filters.kind")}
             value={filterKind}
             options={kindOptions}
             onChange={setFilterKind}
             allLabel={t("inspector.filters.all")}
           />
           <FilterSelect
+            id="inspector-filter-status"
             label={t("inspector.filters.status")}
+            labelEn={gloss("inspector.filters.status")}
             value={filterStatus}
             options={statusOptions}
             onChange={setFilterStatus}
@@ -271,7 +295,14 @@ export default function ApiInspector() {
         </p>
       ) : null}
 
-      <TraceTable rows={filteredEvents} emptyMessage={emptyMessage} className="min-h-0 flex-1" />
+      <Sheet
+        className="min-h-0 flex-1"
+        title={t("inspector.title")}
+        titleEn={gloss("inspector.title")}
+        bodyClassName="flex flex-1 min-h-0 flex-col p-0"
+      >
+        <TraceTable rows={filteredEvents} emptyMessage={emptyMessage} className="min-h-0 flex-1" />
+      </Sheet>
     </motion.div>
   )
 }

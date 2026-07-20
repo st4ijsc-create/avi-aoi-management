@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner"
 import { useLocation } from "wouter"
 
+import { useGloss } from "@/components/hmi/bilingual"
 import { useLanguage, useT } from "@/i18n"
 import {
   useFleetIsRunning,
@@ -36,8 +37,8 @@ import { recordCredential } from "@/lib/credentials"
 import { DEFAULT_MACHINE_TYPE, MACHINE_TYPE_GROUPS } from "@/lib/machineTypes"
 import { cn } from "@/lib/utils"
 import { fadeSlideUp } from "@/theme/motion"
+import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -58,11 +59,12 @@ import { StepIndicator, type Step } from "@/components/StepIndicator"
 
 function useOnboardingSteps(): Step[] {
   const t = useT()
+  const gloss = useGloss()
   return [
-    { id: "register", label: t("onboarding.steps.register") },
-    { id: "poll", label: t("onboarding.steps.poll") },
-    { id: "claim", label: t("onboarding.steps.claim") },
-    { id: "done", label: t("onboarding.steps.done") },
+    { id: "register", label: t("onboarding.steps.register"), labelEn: gloss("onboarding.steps.register") },
+    { id: "poll", label: t("onboarding.steps.poll"), labelEn: gloss("onboarding.steps.poll") },
+    { id: "claim", label: t("onboarding.steps.claim"), labelEn: gloss("onboarding.steps.claim") },
+    { id: "done", label: t("onboarding.steps.done"), labelEn: gloss("onboarding.steps.done") },
   ]
 }
 
@@ -98,7 +100,7 @@ function DemoLiveToggle({
     <div
       role="radiogroup"
       aria-label={t("onboarding.demoLiveToggle.aria")}
-      className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-subtle p-0.5"
+      className="flex items-center gap-0.5 border border-border-strong bg-surface-muted p-0.5"
     >
       {[
         { value: true, label: t("onboarding.demoLiveToggle.demo") },
@@ -114,8 +116,8 @@ function DemoLiveToggle({
             disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cn(
-              "h-6 rounded-[6px] px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50",
-              selected ? "bg-navy-600 text-white shadow-sm" : "text-text-muted hover:text-text-strong"
+              "h-6 px-2.5 text-xs font-semibold tracking-wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-600/50",
+              selected ? "bg-navy-700 text-white" : "text-text-muted hover:text-text-strong"
             )}
           >
             {option.label}
@@ -142,8 +144,8 @@ function ModeIndicator({ isDemo, serverUrl }: { isDemo: boolean; serverUrl: stri
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs",
-        isDemo ? "border-info/20 bg-info/10 text-info-text" : "border-warn/20 bg-warn/10 text-warn-text"
+        "flex items-center gap-2 border px-3 py-2 text-xs",
+        isDemo ? "border-info/30 bg-info/10 text-info-text" : "border-warn/30 bg-warn/10 text-warn-text"
       )}
     >
       {isDemo ? (
@@ -151,7 +153,9 @@ function ModeIndicator({ isDemo, serverUrl }: { isDemo: boolean; serverUrl: stri
       ) : (
         <Globe className="size-3.5 shrink-0" aria-hidden="true" />
       )}
-      <span className="font-semibold">{isDemo ? t("onboarding.modeHint.demoLabel") : t("onboarding.modeHint.liveLabel")}</span>
+      <span className="font-heading text-[13px] font-semibold tracking-wide uppercase">
+        {isDemo ? t("onboarding.modeHint.demoLabel") : t("onboarding.modeHint.liveLabel")}
+      </span>
       {/* Same tint color as the label, not `text-text-muted` — `StatusBadge`'s own doc comment notes
           plain muted-gray text isn't verified to hold AA 4.5:1 on a colored `/10` tint background,
           only the paired `-text` token is. */}
@@ -194,6 +198,7 @@ function RegisterStep({
   onSubmit,
 }: RegisterStepProps) {
   const t = useT()
+  const gloss = useGloss()
   // Flat {value,label} list (grouping is only for the popup's JSX below) — lets `<SelectValue>`
   // resolve the trigger's displayed text from the raw enum value without a separate lookup table.
   const machineTypeItems = React.useMemo(
@@ -211,16 +216,22 @@ function RegisterStep({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormField label={t("onboarding.register.serialLabel")} htmlFor="onb-serial" className="sm:col-span-2">
+        <FormField
+          label={t("onboarding.register.serialLabel")}
+          labelEn={gloss("onboarding.register.serialLabel")}
+          htmlFor="onb-serial"
+          className="sm:col-span-2"
+        >
           <Input
             id="onb-serial"
             value={serialNumber}
             onChange={(e) => onSerialNumber(e.target.value)}
             placeholder={t("onboarding.register.serialPlaceholder")}
+            className="font-numeric"
             required
           />
         </FormField>
-        <FormField label={t("onboarding.register.nameLabel")} htmlFor="onb-name">
+        <FormField label={t("onboarding.register.nameLabel")} labelEn={gloss("onboarding.register.nameLabel")} htmlFor="onb-name">
           <Input
             id="onb-name"
             value={name}
@@ -228,7 +239,7 @@ function RegisterStep({
             placeholder={t("onboarding.register.namePlaceholder")}
           />
         </FormField>
-        <FormField label={t("onboarding.register.typeLabel")} htmlFor="onb-type">
+        <FormField label={t("onboarding.register.typeLabel")} labelEn={gloss("onboarding.register.typeLabel")} htmlFor="onb-type">
           {/* Dropdown, not free text — the real ST4I server rejects `POST /api/machine/register` with
               HTTP 400 unless machineType is EXACTLY one of its enum values (case-sensitive; see
               `@/lib/machineTypes`). Every option here IS one of those exact values, so whatever gets
@@ -261,7 +272,12 @@ function RegisterStep({
           </Select>
         </FormField>
         {!isDemo ? (
-          <FormField label={t("onboarding.register.serverUrlLabel")} htmlFor="onb-server" className="sm:col-span-2">
+          <FormField
+            label={t("onboarding.register.serverUrlLabel")}
+            labelEn={gloss("onboarding.register.serverUrlLabel")}
+            htmlFor="onb-server"
+            className="sm:col-span-2"
+          >
             <Input
               id="onb-server"
               value={serverUrl}
@@ -300,7 +316,7 @@ function PollStep({ serialNumber, isDemo, pending, onPoll, onBack }: PollStepPro
   const t = useT()
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start gap-3 rounded-lg border border-border bg-surface-subtle px-3 py-2.5">
+      <div className="flex items-start gap-3 border border-border-strong bg-surface-muted px-3 py-2.5">
         {pending ? (
           <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-navy-600" aria-hidden="true" />
         ) : (
@@ -321,7 +337,7 @@ function PollStep({ serialNumber, isDemo, pending, onPoll, onBack }: PollStepPro
       </div>
 
       {!isDemo ? (
-        <div className="flex items-start gap-2 rounded-lg border border-info/20 bg-info/10 px-3 py-2.5 text-xs text-info-text">
+        <div className="flex items-start gap-2 border border-info/30 bg-info/10 px-3 py-2.5 text-xs text-info-text">
           <Globe className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
           <span>{t("onboarding.poll.liveInstruction")}</span>
         </div>
@@ -379,6 +395,7 @@ function ClaimEnrollStep({
   onBack,
 }: ClaimEnrollStepProps) {
   const t = useT()
+  const gloss = useGloss()
   // Live's claim field gets its own, more specific hint (where to find the mct_ code) — Enroll has
   // no Live-specific guidance of its own (no REST proxy exists for it; see e2-report.md §3), so it
   // only ever shows the demo caveat.
@@ -397,12 +414,18 @@ function ClaimEnrollStep({
 
         <TabsContent value="claim" className="pt-4">
           <div className="flex flex-col gap-3">
-            <FormField label={t("onboarding.claim.claimTokenLabel")} htmlFor="onb-claim-token" hint={claimHint}>
+            <FormField
+              label={t("onboarding.claim.claimTokenLabel")}
+              labelEn={gloss("onboarding.claim.claimTokenLabel")}
+              htmlFor="onb-claim-token"
+              hint={claimHint}
+            >
               <Input
                 id="onb-claim-token"
                 value={claimToken}
                 onChange={(e) => onClaimToken(e.target.value)}
                 placeholder="mct_…"
+                className="font-mono"
               />
             </FormField>
             <Button onClick={onClaim} disabled={claimPending} className="w-fit">
@@ -414,12 +437,18 @@ function ClaimEnrollStep({
 
         <TabsContent value="enroll" className="pt-4">
           <div className="flex flex-col gap-3">
-            <FormField label={t("onboarding.claim.enrollTokenLabel")} htmlFor="onb-enroll-token" hint={enrollHint}>
+            <FormField
+              label={t("onboarding.claim.enrollTokenLabel")}
+              labelEn={gloss("onboarding.claim.enrollTokenLabel")}
+              htmlFor="onb-enroll-token"
+              hint={enrollHint}
+            >
               <Input
                 id="onb-enroll-token"
                 value={enrollToken}
                 onChange={(e) => onEnrollToken(e.target.value)}
                 placeholder="met_…"
+                className="font-mono"
               />
             </FormField>
             <Button onClick={onEnroll} disabled={enrollPending} className="w-fit">
@@ -464,12 +493,13 @@ function DoneStep({
   onReset,
 }: DoneStepProps) {
   const t = useT()
+  const gloss = useGloss()
   return (
     <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-col gap-4">
       {/* E2 made Claim/Enroll actually join the machine into the live simulated fleet (previously
           this screen's own "View fleet" CTA promised a payoff that didn't exist — functional-audit.md
           #2) — this banner now says so explicitly instead of only logging it in the activity feed. */}
-      <div className="flex items-center gap-3 rounded-lg border border-ok/20 bg-ok/10 px-3 py-2.5">
+      <div className="flex items-center gap-3 border border-ok/30 bg-ok/10 px-3 py-2.5">
         <CheckCircle2 className="size-5 shrink-0 text-ok-text" aria-hidden="true" />
         <div className="flex flex-col">
           <span className="text-sm font-semibold text-text-strong">{t("onboarding.done.savedFor", { code: machineCode })}</span>
@@ -478,13 +508,13 @@ function DoneStep({
         </div>
       </div>
 
-      <FormField label={t("onboarding.done.machineCodeLabel")} htmlFor="onb-done-code">
+      <FormField label={t("onboarding.done.machineCodeLabel")} labelEn={gloss("onboarding.done.machineCodeLabel")} htmlFor="onb-done-code">
         <Input id="onb-done-code" readOnly value={machineCode} className="font-numeric" />
       </FormField>
 
-      <FormField label={t("onboarding.done.keyLabel")}>
+      <FormField label={t("onboarding.done.keyLabel")} labelEn={gloss("onboarding.done.keyLabel")}>
         <div className="flex items-center gap-1.5">
-          <Input readOnly value={revealed ? mkKey : maskKey(mkKey)} className="font-numeric" aria-label="mk_ key" />
+          <Input readOnly value={revealed ? mkKey : maskKey(mkKey)} className="font-mono" aria-label="mk_ key" />
           <Button
             type="button"
             variant="outline"
@@ -524,6 +554,7 @@ function DoneStep({
 // ─────────────────────────────────────────────────────────────────────────
 function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) => void }) {
   const t = useT()
+  const gloss = useGloss()
   const [code, setCode] = React.useState("")
   const [key, setKey] = React.useState("")
   const [savedFlash, setSavedFlash] = React.useState(false)
@@ -558,30 +589,30 @@ function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) =
   }
 
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-text-strong">{t("onboarding.pasteCard.title")}</h3>
-          {savedFlash ? <StatusBadge status="ok">{t("onboarding.pasteCard.saved")}</StatusBadge> : null}
-        </div>
-        <p className="text-sm text-text-muted">{t("onboarding.pasteCard.description")}</p>
-        <FormField label={t("onboarding.pasteCard.codeLabel")} htmlFor="onb-paste-code">
-          <Input
-            id="onb-paste-code"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder={t("onboarding.pasteCard.codePlaceholder")}
-          />
-        </FormField>
-        <FormField label={t("onboarding.pasteCard.keyLabel")} htmlFor="onb-paste-key">
-          <Input id="onb-paste-key" value={key} onChange={(e) => setKey(e.target.value)} placeholder="mk_…" />
-        </FormField>
-        <Button onClick={handleSave} disabled={pasteKey.isPending} className="w-fit">
-          {pasteKey.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <KeyRound className="size-3.5" aria-hidden="true" />}
-          {pasteKey.isPending ? t("onboarding.pasteCard.saving") : t("onboarding.pasteCard.save")}
-        </Button>
-      </CardContent>
-    </Card>
+    <Sheet
+      title={t("onboarding.pasteCard.title")}
+      titleEn={gloss("onboarding.pasteCard.title")}
+      headerRight={savedFlash ? <StatusBadge status="ok">{t("onboarding.pasteCard.saved")}</StatusBadge> : null}
+      bodyClassName="flex flex-col gap-3"
+    >
+      <p className="text-sm text-text-muted">{t("onboarding.pasteCard.description")}</p>
+      <FormField label={t("onboarding.pasteCard.codeLabel")} labelEn={gloss("onboarding.pasteCard.codeLabel")} htmlFor="onb-paste-code">
+        <Input
+          id="onb-paste-code"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder={t("onboarding.pasteCard.codePlaceholder")}
+          className="font-numeric"
+        />
+      </FormField>
+      <FormField label={t("onboarding.pasteCard.keyLabel")} labelEn={gloss("onboarding.pasteCard.keyLabel")} htmlFor="onb-paste-key">
+        <Input id="onb-paste-key" value={key} onChange={(e) => setKey(e.target.value)} placeholder="mk_…" className="font-mono" />
+      </FormField>
+      <Button onClick={handleSave} disabled={pasteKey.isPending} className="w-fit">
+        {pasteKey.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <KeyRound className="size-3.5" aria-hidden="true" />}
+        {pasteKey.isPending ? t("onboarding.pasteCard.saving") : t("onboarding.pasteCard.save")}
+      </Button>
+    </Sheet>
   )
 }
 
@@ -591,6 +622,7 @@ function PasteKeyCard({ onSaved }: { onSaved: (message: string, tone: LogTone) =
 
 export default function Onboarding() {
   const t = useT()
+  const gloss = useGloss()
   const { language } = useLanguage()
   const STEPS = useOnboardingSteps()
   const [, navigate] = useLocation()
@@ -785,19 +817,39 @@ export default function Onboarding() {
     }
   }
 
+  const currentStep = STEPS[stepIndex]
+
   return (
-    <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="flex flex-1 flex-col gap-6 p-6 lg:p-8">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold text-text-strong">{t("onboarding.title")}</h1>
-        <p className="text-sm text-text-muted">{t("onboarding.subtitle")}</p>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={fadeSlideUp}
+      className="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6"
+    >
+      <div className="flex shrink-0 flex-col gap-1">
+        <h1 className="font-heading text-[26px] leading-none font-semibold tracking-tight text-text-strong">
+          {t("onboarding.title")}
+        </h1>
+        <p className="hmi-micro mt-1">{gloss("onboarding.title")}</p>
+        <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("onboarding.subtitle")}</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Card className="h-fit">
-          <CardContent className="flex flex-col gap-6">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        {/* Current stage in the Sheet's own title — reads like a procedure sheet's running header
+            ("what step am I on") rather than a generic panel label. ModeIndicator + StepIndicator stay
+            pinned; only the step's own body scrolls internally when the form runs long (Live mode adds
+            a server-URL field; the 24-value machine-type select can push short viewports). */}
+        <Sheet
+          className="min-h-0"
+          title={currentStep.label}
+          titleEn={currentStep.labelEn}
+          bodyClassName="flex min-h-0 flex-1 flex-col gap-4 p-0"
+        >
+          <div className="flex shrink-0 flex-col gap-4 p-4 pb-0">
             <ModeIndicator isDemo={isDemo} serverUrl={serverUrl} />
             <StepIndicator steps={STEPS} currentIndex={stepIndex} />
-
+          </div>
+          <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto p-4 pt-0">
             {stepIndex === 0 ? (
               <RegisterStep
                 serialNumber={serialNumber}
@@ -854,16 +906,18 @@ export default function Onboarding() {
                 onReset={handleReset}
               />
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </Sheet>
 
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardContent className="flex flex-col gap-3">
-              <h3 className="text-sm font-semibold text-text-strong">{t("onboarding.log.title")}</h3>
-              <OnboardingLog entries={log} />
-            </CardContent>
-          </Card>
+        <div className="flex min-h-0 flex-col gap-4">
+          <Sheet
+            className="min-h-0 flex-1"
+            title={t("onboarding.log.title")}
+            titleEn={gloss("onboarding.log.title")}
+            bodyClassName="flex flex-1 min-h-0 flex-col p-3"
+          >
+            <OnboardingLog entries={log} className="flex-1" />
+          </Sheet>
 
           <PasteKeyCard onSaved={pushLog} />
         </div>
