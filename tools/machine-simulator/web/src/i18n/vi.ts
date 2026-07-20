@@ -1251,6 +1251,16 @@ export const vi = {
 
     status: {
       estop: "DỪNG KHẨN CẤP",
+      // Nameplate lamp sub-line (H2b) — deliberately keyed off OPERATIONAL state (is the fleet
+      // actually turning), not the lamp's own quality color, so a last-cycle FAIL result (which
+      // colors the lamp "fault") doesn't misreport "Stopped" while the fleet keeps cycling. Only
+      // `Hmi.tsx`'s own `estopEngaged`/`running` booleans choose between these three — see its
+      // `lampSub` comment.
+      sub: {
+        run: "Đang vận hành",
+        fault: "Đã dừng",
+        idle: "Chờ lệnh",
+      },
     },
 
     controls: {
@@ -1299,6 +1309,11 @@ export const vi = {
       uplink: "TRẠM THU",
       noProduct: "Chưa gán sản phẩm cấu hình",
       pointsSynced: (vars: Vars) => `${vars.count} điểm đo`,
+    },
+
+    readoutPanel: {
+      title: "Thông số vận hành",
+      titleEn: "OPERATING READOUTS",
     },
 
     readout: {

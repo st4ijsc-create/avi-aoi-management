@@ -126,17 +126,26 @@ test.describe("HMI operator panel", () => {
     test(`visual — ${theme}`, async ({ page }) => {
       await primeAppStorage(page, { theme })
       await gotoHmi(page, "AOI-01")
-      // Live regions (readout numerals, the schematic's plotted points/caption, the scrolling log) are
-      // masked — same reasoning `00-visual-and-a11y.spec.ts`'s header comment gives for why inherently
-      // live regions get DOM assertions instead of raw pixel comparison elsewhere in this suite: masking
-      // is the middle ground for a screen this task brief explicitly wants a screenshot baseline for,
-      // keeping the assertion on the STRUCTURAL chrome (nameplate, registration corners, control
-      // column, footer bar) that a real regression should actually be caught on.
+      // H2b: the ORIGINAL mask list here (`.hmi-graph-paper`, `.hmi-readout-grid` — the whole
+      // schematic body and the whole readout panel) is exactly why the live review's flaws (schematic
+      // marooned in ~25% of its sheet, a dead band under the readouts) slipped past this baseline —
+      // masking the entire live region also hides any STRUCTURAL regression inside it. Tightened to
+      // mask only the sub-elements that are genuinely non-deterministic run-to-run against the shared
+      // `FleetHost` singleton (a live status word/color, a cycle counter, a defect's result color, a
+      // ticking clock, the scrolling log) via stable `hmi-*` class hooks each component sets on
+      // exactly that live node — see `Readout.tsx`'s/`AoiSchematic.tsx`'s/`Nameplate.tsx`'s own
+      // comments on each hook. Everything else (registration corners, the schematic's drawing/
+      // dimension lines/graph-paper ground, the readout grid's borders/dividers/micro-labels, panel
+      // titles) stays UNmasked, so a regression like H2's (the drawing shrinking back into a small
+      // island, or the readout grid losing its border/height-fill) is actually caught by the pixel
+      // diff instead of being invisible under a mask block.
       await expect(page).toHaveScreenshot(`hmi-aoi-${theme}.png`, {
         mask: [
           page.locator(".hmi-clock"),
-          page.locator(".hmi-graph-paper"),
-          page.locator(".hmi-readout-grid"),
+          page.locator(".hmi-nameplate-lamp"),
+          page.locator(".hmi-aoi-point"),
+          page.locator(".hmi-aoi-caption"),
+          page.locator(".hmi-readout-value"),
           page.getByRole("log"),
           page.locator(".hmi-production-progress"),
         ],

@@ -45,18 +45,23 @@ export function SchematicPanel({
       titleEn={gloss(FIG_KEY[deviceClass])}
       headerRight={!isRunning ? <span className="hmi-micro">{t("hmi.schematic.idleNote")}</span> : null}
     >
-      <div className="flex w-full flex-1 items-center justify-center">
+      {/*
+        H2b: the schematic used to be capped at max-h-[280px]/max-w-[560px] regardless of how large
+        the Sheet around it actually was — on a full HMI panel that clamp left the drawing marooned
+        in ~25% of the sheet, surrounded by empty graph paper (the single biggest flaw in the live
+        review). Each schematic's own `viewBox` is now tightened to its artwork's real bounding box,
+        so letting the SVG fill this flex box completely (`h-full w-full`) and scale via
+        `preserveAspectRatio="xMidYMid meet"` (each schematic's own default) makes the drawing read
+        as the centrepiece — filling ~85–90% of the sheet at any panel size instead of a small
+        island in the middle of it.
+      */}
+      <div className="flex h-full w-full flex-1 items-center justify-center">
         {deviceClass === "Automation" ? (
-          <AutomationSchematic isRunning={isRunning} cycles={cycles} className="h-full max-h-[280px] w-full max-w-[560px]" />
+          <AutomationSchematic isRunning={isRunning} cycles={cycles} className="h-full w-full" />
         ) : deviceClass === "AoiAvi" ? (
-          <AoiSchematic
-            isRunning={isRunning}
-            productName={aoiProductName}
-            points={aoiPoints}
-            className="h-full max-h-[280px] w-full max-w-[560px]"
-          />
+          <AoiSchematic isRunning={isRunning} productName={aoiProductName} points={aoiPoints} className="h-full w-full" />
         ) : (
-          <IotSchematic isRunning={isRunning} latestReading={iotLatestReading} className="h-full max-h-[280px] w-full max-w-[560px]" />
+          <IotSchematic isRunning={isRunning} latestReading={iotLatestReading} className="h-full w-full" />
         )}
       </div>
     </Sheet>

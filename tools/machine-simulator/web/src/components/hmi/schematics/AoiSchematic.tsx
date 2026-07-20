@@ -4,6 +4,7 @@ import { useGloss } from "@/components/hmi/bilingual"
 import { DimensionLine } from "@/components/hmi/DimensionLine"
 import { useT } from "@/i18n"
 import type { BoardResult } from "@/lib/api"
+import { truncateText } from "@/lib/utils"
 
 export interface AoiSchematicPoint {
   code: string
@@ -17,10 +18,14 @@ export interface AoiSchematicPoint {
   result?: BoardResult
 }
 
-const BOARD_X = 150
-const BOARD_Y = 66
-const BOARD_W = 170
-const BOARD_H = 116
+const BOARD_X = 175
+const BOARD_Y = 56
+const BOARD_W = 230
+const BOARD_H = 100
+/** Caption truncation — H2b: an unbounded product name (e.g. "Bo mạch điều khiển chính (Main
+ * Control Board)") wrapped nowhere in SVG text and ran straight through the camera head glyph
+ * above the board. Truncated visually; the full name still reaches assistive tech via `<title>`. */
+const CAPTION_MAX_CHARS = 30
 
 const RESULT_VAR: Record<BoardResult, string> = {
   OK: "var(--color-status-run)",
@@ -54,41 +59,50 @@ interface AoiSchematicProps {
 export function AoiSchematic({ isRunning, productName, points, className }: AoiSchematicProps) {
   const t = useT()
   const gloss = useGloss()
+  const fullCaption = `${productName ?? "—"} · ${t("hmi.schematic.pointsSynced", { count: points.length })}`
+  const captionLabel = points.length > 0 ? truncateText(productName ?? "—", CAPTION_MAX_CHARS) : null
 
   return (
+    // viewBox tightened to the artwork's real bounding box AND widened (~2.64:1) to roughly match
+    // this panel's own rendered aspect ratio at the operator-panel sizes the spec cares about — see
+    // `AutomationSchematic.tsx`'s doc comment for the full reasoning (H2b: fill 85-90% of the sheet,
+    // not float in a much smaller `meet`-letterboxed island inside it).
     <svg
-      viewBox="0 0 460 224"
+      viewBox="20 6 560 218"
+      preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
       aria-label={`${t("hmi.schematic.figAoi")} — ${gloss("hmi.schematic.figAoi")}`}
     >
       <g className={isRunning ? "hmi-schematic-run" : undefined}>
-        {/* Conveyor rollers + belt */}
-        <circle cx={70} cy={200} r={10} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
-        <circle cx={390} cy={200} r={10} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
-        <line x1={70} y1={190} x2={390} y2={190} stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
+        {/* Conveyor rollers + belt — BELOW the dimension line/caption band (H2b: the belt used to
+            sit directly under the board, with the caption squeezed inside the belt's own solid/dashed
+            rail pair — collided with the dashed tick line at every panel size). */}
+        <circle cx={40} cy={196} r={10} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
+        <circle cx={560} cy={196} r={10} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
+        <line x1={40} y1={186} x2={560} y2={186} stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
         <line
           className="hmi-aoi-belt-ticks hmi-wire"
-          x1={70}
-          y1={200}
-          x2={390}
-          y2={200}
+          x1={40}
+          y1={196}
+          x2={560}
+          y2={196}
           stroke="var(--text-muted)"
           strokeWidth={1.5}
           strokeDasharray="8 8"
         />
 
         {/* Camera stand + head, sweeps horizontally across the board while running */}
-        <line x1={230} y1={20} x2={230} y2={40} stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
-        <g className="hmi-aoi-camera" style={{ ["--hmi-sweep-x" as string]: "150px" } as React.CSSProperties}>
+        <line x1={290} y1={16} x2={290} y2={36} stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
+        <g className="hmi-aoi-camera" style={{ ["--hmi-sweep-x" as string]: "200px" } as React.CSSProperties}>
           <path
-            d="M 218 40 L 242 40 L 250 58 L 210 58 Z"
+            d="M 278 36 L 302 36 L 310 54 L 270 54 Z"
             fill="none"
             stroke="var(--color-accent)"
             strokeWidth={1.5}
             className="hmi-wire"
           />
-          <line x1={230} y1={58} x2={230} y2={BOARD_Y} stroke="var(--color-accent)" strokeWidth={1} strokeDasharray="2 3" className="hmi-wire" />
+          <line x1={290} y1={54} x2={290} y2={BOARD_Y} stroke="var(--color-accent)" strokeWidth={1} strokeDasharray="2 3" className="hmi-wire" />
         </g>
 
         {/* PCB outline */}
@@ -109,6 +123,11 @@ export function AoiSchematic({ isRunning, productName, points, className }: AoiS
           const cy = BOARD_Y + p.ny * BOARD_H
           const color = p.result ? RESULT_VAR[p.result] : "var(--color-status-idle)"
           return (
+            // `hmi-aoi-point` — a stable mask hook (H2b): the one thing about this dot that's
+            // genuinely live is its RESULT COLOR (green/red/amber as real cycles land); its position
+            // is real, static product config. The visual baseline masks only these, not the whole
+            // schematic, so a structural regression (the board/conveyor/dimension-line drawing
+            // itself) is still caught by the pixel diff.
             <circle
               key={p.code}
               cx={cx}
@@ -117,7 +136,7 @@ export function AoiSchematic({ isRunning, productName, points, className }: AoiS
               fill={p.result ? color : "none"}
               stroke={color}
               strokeWidth={1.3}
-              className="hmi-wire"
+              className="hmi-wire hmi-aoi-point"
             >
               <title>{p.code}</title>
             </circle>
@@ -126,16 +145,33 @@ export function AoiSchematic({ isRunning, productName, points, className }: AoiS
       </g>
 
       {points.length === 0 ? (
-        <text x={230} y={BOARD_Y + BOARD_H / 2} textAnchor="middle" fontSize={9} fill="var(--text-muted)" fontFamily="var(--font-mono)">
+        <text
+          x={BOARD_X + BOARD_W / 2}
+          y={BOARD_Y + BOARD_H / 2}
+          textAnchor="middle"
+          fontSize={9}
+          fill="var(--text-muted)"
+          fontFamily="var(--font-mono)"
+        >
           {t("hmi.schematic.noProduct")}
         </text>
       ) : null}
 
-      <text x={BOARD_X} y={BOARD_Y - 8} fontSize={8} fill="var(--text-muted)" fontFamily="var(--font-mono)">
-        {productName ?? "—"} · {t("hmi.schematic.pointsSynced", { count: points.length })}
-      </text>
+      <DimensionLine x1={BOARD_X} x2={BOARD_X + BOARD_W} y={BOARD_Y + BOARD_H + 16} label={`${BOARD_W}`} />
 
-      <DimensionLine x1={BOARD_X} x2={BOARD_X + BOARD_W} y={BOARD_Y + BOARD_H + 18} label={`${BOARD_W}`} />
+      {/* Caption sits BELOW the whole cell — board, dimension line AND the conveyor (H2b, two
+          rounds): H2's version sat directly above the board, at the same height band as the camera
+          head glyph, and collided with it whenever the product name ran long; the first H2b fix
+          moved it just under the board but that put it inside the conveyor belt's own solid/dashed
+          rail band, colliding with the dashed tick line instead. Below EVERYTHING is clear at any
+          panel size regardless of camera or belt position, and reads like a real drawing's title
+          block. Truncated visually; `<title>` carries the untruncated name. */}
+      {captionLabel !== null ? (
+        <text x={BOARD_X} y={222} fontSize={8} fill="var(--text-muted)" fontFamily="var(--font-mono)" className="hmi-aoi-caption">
+          <title>{fullCaption}</title>
+          {captionLabel} · {t("hmi.schematic.pointsSynced", { count: points.length })}
+        </text>
+      ) : null}
     </svg>
   )
 }

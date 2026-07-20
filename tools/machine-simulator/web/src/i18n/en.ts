@@ -1236,6 +1236,11 @@ export const en: Dictionary = {
 
     status: {
       estop: "E-STOP ENGAGED",
+      sub: {
+        run: "Running",
+        fault: "Stopped",
+        idle: "Standing by",
+      },
     },
 
     controls: {
@@ -1284,6 +1289,11 @@ export const en: Dictionary = {
       uplink: "UPLINK",
       noProduct: "No product config linked",
       pointsSynced: (vars: Vars) => `${vars.count} points`,
+    },
+
+    readoutPanel: {
+      title: "OPERATING READOUTS",
+      titleEn: "Thông số vận hành",
     },
 
     readout: {

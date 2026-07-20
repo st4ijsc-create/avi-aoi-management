@@ -58,7 +58,10 @@ export function Nameplate({ code, deviceClass, driverKind, lampState, lampLabel,
       </div>
 
       <div className="flex shrink-0 items-center gap-5">
-        <StatusLamp state={lampState} label={lampLabel} sub={lampSub} live={lampLive} />
+        {/* `hmi-nameplate-lamp` — a stable mask hook for the visual-regression baseline (H2b): the
+            machine's live status word/color is genuinely non-deterministic run-to-run (whichever
+            state the shared fleet happens to be in), same reasoning as `hmi-readout-value`. */}
+        <StatusLamp size="lg" state={lampState} label={lampLabel} sub={lampSub} live={lampLive} className="hmi-nameplate-lamp" />
 
         <div className="h-8 w-px bg-border" aria-hidden="true" />
 

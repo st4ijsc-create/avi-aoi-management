@@ -18,8 +18,12 @@ export function IotSchematic({ isRunning, latestReading, className }: IotSchemat
   const runClass = isRunning ? "hmi-schematic-run" : undefined
 
   return (
+    // viewBox tightened to the artwork's own bounding box (H2b: fill 85-90% of the sheet, not float
+    // in a much larger box) — the original 460x224 canvas had ~35% unused vertical margin above the
+    // signal arcs and below the tick row.
     <svg
-      viewBox="0 0 460 224"
+      viewBox="20 55 396 161"
+      preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
       aria-label={`${t("hmi.schematic.figIot")} — ${gloss("hmi.schematic.figIot")}`}

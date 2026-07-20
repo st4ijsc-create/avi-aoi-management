@@ -33,18 +33,55 @@ export interface ReadoutProps {
   tone?: ReadoutTone
   /** 0–100 — renders a small donut gauge beside the numeral instead of nothing. */
   gaugePct?: number
+  /**
+   * `"numeric"` (default) keeps the full tabular-numeral display size — a measurement the operator
+   * reads at a glance. `"text"` is for enum/string values (status words, driver names, config
+   * state, a product name, a defect code) that can run arbitrarily long — H2b: these previously
+   * rendered at the same 38px display size as a number and wrapped to 2–3 lines, breaking the grid.
+   * `"text"` renders condensed, single-line, truncated with an accessible full value (`title` +
+   * `aria-label` carry the untruncated string — CSS `truncate` only hides it visually).
+   */
+  valueType?: "numeric" | "text"
   className?: string
 }
 
 /** Big tabular-numeral readout — the KPI/measurement primitive (spec §5). Optional donut gauge for
  * a percentage reading (yield, pass rate, …); omit `gaugePct` for a plain numeric readout. */
-export function Readout({ value, unit, label, labelEn, sub, tone = "neutral", gaugePct, className }: ReadoutProps) {
+export function Readout({
+  value,
+  unit,
+  label,
+  labelEn,
+  sub,
+  tone = "neutral",
+  gaugePct,
+  valueType = "numeric",
+  className,
+}: ReadoutProps) {
+  const isText = valueType === "text"
+  // Only a plain string can be truncated/title-attributed sensibly — a ReactNode value (rare, none
+  // of today's callers) just renders as-is at the text size.
+  const fullText = typeof value === "string" ? value : undefined
+
   return (
     <div className={cn("flex items-center gap-4", className)}>
       {gaugePct !== undefined ? <DonutGauge pct={gaugePct} tone={tone} /> : null}
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">
-          <span className={cn("font-heading text-[38px] leading-[1.05] font-semibold tabular-nums", TONE_TEXT[tone])}>
+          <span
+            // `hmi-readout-value` — a stable hook the HMI visual-regression baseline masks (H2b):
+            // this is the one part of a Readout tile that's genuinely live (a cycle count, a
+            // status word, a defect code) and expected to differ run-to-run; everything else in the
+            // tile (border, dividers, micro-labels) is structural and should stay UNmasked so a
+            // layout regression is actually caught by the pixel diff.
+            className={cn(
+              "hmi-readout-value font-heading font-semibold tabular-nums",
+              isText ? "block max-w-full truncate text-[19px] leading-[1.15]" : "text-[38px] leading-[1.05]",
+              TONE_TEXT[tone]
+            )}
+            title={isText ? fullText : undefined}
+            aria-label={isText && fullText ? fullText : undefined}
+          >
             {value}
           </span>
           {unit ? <span className="hmi-micro pb-1 normal-case">{unit}</span> : null}
@@ -53,7 +90,7 @@ export function Readout({ value, unit, label, labelEn, sub, tone = "neutral", ga
           <span className="hmi-micro">{label}</span>
           {labelEn ? <span className="hmi-micro text-text-muted/70">{labelEn}</span> : null}
         </div>
-        {sub ? <div className="mt-0.5 text-[11px] text-text-muted">{sub}</div> : null}
+        {sub ? <div className="mt-0.5 truncate text-[11px] text-text-muted">{sub}</div> : null}
       </div>
     </div>
   )
@@ -65,7 +102,14 @@ function DonutGauge({ pct, tone }: { pct: number; tone: ReadoutTone }) {
   const c = 2 * Math.PI * r
   const filled = (clamped / 100) * c
   return (
-    <svg width="56" height="56" viewBox="0 0 56 56" className="shrink-0" role="img" aria-label={`${Math.round(clamped)}%`}>
+    <svg
+      width="56"
+      height="56"
+      viewBox="0 0 56 56"
+      className="hmi-readout-value shrink-0"
+      role="img"
+      aria-label={`${Math.round(clamped)}%`}
+    >
       <circle cx="28" cy="28" r={r} fill="none" stroke="var(--color-divider)" strokeWidth="4" />
       <circle
         cx="28"

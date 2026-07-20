@@ -5,7 +5,7 @@ import { useGloss } from "@/components/hmi/bilingual"
 import { avgCycleIntervalMs, cycleRatePerMin, observedSpanLabel, parseKeyMetric } from "@/components/hmi/derive"
 import { useT } from "@/i18n"
 import type { MachineDetail as MachineDetailDto } from "@/lib/api"
-import { formatMetric } from "@/lib/utils"
+import { cn, formatMetric } from "@/lib/utils"
 
 const STATUS_KEY: Record<string, string> = {
   Idle: "status.idle",
@@ -37,6 +37,9 @@ interface TileDef {
   sub?: ReactNode
   tone?: ReadoutTone
   gaugePct?: number
+  /** `"text"` for enum/string tiles (status word, driver, config state, product name, defect code) —
+   * see `<Readout>`'s own doc comment (H2b). Defaults to `"numeric"` when omitted. */
+  valueType?: "numeric" | "text"
 }
 
 interface ReadoutGridProps {
@@ -97,9 +100,21 @@ export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridPro
         labelKey: "hmi.readout.cycleTime",
         tone: "neutral",
       },
-      { key: "status", value: t(statusKey), labelKey: "hmi.readout.status", tone: statusTone },
-      { key: "driver", value: t(`driverKind.${machine.driverKind}`), labelKey: "hmi.readout.driver", tone: "neutral" },
-      { key: "configState", value: machine.driftState, labelKey: "hmi.readout.configState", tone: "neutral" },
+      { key: "status", value: t(statusKey), labelKey: "hmi.readout.status", tone: statusTone, valueType: "text" },
+      {
+        key: "driver",
+        value: t(`driverKind.${machine.driverKind}`),
+        labelKey: "hmi.readout.driver",
+        tone: "neutral",
+        valueType: "text",
+      },
+      {
+        key: "configState",
+        value: machine.driftState,
+        labelKey: "hmi.readout.configState",
+        tone: "neutral",
+        valueType: "text",
+      },
     ]
   } else if (machine.class === "AoiAvi") {
     const ngPoints = machine.boardPoints.filter((p) => p.result === "NG")
@@ -131,8 +146,15 @@ export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridPro
         value: lastDefect?.defectCode ?? "—",
         labelKey: "hmi.readout.lastDefect",
         tone: lastDefect ? "fault" : "idle",
+        valueType: "text",
       },
-      { key: "product", value: productLabel ?? "—", labelKey: "hmi.readout.product", tone: "neutral" },
+      {
+        key: "product",
+        value: productLabel ?? "—",
+        labelKey: "hmi.readout.product",
+        tone: "neutral",
+        valueType: "text",
+      },
       {
         key: "cycleRate",
         value: rate !== null ? rate.toFixed(1) : "—",
@@ -140,7 +162,13 @@ export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridPro
         labelKey: "hmi.readout.cycleRate",
         tone: "neutral",
       },
-      { key: "configState", value: machine.driftState, labelKey: "hmi.readout.configState", tone: "neutral" },
+      {
+        key: "configState",
+        value: machine.driftState,
+        labelKey: "hmi.readout.configState",
+        tone: "neutral",
+        valueType: "text",
+      },
     ]
   } else {
     const lastSeries = machine.telemetry.length > 0 ? machine.telemetry[0] : undefined
@@ -163,26 +191,47 @@ export function ReadoutGrid({ machine, productLabel, className }: ReadoutGridPro
       },
       { key: "observedSpan", value: span ?? "—", labelKey: "hmi.readout.observedSpan", tone: "neutral" },
       { key: "passRate", value: "—", labelKey: "hmi.readout.passRate", tone: "idle" },
-      { key: "status", value: t(statusKey), labelKey: "hmi.readout.status", tone: statusTone },
-      { key: "driver", value: t(`driverKind.${machine.driverKind}`), labelKey: "hmi.readout.driver", tone: "neutral" },
-      { key: "configState", value: machine.driftState, labelKey: "hmi.readout.configState", tone: "neutral" },
+      { key: "status", value: t(statusKey), labelKey: "hmi.readout.status", tone: statusTone, valueType: "text" },
+      {
+        key: "driver",
+        value: t(`driverKind.${machine.driverKind}`),
+        labelKey: "hmi.readout.driver",
+        tone: "neutral",
+        valueType: "text",
+      },
+      {
+        key: "configState",
+        value: machine.driftState,
+        labelKey: "hmi.readout.configState",
+        tone: "neutral",
+        valueType: "text",
+      },
     ]
   }
 
   return (
-    <div className={className}>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-4">
+    <div className={cn("h-full", className)}>
+      {/* Gap-as-border technique (1px grid gap on a `bg-border` container, each cell opaque) —
+       * Tailwind's `divide-x`/`divide-y` utilities don't produce clean internal gridlines on a
+       * WRAPPING grid (they border every child but the first in DOM order, not every child but the
+       * first IN ITS ROW), so this is the reliable way to get a real bordered data-sheet table.
+       * `auto-rows-fr` + the `h-full` above stretches the (fixed 2-row) grid to fill whatever height
+       * the panel has — H2b fix for the dead band that used to sit below a top-anchored tile list. */}
+      <div className="grid h-full auto-rows-fr grid-cols-2 gap-px border border-border bg-border lg:grid-cols-4">
         {tiles.map((tile) => (
-          <Readout
-            key={tile.key}
-            value={tile.value}
-            unit={tile.unit}
-            label={t(tile.labelKey)}
-            labelEn={gloss(tile.labelKey)}
-            sub={tile.sub}
-            tone={tile.tone}
-            gaugePct={tile.gaugePct}
-          />
+          <div key={tile.key} className="flex items-center bg-surface-card px-5 py-3">
+            <Readout
+              value={tile.value}
+              unit={tile.unit}
+              label={t(tile.labelKey)}
+              labelEn={gloss(tile.labelKey)}
+              sub={tile.sub}
+              tone={tile.tone}
+              gaugePct={tile.gaugePct}
+              valueType={tile.valueType}
+              className="w-full"
+            />
+          </div>
         ))}
       </div>
     </div>

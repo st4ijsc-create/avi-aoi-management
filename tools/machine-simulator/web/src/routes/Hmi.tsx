@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Link, useParams } from "wouter"
 
-import { type StatusLampState } from "@/components/industrial"
+import { Sheet, type StatusLampState } from "@/components/industrial"
 import { ControlColumn } from "@/components/hmi/ControlColumn"
 import { Nameplate } from "@/components/hmi/Nameplate"
 import { ProductionProgress } from "@/components/hmi/ProductionProgress"
@@ -9,6 +9,7 @@ import { ReadoutGrid } from "@/components/hmi/ReadoutGrid"
 import { SchematicPanel } from "@/components/hmi/SchematicPanel"
 import type { AoiSchematicPoint } from "@/components/hmi/schematics/AoiSchematic"
 import { SystemLog, type HmiLocalLogEvent } from "@/components/hmi/SystemLog"
+import { useGloss } from "@/components/hmi/bilingual"
 import { parseKeyMetric } from "@/components/hmi/derive"
 import { useT } from "@/i18n"
 import {
@@ -74,6 +75,7 @@ function ErrorKiosk({ title, description }: { title: string; description: string
 export default function Hmi() {
   const { code } = useParams<{ code: string }>()
   const t = useT()
+  const gloss = useGloss()
 
   const { data: machine, isPending, isError, error } = useMachine(code)
   const fleetIsRunning = useFleetIsRunning()
@@ -168,6 +170,13 @@ export default function Hmi() {
             : "idle"
 
   const lampLabel = estopEngaged ? t("hmi.status.estop") : t(STATUS_KEY[machine.statusText] ?? "status.idle")
+  // The nameplate lamp's sub-line (H2b, spec §"lamp + state + sub-line") is deliberately keyed off
+  // OPERATIONAL state (is the fleet actually turning) rather than `lampState`'s QUALITY color —
+  // those are two different axes. A last-cycle FAIL result colors the lamp "fault" (correctly — the
+  // operator needs to see red) but the fleet is very much still running; a sub-line derived from
+  // `lampState` alone would misreport that as "Đã dừng" (Stopped) even while cycles keep landing.
+  // Only a genuine E-STOP is actually "stopped".
+  const lampSub = estopEngaged ? t("hmi.status.sub.fault") : running ? t("hmi.status.sub.run") : t("hmi.status.sub.idle")
 
   const lastRow = machine.cycleLog.length > 0 ? machine.cycleLog[machine.cycleLog.length - 1] : undefined
   const parsedIotMetric = lastRow ? parseKeyMetric(lastRow.keyMetric) : null
@@ -181,13 +190,14 @@ export default function Hmi() {
         driverKind={machine.driverKind}
         lampState={lampState}
         lampLabel={lampLabel}
+        lampSub={lampSub}
         lampLive={running}
       />
 
       <div className="flex min-h-0 flex-1 gap-3 p-3">
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           <SchematicPanel
-            className="min-h-0 flex-[1.4]"
+            className="min-h-0 flex-[1.6]"
             deviceClass={machine.class}
             isRunning={running}
             cycles={machine.cycles}
@@ -195,12 +205,19 @@ export default function Hmi() {
             aoiPoints={aoiPoints}
             iotLatestReading={iotLatestReading}
           />
-          <div
-            tabIndex={0}
-            className="hmi-readout-grid hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+          <Sheet
+            className="hmi-readout-grid min-h-0 flex-1"
+            title={t("hmi.readoutPanel.title")}
+            titleEn={gloss("hmi.readoutPanel.title")}
+            bodyClassName="flex flex-1 min-h-0 flex-col p-0"
           >
-            <ReadoutGrid machine={machine} productLabel={isAoi ? (product.data?.name ?? productCode ?? null) : undefined} />
-          </div>
+            <div
+              tabIndex={0}
+              className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+            >
+              <ReadoutGrid machine={machine} productLabel={isAoi ? (product.data?.name ?? productCode ?? null) : undefined} />
+            </div>
+          </Sheet>
         </div>
 
         <div className="flex w-[320px] shrink-0 flex-col gap-3">
