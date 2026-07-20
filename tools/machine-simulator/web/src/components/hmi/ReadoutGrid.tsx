@@ -110,7 +110,12 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
         value: parsedMetric ? formatMetric(Number(parsedMetric.value)) : "—",
         unit: parsedMetric?.unit,
         labelKey: "hmi.readout.metric",
-        sub: parsedMetric ? parsedMetric.name : undefined,
+        // "" (not `undefined`) — H4 job 3, same fix as the STATUS tile below: reserves this tile's
+        // sub-row space unconditionally so its height can't shift between "no metric parsed yet" and
+        // "a metric landed", which otherwise moves every unmasked sibling below it between runs (a
+        // real reproduced flake at the tightened threshold, not hypothetical — see `Readout.tsx`'s
+        // own `sub !== undefined` doc comment for the mechanism).
+        sub: parsedMetric ? parsedMetric.name : "",
         tone: "neutral",
       },
       {
@@ -187,7 +192,10 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
         labelKey: "hmi.readout.status",
         tone: statusTone,
         valueType: "text",
-        sub: lastDefect?.defectCode ?? undefined,
+        // "" (not omitted/undefined) — H4 job 3: reserves this tile's sub-row space unconditionally so
+        // the STATUS tile's height (and everything unmasked below it) doesn't shift between "no defect
+        // yet" and "a defect landed", see `Readout.tsx`'s `sub !== undefined` doc comment.
+        sub: lastDefect?.defectCode ?? "",
       },
       {
         key: "product",

@@ -126,6 +126,20 @@ test.describe("HMI operator panel", () => {
     test(`visual — ${theme}`, async ({ page }) => {
       await primeAppStorage(page, { theme })
       await gotoHmi(page, "AOI-01")
+      // H4 job 3 — Playwright's built-in `animations: "disabled"` (the config default this suite
+      // relies on) freezes CSS transitions and FINITE animations reliably, but `index.css`'s
+      // `.hmi-schematic-run` keyframes (gantry sweep, camera sweep, belt-tick dash, etc. — all
+      // `animation-iteration-count: infinite`) are a documented Playwright edge case: forcing
+      // `animation-duration: 0s` on an INFINITE-iteration animation doesn't reliably land every
+      // element on the same deterministic frame across runs in headless Chromium, reproduced live as
+      // a ~1px sub-pixel shift bleeding into unmasked, otherwise-completely-static sibling text (the
+      // "Tốc độ chu kỳ / Cycle Rate" micro-label) once the suite's tolerance was tightened — not a
+      // hypothetical flake, caught 3/3 times on repeated fresh runs before this fix. `animation: none`
+      // is a stronger, unambiguous override than duration:0 for infinite animations (no "which frame
+      // did a 0-duration infinite loop land on" ambiguity — the element just renders its unanimated
+      // base state), applied here rather than in the app's own CSS so production keeps its real
+      // motion.
+      await page.addStyleTag({ content: ".hmi-schematic-run * { animation: none !important; }" })
       // H2b: the ORIGINAL mask list here (`.hmi-graph-paper`, `.hmi-readout-grid` — the whole
       // schematic body and the whole readout panel) is exactly why the live review's flaws (schematic
       // marooned in ~25% of its sheet, a dead band under the readouts) slipped past this baseline —

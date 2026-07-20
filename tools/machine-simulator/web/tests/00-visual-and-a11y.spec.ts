@@ -46,6 +46,8 @@ const THEMES: Theme[] = ["light", "dark"]
 interface ScreenCase {
   slug: string
   visit: (page: Page, theme: Theme) => Promise<void>
+  /** Per-screen viewport override — only `tokens` needs one, see its own case below. */
+  viewport?: { width: number; height: number }
 }
 
 const SCREENS: ScreenCase[] = [
@@ -154,6 +156,19 @@ const SCREENS: ScreenCase[] = [
     slug: "tokens",
     // `/tokens` manages its own local theme toggle — see `gotoTokens`'s doc comment.
     visit: async (page, theme) => gotoTokens(page, theme),
+    // H4 job 3 — `/tokens` alone needs a viewport TALL ENOUGH to cover its whole ~3240px of content
+    // (3300 for margin), NOT `fullPage: true`. That route is a genuinely page-scrolling document (not
+    // the app shell's `h-svh overflow-hidden` + inner-`<main>`-scrolls layout the other 13 screens use
+    // — see this file's own top doc comment for why THEY use a fixed 1440×1600 viewport instead), so
+    // `fullPage` looked like the obvious fit — but it reproducibly captured a STALE render for
+    // content below the visible fold: injecting a real regression (`ui/status-badge.tsx`'s "ok" tone
+    // swapped for the decorative "info" hue, affecting swatches at y≈2321) was invisible to a
+    // `fullPage: true` capture even though `getComputedStyle` AND an in-viewport screenshot of the
+    // exact same page both confirmed the regressed color was genuinely painted there — Chromium's
+    // full-page capture stitches from compositor tiles that can go stale for off-screen content that
+    // was never scrolled into view before the capture. A tall fixed viewport (no scrolling needed,
+    // nothing ever off-screen) sidesteps that entirely and reproducibly WAS caught.
+    viewport: { width: 1440, height: 3300 },
   },
 ]
 
@@ -161,8 +176,20 @@ for (const screen of SCREENS) {
   test.describe(screen.slug, () => {
     for (const theme of THEMES) {
       test(`visual — ${theme}`, async ({ page }) => {
+        if (screen.viewport) await page.setViewportSize(screen.viewport)
         await screen.visit(page, theme)
-        await expect(page).toHaveScreenshot(`${screen.slug}-${theme}.png`)
+        // `.hmi-clock` — the shared TopBar's live HH:MM:SS clock (`TopBar.tsx`'s `Clock`, same class
+        // hook `Nameplate.tsx`'s own clock uses for `11-hmi.spec.ts`'s mask list) is the ONE
+        // genuinely-nondeterministic node on every one of these otherwise-pristine screens: it ticks
+        // every second, so a baseline captured at time T1 and compared against a run at time T2 will
+        // always differ there even though nothing regressed. Masking just this node (not the whole
+        // header/TopBar) is what makes the H4 job-3 tightened `maxDiffPixelRatio` hold without
+        // reintroducing flakiness — everything else on the page (including the rest of the TopBar) stays
+        // unmasked, so a real regression there is still caught. No-op on `/tokens` (renders standalone,
+        // no TopBar/clock).
+        await expect(page).toHaveScreenshot(`${screen.slug}-${theme}.png`, {
+          mask: [page.locator(".hmi-clock")],
+        })
       })
 
       test(`a11y (axe, wcag2a/2aa/21aa) — ${theme}`, async ({ page }) => {

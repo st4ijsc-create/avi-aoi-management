@@ -222,12 +222,19 @@ export function AoiSchematic({ isRunning, productName, points, className }: AoiS
             // genuinely live is its RESULT COLOR (green/red/amber as real cycles land); its position
             // is real, static product config. The visual baseline masks only these, not the whole
             // schematic, so a structural regression (the board/conveyor/dimension-line drawing
-            // itself) is still caught by the pixel diff.
+            // itself) is still caught by the pixel diff. Radius is a CONSTANT 3.4 regardless of
+            // `p.result` (H4 job 3 — previously 2.4 pre-result/3.4 post-result): Playwright's `mask`
+            // paints a box over the locator's CURRENT bounding rect at screenshot time, so a
+            // radius that depends on live, timing-dependent state (whether a given point has landed
+            // its first result by the moment the shot is taken) made the mask itself a different size
+            // between the run that captured a baseline and any later comparison run, leaking a ~1px
+            // ring of unmasked pixels at the edge — a real, reproduced source of flakiness once the
+            // suite's tolerance was tightened, not a hypothetical one.
             <circle
               key={p.code}
               cx={cx}
               cy={cy}
-              r={p.result ? 3.4 : 2.4}
+              r={3.4}
               fill={p.result ? color : "none"}
               stroke={color}
               strokeWidth={1.3}

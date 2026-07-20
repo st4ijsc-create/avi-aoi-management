@@ -67,15 +67,21 @@ export function Readout({
     <div className={cn("flex items-center gap-4", className)}>
       {gaugePct !== undefined ? <DonutGauge pct={gaugePct} tone={tone} /> : null}
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
+        {/* `hmi-readout-value` lives on this ROW, not the value `<span>` itself (H4 job 3) — the span
+            is inline/shrink-to-content, so its own bounding box WIDTH varies with the live value's
+            digit/character count (e.g. "5" vs "128", "IDLE" vs "INSUFFICIENT_SOLDER"), which made the
+            visual-regression mask itself a moving target: a baseline captured with a short value left a
+            sliver of the LONGER value's extra width unmasked on a later run (and vice versa), a
+            genuine source of flakiness once the suite's tolerance was tightened. This row is a plain
+            block box (`display:flex` only changes how its OWN children lay out) so it already fills
+            the tile's full text-column width regardless of content — masking IT keeps the box size
+            stable across runs while still covering whatever the value renders. Everything else in the
+            tile (border, dividers, micro-labels below) stays UNmasked so a real layout regression is
+            still caught by the pixel diff. */}
+        <div className="hmi-readout-value flex items-baseline gap-1.5">
           <span
-            // `hmi-readout-value` — a stable hook the HMI visual-regression baseline masks (H2b):
-            // this is the one part of a Readout tile that's genuinely live (a cycle count, a
-            // status word, a defect code) and expected to differ run-to-run; everything else in the
-            // tile (border, dividers, micro-labels) is structural and should stay UNmasked so a
-            // layout regression is actually caught by the pixel diff.
             className={cn(
-              "hmi-readout-value font-heading font-semibold tabular-nums",
+              "font-heading font-semibold tabular-nums",
               isText ? "block max-w-full truncate text-[19px] leading-[1.15]" : "text-[38px] leading-[1.05]",
               TONE_TEXT[tone]
             )}
@@ -95,7 +101,24 @@ export function Readout({
           <span className="hmi-micro min-w-0 flex-1 truncate">{label}</span>
           {labelEn ? <span className="hmi-micro shrink-0 truncate text-text-muted/70">{labelEn}</span> : null}
         </div>
-        {sub ? <div className="mt-0.5 truncate text-[11px] text-text-muted">{sub}</div> : null}
+        {/* `hmi-readout-value` also covers `sub` (H4 job 3): some callers pass genuinely-live content
+            here too — `ReadoutGrid.tsx`'s STATUS tile shows the last defect's code, which is exactly
+            as timing-dependent/random as the value above it — and an unmasked live `sub` leaked a
+            reproduced ~1% pixel diff into the HMI baseline once the suite's tolerance was tightened.
+            Callers with a genuinely static `sub` (a fixed metric-name qualifier) lose nothing by also
+            being covered — it's a minor caption, not the tile's structural chrome.
+
+            `sub !== undefined` (not just truthy `sub`) is deliberate: a caller whose sub-text can be
+            EMPTY at some moments and non-empty at others (the STATUS tile's defect code — empty until
+            the first defect lands) needs the row to occupy the SAME vertical space either way, or
+            every unmasked sibling below it (the micro-label row's own text, structural and meant to
+            stay checkable) shifts up/down between runs depending on timing — a real geometry mismatch
+            no mask can paper over, reproduced live: two runs of the same pristine HMI screen landed a
+            first defect at different moments, so one had the sub row and one didn't. Passing `""`
+            (not omitting the prop) is how a caller opts into this reserved, always-present row. */}
+        {sub !== undefined ? (
+          <div className="hmi-readout-value mt-0.5 truncate text-[11px] text-text-muted">{sub || " "}</div>
+        ) : null}
       </div>
     </div>
   )

@@ -96,7 +96,13 @@ function Clock() {
   }, [])
   const formatted = now.toLocaleTimeString(undefined, { hour12: false })
   return (
-    <span className="font-mono text-[13px] tabular-nums text-text-body" suppressHydrationWarning>
+    // `hmi-clock` — SAME stable class hook `Nameplate.tsx`'s own live clock uses (see its doc comment
+    // and `11-hmi.spec.ts`'s mask list), so every screen's visual baseline can mask this one
+    // genuinely-nondeterministic node (ticks every second, so it WILL differ between the run that
+    // captured the baseline and any later comparison run) via a single shared selector, instead of
+    // either two different selectors to keep in sync or masking something broader that would also hide
+    // a real regression.
+    <span className="hmi-clock font-mono text-[13px] tabular-nums text-text-body" suppressHydrationWarning>
       {formatted}
     </span>
   )

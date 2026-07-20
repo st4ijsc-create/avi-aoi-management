@@ -33,9 +33,37 @@ export default defineConfig({
       // transitions included) to their end state before the pixel comparison — the default, kept
       // explicit here because it's load-bearing for baseline stability.
       animations: "disabled",
-      // A hair of tolerance for sub-pixel font/AA rendering jitter between runs on the same
-      // machine — not a license for structural drift (0.02 = up to 2% of pixels may differ).
-      maxDiffPixelRatio: 0.02,
+      // H4 job 3 — tightened from 0.02 (2%) → 0.0005 (0.05%) → 0.00002 (0.002%). The 2% figure was
+      // wide enough that a FULL PALETTE CHANGE left 11 of this suite's 28 baselines "passing
+      // unchanged", and a later whole-screen restyle (H3b) was reported as "legitimately falling
+      // under the suite's tolerance" — i.e. this gate could not see a redesign, so it could not see
+      // a regression either.
+      //
+      // Every genuinely-live pixel source on these screens was found and either masked or made
+      // layout-stable (see the `.hmi-clock` class on `TopBar.tsx`'s/`Nameplate.tsx`'s clocks,
+      // `hmi-readout-value` on `Readout.tsx`'s value+unit ROW and `sub` line, the constant-radius
+      // defect dot in `AoiSchematic.tsx`, and `sub !== undefined` reserving the STATUS tile's sub-row
+      // height unconditionally so it can't shift the layout below it — every one of these was a REAL
+      // reproduced flake, not a hypothetical one). A SEPARATE, bigger source of nondeterminism was
+      // `ProductConfigStore`/`SimulatedEcosystem` persisting recipe/product edits to a JSON file
+      // beside the built engine binary that survived across `dotnet run` restarts — see
+      // `scripts/reset-engine-state.mjs`'s doc comment for the reproduced ~1% diff this caused before
+      // it was wired into the `webServer` command below. With BOTH of those fixed, re-running this
+      // suite twice against a fresh engine at 0.0000001 (~0 pixels) produced EXACT pixel matches on
+      // all 30 baselines both times — genuine noise floor is provably zero on this machine.
+      //
+      // 0.00002 was calibrated against a real injected regression, not picked blind: hiding the
+      // `.sheet` registration corners (index.css's `.sheet > .corner`, the shared L-shaped marks
+      // EVERY panel across all 14 screens renders — see `industrial/Sheet.tsx`) is about as subtle a
+      // structural regression as this UI can produce, and at 0 tolerance it reproducibly diffed
+      // 68–273px per screen (68px on single-panel screens like `machines`/`inspector`, up to 273px on
+      // panel-dense ones like `product-config-points`) — NEVER more than ~0.03% of a 1440×900 frame.
+      // 0.0005 (648px cap) was proven too loose to catch it: all 28 baselines "passed unchanged" with
+      // every corner hidden. 0.00002 (≈26px cap on 1440×900) sits below that 68px floor with margin
+      // while staying ~2,500x looser than the machine's own proven noise floor — room for font/AA
+      // variance on a different machine/CI runner, nowhere near enough to hide a moved/recolored/
+      // reshaped panel. NOT a license for structural drift.
+      maxDiffPixelRatio: 0.00002,
     },
   },
   reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
@@ -61,7 +89,14 @@ export default defineConfig({
       // is defensive (no Properties/launchSettings.json exists in that project today) so a future
       // one added for `dotnet run` convenience in normal dev use can't silently repoint the port
       // this suite depends on.
-      command: "dotnet run --project ../src/St4i.EngineApi/St4i.EngineApi.csproj --no-launch-profile",
+      //
+      // H4 job 2/3 — `node ./scripts/reset-engine-state.mjs &&` runs FIRST, every time this
+      // webServer boots. `ProductConfigStore`/`SimulatedEcosystem` persist to a JSON file beside
+      // the built binary and load it as-is on the next boot instead of reseeding once it exists —
+      // correct for the real kiosk app surviving a restart, but it means a `dotnet run` here reused
+      // whatever an EARLIER test session's edit/push test had already mutated on disk, so "fresh
+      // engine" wasn't actually fresh. See the script's own doc comment for the reproduced diff.
+      command: "node ./scripts/reset-engine-state.mjs && dotnet run --project ../src/St4i.EngineApi/St4i.EngineApi.csproj --no-launch-profile",
       url: "http://localhost:5199/v1/health",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
