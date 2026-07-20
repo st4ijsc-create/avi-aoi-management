@@ -11,6 +11,18 @@ export interface ControlButtonProps extends Omit<React.ComponentProps<"button">,
   label: React.ReactNode
   /** English gloss, shown beneath the label — omit only if `label` is already English. */
   labelEn?: React.ReactNode
+  /**
+   * Branch-review I-7 — true once a LATCHED control (currently only the E-STOP variant) has already
+   * been engaged. Unlike `disabled` (the flat, neutral "not applicable right now" skin — e.g. START
+   * while running) a pressed E-STOP IS the active fault condition itself: it must keep its full red
+   * dome (a latched mushroom on real hardware stays red and stays visible), stay keyboard-focusable
+   * (native `disabled` removes an element from the tab order entirely — exactly the control an
+   * operator most needs to still be able to find), and read as "already pressed" via `aria-pressed`
+   * plus a permanently collapsed physical base rather than going flat grey and looking inert.
+   * Re-activation is blocked via `aria-disabled` (not the native attribute) and by the caller simply
+   * omitting `onClick` while `pressed`.
+   */
+  pressed?: boolean
 }
 
 const ICONS: Record<ControlButtonVariant, React.ComponentType<{ className?: string }>> = {
@@ -41,56 +53,64 @@ const ICON_SIZE: Record<ControlButtonVariant, string> = {
  * press. Honors `prefers-reduced-motion` (the press collapse still happens instantly, just without
  * the eased transition) and is fully keyboard operable — a native `<button>`, not a styled `<div>`.
  */
-export function ControlButton({ variant, label, labelEn, className, disabled, style, ...props }: ControlButtonProps) {
+export function ControlButton({ variant, label, labelEn, className, disabled, pressed, style, ...props }: ControlButtonProps) {
   const Icon = ICONS[variant]
+
+  // I-7: native `disabled` (the flat grey skin, and removal from the tab order) is reserved for the
+  // classic "inapplicable right now" case. A LATCHED estop is never natively disabled — see `pressed`'s
+  // doc comment above.
+  const nativeDisabled = Boolean(disabled) && !pressed
+  const flatSkin = nativeDisabled
+  const estopArmedOrLatched = variant === "estop" && !flatSkin
 
   return (
     <button
       type="button"
-      disabled={disabled}
+      disabled={nativeDisabled}
+      aria-disabled={flatSkin || pressed ? true : undefined}
+      aria-pressed={variant === "estop" ? (pressed ?? false) : undefined}
       className={cn(
         "group/control relative flex shrink-0 flex-col items-center justify-center gap-1 border text-center outline-none transition-[transform,box-shadow] duration-75 select-none motion-reduce:transition-none",
         "focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-[var(--color-bg)]",
         SIZE_CLASS[variant],
         variant === "start" &&
-          !disabled &&
+          !flatSkin &&
           "border-navy-800 bg-navy-700 text-white hover:bg-navy-600 active:translate-y-px",
         variant === "pause" &&
-          !disabled &&
+          !flatSkin &&
           "border-status-warn bg-status-warn/15 text-warn-text hover:bg-status-warn/25 active:translate-y-px",
         variant === "reset" &&
-          !disabled &&
+          !flatSkin &&
           "border-border-strong bg-surface-muted text-text-body hover:bg-surface-base active:translate-y-px",
-        variant === "estop" &&
-          !disabled &&
-          "cursor-pointer border-[3px] text-white active:translate-y-1",
-        disabled && "cursor-not-allowed border-border bg-surface-muted text-text-muted",
+        estopArmedOrLatched && !pressed && "cursor-pointer border-[3px] text-white active:translate-y-1",
+        // Latched: keeps the red dome (see style below) but reads as permanently pressed-in, not
+        // interactive — no pointer cursor, no further translate-on-active.
+        estopArmedOrLatched && pressed && "cursor-default border-[3px] text-white translate-y-1",
+        flatSkin && "cursor-not-allowed border-border bg-surface-muted text-text-muted",
         className
       )}
       style={
-        variant === "estop"
+        estopArmedOrLatched
           ? {
-              borderColor: disabled ? undefined : "#7d1f16",
-              background: disabled
-                ? undefined
-                : "radial-gradient(circle at 50% 38%, #e0503f, #b5271a 62%, #8f1d12)",
-              boxShadow: disabled ? "none" : "0 6px 0 #6d160d",
+              borderColor: "#7d1f16",
+              background: "radial-gradient(circle at 50% 38%, #e0503f, #b5271a 62%, #8f1d12)",
+              boxShadow: pressed ? "0 2px 0 #6d160d" : "0 6px 0 #6d160d",
               ...style,
             }
           : style
       }
       onMouseDown={(e) => {
-        if (variant === "estop" && !disabled) {
+        if (estopArmedOrLatched && !pressed) {
           e.currentTarget.style.boxShadow = "0 2px 0 #6d160d"
         }
       }}
       onMouseUp={(e) => {
-        if (variant === "estop" && !disabled) {
+        if (estopArmedOrLatched && !pressed) {
           e.currentTarget.style.boxShadow = "0 6px 0 #6d160d"
         }
       }}
       onMouseLeave={(e) => {
-        if (variant === "estop" && !disabled) {
+        if (estopArmedOrLatched && !pressed) {
           e.currentTarget.style.boxShadow = "0 6px 0 #6d160d"
         }
       }}

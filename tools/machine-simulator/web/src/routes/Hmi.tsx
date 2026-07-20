@@ -14,8 +14,11 @@ import { parseKeyMetric } from "@/components/hmi/derive"
 import { useT } from "@/i18n"
 import {
   EngineApiError,
+  useEstopFleet,
+  useFleetEstopEngaged,
   useFleetIsRunning,
   useMachine,
+  useResetEstop,
   useStartFleet,
   useStopFleet,
 } from "@/lib/api"
@@ -68,17 +71,23 @@ export default function Hmi() {
 
   const { data: machine, isPending, isError, error } = useMachine(code)
   const fleetIsRunning = useFleetIsRunning()
+  // C-2: server-owned, shared across every panel/tab — no longer this component instance's own React
+  // state, so navigating to another machine's panel (or an F5) can no longer silently drop an active
+  // E-STOP the way local state did.
+  const estopEngaged = useFleetEstopEngaged()
   const startFleet = useStartFleet()
   const stopFleet = useStopFleet()
+  const estopFleet = useEstopFleet()
+  const resetEstop = useResetEstop()
 
-  const [estopEngaged, setEstopEngaged] = React.useState(false)
   const [localEvents, setLocalEvents] = React.useState<HmiLocalLogEvent[]>([])
 
   // A fresh machine code (navigating from one HMI straight to another) must not inherit the previous
-  // machine's fault latch or log — `wouter` reuses this component instance across a param change since
-  // it's the same route/component, so this doesn't happen for free.
+  // machine's LOCAL log — `wouter` reuses this component instance across a param change since it's the
+  // same route/component, so this doesn't happen for free. The E-STOP latch itself is intentionally
+  // NOT reset here anymore (C-2): it's fleet-wide state, and a real emergency stop on one machine's
+  // panel must still be in force when an operator switches to another machine's panel.
   React.useEffect(() => {
-    setEstopEngaged(false)
     setLocalEvents([])
   }, [code])
 
@@ -102,21 +111,37 @@ export default function Hmi() {
       : (configCheck.data.recipe?.driftState ?? null)
     : null
 
+  // I-1 — branch-review: the engine's per-cycle `boardPoints` are generic simulator points
+  // (`PT-001`…`PT-020`, `AoiInspectorSim.cs`) that share NO code vocabulary with the product's own
+  // configured `MeasurementPoint.code`s (e.g. `P01`) — there is no engine-side link between "this
+  // cycle's board result" and "this specific configured point." The previous build zipped the two
+  // lists BY ARRAY INDEX, which put a real NG verdict's colour on a specific, named, wrong physical
+  // location (live-reproduced: an NG at board index 9 painted product point `P03` red, and the NG at
+  // index 9 itself was silently dropped whenever the product had fewer than 10 configured points).
+  // Per the review's second remediation option: positions stay real (`nx`/`ny` come straight from
+  // the product's own config, unchanged below); no dot is coloured by an unverifiable per-point
+  // match — `aoiPoints` below carries ONLY position + code, never a `result`. The real per-cycle
+  // verdict is instead surfaced as an honest AGGREGATE (`aoiUnlocatedDefects`, computed straight from
+  // `machine.boardPoints` with no product-point involvement at all) plus a disclosure caption on the
+  // schematic itself — see `AoiSchematic.tsx`'s own remarks.
   const aoiPoints = React.useMemo<AoiSchematicPoint[]>(() => {
     if (!productPoints.data) return []
     const sorted = [...productPoints.data]
       .filter((p) => !p.deletedAt)
       .sort((a, b) => a.orderIndex - b.orderIndex)
-    const boardPoints = machine?.boardPoints ?? []
     const imgW = product.data?.imageWidth ?? null
     const imgH = product.data?.imageHeight ?? null
-    return sorted.map((p, i) => ({
+    return sorted.map((p) => ({
       code: p.code,
       nx: clamp01(p.normalizedX ?? (imgW ? p.positionX / imgW : 0.5)),
       ny: clamp01(p.normalizedY ?? (imgH ? p.positionY / imgH : 0.5)),
-      result: boardPoints[i]?.result,
     }))
-  }, [productPoints.data, machine?.boardPoints, product.data])
+  }, [productPoints.data, product.data])
+
+  const aoiUnlocatedDefects = React.useMemo(
+    () => (machine?.boardPoints ?? []).filter((p) => p.result === "NG").length,
+    [machine?.boardPoints]
+  )
 
   const running = fleetIsRunning && !estopEngaged
 
@@ -137,15 +162,22 @@ export default function Hmi() {
   }
 
   function handleEstop() {
-    // Real, honest stop — this isn't a cosmetic-only fault state (spec: "it really stops the engine").
-    stopFleet.mutate()
-    setEstopEngaged(true)
-    pushLocalEvent("error", t("hmi.log.estopEngaged"), "E-STOP — fleet stopped, controls locked")
+    // C-2/C-3 — a real, confirmed, server-latched stop (spec: "it really stops the engine"). The
+    // mutation's `onSuccess` firing IS the confirmation the machine actually stopped; the previous
+    // version latched and logged success unconditionally on a fire-and-forget POST with no `onError`,
+    // so a failed request still told the operator the machine was safely stopped.
+    estopFleet.mutate(undefined, {
+      onSuccess: () => pushLocalEvent("error", t("hmi.log.estopEngaged"), "E-STOP — fleet stopped, controls locked"),
+      onError: () =>
+        pushLocalEvent("error", t("hmi.log.estopFailed"), "E-STOP COMMAND FAILED — engine did not confirm the stop"),
+    })
   }
 
   function handleReset() {
-    setEstopEngaged(false)
-    pushLocalEvent("ok", t("hmi.log.estopReset"), "RESET — E-STOP cleared")
+    resetEstop.mutate(undefined, {
+      onSuccess: () => pushLocalEvent("ok", t("hmi.log.estopReset"), "RESET — E-STOP cleared"),
+      onError: () => pushLocalEvent("error", t("hmi.log.estopResetFailed"), "RESET FAILED — E-STOP still latched"),
+    })
   }
 
   if (!code) return <ErrorKiosk title={t("common.connectivityError")} description="" />
@@ -199,6 +231,7 @@ export default function Hmi() {
             cycles={machine.cycles}
             aoiProductName={product.data?.name ?? productCode ?? null}
             aoiPoints={aoiPoints}
+            aoiUnlocatedDefects={aoiUnlocatedDefects}
             iotLatestReading={iotLatestReading}
           />
           <Sheet
@@ -226,6 +259,8 @@ export default function Hmi() {
             isRunning={fleetIsRunning}
             startPending={startFleet.isPending}
             pausePending={stopFleet.isPending}
+            estopPending={estopFleet.isPending}
+            resetPending={resetEstop.isPending}
             onStart={handleStart}
             onPause={handlePause}
             onEstop={handleEstop}

@@ -42,6 +42,21 @@ export type DeviceClass = "Automation" | "Iot" | "AoiAvi"
 export type DriverKind = "Simulated" | "HotFolderAoi" | "Mqtt"
 export type TransportMode = "Live" | "Demo" | "Auto"
 
+/**
+ * Branch-review I-11 — ONE shared transport-mode→tone map. Before this, `ConfigSyncPanel.tsx` and
+ * `TraceTable.tsx` each invented their own (`MODE_BADGE`/`MODE_TONE`) and disagreed with each other:
+ * `Live → warn` in one, `Live → info` in the other; `Auto` the reverse. Transport mode is a
+ * CONFIGURATION fact (which backend a machine talks to), not a machine STATE (spec §2's status ramp),
+ * so neither variant belongs on `warn`/`fault`/`ok` — every caller now renders it `info` (Live/Auto —
+ * "worth noting, talking to a real/adaptive backend") or `neutral` (Demo — the default, nothing to
+ * flag), never the safety-ramp colours.
+ */
+export const TRANSPORT_MODE_TONE: Record<TransportMode, "info" | "neutral"> = {
+  Live: "info",
+  Demo: "neutral",
+  Auto: "info",
+}
+
 export interface FleetTile {
   code: string
   deviceClass: DeviceClass
@@ -62,10 +77,16 @@ export interface FleetKpis {
 export interface FleetSnapshot {
   machines: FleetTile[]
   kpis: FleetKpis
-  /** M-3: true server-truth of whether the fleet is currently running (`FleetHost.IsRunning`, mirrored
-   * onto `FleetSnapshotDto`) — used only to SEED the client-tracked run-state context below on first
-   * load/reload; day-to-day the Start/Stop mutations remain the source of truth for that context. */
+  /** M-3/C-1: server-truth of whether the fleet is currently running (`FleetHost.IsRunning`, mirrored
+   * onto `FleetSnapshotDto`) — the SOURCE OF TRUTH for `useFleetIsRunning()` on every poll, not just the
+   * first one (branch-review C-1: seeding once and then trusting only this tab's own Start/Stop results
+   * let the panel keep asserting "stopped" while the machine ran on, e.g. after another panel/tab/the
+   * REST API changed fleet state). */
   isRunning: boolean
+  /** C-2: server-owned E-STOP latch (`FleetHost.EstopEngaged`) — shared across every panel/tab that
+   * polls this same snapshot and survives a reload, replacing the old component-local React state a
+   * second panel or an F5 could silently forget. */
+  estopEngaged: boolean
 }
 
 export interface FleetActionResult {
@@ -351,6 +372,12 @@ const endpoints = {
     request<ModeState>("/v1/mode", { method: "PUT", body: JSON.stringify({ mode }) }),
   startFleet: () => request<FleetActionResult>("/v1/fleet/start", { method: "POST" }),
   stopFleet: () => request<FleetActionResult>("/v1/fleet/stop", { method: "POST" }),
+  // C-2/C-3 — both return the FULL fleet snapshot (not the smaller action-result shape /start and
+  // /stop use): the response IS the confirmation the machine actually stopped/latch actually
+  // changed (C-3 — no more fire-and-forget), and it's authoritative enough to seed the shared
+  // fleet-runtime state directly instead of waiting up to 1s for the next poll to catch up.
+  estopFleet: () => request<FleetSnapshot>("/v1/fleet/estop", { method: "POST" }),
+  resetEstop: () => request<FleetSnapshot>("/v1/fleet/estop/reset", { method: "POST" }),
   health: () => request<Health>("/v1/health"),
   machineDetail: (code: string) => request<MachineDetail>(`/v1/machines/${encodeURIComponent(code)}`),
   syncConfig: (code: string) =>
@@ -382,35 +409,38 @@ const endpoints = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Fleet runtime context — day-to-day "is the fleet actively running" is
-// tracked client-side as plain shell-scoped state (set from the start/stop
-// mutations' own results) rather than shoehorned into the query cache.
-// Dashboard's empty state and the TopBar Start/Stop buttons both read it;
-// starting/stopping the fleet is meaningful from ANY route, not just
-// Dashboard, so it lives above the router in App.tsx.
+// Fleet runtime context — "is the fleet actively running" / "is E-STOP
+// latched" are shared, shell-scoped state (not shoehorned into per-route
+// component state) so every consumer — Dashboard's empty state, the TopBar
+// Start/Stop buttons, every `/hmi/:code` panel — agrees, regardless of
+// route. Starting/stopping/E-STOPping the fleet is meaningful from ANY
+// route, so this lives above the router in App.tsx.
 //
-// M-3 (final-review): that client state used to start every session at
-// `false` regardless of server truth, so a page reload while a fleet was
-// genuinely running left the TopBar Stop button disabled until Start was
-// clicked once (a no-op server-side, since FleetHost.Start()/Stop() are
-// both idempotent — it "self-healed" but only after an extra, confusing
-// click). `FleetSnapshotDto.isRunning` now round-trips server truth on
-// GET /v1/fleet, so the provider below seeds its state from the FIRST
-// snapshot it observes each mount, then leaves the mutations in charge
-// exactly as before.
+// Branch-review C-1 — this used to seed `isRunning` from only the FIRST
+// polled `/v1/fleet` snapshot and hand control to the Start/Stop mutations'
+// own results for the rest of the page's life: a fleet-state change from
+// ANYWHERE ELSE (another HMI panel, another tab, the REST API, the engine
+// itself) was silently ignored forever — reproduced live as an HMI panel
+// insisting a machine was stopped while its cycle counter kept climbing.
+// The polled snapshot (`data.isRunning`/`data.estopEngaged`) is now the
+// SOLE source of truth on every tick; a mutation's own result is applied
+// only as a short-lived OPTIMISTIC override (so Start/Pause/E-STOP/RESET
+// still feel instant) that the very next poll — at most ~1s later —
+// supersedes, exactly the "optimistic until the next poll lands" contract
+// the review asked for.
 // ─────────────────────────────────────────────────────────────────────────
 
 interface FleetRuntimeValue {
   isRunning: boolean
-  setIsRunning: (value: boolean) => void
+  estopEngaged: boolean
+  /** Applies a mutation's own result immediately; overwritten by the next real poll. */
+  setOptimisticIsRunning: (value: boolean) => void
+  setOptimisticEstopEngaged: (value: boolean) => void
 }
 
 const FleetRuntimeContext = React.createContext<FleetRuntimeValue | null>(null)
 
 export function FleetRuntimeProvider({ children }: { children: React.ReactNode }) {
-  const [isRunning, setIsRunning] = React.useState(false)
-  const seededRef = React.useRef(false)
-
   // Same query key `useFleet()` polls (~1s) — this just adds another observer onto that SAME shared
   // cache entry (TanStack Query dedupes by key), not a second network poll.
   const { data } = useQuery({
@@ -419,13 +449,33 @@ export function FleetRuntimeProvider({ children }: { children: React.ReactNode }
     refetchInterval: 1000,
   })
 
-  React.useEffect(() => {
-    if (seededRef.current || data === undefined) return
-    seededRef.current = true
-    setIsRunning(data.isRunning)
-  }, [data])
+  const [optimistic, setOptimistic] = React.useState<{ isRunning?: boolean; estopEngaged?: boolean }>({})
 
-  const value = React.useMemo(() => ({ isRunning, setIsRunning }), [isRunning])
+  // Every successful fetch (poll OR a mutation's `queryClient.setQueryData`) produces a brand-new
+  // `data` object reference — cleared the optimistic override as soon as ANY fresh snapshot lands, so
+  // it never outlives "until the next poll", never masks a real server-side change indefinitely.
+  const seenDataRef = React.useRef(data)
+  if (data !== seenDataRef.current) {
+    seenDataRef.current = data
+    if (optimistic.isRunning !== undefined || optimistic.estopEngaged !== undefined) {
+      setOptimistic({})
+    }
+  }
+
+  const isRunning = optimistic.isRunning ?? data?.isRunning ?? false
+  const estopEngaged = optimistic.estopEngaged ?? data?.estopEngaged ?? false
+
+  const setOptimisticIsRunning = React.useCallback((value: boolean) => {
+    setOptimistic((prev) => ({ ...prev, isRunning: value }))
+  }, [])
+  const setOptimisticEstopEngaged = React.useCallback((value: boolean) => {
+    setOptimistic((prev) => ({ ...prev, estopEngaged: value }))
+  }, [])
+
+  const value = React.useMemo(
+    () => ({ isRunning, estopEngaged, setOptimisticIsRunning, setOptimisticEstopEngaged }),
+    [isRunning, estopEngaged, setOptimisticIsRunning, setOptimisticEstopEngaged]
+  )
   return React.createElement(FleetRuntimeContext.Provider, { value }, children)
 }
 
@@ -435,9 +485,15 @@ function useFleetRuntime(): FleetRuntimeValue {
   return ctx
 }
 
-/** Whether the fleet is currently believed to be running (client-tracked, see remarks above). */
+/** Whether the fleet is currently running — server-truth on every poll (see remarks above), not just
+ * seeded once. */
 export function useFleetIsRunning(): boolean {
   return useFleetRuntime().isRunning
+}
+
+/** C-2 — whether E-STOP is currently latched, server-owned and shared across every panel/tab. */
+export function useFleetEstopEngaged(): boolean {
+  return useFleetRuntime().estopEngaged
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -488,22 +544,61 @@ export function useSetMode() {
 
 export function useStartFleet() {
   const queryClient = useQueryClient()
-  const { setIsRunning } = useFleetRuntime()
+  const { setOptimisticIsRunning } = useFleetRuntime()
   return useMutation({
     mutationFn: endpoints.startFleet,
     onSuccess: (data) => {
-      setIsRunning(data.running)
+      setOptimisticIsRunning(data.running)
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.fleet })
     },
   })
 }
 
 export function useStopFleet() {
-  const { setIsRunning } = useFleetRuntime()
+  const queryClient = useQueryClient()
+  const { setOptimisticIsRunning } = useFleetRuntime()
   return useMutation({
     mutationFn: endpoints.stopFleet,
     onSuccess: (data) => {
-      setIsRunning(data.running)
+      setOptimisticIsRunning(data.running)
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.fleet })
+    },
+  })
+}
+
+/**
+ * C-2/C-3 — the E-STOP command. Unlike the old component-local `estopEngaged` React state, the latch
+ * this seeds (`useFleetEstopEngaged`) is server-owned and mirrored on every `/v1/fleet` poll, so it's
+ * shared across every panel/tab and survives a reload. `mutationFn` calls `FleetHost.Estop()`, which
+ * tears the pipeline down BEFORE returning — so `onSuccess` firing is itself the confirmation the
+ * machine actually stopped (C-3: the old code latched and logged a success banner on a fire-and-forget
+ * POST with no `onError`, which could still fail silently). The full fleet snapshot the endpoint
+ * returns is written straight into the query cache so every consumer (readouts, other panels) sees the
+ * post-E-STOP state immediately, not after the next 1s poll.
+ */
+export function useEstopFleet() {
+  const queryClient = useQueryClient()
+  const { setOptimisticIsRunning, setOptimisticEstopEngaged } = useFleetRuntime()
+  return useMutation({
+    mutationFn: endpoints.estopFleet,
+    onSuccess: (data) => {
+      setOptimisticIsRunning(data.isRunning)
+      setOptimisticEstopEngaged(data.estopEngaged)
+      queryClient.setQueryData(QUERY_KEYS.fleet, data)
+    },
+  })
+}
+
+/** Clears the E-STOP latch server-side. Does NOT restart the fleet (spec/C-2: an explicit, separate
+ * transition) — START is enabled again but stays inert until pressed. */
+export function useResetEstop() {
+  const queryClient = useQueryClient()
+  const { setOptimisticEstopEngaged } = useFleetRuntime()
+  return useMutation({
+    mutationFn: endpoints.resetEstop,
+    onSuccess: (data) => {
+      setOptimisticEstopEngaged(data.estopEngaged)
+      queryClient.setQueryData(QUERY_KEYS.fleet, data)
     },
   })
 }

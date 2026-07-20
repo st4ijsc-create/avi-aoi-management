@@ -17,6 +17,10 @@ interface ControlColumnProps {
   isRunning: boolean
   startPending: boolean
   pausePending: boolean
+  /** In-flight E-STOP request, not yet confirmed by the server (C-3) — grey the button out (classic
+   * `disabled` skin) only for this brief transient window, distinct from `estopEngaged` itself. */
+  estopPending: boolean
+  resetPending: boolean
   onStart: () => void
   onPause: () => void
   onEstop: () => void
@@ -34,6 +38,8 @@ export function ControlColumn({
   isRunning,
   startPending,
   pausePending,
+  estopPending,
+  resetPending,
   onStart,
   onPause,
   onEstop,
@@ -73,10 +79,25 @@ export function ControlColumn({
         />
       </div>
 
-      <ControlButton variant="estop" label={t("hmi.controls.estop")} labelEn={enLabel("estop")} disabled={estopEngaged} onClick={onEstop} />
+      {/* I-7: `pressed` (not `disabled`) once latched — keeps the dome red and the button focusable;
+          `onClick` is simply omitted while latched so a stray click/Enter/Space is a no-op. */}
+      <ControlButton
+        variant="estop"
+        label={t("hmi.controls.estop")}
+        labelEn={enLabel("estop")}
+        pressed={estopEngaged}
+        disabled={estopPending}
+        onClick={estopEngaged ? undefined : onEstop}
+      />
 
       {estopEngaged ? (
-        <ControlButton variant="reset" label={t("hmi.controls.reset")} labelEn={enLabel("reset")} onClick={onReset} />
+        <ControlButton
+          variant="reset"
+          label={t("hmi.controls.reset")}
+          labelEn={enLabel("reset")}
+          disabled={resetPending}
+          onClick={onReset}
+        />
       ) : null}
     </Sheet>
   )

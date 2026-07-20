@@ -49,7 +49,12 @@ export function IotSchematic({ isRunning, latestReading, className }: IotSchemat
           {t("hmi.schematic.node")}
         </text>
 
-        {/* Link + travelling packets */}
+        {/* Link + travelling packets — branch-review I-10: these were painted with the status-run
+            GREEN, i.e. the "machine healthy/OK" colour, purely because green reads as "data flowing" —
+            not because anything is actually in the run STATE (they render the same whether the node is
+            healthy, degraded, or stopped; only the motion itself is gated on `isRunning`). Spec §2:
+            status colours are for state only, never decoration — drawn in the schematic's own accent
+            colour instead, matching every other live element in this drawing. */}
         <line x1={110} y1={112} x2={370} y2={112} stroke="var(--text-muted)" strokeWidth={1} strokeDasharray="3 5" className="hmi-wire" />
         {[0, 0.8, 1.6].map((delay) => (
           <circle
@@ -58,7 +63,7 @@ export function IotSchematic({ isRunning, latestReading, className }: IotSchemat
             cx={116}
             cy={112}
             r={3}
-            fill="var(--color-status-run)"
+            fill="var(--color-accent)"
             style={{ animationDelay: `${delay}s` }}
           />
         ))}
@@ -87,10 +92,21 @@ export function IotSchematic({ isRunning, latestReading, className }: IotSchemat
         ))}
       </g>
 
+      {/* `hmi-iot-reading` — C-5/I-15-style mask hook, on a FIXED-SIZE invisible rect rather than the
+          live `<text>` itself: this string's LENGTH varies cycle to cycle (different numeric values
+          have different digit counts), so a mask sized to the text's own current bounding box left
+          real, reproduced slivers at its left/right edges unmasked whenever a baseline was captured
+          against one string length and compared against a different one — the exact same class of bug
+          `AutomationSchematic.tsx`'s `.hmi-feeder-live` fix (and `AoiSchematic.tsx`'s constant dot
+          radius) already guards against. Sized generously — well past any realistic reading string —
+          rather than tuned to a specific value's width. */}
       {latestReading ? (
-        <text x={230} y={206} textAnchor="middle" fontSize={9} fill="var(--text-body)" fontFamily="var(--font-mono)">
-          {latestReading}
-        </text>
+        <>
+          <rect x={140} y={192} width={180} height={18} fill="transparent" className="hmi-iot-reading" />
+          <text x={230} y={206} textAnchor="middle" fontSize={9} fill="var(--text-body)" fontFamily="var(--font-mono)">
+            {latestReading}
+          </text>
+        </>
       ) : null}
     </svg>
   )

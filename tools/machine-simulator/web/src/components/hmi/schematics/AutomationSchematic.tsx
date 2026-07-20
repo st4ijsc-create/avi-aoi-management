@@ -69,8 +69,13 @@ export function AutomationSchematic({ isRunning, cycles, className }: Automation
         <circle cx={309} cy={134} r={2} fill="var(--text-muted)" />
         <circle cx={286} cy={134} r={2.6} fill="none" stroke="var(--color-accent)" strokeWidth={1.3} className="hmi-wire" />
 
-        {/* Feeder bowl + linear feed tube toward the pick point */}
+        {/* Feeder bowl + linear feed tube toward the pick point. I-6: the remaining-screw count is a
+            deterministic decoration (`derive.ts`'s `feederRemaining` — no real feeder-inventory signal
+            exists engine-side), disclosed via both the visible "(MÔ PHỎNG)"/"(SIMULATED)" suffix on
+            the caption below AND this group-level `<title>` tooltip, rather than rendering as an
+            unmarked instrument reading. */}
         <g>
+          <title>{t("hmi.schematic.feederDisclosure")}</title>
           <circle cx={42} cy={82} r={20} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
           <circle cx={42} cy={82} r={11} fill="none" stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" opacity={0.7} />
           <circle cx={36} cy={75} r={1.5} fill="var(--color-accent)" opacity={0.7} />
@@ -82,14 +87,26 @@ export function AutomationSchematic({ isRunning, cycles, className }: Automation
           <text x={42} y={116} textAnchor="middle" fontSize={7} letterSpacing="0.08em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
             {t("hmi.schematic.feeder")}
           </text>
+          {/* `hmi-feeder-live` — C-5/I-15-style mask hook, on a FIXED-SIZE invisible rect rather than
+              wrapping the live number/bar in a `<g>` and masking THAT: an SVG group's bounding box is
+              the union of its children's actual current geometry, so masking the group directly would
+              size the mask box to whatever the fill bar's width happens to be AT SCREENSHOT TIME —
+              exactly the flake `AoiSchematic.tsx`'s own "radius is a CONSTANT" comment already
+              documents for its measurement dots, reproduced live here too: a baseline captured at one
+              `cycles % capacity` fill width left a real, narrow sliver of a DIFFERENT-width bar
+              unmasked on a later run (the two widths never fully overlap unless `remaining` happens to
+              match). This rect's own size never depends on `remaining`/`fillPct` — it's sized once, big
+              enough to cover the number's text extent AND the full 0–42 fill-bar range regardless of
+              value. */}
+          <rect x={16} y={116} width={52} height={42} fill="transparent" className="hmi-feeder-live" />
           <text x={42} y={134} textAnchor="middle" fontSize={15} fontWeight={700} fill="var(--color-text)" fontFamily="var(--font-heading)">
             {remaining}
           </text>
+          <rect x={21} y={152} width={42 * fillPct} height={4} fill="var(--color-accent)" opacity={0.55} />
           <text x={42} y={148} textAnchor="middle" fontSize={6.5} letterSpacing="0.08em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
             {t("hmi.schematic.remaining")}
           </text>
           <rect x={21} y={152} width={42} height={4} fill="none" stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" />
-          <rect x={21} y={152} width={42 * fillPct} height={4} fill="var(--color-accent)" opacity={0.55} />
         </g>
 
         {/*

@@ -23,7 +23,15 @@ const STATUS_TONE: Record<string, ReadoutTone> = {
   TELEMETRY: "neutral",
 }
 
-function passRateTone(passRate: number): ReadoutTone {
+/**
+ * Branch-review "the FPY instance" — a machine that has never run has `passRate === 0` (the engine's
+ * own `_judgedCount == 0 ? 0.0 : …` default, `MachineState.cs`), which is indistinguishable from "0% of
+ * boards passed" by value alone. Coloring that fault-red (spec §2: status colours are for STATE only)
+ * makes a never-run machine on an exhibition floor look like it's actively failing. `cycles` is the
+ * tell: zero cycles means no data yet, not a bad result — same "no data ≠ fault" principle the class
+ * already applies elsewhere (`cycleRate`/`cycleTime`/`signal` all render `"—"`/`"idle"` while empty). */
+function passRateTone(passRate: number, cycles: number): ReadoutTone {
+  if (cycles === 0) return "idle"
   if (passRate >= 0.95) return "run"
   if (passRate >= 0.8) return "warn"
   return "fault"
@@ -99,10 +107,10 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
       { key: "cycles", value: machine.cycles.toLocaleString(), labelKey: "hmi.readout.cycles", tone: "neutral" },
       {
         key: "passRate",
-        value: `${(machine.passRate * 100).toFixed(1)}`,
-        unit: "%",
+        value: machine.cycles > 0 ? `${(machine.passRate * 100).toFixed(1)}` : "—",
+        unit: machine.cycles > 0 ? "%" : undefined,
         labelKey: "hmi.readout.passRate",
-        tone: passRateTone(machine.passRate),
+        tone: passRateTone(machine.passRate, machine.cycles),
         gaugePct: machine.passRate * 100,
       },
       {
@@ -168,17 +176,22 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
       },
       {
         key: "fpy",
-        value: `${(machine.passRate * 100).toFixed(1)}`,
-        unit: "%",
+        value: machine.cycles > 0 ? `${(machine.passRate * 100).toFixed(1)}` : "—",
+        unit: machine.cycles > 0 ? "%" : undefined,
         labelKey: "hmi.readout.fpy",
-        tone: passRateTone(machine.passRate),
+        tone: passRateTone(machine.passRate, machine.cycles),
         gaugePct: machine.passRate * 100,
       },
       {
         key: "defects",
         value: machine.cycles > 0 ? cumulativeNg.toLocaleString() : "—",
         labelKey: "hmi.readout.defects",
-        tone: cumulativeNg > 0 ? "fault" : "run",
+        // Branch-review I-8: a raw cumulative COUNT is not a state — pinning it fault-red the moment a
+        // single NG board has ever occurred desensitizes the one colour on this screen that's supposed
+        // to mean "stop, this needs help" (spec §2). `neutral` here matches every other running-total
+        // tile on this grid (boards/pointsInspected/cycles); the STATUS tile right below already
+        // carries the real fault-state signal for the last verdict.
+        tone: "neutral",
       },
       {
         // H2c: was "Last Defect" (the current board's defect CODE only — "—" whenever the last
@@ -250,9 +263,14 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
       },
       {
         key: "configState",
-        value: configStateValue,
+        // I-4 — this simulated fleet has no device_settings recipe for the IoT machine type, so the
+        // checksum-based drift check every other class uses here can structurally never resolve for
+        // IoT (`configDriftState` is permanently `null`, forever rendering a bare "—" that reads as
+        // "still waiting for data", not "not applicable to this class"). An explicit N/A is honest
+        // about which of those two it actually is.
+        value: t("hmi.readout.configStateNotApplicable"),
         labelKey: "hmi.readout.configState",
-        tone: configStateTone,
+        tone: "idle",
         valueType: "text",
       },
     ]

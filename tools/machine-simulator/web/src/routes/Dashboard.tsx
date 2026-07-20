@@ -131,7 +131,11 @@ export default function Dashboard() {
                     : online > 0
                       ? t("dashboard.kpi.onlineNotYet", { count: roster - online })
                       : t("dashboard.kpi.onlineNone"),
-                status: online === roster && roster > 0 ? "ok" : online > 0 ? "warn" : "neutral",
+                // I-12: a fleet mid-start is a normal transient boot state, not a warning — every
+                // fleet passes through "some online" at every startup. `warn` here desensitizes the
+                // operator to amber; `info` (routes to the neutral tone, see DELTA_TONE) reads as "in
+                // progress" instead.
+                status: online === roster && roster > 0 ? "ok" : online > 0 ? "info" : "neutral",
               }}
             />
             <KpiTile label={t("dashboard.kpi.totalCycles")} labelEn={gloss("dashboard.kpi.totalCycles")} value={totalCycles.toLocaleString()}>

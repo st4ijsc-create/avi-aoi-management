@@ -145,7 +145,11 @@ function ModeIndicator({ isDemo, serverUrl }: { isDemo: boolean; serverUrl: stri
     <div
       className={cn(
         "flex items-center gap-2 border px-3 py-2 text-xs",
-        isDemo ? "border-info/30 bg-info/10 text-info-text" : "border-warn/30 bg-warn/10 text-warn-text"
+        // I-11: transport mode is a CONFIGURATION fact, not a machine state (spec §2) — Live used to
+        // paint amber/warn and Demo calm blue/info, so the correct production configuration was the
+        // one that visually read as a warning. Matches `TRANSPORT_MODE_TONE` (`lib/api.ts`): Demo is
+        // the neutral default, Live/real-backend gets the (non-alarming) info tint.
+        isDemo ? "border-border bg-surface-muted text-text-body" : "border-info/30 bg-info/10 text-info-text"
       )}
     >
       {isDemo ? (

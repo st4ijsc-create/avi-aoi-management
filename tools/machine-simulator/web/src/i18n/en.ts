@@ -1226,6 +1226,7 @@ export const en: Dictionary = {
     cycleTrend: "Cycle trend",
     cyclesUnit: "cycles",
     passRateNotApplicableAria: "Pass rate not applicable — telemetry only",
+    passRateNoDataAria: "No pass-rate data yet — machine hasn't run a cycle",
     passRateAria: (vars: Vars) => `Pass rate ${vars.pct}%`,
   },
 
@@ -1262,7 +1263,9 @@ export const en: Dictionary = {
       titleEn: "Nhật ký hệ thống",
       empty: "No events yet.",
       estopEngaged: "E-STOP — fleet stopped, controls locked",
+      estopFailed: "E-STOP FAILED — engine did not confirm the stop",
       estopReset: "RESET — E-STOP cleared",
+      estopResetFailed: "RESET FAILED — E-STOP still latched",
       fleetStarted: "Fleet started",
       fleetPaused: "Fleet paused",
     },
@@ -1282,7 +1285,8 @@ export const en: Dictionary = {
       figIot: "FIG. 01 — IOT SENSOR NODE",
       idleNote: "Machine stopped — static drawing",
       feeder: "FEEDER",
-      remaining: "REMAINING",
+      remaining: "REMAINING (SIMULATED)",
+      feederDisclosure: "Remaining-screw count is a simulated estimate derived from the cycle counter — not a real inventory signal from the machine.",
       zAxis: "Z-AXIS",
       conveyor: "CONVEYOR",
       camera: "CAMERA HEAD",
@@ -1290,7 +1294,10 @@ export const en: Dictionary = {
       node: "SENSOR NODE",
       uplink: "UPLINK",
       noProduct: "No product config linked",
-      pointsSynced: (vars: Vars) => `${vars.count} points`,
+      pointsSynced: (vars: Vars) => `${vars.count} configured positions`,
+      aggregateDefects: (vars: Vars) => `${vars.count} defects (aggregate)`,
+      aggregateDisclosure: "Positions: real product config · Defect count: machine-wide aggregate, not assigned to any single position",
+      configuredPosition: (vars: Vars) => `${vars.code} — configured position (not a measurement result)`,
     },
 
     readoutPanel: {
@@ -1317,6 +1324,7 @@ export const en: Dictionary = {
       signal: "Signal",
       observedSpan: "Observed Span",
       status: "Status",
+      configStateNotApplicable: "N/A",
     },
   },
 

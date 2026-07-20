@@ -22,7 +22,7 @@ import { Link } from "wouter"
 
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
-import { useMode, type DeviceClass, type TransportMode } from "@/lib/api"
+import { TRANSPORT_MODE_TONE, useMode, type DeviceClass, type TransportMode } from "@/lib/api"
 import {
   useMachineConfigCheck,
   useMachineConfigDiff,
@@ -65,12 +65,6 @@ const DRIFT_BADGE: Record<string, BadgeStatus> = {
   in_sync: "ok",
   drift: "warn",
   unknown: "neutral",
-}
-
-const MODE_BADGE: Record<TransportMode, BadgeStatus> = {
-  Live: "warn",
-  Demo: "neutral",
-  Auto: "info",
 }
 
 // Task review #1/#7 — the backend's diff (ConfigSyncEngine.DiffFields) now drives its field set off the
@@ -172,7 +166,7 @@ function ModeIndicator() {
   return (
     <div className="flex items-center gap-2">
       <span className="hmi-micro">{t("configSyncPanel.modeLabel")}</span>
-      <StatusBadge status={MODE_BADGE[mode]}>{t(`configSyncPanel.mode.${mode}`)}</StatusBadge>
+      <StatusBadge status={TRANSPORT_MODE_TONE[mode]}>{t(`configSyncPanel.mode.${mode}`)}</StatusBadge>
     </div>
   )
 }

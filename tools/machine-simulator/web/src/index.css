@@ -549,11 +549,21 @@
     }
 
     .hmi-schematic-run .hmi-gantry-head { animation: hmi-kf-gantry-sweep 3.4s ease-in-out infinite; }
-    .hmi-schematic-run .hmi-gantry-bit { animation: hmi-kf-bit-spin 0.5s linear infinite; transform-origin: center; }
+    /* C-4: SVG elements default to `transform-box: view-box`, so a bare `transform-origin: center`
+       resolves to the centre of the whole viewBox, not of the element itself — the driver bit orbited
+       a ~278-unit radius around the drawing's centre instead of spinning in place (measured live:
+       bounding-rect x 490→1459 for a viewBox spanning x 25…923). `transform-box: fill-box` re-anchors
+       `center` to the element's OWN bounding-box centre, matching every browser's non-SVG-legacy
+       default and what "spin in place" actually requires. */
+    .hmi-schematic-run .hmi-gantry-bit { animation: hmi-kf-bit-spin 0.5s linear infinite; transform-box: fill-box; transform-origin: center; }
     .hmi-schematic-run .hmi-gantry-zmarker { animation: hmi-kf-z-stroke 1.7s ease-in-out infinite; }
     .hmi-schematic-run .hmi-aoi-camera { animation: hmi-kf-camera-sweep 3s ease-in-out infinite; }
     .hmi-schematic-run .hmi-aoi-belt-ticks { animation: hmi-kf-belt-dash 0.9s linear infinite; }
-    .hmi-schematic-run .hmi-iot-arc { animation: hmi-kf-signal-pulse 2.2s ease-out infinite; transform-origin: center; }
+    /* C-4: same view-box-vs-fill-box bug — each arc scaled from the drawing's centre instead of the
+       sensor node it's drawn around, so on IOT-01 the arcs swept in from off-canvas instead of
+       radiating from the node. `fill-box` anchors the scale on the circle's own centre (already at the
+       node, by construction), which is what "emanating from the sensor" requires. */
+    .hmi-schematic-run .hmi-iot-arc { animation: hmi-kf-signal-pulse 2.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
     .hmi-schematic-run .hmi-iot-packet { animation: hmi-kf-packet-travel 2.4s linear infinite; }
     .hmi-schematic-run .hmi-iot-tick { animation: hmi-kf-tick-blip 1s ease-in-out infinite; }
   }

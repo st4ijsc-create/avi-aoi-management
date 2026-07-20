@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from "framer-motion"
 
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
+import { TRANSPORT_MODE_TONE } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { traceStatusTone, type TraceRow } from "@/lib/inspector"
 import { rowEnter } from "@/theme/motion"
@@ -24,12 +25,6 @@ const KIND_DOT: Record<string, string> = {
   ProcessResult: "bg-chart-1",
   Telemetry: "bg-chart-2",
   Inspection: "bg-chart-3",
-}
-
-const MODE_TONE: Record<string, "info" | "neutral" | "warn"> = {
-  Live: "info",
-  Demo: "neutral",
-  Auto: "warn",
 }
 
 const ROW_TONE_CLASS: Record<ReturnType<typeof traceStatusTone>, string> = {
@@ -244,7 +239,7 @@ export function TraceTable({ rows, emptyMessage, className }: TraceTableProps) {
                         {row.latencyMs}ms
                       </div>
                       <div role="cell" className="flex justify-center">
-                        <StatusChip status={MODE_TONE[row.mode] ?? "neutral"} className="w-fit">
+                        <StatusChip status={TRANSPORT_MODE_TONE[row.mode] ?? "neutral"} className="w-fit">
                           {row.mode}
                         </StatusChip>
                       </div>

@@ -18,6 +18,10 @@ interface SchematicPanelProps {
   cycles: number
   aoiProductName?: string | null
   aoiPoints: AoiSchematicPoint[]
+  /** I-1 — real per-cycle NG count from the engine's own board points, computed with NO product-point
+   * involvement (see `Hmi.tsx`'s remarks) — an honest aggregate the AOI schematic shows instead of
+   * colouring an individual, unverifiably-matched dot. */
+  aoiUnlocatedDefects?: number
   iotLatestReading?: string | null
   className?: string
 }
@@ -30,6 +34,7 @@ export function SchematicPanel({
   cycles,
   aoiProductName,
   aoiPoints,
+  aoiUnlocatedDefects,
   iotLatestReading,
   className,
 }: SchematicPanelProps) {
@@ -59,7 +64,13 @@ export function SchematicPanel({
         {deviceClass === "Automation" ? (
           <AutomationSchematic isRunning={isRunning} cycles={cycles} className="h-full w-full" />
         ) : deviceClass === "AoiAvi" ? (
-          <AoiSchematic isRunning={isRunning} productName={aoiProductName} points={aoiPoints} className="h-full w-full" />
+          <AoiSchematic
+            isRunning={isRunning}
+            productName={aoiProductName}
+            points={aoiPoints}
+            unlocatedDefects={aoiUnlocatedDefects ?? 0}
+            className="h-full w-full"
+          />
         ) : (
           <IotSchematic isRunning={isRunning} latestReading={iotLatestReading} className="h-full w-full" />
         )}

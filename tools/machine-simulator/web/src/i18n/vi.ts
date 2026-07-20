@@ -1237,6 +1237,7 @@ export const vi = {
     cycleTrend: "Xu hướng chu kỳ",
     cyclesUnit: "chu kỳ",
     passRateNotApplicableAria: "Không áp dụng tỷ lệ đạt — chỉ có dữ liệu cảm biến",
+    passRateNoDataAria: "Chưa có dữ liệu tỷ lệ đạt — máy chưa chạy chu kỳ nào",
     passRateAria: (vars: Vars) => `Tỷ lệ đạt ${vars.pct}%`,
   },
 
@@ -1282,7 +1283,9 @@ export const vi = {
       titleEn: "SYSTEM LOG",
       empty: "Chưa có sự kiện nào.",
       estopEngaged: "DỪNG KHẨN — đã dừng fleet, khóa điều khiển",
+      estopFailed: "LỖI DỪNG KHẨN — máy chủ không xác nhận đã dừng",
       estopReset: "ĐẶT LẠI — đã gỡ khóa dừng khẩn cấp",
+      estopResetFailed: "LỖI ĐẶT LẠI — dừng khẩn cấp vẫn đang khóa",
       fleetStarted: "Đã khởi động fleet",
       fleetPaused: "Đã tạm dừng fleet",
     },
@@ -1302,7 +1305,12 @@ export const vi = {
       figIot: "HÌNH 01 — NÚT CẢM BIẾN IoT",
       idleNote: "Máy đang dừng — sơ đồ tĩnh",
       feeder: "CẤP VÍT",
-      remaining: "CÒN LẠI",
+      // I-6 — the engine reports no real feeder-inventory signal; this countdown is a deterministic
+      // decoration derived from the cycle counter (`derive.ts`'s `feederRemaining`), not a live sensor
+      // reading. "(MÔ PHỎNG)" ("simulated") makes that unmistakable right on the schematic instead of
+      // only in a code comment — spec §7 still wants the feeder shown, just honestly labeled.
+      remaining: "CÒN LẠI (MÔ PHỎNG)",
+      feederDisclosure: "Số vít còn lại là ước tính mô phỏng theo số chu kỳ — không phải tín hiệu tồn kho thật từ máy.",
       zAxis: "TRỤC Z",
       conveyor: "BĂNG TẢI",
       camera: "ĐẦU CAMERA",
@@ -1310,7 +1318,20 @@ export const vi = {
       node: "NÚT CẢM BIẾN",
       uplink: "TRẠM THU",
       noProduct: "Chưa gán sản phẩm cấu hình",
-      pointsSynced: (vars: Vars) => `${vars.count} điểm đo`,
+      // I-1/I-2 — reworded from "N điểm đo" ("N points measured", easily confused with the readout
+      // grid's own "Điểm đã kiểm" tile, a DIFFERENT number — the engine's raw per-cycle board-point
+      // count, not the product's configured point count these dots plot). "Vị trí cấu hình" ("N
+      // configured positions") is unambiguous: this is catalogue geometry, not a live measurement.
+      pointsSynced: (vars: Vars) => `${vars.count} vị trí cấu hình`,
+      // I-1 — the per-point RESULT colour was removed (see `AoiSchematic.tsx`'s header comment); this
+      // is the honest replacement: the real per-cycle NG count, disclosed as an aggregate rather than
+      // implied to be located at any specific dot above.
+      aggregateDefects: (vars: Vars) => `${vars.count} lỗi (tổng hợp)`,
+      // Full disclosure text, carried only in the caption's `<title>` tooltip (unbounded length) —
+      // the short visible line above already implies it via wording, this spells it out for anyone
+      // who hovers/inspects.
+      aggregateDisclosure: "Vị trí: đúng cấu hình sản phẩm · Kết quả lỗi: tổng hợp toàn máy, không gán vào từng vị trí",
+      configuredPosition: (vars: Vars) => `${vars.code} — vị trí cấu hình (không phải kết quả đo)`,
     },
 
     readoutPanel: {
@@ -1337,6 +1358,11 @@ export const vi = {
       signal: "Tín hiệu",
       observedSpan: "Khoảng quan sát",
       status: "Trạng thái",
+      // I-4 — IoT machines have no device_settings recipe in this fleet, so the checksum-based drift
+      // check this tile shows for the other two classes can never resolve; an explicit "not
+      // applicable" reads honestly, unlike a bare em dash (which looks identical to "still waiting
+      // for data").
+      configStateNotApplicable: "KHÔNG ÁP DỤNG",
     },
   },
 

@@ -37,19 +37,25 @@ function ringColor(tokens: ChartTokens, passRate: number): string {
  * the judged count entirely (server-side comment: "Telemetry readings are excluded entirely"), so
  * a telemetry-only device's `passRate` is permanently `0` — not a failing score, just "not judged."
  * Rendering that as a red 0% ring would misrepresent a perfectly healthy sensor as failing.
+ *
+ * Branch-review — the same "zero/absent data rendered as a fault colour" class as the HMI's FPY
+ * tile fix: a machine that has never cycled ALSO has `passRate === 0` (the engine's
+ * `_judgedCount == 0 ? 0.0 : …` default), indistinguishable from "0% of boards passed" by value
+ * alone — a fresh, never-run machine on the roster should not wear a red ring. `cycles === 0` gets
+ * the same neutral placeholder treatment as `!applicable`.
  */
-function PassRateRing({ passRate, applicable }: { passRate: number; applicable: boolean }) {
+function PassRateRing({ passRate, applicable, cycles }: { passRate: number; applicable: boolean; cycles: number }) {
   const t = useT()
   const chartTokens = useChartTokens()
   const radius = 17
   const circumference = 2 * Math.PI * radius
 
-  if (!applicable) {
+  if (!applicable || cycles === 0) {
     return (
       <div
         className="relative flex size-11 shrink-0 items-center justify-center"
         role="img"
-        aria-label={t("machineCard.passRateNotApplicableAria")}
+        aria-label={applicable ? t("machineCard.passRateNoDataAria") : t("machineCard.passRateNotApplicableAria")}
       >
         <svg viewBox="0 0 40 40" className="size-11" aria-hidden="true">
           <circle cx="20" cy="20" r={radius} fill="none" stroke="var(--border)" strokeWidth="4" />
@@ -134,7 +140,7 @@ export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            <PassRateRing passRate={machine.passRate} applicable={machine.deviceClass !== "Iot"} />
+            <PassRateRing passRate={machine.passRate} applicable={machine.deviceClass !== "Iot"} cycles={machine.cycles} />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               {/* Stacked, not inline — same H3c fix as Machines.tsx's filter labels: both languages
                   uppercase in one line read as a single garbled string. */}

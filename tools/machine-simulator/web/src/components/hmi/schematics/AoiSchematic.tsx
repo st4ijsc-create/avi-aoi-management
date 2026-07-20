@@ -3,7 +3,6 @@ import * as React from "react"
 import { useGloss } from "@/components/hmi/bilingual"
 import { DimensionLine } from "@/components/hmi/DimensionLine"
 import { useT } from "@/i18n"
-import type { BoardResult } from "@/lib/api"
 import { truncateText } from "@/lib/utils"
 
 export interface AoiSchematicPoint {
@@ -13,9 +12,6 @@ export interface AoiSchematicPoint {
    * derivation, which falls back to a centered point only if the product genuinely has neither). */
   nx: number
   ny: number
-  /** The live cycle's verdict for this point, when one exists yet — see this file's header comment
-   * for how the correspondence to a board result is derived. */
-  result?: BoardResult
 }
 
 // Frame footprint deliberately mirrors `AutomationSchematic.tsx`'s uprights/rails exactly (78/468,
@@ -41,16 +37,13 @@ const GANTRY_RAIL_X2 = 398
  * above the board. Truncated visually; the full name still reaches assistive tech via `<title>`. */
 const CAPTION_MAX_CHARS = 30
 
-const RESULT_VAR: Record<BoardResult, string> = {
-  OK: "var(--color-status-run)",
-  NG: "var(--color-status-fault)",
-  NTF: "var(--color-status-warn)",
-}
-
 interface AoiSchematicProps {
   isRunning: boolean
   productName?: string | null
   points: AoiSchematicPoint[]
+  /** I-1 — real per-cycle NG count from the engine's own board points (`Hmi.tsx`), shown as an
+   * honest aggregate instead of colouring an individual dot below. */
+  unlocatedDefects?: number
   className?: string
 }
 
@@ -68,20 +61,23 @@ interface AoiSchematicProps {
  * established (portal frame with feet, dimension callouts directly beneath what they measure) so the
  * two machine classes read as one design system, not two unrelated styles.
  *
- * Honest disclosure on the point↔result correspondence: this build's AOI simulator
- * (`AoiInspectorSim.cs`) always inspects a fixed set of generic points (`PT-001`…`PT-020`) that don't
- * share a code vocabulary with the product's own configured `MeasurementPoint.code`s (e.g. `P01`) —
- * there is no engine-side link between "this cycle's board result" and "this specific configured
- * point." Per the H2 brief's "derive client-side and say so," the correspondence here is POSITIONAL:
- * the product's points (already ordered by `orderIndex`) are zipped index-for-index against the
- * live cycle's `boardPoints` in the order the engine returns them. The plotted POSITIONS are always
- * the real, configured product geometry; only which live result colors which dot is a client-side
- * approximation, not a code match.
+ * Branch-review I-1 — honest disclosure on the point↔result correspondence: this build's AOI
+ * simulator (`AoiInspectorSim.cs`) always inspects a fixed set of generic points (`PT-001`…`PT-020`)
+ * that share NO code vocabulary with the product's own configured `MeasurementPoint.code`s (e.g.
+ * `P01`) — there is no engine-side link between "this cycle's board result" and "this specific
+ * configured point." An earlier build zipped the two lists BY ARRAY INDEX, which put a real NG
+ * verdict's colour on a specific, named, wrong physical location (live-reproduced: an NG at board
+ * index 9 painted product point `P03` red). Per the review's fix, this component no longer colours
+ * individual dots by an unverifiable match at all: every dot below plots the product's REAL
+ * configured position (unchanged) but stays the neutral idle outline — position is real config,
+ * never a claim about that exact spot's result. The real per-cycle NG count is instead shown as an
+ * honest AGGREGATE (`unlocatedDefects`, supplied by the caller straight from the engine's own board
+ * points) in the caption, with an explicit disclosure of what's config and what's aggregate.
  */
-export function AoiSchematic({ isRunning, productName, points, className }: AoiSchematicProps) {
+export function AoiSchematic({ isRunning, productName, points, unlocatedDefects = 0, className }: AoiSchematicProps) {
   const t = useT()
   const gloss = useGloss()
-  const fullCaption = `${productName ?? "—"} · ${t("hmi.schematic.pointsSynced", { count: points.length })}`
+  const fullCaption = `${productName ?? "—"} · ${t("hmi.schematic.pointsSynced", { count: points.length })} · ${t("hmi.schematic.aggregateDisclosure")}`
   const captionLabel = points.length > 0 ? truncateText(productName ?? "—", CAPTION_MAX_CHARS) : null
 
   // Camera sweeps the gantry rail from its left end to its right end and back — the CSS keyframe
@@ -212,38 +208,40 @@ export function AoiSchematic({ isRunning, productName, points, className }: AoiS
           className="hmi-wire"
         />
 
-        {/* Real measurement points, plotted at their true normalized config positions */}
-        {points.map((p) => {
-          const cx = BOARD_X + p.nx * BOARD_W
-          const cy = BOARD_Y + p.ny * BOARD_H
-          const color = p.result ? RESULT_VAR[p.result] : "var(--color-status-idle)"
-          return (
-            // `hmi-aoi-point` — a stable mask hook (H2b): the one thing about this dot that's
-            // genuinely live is its RESULT COLOR (green/red/amber as real cycles land); its position
-            // is real, static product config. The visual baseline masks only these, not the whole
-            // schematic, so a structural regression (the board/conveyor/dimension-line drawing
-            // itself) is still caught by the pixel diff. Radius is a CONSTANT 3.4 regardless of
-            // `p.result` (H4 job 3 — previously 2.4 pre-result/3.4 post-result): Playwright's `mask`
-            // paints a box over the locator's CURRENT bounding rect at screenshot time, so a
-            // radius that depends on live, timing-dependent state (whether a given point has landed
-            // its first result by the moment the shot is taken) made the mask itself a different size
-            // between the run that captured a baseline and any later comparison run, leaking a ~1px
-            // ring of unmasked pixels at the edge — a real, reproduced source of flakiness once the
-            // suite's tolerance was tightened, not a hypothetical one.
-            <circle
-              key={p.code}
-              cx={cx}
-              cy={cy}
-              r={3.4}
-              fill={p.result ? color : "none"}
-              stroke={color}
-              strokeWidth={1.3}
-              className="hmi-wire hmi-aoi-point"
-            >
-              <title>{p.code}</title>
-            </circle>
-          )
-        })}
+        {/* Real measurement points, plotted at their true normalized config positions. Branch-review
+            I-1: no longer coloured by a per-point result — see this file's header comment. Each dot
+            stays the neutral idle outline; the `<title>` is explicit that this is a CONFIGURED
+            position, not a verdict site.
+
+            I-15 — `hmi-aoi-points-group` wraps the whole set as ONE stable mask hook, in addition to
+            each dot's own `.hmi-aoi-point` class: whichever product is currently configured on this
+            machine determines both the COUNT and the POSITION of these dots, so masking only each
+            dot's OWN current bounding box doesn't help if a baseline was captured against a
+            different point set than the run being compared — the mismatched region between the two
+            leaks through as unmasked pixels (the exact failure this class guards `11-hmi.spec.ts`
+            against, see its own `beforeEach` remarks). Masking the whole group's bounding box is
+            robust to point-count/position drift; the per-dot class stays for any caller that wants a
+            narrower mask once the point set is otherwise pinned. */}
+        <g className="hmi-aoi-points-group">
+          {points.map((p) => {
+            const cx = BOARD_X + p.nx * BOARD_W
+            const cy = BOARD_Y + p.ny * BOARD_H
+            return (
+              <circle
+                key={p.code}
+                cx={cx}
+                cy={cy}
+                r={3.4}
+                fill="none"
+                stroke="var(--color-status-idle)"
+                strokeWidth={1.3}
+                className="hmi-wire hmi-aoi-point"
+              >
+                <title>{t("hmi.schematic.configuredPosition", { code: p.code })}</title>
+              </circle>
+            )
+          })}
+        </g>
       </g>
 
       {points.length === 0 ? (
@@ -268,12 +266,24 @@ export function AoiSchematic({ isRunning, productName, points, className }: AoiS
       {/* Caption sits below everything — board, conveyor, dimension lines (H2b's collision fix,
           kept: the caption used to sit above the board at the same height as the camera glyph, then
           inside the belt's own tick band; below everything is clear at any panel size). Truncated
-          visually; `<title>` carries the untruncated name. */}
+          visually; `<title>` carries the untruncated name.
+
+          `hmi-aoi-caption` — C-5/I-15-style mask hook lives on a FIXED-SIZE invisible rect, not the
+          `<text>` itself: since I-1's aggregate defect count was added here, this string's rendered
+          WIDTH now varies cycle to cycle (the count's digit-length grows), so masking the text
+          element directly would size the mask to whatever that width happens to be at screenshot
+          time — the same class of bug `AutomationSchematic.tsx`'s `.hmi-feeder-live` and
+          `IotSchematic.tsx`'s `.hmi-iot-reading` fixes already guard against. Sized generously across
+          the caption's whole row rather than tuned to one string's width. */}
       {captionLabel !== null ? (
-        <text x={BOARD_X} y={198} fontSize={8} fill="var(--text-muted)" fontFamily="var(--font-mono)" className="hmi-aoi-caption">
-          <title>{fullCaption}</title>
-          {captionLabel} · {t("hmi.schematic.pointsSynced", { count: points.length })}
-        </text>
+        <>
+          <rect x={163} y={188} width={353} height={14} fill="transparent" className="hmi-aoi-caption" />
+          <text x={BOARD_X} y={198} fontSize={8} fill="var(--text-muted)" fontFamily="var(--font-mono)">
+            <title>{fullCaption}</title>
+            {captionLabel} · {t("hmi.schematic.pointsSynced", { count: points.length })} ·{" "}
+            {t("hmi.schematic.aggregateDefects", { count: unlocatedDefects })}
+          </text>
+        </>
       ) : null}
     </svg>
   )

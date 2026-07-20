@@ -385,8 +385,12 @@ export default function Machines() {
           <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("machines.description")}</p>
         </div>
         {!isPending && !isError ? (
+          // I-12: a fleet mid-start (0 < online < total) is a NORMAL transient boot state, not a
+          // warning — every fleet passes through it at every startup. `warn` here desensitizes the
+          // operator to amber; `info` reads as "in progress", `ok` once fully online, `neutral` while
+          // stopped.
           <StatusBadge
-            status={online === roster.length && roster.length > 0 ? "ok" : online > 0 ? "warn" : "neutral"}
+            status={online === roster.length && roster.length > 0 ? "ok" : online > 0 ? "info" : "neutral"}
           >
             {t("machines.onlineCount", { online, total: roster.length })}
           </StatusBadge>
