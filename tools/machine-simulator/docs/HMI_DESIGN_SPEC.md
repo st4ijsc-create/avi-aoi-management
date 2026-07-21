@@ -115,6 +115,20 @@ The centrepiece. A wireframe SVG of the actual machine, `vector-effect: non-scal
 
 Pick the schematic from the machine's `deviceClass`. Idle state = static drawing, no motion.
 
+**H5b — `viewBox` aspect must match the COLUMN it fills, not a full-width strip.** H5's layout rework
+(§8) put the schematic in a column that's taller than it is wide at the 1280×800/1600×1000 floor
+(~0.85:1) — a `viewBox` tuned to a wide full-width sheet (H5's own `520×244`, ~2.13:1) "meet"-scales
+WIDTH-first inside that column, leaving large empty graph-paper bands above and below the drawing
+(measured live: ~44% fill at 1280×800, worse than the H2b regression this same rule already warns
+about once). The fix each schematic component (`AutomationSchematic`/`AoiSchematic`/`IotSchematic`)
+now follows: grow the `viewBox` HEIGHT with genuine added machine geometry — taller portal-frame legs,
+a longer camera-gantry drop, mounting poles under the IoT node/tower — never blank padding, per
+`MachinePlinth`'s own established discipline — until the drawing fills ~85–90% of its column at both
+floor sizes (verified live via screenshot, not computed blind). Every in-drawing label's `fontSize`
+was also bumped (~25–30%) in the same pass — the reference distance is ~50cm, and the H5 column reflow
+left several (feeder/Z-axis/node/uplink labels, dimension callouts) too small to read at that
+distance even where the drawing itself fit.
+
 ## 8. Layout
 
 **H5 (2026-07) — rewritten from scratch.** The previous version of this section was one paragraph of
@@ -152,19 +166,21 @@ a **3-column flex row**. Implementation (`Hmi.tsx`):
 - Outer shell: `flex h-svh flex-col overflow-hidden` — the ONE element allowed to define the page's
   total height; nothing inside it may push past it (spec §9: no page scroll, ever).
 - Main row: `flex min-h-0 flex-[5] gap-3 p-3 pb-0` — three children, `gap-3` between them.
-- Log band: `flex min-h-0 flex-1 m-3` (mt implied by the row's own `pb-0` + the log's own margin) —
-  **the `5:1` flex ratio between the main row and the log band is deliberate, not arbitrary**: it's
-  the smallest ratio (most height given to the row) that still leaves the log legible (2–3 visible
-  rows at the 1280×800 floor) while giving the control rail enough height that its OWN worst-case
-  content (see §8.3) never overflows. Do not shrink the row's share below this without re-verifying
-  the control rail's worst-case fit at 1280×800.
+- Log band: `flex min-h-0 flex-[1.5] m-3` (mt implied by the row's own `pb-0` + the log's own margin)
+  — **the `5:1.5` flex ratio between the main row and the log band is deliberate, not arbitrary**:
+  H5b (this pass) loosened it from the original `5:1` — at `5:1` the log was ~2 visible rows at the
+  1280×800 floor, not a "persistent band" an operator would glance at. `5:1.5` is the loosest ratio
+  that keeps the control rail's own worst-case (E-STOP-latched) content fitting **with real margin**
+  at 1280×800 — re-verified live via `scrollHeight`/`clientHeight` on `ControlColumn`'s scroll
+  container, combined with trimming that column's own padding (§8.3). Do not loosen this further
+  without re-running that same check.
 
 ### 8.2 The three main-row columns
 
 | Column | Sizing | Contents |
 |---|---|---|
 | **Schematic** | `flexGrow` per device class (§8.4), `flexBasis: 0`, `min-w-0 min-h-0` | `<Sheet>` → wireframe SVG (flex-1, fills available height) → `<SchematicCaptionStrip>`, a fixed `h-9` row directly under the drawing carrying the ONE class-specific live reading (feeder remaining / AOI product+points+defects / IoT latest reading) — **live numeric callouts never render inside the SVG canvas itself** (spec §7); the drawing stays a clean wireframe, the strip is where the numbers live. |
-| **Readouts** | `flexGrow` per device class (§8.4), `flexBasis: 0`, `min-w-0 min-h-0` | `<Sheet>` wrapping `<ReadoutGrid>`, an `@container`-queried tile grid — **2 columns below a ~672px container width (`@2xl`), 4 columns above it.** This MUST be a container query, not a `lg:`/viewport breakpoint: this column is roughly a third of the viewport width, so a viewport-relative breakpoint has nothing to do with how wide the panel actually is (this was a real bug — see the git history around H5). |
+| **Readouts** | `flexGrow` per device class (§8.4), `flexBasis: 0`, `min-w-0 min-h-0` | `<Sheet>` wrapping `<ReadoutGrid>`, an `@container`-queried tile grid — **2 columns below a ~672px container width (`@2xl`), 4 columns above it.** This MUST be a container query, not a `lg:`/viewport breakpoint: this column is roughly a third of the viewport width, so a viewport-relative breakpoint has nothing to do with how wide the panel actually is (this was a real bug — see the git history around H5). Each tile's `<Readout labelLayout="stack">` — H5b: at this column's narrowest (2-column, 1280×800 floor) a tile is only ~160–200px wide, too narrow for an inline vi label + uppercase en gloss on one line without ellipsis-truncating real words (live-reproduced: "CHỈ SỐ QUY T…", "TRẠNG THÁI CẤ…", "TỶ LỆ …"). `labelLayout="stack"` (spec §1's "beneath" option, `Readout.tsx`) puts the gloss on its own line instead of sharing the row; combined with shortening the 3 worst-offending strings (`i18n/vi.ts`'s `hmi.readout.metric`/`configState`/`passRate`), no label truncates at the floor. This is opt-in per call site — `KpiTile`/`OutputCard` keep the default inline layout, they have more room. |
 | **Output + Controls** | Fixed `w-[336px] shrink-0` (never grows/shrinks with viewport — the physical control sizes in §6 are themselves fixed px, so the rail that holds them is fixed too), `flex flex-col gap-3` | `<OutputCard>` (`shrink-0`, natural content height — OK/NG/Total as `<Readout>` tiles + a proportional bar) stacked above `<ControlColumn>` (`min-h-0 flex-1` — fills every remaining px in the column). |
 
 Schematic and Readouts are the only two columns that flex — their combined width is whatever's left
@@ -193,10 +209,33 @@ of below it means the E-STOP-engaged state only ever adds the banner's height (~
 state's, which fits.
 
 If a future change adds ANOTHER control, re-check this fit at 1280×800 before shipping — the rail's
-own body is wrapped in a defensive `overflow-y-auto` (`hmi-scroll`) with the button cluster centred via
-`m-auto` as a fallback (scrolls rather than silently overlapping if it ever doesn't fit), but that
-fallback existing is not permission to stop checking; an operator should never have to scroll to find
-RESET.
+own body is wrapped in a defensive `overflow-y-auto` (`hmi-scroll`) as a fallback (scrolls rather than
+silently overlapping if it ever doesn't fit), but that fallback existing is not permission to stop
+checking; an operator should never have to scroll to find RESET.
+
+**H5b — anchoring, not centring.** The rail used to vertically CENTRE the whole button cluster
+(`m-auto`) inside its `flex-1` body. Two problems: at 1600×1000 the rail is tall (~500px) and the
+cluster only fills its middle third, reading as dead space above and below rather than a deliberately
+filled control column; and centring is not position-STABLE — growing the block by the E-STOP-latched
+banner's height shifts the whole centred block down, moving E-STOP by roughly half the banner's height
+every time it latches, which breaks the "operator builds muscle memory for E-STOP's position"
+convention this same section already argues for. Fix: `[START, PAUSE]` anchors to the TOP of the rail
+(`shrink-0`); `[E-STOP]`/`[E-STOP, RESET]` (+ the banner, when present) anchors to the BOTTOM via
+`mt-auto` on its own wrapper, with the banner rendered ABOVE the button row inside that same wrapper.
+Because the button row is the wrapper's last child, the banner appearing only grows the wrapper
+upward — **E-STOP's distance from the rail's bottom edge is now identical latched or not, on every
+machine class.** The gap this opens between the two clusters at tall viewports is real breathing room,
+not a leftover margin.
+
+**Active fallback:** even with the `5:1.5` log ratio (§8.1) and trimmed rail padding, the E-STOP-latched
+worst case is a few px taller than the rail's own visible area at the exact 1280×800 floor — live-
+reproduced: loading `/hmi/:code` directly into an already-latched fleet left RESET clipped below the
+visible area, un-scrolled, so `elementFromPoint` at RESET's own centre hit the wrong element. A passive
+`overflow-y-auto` fallback isn't enough on its own for a safety control. `ControlColumn.tsx` now runs a
+`React.useEffect` keyed on `estopEngaged` that calls `resetRef.current?.scrollIntoView({block:
+"nearest"})` — fires the instant the rail KNOWS it's latched, including on mount (a fresh page load
+into an already-latched fleet), not just on the click that causes the transition. An operator should
+never have to discover on their own that they need to scroll to find RESET.
 
 ### 8.4 Per-device-class proportions
 

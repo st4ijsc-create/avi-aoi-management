@@ -256,6 +256,18 @@ export default function Hmi() {
         row, once a later task adds one (spec §8 note); this row's own `min-h-0` + each child's
         internal `hmi-scroll` is what keeps the WHOLE PAGE from ever scrolling (spec §9) at any of the
         three device classes' proportions.
+
+        H5b — row:log ratio changed 5:1 → 5:1.5 (spec §8.1's own note: "do not shrink the row's share
+        below this without re-verifying the control rail's worst-case fit" — this pass DID
+        re-verify, live, with an engine `evaluate()` measuring `ControlColumn`'s own `scrollHeight` vs
+        `clientHeight` at 1280×800: 5:2 left the rail short by 45px even BEFORE the E-STOP-engaged
+        banner added more, i.e. it broke §8.3's fit in the NORMAL state, not just the latched one —
+        5:1.5, combined with `ControlColumn.tsx`'s own trimmed padding, is the loosest ratio that keeps
+        the rail's unlatched content fitting with real margin at the 1280×800 floor. The old 5:1 log
+        band was ~2 visible rows there — not a "persistent band" an operator would actually glance at,
+        just a sliver; 5:1.5 gets it to ~3. The H5b schematic fix (this same pass) makes the schematic
+        column look "full" via FILL PERCENTAGE, not raw pixels, so giving the log some height back
+        doesn't reopen the empty-canvas regression this pass fixes.
       */}
       <div className="flex min-h-0 flex-[5] gap-3 p-3 pb-0">
         <SchematicPanel
@@ -313,7 +325,7 @@ export default function Hmi() {
       </div>
 
       <SystemLog
-        className="hmi-system-log-band m-3 min-h-0 flex-1"
+        className="hmi-system-log-band m-3 min-h-0 flex-[1.5]"
         machineCode={machine.code}
         localEvents={localEvents}
         events={traceEvents}

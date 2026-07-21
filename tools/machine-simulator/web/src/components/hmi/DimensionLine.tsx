@@ -12,8 +12,8 @@ export function DimensionLine({ x1, x2, y, label }: { x1: number; x2: number; y:
         x={(x1 + x2) / 2}
         y={y - 5}
         textAnchor="middle"
-        fontSize={8.5}
-        letterSpacing="0.04em"
+        fontSize={10}
+        letterSpacing="0.03em"
         fill="var(--text-muted)"
         stroke="none"
         fontFamily="var(--font-mono)"

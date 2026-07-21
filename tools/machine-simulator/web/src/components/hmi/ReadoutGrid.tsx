@@ -302,6 +302,12 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
               tone={tile.tone}
               gaugePct={tile.gaugePct}
               valueType={tile.valueType}
+              // H5b — spec §3's "beneath" gloss placement, not "beside": this grid's tiles are the
+              // narrowest `Readout` call site in the app (~160–200px at the 1280×800 floor's 2-column
+              // width), where an inline vi label + uppercase en gloss genuinely doesn't fit on one
+              // line without ellipsis-truncating real words. See `Readout.tsx`'s own `labelLayout` doc
+              // comment for the live-reproduced truncation this fixes.
+              labelLayout="stack"
               className="w-full"
             />
           </div>

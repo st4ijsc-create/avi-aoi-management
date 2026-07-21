@@ -42,6 +42,20 @@ export interface ReadoutProps {
    * `aria-label` carry the untruncated string — CSS `truncate` only hides it visually).
    */
   valueType?: "numeric" | "text"
+  /**
+   * H5b — `"inline"` (default, unchanged) sits `label`/`labelEn` side by side on one row, same as
+   * every pre-existing caller (`KpiTile`, `OutputCard`) still gets. `"stack"` puts the gloss on its
+   * OWN row below the primary label instead of sharing horizontal space with it — spec §3 already
+   * allows the gloss "beneath/beside" the primary label; this is the "beneath" option. Callers in a
+   * narrow tile (the HMI `ReadoutGrid`, 1280×800's 2-column floor) opt in: at ~160–200px of tile
+   * width, an inline label+gloss pair genuinely doesn't fit a Vietnamese caption AND its uppercase
+   * English gloss on one line — CSS `truncate` was hiding real words (live-reproduced: "CHỈ SỐ QUY
+   * T…", "TRẠNG THÁI CẤ…", "TỶ LỆ …"), an operator-facing regression, not a cosmetic one. Stacking
+   * gives each line the FULL tile width instead of splitting it, which — combined with shortening the
+   * worst-offending label strings themselves (`i18n/vi.ts`) — closes the truncation without touching
+   * unrelated, wider `Readout` call sites.
+   */
+  labelLayout?: "inline" | "stack"
   className?: string
 }
 
@@ -56,9 +70,11 @@ export function Readout({
   tone = "neutral",
   gaugePct,
   valueType = "numeric",
+  labelLayout = "inline",
   className,
 }: ReadoutProps) {
   const isText = valueType === "text"
+  const stacked = labelLayout === "stack"
   // Only a plain string can be truncated/title-attributed sensibly — a ReactNode value (rare, none
   // of today's callers) just renders as-is at the text size.
   const fullText = typeof value === "string" ? value : undefined
@@ -97,9 +113,16 @@ export function Readout({
             HÌNH") couldn't compress and wrapped to a second line in the narrowest tiles at 1280px
             instead of truncating. Primary label gets the remaining space and truncates; the gloss
             stays fixed-width (won't itself wrap) and is the first thing dropped when space is tight. */}
-        <div className="mt-1 flex min-w-0 items-baseline gap-1.5 overflow-hidden">
-          <span className="hmi-micro min-w-0 flex-1 truncate">{label}</span>
-          {labelEn ? <span className="hmi-micro shrink-0 truncate text-text-muted/70">{labelEn}</span> : null}
+        <div
+          className={cn(
+            "mt-1 flex min-w-0 overflow-hidden",
+            stacked ? "flex-col items-start gap-0" : "items-baseline gap-1.5"
+          )}
+        >
+          <span className={cn("hmi-micro min-w-0 truncate", stacked ? "w-full" : "flex-1")}>{label}</span>
+          {labelEn ? (
+            <span className={cn("hmi-micro truncate text-text-muted/70", stacked ? "w-full" : "shrink-0")}>{labelEn}</span>
+          ) : null}
         </div>
         {/* `hmi-readout-value` also covers `sub` (H4 job 3): some callers pass genuinely-live content
             here too — `ReadoutGrid.tsx`'s STATUS tile shows the last defect's code, which is exactly

@@ -1349,14 +1349,19 @@ export const vi = {
       titleEn: "OPERATING READOUTS",
     },
 
+      // H5b — `metric`/`configState`/`passRate` shortened: live-reproduced ellipsis truncation at the
+      // 1280×800 floor ("CHỈ SỐ QUY T…", "TRẠNG THÁI CẤ…", "TỶ LỆ …") — the readout grid's narrowest
+      // tiles at that width (~160–200px) couldn't fit the old, longer strings even after switching the
+      // gloss to its own line (`ReadoutGrid.tsx`'s `labelLayout="stack"`). Meaning stays legible via
+      // the tile's own uppercase EN gloss + numeric context (e.g. "Tỷ lệ" beside a "%" figure).
     readout: {
       cycles: "Chu kỳ",
-      passRate: "Tỷ lệ đạt",
+      passRate: "Tỷ lệ",
       cycleRate: "Tốc độ chu kỳ",
       cycleTime: "Thời gian chu kỳ",
-      metric: "Chỉ số quy trình",
+      metric: "Chỉ số",
       driver: "Driver",
-      configState: "Trạng thái cấu hình",
+      configState: "Cấu hình",
       boards: "Số bo mạch",
       pointsInspected: "Điểm đã kiểm",
       fpy: "FPY",

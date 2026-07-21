@@ -15,17 +15,25 @@ export interface AoiSchematicPoint {
 }
 
 // Frame footprint deliberately mirrors `AutomationSchematic.tsx`'s uprights/rails exactly (78/468,
-// 24/152) — H2c: the two machine classes should read as the SAME drawing LANGUAGE (a real cell with a
-// frame), not two unrelated visual styles, even though what happens inside the frame differs.
+// 24/380) — H2c: the two machine classes should read as the SAME drawing LANGUAGE (a real cell with a
+// frame), not two unrelated visual styles, even though what happens inside the frame differs. H5b:
+// FRAME_BASE grown 152 → 380 in lockstep with `AutomationSchematic.tsx`'s own H5b fix (see that
+// file's doc comment) — both schematics share one viewBox height (520×480) so the two machine classes
+// keep reading as the same drawing system after the fix, not just before it.
 const FRAME_LEFT = 78
 const FRAME_RIGHT = 468
 const FRAME_TOP = 24
-const FRAME_BASE = 152
+const FRAME_BASE = 380
 
 const BOARD_W = 190
 const BOARD_X = 165 // centered on the 520-wide viewBox
 const BOARD_H = 40
-const CONVEYOR_TOP = 118 // belt-deck top edge — the board's bottom edge rests exactly here
+// H5b: CONVEYOR_TOP moved down from 118 → 340, staying close to the (now much lower) floor — same
+// "short legs, deck near the ground" relationship the old 118-vs-152 pair had (gap 34 → gap 40 now).
+// Keeping the conveyor near the floor (rather than centering it in the taller frame) means the extra
+// canvas height goes to the CAMERA'S OWN TRAVEL instead — a longer, still-connected drop from the
+// gantry rail to the board — real geometry, not a blank gap between the conveyor and its own legs.
+const CONVEYOR_TOP = 340
 const BOARD_Y = CONVEYOR_TOP - BOARD_H
 
 const GANTRY_RAIL_Y = 30
@@ -80,13 +88,13 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
 
   return (
     // viewBox width matches `AutomationSchematic.tsx`'s (520 wide) — both cells share the same frame
-    // footprint and fill the sheet the same way (H2b's fill-the-sheet fix, kept). H5: height grown
-    // 196 → 244, matching `AutomationSchematic.tsx`'s own new height exactly (both cells share one
-    // frame footprint AND one canvas height) — real added geometry (`MachinePlinth`, see its own doc
-    // comment), not empty padding, to reduce the "meet"-scaling letterbox now that this drawing lives
-    // in a much taller, narrower column (layout spec §8 gap 1) than the old full-width sheet.
+    // footprint and fill the sheet the same way (H2b's fill-the-sheet fix, kept). H5b: height grown
+    // again, 244 → 480, matching `AutomationSchematic.tsx`'s own H5b height exactly (both cells share
+    // one frame footprint AND one canvas height) — real added geometry (the camera's own overhead
+    // travel got longer, `FRAME_BASE`/`MachinePlinth` moved down with it), not empty padding, to close
+    // the "meet"-scaling letterbox regression this pass fixes (see this file's `FRAME_BASE` comment).
     <svg
-      viewBox="0 0 520 244"
+      viewBox="0 0 520 480"
       preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
@@ -136,19 +144,23 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
             ANCESTOR `<g>`; the CSS-animated class goes on a CHILD `<g>` with no competing `transform`
             attribute of its own. */}
         <g transform={`translate(${cameraRestX}, 0)`}>
+          {/* H5b: the mount drop is now a long travel (rail y=30 down to y=260, was a 12-unit stub) —
+              the camera hangs much lower over the (now much lower) conveyor, real added length rather
+              than a taller blank gap between the rail and the board. Lens head/ring light/focus beam
+              all shift down with it, same relative offsets from the mount's own end. */}
           <g className="hmi-aoi-camera" style={{ ["--hmi-sweep-x" as string]: `${sweepX}px` } as React.CSSProperties}>
-            <line x1={0} y1={GANTRY_RAIL_Y} x2={0} y2={42} stroke="var(--color-accent)" strokeWidth={2} className="hmi-wire" />
+            <line x1={0} y1={GANTRY_RAIL_Y} x2={0} y2={260} stroke="var(--color-accent)" strokeWidth={2} className="hmi-wire" />
             <path
-              d="M -12 42 L 12 42 L 17 57 L -17 57 Z"
+              d="M -12 260 L 12 260 L 17 275 L -17 275 Z"
               fill="var(--color-accent)"
               stroke="var(--color-accent)"
               strokeWidth={1.5}
               className="hmi-wire"
             />
             {/* Ring light around the lens */}
-            <circle cx={0} cy={61} r={11} fill="none" stroke="var(--color-accent)" strokeWidth={1.5} strokeDasharray="3 3" className="hmi-wire" />
+            <circle cx={0} cy={279} r={11} fill="none" stroke="var(--color-accent)" strokeWidth={1.5} strokeDasharray="3 3" className="hmi-wire" />
             {/* Focus beam down to the board */}
-            <line x1={0} y1={72} x2={0} y2={BOARD_Y} stroke="var(--color-accent)" strokeWidth={1} strokeDasharray="2 3" className="hmi-wire" />
+            <line x1={0} y1={290} x2={0} y2={BOARD_Y} stroke="var(--color-accent)" strokeWidth={1} strokeDasharray="2 3" className="hmi-wire" />
           </g>
         </g>
 
@@ -241,8 +253,8 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
           aggregate defects) and the "no product linked" fallback both moved to
           `SchematicPanel.tsx`'s caption/readout strip below this drawing (layout spec §8 gap 4) — this
           canvas is now purely the wireframe + its dimension lines. */}
-      <DimensionLine x1={BOARD_X} x2={BOARD_X + BOARD_W} y={214} label={`${BOARD_W}`} />
-      <DimensionLine x1={FRAME_LEFT} x2={FRAME_RIGHT} y={230} label="390" />
+      <DimensionLine x1={BOARD_X} x2={BOARD_X + BOARD_W} y={442} label={`${BOARD_W}`} />
+      <DimensionLine x1={FRAME_LEFT} x2={FRAME_RIGHT} y={458} label="390" />
     </svg>
   )
 }

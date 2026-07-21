@@ -18,14 +18,15 @@ export function IotSchematic({ isRunning, className }: IotSchematicProps) {
   const runClass = isRunning ? "hmi-schematic-run" : undefined
 
   return (
-    // viewBox tightened to the artwork's own bounding box (H2b: fill 85-90% of the sheet, not float
-    // in a much larger box) — the original 460x224 canvas had ~35% unused vertical margin above the
-    // signal arcs and below the tick row. H5: grown again 141 → 190 — NOT a return to the old empty
-    // margin, but real added geometry (`MachinePlinth` under the node/tower, see its own doc comment)
-    // to reduce the "meet"-scaling letterbox now that this drawing lives in a much taller, narrower
-    // column (layout spec §8 gap 1) than the old full-width sheet its proportions were tuned for.
+    // H5b — viewBox grown again, height 190 → 460 (width unchanged: the node/link/tower group already
+    // filled ~94% of the old 396-wide canvas, this class's problem was purely vertical). The node/
+    // arcs/link stay near the top (unchanged position — already tight against the old top edge); the
+    // real added geometry is BELOW: both the node and the uplink tower now stand on tall mounting
+    // poles rising from a shared ground plinth, and the sample-rate ticks moved down to sit just above
+    // that ground line — an honest "elevated sensor + mast" reading (real hardware: both units really
+    // do mount on poles/masts), not blank canvas. `MachinePlinth` grew to match (H5's own rationale).
     <svg
-      viewBox="20 55 396 190"
+      viewBox="20 55 396 460"
       preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
@@ -48,9 +49,13 @@ export function IotSchematic({ isRunning, className }: IotSchematicProps) {
             style={{ animationDelay: `${i * 0.5}s` }}
           />
         ))}
-        <text x={84} y={150} textAnchor="middle" fontSize={7.5} letterSpacing="0.06em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
+        {/* H5b: fontSize 7.5 → 9.5 (spec §3 legibility bar). */}
+        <text x={84} y={150} textAnchor="middle" fontSize={9.5} letterSpacing="0.05em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
           {t("hmi.schematic.node")}
         </text>
+        {/* H5b: mounting pole — the node stands on a real support column down to the ground plinth,
+            same "genuine added geometry, not padding" discipline as `MachinePlinth` itself. */}
+        <line x1={84} y1={132} x2={84} y2={430} stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" opacity={0.85} />
 
         {/* Link + travelling packets — branch-review I-10: these were painted with the status-run
             GREEN, i.e. the "machine healthy/OK" colour, purely because green reads as "data flowing" —
@@ -71,23 +76,26 @@ export function IotSchematic({ isRunning, className }: IotSchematicProps) {
           />
         ))}
 
-        {/* Uplink tower */}
+        {/* Uplink tower — antenna array unchanged near the top (same height as the node), now on a
+            long mast down to the same ground plinth (H5b: real added length, not padding). */}
         <path d="M 386 138 L 396 90 L 406 138 Z" fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
         <line x1={396} y1={90} x2={396} y2={78} stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
         <circle cx={396} cy={76} r={2.5} fill="var(--text-muted)" />
-        <text x={396} y={152} textAnchor="middle" fontSize={7.5} letterSpacing="0.06em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
+        <line x1={396} y1={138} x2={396} y2={430} stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" opacity={0.85} />
+        {/* H5b: fontSize 7.5 → 9.5, moved down beside the mast (was crowding the antenna base). */}
+        <text x={396} y={162} textAnchor="middle" fontSize={9.5} letterSpacing="0.05em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
           {t("hmi.schematic.uplink")}
         </text>
 
-        {/* Sample-rate tick row */}
+        {/* Sample-rate tick row — moved down to sit just above the ground plinth. */}
         {Array.from({ length: 12 }, (_, i) => (
           <line
             key={i}
             className="hmi-iot-tick"
             x1={140 + i * 18}
-            y1={178}
+            y1={398}
             x2={140 + i * 18}
-            y2={186}
+            y2={406}
             stroke="var(--color-accent)"
             strokeWidth={2}
             style={{ animationDelay: `${i * 0.12}s` }}
@@ -95,7 +103,7 @@ export function IotSchematic({ isRunning, className }: IotSchematicProps) {
         ))}
       </g>
 
-      <MachinePlinth x1={40} x2={410} y={198} height={40} />
+      <MachinePlinth x1={40} x2={410} y={430} height={48} />
     </svg>
   )
 }
