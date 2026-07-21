@@ -53,8 +53,20 @@ internal sealed class SnakeUpperEnumConverter : JsonConverterFactory
         EnumConverterHelper.CreateConverterFor(typeToConvert, JsonNamingPolicy.SnakeCaseUpper, options);
 }
 
-/// <summary>Shared unwrap logic for <see cref="SnakeLowerEnumConverter"/>/<see cref="SnakeUpperEnumConverter"/>
-/// — see their doc comment for why this can't just return the closed
+/// <summary>camelCase sibling of <see cref="SnakeLowerEnumConverter"/>/<see cref="SnakeUpperEnumConverter"/>
+/// — used only by <see cref="ConfigProvenance"/>, whose wire vocabulary (docs/MACHINE_CONFIG_DESIGN.md
+/// §2: <c>baseline|machine|machineProduct</c>) is camelCase, not snake_case (the one provenance value,
+/// <c>machineProduct</c>, that isn't a single lowercase word).</summary>
+internal sealed class CamelEnumConverter : JsonConverterFactory
+{
+    public override bool CanConvert(Type typeToConvert) => typeToConvert.IsEnum;
+
+    public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+        EnumConverterHelper.CreateConverterFor(typeToConvert, JsonNamingPolicy.CamelCase, options);
+}
+
+/// <summary>Shared unwrap logic for <see cref="SnakeLowerEnumConverter"/>/<see cref="SnakeUpperEnumConverter"/>/
+/// <see cref="CamelEnumConverter"/> — see their doc comment for why this can't just return the closed
 /// <c>JsonStringEnumConverter&lt;TEnum&gt;</c> instance directly.</summary>
 internal static class EnumConverterHelper
 {
