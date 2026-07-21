@@ -10,6 +10,7 @@ import {
   RefreshCw,
   ScanEye,
   ServerCrash,
+  SlidersHorizontal,
 } from "lucide-react"
 import type { VariantProps } from "class-variance-authority"
 import { Link, useParams } from "wouter"
@@ -26,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BoardView } from "@/components/BoardView"
 import { ConfigSyncPanel } from "@/components/ConfigSyncPanel"
 import { CycleLogTable, formatCycleTime, verdictMeta } from "@/components/CycleLogTable"
+import { MachineSettingsPanel } from "@/components/MachineSettingsPanel"
 import { SpcChart } from "@/components/SpcChart"
 import { TelemetryChart } from "@/components/TelemetryChart"
 
@@ -222,6 +224,10 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
               <RefreshCw className="size-3.5" aria-hidden="true" data-icon="inline-start" />
               {t("machineDetail.tabs.config")}
             </TabsTrigger>
+            <TabsTrigger value="settings">
+              <SlidersHorizontal className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              {t("machineDetail.tabs.settings")}
+            </TabsTrigger>
             <TabsTrigger value="log">
               <History className="size-3.5" aria-hidden="true" data-icon="inline-start" />
               {t("machineDetail.tabs.log")}
@@ -329,6 +335,17 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
             <TabsContent value="config" className="pt-4">
               <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
                 <ConfigSyncPanel code={machine.code} deviceClass={machine.class} className="max-w-4xl" />
+              </motion.div>
+            </TabsContent>
+
+            {/* Task 5 (docs/plans/2026-07-21-machine-config.md) — machine operating-configuration,
+                same source of truth as the HMI's own CÀI ĐẶT/SETTINGS tab (`SettingsTab.tsx`), for
+                someone looking from the office rather than standing at the machine. */}
+            <TabsContent value="settings" className="pt-4">
+              <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
+                <Sheet className="max-w-4xl" bodyClassName="flex flex-col p-0">
+                  <MachineSettingsPanel machineCode={machine.code} deviceClass={machine.class} attributedAs="detail" />
+                </Sheet>
               </motion.div>
             </TabsContent>
 

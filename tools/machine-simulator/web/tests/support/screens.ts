@@ -49,6 +49,18 @@ export async function gotoMachineDetailConfig(page: Page, code: string): Promise
   })
 }
 
+/** Machine detail, "Cài đặt/Settings" tab — Task 5's `MachineSettingsPanel`, same data source as the
+ * HMI's own CÀI ĐẶT/SETTINGS tab. Waits past the tab switch and the settings query's own loading state
+ * — the panel's own heading only renders once `useMachineSettings()` has resolved (or the panel's
+ * always-rendered header, which shows regardless — see `MachineSettingsPanel`'s `showHeader` default). */
+export async function gotoMachineDetailSettings(page: Page, code: string): Promise<void> {
+  await gotoMachineDetail(page, code)
+  await page.getByRole("tab", { name: viDict.machineDetail.tabs.settings }).click()
+  await expect(page.getByRole("heading", { name: viDict.machineSettings.title, level: 3 })).toBeVisible({
+    timeout: 15_000,
+  })
+}
+
 export async function gotoInspector(page: Page): Promise<void> {
   await page.goto("/inspector")
   await expect(page.getByRole("heading", { name: viDict.inspector.title, level: 1 })).toBeVisible()
