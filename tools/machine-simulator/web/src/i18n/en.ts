@@ -272,6 +272,7 @@ export const en: Dictionary = {
       telemetry: "Telemetry",
       board: "Board",
       config: "Config",
+      settings: "Settings",
       log: "Log",
     },
     overview: {
@@ -1237,6 +1238,12 @@ export const en: Dictionary = {
     pageTitle: (vars: Vars) => `Machine HMI — ${vars.code}`,
     shift: (vars: Vars) => `SHIFT ${vars.n}`,
 
+    tabs: {
+      railAria: "Switch operator panel tab",
+      operation: "Operation",
+      settings: "Settings",
+    },
+
     status: {
       estop: "E-STOP ENGAGED",
       sub: {
@@ -1334,6 +1341,62 @@ export const en: Dictionary = {
     },
   },
 
+  machineSettings: {
+    title: "Machine Settings",
+    description: "Server recommendations — adjustable per machine or per running product when needed.",
+    productLabel: "Product",
+    productSelectAria: "Select a product to view its configuration",
+    noProducts: "No products yet.",
+    iotHint: "IoT machines run no product — every adjustment applies to this machine.",
+    baselineInfo: (vars: Vars) =>
+      `Recommended v${vars.version} · ${vars.driftedCount} parameter${Number(vars.driftedCount) === 1 ? "" : "s"} adjusted from the recommendation`,
+    notSupported: {
+      title: "No operating-configuration parameters",
+      description: (vars: Vars) => `Machine type "${vars.machineType}" has no operating-configuration parameter set for this feature yet.`,
+    },
+    loadFailed: "Couldn't load the machine configuration.",
+    columns: {
+      label: "Parameter",
+      value: "Effective",
+      range: "Allowed Range",
+      recommended: "Recommended",
+      source: "Source",
+    },
+    provenance: {
+      baseline: "Recommended",
+      machine: "Machine-adjusted",
+      machineProduct: "Product-adjusted",
+    },
+    adjustedBy: (vars: Vars) => `${vars.by} · ${vars.when}`,
+    adjustedByUnknown: (vars: Vars) => `${vars.when}`,
+    relativeTime: {
+      justNow: "just now",
+      minutesAgo: (vars: Vars) => `${vars.n} minute${Number(vars.n) === 1 ? "" : "s"} ago`,
+      hoursAgo: (vars: Vars) => `${vars.n} hour${Number(vars.n) === 1 ? "" : "s"} ago`,
+      daysAgo: (vars: Vars) => `${vars.n} day${Number(vars.n) === 1 ? "" : "s"} ago`,
+    },
+    resetAction: "Reset to default",
+    resetAria: (vars: Vars) => `Reset ${vars.key} to the recommended value`,
+    editAction: "Edit",
+    editAria: (vars: Vars) => `Edit ${vars.key}`,
+    editDialog: {
+      titleFor: (vars: Vars) => `Edit ${vars.label}`,
+      valueLabel: "New value",
+      rangeHint: (vars: Vars) => `Allowed range: ${vars.min}–${vars.max} ${vars.unit}`,
+      scopeLabel: "Applies to",
+      scopeMachine: "This machine (every product)",
+      scopeProduct: (vars: Vars) => `Only the selected product — ${vars.product}`,
+      noteLabel: "Note (optional)",
+      notePlaceholder: "Why this value…",
+      cancel: "Cancel",
+      save: "Save",
+      saving: "Saving…",
+      invalidNumber: "Enter a valid number.",
+      outOfRange: (vars: Vars) => `${vars.key} must be between ${vars.min} and ${vars.max} ${vars.unit} (got ${vars.value}).`,
+      serverErrorFallback: "The server rejected this value.",
+    },
+  },
+
   toast: {
     fleetStarted: "Fleet started.",
     fleetStartFailed: "Couldn't start the fleet.",
@@ -1350,6 +1413,10 @@ export const en: Dictionary = {
     configPushConflicts: (vars: Vars) =>
       `Pushed config for ${vars.code} — ${vars.count} point${Number(vars.count) === 1 ? "" : "s"} had a stale-write conflict and weren't overwritten.`,
     configPushFailed: "Couldn't push config.",
+    machineSettingUpdated: (vars: Vars) => `Updated ${vars.key}.`,
+    machineSettingUpdateFailed: "Couldn't update the parameter.",
+    machineSettingReset: (vars: Vars) => `Reset ${vars.key} to the recommended value.`,
+    machineSettingResetFailed: "Couldn't reset the parameter.",
     keyCopied: "Key copied.",
     productCreated: (vars: Vars) => `Product ${vars.code} created.`,
     productSaved: "Product saved.",

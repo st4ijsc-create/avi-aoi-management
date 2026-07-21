@@ -277,12 +277,45 @@ public sealed class MachineSettingsEndpointsTests
         store.Ensure(AoiMachine.Code, MachineParameterSchema.AoiInspection);
         store.SetAdjustment(AoiMachine.Code, "gain", 2.0, AdjustmentScope.Machine, null, "tech1", null);
 
-        var result = MachineSettingsEndpoints.DeleteSetting(AoiMachine.Code, "gain", AdjustmentScope.Machine, null, fleetHost, store);
+        var result = MachineSettingsEndpoints.DeleteSetting(AoiMachine.Code, "gain", "machine", null, fleetHost, store);
 
         var dto = ExpectOk<MachineSettingsResponseDto>(result);
         var gain = dto.Effective.Single(p => p.Def.Key == "gain");
         Assert.Equal(1.0, gain.Value); // schema default
         Assert.Equal(ConfigProvenance.Baseline, gain.Source);
+    }
+
+    [Fact]
+    public void Delete_setting_rejects_an_unparseable_scope_with_400()
+    {
+        var fleetHost = NewFleetHostWithRegisteredMachines(AoiMachine);
+        var store = NewStore();
+        store.Ensure(AoiMachine.Code, MachineParameterSchema.AoiInspection);
+
+        // Reproduces the live gotcha this fix addresses (see `DeleteSetting`'s own doc comment): a
+        // completely garbage scope value must 400 with a real, non-empty body naming the problem —
+        // never the framework-level empty-body 400 the old `AdjustmentScope`-typed parameter produced
+        // for ANY casing other than the exact C# member name.
+        var result = MachineSettingsEndpoints.DeleteSetting(AoiMachine.Code, "gain", "sideways", null, fleetHost, store);
+
+        var error = ExpectBadRequest(result);
+        Assert.Contains("scope", error.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Delete_setting_accepts_lower_case_scope_matching_the_wire_vocabulary()
+    {
+        // The exact casing every other part of the contract uses (PUT's JSON body, GET/PUT response
+        // `source` values) — `?scope=machine`, not `?scope=Machine`.
+        var fleetHost = NewFleetHostWithRegisteredMachines(AoiMachine);
+        var store = NewStore();
+        store.Ensure(AoiMachine.Code, MachineParameterSchema.AoiInspection);
+        store.SetAdjustment(AoiMachine.Code, "gain", 2.0, AdjustmentScope.Machine, null, "tech1", null);
+
+        var result = MachineSettingsEndpoints.DeleteSetting(AoiMachine.Code, "gain", "machine", null, fleetHost, store);
+
+        var dto = ExpectOk<MachineSettingsResponseDto>(result);
+        Assert.Equal(ConfigProvenance.Baseline, dto.Effective.Single(p => p.Def.Key == "gain").Source);
     }
 
     // ─────────────────────────────────────────────────────────────────────

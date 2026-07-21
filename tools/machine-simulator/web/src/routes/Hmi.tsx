@@ -8,7 +8,9 @@ import { OutputCard } from "@/components/hmi/OutputCard"
 import { ReadoutGrid } from "@/components/hmi/ReadoutGrid"
 import { SchematicPanel } from "@/components/hmi/SchematicPanel"
 import type { AoiSchematicPoint } from "@/components/hmi/schematics/AoiSchematic"
+import { SettingsTab } from "@/components/hmi/SettingsTab"
 import { SystemLog, type HmiLocalLogEvent } from "@/components/hmi/SystemLog"
+import { TabRail, type HmiTabId } from "@/components/hmi/TabRail"
 import { useGloss } from "@/components/hmi/bilingual"
 import { parseKeyMetric } from "@/components/hmi/derive"
 import { useT } from "@/i18n"
@@ -101,6 +103,10 @@ export default function Hmi() {
   const { events: traceEvents, connectionState } = useInspectorStream()
 
   const [localEvents, setLocalEvents] = React.useState<HmiLocalLogEvent[]>([])
+  // Task 4 — the tab rail's own selection. Resets to OPERATION on a fresh machine code for the same
+  // reason `localEvents` does below (a different machine's panel shouldn't inherit "I was looking at
+  // settings" from whatever the previous machine's panel was showing).
+  const [activeTab, setActiveTab] = React.useState<HmiTabId>("operation")
 
   // A fresh machine code (navigating from one HMI straight to another) must not inherit the previous
   // machine's LOCAL log — `wouter` reuses this component instance across a param change since it's the
@@ -109,6 +115,7 @@ export default function Hmi() {
   // panel must still be in force when an operator switches to another machine's panel.
   React.useEffect(() => {
     setLocalEvents([])
+    setActiveTab("operation")
   }, [code])
 
   const isAoi = machine?.class === "AoiAvi"
@@ -245,6 +252,10 @@ export default function Hmi() {
         connectionState={connectionState}
       />
 
+      {/* Task 4 — the tab rail HMI_DESIGN_SPEC.md §8.1 has always reserved this row for, directly
+          under the nameplate, ahead of the main row below. */}
+      <TabRail active={activeTab} onChange={setActiveTab} />
+
       {/*
         H5 — Scheme A, three-column SCADA layout (layout spec §8, closing gap 1/3/4): the schematic
         and the readout grid are now SIBLING columns (read side-by-side, not schematic-above-readouts
@@ -270,38 +281,59 @@ export default function Hmi() {
         doesn't reopen the empty-canvas regression this pass fixes.
       */}
       <div className="flex min-h-0 flex-[6.5] gap-3 p-3 pb-0">
-        <SchematicPanel
-          className="min-h-0 min-w-0"
-          style={{ flexGrow: schematicFlex, flexBasis: 0 }}
-          deviceClass={machine.class}
-          isRunning={running}
-          cycles={machine.cycles}
-          aoiProductName={product.data?.name ?? productCode ?? null}
-          aoiPoints={aoiPoints}
-          aoiUnlocatedDefects={aoiUnlocatedDefects}
-          iotLatestReading={iotLatestReading}
-        />
-
-        <Sheet
-          className="hmi-readout-grid min-h-0 min-w-0"
-          style={{ flexGrow: readoutFlex, flexBasis: 0 }}
-          title={t("hmi.readoutPanel.title")}
-          titleEn={gloss("hmi.readoutPanel.title")}
-          bodyClassName="flex flex-1 min-h-0 flex-col p-0"
-        >
+        {/* Task 4 — the two tabs share this row's flexible left region; the physical control rail
+            (below, in the fixed 336px column) stays mounted UNCHANGED regardless of which tab is
+            active — spec §8.6's safety invariant ("E-STOP never moves/disappears") only holds if
+            switching tabs never touches that column at all, so this conditional is scoped to ONLY
+            the schematic+readouts vs. settings region, never the rail beside it. */}
+        {activeTab === "operation" ? (
           <div
+            id="hmi-tabpanel-operation"
+            role="tabpanel"
+            aria-labelledby="hmi-tab-operation"
             tabIndex={0}
-            className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+            className="flex min-h-0 min-w-0 flex-1 gap-3 outline-none"
           >
-            <ReadoutGrid
-              machine={machine}
-              productLabel={isAoi ? (product.data?.name ?? productCode ?? null) : undefined}
-              configDriftState={configDriftState}
+            <SchematicPanel
+              className="min-h-0 min-w-0"
+              style={{ flexGrow: schematicFlex, flexBasis: 0 }}
+              deviceClass={machine.class}
+              isRunning={running}
+              cycles={machine.cycles}
+              aoiProductName={product.data?.name ?? productCode ?? null}
+              aoiPoints={aoiPoints}
+              aoiUnlocatedDefects={aoiUnlocatedDefects}
+              iotLatestReading={iotLatestReading}
             />
-          </div>
-        </Sheet>
 
-        <div className="flex w-[336px] shrink-0 flex-col gap-2">
+            <Sheet
+              className="hmi-readout-grid min-h-0 min-w-0"
+              style={{ flexGrow: readoutFlex, flexBasis: 0 }}
+              title={t("hmi.readoutPanel.title")}
+              titleEn={gloss("hmi.readoutPanel.title")}
+              bodyClassName="flex flex-1 min-h-0 flex-col p-0"
+            >
+              <div
+                tabIndex={0}
+                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+              >
+                <ReadoutGrid
+                  machine={machine}
+                  productLabel={isAoi ? (product.data?.name ?? productCode ?? null) : undefined}
+                  configDriftState={configDriftState}
+                />
+              </div>
+            </Sheet>
+          </div>
+        ) : (
+          <SettingsTab
+            className="min-h-0 min-w-0 flex-1"
+            machineCode={machine.code}
+            deviceClass={machine.class}
+          />
+        )}
+
+        <div className="flex w-[336px] shrink-0 flex-col gap-1.5">
           <OutputCard
             className="shrink-0"
             deviceClass={machine.class}

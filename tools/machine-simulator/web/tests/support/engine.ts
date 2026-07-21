@@ -57,3 +57,30 @@ export async function pullMachineConfig(request: APIRequestContext, machineCode:
   })
   if (!res.ok()) throw new Error(`pull config for ${machineCode}/${productCode} failed: ${res.status()}`)
 }
+
+/**
+ * Task 4/5 (docs/plans/2026-07-21-machine-config.md) — resets one machine operating-configuration
+ * parameter (`/v1/machines/{code}/settings/{key}`) straight back to its schema default, bypassing the
+ * UI. Used defensively in `beforeEach`/`afterEach` so a spec that edits a setting (the tolerance→NG
+ * demo, scope-semantics proof) doesn't leak an adjustment into a later "pristine" run — the same
+ * "establish your own precondition" idiom `resetEstop`/`resetScenarioToNormal` already use.
+ * `scope: "machine" | "product"` — the query-string wire vocabulary (case-insensitive server-side,
+ * see `MachineSettingsEndpoints.TryParseScope`'s own doc comment), NOT the C# enum member casing.
+ * A 404 (nothing to reset — the key never had an adjustment) is swallowed; any other non-2xx throws.
+ */
+export async function resetMachineSetting(
+  request: APIRequestContext,
+  machineCode: string,
+  key: string,
+  scope: "machine" | "product",
+  product?: string
+): Promise<void> {
+  const query = new URLSearchParams({ scope })
+  if (product) query.set("product", product)
+  const res = await request.delete(
+    `${ENGINE_URL}/v1/machines/${encodeURIComponent(machineCode)}/settings/${encodeURIComponent(key)}?${query.toString()}`
+  )
+  if (!res.ok() && res.status() !== 404) {
+    throw new Error(`reset machine setting ${machineCode}/${key} (${scope}) failed: ${res.status()}`)
+  }
+}

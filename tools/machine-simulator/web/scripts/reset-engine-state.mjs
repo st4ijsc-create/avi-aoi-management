@@ -3,6 +3,15 @@
 // ecosystem/ecosystem-products.json/ecosystem-recipes.json under it) before every Playwright
 // webServer boot of the engine.
 //
+// Task 4/5 (docs/plans/2026-07-21-machine-config.md) — also deletes `machine-operating-config.json`,
+// `MachineConfigStore`'s own persisted file (same `AppContext.BaseDirectory`-relative, load-as-is-if-
+// present convention as the two files above — see `mc-task12-report.md`'s own flagged follow-up #2).
+// Left out of this list, it would reproduce the EXACT test-contamination bug this file already exists
+// to fix once for `products.json`/`recipes.json`: an earlier Playwright session's machine-settings
+// edits (a PUT/DELETE against `/v1/machines/{code}/settings/{key}`) would silently persist into the
+// next "pristine" `00-visual-and-a11y` baseline capture, since `MachineConfigStore` loads whatever it
+// finds on disk rather than reseeding.
+//
 // ROOT CAUSE this fixes: both stores write their state to a JSON file in AppContext.BaseDirectory
 // (the `dotnet run` build-output folder, e.g. bin/Debug/net10.0-windows/) and, once that file
 // exists, load it AS-IS on the next boot instead of reseeding — correct behavior for the real
@@ -51,6 +60,7 @@ for (const outDir of findTfmOutputDirs(binDir)) {
   const targets = [
     join(outDir, "products.json"),
     join(outDir, "recipes.json"),
+    join(outDir, "machine-operating-config.json"),
     join(outDir, "ecosystem", "ecosystem-products.json"),
     join(outDir, "ecosystem", "ecosystem-recipes.json"),
   ]
@@ -63,5 +73,5 @@ for (const outDir of findTfmOutputDirs(binDir)) {
 }
 
 console.log(
-  `[reset-engine-state] removed ${deleted} persisted state file(s) — ProductConfigStore/SimulatedEcosystem will reseed from ProductConfigStore.SeedProducts()/SeedRecipes() on next boot.`
+  `[reset-engine-state] removed ${deleted} persisted state file(s) — ProductConfigStore/SimulatedEcosystem/MachineConfigStore will reseed from their own defaults (ProductConfigStore.SeedProducts()/SeedRecipes(), MachineParameterSchema's baseline defaults) on next boot.`
 )

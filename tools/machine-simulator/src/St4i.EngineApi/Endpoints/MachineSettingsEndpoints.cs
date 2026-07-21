@@ -101,7 +101,7 @@ public static class MachineSettingsEndpoints
     // DELETE /v1/machines/{code}/settings/{key}?scope=&product=
     // ─────────────────────────────────────────────────────────────────────
     internal static IResult DeleteSetting(
-        string code, string key, AdjustmentScope scope, string? product, FleetHost fleetHost, MachineConfigStore store)
+        string code, string key, string? scope, string? product, FleetHost fleetHost, MachineConfigStore store)
     {
         var machine = FindMachine(fleetHost, code);
         if (machine is null) return ApiNotFound($"machine \"{code}\" not found");
@@ -109,11 +109,16 @@ public static class MachineSettingsEndpoints
         var configKind = MachineParameterSchema.ConfigKindForMachineType(machine.MachineType);
         if (configKind is null) return ApiUnsupportedMachineType(machine);
 
+        if (!TryParseScope(scope, out var parsedScope))
+        {
+            return Results.BadRequest(new ApiErrorDto($"scope must be \"machine\" or \"product\" (got \"{scope}\")."));
+        }
+
         try
         {
             store.Ensure(machine.Code, configKind);
-            var updated = store.RemoveAdjustment(machine.Code, key, scope, product, by: null);
-            var responseProduct = scope == AdjustmentScope.Product ? product : null;
+            var updated = store.RemoveAdjustment(machine.Code, key, parsedScope, product, by: null);
+            var responseProduct = parsedScope == AdjustmentScope.Product ? product : null;
             return Json(BuildResponse(machine, configKind, updated, responseProduct, store));
         }
         catch (KeyNotFoundException ex)
@@ -124,6 +129,32 @@ public static class MachineSettingsEndpoints
         {
             return Results.BadRequest(new ApiErrorDto(ex.Message));
         }
+    }
+
+    /// <summary>Parses the DELETE endpoint's <c>scope</c> query value against the SAME lower-case wire
+    /// vocabulary (<c>machine</c>/<c>product</c>) every other machine-settings request/response already
+    /// uses (<see cref="AdjustmentScope"/>'s own <c>SnakeLowerEnumConverter</c>) — bound here as a plain
+    /// <c>string?</c> rather than <see cref="AdjustmentScope"/> directly, because ASP.NET Core's built-in
+    /// query-string enum binder turned out to be case-SENSITIVE to the C# member name
+    /// (<c>Machine</c>/<c>Product</c>), a real gotcha reproduced live building Task 4's web UI:
+    /// <c>?scope=machine</c> (the casing every other part of this feature's contract uses, including this
+    /// SAME enum's JSON wire form) 400'd with a completely EMPTY response body — a framework-level
+    /// model-binding rejection that never even reached this handler — while <c>?scope=Machine</c> silently
+    /// worked. Parsing it ourselves keeps the query-string contract consistent with the JSON one.</summary>
+    private static bool TryParseScope(string? raw, out AdjustmentScope scope)
+    {
+        if (string.Equals(raw, "machine", StringComparison.OrdinalIgnoreCase))
+        {
+            scope = AdjustmentScope.Machine;
+            return true;
+        }
+        if (string.Equals(raw, "product", StringComparison.OrdinalIgnoreCase))
+        {
+            scope = AdjustmentScope.Product;
+            return true;
+        }
+        scope = default;
+        return false;
     }
 
     // ─────────────────────────────────────────────────────────────────────

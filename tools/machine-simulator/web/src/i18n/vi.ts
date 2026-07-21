@@ -277,6 +277,7 @@ export const vi = {
       telemetry: "Cảm biến",
       board: "Bo mạch",
       config: "Cấu hình",
+      settings: "Cài đặt",
       log: "Nhật ký",
     },
     overview: {
@@ -1252,6 +1253,14 @@ export const vi = {
     pageTitle: (vars: Vars) => `Bảng điều khiển máy ${vars.code}`,
     shift: (vars: Vars) => `CA ${vars.n}`,
 
+    // Task 4 — the tab rail HMI_DESIGN_SPEC.md §8.1 has always reserved a row for, directly under the
+    // nameplate, but never built until now (`components/hmi/TabRail.tsx`).
+    tabs: {
+      railAria: "Chuyển tab bảng điều khiển",
+      operation: "Vận hành",
+      settings: "Cài đặt",
+    },
+
     status: {
       estop: "DỪNG KHẨN CẤP",
       // Nameplate lamp sub-line (H2b) — deliberately keyed off OPERATIONAL state (is the fleet
@@ -1381,6 +1390,73 @@ export const vi = {
     },
   },
 
+  // Task 4/5 (docs/plans/2026-07-21-machine-config.md) — machine operating-configuration: shared
+  // between the HMI's CÀI ĐẶT/SETTINGS tab (`SettingsTab.tsx`, at the machine) and the machine detail
+  // screen's own settings tab (`MachineSettingsPanel.tsx`, from the office) — same data source, same
+  // vocabulary, per the design doc's §5.
+  machineSettings: {
+    title: "Cài đặt máy",
+    description: "Khuyến nghị từ máy chủ — chỉnh riêng theo máy hoặc theo từng sản phẩm khi cần.",
+    productLabel: "Sản phẩm",
+    productSelectAria: "Chọn sản phẩm để xem cấu hình",
+    noProducts: "Chưa có sản phẩm nào.",
+    // Design doc §2: "Máy không chạy sản phẩm (IoT sensor/gateway): chỉ có lớp theo máy; giao diện
+    // không hiện chiều sản phẩm."
+    iotHint: "Máy IoT không chạy sản phẩm — mọi điều chỉnh áp dụng cho máy này.",
+    baselineInfo: (vars: Vars) =>
+      `Khuyến nghị v${vars.version} · ${vars.driftedCount} tham số đã chỉnh so với khuyến nghị`,
+    notSupported: {
+      title: "Chưa có bộ tham số vận hành",
+      description: (vars: Vars) => `Loại máy "${vars.machineType}" chưa có bộ tham số vận hành cho tính năng này.`,
+    },
+    loadFailed: "Không thể tải cấu hình máy.",
+    columns: {
+      label: "Tham số",
+      value: "Hiệu lực",
+      range: "Dải cho phép",
+      recommended: "Khuyến nghị",
+      source: "Nguồn",
+    },
+    // The provenance indicator (design doc §5) — "Có điều chỉnh tại máy" is a NORMAL, desirable state,
+    // never colored as a fault (spec §2) — see `MachineSettingsPanel.tsx`'s `PROVENANCE_TONE` map,
+    // which deliberately never uses the status-fault/status-warn ramp for these three values.
+    provenance: {
+      baseline: "Khuyến nghị",
+      machine: "Chỉnh theo máy",
+      machineProduct: "Chỉnh cho sản phẩm này",
+    },
+    adjustedBy: (vars: Vars) => `${vars.by} · ${vars.when}`,
+    adjustedByUnknown: (vars: Vars) => `${vars.when}`,
+    relativeTime: {
+      justNow: "vừa xong",
+      minutesAgo: (vars: Vars) => `${vars.n} phút trước`,
+      hoursAgo: (vars: Vars) => `${vars.n} giờ trước`,
+      daysAgo: (vars: Vars) => `${vars.n} ngày trước`,
+    },
+    resetAction: "Về mặc định",
+    resetAria: (vars: Vars) => `Đặt lại ${vars.key} về khuyến nghị`,
+    editAction: "Sửa",
+    editAria: (vars: Vars) => `Sửa ${vars.key}`,
+    editDialog: {
+      titleFor: (vars: Vars) => `Sửa ${vars.label}`,
+      valueLabel: "Giá trị mới",
+      rangeHint: (vars: Vars) => `Dải cho phép: ${vars.min}–${vars.max} ${vars.unit}`,
+      scopeLabel: "Áp dụng cho",
+      scopeMachine: "Máy này (mọi sản phẩm)",
+      scopeProduct: (vars: Vars) => `Chỉ sản phẩm đang chọn — ${vars.product}`,
+      noteLabel: "Ghi chú (tuỳ chọn)",
+      notePlaceholder: "Vì sao chỉnh giá trị này…",
+      cancel: "Huỷ",
+      save: "Lưu",
+      saving: "Đang lưu…",
+      invalidNumber: "Nhập một số hợp lệ.",
+      // Mirrors the server's OWN 400 wording (docs/plans' hard requirement: "surface that honestly")
+      // — see `mc-task12-report.md`'s `torqueTarget must be between 0.10 and 20.00 Nm (got 999.00).`
+      outOfRange: (vars: Vars) => `${vars.key} phải nằm trong khoảng ${vars.min}–${vars.max} ${vars.unit} (đã nhập ${vars.value}).`,
+      serverErrorFallback: "Máy chủ từ chối giá trị này.",
+    },
+  },
+
   toast: {
     fleetStarted: "Đã chạy fleet.",
     fleetStartFailed: "Không thể chạy fleet.",
@@ -1397,6 +1473,10 @@ export const vi = {
     configPushConflicts: (vars: Vars) =>
       `Đã đẩy cấu hình cho ${vars.code} — ${vars.count} điểm bị xung đột ghi cũ, không được ghi đè.`,
     configPushFailed: "Đẩy cấu hình thất bại.",
+    machineSettingUpdated: (vars: Vars) => `Đã cập nhật ${vars.key}.`,
+    machineSettingUpdateFailed: "Không thể cập nhật tham số.",
+    machineSettingReset: (vars: Vars) => `Đã đặt lại ${vars.key} về khuyến nghị.`,
+    machineSettingResetFailed: "Không thể đặt lại tham số.",
     keyCopied: "Đã sao chép khóa.",
     productCreated: (vars: Vars) => `Đã tạo sản phẩm ${vars.code}.`,
     productSaved: "Đã lưu sản phẩm.",

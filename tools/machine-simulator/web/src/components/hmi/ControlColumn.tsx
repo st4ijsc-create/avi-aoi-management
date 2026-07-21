@@ -91,7 +91,14 @@ export function ControlColumn({
         `scrollHeight <= clientHeight`), not as the mechanism relied on to reach RESET.
       */}
       <div className="hmi-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="flex min-h-full w-full flex-col items-center p-1.5">
+        {/* Task 4 — the tab rail (spec §8.1) claims 32px that used to belong to this row's own
+            budget; `p-1`/`pt-1`/`gap-1` (trimmed from `p-1.5`/`pt-2`/`gap-2`) claw back the same
+            order of magnitude directly from this column's own wrapper, per §8.5's "the control rail
+            is the one region allowed to trim padding/gaps tighter when the worst-case fit demands
+            it" — re-verified live (not computed blind) via the same slack formula
+            `12-hmi-safety-rail.spec.ts` asserts: latched slack at 1280×800 went from -3px (broken)
+            back to comfortably over the 10px floor. */}
+        <div className="flex min-h-full w-full flex-col items-center p-1">
           <div className="flex shrink-0 items-end justify-center gap-5">
             <ControlButton
               variant="start"
@@ -113,7 +120,7 @@ export function ControlColumn({
               rail's bottom edge: every state now reserves the SAME height (banner + RESET slots are
               always present, real or placeholder — see the H5c comment above), so there is nothing
               left for `mt-auto` to collapse differently between states. */}
-          <div className="mt-auto flex w-full flex-col items-center gap-2 pt-2">
+          <div className="mt-auto flex w-full flex-col items-center gap-1 pt-1">
             {/* H5 — `estopHint` (the RESET-instruction sub-line) stays defined in the i18n
                 dictionaries for now but is no longer rendered here: with RESET itself visible right
                 below this banner (beside E-STOP, not a separate stacked row), a second line spelling
