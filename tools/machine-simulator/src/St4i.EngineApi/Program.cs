@@ -92,6 +92,12 @@ builder.Services.AddSingleton(sp => new ConfigSyncCoordinator(
 
 builder.Services.AddSingleton<ConfigSyncEngine>();
 
+// Task 2 (docs/plans/2026-07-21-machine-config.md) — machine operating-configuration store (Task 1's
+// MachineConfigStore). Deliberately a SEPARATE singleton/file from ProductConfigStore/SimulatedEcosystem
+// above: this is "what this machine is actually running" (torque/exposure/speed setpoints), not product
+// spec/points or the automation recipe payload those stores already own.
+builder.Services.AddSingleton<MachineConfigStore>();
+
 // H4 job 1 fix — WebApplicationBuilder's default WebRootPath is `{ContentRootPath}/wwwroot`, and
 // ContentRootPath defaults to the CURRENT WORKING DIRECTORY, which under `dotnet run` is the PROJECT
 // SOURCE directory (confirmed via the "Content root path:" startup log line) — NOT the build output
@@ -139,6 +145,7 @@ app.MapScenarioEndpoints();
 app.MapSettingsEndpoints();
 app.MapOnboardingEndpoints();
 app.MapConfigEndpoints();
+app.MapMachineSettingsEndpoints();
 app.MapInspectorStream();
 
 app.MapFallbackToFile("index.html");
