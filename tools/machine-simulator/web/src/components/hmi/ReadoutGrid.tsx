@@ -159,11 +159,11 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
   } else if (machine.class === "AoiAvi") {
     const ngPoints = machine.boardPoints.filter((p) => p.result === "NG")
     const lastDefect = ngPoints.length > 0 ? ngPoints[ngPoints.length - 1] : undefined
-    // H2c: cumulative NG-board count, computed with the EXACT SAME formula `ProductionProgress`'s
-    // footer strip uses (`okCount = round(cycles*passRate)`, `ngCount = cycles - okCount`) — this
-    // tile previously counted only the CURRENT board's NG points (0 or 1 per cycle), which visibly
-    // disagreed with the footer's cumulative "399 LỖI · 665 TỔNG" on the very same screen. Two
-    // numbers claiming to be "the defect count" must agree; this one now IS the footer's number.
+    // H2c: cumulative NG-board count, computed with the EXACT SAME formula `OutputCard.tsx` uses
+    // (`okCount = round(cycles*passRate)`, `ngCount = cycles - okCount`) — this tile previously
+    // counted only the CURRENT board's NG points (0 or 1 per cycle), which visibly disagreed with the
+    // output card's cumulative "399 LỖI · 665 TỔNG" on the very same screen. Two numbers claiming to
+    // be "the defect count" must agree; this one now IS the output card's number.
     const okCount = Math.round(machine.cycles * machine.passRate)
     const cumulativeNg = Math.max(0, machine.cycles - okCount)
     tiles = [
@@ -277,14 +277,20 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
   }
 
   return (
-    <div className={cn("h-full", className)}>
+    // H5 — `@container`: this panel is now a SIBLING column (spec §8 layout gap 1), roughly a third
+    // of the width the pre-H5 build gave it when it spanned the full content width beneath the
+    // schematic — a `lg:` viewport breakpoint (which the tile grid used to key its 2-vs-4-column
+    // count off) no longer has anything to do with how wide THIS panel actually is (measured ~417px
+    // at a 1280px viewport, well under the old `lg` 1024px viewport threshold this container will
+    // never even approach). Container queries key off the panel's OWN rendered width instead.
+    <div className={cn("@container h-full", className)}>
       {/* Gap-as-border technique (1px grid gap on a `bg-border` container, each cell opaque) —
        * Tailwind's `divide-x`/`divide-y` utilities don't produce clean internal gridlines on a
        * WRAPPING grid (they border every child but the first in DOM order, not every child but the
        * first IN ITS ROW), so this is the reliable way to get a real bordered data-sheet table.
        * `auto-rows-fr` + the `h-full` above stretches the (fixed 2-row) grid to fill whatever height
        * the panel has — H2b fix for the dead band that used to sit below a top-anchored tile list. */}
-      <div className="grid h-full auto-rows-fr grid-cols-2 gap-px border border-border bg-border lg:grid-cols-4">
+      <div className="grid h-full auto-rows-fr grid-cols-2 gap-px border border-border bg-border @2xl:grid-cols-4">
         {tiles.map((tile) => (
           <div key={tile.key} className="flex items-center bg-surface-card px-5 py-3">
             <Readout

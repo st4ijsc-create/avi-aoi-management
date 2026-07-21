@@ -1,18 +1,18 @@
 import { useGloss } from "@/components/hmi/bilingual"
+import { MachinePlinth } from "@/components/hmi/MachinePlinth"
 import { useT } from "@/i18n"
 
 interface IotSchematicProps {
   isRunning: boolean
-  /** Latest telemetry reading, pre-formatted by the caller (`Hmi.tsx`) — purely a label under the
-   * sensor node, not something this component parses. */
-  latestReading?: string | null
   className?: string
 }
 
 /** Sensor node → uplink cell (spec §7): a node emitting radiating signal arcs, packets travelling
  * along the link to an uplink tower, and a row of sample-rate tick marks — all gated on `isRunning`,
- * static otherwise. */
-export function IotSchematic({ isRunning, latestReading, className }: IotSchematicProps) {
+ * static otherwise. H5: the latest-telemetry-reading text this drawing used to render at its own
+ * bottom edge moved to `SchematicPanel.tsx`'s caption/readout strip below the drawing (layout spec
+ * §8 gap 4) — this component is now purely the wireframe. */
+export function IotSchematic({ isRunning, className }: IotSchematicProps) {
   const t = useT()
   const gloss = useGloss()
   const runClass = isRunning ? "hmi-schematic-run" : undefined
@@ -20,9 +20,12 @@ export function IotSchematic({ isRunning, latestReading, className }: IotSchemat
   return (
     // viewBox tightened to the artwork's own bounding box (H2b: fill 85-90% of the sheet, not float
     // in a much larger box) — the original 460x224 canvas had ~35% unused vertical margin above the
-    // signal arcs and below the tick row.
+    // signal arcs and below the tick row. H5: grown again 141 → 190 — NOT a return to the old empty
+    // margin, but real added geometry (`MachinePlinth` under the node/tower, see its own doc comment)
+    // to reduce the "meet"-scaling letterbox now that this drawing lives in a much taller, narrower
+    // column (layout spec §8 gap 1) than the old full-width sheet its proportions were tuned for.
     <svg
-      viewBox="20 55 396 161"
+      viewBox="20 55 396 190"
       preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
@@ -92,22 +95,7 @@ export function IotSchematic({ isRunning, latestReading, className }: IotSchemat
         ))}
       </g>
 
-      {/* `hmi-iot-reading` — C-5/I-15-style mask hook, on a FIXED-SIZE invisible rect rather than the
-          live `<text>` itself: this string's LENGTH varies cycle to cycle (different numeric values
-          have different digit counts), so a mask sized to the text's own current bounding box left
-          real, reproduced slivers at its left/right edges unmasked whenever a baseline was captured
-          against one string length and compared against a different one — the exact same class of bug
-          `AutomationSchematic.tsx`'s `.hmi-feeder-live` fix (and `AoiSchematic.tsx`'s constant dot
-          radius) already guards against. Sized generously — well past any realistic reading string —
-          rather than tuned to a specific value's width. */}
-      {latestReading ? (
-        <>
-          <rect x={140} y={192} width={180} height={18} fill="transparent" className="hmi-iot-reading" />
-          <text x={230} y={206} textAnchor="middle" fontSize={9} fill="var(--text-body)" fontFamily="var(--font-mono)">
-            {latestReading}
-          </text>
-        </>
-      ) : null}
+      <MachinePlinth x1={40} x2={410} y={198} height={40} />
     </svg>
   )
 }

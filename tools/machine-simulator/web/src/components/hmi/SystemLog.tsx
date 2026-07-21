@@ -3,7 +3,7 @@ import * as React from "react"
 import { LogTag, Sheet, type LogLevel } from "@/components/industrial"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useLanguage, useT } from "@/i18n"
-import { traceStatusTone, useInspectorStream, type StatusTone } from "@/lib/inspector"
+import { traceStatusTone, type StatusTone, type StreamConnectionState, type TraceRow } from "@/lib/inspector"
 
 /** A locally-originated log row (control actions — Start/Pause/E-STOP/Reset) — these carry a REAL
  * bilingual message pair (unlike the trace rows below, which mirror raw HTTP method/path/status —
@@ -41,21 +41,25 @@ function formatClock(at: number): string {
 interface SystemLogProps {
   machineCode: string
   localEvents: HmiLocalLogEvent[]
+  /** H5 — the WS trace stream is now opened ONCE in `Hmi.tsx` (`useInspectorStream`) and shared with
+   * the nameplate's connectivity chip, rather than each consumer opening its own socket to the same
+   * endpoint. */
+  events: TraceRow[]
+  connectionState: StreamConnectionState
   className?: string
 }
 
 /**
- * System log (spec §5): monospace, `LogTag` level column, newest-first, fed live by the WS trace
- * stream (`useInspectorStream`, filtered to this machine's own events) merged with local
- * control-action events (E-STOP/Reset/Start/Pause). Panel scrolls internally (`hmi-scroll`) — newest
- * rows land at the top, so no explicit "scroll to bottom" logic is needed to keep the latest event in
- * view.
+ * System log (spec §8: full-width band under the schematic/readouts/output row): monospace, `LogTag`
+ * level column, newest-first, fed live by the shared WS trace stream (filtered to this machine's own
+ * events) merged with local control-action events (E-STOP/Reset/Start/Pause). Scrolls internally
+ * (`hmi-scroll`) — newest rows land at the top, so no explicit "scroll to bottom" logic is needed to
+ * keep the latest event in view.
  */
-export function SystemLog({ machineCode, localEvents, className }: SystemLogProps) {
+export function SystemLog({ machineCode, localEvents, events, connectionState, className }: SystemLogProps) {
   const t = useT()
   const gloss = useGloss()
   const { language } = useLanguage()
-  const { events, connectionState } = useInspectorStream()
 
   const rows = React.useMemo<LogRow[]>(() => {
     const traceRows: LogRow[] = events

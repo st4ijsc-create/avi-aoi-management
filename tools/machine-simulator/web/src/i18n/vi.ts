@@ -1266,6 +1266,16 @@ export const vi = {
       },
     },
 
+    // H5 — nameplate connectivity chip (layout gap 4): reuses the SAME WS trace-stream connection
+    // this panel already opens for the system log (`useInspectorStream`, lifted to `Hmi.tsx` and
+    // passed down) — this is an honest reflection of whether THIS browser tab's live feed is up, not
+    // a synthetic "always ONLINE" decoration.
+    connectivity: {
+      online: "TRỰC TUYẾN",
+      connecting: "ĐANG KẾT NỐI",
+      offline: "MẤT KẾT NỐI",
+    },
+
     controls: {
       title: "Điều khiển vật lý",
       titleEn: "PHYSICAL CONTROLS",

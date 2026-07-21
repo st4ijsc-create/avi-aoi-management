@@ -4,7 +4,7 @@ import { Link, useParams } from "wouter"
 import { Sheet, type StatusLampState } from "@/components/industrial"
 import { ControlColumn } from "@/components/hmi/ControlColumn"
 import { Nameplate } from "@/components/hmi/Nameplate"
-import { ProductionProgress } from "@/components/hmi/ProductionProgress"
+import { OutputCard } from "@/components/hmi/OutputCard"
 import { ReadoutGrid } from "@/components/hmi/ReadoutGrid"
 import { SchematicPanel } from "@/components/hmi/SchematicPanel"
 import type { AoiSchematicPoint } from "@/components/hmi/schematics/AoiSchematic"
@@ -21,11 +21,27 @@ import {
   useResetEstop,
   useStartFleet,
   useStopFleet,
+  type DeviceClass,
 } from "@/lib/api"
 import { useMachineConfigCheck, useProduct, useProductPoints } from "@/lib/configApi"
+import { useInspectorStream } from "@/lib/inspector"
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n))
+}
+
+/**
+ * H5 — layout spec §8's "adapt proportions per machine class rather than copying the reference's
+ * fixed split blindly": `[schematicFlex, readoutFlex]` grow ratios for the two flexible left columns
+ * (the third, control-rail column is a fixed width — see the render below). AOI gets the extra room
+ * (its board + real measurement-point dots need to stay legible, spec §7: "make this the strongest
+ * one"); IoT gives room back to the readout grid instead, since its wireframe (a node, a link, an
+ * uplink) is comparatively sparse and doesn't need the width; Automation splits evenly.
+ */
+const SCHEMATIC_READOUT_FLEX: Record<DeviceClass, [number, number]> = {
+  Automation: [1, 1],
+  AoiAvi: [1.15, 1],
+  Iot: [0.85, 1.15],
 }
 
 let localEventSeq = 0
@@ -79,6 +95,10 @@ export default function Hmi() {
   const stopFleet = useStopFleet()
   const estopFleet = useEstopFleet()
   const resetEstop = useResetEstop()
+
+  // H5 — opened ONCE here and shared by the nameplate's connectivity chip AND the system log (both
+  // used to open their own independent WS connection to the same endpoint before this).
+  const { events: traceEvents, connectionState } = useInspectorStream()
 
   const [localEvents, setLocalEvents] = React.useState<HmiLocalLogEvent[]>([])
 
@@ -210,6 +230,8 @@ export default function Hmi() {
   const parsedIotMetric = lastRow ? parseKeyMetric(lastRow.keyMetric) : null
   const iotLatestReading = parsedIotMetric ? `${parsedIotMetric.name}: ${parsedIotMetric.value}${parsedIotMetric.unit}` : undefined
 
+  const [schematicFlex, readoutFlex] = SCHEMATIC_READOUT_FLEX[machine.class]
+
   return (
     <div className="flex h-svh w-full flex-col overflow-hidden bg-surface-subtle text-text-body">
       <Nameplate
@@ -220,41 +242,62 @@ export default function Hmi() {
         lampLabel={lampLabel}
         lampSub={lampSub}
         lampLive={running}
+        connectionState={connectionState}
       />
 
-      <div className="flex min-h-0 flex-1 gap-3 p-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <SchematicPanel
-            className="min-h-0 flex-[1.6]"
-            deviceClass={machine.class}
-            isRunning={running}
-            cycles={machine.cycles}
-            aoiProductName={product.data?.name ?? productCode ?? null}
-            aoiPoints={aoiPoints}
-            aoiUnlocatedDefects={aoiUnlocatedDefects}
-            iotLatestReading={iotLatestReading}
-          />
-          <Sheet
-            className="hmi-readout-grid min-h-0 flex-1"
-            title={t("hmi.readoutPanel.title")}
-            titleEn={gloss("hmi.readoutPanel.title")}
-            bodyClassName="flex flex-1 min-h-0 flex-col p-0"
-          >
-            <div
-              tabIndex={0}
-              className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
-            >
-              <ReadoutGrid
-                machine={machine}
-                productLabel={isAoi ? (product.data?.name ?? productCode ?? null) : undefined}
-                configDriftState={configDriftState}
-              />
-            </div>
-          </Sheet>
-        </div>
+      {/*
+        H5 — Scheme A, three-column SCADA layout (layout spec §8, closing gap 1/3/4): the schematic
+        and the readout grid are now SIBLING columns (read side-by-side, not schematic-above-readouts
+        in one shared column) and the third column is a fixed-width, FULL-HEIGHT control rail — the
+        output card sits at ITS top (gap 3: promoted out of the old 29px footer), `ControlColumn`
+        fills the rest (gap 2: no longer squeezed to less height than the log). The system log itself
+        moves OUT of this row entirely into its own full-width band below (gap 2/reference §1.2's
+        "alarm banner" convention) — a tab rail belongs directly under the nameplate, ahead of this
+        row, once a later task adds one (spec §8 note); this row's own `min-h-0` + each child's
+        internal `hmi-scroll` is what keeps the WHOLE PAGE from ever scrolling (spec §9) at any of the
+        three device classes' proportions.
+      */}
+      <div className="flex min-h-0 flex-[5] gap-3 p-3 pb-0">
+        <SchematicPanel
+          className="min-h-0 min-w-0"
+          style={{ flexGrow: schematicFlex, flexBasis: 0 }}
+          deviceClass={machine.class}
+          isRunning={running}
+          cycles={machine.cycles}
+          aoiProductName={product.data?.name ?? productCode ?? null}
+          aoiPoints={aoiPoints}
+          aoiUnlocatedDefects={aoiUnlocatedDefects}
+          iotLatestReading={iotLatestReading}
+        />
 
-        <div className="flex w-[320px] shrink-0 flex-col gap-3">
+        <Sheet
+          className="hmi-readout-grid min-h-0 min-w-0"
+          style={{ flexGrow: readoutFlex, flexBasis: 0 }}
+          title={t("hmi.readoutPanel.title")}
+          titleEn={gloss("hmi.readoutPanel.title")}
+          bodyClassName="flex flex-1 min-h-0 flex-col p-0"
+        >
+          <div
+            tabIndex={0}
+            className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+          >
+            <ReadoutGrid
+              machine={machine}
+              productLabel={isAoi ? (product.data?.name ?? productCode ?? null) : undefined}
+              configDriftState={configDriftState}
+            />
+          </div>
+        </Sheet>
+
+        <div className="flex w-[336px] shrink-0 flex-col gap-3">
+          <OutputCard
+            className="shrink-0"
+            deviceClass={machine.class}
+            cycles={machine.cycles}
+            passRate={machine.class === "Iot" ? null : machine.passRate}
+          />
           <ControlColumn
+            className="min-h-0 flex-1"
             estopEngaged={estopEngaged}
             isRunning={fleetIsRunning}
             startPending={startFleet.isPending}
@@ -266,15 +309,15 @@ export default function Hmi() {
             onEstop={handleEstop}
             onReset={handleReset}
           />
-          <SystemLog className="min-h-0 flex-1" machineCode={machine.code} localEvents={localEvents} />
         </div>
       </div>
 
-      <ProductionProgress
-        className="hmi-production-progress"
-        deviceClass={machine.class}
-        cycles={machine.cycles}
-        passRate={machine.class === "Iot" ? null : machine.passRate}
+      <SystemLog
+        className="hmi-system-log-band m-3 min-h-0 flex-1"
+        machineCode={machine.code}
+        localEvents={localEvents}
+        events={traceEvents}
+        connectionState={connectionState}
       />
     </div>
   )

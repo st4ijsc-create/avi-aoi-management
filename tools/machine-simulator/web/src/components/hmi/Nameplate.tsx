@@ -6,7 +6,39 @@ import { StatusLamp, type StatusLampState } from "@/components/industrial"
 import { currentShiftNumber } from "@/components/hmi/derive"
 import { useT } from "@/i18n"
 import type { DeviceClass, DriverKind } from "@/lib/api"
+import type { StreamConnectionState } from "@/lib/inspector"
+import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/theme/ThemeToggle"
+
+const CONNECTIVITY_KEY: Record<StreamConnectionState, string> = {
+  open: "hmi.connectivity.online",
+  connecting: "hmi.connectivity.connecting",
+  closed: "hmi.connectivity.offline",
+}
+
+/**
+ * H5 — connectivity chip (layout gap 4): a plain text/dot badge, deliberately NOT built on
+ * `StatusLamp`'s status ramp — spec §2 reserves run/warn/fault colour for MACHINE state, and this
+ * reports the browser tab's own WS link to the engine, a different axis entirely (a machine can be
+ * genuinely Running while this reads OFFLINE mid-reconnect). Same low-key, text-only idiom
+ * `SystemLog.tsx`'s own header already uses for the identical signal ("WS"/"…"/"OFF"), just spelled
+ * out here since the nameplate is the one place an operator glances at first.
+ */
+function ConnectivityChip({ connectionState }: { connectionState: StreamConnectionState }) {
+  const t = useT()
+  return (
+    <div className="hmi-connectivity flex items-center gap-2 border border-border-strong bg-surface-muted px-3 py-1.5">
+      <span
+        aria-hidden="true"
+        className={cn(
+          "size-2 shrink-0",
+          connectionState === "open" ? "bg-status-run" : connectionState === "connecting" ? "bg-status-warn" : "bg-status-fault"
+        )}
+      />
+      <span className="hmi-micro whitespace-nowrap">{t(CONNECTIVITY_KEY[connectionState])}</span>
+    </div>
+  )
+}
 
 /** Live HH:MM:SS clock — same ticking pattern as `TopBar.tsx`'s own `Clock()`, duplicated locally
  * since the HMI route renders outside `<Shell>` (spec §8: a genuine kiosk shell, not the app chrome). */
@@ -27,12 +59,15 @@ interface NameplateProps {
   lampLabel: string
   lampSub?: string
   lampLive: boolean
+  /** H5 — the shared WS trace-stream state (`useInspectorStream`, opened once in `Hmi.tsx` and passed
+   * to both this chip and `SystemLog`) — layout gap 4's connectivity chip. */
+  connectionState: StreamConnectionState
 }
 
 /** The kiosk header (spec §8): machine code at nameplate scale, device class/driver beneath, a
- * `StatusLamp` for machine state, the current shift (derived from the wall clock), a live clock, and
- * an "obvious way back" to the machine's own detail page. */
-export function Nameplate({ code, deviceClass, driverKind, lampState, lampLabel, lampSub, lampLive }: NameplateProps) {
+ * `StatusLamp` for machine state, a connectivity chip, the current shift (derived from the wall
+ * clock), a live clock, and an "obvious way back" to the machine's own detail page. */
+export function Nameplate({ code, deviceClass, driverKind, lampState, lampLabel, lampSub, lampLive, connectionState }: NameplateProps) {
   const t = useT()
   const now = useClock()
   const shift = currentShiftNumber(now)
@@ -62,6 +97,10 @@ export function Nameplate({ code, deviceClass, driverKind, lampState, lampLabel,
             machine's live status word/color is genuinely non-deterministic run-to-run (whichever
             state the shared fleet happens to be in), same reasoning as `hmi-readout-value`. */}
         <StatusLamp size="lg" state={lampState} label={lampLabel} sub={lampSub} live={lampLive} className="hmi-nameplate-lamp" />
+
+        <div className="h-8 w-px bg-border" aria-hidden="true" />
+
+        <ConnectivityChip connectionState={connectionState} />
 
         <div className="h-8 w-px bg-border" aria-hidden="true" />
 

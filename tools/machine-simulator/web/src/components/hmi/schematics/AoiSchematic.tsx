@@ -2,8 +2,8 @@ import * as React from "react"
 
 import { useGloss } from "@/components/hmi/bilingual"
 import { DimensionLine } from "@/components/hmi/DimensionLine"
+import { MachinePlinth } from "@/components/hmi/MachinePlinth"
 import { useT } from "@/i18n"
-import { truncateText } from "@/lib/utils"
 
 export interface AoiSchematicPoint {
   code: string
@@ -32,18 +32,9 @@ const GANTRY_RAIL_Y = 30
 const GANTRY_RAIL_X1 = 150
 const GANTRY_RAIL_X2 = 398
 
-/** Caption truncation — H2b: an unbounded product name (e.g. "Bo mạch điều khiển chính (Main
- * Control Board)") wrapped nowhere in SVG text and ran straight through the camera head glyph
- * above the board. Truncated visually; the full name still reaches assistive tech via `<title>`. */
-const CAPTION_MAX_CHARS = 30
-
 interface AoiSchematicProps {
   isRunning: boolean
-  productName?: string | null
   points: AoiSchematicPoint[]
-  /** I-1 — real per-cycle NG count from the engine's own board points (`Hmi.tsx`), shown as an
-   * honest aggregate instead of colouring an individual dot below. */
-  unlocatedDefects?: number
   className?: string
 }
 
@@ -72,13 +63,13 @@ interface AoiSchematicProps {
  * configured position (unchanged) but stays the neutral idle outline — position is real config,
  * never a claim about that exact spot's result. The real per-cycle NG count is instead shown as an
  * honest AGGREGATE (`unlocatedDefects`, supplied by the caller straight from the engine's own board
- * points) in the caption, with an explicit disclosure of what's config and what's aggregate.
+ * points), now surfaced in `SchematicPanel.tsx`'s caption strip BELOW this drawing (H5 — layout spec
+ * §8 gap 4) rather than as SVG text inside the canvas itself, with an explicit disclosure of what's
+ * config and what's aggregate.
  */
-export function AoiSchematic({ isRunning, productName, points, unlocatedDefects = 0, className }: AoiSchematicProps) {
+export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps) {
   const t = useT()
   const gloss = useGloss()
-  const fullCaption = `${productName ?? "—"} · ${t("hmi.schematic.pointsSynced", { count: points.length })} · ${t("hmi.schematic.aggregateDisclosure")}`
-  const captionLabel = points.length > 0 ? truncateText(productName ?? "—", CAPTION_MAX_CHARS) : null
 
   // Camera sweeps the gantry rail from its left end to its right end and back — the CSS keyframe
   // (`hmi-kf-camera-sweep`) is `translateX(0)` at rest, `translateX(var(--hmi-sweep-x))` at the
@@ -89,28 +80,28 @@ export function AoiSchematic({ isRunning, productName, points, unlocatedDefects 
 
   return (
     // viewBox width matches `AutomationSchematic.tsx`'s (520 wide) — both cells share the same frame
-    // footprint and fill the sheet the same way (H2b's fill-the-sheet fix, kept). A touch taller
-    // (520x204, aspect 2.55 vs. automation's 2.65) makes room for two dimension callouts stacked
-    // under the frame's base rail PLUS the caption row beneath them, while staying close enough to
-    // the panel's own ~2.6:1 rendered aspect that `meet` scaling only letterboxes a few px per side.
+    // footprint and fill the sheet the same way (H2b's fill-the-sheet fix, kept). H5: height grown
+    // 196 → 244, matching `AutomationSchematic.tsx`'s own new height exactly (both cells share one
+    // frame footprint AND one canvas height) — real added geometry (`MachinePlinth`, see its own doc
+    // comment), not empty padding, to reduce the "meet"-scaling letterbox now that this drawing lives
+    // in a much taller, narrower column (layout spec §8 gap 1) than the old full-width sheet.
     <svg
-      viewBox="0 0 520 204"
+      viewBox="0 0 520 244"
       preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
       aria-label={`${t("hmi.schematic.figAoi")} — ${gloss("hmi.schematic.figAoi")}`}
     >
       <g className={isRunning ? "hmi-schematic-run" : undefined}>
-        {/* Portal frame: uprights, top rail, base rail, feet — same drawing language as the
-            automation cell's frame. */}
+        {/* Portal frame: uprights, top rail, base rail — same drawing language as the automation
+            cell's frame. */}
         <g stroke="var(--text-muted)" strokeWidth={1.5} fill="none">
           <line className="hmi-wire" x1={FRAME_LEFT} y1={FRAME_TOP} x2={FRAME_LEFT} y2={FRAME_BASE} />
           <line className="hmi-wire" x1={FRAME_RIGHT} y1={FRAME_TOP} x2={FRAME_RIGHT} y2={FRAME_BASE} />
           <line className="hmi-wire" x1={FRAME_LEFT - 13} y1={FRAME_TOP} x2={FRAME_RIGHT + 13} y2={FRAME_TOP} />
           <line className="hmi-wire" x1={FRAME_LEFT - 52} y1={FRAME_BASE} x2={FRAME_RIGHT + 47} y2={FRAME_BASE} />
-          <rect className="hmi-wire" x={FRAME_LEFT - 8} y={FRAME_BASE} width={16} height={6} />
-          <rect className="hmi-wire" x={FRAME_RIGHT - 8} y={FRAME_BASE} width={16} height={6} />
         </g>
+        <MachinePlinth x1={FRAME_LEFT - 52} x2={FRAME_RIGHT + 47} y={FRAME_BASE} height={48} />
 
         {/* Overhead gantry rail — static; only the camera assembly below travels along it (the
             "visible gantry" the review asked for, same idiom as the automation cell's carriage
@@ -244,47 +235,14 @@ export function AoiSchematic({ isRunning, productName, points, unlocatedDefects 
         </g>
       </g>
 
-      {points.length === 0 ? (
-        <text
-          x={BOARD_X + BOARD_W / 2}
-          y={BOARD_Y + BOARD_H / 2}
-          textAnchor="middle"
-          fontSize={9}
-          fill="var(--text-muted)"
-          fontFamily="var(--font-mono)"
-        >
-          {t("hmi.schematic.noProduct")}
-        </text>
-      ) : null}
-
       {/* Dimension callouts, directly below the frame's base rail, x-aligned to what they measure —
           same idiom `AutomationSchematic.tsx`'s "80"/"390" callouts already use (spec §7, "attached
-          to what they measure"). */}
-      <DimensionLine x1={BOARD_X} x2={BOARD_X + BOARD_W} y={170} label={`${BOARD_W}`} />
-      <DimensionLine x1={FRAME_LEFT} x2={FRAME_RIGHT} y={184} label="390" />
-
-      {/* Caption sits below everything — board, conveyor, dimension lines (H2b's collision fix,
-          kept: the caption used to sit above the board at the same height as the camera glyph, then
-          inside the belt's own tick band; below everything is clear at any panel size). Truncated
-          visually; `<title>` carries the untruncated name.
-
-          `hmi-aoi-caption` — C-5/I-15-style mask hook lives on a FIXED-SIZE invisible rect, not the
-          `<text>` itself: since I-1's aggregate defect count was added here, this string's rendered
-          WIDTH now varies cycle to cycle (the count's digit-length grows), so masking the text
-          element directly would size the mask to whatever that width happens to be at screenshot
-          time — the same class of bug `AutomationSchematic.tsx`'s `.hmi-feeder-live` and
-          `IotSchematic.tsx`'s `.hmi-iot-reading` fixes already guard against. Sized generously across
-          the caption's whole row rather than tuned to one string's width. */}
-      {captionLabel !== null ? (
-        <>
-          <rect x={163} y={188} width={353} height={14} fill="transparent" className="hmi-aoi-caption" />
-          <text x={BOARD_X} y={198} fontSize={8} fill="var(--text-muted)" fontFamily="var(--font-mono)">
-            <title>{fullCaption}</title>
-            {captionLabel} · {t("hmi.schematic.pointsSynced", { count: points.length })} ·{" "}
-            {t("hmi.schematic.aggregateDefects", { count: unlocatedDefects })}
-          </text>
-        </>
-      ) : null}
+          to what they measure"). H5: the caption row (product name · configured-position count ·
+          aggregate defects) and the "no product linked" fallback both moved to
+          `SchematicPanel.tsx`'s caption/readout strip below this drawing (layout spec §8 gap 4) — this
+          canvas is now purely the wireframe + its dimension lines. */}
+      <DimensionLine x1={BOARD_X} x2={BOARD_X + BOARD_W} y={214} label={`${BOARD_W}`} />
+      <DimensionLine x1={FRAME_LEFT} x2={FRAME_RIGHT} y={230} label="390" />
     </svg>
   )
 }

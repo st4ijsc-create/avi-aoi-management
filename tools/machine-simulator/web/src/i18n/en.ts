@@ -1246,6 +1246,12 @@ export const en: Dictionary = {
       },
     },
 
+    connectivity: {
+      online: "ONLINE",
+      connecting: "CONNECTING",
+      offline: "OFFLINE",
+    },
+
     controls: {
       title: "PHYSICAL CONTROLS",
       titleEn: "Điều khiển vật lý",

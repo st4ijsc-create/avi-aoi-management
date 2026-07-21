@@ -226,7 +226,12 @@ test.describe("HMI operator panel", () => {
         page.locator(".hmi-aoi-caption"),
         page.locator(".hmi-readout-value"),
         page.getByRole("log"),
-        page.locator(".hmi-production-progress"),
+        // H5 — layout gap 3: `OutputCard`'s OK/NG/TOTAL numbers ride the shared `.hmi-readout-value`
+        // mask above (built on the same `<Readout>` primitive as the readout grid), but the
+        // proportional OK/NG bar is a plain coloured div, not a `<Readout>` — its own fill-boundary
+        // pixel position is exactly as cycle-count-dependent as the numbers beside it and needs its
+        // own stable-box mask, same reasoning as `.hmi-feeder-live`/`.hmi-iot-reading`.
+        page.locator(".hmi-output-bar"),
       ],
     },
     {
@@ -238,7 +243,7 @@ test.describe("HMI operator panel", () => {
         page.locator(".hmi-feeder-live"),
         page.locator(".hmi-readout-value"),
         page.getByRole("log"),
-        page.locator(".hmi-production-progress"),
+        page.locator(".hmi-output-bar"),
       ],
     },
     {
@@ -250,7 +255,7 @@ test.describe("HMI operator panel", () => {
         page.locator(".hmi-iot-reading"),
         page.locator(".hmi-readout-value"),
         page.getByRole("log"),
-        page.locator(".hmi-production-progress"),
+        page.locator(".hmi-output-bar"),
       ],
     },
   ]

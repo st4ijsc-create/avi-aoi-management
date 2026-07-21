@@ -117,9 +117,121 @@ Pick the schematic from the machine's `deviceClass`. Idle state = static drawing
 
 ## 8. Layout
 
-- **Kiosk shell.** Nameplate header (machine/app identity + status lamp + shift + clock) → tab rail → content. **The page never scrolls**; panels scroll internally (`hmi-scroll`).
-- Responsive: the reference is fixed 1920×1080, but ours must fill whatever the WebView2 window is. Use flex/grid that fills the viewport; no horizontal page scroll at 1280px.
-- Dense but not cramped: 3–4px base spacing unit, generous panel padding (14–20px).
+**H5 (2026-07) — rewritten from scratch.** The previous version of this section was one paragraph of
+prose ("Nameplate → tab rail → content") with no concrete grid, region list, or proportions — the
+layout drifted from it silently (schematic stacked ABOVE the readouts instead of beside them, the log
+outweighing the control rail 1.8×, output reduced to a 29px footer) because there was nothing specific
+enough here to drift FROM. This section is now the literal source of truth for `Hmi.tsx`'s structure;
+a change to the region grid below requires updating this section in the same change.
+
+### 8.1 Region grid ("Scheme A" — three-column SCADA)
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ NAMEPLATE — fixed 80px band, full width, never scrolls                    │
+│ [reserved: TAB RAIL band lands here, directly under the nameplate,        │
+│  once a machine-settings tab is added — spec intentionally leaves this    │
+│  row empty today rather than shipping a one-tab rail that looks broken]   │
+├──────────────────┬───────────────────┬───────────────────────────────────┤
+│                  │                    │  OUTPUT / SPC card (auto height)  │
+│  SCHEMATIC PANEL │  OPERATING         │  ── gap-3 ──                      │
+│  (flex-grow per  │  READOUTS          │  PHYSICAL CONTROLS                │
+│  device class)   │  (flex-grow per    │  (flex-1 — fills all REMAINING    │
+│  + caption/       │  device class)     │  height in this column; E-STOP   │
+│  readout strip    │                    │  is the single largest control)  │
+│  under the        │                    │                                    │
+│  drawing          │                    │  fixed width: 336px, shrink-0     │
+├──────────────────┴───────────────────┴───────────────────────────────────┤
+│ SYSTEM LOG — full-width band, low visual weight                           │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+This is a **3-region vertical stack** (nameplate / main row / log band), where the main row is itself
+a **3-column flex row**. Implementation (`Hmi.tsx`):
+
+- Outer shell: `flex h-svh flex-col overflow-hidden` — the ONE element allowed to define the page's
+  total height; nothing inside it may push past it (spec §9: no page scroll, ever).
+- Main row: `flex min-h-0 flex-[5] gap-3 p-3 pb-0` — three children, `gap-3` between them.
+- Log band: `flex min-h-0 flex-1 m-3` (mt implied by the row's own `pb-0` + the log's own margin) —
+  **the `5:1` flex ratio between the main row and the log band is deliberate, not arbitrary**: it's
+  the smallest ratio (most height given to the row) that still leaves the log legible (2–3 visible
+  rows at the 1280×800 floor) while giving the control rail enough height that its OWN worst-case
+  content (see §8.3) never overflows. Do not shrink the row's share below this without re-verifying
+  the control rail's worst-case fit at 1280×800.
+
+### 8.2 The three main-row columns
+
+| Column | Sizing | Contents |
+|---|---|---|
+| **Schematic** | `flexGrow` per device class (§8.4), `flexBasis: 0`, `min-w-0 min-h-0` | `<Sheet>` → wireframe SVG (flex-1, fills available height) → `<SchematicCaptionStrip>`, a fixed `h-9` row directly under the drawing carrying the ONE class-specific live reading (feeder remaining / AOI product+points+defects / IoT latest reading) — **live numeric callouts never render inside the SVG canvas itself** (spec §7); the drawing stays a clean wireframe, the strip is where the numbers live. |
+| **Readouts** | `flexGrow` per device class (§8.4), `flexBasis: 0`, `min-w-0 min-h-0` | `<Sheet>` wrapping `<ReadoutGrid>`, an `@container`-queried tile grid — **2 columns below a ~672px container width (`@2xl`), 4 columns above it.** This MUST be a container query, not a `lg:`/viewport breakpoint: this column is roughly a third of the viewport width, so a viewport-relative breakpoint has nothing to do with how wide the panel actually is (this was a real bug — see the git history around H5). |
+| **Output + Controls** | Fixed `w-[336px] shrink-0` (never grows/shrinks with viewport — the physical control sizes in §6 are themselves fixed px, so the rail that holds them is fixed too), `flex flex-col gap-3` | `<OutputCard>` (`shrink-0`, natural content height — OK/NG/Total as `<Readout>` tiles + a proportional bar) stacked above `<ControlColumn>` (`min-h-0 flex-1` — fills every remaining px in the column). |
+
+Schematic and Readouts are the only two columns that flex — their combined width is whatever's left
+after the fixed 336px rail (plus two 12px gaps). **Both need `min-w-0` AND `min-h-0`** (flex items
+default to `min-width/min-height: auto`, which blocks shrinking below content size — omitting either
+reintroduces horizontal or vertical overflow).
+
+### 8.3 The control rail's own worst-case fit (why RESET sits beside E-STOP, not below it)
+
+The control rail is the one region with a REAL "does it fit" constraint, because its content is a
+fixed set of physical-sized buttons (§6), not something that can reflow to a smaller viewport the way
+text or a grid can. Two states exist:
+
+- **Normal**: banner absent, `[START, PAUSE]` row, `[E-STOP]` row.
+- **E-STOP engaged**: a one-line fault banner, `[START, PAUSE]` row (both disabled — same DOM
+  presence as normal, just `disabled`), `[E-STOP, RESET]` row.
+
+**RESET renders BESIDE E-STOP, in the same row, not stacked below it as a fourth element.** An
+earlier build stacked banner + Start/Pause row + E-STOP + RESET as four separate vertical blocks; at
+the 1280×800 floor this overflowed the rail's available height by ~70–160px depending on how much
+other spacing was trimmed, and because nothing was clipping it, the overflow silently reflowed UNDER
+the system-log band below — RESET's own click target was there, geometrically, but a `SystemLog`
+element painted on top of it intercepted every pointer event (`test:e2e`'s RESET-click assertions
+caught this as a 45s timeout, not a visible bug in a screenshot). Putting RESET beside E-STOP instead
+of below it means the E-STOP-engaged state only ever adds the banner's height (~40px) over the normal
+state's, which fits.
+
+If a future change adds ANOTHER control, re-check this fit at 1280×800 before shipping — the rail's
+own body is wrapped in a defensive `overflow-y-auto` (`hmi-scroll`) with the button cluster centred via
+`m-auto` as a fallback (scrolls rather than silently overlapping if it ever doesn't fit), but that
+fallback existing is not permission to stop checking; an operator should never have to scroll to find
+RESET.
+
+### 8.4 Per-device-class proportions
+
+The reference's own fixed 32/43/21 column split is tuned to ONE machine (a screwdrive cell) at ONE
+resolution. Ours must hold three visually different machines (a wide gantry cell, a wide-but-denser
+AOI board+conveyor cell, a sparse IoT sensor node) — `Hmi.tsx`'s `SCHEMATIC_READOUT_FLEX` map sets the
+schematic:readout `flexGrow` ratio per `deviceClass`:
+
+| Class | Schematic : Readout | Why |
+|---|---|---|
+| `Automation` | `1 : 1` | Gantry cell reads evenly between drawing and data. |
+| `AoiAvi` | `1.15 : 1` | The board + real measurement-point dots need to stay legible (spec §7: "make this the strongest one") — the one class that earns extra width. |
+| `Iot` | `0.85 : 1.15` | The node/link/uplink wireframe is comparatively sparse; give the reclaimed width to the readout grid instead of leaving it as schematic dead space. |
+
+The control rail's fixed 336px width does NOT vary per class — it's sized to the physical buttons
+(§6), which are the same across every class.
+
+### 8.5 Responsive floor and page-scroll rule
+
+- **1280×800 is the floor** (the operator panel-PC size this app targets) and **1600×1000 / 1920×1080**
+  are the sizes it's verified against above that. Unlike the reference (fixed 1920×1080, breaks below
+  ~1440px with a forced horizontal scroll), this app has no fixed target resolution — the WebView2
+  kiosk window isn't guaranteed to be any particular size, so every region above uses flex/grid that
+  fills whatever viewport it gets, not a hard-coded px canvas.
+- **The page itself never scrolls, at any of the sizes above** — `document.documentElement.scrollHeight
+  === clientHeight` must hold. Only two things ever scroll internally, both via the shared `hmi-scroll`
+  utility class: the readout grid's tile list and the system log's row list (plus the control rail's
+  defensive fallback in §8.3). No `overflow-y-auto` belongs anywhere else in this tree — if a region
+  needs one to stop overflowing, that's a sign its sizing budget is wrong, not that it needs a
+  scrollbar (§8.3's RESET fix is the one narrow exception, kept specifically as a floor-below-the-floor
+  fallback, not the primary fix).
+- No horizontal scroll at any width down to 1280px.
+- Dense but not cramped: 3–4px base spacing unit, generous panel padding (14–20px) on panels with
+  headroom to spare; the control rail (§8.3) is the one region allowed to trim padding/gaps tighter
+  when the worst-case fit demands it.
 
 ## 9. Quality floor
 

@@ -2,22 +2,25 @@ import * as React from "react"
 
 import { useGloss } from "@/components/hmi/bilingual"
 import { DimensionLine } from "@/components/hmi/DimensionLine"
-import { feederRemaining } from "@/components/hmi/derive"
+import { MachinePlinth } from "@/components/hmi/MachinePlinth"
 import { useT } from "@/i18n"
 
 interface AutomationSchematicProps {
   /** Gates the sweep/spin/Z-stroke animations — false renders a genuinely static drawing (spec §7:
-   * "idle state = static drawing, no motion"), not a paused one. */
+   * "idle state = static drawing, no motion"), not a paused one. The sweep/spin/Z animations
+   * themselves are a fixed-cadence loop, not literally paced to the real cycle rate (the engine
+   * reports no per-axis timing data to drive that honestly) — H5: the ONE real live input this
+   * component used to read (`cycles`, for the feeder remaining-count) moved to
+   * `SchematicPanel.tsx`'s caption strip below the drawing, so this component is now driven by
+   * `isRunning` alone. */
   isRunning: boolean
-  /** Real cycle counter (`MachineDetail.cycles`) — the ONLY live input this schematic reads. Feeder
-   * remaining-count is a derived decoration (see `derive.ts`'s `feederRemaining` doc comment); the
-   * sweep/spin/Z animations themselves are a fixed-cadence loop, not literally paced to the real
-   * cycle rate (the engine reports no per-axis timing data to drive that honestly). */
-  cycles: number
   className?: string
 }
 
-const FEEDER_CAPACITY = 50
+/** H5 — exported so `SchematicPanel.tsx` can compute the SAME remaining-count for the caption/readout
+ * strip now rendered BELOW the drawing (layout spec §8 gap 4: live numeric callouts moved out of the
+ * schematic's own canvas) without duplicating the capacity constant. */
+export const FEEDER_CAPACITY = 50
 
 /**
  * Gantry-driver cell — SCREWDRIVE/ASSEMBLY/DISPENSING/WELDER/automation classes (spec §7). H2b
@@ -36,30 +39,31 @@ const FEEDER_CAPACITY = 50
  * inside it. Every stroke is `vector-effect: non-scaling-stroke` (`.hmi-wire`) so hairlines stay
  * hairlines at any scale.
  */
-export function AutomationSchematic({ isRunning, cycles, className }: AutomationSchematicProps) {
+export function AutomationSchematic({ isRunning, className }: AutomationSchematicProps) {
   const t = useT()
   const gloss = useGloss()
-  const remaining = feederRemaining(cycles, FEEDER_CAPACITY)
-  const fillPct = remaining / FEEDER_CAPACITY
 
   return (
+    // H5 — viewBox HEIGHT grown 196 → 244 (`MachinePlinth`, see its own doc comment): real added
+    // geometry (a hatched base plinth under the portal frame's feet), not empty padding, to reduce
+    // the "meet"-scaling letterbox now that this drawing lives in a much taller, narrower column
+    // (layout spec §8 gap 1) than the old full-width sheet its 520x196 proportions were tuned for.
     <svg
-      viewBox="0 0 520 196"
+      viewBox="0 0 520 244"
       preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
       aria-label={`${t("hmi.schematic.figAutomation")} — ${gloss("hmi.schematic.figAutomation")}`}
     >
       <g className={isRunning ? "hmi-schematic-run" : undefined}>
-        {/* Portal frame: uprights, top rail, base, feet */}
+        {/* Portal frame: uprights, top rail, base */}
         <g stroke="var(--text-muted)" strokeWidth={1.5} fill="none">
           <line className="hmi-wire" x1={78} y1={24} x2={78} y2={152} />
           <line className="hmi-wire" x1={468} y1={24} x2={468} y2={152} />
           <line className="hmi-wire" x1={65} y1={24} x2={481} y2={24} />
           <line className="hmi-wire" x1={26} y1={152} x2={515} y2={152} />
-          <rect className="hmi-wire" x={70} y={152} width={16} height={6} />
-          <rect className="hmi-wire" x={460} y={152} width={16} height={6} />
         </g>
+        <MachinePlinth x1={26} x2={515} y={152} height={48} />
 
         {/* Fixture table + the part actually being fastened */}
         <rect x={218} y={140} width={135} height={12} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
@@ -69,13 +73,13 @@ export function AutomationSchematic({ isRunning, cycles, className }: Automation
         <circle cx={309} cy={134} r={2} fill="var(--text-muted)" />
         <circle cx={286} cy={134} r={2.6} fill="none" stroke="var(--color-accent)" strokeWidth={1.3} className="hmi-wire" />
 
-        {/* Feeder bowl + linear feed tube toward the pick point. I-6: the remaining-screw count is a
-            deterministic decoration (`derive.ts`'s `feederRemaining` — no real feeder-inventory signal
-            exists engine-side), disclosed via both the visible "(MÔ PHỎNG)"/"(SIMULATED)" suffix on
-            the caption below AND this group-level `<title>` tooltip, rather than rendering as an
-            unmarked instrument reading. */}
+        {/* Feeder bowl + linear feed tube toward the pick point — the machine PART itself. H5: the
+            live remaining-count number/fill-bar previously drawn here moved OUT of the drawing canvas
+            into `SchematicPanel.tsx`'s caption/readout strip beneath it (layout spec §8 gap 4 — the
+            reference keeps its wireframe a clean technical drawing and puts live numbers in a strip
+            under it, not floating inside the picture). This group is now purely the static machine
+            geometry; the disclosure tooltip travels with the strip's own reading instead. */}
         <g>
-          <title>{t("hmi.schematic.feederDisclosure")}</title>
           <circle cx={42} cy={82} r={20} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
           <circle cx={42} cy={82} r={11} fill="none" stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" opacity={0.7} />
           <circle cx={36} cy={75} r={1.5} fill="var(--color-accent)" opacity={0.7} />
@@ -86,25 +90,6 @@ export function AutomationSchematic({ isRunning, cycles, className }: Automation
           <path d="M 61 88 L 195 140" stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" fill="none" />
           <text x={42} y={116} textAnchor="middle" fontSize={7} letterSpacing="0.08em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
             {t("hmi.schematic.feeder")}
-          </text>
-          {/* `hmi-feeder-live` — C-5/I-15-style mask hook, on a FIXED-SIZE invisible rect rather than
-              wrapping the live number/bar in a `<g>` and masking THAT: an SVG group's bounding box is
-              the union of its children's actual current geometry, so masking the group directly would
-              size the mask box to whatever the fill bar's width happens to be AT SCREENSHOT TIME —
-              exactly the flake `AoiSchematic.tsx`'s own "radius is a CONSTANT" comment already
-              documents for its measurement dots, reproduced live here too: a baseline captured at one
-              `cycles % capacity` fill width left a real, narrow sliver of a DIFFERENT-width bar
-              unmasked on a later run (the two widths never fully overlap unless `remaining` happens to
-              match). This rect's own size never depends on `remaining`/`fillPct` — it's sized once, big
-              enough to cover the number's text extent AND the full 0–42 fill-bar range regardless of
-              value. */}
-          <rect x={16} y={116} width={52} height={42} fill="transparent" className="hmi-feeder-live" />
-          <text x={42} y={134} textAnchor="middle" fontSize={15} fontWeight={700} fill="var(--color-text)" fontFamily="var(--font-heading)">
-            {remaining}
-          </text>
-          <rect x={21} y={152} width={42 * fillPct} height={4} fill="var(--color-accent)" opacity={0.55} />
-          <text x={42} y={148} textAnchor="middle" fontSize={6.5} letterSpacing="0.08em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
-            {t("hmi.schematic.remaining")}
           </text>
           <rect x={21} y={152} width={42} height={4} fill="none" stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" />
         </g>
@@ -153,8 +138,8 @@ export function AutomationSchematic({ isRunning, cycles, className }: Automation
         </g>
       </g>
 
-      <DimensionLine x1={247} x2={325} y={172} label="80" />
-      <DimensionLine x1={78} x2={468} y={188} label="390" />
+      <DimensionLine x1={247} x2={325} y={214} label="80" />
+      <DimensionLine x1={78} x2={468} y={230} label="390" />
     </svg>
   )
 }
