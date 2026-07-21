@@ -227,15 +227,58 @@ upward — **E-STOP's distance from the rail's bottom edge is now identical latc
 machine class.** The gap this opens between the two clusters at tall viewports is real breathing room,
 not a leftover margin.
 
-**Active fallback:** even with the `5:1.5` log ratio (§8.1) and trimmed rail padding, the E-STOP-latched
-worst case is a few px taller than the rail's own visible area at the exact 1280×800 floor — live-
-reproduced: loading `/hmi/:code` directly into an already-latched fleet left RESET clipped below the
-visible area, un-scrolled, so `elementFromPoint` at RESET's own centre hit the wrong element. A passive
-`overflow-y-auto` fallback isn't enough on its own for a safety control. `ControlColumn.tsx` now runs a
-`React.useEffect` keyed on `estopEngaged` that calls `resetRef.current?.scrollIntoView({block:
-"nearest"})` — fires the instant the rail KNOWS it's latched, including on mount (a fresh page load
-into an already-latched fleet), not just on the click that causes the transition. An operator should
-never have to discover on their own that they need to scroll to find RESET.
+**H5c — SAFETY RULE, made explicit (this area regressed twice before this rule existed):**
+
+> **Safety controls (E-STOP, RESET) never scroll into view, and never move position between states,
+> at 1280×800 or above.** A control an operator reaches for under pressure, with gloves, without
+> looking, must already be on-screen and must already be in the SAME place — "scroll to find it" or
+> "it moved 4px because a banner appeared" are both failures, not degraded-but-acceptable states.
+
+H5 and H5b both believed they'd satisfied this and were both wrong in live-measurable ways:
+
+- H5 shipped a passive `overflow-y-auto` fallback on the rail ("scrolls rather than clipping") and
+  treated that as sufficient. Live-reproduced: loading `/hmi/:code` directly into an already-latched
+  fleet left RESET below the visible area, un-scrolled by default, so `elementFromPoint` at RESET's own
+  centre hit the wrong element — a passive fallback the operator has to discover on their own isn't a
+  fix for a safety control.
+- H5b's follow-up added a `React.useEffect` that called `resetRef.current?.scrollIntoView()` the
+  instant the rail became latched, and separately claimed the `mt-auto` bottom-anchor kept E-STOP's
+  position stable. Both were wrong under measurement: `scrollIntoView` is itself an admission that the
+  rail is a scrolling region — it does not stop the region FROM scrolling, it just automates the scroll
+  a real operator would otherwise have to do by hand. And `mt-auto` only holds a fixed offset from the
+  bottom edge while its content actually FITS the container; the instant the latched content (banner +
+  RESET) overflowed, the auto margin collapsed to 0 and the whole cluster re-anchored to the TOP of the
+  rail instead — live-measured at 1280×800: `clientHeight − scrollHeight = −41px` while latched, and
+  E-STOP's own `getBoundingClientRect()` shifted between states as a direct result.
+
+**The structural fix (current build):** every element in the bottom-anchored cluster now has a
+CONSTANT footprint in every state, so there is nothing left for `mt-auto` to collapse differently
+between states, and the rail's content height literally cannot depend on whether it's latched:
+
+- The fault banner slot is always in the DOM at its real size — latched, real content; unlatched, a
+  same-size `aria-hidden` placeholder with matching border/padding/font classes (so its box is
+  pixel-identical without a hand-picked px value).
+- The RESET slot is likewise always in the DOM at `CONTROL_BUTTON_SIZE_CLASS.reset`'s real footprint —
+  latched, the real button; unlatched, a same-size `aria-hidden` placeholder `<div>`. (`ControlButton`
+  exports that size map so the placeholder can never drift out of sync with the real button.)
+- `ControlButton`'s own `pressed` (latched) skin used to add a permanent `translate-y-1` transform to
+  read as "the dome physically collapsed" — live-measured, that alone moved E-STOP's own bounding box
+  4px the instant it latched. Removed; the "pressed in" cue now comes entirely from the box-shadow
+  collapsing (6px → 2px), a purely cosmetic change with zero geometry impact.
+- With the cluster's height now constant, the remaining requirement is that the CONSTANT (always
+  latched-size) content actually fits the 1280×800 floor with real margin, not just avoids negative
+  slack — the row:log flex ratio (§8.1) and the rail/output-card's own padding (§8.5) were re-tuned so
+  the worst case (latched, both slots real) leaves comfortably over 10px of vertical slack, verified
+  live via `wrapper.children[0].height + wrapper.children[1].height + padding` vs `clientHeight` (not
+  `scrollHeight` alone — see the gotcha below).
+- `hmi-scroll overflow-y-auto` stays on the rail's outer wrapper as defence-in-depth ONLY — it is
+  never actually engaged (`scrollHeight <= clientHeight` holds in every state, asserted by
+  `tests/12-hmi-safety-rail.spec.ts`), not the mechanism relied on to reach RESET.
+
+**Gotcha for anyone re-verifying this fit:** the rail's inner wrapper is `min-h-full`, so once its
+content is shorter than the container, `scrollHeight` clamps UP to `clientHeight` and always reports
+`0` slack — `scrollHeight`/`clientHeight` alone can prove "does it overflow" (yes/no) but NOT "how much
+margin does it have." Measure the real content blocks' own heights directly to check margin.
 
 ### 8.4 Per-device-class proportions
 
@@ -261,12 +304,13 @@ The control rail's fixed 336px width does NOT vary per class — it's sized to t
   kiosk window isn't guaranteed to be any particular size, so every region above uses flex/grid that
   fills whatever viewport it gets, not a hard-coded px canvas.
 - **The page itself never scrolls, at any of the sizes above** — `document.documentElement.scrollHeight
-  === clientHeight` must hold. Only two things ever scroll internally, both via the shared `hmi-scroll`
-  utility class: the readout grid's tile list and the system log's row list (plus the control rail's
-  defensive fallback in §8.3). No `overflow-y-auto` belongs anywhere else in this tree — if a region
-  needs one to stop overflowing, that's a sign its sizing budget is wrong, not that it needs a
-  scrollbar (§8.3's RESET fix is the one narrow exception, kept specifically as a floor-below-the-floor
-  fallback, not the primary fix).
+  === clientHeight` must hold. Only two things are EVER PERMITTED to become scrolling regions, both via
+  the shared `hmi-scroll` utility class: the readout grid's tile list and the system log's row list —
+  both non-safety, informational panels where "scroll for more" is a normal, expected affordance. The
+  control rail carries the same `hmi-scroll` class as defence-in-depth only (§8.3's H5c rule): it must
+  never actually need to scroll, in any state, and that is verified by measurement, not assumed from
+  the class being present. No `overflow-y-auto` belongs anywhere else in this tree — if a region needs
+  one to stop overflowing, that's a sign its sizing budget is wrong, not that it needs a scrollbar.
 - No horizontal scroll at any width down to 1280px.
 - Dense but not cramped: 3–4px base spacing unit, generous panel padding (14–20px) on panels with
   headroom to spare; the control rail (§8.3) is the one region allowed to trim padding/gaps tighter

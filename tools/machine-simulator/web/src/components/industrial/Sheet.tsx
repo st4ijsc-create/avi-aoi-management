@@ -14,6 +14,11 @@ export interface SheetProps extends Omit<React.ComponentProps<"div">, "title"> {
   /** Applies `hmi-graph-paper` to the panel body — for schematic/canvas panels (spec §7). */
   graphPaper?: boolean
   bodyClassName?: string
+  /** H5c — a shorter header (`py-1.5` instead of `py-2.5`, saves 8px), for panels stacked inside the
+   * height-constrained third column (`OutputCard`/`ControlColumn`, spec §8.5's "control rail region
+   * may trim padding/gaps tighter"). Same title size/weight — only the header's own vertical padding
+   * changes, so it still reads as the same panel family. */
+  compact?: boolean
 }
 
 /**
@@ -33,6 +38,7 @@ export function Sheet({
   titleEn,
   headerRight,
   graphPaper,
+  compact,
   className,
   bodyClassName,
   children,
@@ -45,7 +51,7 @@ export function Sheet({
       <span className="corner bl" aria-hidden="true" />
       <span className="corner br" aria-hidden="true" />
       {title !== undefined ? (
-        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+        <div className={cn("flex items-center justify-between gap-3 border-b border-border px-4", compact ? "py-1.5" : "py-2.5")}>
           <div className="flex min-w-0 items-baseline gap-2">
             <h3 className="truncate font-heading text-[15px] leading-none font-semibold tracking-tight text-text-strong">
               {title}

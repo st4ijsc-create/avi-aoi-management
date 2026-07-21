@@ -32,12 +32,17 @@ const ICONS: Record<ControlButtonVariant, React.ComponentType<{ className?: stri
   estop: OctagonAlert,
 }
 
-const SIZE_CLASS: Record<ControlButtonVariant, string> = {
+// H5c — exported so callers that need to reserve a control's exact footprint WITHOUT rendering the
+// control itself (e.g. `ControlColumn`'s RESET placeholder, spec §8.6: safety controls never move
+// between states) read the real size from one place, not a hand-copied magic-number duplicate that
+// can silently drift out of sync with this map.
+export const CONTROL_BUTTON_SIZE_CLASS: Record<ControlButtonVariant, string> = {
   start: "h-24 w-24", // ~96px
   pause: "h-[82px] w-[82px]",
   reset: "h-[72px] w-[72px]",
   estop: "h-[150px] w-[150px]",
 }
+const SIZE_CLASS = CONTROL_BUTTON_SIZE_CLASS
 
 const ICON_SIZE: Record<ControlButtonVariant, string> = {
   start: "size-7",
@@ -83,9 +88,14 @@ export function ControlButton({ variant, label, labelEn, className, disabled, pr
           !flatSkin &&
           "border-border-strong bg-surface-muted text-text-body hover:bg-surface-base active:translate-y-px",
         estopArmedOrLatched && !pressed && "cursor-pointer border-[3px] text-white active:translate-y-1",
-        // Latched: keeps the red dome (see style below) but reads as permanently pressed-in, not
-        // interactive — no pointer cursor, no further translate-on-active.
-        estopArmedOrLatched && pressed && "cursor-default border-[3px] text-white translate-y-1",
+        // H5c — SAFETY FIX: this branch used to also carry `translate-y-1`, a permanent 4px transform
+        // meant to read as "the dome physically collapsed." Live-measured, that transform shifted the
+        // E-STOP button's own `getBoundingClientRect()` by exactly 4px the instant it latched — the
+        // opposite of what a safety control must do (spec §8.6: never move between states, an operator
+        // reaching for it by muscle memory must find it in the SAME place whether it's armed or
+        // latched). The "pressed in" cue now comes entirely from the box-shadow collapsing (`style`
+        // below, 6px → 2px) — no geometry change, same physical-button illusion, zero position drift.
+        estopArmedOrLatched && pressed && "cursor-default border-[3px] text-white",
         flatSkin && "cursor-not-allowed border-border bg-surface-muted text-text-muted",
         className
       )}

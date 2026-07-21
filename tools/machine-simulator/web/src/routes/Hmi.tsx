@@ -269,7 +269,7 @@ export default function Hmi() {
         column look "full" via FILL PERCENTAGE, not raw pixels, so giving the log some height back
         doesn't reopen the empty-canvas regression this pass fixes.
       */}
-      <div className="flex min-h-0 flex-[5] gap-3 p-3 pb-0">
+      <div className="flex min-h-0 flex-[6.5] gap-3 p-3 pb-0">
         <SchematicPanel
           className="min-h-0 min-w-0"
           style={{ flexGrow: schematicFlex, flexBasis: 0 }}
@@ -301,7 +301,7 @@ export default function Hmi() {
           </div>
         </Sheet>
 
-        <div className="flex w-[336px] shrink-0 flex-col gap-3">
+        <div className="flex w-[336px] shrink-0 flex-col gap-2">
           <OutputCard
             className="shrink-0"
             deviceClass={machine.class}
@@ -325,7 +325,7 @@ export default function Hmi() {
       </div>
 
       <SystemLog
-        className="hmi-system-log-band m-3 min-h-0 flex-[1.5]"
+        className="hmi-system-log-band m-3 min-h-0 flex-[1.6]"
         machineCode={machine.code}
         localEvents={localEvents}
         events={traceEvents}

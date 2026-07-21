@@ -27,7 +27,7 @@ export function OutputCard({ deviceClass, cycles, passRate, className }: OutputC
 
   if (passRate === null) {
     return (
-      <Sheet className={className} title={t("hmi.progress.title")} titleEn={gloss("hmi.progress.title")} bodyClassName="flex flex-col gap-2 p-2.5">
+      <Sheet className={className} compact title={t("hmi.progress.title")} titleEn={gloss("hmi.progress.title")} bodyClassName="flex flex-col gap-1.5 p-2">
         <Readout
           value={cycles.toLocaleString()}
           label={t("hmi.progress.packetsLabel")}
@@ -54,10 +54,11 @@ export function OutputCard({ deviceClass, cycles, passRate, className }: OutputC
   return (
     <Sheet
       className={className}
+      compact
       title={t("hmi.progress.title")}
       titleEn={gloss("hmi.progress.title")}
       headerRight={<span className="hmi-micro">{t(subtitleKey)}</span>}
-      bodyClassName="flex flex-col gap-2 p-2.5"
+      bodyClassName="flex flex-col gap-1.5 p-2"
     >
       <Readout value={cycles.toLocaleString()} label={t("hmi.progress.totalLabel")} labelEn={gloss("hmi.progress.totalLabel")} tone="neutral" />
       <div className="grid grid-cols-2 gap-3">

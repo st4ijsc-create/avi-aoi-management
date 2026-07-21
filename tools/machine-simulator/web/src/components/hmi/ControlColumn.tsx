@@ -1,8 +1,7 @@
-import * as React from "react"
-
-import { ControlButton, Sheet } from "@/components/industrial"
+import { CONTROL_BUTTON_SIZE_CLASS, ControlButton, Sheet } from "@/components/industrial"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useLanguage, useT } from "@/i18n"
+import { cn } from "@/lib/utils"
 
 /** `ControlButton.labelEn` is a fixed ENGLISH gloss (spec §6: "large condensed label + English
  * gloss"), not the active-language-swap `MicroLabel`/`Readout` use — omitted only once the label
@@ -53,59 +52,46 @@ export function ControlColumn({
   const { language } = useLanguage()
   const enLabel = (variant: keyof typeof EN_LABEL) => (language === "en" ? undefined : EN_LABEL[variant])
 
-  // H5b — live-reproduced: at the 1280×800 floor the rail's own worst-case (E-STOP-latched) content
-  // is a few px taller than the `hmi-scroll` container's fallback viewport, same class of gap §8.3
-  // already anticipates ("scrolls rather than silently overlapping"). But a PASSIVE fallback isn't
-  // enough on its own — loading `/hmi/:code` directly into an already-latched fleet (a real scenario:
-  // another operator's panel or a page refresh mid-fault) left RESET clipped below the visible area
-  // with the container un-scrolled, and `elementFromPoint` at RESET's own centre hit something else
-  // entirely (confirmed live, not hypothetical). Scrolling RESET into view the instant the rail KNOWS
-  // it's latched — on mount if already latched, or the moment it becomes latched — means an operator
-  // never has to discover on their own that they need to scroll to find it.
-  const resetRef = React.useRef<HTMLButtonElement>(null)
-  React.useEffect(() => {
-    if (estopEngaged) {
-      resetRef.current?.scrollIntoView({ block: "nearest" })
-    }
-  }, [estopEngaged])
-
   return (
-    <Sheet className={className} title={t("hmi.controls.title")} titleEn={gloss("hmi.controls.title")} bodyClassName="flex flex-1 min-h-0 flex-col p-0">
+    <Sheet className={className} compact title={t("hmi.controls.title")} titleEn={gloss("hmi.controls.title")} bodyClassName="flex flex-1 min-h-0 flex-col p-0">
       {/*
-        H5 — layout gap 2: this rail is now FULL HEIGHT (spec §8). An earlier version of this fix
-        stacked the E-STOP-engaged banner AND the RESET button VERTICALLY below the untouched
-        Start/Pause/E-STOP cluster — a real overflow was reproduced live at 1280×800/1440×900 (the
-        RESET button's own click target pushed down UNDER the system-log band's paint order, silently
-        intercepting pointer events — `test:e2e`'s own RESET-click tests caught this). Real hardware
-        panels don't get to scroll their E-STOP out of reach, so the fix is structural, not spacing:
-        RESET now sits BESIDE E-STOP (same row, same idiom Start/Pause already use) instead of
-        stacked below it — every control that existed before (Start/Pause always present, banner only
-        while latched) is still exactly here, the latched state just no longer needs a WHOLE EXTRA
-        ROW's worth of height (~92px), only the banner's (~50px), which comfortably fits.
+        H5 — layout gap 2: this rail is FULL HEIGHT (spec §8), RESET sits BESIDE E-STOP (same row,
+        same idiom Start/Pause already use), not stacked below it.
 
-        H5b — layout gap 3 (dead space + E-STOP muscle-memory): the previous build centred this whole
-        cluster with `m-auto`, which left a large uniform blank band above AND below it once the rail
-        got tall (~500px at 1600×1000, buttons occupying only its middle third) — AND, worse, meant
-        E-STOP's own on-screen position was NOT stable: growing the block by the latch banner's height
-        shifted the WHOLE centred block down, moving E-STOP by roughly half the banner's height every
-        time it latched — exactly the "operators build muscle memory for its position" failure mode
-        the spec calls out. Fix: Start/Pause anchors to the TOP of the rail (`shrink-0`, right under
-        the header); E-STOP (+ RESET, + the banner) anchors to the BOTTOM via `mt-auto` on its own
-        wrapper. Because E-STOP/RESET is the LAST element in that bottom-anchored wrapper, the banner
-        appearing above it only grows the wrapper UPWARD — E-STOP's own distance from the rail's
-        bottom edge never changes, latched or not, on any machine class. The gap this opens up between
-        the two clusters is real, useful space, not a leftover margin. `hmi-scroll overflow-y-auto` +
-        `min-h-full` on the inner wrapper is kept as the same defensive fallback as before (scrolls
-        rather than clipping/overlapping if a future control ever doesn't fit at the panel-PC floor).
+        H5b — Start/Pause anchors to the TOP of the rail (`shrink-0`); the E-STOP/RESET/banner cluster
+        anchors to the BOTTOM via `mt-auto` on its own wrapper, so it always sits the same distance
+        from the rail's bottom edge.
 
-        H5b — outer padding trimmed `p-3`→`p-2` and the bottom cluster's `pt-6`→`pt-4` (spec §8.5:
-        "the control rail is the one region allowed to trim padding/gaps tighter when the worst-case
-        fit demands it") — reclaims the ~16px `ControlColumn` needed once the log band (this same
-        pass) took some of the main row's height back; re-verified via a live `scrollHeight`/
-        `clientHeight` check at 1280×800 in both the normal and E-STOP-latched states.
+        H5c — layout gap 5 (SAFETY REGRESSION, twice): H5b's own claim that mt-auto alone keeps
+        E-STOP's position stable was WRONG under two conditions it didn't account for. (1) `mt-auto`
+        only holds a fixed offset from the bottom edge while the block actually FITS the container —
+        live-measured at 1280×800: unlatched the rail was `scrollHeight === clientHeight` (0px slack,
+        already a hair-trigger fit), latched it needed the banner's extra height on top, overflowed by
+        41px, and `mt-auto` on an overflowing flex child collapses to 0, so the block silently
+        re-anchored to the TOP of its container instead of the bottom — E-STOP moved AND the rail
+        became a scrolling region (the specific defect this pass fixes). (2) Even where the banner did
+        fit, conditionally rendering it (and RESET) meant the bottom cluster's own height literally
+        differed between states by construction — "the same distance from the bottom" was true only
+        as long as nothing overflowed, which is exactly the assumption that broke.
+
+        The structural fix: every element in this cluster now has a CONSTANT footprint in EVERY state.
+        The banner slot and the RESET slot are always in the DOM at their real size — latched, real
+        content; unlatched, a same-size invisible/`aria-hidden` placeholder (RESET's placeholder pulls
+        its size from `CONTROL_BUTTON_SIZE_CLASS.reset`, the same map `ControlButton` itself renders
+        from, so the two can never drift apart) — so the cluster's total height never changes and
+        `mt-auto` never has anything to collapse. E-STOP's own `getBoundingClientRect()` is now
+        provably identical whether idle/running/paused/latched, at a given viewport+class (regression
+        test: `tests/12-hmi-safety-rail.spec.ts`).
+
+        For this to also mean the rail genuinely never needs to scroll, the vertical budget upstream of
+        this component (the third column's OutputCard+ControlColumn split, spec §8.5) was re-tuned so
+        the ALWAYS-latched-size cluster fits with real margin at the 1280×800 floor — see `Hmi.tsx`'s
+        own comment on that split. `hmi-scroll overflow-y-auto` stays on the outer wrapper as a
+        defence-in-depth CSS fallback only (never actually engaged — the regression test asserts
+        `scrollHeight <= clientHeight`), not as the mechanism relied on to reach RESET.
       */}
       <div className="hmi-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="flex min-h-full w-full flex-col items-center p-2">
+        <div className="flex min-h-full w-full flex-col items-center p-1.5">
           <div className="flex shrink-0 items-end justify-center gap-5">
             <ControlButton
               variant="start"
@@ -124,19 +110,34 @@ export function ControlColumn({
           </div>
 
           {/* Bottom-anchored cluster — E-STOP (+ RESET) always ends up the same distance from the
-              rail's bottom edge, regardless of whether the banner above it is present. */}
-          <div className="mt-auto flex w-full flex-col items-center gap-3 pt-4">
+              rail's bottom edge: every state now reserves the SAME height (banner + RESET slots are
+              always present, real or placeholder — see the H5c comment above), so there is nothing
+              left for `mt-auto` to collapse differently between states. */}
+          <div className="mt-auto flex w-full flex-col items-center gap-2 pt-2">
             {/* H5 — `estopHint` (the RESET-instruction sub-line) stays defined in the i18n
                 dictionaries for now but is no longer rendered here: with RESET itself visible right
                 below this banner (beside E-STOP, not a separate stacked row), a second line spelling
                 out "press RESET" is redundant with the button it's describing. */}
-            {estopEngaged ? (
-              <div className="flex w-full items-center justify-center border border-status-fault bg-status-fault/10 px-3 py-1 text-center">
+            <div
+              className={cn(
+                "flex w-full items-center justify-center border px-3 py-0.5 text-center",
+                estopEngaged ? "border-status-fault bg-status-fault/10" : "border-transparent"
+              )}
+              aria-hidden={estopEngaged ? undefined : true}
+            >
+              {estopEngaged ? (
                 <span className="font-heading text-sm font-semibold tracking-wide text-danger-text uppercase">
                   {t("hmi.controls.estopBanner")}
                 </span>
-              </div>
-            ) : null}
+              ) : (
+                // Same font/line-height classes as the real banner text, so this placeholder's box is
+                // pixel-identical to the real one -- U+00A0 (NOT a plain space, which whitespace-collapses to a
+                // zero-width text node and measurably shrinks the line box -- live-reproduced as a 4px drift).
+                <span className="font-heading text-sm font-semibold tracking-wide uppercase invisible" aria-hidden="true">
+                  {" "}
+                </span>
+              )}
+            </div>
 
             <div className="flex items-end justify-center gap-5">
               {/* I-7: `pressed` (not `disabled`) once latched — keeps the dome red and the button
@@ -152,14 +153,15 @@ export function ControlColumn({
               />
               {estopEngaged ? (
                 <ControlButton
-                  ref={resetRef}
                   variant="reset"
                   label={t("hmi.controls.reset")}
                   labelEn={enLabel("reset")}
                   disabled={resetPending}
                   onClick={onReset}
                 />
-              ) : null}
+              ) : (
+                <div className={cn(CONTROL_BUTTON_SIZE_CLASS.reset, "shrink-0")} aria-hidden="true" />
+              )}
             </div>
           </div>
         </div>
