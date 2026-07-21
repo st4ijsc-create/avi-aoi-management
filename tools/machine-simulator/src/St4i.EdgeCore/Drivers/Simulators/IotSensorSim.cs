@@ -1,3 +1,4 @@
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
 
 namespace St4i.EdgeCore.Drivers.Simulators;
@@ -6,6 +7,16 @@ namespace St4i.EdgeCore.Drivers.Simulators;
 /// IoT sensor hub (IOT_SENSOR) — doc-62 §6: temperature/humidity/current dạng sin+nhiễu (sinusoid +
 /// noise), sự kiện drift (periodic calibration-drift events), quality good/uncertain. TELEMETRY
 /// kind carries no pass/fail verdict (doc-62 §6: "(telemetry, không verdict)").
+///
+/// Task 3 (docs/plans/2026-07-21-machine-config.md §4): <c>sampleRateHz</c>/<c>reportIntervalSec</c>
+/// drive telemetry CADENCE (<see cref="CycleSecondsOverride"/>), not the sensor value physics above,
+/// which are unchanged. <b>Cadence model</b> — <c>cadence = min(1 ÷ sampleRateHz, reportIntervalSec)</c>:
+/// a sensor emits every <c>1/sampleRateHz</c> seconds by definition, but a report is never held back
+/// longer than <c>reportIntervalSec</c> even if the configured sample rate is very slow — so whichever of
+/// the two is the tighter constraint wins. Monotonic in the direction an operator expects: raising
+/// <c>sampleRateHz</c> (holding <c>reportIntervalSec</c> above <c>1/sampleRateHz</c> so it isn't the
+/// binding constraint) shortens the cadence; lowering <c>reportIntervalSec</c> below <c>1/sampleRateHz</c>
+/// also shortens it.
 /// </summary>
 public sealed class IotSensorSim : SimulatorBase
 {
@@ -17,8 +28,29 @@ public sealed class IotSensorSim : SimulatorBase
     private const long DriftEveryCycles = 200; // a slow calibration-drift "event" every N cycles
     private const double DriftMagnitudeC = 1.5;
 
-    public IotSensorSim(MachineDescriptor d, int seed) : base(d, seed)
+    /// <summary>Same floor value EngineApi's own <c>FleetHost.MinCycleSeconds</c> uses (mirrored, not
+    /// shared — EdgeCore doesn't reference EngineApi).</summary>
+    private const double MinCycleSecondsFloor = 0.05;
+
+    public IotSensorSim(MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null)
+        : base(d, seed, MachineParameterSchema.IotSettings, configStore, productCodeProvider)
     {
+    }
+
+    /// <summary>Task 3 cadence model — see class remarks. Null (no override) when this instance has no
+    /// <see cref="MachineConfigStore"/> wired.</summary>
+    public override double? CycleSecondsOverride
+    {
+        get
+        {
+            var cfg = ResolveEffectiveConfig();
+            if (cfg is null) return null;
+
+            var sampleRateHz = GetValue(cfg, "sampleRateHz", 1.0);
+            var reportIntervalSec = GetValue(cfg, "reportIntervalSec", 60.0);
+            var cadence = Math.Min(1.0 / Math.Max(sampleRateHz, 1e-6), reportIntervalSec);
+            return Math.Max(cadence, MinCycleSecondsFloor);
+        }
     }
 
     public override DeviceReading NextCycle(long cycle)

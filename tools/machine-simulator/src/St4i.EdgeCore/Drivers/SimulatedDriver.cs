@@ -14,6 +14,11 @@ namespace St4i.EdgeCore.Drivers;
 /// </summary>
 public sealed class SimulatedDriver : IDeviceDriver
 {
+    /// <summary>Task 3 — floor for <see cref="IMachineSimulator.CycleSecondsOverride"/>-derived cadence,
+    /// same value each config-aware simulator's own formula already clamps to (kept here too as a final
+    /// backstop in case a future override forgets to).</summary>
+    private const double MinCycleSeconds = 0.05;
+
     private readonly IReadOnlyList<IMachineSimulator> _sims;
     private readonly long[] _cycleCounters;
     private readonly DateTimeOffset[] _nextDueAt;
@@ -59,7 +64,14 @@ public sealed class SimulatedDriver : IDeviceDriver
             _cycleCounters[idx]++;
             var reading = sim.NextCycle(_cycleCounters[idx]);
 
-            var cadence = sim.Descriptor.CycleSeconds > 0 ? sim.Descriptor.CycleSeconds : 1.0;
+            // Task 3: re-consulted fresh on EVERY cycle (never cached) — sim.CycleSecondsOverride is a
+            // property whose config-aware implementations re-resolve the live MachineConfigStore each
+            // time, which is exactly what lets a speedRpm/clampTimeMs/sampleRateHz/reportIntervalSec
+            // change made against an already-running fleet take effect on the very next cycle, with no
+            // pipeline restart. null (every un-wired simulator) falls back to the pre-Task-3 behaviour.
+            var overrideSeconds = sim.CycleSecondsOverride;
+            var cadence = overrideSeconds ?? (sim.Descriptor.CycleSeconds > 0 ? sim.Descriptor.CycleSeconds : 1.0);
+            if (cadence < MinCycleSeconds) cadence = MinCycleSeconds;
             _nextDueAt[idx] = _nextDueAt[idx].AddSeconds(cadence);
 
             yield return reading;

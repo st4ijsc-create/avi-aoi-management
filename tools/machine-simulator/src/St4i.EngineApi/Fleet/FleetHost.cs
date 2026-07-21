@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers;
 using St4i.EdgeCore.Drivers.HotFolder;
 using St4i.EdgeCore.Drivers.Simulators;
@@ -84,6 +85,23 @@ public sealed class FleetHost
     /// defensive copy so external readers never see a torn list mid-mutation.</summary>
     private readonly List<MachineDescriptor> _fleet;
 
+    /// <summary>Task 3 (docs/plans/2026-07-21-machine-config.md) — optional (defaults to null so every
+    /// pre-existing test that constructs <see cref="FleetHost"/> directly without one keeps compiling and
+    /// behaving unchanged) machine operating-configuration store. Threaded into
+    /// <see cref="SimulatorFactory.Create"/> so the config-aware simulators (Screwdrive/Iot/Aoi today)
+    /// re-resolve their effective config live, straight off this SAME store <c>MachineSettingsEndpoints</c>
+    /// writes to — a PUT against a running fleet is visible on the very next cycle, no restart.</summary>
+    private readonly MachineConfigStore? _configStore;
+
+    /// <summary>Task 3 — "what product is machine X running right now", keyed case-insensitively by
+    /// <see cref="MachineDescriptor.Code"/>. A machine absent from this map (the common case — nothing
+    /// sets it yet outside tests) resolves machine-scoped config only, exactly like a machine whose
+    /// <c>configKind</c> has no product dimension at all. Read by <see cref="CurrentProductFor"/>, which
+    /// every config-aware simulator's <see cref="Func{T,TResult}"/> provider (built in
+    /// <see cref="StartLocked"/>) calls fresh on every cycle — so <see cref="SetCurrentProduct"/> takes
+    /// effect on an already-running fleet with no restart, same as a plain adjustment does.</summary>
+    private readonly ConcurrentDictionary<string, string?> _currentProduct = new(StringComparer.OrdinalIgnoreCase);
+
     private CancellationTokenSource? _cts;
     private Task? _runTask;
     private EdgePipeline? _currentPipeline;
@@ -108,13 +126,15 @@ public sealed class FleetHost
         TransportCoordinator transportCoordinator,
         EventBus eventBus,
         ILogger<FleetHost>? logger = null,
-        St4i.EngineApi.Config.ConfigSyncCoordinator? configSyncCoordinator = null)
+        St4i.EngineApi.Config.ConfigSyncCoordinator? configSyncCoordinator = null,
+        MachineConfigStore? configStore = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
         _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
         _logger = logger;
         _configSyncCoordinator = configSyncCoordinator;
+        _configStore = configStore;
 
         _fleet = LoadFleet().ToList();
         _states = new ConcurrentDictionary<string, MachineState>(StringComparer.OrdinalIgnoreCase);
@@ -235,7 +255,13 @@ public sealed class FleetHost
             ? _fleet
             : _fleet.Select(d => d with { CycleSeconds = Math.Max(MinCycleSeconds, d.CycleSeconds / multiplier) }).ToList();
 
-        var sims = effectiveFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i)).ToList();
+        // Task 3: threading _configStore/CurrentProductFor through here (rather than baking resolved
+        // values into the sims at construction) is what makes a live settings edit apply to an
+        // ALREADY-RUNNING fleet — each config-aware sim re-resolves fresh on every single cycle (see
+        // SimulatorBase.ResolveEffectiveConfig's remarks), so nothing here needs to change on Restart
+        // for a mid-run edit to show up; a restart is only needed for a scenario cycle-rate multiplier
+        // change (see the surrounding ApplyScenario/RegisterMachine callers of this method).
+        var sims = effectiveFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
 
         var decorator = DriverDecoratorForTests;
@@ -684,6 +710,36 @@ public sealed class FleetHost
             }
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // CURRENT PRODUCT (Task 3) — which product's machine×product settings layer a config-aware
+    // simulator resolves against right now.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>Sets (or, with <paramref name="productCode"/> null, clears) the product this machine is
+    /// currently running — read fresh, per cycle, by every config-aware simulator's product-code
+    /// provider (see <see cref="StartLocked"/>), so this takes effect on an already-running fleet
+    /// immediately, no restart. Does not validate <paramref name="productCode"/> against
+    /// <c>ProductConfigStore</c> — Task 3's scope is "the effective config drives behaviour", not product
+    /// catalog validation, and an unknown product code simply resolves to no product-scoped adjustments
+    /// (falls through to the machine-scoped/baseline layers), never an error.</summary>
+    public void SetCurrentProduct(string machineCode, string? productCode)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(machineCode);
+        if (string.IsNullOrWhiteSpace(productCode))
+        {
+            _currentProduct.TryRemove(machineCode, out _);
+        }
+        else
+        {
+            _currentProduct[machineCode] = productCode;
+        }
+    }
+
+    /// <summary>The product <paramref name="machineCode"/> is currently running, or null if none has been
+    /// set (machine-scoped config only).</summary>
+    public string? CurrentProductFor(string machineCode) =>
+        _currentProduct.TryGetValue(machineCode, out var productCode) ? productCode : null;
 
     // ─────────────────────────────────────────────────────────────────────
     // SYNC-CONFIG

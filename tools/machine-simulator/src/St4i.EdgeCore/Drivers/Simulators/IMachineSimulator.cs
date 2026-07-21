@@ -15,4 +15,15 @@ public interface IMachineSimulator
 
     /// <summary>Produces the reading for the given 1-based cycle index. Deterministic in (seed, cycle).</summary>
     DeviceReading NextCycle(long cycle);
+
+    /// <summary>
+    /// Task 3 (docs/plans/2026-07-21-machine-config.md) — optional per-cycle cadence override, consulted
+    /// fresh by <see cref="SimulatedDriver"/> on every scheduling decision (never cached at pipeline
+    /// construction), so a live <c>speedRpm</c>/<c>clampTimeMs</c>/<c>sampleRateHz</c>/<c>reportIntervalSec</c>
+    /// edit takes effect on the very next cycle with no fleet restart. <see langword="null"/> (every
+    /// simulator's default via <see cref="SimulatorBase"/>) means "fall back to
+    /// <see cref="MachineDescriptor.CycleSeconds"/>, exactly the pre-Task-3 behaviour" — a
+    /// simulator this task doesn't wire for cadence is completely unaffected.
+    /// </summary>
+    double? CycleSecondsOverride { get; }
 }
