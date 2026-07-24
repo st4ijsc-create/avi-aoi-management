@@ -93,6 +93,12 @@ public sealed class FleetHost
     /// writes to — a PUT against a running fleet is visible on the very next cycle, no restart.</summary>
     private readonly MachineConfigStore? _configStore;
 
+    /// <summary>WS3-T1 — optional (defaults null so every pre-existing test that constructs
+    /// <see cref="FleetHost"/> directly without one keeps compiling/behaving unchanged) source for
+    /// <see cref="AoiInspectorSim"/>'s real-product-points cycle plan, threaded into
+    /// <see cref="SimulatorFactory.Create"/> exactly like <see cref="_configStore"/> already is.</summary>
+    private readonly St4i.EdgeCore.Config.ProductConfigStore? _productConfigStore;
+
     /// <summary>Task 3 — "what product is machine X running right now", keyed case-insensitively by
     /// <see cref="MachineDescriptor.Code"/>. A machine absent from this map (the common case — nothing
     /// sets it yet outside tests) resolves machine-scoped config only, exactly like a machine whose
@@ -127,7 +133,8 @@ public sealed class FleetHost
         EventBus eventBus,
         ILogger<FleetHost>? logger = null,
         St4i.EngineApi.Config.ConfigSyncCoordinator? configSyncCoordinator = null,
-        MachineConfigStore? configStore = null)
+        MachineConfigStore? configStore = null,
+        St4i.EdgeCore.Config.ProductConfigStore? productConfigStore = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -135,6 +142,7 @@ public sealed class FleetHost
         _logger = logger;
         _configSyncCoordinator = configSyncCoordinator;
         _configStore = configStore;
+        _productConfigStore = productConfigStore;
 
         _fleet = LoadFleet().ToList();
         _states = new ConcurrentDictionary<string, MachineState>(StringComparer.OrdinalIgnoreCase);
@@ -268,7 +276,7 @@ public sealed class FleetHost
         // overriding it outright. Safe to bake in at construction (not a live Func<double>, unlike
         // _configStore itself): a multiplier change ALWAYS restarts this whole pipeline (multiplierChanged
         // check in ApplyScenario/Burst), so it can never go stale for the lifetime of these sim instances.
-        var sims = effectiveFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier)).ToList();
+        var sims = effectiveFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
 
         var decorator = DriverDecoratorForTests;

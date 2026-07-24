@@ -79,6 +79,20 @@ public sealed class IotSensorSim : SimulatorBase
         reading.Telemetry.Add(new TelemetrySample("temperature", Math.Round(temperature, 2), "C", quality));
         reading.Telemetry.Add(new TelemetrySample("humidity", Math.Round(humidity, 2), "%RH", quality));
         reading.Telemetry.Add(new TelemetrySample("current", Math.Round(current, 3), "A", quality));
+
+        // WS3-T1 — one plan step per telemetry channel THIS SAME tick reported above (never a separate
+        // draw): "IoT to sample ticks" (design-doc §3.2/§3.4) — a web twin can trace a moving point along
+        // each channel's own waveform arc, paced by this sensor's real report cadence
+        // (CycleSecondsOverride below), instead of a decorative CSS loop. No per-step Result — telemetry
+        // carries no pass/fail concept (see reading.Verdict above), mirrored here as a null Result on
+        // every step rather than inventing one.
+        reading.Plan = new CyclePlan(cycle, reading.Timestamp, CycleSecondsOverride ?? Descriptor.CycleSeconds,
+        [
+            new CyclePlanStep(0, "temperature", 0.25, 0.5, Result: null, Math.Round(temperature, 2), "C"),
+            new CyclePlanStep(1, "humidity", 0.50, 0.5, Result: null, Math.Round(humidity, 2), "%RH"),
+            new CyclePlanStep(2, "current", 0.75, 0.5, Result: null, Math.Round(current, 3), "A"),
+        ]);
+
         return reading;
     }
 }

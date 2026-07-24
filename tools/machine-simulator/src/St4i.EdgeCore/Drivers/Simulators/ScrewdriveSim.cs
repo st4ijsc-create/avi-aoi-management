@@ -52,6 +52,13 @@ public sealed class ScrewdriveSim : SimulatorBase
     /// even at extreme config values.</summary>
     private const double MinCycleSecondsFloor = 0.05;
 
+    /// <summary>WS3-T1 — fixed number of physical fastening positions this cycle's plan visits: a
+    /// plausible small-board layout (matches the flavor of the seeded automation recipe's own
+    /// <c>screwCount</c>, see <c>ProductConfigStore.SeedRecipes</c>), on the same "fixed constant"
+    /// footing as <see cref="SpinRevolutions"/>/<see cref="WaveformPoints"/> above — the schema has no
+    /// per-board screw-count parameter to drive this from.</summary>
+    private const int FasteningPositionsPerCycle = 4;
+
     public ScrewdriveSim(MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null, double cycleRateMultiplier = 1.0)
         : base(d, seed, MachineParameterSchema.ScrewProgram, configStore, productCodeProvider, cycleRateMultiplier)
     {
@@ -77,7 +84,65 @@ public sealed class ScrewdriveSim : SimulatorBase
         reading.Metrics.Add(new MetricSample("angle", angle, "deg", null, null, AngleMean));
         reading.Waveforms.Add(waveform);
         reading.Verdict = VerdictHelper.Evaluate(torque, lsl, usl);
+
+        // WS3-T1 — the fastening-sequence plan for the twin. Step 0 reuses THIS SAME torque draw/verdict
+        // (never a second, independently-drawn "claim" about the primary screw); steps 1..N-1 draw fresh
+        // from the identical resolved distribution. Any step's own NG is then folded into the reading's
+        // aggregate Verdict below — "aggregate == per-step tally" (design-doc §3.4/§4), not a second,
+        // disagreeing narrative. With the schema-default torqueTolerance this almost never fires (the
+        // baseline NG rate stays near zero, same as before this task); a tightened torqueTolerance makes
+        // it fire far more often, exactly the "siết dung sai ⇒ nhiều điểm đỏ hơn trên bản vẽ" WS3-T1
+        // exists to expose.
+        var plan = BuildFasteningPlan(
+            rng, cycle, reading.Timestamp, CycleSecondsOverride ?? Descriptor.CycleSeconds,
+            torqueTarget, torqueStd, lsl, usl, torque, reading.Verdict);
+        if (plan.Steps.Any(s => s.Result == "NG")) reading.Verdict = Verdict.Fail;
+        reading.Plan = plan;
+
         return reading;
+    }
+
+    /// <summary>See <see cref="FasteningPositionsPerCycle"/> and this method's call site for the
+    /// "aggregate == per-step tally" contract. Positions are evenly spaced along the board's normalized
+    /// width at a fixed centreline height — pure data (this task makes no web change), for a future twin
+    /// build to place the head along.</summary>
+    private static CyclePlan BuildFasteningPlan(
+        Random rng, long cycle, DateTimeOffset startedAt, double durationSeconds,
+        double torqueTarget, double torqueStd, double lsl, double usl,
+        double primaryTorque, Verdict primaryVerdict)
+    {
+        var steps = new List<CyclePlanStep>(FasteningPositionsPerCycle);
+        for (var i = 0; i < FasteningPositionsPerCycle; i++)
+        {
+            double torque;
+            Verdict verdict;
+            if (i == 0)
+            {
+                // The exact same draw/verdict already computed above — not a second, disagreeing sample.
+                torque = primaryTorque;
+                verdict = primaryVerdict;
+            }
+            else
+            {
+                torque = rng.NextGaussian(torqueTarget, torqueStd);
+                verdict = VerdictHelper.Evaluate(torque, lsl, usl);
+            }
+
+            var nx = FasteningPositionsPerCycle == 1
+                ? 0.5
+                : 0.2 + i * (0.6 / (FasteningPositionsPerCycle - 1));
+
+            steps.Add(new CyclePlanStep(
+                Index: i,
+                PointCode: $"FSTN-{i + 1:D2}",
+                NormalizedX: nx,
+                NormalizedY: 0.5,
+                Result: verdict == Verdict.Fail ? "NG" : "OK",
+                MetricValue: Math.Round(torque, 3),
+                Unit: "Nm"));
+        }
+
+        return new CyclePlan(cycle, startedAt, durationSeconds, steps);
     }
 
     /// <summary>Task 3 cadence model — see class remarks. Returns null (no override — the driver falls

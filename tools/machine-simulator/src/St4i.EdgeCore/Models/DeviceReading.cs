@@ -47,4 +47,10 @@ public class DeviceReading
     public long CycleCounter { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public Dictionary<string, object>? Genealogy { get; set; }
+
+    /// <summary>WS3-T1 (docs/PRODUCTION_UI_DESIGN.md §3.2) — this cycle's ordered per-step plan (point
+    /// sequence + per-step results + timing) for a "living twin" web animation, or null for a simulator
+    /// this task doesn't wire a plan for. Purely additive: every pre-existing field above keeps its
+    /// exact pre-Task-3/pre-WS3-T1 value regardless of whether this is populated.</summary>
+    public CyclePlan? Plan { get; set; }
 }

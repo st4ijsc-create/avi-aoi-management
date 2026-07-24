@@ -86,6 +86,16 @@ public abstract class SimulatorBase : IMachineSimulator
     protected EffectiveConfig? ResolveEffectiveConfig() =>
         ConfigStore?.Resolve(Descriptor.Code, _productCodeProvider?.Invoke());
 
+    /// <summary>WS3-T1 — the raw product code this machine is currently running, independent of any
+    /// <see cref="MachineConfigStore"/>-resolved parameter VALUES: a simulator that needs to look up the
+    /// PRODUCT's own config (e.g. <see cref="AoiInspectorSim"/> resolving real
+    /// <see cref="ProductConfigStore"/> measurement points for its cycle plan) reads this instead of
+    /// going through <see cref="ResolveEffectiveConfig"/>. Re-invoked fresh on every read (never
+    /// memoized), same "no stale product" contract <see cref="ResolveEffectiveConfig"/> already
+    /// documents. Null when this instance has no product-code provider wired (the pre-Task-3
+    /// construction path, or a machine running no single product right now).</summary>
+    protected string? CurrentProductCode => _productCodeProvider?.Invoke();
+
     /// <summary>The value of <paramref name="key"/> from a resolved config, or <paramref name="fallback"/>
     /// when <paramref name="cfg"/> is null (no config store wired) or the key isn't present.</summary>
     protected static double GetValue(EffectiveConfig? cfg, string key, double fallback) =>

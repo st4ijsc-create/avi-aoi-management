@@ -31,9 +31,12 @@ public static class SimulatorFactory
     /// <paramref name="d"/>.CycleSeconds, which the caller (<c>FleetHost.StartLocked</c>) already
     /// pre-scales by this SAME multiplier before calling this factory. Defaults to 1.0 (every pre-existing
     /// call site/test that doesn't pass one behaves exactly as before).</param>
+    /// <param name="productConfigStore">WS3-T1 — optional (defaults null, every pre-existing call site
+    /// unaffected) source for <see cref="AoiInspectorSim"/>'s real-product-points cycle plan; see its own
+    /// <c>ResolveRealPoints</c> remarks. Ignored by every other machine type.</param>
     public static IMachineSimulator Create(
         MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string, string?>? currentProductCode = null,
-        double cycleRateMultiplier = 1.0)
+        double cycleRateMultiplier = 1.0, ProductConfigStore? productConfigStore = null)
     {
         ArgumentNullException.ThrowIfNull(d);
 
@@ -50,17 +53,18 @@ public static class SimulatorFactory
             "LEAK_TEST" => new LeakTestSim(d, seed),
             "FUNCTIONAL_TEST" => new FunctionalTestSim(d, seed),
             "IOT_SENSOR" => new IotSensorSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
-            "AOI" or "AOI_AVI" or "AVI" => new AoiInspectorSim(d, seed, configStore: configStore, productCodeProvider: productCodeProvider),
-            _ => FallbackByDeviceClass(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
+            "AOI" or "AOI_AVI" or "AVI" => new AoiInspectorSim(d, seed, configStore: configStore, productCodeProvider: productCodeProvider, productConfigStore: productConfigStore),
+            _ => FallbackByDeviceClass(d, seed, configStore, productCodeProvider, cycleRateMultiplier, productConfigStore),
         };
     }
 
     private static IMachineSimulator FallbackByDeviceClass(
-        MachineDescriptor d, int seed, MachineConfigStore? configStore, Func<string?>? productCodeProvider, double cycleRateMultiplier) =>
+        MachineDescriptor d, int seed, MachineConfigStore? configStore, Func<string?>? productCodeProvider,
+        double cycleRateMultiplier, ProductConfigStore? productConfigStore) =>
         d.DeviceClass switch
         {
             DeviceClass.Iot => new IotSensorSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
-            DeviceClass.AoiAvi => new AoiInspectorSim(d, seed, configStore: configStore, productCodeProvider: productCodeProvider),
+            DeviceClass.AoiAvi => new AoiInspectorSim(d, seed, configStore: configStore, productCodeProvider: productCodeProvider, productConfigStore: productConfigStore),
             _ => new ScrewdriveSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
         };
 }

@@ -40,6 +40,10 @@ public sealed record FleetActionResultDto(bool Running, string Mode);
 // ─────────────────────────────────────────────────────────────────────────
 // GET /v1/machines/{code}
 // ─────────────────────────────────────────────────────────────────────────
+/// <param name="Plan">WS3-T1 (docs/PRODUCTION_UI_DESIGN.md §3.2) — the latest cycle's ordered per-step
+/// plan (point sequence + per-step results + timing) for a "living twin" web animation, or null when the
+/// fleet isn't running ("idle machine = no active plan") or this machine's simulator doesn't wire a plan.
+/// Purely additive — every other field above is unchanged by this task.</param>
 public sealed record MachineDetailDto(
     string Code,
     DeviceClass Class,
@@ -51,7 +55,8 @@ public sealed record MachineDetailDto(
     IReadOnlyList<TelemetrySeriesDto> Telemetry,
     IReadOnlyList<BoardPointDto> BoardPoints,
     IReadOnlyList<CycleLogEntry> CycleLog,
-    string DriftState);
+    string DriftState,
+    CyclePlan? Plan = null);
 
 // ─────────────────────────────────────────────────────────────────────────
 // GET/PUT /v1/mode

@@ -56,13 +56,20 @@ public sealed class AoiInspectorSim : SimulatorBase
     private readonly int _pointsPerBoard;
     private readonly double _ngRate;
 
+    /// <summary>WS3-T1 — optional (defaults null so every pre-existing call site/test keeps compiling and
+    /// behaving byte-for-byte) source for this machine's REAL configured measurement points. See
+    /// <see cref="ResolveRealPoints"/>.</summary>
+    private readonly ProductConfigStore? _productConfigStore;
+
     public AoiInspectorSim(
         MachineDescriptor d, int seed, int pointsPerBoard = 20, double ngRate = 0.05,
-        MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null)
+        MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null,
+        ProductConfigStore? productConfigStore = null)
         : base(d, seed, MachineParameterSchema.AoiInspection, configStore, productCodeProvider)
     {
         _pointsPerBoard = Math.Max(1, pointsPerBoard);
         _ngRate = Math.Clamp(ngRate, 0.0, 1.0);
+        _productConfigStore = productConfigStore;
     }
 
     public override DeviceReading NextCycle(long cycle)
@@ -85,9 +92,23 @@ public sealed class AoiInspectorSim : SimulatorBase
             matchScoreStd += ExposureNoiseSensitivity * exposureDeviation + LightNoiseSensitivity * lightDeviation;
         }
 
-        for (var i = 1; i <= _pointsPerBoard; i++)
+        // WS3-T1 — when this machine has a REAL configured product (ProductConfigStore wired + a
+        // product resolved + it has at least one active/enabled point), inspect THOSE real points
+        // instead of the generic PT-001.. fallback, and build the cycle plan from the EXACT SAME
+        // per-point draws below — never a second, independently-resolved point set (this closes the gap
+        // AoiSchematic.tsx's own header comment documents: an earlier web build zipped a generic result
+        // list onto real product points BY ARRAY INDEX and painted a real NG verdict on the wrong
+        // physical point — the fix belongs at the SOURCE, not left to a caller to reconcile two
+        // disagreeing lists). Null (no product resolvable) falls back to the pre-Task-3/pre-WS3-T1
+        // generic PT-001.. behaviour byte-for-byte, including NO cycle plan (idle-equivalent for the
+        // twin — an honest "nothing real to show" rather than a fabricated position).
+        var realPoints = ResolveRealPoints();
+        var pointCount = realPoints?.Count ?? _pointsPerBoard;
+        var planSteps = realPoints is null ? null : new List<CyclePlanStep>(pointCount);
+
+        for (var i = 0; i < pointCount; i++)
         {
-            var pointCode = $"PT-{i:D3}";
+            var pointCode = realPoints is null ? $"PT-{i + 1:D3}" : realPoints[i].Code;
             bool isNg;
             double? matchScore = null;
 
@@ -103,11 +124,69 @@ public sealed class AoiInspectorSim : SimulatorBase
 
             reading.Measurements.Add(isNg ? BuildNgMeasurement(rng, pointCode, matchScore) : BuildOkMeasurement(rng, pointCode, matchScore));
             anyNg |= isNg;
+
+            if (planSteps is not null)
+            {
+                var real = realPoints![i];
+                planSteps.Add(new CyclePlanStep(
+                    Index: i,
+                    PointCode: pointCode,
+                    NormalizedX: real.Nx,
+                    NormalizedY: real.Ny,
+                    Result: isNg ? "NG" : "OK",
+                    MetricValue: matchScore.HasValue ? Math.Round(matchScore.Value, 3) : null,
+                    Unit: "score"));
+            }
         }
 
         reading.Verdict = anyNg ? Verdict.Fail : Verdict.Pass;
+        if (planSteps is not null)
+        {
+            // AOI has no cadence override (class remarks) — its cadence, and so its plan's duration,
+            // comes entirely from Descriptor.CycleSeconds.
+            reading.Plan = new CyclePlan(cycle, reading.Timestamp, Descriptor.CycleSeconds, planSteps);
+        }
+
         return reading;
     }
+
+    /// <summary>WS3-T1 — one real, currently-active, enabled measurement point, normalized 0..1 (mirrors
+    /// the web's own derivation in <c>Hmi.tsx</c>: <c>NormalizedX</c> when authored, else
+    /// <c>PositionX/ImageWidth</c>, clamped to [0,1] either way).</summary>
+    private sealed record RealPoint(string Code, double Nx, double Ny);
+
+    /// <summary>This machine's REAL configured measurement points, or null when no
+    /// <see cref="ProductConfigStore"/> is wired, no product is currently resolved for this machine, the
+    /// product code doesn't exist in the store, or the resolved product has zero active/enabled points —
+    /// every one of those is an ORDINARY case ("this machine isn't linked to a real product board right
+    /// now"), never an error; <see cref="NextCycle"/> falls back to the generic PT-001.. inspection (and
+    /// emits no cycle plan) in every one of them, exactly as it always has when no product config is in
+    /// play.</summary>
+    private IReadOnlyList<RealPoint>? ResolveRealPoints()
+    {
+        if (_productConfigStore is null) return null;
+
+        var productCode = CurrentProductCode;
+        if (string.IsNullOrWhiteSpace(productCode)) return null;
+
+        var product = _productConfigStore.GetProduct(productCode);
+        if (product is null) return null;
+
+        var imgW = product.ImageWidth is > 0 ? (double?)product.ImageWidth : null;
+        var imgH = product.ImageHeight is > 0 ? (double?)product.ImageHeight : null;
+
+        var points = product.ActivePoints
+            .Where(p => p.IsActive)
+            .Select(p => new RealPoint(
+                p.Code,
+                Clamp01(p.NormalizedX ?? (imgW.HasValue ? p.PositionX / imgW.Value : 0.5)),
+                Clamp01(p.NormalizedY ?? (imgH.HasValue ? p.PositionY / imgH.Value : 0.5))))
+            .ToList();
+
+        return points.Count > 0 ? points : null;
+    }
+
+    private static double Clamp01(double v) => Math.Clamp(v, 0.0, 1.0);
 
     private static MeasurementResult BuildOkMeasurement(Random rng, string pointCode, double? matchScore) =>
         new(pointCode, "OK", MeasuredValue: Math.Round(matchScore ?? rng.NextGaussian(1.0, 0.05), 3), Unit: "score");

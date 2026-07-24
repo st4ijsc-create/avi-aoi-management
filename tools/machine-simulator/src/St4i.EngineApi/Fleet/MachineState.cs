@@ -48,6 +48,15 @@ public sealed class MachineState
     private IReadOnlyList<MeasurementResult> _boardPoints = Array.Empty<MeasurementResult>();
     private readonly List<CycleLogEntry> _cycleLog = new();
 
+    /// <summary>WS3-T1 — the latest reading's cycle plan (or null for a machine type this task doesn't
+    /// wire a plan for), surfaced on <c>GET /v1/machines/{code}</c> — the SAME per-machine polled surface
+    /// the HMI panel already reads (<c>useMachine</c>, ~1s), chosen as the lightest place to expose this:
+    /// no new endpoint, no socket-shape change. Replaced wholesale on every <see cref="ApplyReading"/>
+    /// call (never accumulated), mirroring <see cref="_boardPoints"/>'s own "always exactly the LATEST
+    /// cycle's worth" contract. Gated to null on the exposed DTO whenever the fleet isn't running (see
+    /// <see cref="ToDetail(bool)"/>) — "idle machine = no active plan".</summary>
+    private CyclePlan? _currentPlan;
+
     private long _passCount;
     private long _judgedCount;
     private string? _cachedConfigVersion;
@@ -160,6 +169,12 @@ public sealed class MachineState
                 _boardPoints = reading.Measurements.ToList();
             }
 
+            // WS3-T1 — always replaced wholesale (null included) with THIS reading's own plan, never
+            // accumulated: an idle-equivalent reading kind/simulator (or a machine with no product
+            // configured for AOI) legitimately has no plan this cycle, and the exposed DTO must reflect
+            // that rather than keep showing a stale plan from several cycles ago.
+            _currentPlan = reading.Plan;
+
             _cycleLog.Add(new CycleLogEntry(reading.Timestamp, reading.SerialNumber, reading.Verdict.ToString(), FormatKeyMetric(reading)));
             TrimFront(_cycleLog, MaxCycleLogRows);
         }
@@ -250,7 +265,10 @@ public sealed class MachineState
                 telemetry,
                 boardPoints,
                 _cycleLog.ToArray(),
-                DriftState);
+                DriftState,
+                // WS3-T1 — "idle machine = no active plan, twin renders static": gated by the SAME
+                // fleetRunning flag every other live-ness-sensitive field on this DTO already uses.
+                fleetRunning ? _currentPlan : null);
         }
     }
 
