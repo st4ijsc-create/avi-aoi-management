@@ -77,3 +77,4 @@ export * from "./sop"; // doc 44 W6-1 — e-SOP: sops + sop_steps + sop_executio
 export * from "./enterpriseIntegration"; // doc 44 W6-5 — WMS/PLM/CMMS connector anti-corruption id-map + sync log (G5.24)
 export * from "./machineConfigState"; // doc 56 Đ4 — generic machine config-sync shadow (desired/reported + drift), migration 0293
 export * from "./processMart"; // doc 56 Đ5 — process analytics daily rollup mart, migration 0294
+export * from "./machineOperatingConfig"; // Task 6 (machine-config plan) — machine-reported ACTUAL operating config (baseline⊕machine⊕machine×product), migration 0298

@@ -1062,6 +1062,33 @@ async function startServer() {
     }
   });
 
+  // POST /api/machine/config-sync/report-settings — Task 6, machine reports its
+  // ACTUAL operating config (adjustments + effective set) into
+  // machine_operating_config. Gated by MACHINE_OPERATING_CONFIG_REPORT_ENABLED
+  // (PRECONDITION_FAILED → 500 when off, same shape as the check/get/ack proxies).
+  app.post("/api/machine/config-sync/report-settings", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || machineBearer(req) || req.body?.apiKey;
+      const result = await caller.machineApi.reportSettings({
+        configKind: req.body?.configKind,
+        apiKey,
+        machineCode: req.body?.machineCode,
+        productModelCode: req.body?.productModelCode,
+        baselineVersion: req.body?.baselineVersion,
+        adjustments: req.body?.adjustments,
+        effective: req.body?.effective,
+        checksum: req.body?.checksum,
+        reportedBy: req.body?.reportedBy,
+      } as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] config-sync report-settings error:", error?.code || "", error?.message || error);
+      sendMachineProxyError(res, error, "Config-sync report-settings failed");
+    }
+  });
+
   // GET /api/mqtt/version.json — Public endpoint for FactoryAlertSystem OTA updates
   app.get("/api/mqtt/version.json", async (_req, res) => {
     try {
