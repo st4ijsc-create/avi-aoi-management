@@ -1,19 +1,19 @@
-import * as React from "react"
-
 import { useGloss } from "@/components/hmi/bilingual"
 import { DimensionLine } from "@/components/hmi/DimensionLine"
 import { MachinePlinth } from "@/components/hmi/MachinePlinth"
+import { useCycleTwin } from "@/components/hmi/useCycleTwin"
 import { useT } from "@/i18n"
+import type { CyclePlan } from "@/lib/api"
 
 interface AutomationSchematicProps {
-  /** Gates the sweep/spin/Z-stroke animations — false renders a genuinely static drawing (spec §7:
-   * "idle state = static drawing, no motion"), not a paused one. The sweep/spin/Z animations
-   * themselves are a fixed-cadence loop, not literally paced to the real cycle rate (the engine
-   * reports no per-axis timing data to drive that honestly) — H5: the ONE real live input this
-   * component used to read (`cycles`, for the feeder remaining-count) moved to
-   * `SchematicPanel.tsx`'s caption strip below the drawing, so this component is now driven by
-   * `isRunning` alone. */
-  isRunning: boolean
+  /** WS3-T2 — the machine's latest cycle plan (`MachineDetailDto.Plan`). Non-null implies the fleet is
+   * running (`MachineState.ToDetail`'s own gate) — its steps are the REAL fastening positions/results
+   * this cycle drives, in visit order. Null (idle/E-STOPped) falls back to the pre-WS3-T2 static
+   * decorative pose (three un-lit points, carriage at rest). */
+  plan: CyclePlan | null | undefined
+  /** True while the twin should actually move — `isRunning && plan has steps && !prefers-reduced-motion`
+   * (computed once by `SchematicPanel`). */
+  animate: boolean
   className?: string
 }
 
@@ -22,37 +22,75 @@ interface AutomationSchematicProps {
  * schematic's own canvas) without duplicating the capacity constant. */
 export const FEEDER_CAPACITY = 50
 
+/** WS3-T2 — the engine's `ScrewdriveSim.FasteningPositionsPerCycle` is a fixed, documented constant
+ * (no schema field exists for a real per-board screw count — see ws3-t1-report.md's fast-follow #2).
+ * `SchematicPanel`'s feeder caption uses `plan.steps.length` directly whenever a plan is in hand (the
+ * true live count) and only falls back to this mirrored constant while idle/no plan — kept as an
+ * explicit, named export (not a silent `1`) so the fallback is honest about being a stand-in for the
+ * same real number, not a different, weaker assumption. */
+export const FASTENING_STEPS_PER_CYCLE_FALLBACK = 4
+
+/** Idle-pose fastening points (spec's original "two already driven, one live target" decoration) —
+ * used ONLY when there's no real plan to draw from (no product/plan concept for Automation the way AOI
+ * has, but the machine's own linked recipe always resolves once running, so this is purely the static
+ * rest illustration). Positions match the pre-WS3-T2 hardcoded circles exactly (nx spread across the
+ * fastening rect, ny centered) — same table coordinates the live dots below use, so idle → live is a
+ * position-STABLE transition, not a jump. */
+const IDLE_POINTS: ReadonlyArray<{ code: string; nx: number; ny: number }> = [
+  { code: "idle-1", nx: 0.2, ny: 0.5 },
+  { code: "idle-2", nx: 0.8, ny: 0.5 },
+  { code: "idle-3", nx: 0.5, ny: 0.5 },
+]
+
+const TABLE_X = 247
+const TABLE_W = 78
+const TABLE_Y = 356
+const TABLE_H = 12
+
+/** Carriage's own rest/entry position, in the SAME local rail frame the `translate(228, 24)` ancestor
+ * already establishes (x=0 there IS the rail's left end) — segment 0 of a fresh cycle travels FROM
+ * here TO `plan.steps[0]`. Matches `useCycleTwin`'s generic normalized-space contract: 0 here maps to
+ * the SAME local-offset 0 the old static rest pose used. */
+const CARRIAGE_REST_POINT = { x: 0, y: 0.5 }
+
+/** The old CSS sweep's amplitude (130px, `--hmi-sweep-x`) — reused as the MAPPING range for the
+ * carriage's live normalized-X position (`offsetX = nx * RAIL_SWEEP_PX`), so a live cycle travels
+ * across the exact same physical span the static/idle pose always implied. */
+const RAIL_SWEEP_PX = 130
+
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n))
+}
+
 /**
- * Gantry-driver cell — SCREWDRIVE/ASSEMBLY/DISPENSING/WELDER/automation classes (spec §7). H2b
- * rebuild: H2's version read as "a beam, a stick Z-axis and a feeder box" — this adds the machine
- * around it: a portal frame with feet, a raised fixture table holding the part actually being
- * fastened (three screw points, already-driven ones shown filled), a carriage with roller wheels
- * riding the rail (not a bare rect), a clearer Z-axis ballscrew + guide-sleeve stroke, and a round
- * vibratory feeder bowl + linear feed tube (the box-with-a-label from H2 didn't read as a feeder at
- * a glance).
+ * Gantry-driver cell — SCREWDRIVE/ASSEMBLY/DISPENSING/WELDER/automation classes (spec §7). A portal
+ * frame with feet, a raised fixture table holding the part actually being fastened, a carriage with
+ * roller wheels riding the rail, a Z-axis ballscrew + guide-sleeve stroke, and a round vibratory
+ * feeder bowl + linear feed tube.
  *
- * `viewBox` is tightened to the artwork's own bounding box. H5b (this pass): the H5 build widened it
- * to a wide ~2.65:1 sheet tuned for a full-width panel — but the H5 layout rework put this drawing in
- * a COLUMN, not a full-width strip, and a column at the 1280×800/1600×1000 floor renders closer to a
- * SQUARE-ish box (~0.85:1, taller than wide) once the fixed-width control rail/nameplate/log band are
- * accounted for. A 2.65:1 drawing inside a 0.85:1 box is "meet"-scaled WIDTH-first, leaving huge blank
- * bands above/below — the exact regression this pass fixes. Fix: the portal frame's legs (and every
- * part hung off them — table, feeder tube, Z-axis stroke) are genuinely taller now (viewBox
- * 520×480, ~1.08:1, close to square), real added machine geometry (a taller column cell, plausible on
- * a real gantry/assembly line), not padding — same discipline `MachinePlinth` already established.
- * Every stroke is `vector-effect: non-scaling-stroke` (`.hmi-wire`) so hairlines stay hairlines at any
- * scale; in-drawing text is sized for legibility at ~50cm (spec §3), not the smaller H5 sizes.
+ * WS3-T2 (docs/PRODUCTION_UI_DESIGN.md §3.2–§3.4) — the living twin: whenever `plan` is present, the
+ * carriage genuinely travels the rail to EACH real fastening step in cycle order (`useCycleTwin`,
+ * paced by the plan's own `startedAt`/`durationSeconds`), the bit spins and the Z-axis strokes only
+ * while actually dwelling on a point ("driving" it), and every fastening point on the part is drawn at
+ * its own real position and lit by its own real result — replacing the old fixed three-point
+ * decoration and the fixed-cadence CSS sweep entirely.
  */
-export function AutomationSchematic({ isRunning, className }: AutomationSchematicProps) {
+export function AutomationSchematic({ plan, animate, className }: AutomationSchematicProps) {
   const t = useT()
   const gloss = useGloss()
 
+  const clock = useCycleTwin(plan, CARRIAGE_REST_POINT, animate)
+
+  const liveSteps = plan?.steps
+  const hasLiveSteps = !!liveSteps && liveSteps.length > 0
+
+  const carriageOffsetX = clock ? clamp01(clock.head.x) * RAIL_SWEEP_PX : 0
+  const dwelling = clock?.dwelling ?? false
+
   return (
-    // H5b — viewBox height grown again, 244 → 480 (see this component's own doc comment above): the
-    // portal frame's legs now run FRAME_TOP(24) → FRAME_BASE(380), roughly 3× their old span, with
-    // the fixture table/part/feeder-tube/Z-axis stroke all re-anchored off the new, lower floor —
-    // real geometry, not a taller empty canvas. Verified live (screenshots) at 1280×800/1600×1000: the
-    // drawing now fills ~85-90% of its sheet's vertical space instead of ~44%.
+    // viewBox height 244 → 480: the portal frame's legs run FRAME_TOP(24) → FRAME_BASE(380), with the
+    // fixture table/part/feeder-tube/Z-axis stroke all re-anchored off the new, lower floor — real
+    // geometry, not a taller empty canvas.
     <svg
       viewBox="0 0 520 480"
       preserveAspectRatio="xMidYMid meet"
@@ -60,7 +98,7 @@ export function AutomationSchematic({ isRunning, className }: AutomationSchemati
       role="img"
       aria-label={`${t("hmi.schematic.figAutomation")} — ${gloss("hmi.schematic.figAutomation")}`}
     >
-      <g className={isRunning ? "hmi-schematic-run" : undefined}>
+      <g className={animate ? "hmi-schematic-run" : undefined}>
         {/* Portal frame: uprights, top rail, base */}
         <g stroke="var(--text-muted)" strokeWidth={1.5} fill="none">
           <line className="hmi-wire" x1={78} y1={24} x2={78} y2={380} />
@@ -70,34 +108,75 @@ export function AutomationSchematic({ isRunning, className }: AutomationSchemati
         </g>
         <MachinePlinth x1={26} x2={515} y={380} height={48} />
 
-        {/* Fixture table + the part actually being fastened — sits exactly on the (now lower) floor,
-            same "table bottom = floor, part bottom = table top" contact rule as before. */}
+        {/* Fixture table — sits exactly on the (now lower) floor, same "table bottom = floor, part
+            bottom = table top" contact rule as before. */}
         <rect x={218} y={368} width={135} height={12} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
-        <rect x={247} y={356} width={78} height={12} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
-        {/* Fastening points on the part — two already driven (filled), one live target (accent ring) */}
-        <circle cx={263} cy={362} r={2} fill="var(--text-muted)" />
-        <circle cx={309} cy={362} r={2} fill="var(--text-muted)" />
-        <circle cx={286} cy={362} r={2.6} fill="none" stroke="var(--color-accent)" strokeWidth={1.3} className="hmi-wire" />
+        <rect x={TABLE_X} y={TABLE_Y} width={TABLE_W} height={TABLE_H} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
 
-        {/* Feeder bowl + linear feed tube toward the pick point — the machine PART itself. H5: the
-            live remaining-count number/fill-bar previously drawn here moved OUT of the drawing canvas
-            into `SchematicPanel.tsx`'s caption/readout strip beneath it (layout spec §8 gap 4 — the
-            reference keeps its wireframe a clean technical drawing and puts live numbers in a strip
-            under it, not floating inside the picture). This group is now purely the static machine
-            geometry; the disclosure tooltip travels with the strip's own reading instead. */}
+        {/* WS3-T2 — fastening points on the part, at their REAL positions once a plan is in hand, each
+            lit by its OWN real result (revealed in visit order while animating, all at once when
+            static/reduced-motion — design-doc §3.3). Idle/no plan: the original 3-point decoration,
+            same table coordinates, so idle → live never jumps position. Two distinctly-typed branches
+            (rather than one `.map` over a hand-unioned shape) — the idle decoration and the live
+            per-step dots render different SVG entirely (plain filled/ring dots vs. colour-by-result),
+            so forcing them through one shape just to share a `.map` call bought nothing.
+
+            `hmi-scrw-points-group` — a stable visual-test mask hook (same discipline
+            `AoiSchematic.tsx`'s own `.hmi-aoi-points-group` already established): which of these 4
+            real fastening steps are OK/NG is a live per-cycle draw, not reproducible pixel-for-pixel
+            run to run, so `11-hmi.spec.ts`'s automation baseline masks this whole group's stable
+            bounding box rather than trying to pin an exact colour sequence. */}
+        <g className="hmi-scrw-points-group">
+          {!hasLiveSteps
+            ? IDLE_POINTS.map((p, i) => {
+                const cx = TABLE_X + p.nx * TABLE_W
+                const cy = TABLE_Y + p.ny * TABLE_H
+                // Two filled (already-driven look), one accent ring (live-target look) — exactly the
+                // pre-WS3-T2 static artwork, just generated from the same coordinate table.
+                return i === IDLE_POINTS.length - 1 ? (
+                  <circle key={p.code} cx={cx} cy={cy} r={2.6} fill="none" stroke="var(--color-accent)" strokeWidth={1.3} className="hmi-wire" />
+                ) : (
+                  <circle key={p.code} cx={cx} cy={cy} r={2} fill="var(--text-muted)" />
+                )
+              })
+            : liveSteps!.map((step, i) => {
+                const cx = TABLE_X + clamp01(step.normalizedX) * TABLE_W
+                const cy = TABLE_Y + clamp01(step.normalizedY) * TABLE_H
+                const revealed = clock ? i < clock.revealedCount : true
+                const resultLabel = step.result === "OK" ? t("hmi.progress.okLabel") : t("hmi.progress.ngLabel")
+                const tone = !revealed || !step.result ? "idle" : step.result === "OK" ? "run" : "fault"
+                return (
+                  <circle
+                    key={step.pointCode}
+                    cx={cx}
+                    cy={cy}
+                    r={revealed && step.result ? 3.4 : 2.4}
+                    fill={revealed && step.result ? `var(--color-status-${tone})` : "none"}
+                    stroke={`var(--color-status-${tone})`}
+                    strokeWidth={1.3}
+                    className="hmi-wire"
+                    style={{ transition: "fill 140ms ease, stroke 140ms ease, r 140ms ease" }}
+                  >
+                    <title>
+                      {revealed && step.result
+                        ? t("hmi.schematic.measuredResult", { code: step.pointCode, result: resultLabel })
+                        : t("hmi.schematic.configuredPosition", { code: step.pointCode })}
+                    </title>
+                  </circle>
+                )
+              })}
+        </g>
+
+        {/* Feeder bowl + linear feed tube toward the pick point — static machine geometry; the live
+            remaining-count number lives in `SchematicPanel.tsx`'s caption strip beneath the drawing. */}
         <g>
           <circle cx={42} cy={82} r={20} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
           <circle cx={42} cy={82} r={11} fill="none" stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" opacity={0.7} />
           <circle cx={36} cy={75} r={1.5} fill="var(--color-accent)" opacity={0.7} />
           <circle cx={49} cy={79} r={1.5} fill="var(--color-accent)" opacity={0.7} />
           <circle cx={40} cy={89} r={1.5} fill="var(--color-accent)" opacity={0.7} />
-          {/* Feed tube — two parallel rails from the bowl mouth down to the pick-up point by the
-              table. H5b: the table moved much lower (new floor), so this tube is now a longer,
-              steeper run — still the same two-rail idiom, just re-anchored to the new pickup point. */}
           <path d="M 61 78 L 195 356" stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" fill="none" />
           <path d="M 61 88 L 195 368" stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" fill="none" />
-          {/* H5b: fontSize 7 → 9 (spec §3/§7's "legible at ~50cm" bar — every in-drawing label was
-              undersized after the H5 column reflow, this and `zAxis` below were the two worst). */}
           <text x={42} y={116} textAnchor="middle" fontSize={9} letterSpacing="0.06em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
             {t("hmi.schematic.feeder")}
           </text>
@@ -105,46 +184,34 @@ export function AutomationSchematic({ isRunning, className }: AutomationSchemati
         </g>
 
         {/*
-          Carriage — traverses the rail (sweeps back and forth across the three fastening points
-          while running) — roller wheels + body + ballscrew shaft, not a bare rect.
-
-          GOTCHA (H2b, real bug found while verifying this against the live DOM — present in H1's
-          original gantry-head/bit too, just never surfaced because the marooned pre-fix layout
-          made it hard to notice): a CSS `transform` (from the sweep/spin `animation`) on an SVG
-          element REPLACES that element's own `transform` XML ATTRIBUTE outright rather than
-          composing with it — the CSS transform always wins once the animation is running. Putting
-          `transform="translate(228, 24)"` and the animated `.hmi-gantry-head` class on the SAME
-          `<g>` meant the static offset vanished the instant the sweep animation started, so the
-          carriage rendered near the viewBox origin (visually on top of the feeder bowl) instead of
-          over the fixture table. Fix: the static SVG-attribute translate lives on its own
-          non-animated ancestor `<g>`; the CSS-animated class goes on a child `<g>` with no
-          competing `transform` attribute of its own — same fix applied to the driver-bit group
-          below (`translate(0, 104)` + the spin animation had the identical conflict).
+          Carriage — WS3-T2: `carriageOffsetX` is a plain SVG-attribute translate recomputed every
+          animation frame from the real cycle clock (`useCycleTwin`), not a CSS `animation` — the old
+          "CSS transform replaces the SVG transform attribute" conflict this comment used to warn about
+          no longer applies (nothing here is CSS-animated). A `transition` on `transform` gives
+          frame-to-frame motion a soft ease without a JS tween.
         */}
         <g transform="translate(228, 24)">
-          <g className="hmi-gantry-head" style={{ ["--hmi-sweep-x" as string]: "130px" } as React.CSSProperties}>
+          <g
+            className="hmi-gantry-head"
+            transform={`translate(${carriageOffsetX}, 0)`}
+            style={{ transition: animate ? "transform 90ms linear" : undefined }}
+          >
             <circle cx={-10} cy={-8} r={3} fill="none" stroke="var(--color-accent)" strokeWidth={1.3} className="hmi-wire" />
             <circle cx={10} cy={-8} r={3} fill="none" stroke="var(--color-accent)" strokeWidth={1.3} className="hmi-wire" />
             <rect x={-16} y={-6} width={32} height={16} fill="var(--color-accent)" />
-            {/* H5b: the Z-axis shaft now runs the full new leg span down to the (lower) fastening
-                point — 10→332 local, was 10→104 — real added length, matching the taller frame. */}
             <line x1={0} y1={10} x2={0} y2={332} stroke="var(--color-accent)" strokeWidth={2} className="hmi-wire" />
 
-            {/* Z-axis guide sleeve — strokes down the shaft while running. Repositioned to the same
-                proportional point along the now-longer shaft (~38% down from the carriage). */}
-            <g className="hmi-gantry-zmarker">
+            {/* Z-axis guide sleeve — strokes only while actually dwelling on (driving) a point. */}
+            <g className={dwelling ? "hmi-gantry-zmarker hmi-driving" : "hmi-gantry-zmarker"}>
               <rect x={-7} y={125} width={14} height={16} fill="none" stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" />
             </g>
-            {/* H5b: fontSize 6.5 → 8.5 (spec §3 legibility bar), repositioned beside the moved sleeve. */}
             <text x={14} y={137} fontSize={8.5} letterSpacing="0.05em" fill="var(--text-muted)" fontFamily="var(--font-mono)">
               {t("hmi.schematic.zAxis")}
             </text>
 
-            {/* Spinning driver bit, over the live fastening point — local translate 104 → 332,
-                tracking the table's new lower position (6 units above the part's surface, same
-                stand-off the old geometry used). */}
+            {/* Spinning driver bit — spins only while dwelling (actually driving the fastener). */}
             <g transform="translate(0, 332)">
-              <g className="hmi-gantry-bit">
+              <g className={dwelling ? "hmi-gantry-bit hmi-driving" : "hmi-gantry-bit"}>
                 <circle r={7} fill="none" stroke="var(--color-accent)" strokeWidth={2} className="hmi-wire" />
                 <line x1={-6} y1={0} x2={6} y2={0} stroke="var(--color-accent)" strokeWidth={1.5} className="hmi-wire" />
                 <line x1={0} y1={-6} x2={0} y2={6} stroke="var(--color-accent)" strokeWidth={1.5} className="hmi-wire" />

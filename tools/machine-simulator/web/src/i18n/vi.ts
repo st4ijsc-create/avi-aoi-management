@@ -1379,6 +1379,16 @@ export const vi = {
       // who hovers/inspects.
       aggregateDisclosure: "Vị trí: đúng cấu hình sản phẩm · Kết quả lỗi: tổng hợp toàn máy, không gán vào từng vị trí",
       configuredPosition: (vars: Vars) => `${vars.code} — vị trí cấu hình (không phải kết quả đo)`,
+      // WS3-T2 — the living twin closes the exact gap `aggregateDefects`/`aggregateDisclosure` above
+      // exist for: once a real `CyclePlan` is in hand, each dot's colour IS its own real result, so
+      // the caption can honestly say so instead of falling back to a machine-wide aggregate.
+      livePointResults: (vars: Vars) => `${vars.ng}/${vars.total} điểm NG — đúng vị trí đo thực`,
+      livePointDisclosure:
+        "Vị trí và kết quả đều lấy trực tiếp từ chu trình đo thực — mỗi điểm sáng đúng theo kết quả của chính nó, không còn là tổng hợp.",
+      // WS3-T2 — accessible `<title>` on a dot the twin has actually lit by its own real result (as
+      // opposed to `configuredPosition` above, used for a dot that's real POSITION but no result yet
+      // — pending this cycle, or no plan at all).
+      measuredResult: (vars: Vars) => `${vars.code} — ${vars.result}`,
     },
 
     readoutPanel: {

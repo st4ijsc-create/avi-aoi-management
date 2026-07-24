@@ -78,6 +78,52 @@ public sealed class CyclePlanFleetTests
         Assert.True(stopped.Cycles > 0, "counters must stay visible after stop, only the plan/status gate");
     }
 
+    /// <summary>WS3-T2 (ws3-t1-report.md's fast-follow #1) — <c>FleetHost</c>'s ctor now seeds every
+    /// <c>AoiAvi</c> machine in the roster with one of the <see cref="ProductConfigStore"/>'s own
+    /// catalog products round-robin, so the shipped demo fleet's AOI machines are no longer un-linked by
+    /// default (the exact gap WS3-T1 flagged: "no HTTP endpoint currently calls
+    /// <c>FleetHost.SetCurrentProduct</c> ... a live curl against them today shows <c>plan:null</c>").
+    /// A fresh <see cref="ProductConfigStore"/> in an empty temp directory seeds its own real "MODEL-A"/
+    /// "MODEL-B" demo products (<see cref="ProductConfigStore.SeedProducts"/>) — this proves the two AOI
+    /// machines in the roster (fleet order) land on those two products, alphabetically.</summary>
+    [Fact]
+    public void Construction_Seeds_Every_AoiAvi_Machine_With_A_Catalog_Product_RoundRobin()
+    {
+        var productStore = new ProductConfigStore(TempDir("st4i-seed-aoi-products-"));
+        var host = CreateHost(productStore);
+
+        Assert.Equal("MODEL-A", host.CurrentProductFor("AOI-01"));
+        Assert.Equal("MODEL-B", host.CurrentProductFor("AOI-02"));
+    }
+
+    /// <summary>WS3-T2 — the end-to-end proof the task actually cares about: with NO explicit
+    /// <see cref="FleetHost.SetCurrentProduct"/> call from a test/caller (unlike the sibling test below,
+    /// which deliberately links a hand-built product), the demo fleet's AOI-01 comes up on a running
+    /// fleet with a REAL, non-null plan whose steps carry the auto-seeded product's real point codes —
+    /// exactly what a live <c>curl http://localhost:5199/v1/machines/AOI-01</c> now returns.</summary>
+    [Fact]
+    public async Task Aoi_MachineDetail_Plan_Populated_By_Default_Via_Startup_Seeded_Product_Link()
+    {
+        var productStore = new ProductConfigStore(TempDir("st4i-seed-aoi-plan-"));
+        var host = CreateHost(productStore);
+        host.Start();
+
+        try
+        {
+            await WaitUntilAsync(() => host.MachineDetail("AOI-01")?.Plan is not null, "AOI-01's plan to populate from the auto-seeded product link, no explicit SetCurrentProduct call");
+
+            var detail = host.MachineDetail("AOI-01")!;
+            Assert.True(detail.Plan!.Steps.Count > 0, "the seeded product (MODEL-A) has real active points");
+            // MODEL-A's real seed points are P01.. (ProductConfigStore.SeedProducts) — never the
+            // generic PT-001.. fallback code vocabulary AoiInspectorSim uses when no product resolves.
+            Assert.All(detail.Plan.Steps, s => Assert.StartsWith("P", s.PointCode));
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
     [Fact]
     public async Task Aoi_MachineDetail_Plan_Reflects_The_Real_Configured_Product_On_A_Running_Fleet()
     {

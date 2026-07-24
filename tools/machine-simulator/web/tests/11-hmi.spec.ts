@@ -30,6 +30,14 @@ import { vi as viDict } from "../src/i18n/vi"
  * baseline at DIFFERENT positions — reproduced live as a 166px diff. This file now establishes its own
  * precondition instead of inheriting one from file order, so it holds standalone too.
  */
+
+/** WS3-T2 — an instant guaranteed to sit past ANY real plan's `startedAt + durationSeconds` (cycle
+ * durations across this fleet top out at a few seconds — see `AutomationSchematic.tsx`'s WS3-T2
+ * remarks), used to freeze `Date.now()` for the schematic visual baselines below. See the visual
+ * test's own comment for why this specific mechanism (not a CSS animation override) is what makes the
+ * living twin's JS-driven motion/reveal deterministic. */
+const FROZEN_FUTURE_TIME = new Date("2100-01-01T00:00:00Z")
+
 test.describe("HMI operator panel", () => {
   test.beforeEach(async ({ request }) => {
     await pullMachineConfig(request, "AOI-01", "MODEL-A")
@@ -250,6 +258,10 @@ test.describe("HMI operator panel", () => {
         page.locator(".hmi-readout-value"),
         page.getByRole("log"),
         page.locator(".hmi-output-bar"),
+        // WS3-T2 — the living twin: which of SCRW-01's 4 real fastening steps land OK/NG this cycle
+        // is a live per-cycle draw (same reasoning as AOI's own `.hmi-aoi-points-group` mask below),
+        // so this stable-box group mask stands in for it rather than pinning an exact colour sequence.
+        page.locator(".hmi-scrw-points-group"),
       ],
     },
     {
@@ -269,6 +281,21 @@ test.describe("HMI operator panel", () => {
   for (const { slug, code, mask } of SCHEMATIC_CASES) {
     for (const theme of THEMES) {
       test(`visual — ${slug} — ${theme}`, async ({ page }) => {
+        // WS3-T2 — the living twin (`cycleTwin.ts`/`useCycleTwin.ts`) positions the head/carriage and
+        // reveals per-point results as a plain SVG-attribute recomputed every `requestAnimationFrame`
+        // from real wall-clock `Date.now()` vs. the live plan's own `startedAt`/`durationSeconds` —
+        // NOT a CSS `animation`, so the `animation: none !important` override below (still needed for
+        // the genuinely-ambient CSS loops that remain — belt ticks, IoT signal-pulse arcs) has no
+        // effect on it. Freezing `Date.now()` (`page.clock.setFixedTime`, real timers/network/rAF
+        // still tick normally) is what makes THIS deterministic instead: any fixed instant far past
+        // the live plan's own `startedAt + durationSeconds` clamps `computeCyclePlanClock` to the same
+        // "cycle complete" pose every run — every step revealed by its own real result, head/carriage
+        // resting at the LAST real point — regardless of which actual cycle is in flight when the
+        // test happens to run. This is a MEANINGFUL baseline (real per-point colours, real final
+        // position), not a trivial idle one, and needs no new masking for the pose itself — only the
+        // *which* result each point landed (a live per-cycle draw) still needs the existing stable-box
+        // group masks (`.hmi-aoi-points-group`/`.hmi-scrw-points-group`) below.
+        await page.clock.setFixedTime(FROZEN_FUTURE_TIME)
         await primeAppStorage(page, { theme })
         await gotoHmi(page, code)
         // H4 job 3 — Playwright's built-in `animations: "disabled"` (the config default this suite

@@ -150,6 +150,40 @@ public sealed class FleetHost
         {
             _states[descriptor.Code] = new MachineState(descriptor);
         }
+
+        SeedAoiProductLinks();
+    }
+
+    /// <summary>WS3-T2 (docs/PRODUCTION_UI_DESIGN.md §3.2/§3.4, ws3-t1-report.md's fast-follow #1) —
+    /// WS3-T1 built the per-step cycle-plan machinery and proved AOI's plan carries a linked product's
+    /// REAL points end-to-end, but nothing ever called <see cref="SetCurrentProduct"/> for the shipped
+    /// roster, so AOI-01/AOI-02 ran un-linked by default and a live <c>GET /v1/machines/AOI-01</c>
+    /// returned <c>"plan":null</c> — no per-point data for the living-twin schematic to draw, which is
+    /// the whole point of this task. This seeds every <see cref="DeviceClass.AoiAvi"/> machine in the
+    /// roster (fleet order) with one of <see cref="_productConfigStore"/>'s own catalog products,
+    /// round-robin (1st AOI machine → the 1st product code alphabetically, i.e. seeded "MODEL-A"; 2nd
+    /// AOI machine → "MODEL-B"; wrapping if there are more AOI machines than products) — a real,
+    /// already-seeded product, never a fabricated one. A caller can still override any of these later via
+    /// <see cref="SetCurrentProduct"/> (e.g. a future settings/onboarding endpoint) since this only seeds
+    /// the SAME <see cref="_currentProduct"/> map that method writes.
+    ///
+    /// No-op (nothing to link) when no <see cref="ProductConfigStore"/> is wired or it has zero products
+    /// — the same "ordinary case, not an error" contract <c>AoiInspectorSim.ResolveRealPoints</c> already
+    /// documents for an unresolved product. Runs once, at construction, before this instance is published
+    /// to any other thread — no lock needed, same reasoning <see cref="ProductConfigStore.Load"/> itself
+    /// documents.</summary>
+    private void SeedAoiProductLinks()
+    {
+        if (_productConfigStore is null) return;
+
+        var products = _productConfigStore.ListProducts();
+        if (products.Count == 0) return;
+
+        var aoiMachines = _fleet.Where(d => d.DeviceClass == DeviceClass.AoiAvi).ToList();
+        for (var i = 0; i < aoiMachines.Count; i++)
+        {
+            _currentProduct[aoiMachines[i].Code] = products[i % products.Count].Code;
+        }
     }
 
     /// <summary>Point-in-time copy of the fleet roster. E1: no longer a fixed, ctor-built list —

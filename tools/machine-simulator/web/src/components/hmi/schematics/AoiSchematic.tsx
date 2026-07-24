@@ -1,9 +1,9 @@
-import * as React from "react"
-
 import { useGloss } from "@/components/hmi/bilingual"
 import { DimensionLine } from "@/components/hmi/DimensionLine"
 import { MachinePlinth } from "@/components/hmi/MachinePlinth"
+import { useCycleTwin } from "@/components/hmi/useCycleTwin"
 import { useT } from "@/i18n"
+import type { CyclePlan } from "@/lib/api"
 
 export interface AoiSchematicPoint {
   code: string
@@ -40,51 +40,69 @@ const GANTRY_RAIL_Y = 30
 const GANTRY_RAIL_X1 = 150
 const GANTRY_RAIL_X2 = 398
 
+/** Camera's own rest/entry position (rail's left end, matching the pre-WS3-T2 static pose) — segment
+ * 0 of a fresh cycle travels FROM here TO `plan.steps[0]`, in the SAME normalized-X space every step's
+ * own `normalizedX` uses (`useCycleTwin`'s `restPoint`, ny unused for this component — the beam target
+ * always uses the ACTIVE step's own real Y directly, see the render below). */
+const CAMERA_REST_POINT = { x: 0, y: 0.5 }
+
 interface AoiSchematicProps {
-  isRunning: boolean
+  /** WS3-T2 — the machine's latest cycle plan (`MachineDetailDto.Plan`). Non-null implies a real
+   * product is linked AND the fleet is running (`MachineState.ToDetail`'s own gate) — when present,
+   * ITS points/results/positions are the single source of truth for both the drawing's dots and the
+   * camera head's travel; `points` below is only the IDLE-fallback (no plan yet, or none ever). */
+  plan: CyclePlan | null | undefined
+  /** True while the twin should actually move — `isRunning && plan has steps && !prefers-reduced-motion`
+   * (computed once by `SchematicPanel`, the shared parent of every device-class schematic). */
+  animate: boolean
   points: AoiSchematicPoint[]
   className?: string
+}
+
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n))
 }
 
 /**
  * AOI/AVI inspection cell (spec §7, "make this the strongest one"): a real machine — portal frame,
  * a conveyor BODY (belt deck, end rollers, guide rails) carrying the PCB, a camera head traveling a
- * visible overhead gantry rail with a ring light around the lens — sweeping the board, with the
- * product's REAL measurement points (real `normalizedX`/`normalizedY` config, fetched from
- * `/v1/products/{code}/points`) plotted at their true positions, lit green/red as OK/NG results
- * arrive.
+ * visible overhead gantry rail with a ring light around the lens — sweeping the board.
  *
- * H2c rebuild: H2/H2b's version was scattered parts on a sheet — no frame, the conveyor was a bare
- * dashed line with one circle at each far edge, and the board floated in a gap above it instead of
- * riding on anything. This composes the same drawing vocabulary `AutomationSchematic.tsx` already
- * established (portal frame with feet, dimension callouts directly beneath what they measure) so the
- * two machine classes read as one design system, not two unrelated styles.
- *
- * Branch-review I-1 — honest disclosure on the point↔result correspondence: this build's AOI
- * simulator (`AoiInspectorSim.cs`) always inspects a fixed set of generic points (`PT-001`…`PT-020`)
- * that share NO code vocabulary with the product's own configured `MeasurementPoint.code`s (e.g.
- * `P01`) — there is no engine-side link between "this cycle's board result" and "this specific
- * configured point." An earlier build zipped the two lists BY ARRAY INDEX, which put a real NG
- * verdict's colour on a specific, named, wrong physical location (live-reproduced: an NG at board
- * index 9 painted product point `P03` red). Per the review's fix, this component no longer colours
- * individual dots by an unverifiable match at all: every dot below plots the product's REAL
- * configured position (unchanged) but stays the neutral idle outline — position is real config,
- * never a claim about that exact spot's result. The real per-cycle NG count is instead shown as an
- * honest AGGREGATE (`unlocatedDefects`, supplied by the caller straight from the engine's own board
- * points), now surfaced in `SchematicPanel.tsx`'s caption strip BELOW this drawing (H5 — layout spec
- * §8 gap 4) rather than as SVG text inside the canvas itself, with an explicit disclosure of what's
- * config and what's aggregate.
+ * WS3-T2 (docs/PRODUCTION_UI_DESIGN.md §3.2–§3.4) — the living twin. WS3-T1 closed the gap the H2c
+ * header comment below used to describe (the engine now emits a `CyclePlan` whose steps are the SAME
+ * real, product-configured points this drawing already plots, each carrying ITS OWN real result) — so
+ * this component no longer needs the "never colour an individual dot" workaround: whenever `plan` is
+ * present, each dot's fill IS its own step's real `result`, and the camera head genuinely travels to
+ * each point in cycle order, paced by the plan's own `startedAt`/`durationSeconds` (`useCycleTwin`) —
+ * never a fixed-cadence CSS loop. `points` (the product's static configured positions, no live result)
+ * remains the fallback for the two honest "nothing live to show" cases: no plan yet (idle/E-STOPped)
+ * or no product ever linked.
  */
-export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps) {
+export function AoiSchematic({ plan, animate, points, className }: AoiSchematicProps) {
   const t = useT()
   const gloss = useGloss()
 
-  // Camera sweeps the gantry rail from its left end to its right end and back — the CSS keyframe
-  // (`hmi-kf-camera-sweep`) is `translateX(0)` at rest, `translateX(var(--hmi-sweep-x))` at the
-  // midpoint, so the assembly's OWN drawn (rest) position must already sit at the rail's left end.
+  const clock = useCycleTwin(plan, CAMERA_REST_POINT, animate)
+
   const railClearSpan = GANTRY_RAIL_X2 - GANTRY_RAIL_X1
-  const cameraRestX = GANTRY_RAIL_X1 + 12
-  const sweepX = railClearSpan - 24
+  const railUsableSpan = railClearSpan - 24
+  const restX = GANTRY_RAIL_X1 + 12
+
+  // Dots to draw: the live plan's own steps (real position + real result) whenever one exists — even
+  // while NOT animating (reduced motion, or the brief instant before the first rAF tick lands) the
+  // real result is still known data and shown immediately, just without motion — falling back to the
+  // product's static configured positions (no result, neutral) only when there's genuinely no plan.
+  const liveSteps = plan?.steps
+  const hasLiveSteps = !!liveSteps && liveSteps.length > 0
+
+  // Camera head — while actually animating, it's mid-travel at `clock.head.x` (normalized, mapped onto
+  // the rail's own pixel span) and its focus beam aims at whichever step is currently active. Idle, no
+  // plan, or reduced-motion: the pre-WS3-T2 static rest pose (left rail end, beam straight down).
+  const cameraX = clock ? restX + clamp01(clock.head.x) * railUsableSpan : restX
+  const activeStep = clock && liveSteps ? liveSteps[clock.activeIndex] : null
+  const beamTargetX = activeStep ? BOARD_X + clamp01(activeStep.normalizedX) * BOARD_W : cameraX
+  const beamTargetY = activeStep ? BOARD_Y + clamp01(activeStep.normalizedY) * BOARD_H : BOARD_Y
+  const dwelling = clock?.dwelling ?? false
 
   return (
     // viewBox width matches `AutomationSchematic.tsx`'s (520 wide) — both cells share the same frame
@@ -100,7 +118,7 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
       role="img"
       aria-label={`${t("hmi.schematic.figAoi")} — ${gloss("hmi.schematic.figAoi")}`}
     >
-      <g className={isRunning ? "hmi-schematic-run" : undefined}>
+      <g className={animate ? "hmi-schematic-run" : undefined}>
         {/* Portal frame: uprights, top rail, base rail — same drawing language as the automation
             cell's frame. */}
         <g stroke="var(--text-muted)" strokeWidth={1.5} fill="none">
@@ -111,9 +129,7 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
         </g>
         <MachinePlinth x1={FRAME_LEFT - 52} x2={FRAME_RIGHT + 47} y={FRAME_BASE} height={48} />
 
-        {/* Overhead gantry rail — static; only the camera assembly below travels along it (the
-            "visible gantry" the review asked for, same idiom as the automation cell's carriage
-            riding its own static rail). Support struts tie it back to the frame's top rail. */}
+        {/* Overhead gantry rail — static; only the camera assembly below travels along it. */}
         <g stroke="var(--text-muted)" strokeWidth={1} fill="none" className="hmi-wire" opacity={0.85}>
           <line x1={GANTRY_RAIL_X1} y1={FRAME_TOP} x2={GANTRY_RAIL_X1} y2={GANTRY_RAIL_Y} />
           <line x1={GANTRY_RAIL_X2} y1={FRAME_TOP} x2={GANTRY_RAIL_X2} y2={GANTRY_RAIL_Y} />
@@ -129,26 +145,16 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
         />
 
         {/* Camera assembly — mount drop, head, ring light and focus beam ALL move together as one
-            group (H2c fix for "camera mount must travel with the camera head": H2/H2b drew the mount
-            stand as a SIBLING of the sweeping `.hmi-aoi-camera` group rather than a child of it, so
-            it stayed fixed at center while the head swept away — the head read as detached and
-            floating mid-sweep.
-
-            GOTCHA (caught live via screenshot, not just read from code — the exact bug
-            `AutomationSchematic.tsx`'s own doc comment already warns about): a CSS `transform` from
-            the sweep animation REPLACES an SVG element's own `transform` XML ATTRIBUTE outright
-            rather than composing with it. Putting `transform="translate(...)"` and the animated
-            `.hmi-aoi-camera` class on the SAME `<g>` (my first attempt) made the static rest
-            position vanish the instant the animation started, rendering the whole assembly near the
-            viewBox origin. Fix: the static rest-position translate lives on its own non-animated
-            ANCESTOR `<g>`; the CSS-animated class goes on a CHILD `<g>` with no competing `transform`
-            attribute of its own. */}
-        <g transform={`translate(${cameraRestX}, 0)`}>
-          {/* H5b: the mount drop is now a long travel (rail y=30 down to y=260, was a 12-unit stub) —
-              the camera hangs much lower over the (now much lower) conveyor, real added length rather
-              than a taller blank gap between the rail and the board. Lens head/ring light/focus beam
-              all shift down with it, same relative offsets from the mount's own end. */}
-          <g className="hmi-aoi-camera" style={{ ["--hmi-sweep-x" as string]: `${sweepX}px` } as React.CSSProperties}>
+            group. WS3-T2: `cameraX` is a plain SVG-attribute translate recomputed every animation
+            frame from the real cycle clock (`useCycleTwin`) — not a CSS `animation`, so there is no
+            "CSS transform replaces the SVG attribute" conflict to guard against (the H2c gotcha this
+            comment used to document no longer applies: nothing here is CSS-animated anymore). A
+            `transition` on `transform` gives frame-to-frame motion a soft ease without a JS tween. */}
+        <g
+          transform={`translate(${cameraX}, 0)`}
+          style={{ transition: animate ? "transform 90ms linear" : undefined }}
+        >
+          <g>
             <line x1={0} y1={GANTRY_RAIL_Y} x2={0} y2={260} stroke="var(--color-accent)" strokeWidth={2} className="hmi-wire" />
             <path
               d="M -12 260 L 12 260 L 17 275 L -17 275 Z"
@@ -157,19 +163,38 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
               strokeWidth={1.5}
               className="hmi-wire"
             />
-            {/* Ring light around the lens */}
-            <circle cx={0} cy={279} r={11} fill="none" stroke="var(--color-accent)" strokeWidth={1.5} strokeDasharray="3 3" className="hmi-wire" />
-            {/* Focus beam down to the board */}
-            <line x1={0} y1={290} x2={0} y2={BOARD_Y} stroke="var(--color-accent)" strokeWidth={1} strokeDasharray="2 3" className="hmi-wire" />
+            {/* Ring light around the lens — brightens while dwelling on a point ("taking the shot"). */}
+            <circle
+              cx={0}
+              cy={279}
+              r={11}
+              fill="none"
+              stroke="var(--color-accent)"
+              strokeWidth={dwelling ? 2.5 : 1.5}
+              strokeDasharray="3 3"
+              opacity={dwelling ? 1 : 0.85}
+              className="hmi-wire"
+              style={{ transition: "stroke-width 120ms ease, opacity 120ms ease" }}
+            />
+            {/* Focus/aim beam — while animating it aims at the ACTIVE step's real (x,y); otherwise (no
+                plan / idle / reduced-motion) it drops straight down, the pre-WS3-T2 static pose. */}
+            <line
+              x1={0}
+              y1={290}
+              x2={beamTargetX - cameraX}
+              y2={beamTargetY}
+              stroke="var(--color-accent)"
+              strokeWidth={1}
+              strokeDasharray="2 3"
+              className="hmi-wire"
+              style={{ transition: animate ? "x2 90ms linear, y2 90ms linear" : undefined }}
+            />
           </g>
         </g>
 
-        {/* Conveyor body — belt deck, end rollers, guide rails, moving belt ticks. The PCB rests
-            directly on the deck's top edge (H2c: was floating in a gap above a bare dashed line). */}
+        {/* Conveyor body — belt deck, end rollers, guide rails, moving belt ticks. */}
         <g>
-          {/* Guide rails — the raised edge strips the board's edges actually ride inside */}
           <line x1={116} y1={CONVEYOR_TOP - 4} x2={404} y2={CONVEYOR_TOP - 4} stroke="var(--text-muted)" strokeWidth={1} className="hmi-wire" opacity={0.6} />
-          {/* Belt deck body */}
           <rect
             x={106}
             y={CONVEYOR_TOP}
@@ -180,7 +205,8 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
             strokeWidth={1.5}
             className="hmi-wire"
           />
-          {/* Moving belt ticks — animates only while running */}
+          {/* Moving belt ticks — ambient "the conveyor is running" cue, gated on the same live-motion
+              condition as the rest of the drawing (not tied to any one point). */}
           <line
             className="hmi-aoi-belt-ticks hmi-wire"
             x1={120}
@@ -192,14 +218,12 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
             strokeDasharray="8 8"
             opacity={0.8}
           />
-          {/* End rollers — protrude above/below the deck, the belt visibly wraps them */}
           <circle cx={112} cy={CONVEYOR_TOP + 9} r={13} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
           <circle cx={408} cy={CONVEYOR_TOP + 9} r={13} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} className="hmi-wire" />
         </g>
 
         {/* PCB — a solid card (fill `--color-surface`, distinct from the graph-paper `--color-bg`
-            ground), bottom edge exactly on the belt deck's top edge, no gap — H2c: it used to be a
-            transparent outline floating in open space above the conveyor. */}
+            ground), bottom edge exactly on the belt deck's top edge. */}
         <rect
           x={BOARD_X}
           y={BOARD_Y}
@@ -211,48 +235,65 @@ export function AoiSchematic({ isRunning, points, className }: AoiSchematicProps
           className="hmi-wire"
         />
 
-        {/* Real measurement points, plotted at their true normalized config positions. Branch-review
-            I-1: no longer coloured by a per-point result — see this file's header comment. Each dot
-            stays the neutral idle outline; the `<title>` is explicit that this is a CONFIGURED
-            position, not a verdict site.
-
-            I-15 — `hmi-aoi-points-group` wraps the whole set as ONE stable mask hook, in addition to
-            each dot's own `.hmi-aoi-point` class: whichever product is currently configured on this
-            machine determines both the COUNT and the POSITION of these dots, so masking only each
-            dot's OWN current bounding box doesn't help if a baseline was captured against a
-            different point set than the run being compared — the mismatched region between the two
-            leaks through as unmasked pixels (the exact failure this class guards `11-hmi.spec.ts`
-            against, see its own `beforeEach` remarks). Masking the whole group's bounding box is
-            robust to point-count/position drift; the per-dot class stays for any caller that wants a
-            narrower mask once the point set is otherwise pinned. */}
+        {/* WS3-T2 — the living twin's headline element (spec §7: "make this the strongest one"). Real
+            measurement points, plotted at their true configured positions; whenever a real `CyclePlan`
+            is in hand, each dot's colour is ITS OWN real result (revealed progressively in step order
+            while animating, all-at-once when static/reduced-motion — never a fabricated match). With
+            no plan (idle, E-STOPped, or no product ever linked), every dot is the neutral idle outline
+            plotting position only — exactly the pre-WS3-T2 honest fallback. */}
         <g className="hmi-aoi-points-group">
-          {points.map((p) => {
-            const cx = BOARD_X + p.nx * BOARD_W
-            const cy = BOARD_Y + p.ny * BOARD_H
-            return (
-              <circle
-                key={p.code}
-                cx={cx}
-                cy={cy}
-                r={3.4}
-                fill="none"
-                stroke="var(--color-status-idle)"
-                strokeWidth={1.3}
-                className="hmi-wire hmi-aoi-point"
-              >
-                <title>{t("hmi.schematic.configuredPosition", { code: p.code })}</title>
-              </circle>
-            )
-          })}
+          {hasLiveSteps
+            ? liveSteps!.map((step, i) => {
+                const cx = BOARD_X + clamp01(step.normalizedX) * BOARD_W
+                const cy = BOARD_Y + clamp01(step.normalizedY) * BOARD_H
+                // Static/reduced-motion (`clock` is null while `animate` is false): show every real
+                // result immediately (design-doc §3.3 — "static, but last-known results, numbers still
+                // update"). Animating: reveal in cycle order as the head actually arrives.
+                const revealed = clock ? i < clock.revealedCount : true
+                const resultLabel = step.result === "OK" ? t("hmi.progress.okLabel") : t("hmi.progress.ngLabel")
+                const tone = !revealed || !step.result ? "idle" : step.result === "OK" ? "run" : "fault"
+                return (
+                  <circle
+                    key={step.pointCode}
+                    cx={cx}
+                    cy={cy}
+                    r={revealed && step.result ? 4.2 : 3.4}
+                    fill={revealed && step.result ? `var(--color-status-${tone})` : "none"}
+                    stroke={`var(--color-status-${tone})`}
+                    strokeWidth={1.3}
+                    className="hmi-wire hmi-aoi-point"
+                    style={{ transition: "fill 140ms ease, stroke 140ms ease, r 140ms ease" }}
+                  >
+                    <title>
+                      {revealed && step.result
+                        ? t("hmi.schematic.measuredResult", { code: step.pointCode, result: resultLabel })
+                        : t("hmi.schematic.configuredPosition", { code: step.pointCode })}
+                    </title>
+                  </circle>
+                )
+              })
+            : points.map((p) => {
+                const cx = BOARD_X + p.nx * BOARD_W
+                const cy = BOARD_Y + p.ny * BOARD_H
+                return (
+                  <circle
+                    key={p.code}
+                    cx={cx}
+                    cy={cy}
+                    r={3.4}
+                    fill="none"
+                    stroke="var(--color-status-idle)"
+                    strokeWidth={1.3}
+                    className="hmi-wire hmi-aoi-point"
+                  >
+                    <title>{t("hmi.schematic.configuredPosition", { code: p.code })}</title>
+                  </circle>
+                )
+              })}
         </g>
       </g>
 
-      {/* Dimension callouts, directly below the frame's base rail, x-aligned to what they measure —
-          same idiom `AutomationSchematic.tsx`'s "80"/"390" callouts already use (spec §7, "attached
-          to what they measure"). H5: the caption row (product name · configured-position count ·
-          aggregate defects) and the "no product linked" fallback both moved to
-          `SchematicPanel.tsx`'s caption/readout strip below this drawing (layout spec §8 gap 4) — this
-          canvas is now purely the wireframe + its dimension lines. */}
+      {/* Dimension callouts, directly below the frame's base rail, x-aligned to what they measure. */}
       <DimensionLine x1={BOARD_X} x2={BOARD_X + BOARD_W} y={442} label={`${BOARD_W}`} />
       <DimensionLine x1={FRAME_LEFT} x2={FRAME_RIGHT} y={458} label="390" />
     </svg>

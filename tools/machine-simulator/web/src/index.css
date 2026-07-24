@@ -764,28 +764,31 @@
   }
 
   /* ==========================================================================
-     Living schematic animations (spec §7) — H2. Every rule lives INSIDE the
-     `no-preference` media query, so `prefers-reduced-motion: reduce` kills every
-     one of them at the source, unconditionally. Idle/static is the DEFAULT: an
-     element only animates once its schematic root also carries `.hmi-schematic-run`
-     (applied by React only while `fleetIsRunning && !estopEngaged`), so a
-     stopped/faulted machine renders a genuinely static drawing, not a paused one.
-     ========================================================================== */
+     Living schematic animations (spec §7; WS3-T2 docs/PRODUCTION_UI_DESIGN.md §3.3). Every rule lives
+     INSIDE the `no-preference` media query, so `prefers-reduced-motion: reduce` kills every one of
+     them at the source, unconditionally. Idle/static is the DEFAULT: an element only animates once its
+     schematic root also carries `.hmi-schematic-run` (applied by React only while `animate` — real
+     cycle plan in hand, fleet actually running, motion not reduced; `SchematicPanel.tsx`'s own doc
+     comment), so a stopped/faulted/idle machine renders a genuinely static drawing, not a paused one.
+
+     WS3-T2 retired the fixed-cadence loops that used to drive DISCRETE, per-point motion with no link
+     to real data — `hmi-kf-gantry-sweep`/`hmi-kf-camera-sweep` (the head/carriage's own position is now
+     a plain SVG-attribute transform recomputed every frame from the real cycle clock,
+     `useCycleTwin.ts`) and `hmi-kf-packet-travel`/`hmi-kf-tick-blip` (the IoT packet's position and the
+     sample-tick row's lit count are likewise real-clock-driven attributes now, not a guessed loop
+     period). What's left here is genuinely AMBIENT motion — a conveyor belt running, a sensor radiating
+     — that never claimed a specific data value in the first place, so a cadence loop stays honest for
+     it; and `hmi-kf-bit-spin`/`hmi-kf-z-stroke`, retargeted from "spins/strokes for the whole time the
+     machine runs" to "spins/strokes only while a schematic component's own `dwelling` state (from the
+     real cycle clock) says the head is actually parked on a point taking the reading" — see
+     `AutomationSchematic.tsx`'s `.hmi-driving` class toggle. */
   @media (prefers-reduced-motion: no-preference) {
-    @keyframes hmi-kf-gantry-sweep {
-      0%, 100% { transform: translateX(0); }
-      50% { transform: translateX(var(--hmi-sweep-x, 220px)); }
-    }
     @keyframes hmi-kf-bit-spin {
       to { transform: rotate(360deg); }
     }
     @keyframes hmi-kf-z-stroke {
       0%, 100% { transform: translateY(0); }
       50% { transform: translateY(12px); }
-    }
-    @keyframes hmi-kf-camera-sweep {
-      0%, 100% { transform: translateX(0); }
-      50% { transform: translateX(var(--hmi-sweep-x, 150px)); }
     }
     @keyframes hmi-kf-belt-dash {
       to { stroke-dashoffset: -32px; }
@@ -794,34 +797,22 @@
       0% { transform: scale(0.35); opacity: 0.75; }
       100% { transform: scale(1.7); opacity: 0; }
     }
-    @keyframes hmi-kf-packet-travel {
-      0% { transform: translateX(0); opacity: 0; }
-      8% { opacity: 1; }
-      92% { opacity: 1; }
-      100% { transform: translateX(var(--hmi-sweep-x, 260px)); opacity: 0; }
-    }
-    @keyframes hmi-kf-tick-blip {
-      0%, 100% { opacity: 0.25; }
-      50% { opacity: 1; }
-    }
 
-    .hmi-schematic-run .hmi-gantry-head { animation: hmi-kf-gantry-sweep 3.4s ease-in-out infinite; }
     /* C-4: SVG elements default to `transform-box: view-box`, so a bare `transform-origin: center`
        resolves to the centre of the whole viewBox, not of the element itself — the driver bit orbited
        a ~278-unit radius around the drawing's centre instead of spinning in place (measured live:
        bounding-rect x 490→1459 for a viewBox spanning x 25…923). `transform-box: fill-box` re-anchors
        `center` to the element's OWN bounding-box centre, matching every browser's non-SVG-legacy
-       default and what "spin in place" actually requires. */
-    .hmi-schematic-run .hmi-gantry-bit { animation: hmi-kf-bit-spin 0.5s linear infinite; transform-box: fill-box; transform-origin: center; }
-    .hmi-schematic-run .hmi-gantry-zmarker { animation: hmi-kf-z-stroke 1.7s ease-in-out infinite; }
-    .hmi-schematic-run .hmi-aoi-camera { animation: hmi-kf-camera-sweep 3s ease-in-out infinite; }
+       default and what "spin in place" actually requires. WS3-T2: gated on `.hmi-driving` (a real,
+       per-frame `dwelling` boolean from the cycle clock), not unconditionally on `.hmi-schematic-run`
+       — the bit/Z-axis now only animate while a real fastening step is actually being driven. */
+    .hmi-gantry-bit.hmi-driving { animation: hmi-kf-bit-spin 0.5s linear infinite; transform-box: fill-box; transform-origin: center; }
+    .hmi-gantry-zmarker.hmi-driving { animation: hmi-kf-z-stroke 1.7s ease-in-out infinite; }
     .hmi-schematic-run .hmi-aoi-belt-ticks { animation: hmi-kf-belt-dash 0.9s linear infinite; }
     /* C-4: same view-box-vs-fill-box bug — each arc scaled from the drawing's centre instead of the
        sensor node it's drawn around, so on IOT-01 the arcs swept in from off-canvas instead of
        radiating from the node. `fill-box` anchors the scale on the circle's own centre (already at the
        node, by construction), which is what "emanating from the sensor" requires. */
     .hmi-schematic-run .hmi-iot-arc { animation: hmi-kf-signal-pulse 2.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
-    .hmi-schematic-run .hmi-iot-packet { animation: hmi-kf-packet-travel 2.4s linear infinite; }
-    .hmi-schematic-run .hmi-iot-tick { animation: hmi-kf-tick-blip 1s ease-in-out infinite; }
   }
 }

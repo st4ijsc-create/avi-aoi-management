@@ -339,6 +339,7 @@ export default function Hmi() {
               deviceClass={machine.class}
               isRunning={running}
               cycles={machine.cycles}
+              plan={machine.plan}
               aoiProductName={primaryProductLabel}
               aoiPoints={aoiPoints}
               aoiUnlocatedDefects={aoiUnlocatedDefects}

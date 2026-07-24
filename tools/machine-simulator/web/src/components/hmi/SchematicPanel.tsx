@@ -4,10 +4,11 @@ import { Sheet } from "@/components/industrial"
 import { useGloss } from "@/components/hmi/bilingual"
 import { feederRemaining } from "@/components/hmi/derive"
 import { AoiSchematic, type AoiSchematicPoint } from "@/components/hmi/schematics/AoiSchematic"
-import { AutomationSchematic, FEEDER_CAPACITY } from "@/components/hmi/schematics/AutomationSchematic"
+import { AutomationSchematic, FASTENING_STEPS_PER_CYCLE_FALLBACK, FEEDER_CAPACITY } from "@/components/hmi/schematics/AutomationSchematic"
 import { IotSchematic } from "@/components/hmi/schematics/IotSchematic"
+import { usePrefersReducedMotion } from "@/components/hmi/useCycleTwin"
 import { useT } from "@/i18n"
-import type { DeviceClass } from "@/lib/api"
+import type { CyclePlan, DeviceClass } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 const FIG_KEY: Record<DeviceClass, string> = {
@@ -20,11 +21,15 @@ interface SchematicPanelProps {
   deviceClass: DeviceClass
   isRunning: boolean
   cycles: number
+  /** WS3-T2 (docs/PRODUCTION_UI_DESIGN.md §3.2–§3.4) — the machine's latest cycle plan
+   * (`MachineDetailDto.Plan`), the living twin's single source of real per-step position/result/timing
+   * data. Non-null implies the fleet is running (the engine's own idle gate) — `null` means "render the
+   * static drawing" (no plan yet, or this device class doesn't wire one). */
+  plan: CyclePlan | null | undefined
   aoiProductName?: string | null
   aoiPoints: AoiSchematicPoint[]
   /** I-1 — real per-cycle NG count from the engine's own board points, computed with NO product-point
-   * involvement (see `Hmi.tsx`'s remarks) — an honest aggregate the caption strip shows instead of
-   * colouring an individual, unverifiably-matched dot. */
+   * involvement (see `Hmi.tsx`'s remarks) — the fallback caption when no live plan is in hand. */
   aoiUnlocatedDefects?: number
   iotLatestReading?: string | null
   className?: string
@@ -35,20 +40,20 @@ interface SchematicPanelProps {
 
 /**
  * Picks the living schematic by `deviceClass` (spec §7) and frames it as a `<Sheet>` on the
- * graph-paper ground with its `FIG. NN` caption — the centrepiece panel of the HMI page (spec §8,
- * layout gap 1: this now sits BESIDE `ReadoutGrid` as a sibling column, not stacked above it).
+ * graph-paper ground with its `FIG. NN` caption — the centrepiece panel of the HMI page.
  *
- * H5 — layout gap 4: every live numeric callout that used to be drawn INSIDE the schematic's own SVG
- * canvas (feeder remaining-count, the AOI product/points/defects caption, the IoT latest reading) now
- * lives in a thin caption/readout strip directly BELOW the drawing instead — the reference's own
- * pattern ("a caption block plus a short readout strip pinned directly under the drawing", not labels
- * drawn inside the technical drawing itself). Each schematic component (`AutomationSchematic` /
- * `AoiSchematic` / `IotSchematic`) is now purely the wireframe; this component owns the strip.
+ * WS3-T2 — this is where `animate` (the ONE gate every schematic's motion respects: real plan in hand,
+ * fleet actually running, and the operator hasn't asked for reduced motion) is computed ONCE and
+ * handed to whichever `*Schematic` renders, rather than each one re-deriving it. `prefers-reduced-motion`
+ * is read here (not deeper) because this is also where the caption strip needs to know it: a reduced-
+ * motion panel still shows the SAME live numbers, just without the head/carriage/camera actually moving
+ * (design-doc §3.3).
  */
 export function SchematicPanel({
   deviceClass,
   isRunning,
   cycles,
+  plan,
   aoiProductName,
   aoiPoints,
   aoiUnlocatedDefects,
@@ -58,6 +63,10 @@ export function SchematicPanel({
 }: SchematicPanelProps) {
   const t = useT()
   const gloss = useGloss()
+  const reducedMotion = usePrefersReducedMotion()
+
+  const hasPlanSteps = !!plan && plan.steps.length > 0
+  const animate = isRunning && hasPlanSteps && !reducedMotion
 
   return (
     <Sheet
@@ -88,17 +97,18 @@ export function SchematicPanel({
       */}
       <div className="hmi-graph-paper flex min-h-0 flex-1 items-center justify-center p-3">
         {deviceClass === "Automation" ? (
-          <AutomationSchematic isRunning={isRunning} className="h-full w-full" />
+          <AutomationSchematic plan={plan} animate={animate} className="h-full w-full" />
         ) : deviceClass === "AoiAvi" ? (
-          <AoiSchematic isRunning={isRunning} points={aoiPoints} className="h-full w-full" />
+          <AoiSchematic plan={plan} animate={animate} points={aoiPoints} className="h-full w-full" />
         ) : (
-          <IotSchematic isRunning={isRunning} className="h-full w-full" />
+          <IotSchematic plan={plan} animate={animate} className="h-full w-full" />
         )}
       </div>
 
       <SchematicCaptionStrip
         deviceClass={deviceClass}
         cycles={cycles}
+        plan={plan}
         aoiProductName={aoiProductName}
         aoiPointsCount={aoiPoints.length}
         aoiUnlocatedDefects={aoiUnlocatedDefects ?? 0}
@@ -111,6 +121,7 @@ export function SchematicPanel({
 interface SchematicCaptionStripProps {
   deviceClass: DeviceClass
   cycles: number
+  plan: CyclePlan | null | undefined
   aoiProductName?: string | null
   aoiPointsCount: number
   aoiUnlocatedDefects: number
@@ -125,6 +136,7 @@ interface SchematicCaptionStripProps {
 function SchematicCaptionStrip({
   deviceClass,
   cycles,
+  plan,
   aoiProductName,
   aoiPointsCount,
   aoiUnlocatedDefects,
@@ -133,7 +145,13 @@ function SchematicCaptionStrip({
   const t = useT()
 
   if (deviceClass === "Automation") {
-    const remaining = feederRemaining(cycles, FEEDER_CAPACITY)
+    // WS3-T2 — "feeder counts down by real steps" (design-doc §3.3): a completed cycle consumes its
+    // OWN real fastening-step count (`plan.steps.length`) rather than the pre-WS3-T2 flat 1-per-cycle
+    // assumption. `plan` is only ever non-null while THIS cycle is running, so the fallback constant
+    // (mirroring the engine's own fixed `FasteningPositionsPerCycle`) keeps the number continuous
+    // across running/idle transitions instead of jumping when the plan disappears mid-poll.
+    const stepsPerCycle = plan?.steps.length ?? FASTENING_STEPS_PER_CYCLE_FALLBACK
+    const remaining = feederRemaining(cycles, FEEDER_CAPACITY, stepsPerCycle)
     return (
       <div className="hmi-schematic-caption hmi-feeder-live flex h-9 shrink-0 items-center justify-between gap-3 border-t border-border px-3">
         <span className="hmi-micro truncate">{t("hmi.schematic.feeder")}</span>
@@ -148,12 +166,26 @@ function SchematicCaptionStrip({
 
   if (deviceClass === "AoiAvi") {
     const hasProduct = aoiPointsCount > 0
-    const primary = hasProduct
-      ? `${aoiProductName ?? "—"} · ${t("hmi.schematic.pointsSynced", { count: aoiPointsCount })} · ${t("hmi.schematic.aggregateDefects", { count: aoiUnlocatedDefects })}`
-      : t("hmi.schematic.noProduct")
+    // WS3-T2 — once a real plan is in hand, its own steps are a MORE honest source than the machine-
+    // wide `aoiUnlocatedDefects` aggregate (I-1's old workaround): the caption now states the exact
+    // per-point NG count/total the drawing itself is lighting, not a disclaimer that it can't say
+    // which dot is which — because now it genuinely can.
+    const hasLivePlan = !!plan && plan.steps.length > 0
+    let primary: string
+    let disclosureTitle: string | undefined
+    if (hasLivePlan) {
+      const ngCount = plan!.steps.filter((s) => s.result === "NG").length
+      primary = `${aoiProductName ?? "—"} · ${t("hmi.schematic.livePointResults", { ng: ngCount, total: plan!.steps.length })}`
+      disclosureTitle = t("hmi.schematic.livePointDisclosure")
+    } else if (hasProduct) {
+      primary = `${aoiProductName ?? "—"} · ${t("hmi.schematic.pointsSynced", { count: aoiPointsCount })} · ${t("hmi.schematic.aggregateDefects", { count: aoiUnlocatedDefects })}`
+      disclosureTitle = t("hmi.schematic.aggregateDisclosure")
+    } else {
+      primary = t("hmi.schematic.noProduct")
+    }
     return (
       <div className="hmi-schematic-caption hmi-aoi-caption flex h-9 shrink-0 items-center border-t border-border px-3">
-        <span className="truncate font-mono text-[12px] text-text-body" title={hasProduct ? t("hmi.schematic.aggregateDisclosure") : undefined}>
+        <span className="truncate font-mono text-[12px] text-text-body" title={disclosureTitle}>
           {primary}
         </span>
       </div>

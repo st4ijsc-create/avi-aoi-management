@@ -168,6 +168,34 @@ export interface CycleLogRow {
   keyMetric: string
 }
 
+/**
+ * WS3-T1/WS3-T2 (docs/PRODUCTION_UI_DESIGN.md §3.2) — one ordered step within a single cycle's
+ * `CyclePlan`, mirroring `St4i.EdgeCore.Models.CyclePlanStep` exactly. `result` is `"OK"`/`"NG"` for a
+ * class with a pass/fail concept (AOI/SCREWDRIVE) or `null` for one without (IOT_SENSOR telemetry —
+ * mirrors `Verdict.Skip`'s own convention). The living twin (`cycleTwin.ts`) is the sole consumer of
+ * `normalizedX/Y` — never fabricated, always the SAME real point/target the engine's own simulator
+ * drew this step's `result`/`metricValue` from.
+ */
+export interface CyclePlanStep {
+  index: number
+  pointCode: string
+  normalizedX: number
+  normalizedY: number
+  result: "OK" | "NG" | null
+  metricValue: number | null
+  unit: string | null
+}
+
+/** WS3-T1/WS3-T2 — the ordered list of steps ONE cycle visits, plus the wall-clock start and real
+ * cadence a web twin paces its OWN local `requestAnimationFrame` interpolation against (`cycleTwin.ts`)
+ * — no per-frame socket traffic needed. Mirrors `St4i.EdgeCore.Models.CyclePlan`. */
+export interface CyclePlan {
+  cycleCounter: number
+  startedAt: string
+  durationSeconds: number
+  steps: CyclePlanStep[]
+}
+
 export interface MachineDetail {
   code: string
   /** Named `class` on the wire (`MachineDetailDto.Class`) — same `DeviceClass` enum as the fleet tile. */
@@ -182,6 +210,10 @@ export interface MachineDetail {
   cycleLog: CycleLogRow[]
   /** Human-readable outcome of the last `sync-config` call this session — "—" until one has run. */
   driftState: string
+  /** WS3-T1 — the latest cycle's living-twin plan, or `null` whenever the fleet isn't running ("idle
+   * machine = no active plan", `MachineState.ToDetail`'s own gate) or this machine's simulator doesn't
+   * wire one (WELDER/DISPENSING/ASSEMBLY/LEAK_TEST/FUNCTIONAL_TEST — out of WS3's scope). */
+  plan: CyclePlan | null
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -1342,6 +1342,10 @@ export const en: Dictionary = {
       aggregateDefects: (vars: Vars) => `${vars.count} defects (aggregate)`,
       aggregateDisclosure: "Positions: real product config · Defect count: machine-wide aggregate, not assigned to any single position",
       configuredPosition: (vars: Vars) => `${vars.code} — configured position (not a measurement result)`,
+      livePointResults: (vars: Vars) => `${vars.ng}/${vars.total} points NG — matched to the real measured position`,
+      livePointDisclosure:
+        "Position and result both come straight from the real inspection cycle — each point lights by its own result, no longer an aggregate.",
+      measuredResult: (vars: Vars) => `${vars.code} — ${vars.result}`,
     },
 
     readoutPanel: {

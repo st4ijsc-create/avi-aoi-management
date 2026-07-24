@@ -62,8 +62,15 @@ export function currentShiftNumber(date: Date): 1 | 2 | 3 {
 
 /** Remaining-screw feeder count for the automation schematic — the engine tracks no feeder-inventory
  * field, so this is a deterministic, purely-decorative countdown derived from the real cycle counter
- * against an assumed feeder capacity, cycling back to full every `capacity` cycles. */
-export function feederRemaining(cycles: number, capacity = 50): number {
-  const used = cycles % capacity
+ * against an assumed feeder capacity, cycling back to full every `capacity` cycles.
+ *
+ * WS3-T2 — `stepsPerCycle` (default 1, the pre-WS3-T2 assumption) now lets a caller pass the REAL
+ * number of fastening steps a completed cycle actually consumed (`CyclePlan.Steps.Length`, or the
+ * engine's own fixed `FasteningPositionsPerCycle` constant as a fallback while idle/no plan is in
+ * hand) — "feeder counts down by real steps" (design-doc §3.3), not a made-up 1-per-cycle cadence.
+ * Kept as an explicit parameter (not hardcoded here) so this function stays a pure derivation with no
+ * hidden per-machine-class knowledge. */
+export function feederRemaining(cycles: number, capacity = 50, stepsPerCycle = 1): number {
+  const used = (cycles * stepsPerCycle) % capacity
   return capacity - used
 }
