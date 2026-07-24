@@ -93,3 +93,36 @@ internal sealed record SyncPointImageWire(string ProductModelCode, string PointC
 internal sealed record AckRequestWire(string ConfigKind, string? MachineCode, string? Code, int? Version, string? Checksum);
 
 internal sealed record AckResponseWire(bool Success, long? MachineId, string? ConfigKind, string? DriftState);
+
+// ── POST /api/machine/config-sync/report-settings request/response (Task 7 — machine operating-config
+// report-up, docs/MACHINE_CONFIG_DESIGN.md §6, mirrors server/routers/machineApiRouters.ts's
+// `reportSettings` input/output 1:1). Field names match the server's zod input exactly (camelCase via
+// LiveConfigSyncBackend.RequestOptions); `apiKey`/`machineCode` are NOT sent in the body — auth goes out
+// via the X-API-Key/Bearer headers ApplyAuth already attaches (same as every other Live call), and the
+// Express proxy layer (server/_core/index.ts) reads the header itself before ever constructing the tRPC
+// input, so a body-less machineCode still satisfies the procedure's own `apiKey || machineCode` refine
+// once the header is present. `machineCode` IS still sent (some deployments may proxy this endpoint
+// without extracting the header) — see ReportSettingsWire.MachineCode.
+internal sealed record ReportSettingsWire(
+    string ConfigKind,
+    string? MachineCode,
+    string? ProductModelCode,
+    string? BaselineVersion,
+    IReadOnlyDictionary<string, ReportAdjustmentWire>? Adjustments,
+    IReadOnlyList<ReportEffectiveWire>? Effective,
+    string? Checksum,
+    string? ReportedBy);
+
+internal sealed record ReportAdjustmentWire(double Value, string? By, string? At, string? Note);
+
+internal sealed record ReportEffectiveWire(string Key, double Value, string? Source, double? BaselineValue);
+
+internal sealed record ReportSettingsResponseWire(
+    bool Success,
+    long? Id,
+    long? MachineId,
+    string? ConfigKind,
+    string? Scope,
+    long? ProductModelId,
+    string? Checksum,
+    DateTimeOffset? ReportedAt);

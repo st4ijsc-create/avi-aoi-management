@@ -421,6 +421,108 @@ public sealed class LiveConfigSyncTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Task 7 — ReportSettingsAsync (machine operating-config report-up).
+    // ─────────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task ReportSettingsAsync_posts_exact_shape_with_contract_casing_and_auth_header()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, _) => (HttpStatusCode.OK, """
+                {"success":true,"id":1,"machineId":247,"configKind":"screw_program","scope":"machine",
+                 "productModelId":null,"checksum":"abc123","reportedAt":"2026-07-24T10:00:00Z"}
+                """),
+        };
+        using var backend = Backend(h, mkKey: "mk_test", machineCode: "SCRW-SIM-01");
+
+        var def = new ParameterDef("torqueTarget", "Mô-men xiết", "Torque", "Nm", ParameterValueKind.Number, 0.1, 20, 0.01, 2, "screw_program", 1.35);
+        var adjustments = new Dictionary<string, ParameterAdjustment>
+        {
+            ["torqueTarget"] = new() { Value = 1.42, By = "tech1", At = new DateTimeOffset(2026, 7, 24, 9, 0, 0, TimeSpan.Zero), Note = "recalibrated" },
+        };
+        var effective = new List<EffectiveParameter>
+        {
+            new(def, 1.42, ConfigProvenance.Machine, 1.35, adjustments["torqueTarget"], null),
+        };
+        var request = new MachineSettingsReportRequestDto("screw_program", null, 1, adjustments, effective, "checksum-xyz", "tech1");
+
+        var result = await backend.ReportSettingsAsync(request, default);
+
+        Assert.Equal(HttpMethod.Post, h.LastRequest!.Method);
+        Assert.Equal("http://synapse.local/api/machine/config-sync/report-settings", h.LastRequest.RequestUri!.ToString());
+        Assert.Equal("mk_test", h.LastRequest.Headers.GetValues("X-API-Key").Single());
+
+        var body = h.LastBody!;
+        Assert.Contains("\"configKind\":\"screw_program\"", body);
+        Assert.Contains("\"machineCode\":\"SCRW-SIM-01\"", body);
+        Assert.Contains("\"baselineVersion\":\"1\"", body);
+        Assert.Contains("\"torqueTarget\":{\"value\":1.42,\"by\":\"tech1\"", body);
+        Assert.Contains("\"note\":\"recalibrated\"", body);
+        Assert.Contains("\"key\":\"torqueTarget\"", body);
+        Assert.Contains("\"source\":\"machine\"", body);
+        Assert.Contains("\"baselineValue\":1.35", body);
+        Assert.Contains("\"checksum\":\"checksum-xyz\"", body);
+        // productModelCode omitted entirely for a machine-scoped report — never sent as an explicit null.
+        Assert.DoesNotContain("productModelCode", body);
+
+        Assert.True(result.Attempted);
+        Assert.True(result.Success);
+        Assert.Equal("Live", result.BackendName);
+        Assert.Contains("id=1", result.Message);
+        Assert.Contains("scope=machine", result.Message);
+    }
+
+    [Fact]
+    public async Task ReportSettingsAsync_sends_productModelCode_for_a_product_scoped_report()
+    {
+        var h = new CapturingHandler { Responder = (_, _) => (HttpStatusCode.OK, """{"success":true,"id":2,"scope":"machine_product"}""") };
+        using var backend = Backend(h, mkKey: "mk_test", machineCode: "AOI-01");
+
+        var request = new MachineSettingsReportRequestDto(
+            "aoi_inspection", "MODEL-B", 3, new Dictionary<string, ParameterAdjustment>(), Array.Empty<EffectiveParameter>(), "chk", null);
+
+        await backend.ReportSettingsAsync(request, default);
+
+        Assert.Contains("\"productModelCode\":\"MODEL-B\"", h.LastBody!);
+    }
+
+    [Fact]
+    public async Task ReportSettingsAsync_with_HTTP_500_flag_off_returns_honest_failure_not_fake_success()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, _) => (HttpStatusCode.InternalServerError, """
+                {"success":false,"retryable":false,"message":"Machine operating-config report is disabled on this server (MACHINE_OPERATING_CONFIG_REPORT_ENABLED)."}
+                """),
+        };
+        using var backend = Backend(h, mkKey: "mk_test", machineCode: "SCRW-SIM-01");
+        var request = new MachineSettingsReportRequestDto("screw_program", null, 1, new Dictionary<string, ParameterAdjustment>(), Array.Empty<EffectiveParameter>(), "chk", null);
+
+        var result = await backend.ReportSettingsAsync(request, default);
+
+        Assert.True(result.Attempted); // it DID try — this is a real server response, not a client-side skip
+        Assert.False(result.Success);
+        Assert.Contains("MACHINE_OPERATING_CONFIG_REPORT_ENABLED", result.Message);
+    }
+
+    [Fact]
+    public async Task ReportSettingsAsync_with_no_mkKey_returns_friendly_not_configured_result_not_throw()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, _) => throw new InvalidOperationException("handler must never be reached — not configured"),
+        };
+        var backend = LiveConfigSyncBackend.ForMachine("http://synapse.local", mkKey: null, machineCode: "SCRW-SIM-01", verifyTls: true, handler: h);
+        var request = new MachineSettingsReportRequestDto("screw_program", null, 1, new Dictionary<string, ParameterAdjustment>(), Array.Empty<EffectiveParameter>(), "chk", null);
+
+        var result = await backend.ReportSettingsAsync(request, default);
+
+        Assert.False(result.Attempted);
+        Assert.False(result.Success);
+        Assert.Null(h.LastRequest);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // ConfigSyncCoordinator — Task C3's "wire backend selection by mode".
     // ─────────────────────────────────────────────────────────────────────
     [Fact]

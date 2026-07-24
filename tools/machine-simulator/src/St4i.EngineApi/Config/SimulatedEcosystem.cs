@@ -381,6 +381,19 @@ public sealed class SimulatedEcosystem : IConfigSyncBackend
     public Task<AckResultDto> AckAsync(string configKind, string? code, int? version, string? checksum, CancellationToken ct) =>
         Task.FromResult(new AckResultDto(true, "demo-machine", configKind, "unknown"));
 
+    /// <summary>Task 7 — Demo's machine operating-configuration push is a friendly LOCAL-ONLY no-op:
+    /// <c>MachineConfigStore.RecordPush</c> (the caller, <see cref="Endpoints.MachineSettingsEndpoints.PushSettingsAsync"/>)
+    /// already recorded the report in the machine's own local history before this is ever called — Demo
+    /// mode never puts anything on the wire, by design (offline integrity). <see cref="MachineSettingsReportResultDto.Attempted"/>
+    /// is false specifically to make that honest at the call site: nothing was sent anywhere, not "sent
+    /// and succeeded".</summary>
+    public Task<MachineSettingsReportResultDto> ReportSettingsAsync(MachineSettingsReportRequestDto request, CancellationToken ct) =>
+        Task.FromResult(new MachineSettingsReportResultDto(
+            Attempted: false,
+            Success: true,
+            BackendName: Name,
+            Message: "Demo — đã ghi vào lịch sử cục bộ, không gửi ra máy chủ (recorded locally only, no network in Demo mode)."));
+
     // ─────────────────────────────────────────────────────────────────────
     // Merge helpers — governed/lock-aware application of an incoming SyncPointDto onto a stored point.
     // ─────────────────────────────────────────────────────────────────────

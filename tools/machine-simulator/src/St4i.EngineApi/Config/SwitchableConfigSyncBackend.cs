@@ -75,4 +75,7 @@ public sealed class SwitchableConfigSyncBackend : IConfigSyncBackend
 
     public Task<AckResultDto> AckAsync(string configKind, string? code, int? version, string? checksum, CancellationToken ct) =>
         Inner.AckAsync(configKind, code, version, checksum, ct);
+
+    public Task<MachineSettingsReportResultDto> ReportSettingsAsync(MachineSettingsReportRequestDto request, CancellationToken ct) =>
+        Inner.ReportSettingsAsync(request, ct);
 }

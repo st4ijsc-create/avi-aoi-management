@@ -600,6 +600,9 @@ public sealed class ConfigSyncEngineTests
             Acks.Add((configKind, code, version, checksum));
             return _inner.AckAsync(configKind, code, version, checksum, ct);
         }
+
+        public Task<MachineSettingsReportResultDto> ReportSettingsAsync(MachineSettingsReportRequestDto request, CancellationToken ct) =>
+            _inner.ReportSettingsAsync(request, ct);
     }
 
     // ─────────────────────────────────────────────────────────────────────

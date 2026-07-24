@@ -67,4 +67,23 @@ public interface IConfigSyncBackend
     /// drift-shadow to write locally); <see cref="LiveConfigSyncBackend"/> POSTs it for real, "friendly,
     /// never throws" like every other Live read/report call.</summary>
     Task<AckResultDto> AckAsync(string configKind, string? code, int? version, string? checksum, CancellationToken ct);
+
+    /// <summary>
+    /// Task 7 (docs/plans/2026-07-21-machine-config.md) — reports THIS machine's ACTUAL operating
+    /// configuration (the machine operating-configuration feature, docs/MACHINE_CONFIG_DESIGN.md §2:
+    /// torque/speed/exposure/etc, distinct from the product/points config above) to the ecosystem.
+    /// NEVER overwrites the baseline recommendation — "Đẩy lên server = báo cáo cấu hình THỰC TẾ của máy
+    /// này, KHÔNG phải ghi đè baseline chung".
+    ///
+    /// <see cref="SimulatedEcosystem"/> (Demo) is a friendly LOCAL-ONLY no-op success — Demo push is
+    /// already fully handled by <c>MachineConfigStore.RecordPush</c> before this is ever called (no
+    /// network in Demo mode, ever); <see cref="LiveConfigSyncBackend"/> (Live) POSTs it for real to
+    /// <c>/api/machine/config-sync/report-settings</c>, gated server-side by
+    /// <c>MACHINE_OPERATING_CONFIG_REPORT_ENABLED</c>. "Friendly, never throws" like every other Live
+    /// report/ack call: not-configured, network-unreachable, the flag-off state, and any other non-2xx
+    /// all collapse to <see cref="MachineSettingsReportResultDto.Success"/> == false with an honest
+    /// human-readable <see cref="MachineSettingsReportResultDto.Message"/> — never a fake success, per
+    /// the design's explicit honesty requirement for a disabled server.
+    /// </summary>
+    Task<MachineSettingsReportResultDto> ReportSettingsAsync(MachineSettingsReportRequestDto request, CancellationToken ct);
 }

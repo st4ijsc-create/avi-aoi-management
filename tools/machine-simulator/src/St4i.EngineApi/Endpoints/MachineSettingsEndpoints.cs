@@ -161,7 +161,7 @@ public static class MachineSettingsEndpoints
     // POST /v1/machines/{code}/settings/pull
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PullSettingsAsync(
-        HttpContext context, string code, FleetHost fleetHost, MachineConfigStore store, CancellationToken ct)
+        HttpContext context, string code, FleetHost fleetHost, MachineConfigStore store, IConfigSyncBackend backend, CancellationToken ct)
     {
         var machine = FindMachine(fleetHost, code);
         if (machine is null) return ApiNotFound($"machine \"{code}\" not found");
@@ -174,12 +174,13 @@ public static class MachineSettingsEndpoints
 
         try
         {
-            // Task 1/6/7: no live server call yet — PullBaseline with newValues:null re-derives the
-            // baseline from the schema's own defaults (idempotent "refresh the recommendation"). A later
-            // task threads real server-fetched values through here without changing this endpoint's
-            // shape.
-            var updated = store.PullBaseline(machine.Code, configKind, newValues: null, by: body?.By);
-            return Json(BuildResponse(machine, configKind, updated, body?.Product, store));
+            // Task 7 — asks the CURRENTLY-ACTIVE backend (Demo's SimulatedEcosystem or Live's real
+            // server, whichever ConfigSyncCoordinator/SwitchableConfigSyncBackend currently points at)
+            // for a recommendation via the SAME config-sync/check+get pull already used for
+            // recipe/device_settings sync — never a fabricated success, see TryFetchServerBaselineAsync.
+            var (newValues, source) = await TryFetchServerBaselineAsync(backend, machine, configKind, ct).ConfigureAwait(false);
+            var updated = store.PullBaseline(machine.Code, configKind, newValues, by: body?.By);
+            return Json(BuildResponse(machine, configKind, updated, body?.Product, store, baselineSource: source));
         }
         catch (InvalidOperationException ex)
         {
@@ -187,11 +188,86 @@ public static class MachineSettingsEndpoints
         }
     }
 
+    /// <summary>Task 7 — the honest "where did this baseline come from" resolution: asks <paramref
+    /// name="backend"/> (Demo or Live, whichever is currently active) for a recipe/device_settings via
+    /// the SAME <see cref="IConfigSyncBackend.CheckRecipeAsync"/>/<see cref="IConfigSyncBackend.GetRecipeAsync"/>
+    /// pair the general config-sync flow already uses (<see cref="ConfigSyncEngine.PullAsync"/>), then
+    /// strips the payload down to only the numeric fields this machine's operating-configuration schema
+    /// actually knows about (an unrecognized field — e.g. a recipe's <c>notes</c>/<c>torqueUnit</c> — is
+    /// silently ignored, never a failure). Returns <c>(null, "...")</c> whenever nothing usable resolved
+    /// (backend not configured, server has no recipe assigned, the flag-off friendly-empty state, or a
+    /// resolved payload with zero matching keys) — <see cref="MachineConfigStore.PullBaseline"/> then
+    /// falls back to the schema's own defaults exactly as it always has, never a fabricated value.</summary>
+    private static async Task<(IReadOnlyDictionary<string, double>? Values, string Source)> TryFetchServerBaselineAsync(
+        IConfigSyncBackend backend, MachineDescriptor machine, string configKind, CancellationToken ct)
+    {
+        var wireKind = ResolveWireConfigKind(machine.DeviceClass);
+        var check = await backend.CheckRecipeAsync(null, machine.MachineType, wireKind, ct).ConfigureAwait(false);
+        if (!check.Success || check.Code is null)
+        {
+            return (null, $"{backend.Name}: không có khuyến nghị từ máy chủ cho loại máy \"{machine.MachineType}\" — dùng mặc định của schema (no server recommendation, schema defaults).");
+        }
+
+        var recipe = await backend.GetRecipeAsync(check.Code, wireKind, ct).ConfigureAwait(false);
+        var numeric = ExtractNumericPayload(recipe?.Payload, MachineParameterSchema.ParametersFor(configKind));
+        if (numeric is null)
+        {
+            return (null, $"{backend.Name}: tìm thấy \"{check.Code}\" v{check.Version} nhưng không có trường nào khớp — dùng mặc định của schema (no matching parameter fields, schema defaults).");
+        }
+
+        return (numeric, $"{backend.Name}: khuyến nghị từ \"{check.Code}\" v{check.Version} trên máy chủ (server recipe, resolvedBy={check.ResolvedBy}).");
+    }
+
+    /// <summary>The contract's own <c>recipe</c>/<c>device_settings</c> distinction (System A) — same
+    /// mapping <see cref="ConfigSyncEngine"/>'s own (private) <c>ResolveConfigKind</c> uses for the
+    /// existing product/points config-sync flow, duplicated here (2 lines) rather than exposed publicly
+    /// from that class purely for this one caller.</summary>
+    private static string ResolveWireConfigKind(DeviceClass deviceClass) => deviceClass switch
+    {
+        DeviceClass.Iot => "device_settings",
+        _ => "recipe",
+    };
+
+    /// <summary>Strips an ecosystem recipe payload down to just the numeric fields this <paramref
+    /// name="schema"/> defines (docs/MACHINE_CONFIG_DESIGN.md's established "trường lạ STRIP" convention
+    /// — an unknown/non-numeric field is dropped, never rejected). Returns null (not an empty dictionary)
+    /// when nothing matched, so the caller's "did we get anything usable" check is a single null test.</summary>
+    private static IReadOnlyDictionary<string, double>? ExtractNumericPayload(
+        IReadOnlyDictionary<string, object?>? payload, IReadOnlyList<ParameterDef> schema)
+    {
+        if (payload is null || payload.Count == 0) return null;
+
+        var result = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var def in schema)
+        {
+            if (payload.TryGetValue(def.Key, out var raw) && TryToDouble(raw, out var value))
+            {
+                result[def.Key] = value;
+            }
+        }
+
+        return result.Count > 0 ? result : null;
+    }
+
+    private static bool TryToDouble(object? raw, out double value)
+    {
+        switch (raw)
+        {
+            case double d: value = d; return true;
+            case float f: value = f; return true;
+            case long l: value = l; return true;
+            case int i: value = i; return true;
+            case decimal m: value = (double)m; return true;
+            case JsonElement je when je.ValueKind == JsonValueKind.Number: value = je.GetDouble(); return true;
+            default: value = 0; return false;
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // POST /v1/machines/{code}/settings/push
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PushSettingsAsync(
-        HttpContext context, string code, FleetHost fleetHost, MachineConfigStore store, CancellationToken ct)
+        HttpContext context, string code, FleetHost fleetHost, MachineConfigStore store, IConfigSyncBackend backend, CancellationToken ct)
     {
         var machine = FindMachine(fleetHost, code);
         if (machine is null) return ApiNotFound($"machine \"{code}\" not found");
@@ -211,17 +287,42 @@ public static class MachineSettingsEndpoints
 
             // Reporting only — RecordPush never touches Baseline/MachineAdjustments/ProductAdjustments
             // (see MachineConfigStore.RecordPush's own doc comment); cfg.Baseline.Version below is read
-            // BEFORE this call anyway, so a test can assert it is unchanged across the push.
+            // BEFORE this call anyway, so a test can assert it is unchanged across the push. This LOCAL
+            // mirror always happens, in every mode — Demo's ENTIRE push is this line, nothing else.
             store.RecordPush(machine.Code, effective.ProductCode, body?.By, message);
 
+            // Task 7 — ALSO report to the currently-active backend (SwitchableConfigSyncBackend picks
+            // Demo/SimulatedEcosystem or Live/LiveConfigSyncBackend by the app's transport mode). The
+            // adjustments sent are scoped to exactly what was resolved above — the one product's map when
+            // this push is product-scoped, the machine-wide map otherwise — matching the server's own
+            // single "adjustments at this scope" field (see MachineSettingsReportRequestDto's doc
+            // comment). Never throws (every IConfigSyncBackend implementation is "friendly" here); a
+            // failed/not-configured/flag-off Live report does not fail the push overall — the local
+            // mirror above already succeeded — it is surfaced honestly via LiveReport instead.
+            var scopedAdjustments = ResolveScopedAdjustments(cfg, effective.ProductCode);
+            var report = await backend.ReportSettingsAsync(
+                new MachineSettingsReportRequestDto(configKind, effective.ProductCode, cfg.Baseline.Version, scopedAdjustments, effective.Parameters, checksum, body?.By),
+                ct).ConfigureAwait(false);
+
             return Json(new MachineSettingsPushResultDto(
-                machine.Code, configKind, effective.ProductCode, effective.Parameters, checksum, cfg.Baseline.Version, message));
+                machine.Code, configKind, effective.ProductCode, effective.Parameters, checksum, cfg.Baseline.Version, message, report));
         }
         catch (KeyNotFoundException ex)
         {
             return ApiNotFound(ex.Message);
         }
     }
+
+    /// <summary>The adjustments map at exactly the scope <paramref name="productCode"/> resolved to —
+    /// <see cref="MachineOperatingConfig.ProductAdjustments"/>[productCode] when this push is
+    /// product-scoped, <see cref="MachineOperatingConfig.MachineAdjustments"/> otherwise. Never both
+    /// combined — see <see cref="MachineSettingsReportRequestDto"/>'s doc comment.</summary>
+    private static IReadOnlyDictionary<string, ParameterAdjustment> ResolveScopedAdjustments(MachineOperatingConfig cfg, string? productCode) =>
+        productCode is not null && cfg.ProductAdjustments.TryGetValue(productCode, out var byKey)
+            ? byKey
+            : productCode is not null
+                ? new Dictionary<string, ParameterAdjustment>()
+                : cfg.MachineAdjustments;
 
     private static string BuildPushMessage(EffectiveConfig effective, string checksum)
     {
@@ -244,7 +345,8 @@ public static class MachineSettingsEndpoints
     // ─────────────────────────────────────────────────────────────────────
 
     private static MachineSettingsResponseDto BuildResponse(
-        MachineDescriptor machine, string configKind, MachineOperatingConfig cfg, string? productCode, MachineConfigStore store)
+        MachineDescriptor machine, string configKind, MachineOperatingConfig cfg, string? productCode, MachineConfigStore store,
+        string? baselineSource = null)
     {
         var supportsProduct = MachineParameterSchema.SupportsProductScope(configKind);
         var scopedProduct = supportsProduct ? productCode : null;
@@ -271,7 +373,8 @@ public static class MachineSettingsEndpoints
             productAdjustments,
             effective.Parameters,
             store.ComputeAdjustmentsChecksum(machine.Code),
-            driftedKeys);
+            driftedKeys,
+            baselineSource);
     }
 
     private static MachineDescriptor? FindMachine(FleetHost fleetHost, string code) =>

@@ -403,6 +403,90 @@ public sealed class LiveConfigSyncBackend : IConfigSyncBackend, IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Task 7 — machine operating-configuration report-up (docs/MACHINE_CONFIG_DESIGN.md §6).
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>Real POST of <c>/api/machine/config-sync/report-settings</c>. "Friendly, never throws"
+    /// like the rest of this class: not-configured and every non-2xx status (including the server's
+    /// <c>MACHINE_OPERATING_CONFIG_REPORT_ENABLED</c> flag-off 500 — see
+    /// <c>server/services/machineOperatingConfigService.ts</c>'s header comment) collapse to
+    /// <see cref="MachineSettingsReportResultDto.Success"/> == false with an honest message built from
+    /// the server's own response body via <see cref="FriendlyHttpError"/> — no special-casing needed for
+    /// the flag-off 500 specifically (unlike <see cref="CheckRecipeAsync"/>/<see cref="GetRecipeAsync"/>,
+    /// which have no message field to carry the distinction), the generic error path already surfaces the
+    /// server's real "...report is disabled..." text.</summary>
+    public async Task<MachineSettingsReportResultDto> ReportSettingsAsync(MachineSettingsReportRequestDto request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!IsConfigured)
+        {
+            return new MachineSettingsReportResultDto(
+                Attempted: false,
+                Success: false,
+                BackendName: Name,
+                Message: "Live chưa được cấu hình (thiếu serverUrl hoặc mk_ key) — not configured for Live.");
+        }
+
+        var reqBody = new ReportSettingsWire(
+            request.ConfigKind,
+            _machineCode,
+            request.ProductCode,
+            request.BaselineVersion.ToString(CultureInfo.InvariantCulture),
+            request.Adjustments.ToDictionary(
+                kv => kv.Key,
+                kv => new ReportAdjustmentWire(kv.Value.Value, kv.Value.By, kv.Value.At.ToString("O", CultureInfo.InvariantCulture), kv.Value.Note),
+                StringComparer.OrdinalIgnoreCase),
+            request.Effective
+                .Select(p => new ReportEffectiveWire(p.Def.Key, p.Value, ToWireSource(p.Source), p.BaselineValue))
+                .ToList(),
+            request.Checksum,
+            request.ReportedBy);
+
+        var url = _serverUrl + "/api/machine/config-sync/report-settings";
+        var (status, body) = await PostAsync(url, reqBody, ct).ConfigureAwait(false);
+
+        if (status == NetworkUnreachable)
+        {
+            return new MachineSettingsReportResultDto(
+                Attempted: true, Success: false, BackendName: Name,
+                Message: "Không kết nối được máy chủ (network unreachable) — báo cáo cấu hình chưa được gửi.");
+        }
+
+        if (!IsOk(status, body))
+        {
+            return new MachineSettingsReportResultDto(Attempted: true, Success: false, BackendName: Name, Message: FriendlyHttpError(status, body));
+        }
+
+        var parsed = Deserialize<ReportSettingsResponseWire>(body);
+        if (parsed is null || !parsed.Success)
+        {
+            return new MachineSettingsReportResultDto(
+                Attempted: true, Success: false, BackendName: Name,
+                Message: "Phản hồi server không hợp lệ (invalid report-settings response).");
+        }
+
+        return new MachineSettingsReportResultDto(
+            Attempted: true, Success: true, BackendName: Name,
+            Message: $"Đã báo cáo cấu hình lên server — id={parsed.Id}, scope={parsed.Scope}, checksum={ShortChecksum(parsed.Checksum)}.");
+    }
+
+    /// <summary><see cref="ConfigProvenance"/> already serializes with the contract's exact camelCase
+    /// wire vocabulary via its own <c>[JsonConverter(typeof(CamelEnumConverter))]</c> — this just spells
+    /// that same mapping explicitly for the request DTO's plain <c>string?</c> field (built once per
+    /// effective parameter, not worth round-tripping through a full JSON serialize/parse).</summary>
+    private static string? ToWireSource(ConfigProvenance source) => source switch
+    {
+        ConfigProvenance.Baseline => "baseline",
+        ConfigProvenance.Machine => "machine",
+        ConfigProvenance.MachineProduct => "machineProduct",
+        _ => null,
+    };
+
+    private static string ShortChecksum(string? checksum) =>
+        string.IsNullOrEmpty(checksum) ? "(none)" : checksum.Length > 12 ? checksum[..12] + "..." : checksum;
+
+    // ─────────────────────────────────────────────────────────────────────
     // HTTP plumbing.
     // ─────────────────────────────────────────────────────────────────────
 
