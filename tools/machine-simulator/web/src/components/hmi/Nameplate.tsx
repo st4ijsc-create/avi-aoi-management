@@ -8,7 +8,7 @@ import { useT } from "@/i18n"
 import type { DeviceClass, DriverKind } from "@/lib/api"
 import type { StreamConnectionState } from "@/lib/inspector"
 import { cn } from "@/lib/utils"
-import { ThemeToggle } from "@/theme/ThemeToggle"
+import { ThemeQuickSwitch } from "@/theme/ThemePicker"
 
 const CONNECTIVITY_KEY: Record<StreamConnectionState, string> = {
   open: "hmi.connectivity.online",
@@ -113,7 +113,7 @@ export function Nameplate({ code, deviceClass, driverKind, lampState, lampLabel,
 
         <div className="h-8 w-px bg-border" aria-hidden="true" />
 
-        <ThemeToggle />
+        <ThemeQuickSwitch />
       </div>
     </header>
   )

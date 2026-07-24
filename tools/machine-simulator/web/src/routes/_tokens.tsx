@@ -151,13 +151,21 @@ const statusSwatches: Swatch[] = [
 // Small building blocks local to this showcase
 // ---------------------------------------------------------------------------
 
+// WS1 — this standalone showcase manages its OWN local light/dark state, independent of the app's
+// 3-theme `ThemeProvider` (see `App.tsx`'s doc comment: "/tokens stays reachable standalone — it's
+// a living style reference, not a shell screen"). Its "dark" now maps onto the app's actual dark
+// world, Console (`@custom-variant dark` in index.css targets `[data-theme="console"]`) — otherwise
+// this page's own toggle would silently stop doing anything the moment WS1 landed, since nothing
+// matches a bare `data-theme="dark"` anymore. Still only a light/dark toggle here, not the full
+// 3-way picker (`theme/ThemePicker.tsx`) the real app shell uses — this page predates and is
+// intentionally decoupled from that system.
 function useThemeToggle() {
   const [theme, setTheme] = React.useState<"light" | "dark">(() =>
-    document.documentElement.dataset.theme === "dark" ? "dark" : "light"
+    document.documentElement.dataset.theme === "console" ? "dark" : "light"
   )
   React.useEffect(() => {
     if (theme === "dark") {
-      document.documentElement.setAttribute("data-theme", "dark")
+      document.documentElement.setAttribute("data-theme", "console")
     } else {
       document.documentElement.removeAttribute("data-theme")
     }

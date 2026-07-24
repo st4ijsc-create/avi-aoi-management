@@ -301,7 +301,9 @@ test.describe("Machine settings — HMI tab + machine detail panel", () => {
     await expect(row).toContainText(viDict.machineSettings.provenance.baseline)
   })
 
-  const THEMES: Theme[] = ["light", "dark"]
+  // WS1 — no pixel-baseline cost here (axe only), so run all 3 real themes rather than pinning to
+  // Glass, same reasoning as `12-hmi-safety-rail.spec.ts`'s own THEMES.
+  const THEMES: Theme[] = ["glass", "console", "warmth"]
   for (const theme of THEMES) {
     test(`a11y (axe, wcag2a/2aa/21aa) — HMI settings tab — ${theme}`, async ({ page }) => {
       await primeAppStorage(page, { theme })

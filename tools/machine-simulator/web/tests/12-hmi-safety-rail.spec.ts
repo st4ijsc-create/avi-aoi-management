@@ -113,7 +113,12 @@ test.describe("HMI safety rail — never scrolls, E-STOP never moves", () => {
     })
   }
 
-  const THEMES: Theme[] = ["light", "dark"]
+  // WS1 Global Constraints: "12-hmi-safety-rail.spec.ts phải xanh trên mọi theme" — this file has no
+  // pixel-baseline cost (pure DOM geometry/hit-testing assertions, no `toHaveScreenshot`), so unlike
+  // the visual suites it costs nothing to actually run across all 3 real themes right now instead of
+  // pinning to Glass — this is live evidence the E-STOP/RESET safety rail invariant genuinely holds
+  // under Console/Warmth's own layout-affecting tokens (radius, elevation), not just Glass's.
+  const THEMES: Theme[] = ["glass", "console", "warmth"]
   const VIEWPORTS = [
     { width: 1280, height: 800 },
     { width: 1600, height: 1000 },

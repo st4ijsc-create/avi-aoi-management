@@ -17,6 +17,7 @@ import {
 import { listCredentials, recordCredential, type CredentialRecord } from "@/lib/credentials"
 import { cn } from "@/lib/utils"
 import { fadeSlideUp } from "@/theme/motion"
+import { ThemeRadioGroup } from "@/theme/ThemePicker"
 import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -234,7 +235,17 @@ export default function Settings() {
           H3c fix as `Scenario.tsx`; the save bar below stays outside this wrapper so it's always
           reachable without scrolling past it. */}
       <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="flex flex-col gap-4">
+        <Sheet
+          title={t("settings.theme.title")}
+          titleEn={gloss("settings.theme.title")}
+          bodyClassName="flex flex-col gap-3"
+        >
+          <p className="text-sm text-text-muted">{t("settings.theme.appliesImmediately")}</p>
+          <ThemeRadioGroup />
+        </Sheet>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Sheet title={t("settings.connection.title")} titleEn={gloss("settings.connection.title")} bodyClassName="flex flex-col gap-4">
           <FormField
             label={t("settings.connection.serverUrlLabel")}
@@ -371,6 +382,7 @@ export default function Settings() {
             </Select>
           </FormField>
         </Sheet>
+        </div>
       </div>
       </div>
 

@@ -13,8 +13,10 @@ export const en: Dictionary = {
   },
 
   theme: {
-    toggleToLight: "Light mode",
-    toggleToDark: "Dark mode",
+    pickerAriaLabel: (vars: Vars) => `Choose theme — currently ${vars.current}`,
+    glass: { name: "Glass", description: "Light, premium" },
+    console: { name: "Console", description: "Dark, high-tech" },
+    warmth: { name: "Warmth", description: "Warm, industrial" },
   },
 
   shell: {
@@ -925,6 +927,11 @@ export const en: Dictionary = {
   settings: {
     title: "Settings",
     subtitle: "Connection, operating mode, machine auth, and language — wired to /v1/settings and /v1/mode.",
+    theme: {
+      title: "Theme",
+      radioGroupAria: "Choose theme",
+      appliesImmediately: "Applies immediately — no need to press Save.",
+    },
     connection: {
       title: "Server connection",
       // M-6 (branch-review) — this field used to be `<FormField label="Server URL" labelEn="SERVER

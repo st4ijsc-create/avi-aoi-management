@@ -9,10 +9,14 @@ import { useTheme } from "@/theme/ThemeToggle"
  * than sonner's stock look. */
 function Toaster({ ...props }: ToasterProps) {
   const { theme } = useTheme()
+  // sonner only understands its own "light"/"dark"/"system" — Console is this app's one dark
+  // ground, Glass/Warmth both light; colors are already fully overridden below via this app's own
+  // CSS custom properties regardless, so this only steers sonner's OWN built-in icon tinting.
+  const sonnerTheme = theme === "console" ? "dark" : "light"
 
   return (
     <Sonner
-      theme={theme}
+      theme={sonnerTheme}
       className="toaster group"
       position="bottom-right"
       richColors={false}

@@ -1,66 +1,80 @@
 import * as React from "react"
-import { Moon, Sun } from "lucide-react"
 
-import { useT } from "@/i18n"
-import { Button } from "@/components/ui/button"
+export type Theme = "glass" | "console" | "warmth"
 
-export type Theme = "light" | "dark"
+/** Draw order for anything that cycles/lists the 3 themes (topbar quick-switch, Settings
+ * radiogroup) — Glass first since it's the default. */
+export const THEMES: readonly Theme[] = ["glass", "console", "warmth"]
 
 const STORAGE_KEY = "st4i-sim-theme"
 
-function systemPrefersDark(): boolean {
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches
+function isTheme(value: string | null): value is Theme {
+  return value === "glass" || value === "console" || value === "warmth"
+}
+
+/** WS1 migrates the old 2-way light/dark storage value onto the 3-way theme it most resembles —
+ * light (the old default) → glass (the new default), dark → console (the new dark world; `dark:`
+ * utilities now target `[data-theme="console"]`, see index.css). Warmth has no old equivalent, so
+ * nothing ever migrates TO it — a user only lands there by picking it explicitly post-upgrade. */
+function migrateLegacyTheme(value: string | null): Theme | null {
+  if (value === "light") return "glass"
+  if (value === "dark") return "console"
+  return null
 }
 
 function readStoredTheme(): Theme | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw === "light" || raw === "dark" ? raw : null
+    if (isTheme(raw)) return raw
+    const migrated = migrateLegacyTheme(raw)
+    if (migrated) {
+      // Persist the migrated value immediately — otherwise every load would silently re-derive it
+      // from the stale "light"/"dark" string forever instead of actually completing the migration.
+      try {
+        localStorage.setItem(STORAGE_KEY, migrated)
+      } catch {
+        // Storage disabled — the in-memory value below still drives this session's UI.
+      }
+    }
+    return migrated
   } catch {
-    // Private-browsing/storage-disabled — fall through to OS preference.
+    // Private-browsing/storage-disabled — fall through to the default.
     return null
   }
 }
 
-/** OS preference first, falling back to a persisted explicit choice, falling back to light —
- * matches the brief's "respects OS default first" (an explicit toggle from here on always wins,
- * persisted, until the browser storage is cleared). */
+/** A persisted explicit choice (including one just migrated from the old light/dark value) wins;
+ * otherwise **Glass** (docs/PRODUCTION_UI_DESIGN.md: "Theme mặc định | Glass (sáng cao cấp)").
+ * Unlike the old 2-way toggle, this does NOT fall back to `prefers-color-scheme` — there's no
+ * sensible 3-way mapping from a binary OS preference, and the product decision is an explicit,
+ * always-Glass default rather than an inferred one. */
 function initialTheme(): Theme {
-  const stored = readStoredTheme()
-  if (stored) return stored
-  return systemPrefersDark() ? "dark" : "light"
+  return readStoredTheme() ?? "glass"
 }
 
 interface ThemeContextValue {
   theme: Theme
   setTheme: (theme: Theme) => void
-  toggleTheme: () => void
+  /** Advances to the next theme in `THEMES` order, wrapping — the topbar quick-switch's single
+   * click/keypress action (`ThemeQuickSwitch` in `theme/ThemePicker.tsx` uses a full 3-item menu
+   * instead, so this is here mainly for keyboard shortcuts / tests, kept from the old toggle's
+   * shape so any other future caller has a one-step "next theme" primitive). */
+  cycleTheme: () => void
 }
 
 const ThemeContext = React.createContext<ThemeContextValue | null>(null)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = React.useState<Theme>(initialTheme)
-  const explicitRef = React.useRef(readStoredTheme() !== null)
 
-  React.useEffect(() => {
-    const root = document.documentElement
-    if (theme === "dark") root.setAttribute("data-theme", "dark")
-    else root.removeAttribute("data-theme")
+  // `useLayoutEffect` (not `useEffect`) — runs synchronously before the browser paints, so a
+  // returning user's persisted Console/Warmth choice never flashes Glass (the bare `:root`
+  // default in index.css) for one frame first.
+  React.useLayoutEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme)
   }, [theme])
 
-  // Track the OS setting live only until the user makes an explicit choice from this app — once
-  // they've toggled, that choice is sticky (persisted) and no longer overridden by an OS-level flip.
-  React.useEffect(() => {
-    if (explicitRef.current) return
-    const mql = window.matchMedia("(prefers-color-scheme: dark)")
-    const onChange = (e: MediaQueryListEvent) => setThemeState(e.matches ? "dark" : "light")
-    mql.addEventListener("change", onChange)
-    return () => mql.removeEventListener("change", onChange)
-  }, [])
-
   const setTheme = React.useCallback((next: Theme) => {
-    explicitRef.current = true
     setThemeState(next)
     try {
       localStorage.setItem(STORAGE_KEY, next)
@@ -69,11 +83,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const toggleTheme = React.useCallback(() => {
-    setTheme(theme === "dark" ? "light" : "dark")
+  const cycleTheme = React.useCallback(() => {
+    setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length])
   }, [theme, setTheme])
 
-  const value = React.useMemo(() => ({ theme, setTheme, toggleTheme }), [theme, setTheme, toggleTheme])
+  const value = React.useMemo(() => ({ theme, setTheme, cycleTheme }), [theme, setTheme, cycleTheme])
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
@@ -81,25 +95,4 @@ export function useTheme(): ThemeContextValue {
   const ctx = React.useContext(ThemeContext)
   if (!ctx) throw new Error("useTheme must be used within <ThemeProvider>")
   return ctx
-}
-
-/** Icon-only toggle for the TopBar — same visual language as the `/tokens` reference showcase's own
- * toggle, wired to the shared, persisted `ThemeProvider` instead of page-local state. */
-export function ThemeToggle() {
-  const { theme, toggleTheme } = useTheme()
-  const t = useT()
-  const isDark = theme === "dark"
-
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon"
-      aria-pressed={isDark}
-      aria-label={isDark ? t("theme.toggleToLight") : t("theme.toggleToDark")}
-      onClick={toggleTheme}
-    >
-      {isDark ? <Sun className="size-3.5" aria-hidden="true" /> : <Moon className="size-3.5" aria-hidden="true" />}
-    </Button>
-  )
 }

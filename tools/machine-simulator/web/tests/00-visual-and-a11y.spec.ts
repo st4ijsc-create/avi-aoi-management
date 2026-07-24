@@ -20,7 +20,14 @@ import {
 import { primeAppStorage, type Theme } from "./support/theme"
 
 /**
- * Visual-regression + axe a11y baselines for all 7 screens, light + dark.
+ * Visual-regression + axe a11y baselines for all 14 screens.
+ *
+ * WS1-T1 (docs/plans/2026-07-24-theme-system.md) — pinned to Glass only (the new default theme)
+ * here: the old `["light", "dark"]` sweep no longer type-checks against the 3-theme `Theme` union,
+ * and WS1-T1's own scope is the token foundation + selector, not a full 3-theme visual baseline.
+ * WS1-T3 rebuilds this properly across a representative screen set × all 3 themes — see that task's
+ * plan entry. Every screen/mask/assertion below is unchanged; only the theme AXIS narrowed from 2
+ * values to 1.
  *
  * MUST run before any other spec file — file order matters here because `FleetHost` inside the
  * engine is a process-lifetime singleton (see `playwright.config.ts`'s top comment). Every screen
@@ -41,7 +48,7 @@ import { primeAppStorage, type Theme } from "./support/theme"
  */
 test.use({ viewport: { width: 1440, height: 1600 } })
 
-const THEMES: Theme[] = ["light", "dark"]
+const THEMES: Theme[] = ["glass"]
 
 interface ScreenCase {
   slug: string
@@ -154,8 +161,11 @@ const SCREENS: ScreenCase[] = [
   },
   {
     slug: "tokens",
-    // `/tokens` manages its own local theme toggle — see `gotoTokens`'s doc comment.
-    visit: async (page, theme) => gotoTokens(page, theme),
+    // `/tokens` manages its own local light/dark toggle (unrelated to the app's 3-way `Theme`) —
+    // see `gotoTokens`'s doc comment. Only ever called with "glass" today (see `THEMES` above), so
+    // this always resolves to "light" — the `=== "console"` mapping is there for WS1-T3, when this
+    // loop widens to all 3 themes and Console should show that page's own "dark" state.
+    visit: async (page, theme) => gotoTokens(page, theme === "console" ? "dark" : "light"),
     // H4 job 3 — `/tokens` alone needs a viewport TALL ENOUGH to cover its whole ~3240px of content
     // (3300 for margin), NOT `fullPage: true`. That route is a genuinely page-scrolling document (not
     // the app shell's `h-svh overflow-hidden` + inner-`<main>`-scrolls layout the other 13 screens use

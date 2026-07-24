@@ -206,7 +206,9 @@ test.describe("HMI operator panel", () => {
     await expect(page.getByRole("button", { name: viDict.hmi.controls.estop })).toBeFocused()
   })
 
-  const THEMES: Theme[] = ["light", "dark"]
+  // WS1-T1 — pinned to Glass only, same reasoning as `00-visual-and-a11y.spec.ts`'s own THEMES
+  // (see that file's top doc comment); WS1-T3 widens this across all 3 themes.
+  const THEMES: Theme[] = ["glass"]
 
   // Branch-review C-5 — the suite's tolerance was tightened specifically so structural schematic
   // regressions would be caught, but only the AOI class ever had a baseline: C-4 (both animated

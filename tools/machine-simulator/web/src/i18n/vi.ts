@@ -15,9 +15,14 @@ export const vi = {
       "Không thể kết nối tới engine ở địa chỉ đã cấu hình — hãy kiểm tra St4i.EngineApi đã chạy chưa.",
   },
 
+  // WS1 — 3-theme system (docs/PRODUCTION_UI_DESIGN.md). `name` is a proper noun, kept identical
+  // in both dictionaries (like "ST4I" itself) — only `description` and the picker's own chrome
+  // translate. Shared by `theme/ThemePicker.tsx`'s topbar quick-switch AND Settings' radiogroup.
   theme: {
-    toggleToLight: "Chế độ sáng",
-    toggleToDark: "Chế độ tối",
+    pickerAriaLabel: (vars: Vars) => `Chọn giao diện — hiện tại ${vars.current}`,
+    glass: { name: "Glass", description: "Sáng, cao cấp" },
+    console: { name: "Console", description: "Tối, công nghệ cao" },
+    warmth: { name: "Warmth", description: "Ấm, công nghiệp" },
   },
 
   shell: {
@@ -926,6 +931,11 @@ export const vi = {
   settings: {
     title: "Cài đặt",
     subtitle: "Kết nối, chế độ vận hành, xác thực máy và ngôn ngữ — kết nối trực tiếp tới /v1/settings và /v1/mode.",
+    theme: {
+      title: "Giao diện",
+      radioGroupAria: "Chọn giao diện",
+      appliesImmediately: "Áp dụng ngay lập tức — không cần bấm Lưu.",
+    },
     connection: {
       title: "Kết nối máy chủ",
       serverUrlLabel: "Địa chỉ máy chủ (Server URL)",

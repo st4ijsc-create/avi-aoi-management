@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { NAV_ITEMS } from "@/shell/Sidebar"
-import { ThemeToggle } from "@/theme/ThemeToggle"
+import { ThemeQuickSwitch } from "@/theme/ThemePicker"
 
 const MODE_OPTIONS: { value: TransportMode; label: string }[] = [
   { value: "Live", label: "Live" },
@@ -203,7 +203,7 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
 
         <Clock />
 
-        <ThemeToggle />
+        <ThemeQuickSwitch />
 
         <button
           type="button"
