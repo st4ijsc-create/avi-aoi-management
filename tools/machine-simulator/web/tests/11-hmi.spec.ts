@@ -206,9 +206,13 @@ test.describe("HMI operator panel", () => {
     await expect(page.getByRole("button", { name: viDict.hmi.controls.estop })).toBeFocused()
   })
 
-  // WS1-T1 — pinned to Glass only, same reasoning as `00-visual-and-a11y.spec.ts`'s own THEMES
-  // (see that file's top doc comment); WS1-T3 widens this across all 3 themes.
-  const THEMES: Theme[] = ["glass"]
+  // WS1-T1 pinned this to Glass only, same reasoning as `00-visual-and-a11y.spec.ts`'s own THEMES
+  // (see that file's top doc comment). WS1-T3 (docs/plans/2026-07-24-theme-system.md, Task 3)
+  // widens this to all 3 themes — the plan's explicit ask is exactly this: the HMI panel × all 3
+  // machine classes (SCRW/AOI/IOT) × glass/console/warmth, since this is the one screen where
+  // Console's `--glow-run` (SchematicPanel/StatusLamp/Readout) and every theme's status-color
+  // invariant (§4 — no-data ≠ fault) are simultaneously live and highest-stakes to regress.
+  const THEMES: Theme[] = ["glass", "console", "warmth"]
 
   // Branch-review C-5 — the suite's tolerance was tightened specifically so structural schematic
   // regressions would be caught, but only the AOI class ever had a baseline: C-4 (both animated

@@ -22,12 +22,19 @@ import { primeAppStorage, type Theme } from "./support/theme"
 /**
  * Visual-regression + axe a11y baselines for all 14 screens.
  *
- * WS1-T1 (docs/plans/2026-07-24-theme-system.md) — pinned to Glass only (the new default theme)
- * here: the old `["light", "dark"]` sweep no longer type-checks against the 3-theme `Theme` union,
- * and WS1-T1's own scope is the token foundation + selector, not a full 3-theme visual baseline.
- * WS1-T3 rebuilds this properly across a representative screen set × all 3 themes — see that task's
- * plan entry. Every screen/mask/assertion below is unchanged; only the theme AXIS narrowed from 2
- * values to 1.
+ * WS1-T1 (docs/plans/2026-07-24-theme-system.md) pinned every screen to Glass only (the new default
+ * theme): the old `["light", "dark"]` sweep no longer type-checked against the 3-theme `Theme` union,
+ * and WS1-T1's own scope was the token foundation + selector, not a full 3-theme visual baseline.
+ *
+ * WS1-T3 widens a REPRESENTATIVE subset (`MULTI_THEME_SLUGS` below) to all 3 themes instead of
+ * tripling all 14 — the plan's own Task 3 entry explicitly says "not blindly triple every baseline;
+ * pick contrast-risky screens." The other 10 screens stay Glass-only: they're compositionally the
+ * same `.sheet`-panel/table/form primitives already exercised by the widened set, so a Console/Warmth
+ * regression in, say, `Select`'s popup radius or `Tabs`' focus ring would already be caught on
+ * `machine-detail-config`'s or `product-config-detail`'s shared components via the widened screens
+ * above, or via `13-machine-settings.spec.ts`'s own 3-theme axe sweep (widened in WS1-T1) covering a
+ * settings-panel variant of the same primitives. Every screen/mask/assertion below is otherwise
+ * unchanged.
  *
  * MUST run before any other spec file — file order matters here because `FleetHost` inside the
  * engine is a process-lifetime singleton (see `playwright.config.ts`'s top comment). Every screen
@@ -48,7 +55,22 @@ import { primeAppStorage, type Theme } from "./support/theme"
  */
 test.use({ viewport: { width: 1440, height: 1600 } })
 
-const THEMES: Theme[] = ["glass"]
+const GLASS_ONLY: Theme[] = ["glass"]
+const ALL_THEMES: Theme[] = ["glass", "console", "warmth"]
+
+/** WS1-T3 — the representative, contrast-risky screen set that gets full 3-theme visual+axe
+ * coverage (see this file's top doc comment for why the other 10 screens stay Glass-only):
+ *  - `dashboard`/`machines`: the KPI-tile/StatusBadge/table-row-pulse-heavy screens — the highest
+ *    density of the `--status-*` + `--ok/warn/danger/neutral` alias tokens anywhere in the app, so
+ *    the screens most likely to break contrast or "glow" semantics on Console/Warmth.
+ *  - `machine-detail`: the physical `ControlButton` (Warmth's own `--elevation` signature bullet)
+ *    + `StatusLamp` (Console's `--glow-run` signature bullet) live together on one screen.
+ *  - `product-config-points`: the one screen built on `BoardCanvas` — a background-image + absolutely
+ *    positioned marker layout, a categorically different rendering primitive than every `.sheet`/table
+ *    screen above (spec's own "instrument marks stay square" invariant lives here too).
+ *  - the HMI operator panel (`11-hmi.spec.ts`'s own `SCHEMATIC_CASES`, widened separately in that
+ *    file) covers all 3 machine classes (SCRW/AOI/IOT) × all 3 themes — the plan's explicit ask. */
+const MULTI_THEME_SLUGS = new Set(["dashboard", "machines", "machine-detail", "product-config-points"])
 
 interface ScreenCase {
   slug: string
@@ -184,7 +206,8 @@ const SCREENS: ScreenCase[] = [
 
 for (const screen of SCREENS) {
   test.describe(screen.slug, () => {
-    for (const theme of THEMES) {
+    const themes = MULTI_THEME_SLUGS.has(screen.slug) ? ALL_THEMES : GLASS_ONLY
+    for (const theme of themes) {
       test(`visual — ${theme}`, async ({ page }) => {
         if (screen.viewport) await page.setViewportSize(screen.viewport)
         await screen.visit(page, theme)
