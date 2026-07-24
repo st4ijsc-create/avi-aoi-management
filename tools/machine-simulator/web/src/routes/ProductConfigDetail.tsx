@@ -365,7 +365,7 @@ function ProductSyncTab({ code }: { code: string }) {
               <select
                 value={selectedMachine}
                 onChange={(event) => handleMachineChange(event.target.value)}
-                className="h-8 w-48 border border-border-strong bg-surface-muted px-2 text-sm text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
+                className="h-8 w-48 rounded-[var(--radius)] border border-border-strong bg-surface-muted px-2 text-sm text-text-body outline-none transition-colors focus-visible:border-[var(--focus)] focus-visible:ring-2 focus-visible:ring-[var(--focus)]/40"
               >
                 <option value="">{t("productConfigDetail.sync.machinePlaceholder")}</option>
                 {aoiMachines.map((machine) => (
@@ -493,7 +493,7 @@ function ProductConfigDetailBody({ product }: { product: ProductModel }) {
             <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="h-full min-h-0">
               <div
                 tabIndex={0}
-                className="hmi-scroll h-full overflow-x-hidden overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+                className="hmi-scroll h-full overflow-x-hidden overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
               >
                 <ProductInfoTab product={product} pointCount={pointCount} />
               </div>
@@ -504,7 +504,7 @@ function ProductConfigDetailBody({ product }: { product: ProductModel }) {
             <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="h-full min-h-0">
               <div
                 tabIndex={0}
-                className="hmi-scroll h-full overflow-x-hidden overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+                className="hmi-scroll h-full overflow-x-hidden overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
               >
                 <PointsEditor product={product} />
               </div>
@@ -515,7 +515,7 @@ function ProductConfigDetailBody({ product }: { product: ProductModel }) {
             <motion.div initial="hidden" animate="visible" variants={fadeSlideUp} className="h-full min-h-0">
               <div
                 tabIndex={0}
-                className="hmi-scroll h-full overflow-x-hidden overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+                className="hmi-scroll h-full overflow-x-hidden overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
               >
                 <ProductSyncTab code={product.code} />
               </div>

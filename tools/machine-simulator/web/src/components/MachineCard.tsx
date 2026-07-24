@@ -118,7 +118,7 @@ export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
       <button
         type="button"
         onClick={() => onOpen(machine.code)}
-        className="block w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+        className="block w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
       >
         {/* Flat hairline highlight on hover/focus — no lift/shadow (ground rule §1: no drop shadows
             outside the physical controls). */}

@@ -23,6 +23,7 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
 
 function DialogOverlay({
   className,
+  style,
   ...props
 }: DialogPrimitive.Backdrop.Props) {
   return (
@@ -32,6 +33,11 @@ function DialogOverlay({
         "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
+      // WS1-T2 — a light backdrop blur (a quarter of the popup's own `--glass-blur`, so the scrim
+      // reads as depth-of-field behind the frosted popup, not a second identically-blurred layer)
+      // instead of the flat `backdrop-blur-xs` utility, so the veil itself carries a whisper of
+      // each theme's own glass/glow/material register (0 on Warmth, since `--glass-blur: 0px`).
+      style={{ backdropFilter: "blur(calc(var(--glass-blur) / 4))", WebkitBackdropFilter: "blur(calc(var(--glass-blur) / 4))", ...style }}
       {...props}
     />
   )
@@ -51,7 +57,12 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "sheet fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 bg-popover p-4 text-sm text-popover-foreground duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // WS1-T2 — `hmi-panel-glass` (was a flat `bg-popover`) reads the panel through
+          // `--panel-fill`/`--glass-blur`: frosted translucent glass on Glass/Console, an opaque
+          // 85%-fill material card on Warmth (its `--glass-blur: 0px` makes the blur a no-op by
+          // design). `.sheet` (index.css) already contributes this theme's `--radius-card` +
+          // `--elevation` — no separate radius/shadow utility needed here.
+          "sheet hmi-panel-glass fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 p-4 text-sm text-popover-foreground duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

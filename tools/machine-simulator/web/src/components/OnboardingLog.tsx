@@ -68,7 +68,7 @@ export function OnboardingLog({ entries, className }: OnboardingLogProps) {
       // restyle's own `assertNoSeriousA11yViolations` run down this exact wizard flow surfaced it.
       tabIndex={0}
       className={cn(
-        "hmi-scroll min-h-0 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]",
+        "hmi-scroll min-h-0 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]",
         className
       )}
     >

@@ -62,7 +62,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-sidebar">
       <div className="flex items-center gap-2.5 border-b border-border px-4 py-4">
-        <div className="flex size-8 shrink-0 items-center justify-center border border-navy-800 bg-navy-700 font-heading text-sm font-bold text-white">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-navy-800 bg-navy-700 font-heading text-sm font-bold text-white">
           S4
         </div>
         <div className="flex flex-col leading-tight">
@@ -83,7 +83,7 @@ export function Sidebar() {
               key={item.path}
               href={item.path}
               className={cn(
-                "flex items-center gap-2.5 border-l-2 px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
+                "flex items-center gap-2.5 border-l-2 px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
                 active
                   ? "border-l-[var(--color-accent)] bg-navy-700 text-white"
                   : "border-l-transparent text-text-body hover:border-l-border-strong hover:bg-surface-muted hover:text-text-strong"

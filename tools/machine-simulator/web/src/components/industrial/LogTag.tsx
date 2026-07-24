@@ -27,7 +27,7 @@ export function LogTag({ level, className }: LogTagProps) {
   return (
     <span
       className={cn(
-        "inline-block w-14 shrink-0 border px-1 py-0.5 text-center font-mono text-[10px] font-semibold tracking-wide",
+        "inline-block w-14 shrink-0 rounded-[var(--radius-sm)] border px-1 py-0.5 text-center font-mono text-[10px] font-semibold tracking-wide",
         LEVEL_CLASS[level],
         className
       )}

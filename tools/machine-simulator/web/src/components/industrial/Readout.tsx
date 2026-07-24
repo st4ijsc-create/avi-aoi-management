@@ -99,7 +99,14 @@ export function Readout({
             className={cn(
               "font-heading font-semibold tabular-nums",
               isText ? "block max-w-full truncate text-[19px] leading-[1.15]" : "text-[38px] leading-[1.05]",
-              TONE_TEXT[tone]
+              TONE_TEXT[tone],
+              // WS1-T2 — Console's "key data glow gently": a run-toned reading (a passing rate, a
+              // live cycle count, "RUNNING") gets the same `--glow-run` halo as a live StatusLamp,
+              // `none`/no-op on Glass/Warmth. `box-shadow` doesn't affect layout (paint-only), so
+              // this is a zero-risk no-op everywhere the token itself resolves to `none` — safe
+              // alongside the pinned-Glass visual baselines. Reserved to `tone === "run"` only —
+              // warn/fault/idle/neutral readings never glow.
+              tone === "run" && "hmi-glow-run"
             )}
             // M-4 (branch-review) — this `<span>` has the implicit `role="generic"`, which ARIA
             // forbids naming (aria-label/aria-labelledby are prohibited attributes on that role, and

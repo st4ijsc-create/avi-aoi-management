@@ -75,9 +75,16 @@ export function ControlButton({ variant, label, labelEn, className, disabled, pr
       aria-disabled={flatSkin || pressed ? true : undefined}
       aria-pressed={variant === "estop" ? (pressed ?? false) : undefined}
       className={cn(
-        "group/control relative flex shrink-0 flex-col items-center justify-center gap-1 border text-center outline-none transition-[transform,box-shadow] duration-75 select-none motion-reduce:transition-none",
-        "focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-[var(--color-bg)]",
+        "group/control relative flex shrink-0 flex-col items-center justify-center gap-1 rounded-[var(--radius)] border text-center outline-none transition-[transform,box-shadow] duration-75 select-none motion-reduce:transition-none",
+        "focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-[var(--color-bg)]",
         SIZE_CLASS[variant],
+        // WS1-T2 — Warmth's own signature bullet is explicitly about CONTROLS: "tactile physical
+        // depth on controls (real-but-soft shadows via --elevation)". START/PAUSE/RESET pick up
+        // `--elevation` directly (a whisper shadow on Glass, cyan-ring+deep-shadow on Console, a
+        // real-but-soft contact shadow on Warmth) so they read as raised hardware, not flat web
+        // buttons. E-STOP keeps its OWN dedicated inline dome shadow below (the one sanctioned
+        // shadow exception, spec §6) — this utility class is intentionally never applied to it.
+        variant !== "estop" && !flatSkin && "shadow-[var(--elevation)]",
         variant === "start" &&
           !flatSkin &&
           "border-navy-800 bg-navy-700 text-white hover:bg-navy-600 active:translate-y-px",

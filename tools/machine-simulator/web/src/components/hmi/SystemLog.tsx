@@ -103,7 +103,7 @@ export function SystemLog({ machineCode, localEvents, events, connectionState, c
         tabIndex={0}
         role="log"
         aria-label={t("hmi.log.title")}
-        className="hmi-scroll flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+        className="hmi-scroll flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
       >
         {rows.length === 0 ? (
           <p className="p-4 text-center text-xs text-text-muted">{t("hmi.log.empty")}</p>

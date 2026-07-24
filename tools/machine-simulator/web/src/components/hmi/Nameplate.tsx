@@ -77,7 +77,7 @@ export function Nameplate({ code, deviceClass, driverKind, lampState, lampLabel,
       <div className="flex min-w-0 items-center gap-4">
         <Link
           href={`/machines/${encodeURIComponent(code)}`}
-          className="flex shrink-0 items-center gap-1.5 border border-border-strong px-2.5 py-2 text-xs text-text-muted transition-colors hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] dark:hover:text-navy-200"
+          className="flex shrink-0 items-center gap-1.5 border border-border-strong px-2.5 py-2 text-xs text-text-muted transition-colors hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] dark:hover:text-navy-200"
         >
           <ArrowLeft className="size-3.5" aria-hidden="true" />
           {t("hmi.back")}

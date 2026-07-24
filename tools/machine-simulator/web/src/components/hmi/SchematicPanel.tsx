@@ -8,6 +8,7 @@ import { AutomationSchematic, FEEDER_CAPACITY } from "@/components/hmi/schematic
 import { IotSchematic } from "@/components/hmi/schematics/IotSchematic"
 import { useT } from "@/i18n"
 import type { DeviceClass } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 const FIG_KEY: Record<DeviceClass, string> = {
   Automation: "hmi.schematic.figAutomation",
@@ -60,7 +61,15 @@ export function SchematicPanel({
 
   return (
     <Sheet
-      className={className}
+      className={cn(
+        className,
+        // WS1-T2 — "an active schematic element ... glow gently": the centrepiece drawing panel
+        // itself is the one Sheet in the app that gets the combined elevation+glow treatment while
+        // running, layering `--glow-run` on top of (not replacing) this theme's own `--elevation` —
+        // a no-op on Glass/Warmth (`--glow-run: none` composites away to nothing). Idle machines
+        // stay on the plain `.sheet` elevation only, same as every other panel.
+        isRunning && "shadow-[var(--elevation),var(--glow-run)]"
+      )}
       style={style}
       bodyClassName="flex flex-1 min-h-0 flex-col p-0"
       title={t(FIG_KEY[deviceClass])}

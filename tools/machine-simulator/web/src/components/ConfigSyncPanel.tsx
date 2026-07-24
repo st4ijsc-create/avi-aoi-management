@@ -1005,7 +1005,7 @@ function SyncHistoryCard({ machineCode }: { machineCode: string }) {
       ) : (
         <div
           tabIndex={0}
-          className="hmi-scroll overflow-x-auto border border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+          className="hmi-scroll overflow-x-auto border border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
         >
           <Table>
             <TableHeader>

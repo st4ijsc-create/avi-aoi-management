@@ -81,7 +81,7 @@ export function ThemeQuickSwitch() {
     <SelectPrimitive.Root value={theme} onValueChange={(value) => value && setTheme(value)}>
       <SelectPrimitive.Trigger
         aria-label={t("theme.pickerAriaLabel", { current: copy(theme).name })}
-        className="flex size-8 shrink-0 items-center justify-center border border-border-strong bg-transparent text-text-muted transition-colors outline-none hover:bg-surface-muted hover:text-text-strong focus-visible:border-[var(--focus)] focus-visible:ring-2 focus-visible:ring-[var(--focus)]/40 data-popup-open:border-[var(--focus)]"
+        className="flex size-8 shrink-0 items-center justify-center rounded-[var(--radius)] border border-border-strong bg-transparent text-text-muted transition-colors outline-none hover:bg-surface-muted hover:text-text-strong focus-visible:border-[var(--focus)] focus-visible:ring-2 focus-visible:ring-[var(--focus)]/40 data-popup-open:border-[var(--focus)]"
       >
         <Icon className="size-3.5" aria-hidden="true" />
       </SelectPrimitive.Trigger>
@@ -138,7 +138,7 @@ export function ThemeRadioGroup() {
             aria-checked={selected}
             onClick={() => setTheme(id)}
             className={cn(
-              "flex flex-col items-stretch gap-2.5 border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]/50",
+              "flex flex-col items-stretch gap-2.5 rounded-[var(--radius-card)] border p-3 text-left shadow-[var(--elevation)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]/50",
               selected ? "border-[var(--color-accent)] bg-surface-muted" : "border-border-strong hover:bg-surface-subtle"
             )}
           >

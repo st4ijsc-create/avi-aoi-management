@@ -12,7 +12,7 @@ interface ConfigModeToggleProps {
 }
 
 const SEGMENT_CLASS =
-  "flex items-center gap-1.5 border border-transparent px-2.5 py-1.5 text-[11px] font-semibold tracking-wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/50"
+  "flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-transparent px-2.5 py-1.5 text-[11px] font-semibold tracking-wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]/50"
 
 /**
  * Task C6 — segmented switch between the two config-sync authoring domains sharing this workspace:
@@ -32,7 +32,7 @@ export function ConfigModeToggle({ current, className }: ConfigModeToggleProps) 
   return (
     <nav
       aria-label={t("configModeToggle.ariaLabel")}
-      className={cn("inline-flex w-fit items-center border border-border-strong bg-surface-muted p-0.5", className)}
+      className={cn("inline-flex w-fit items-center rounded-[var(--radius)] border border-border-strong bg-surface-muted p-0.5", className)}
     >
       <Link
         href="/products"

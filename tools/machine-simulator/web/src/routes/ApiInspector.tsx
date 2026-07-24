@@ -93,7 +93,7 @@ function FilterSelect({ id, label, labelEn, value, options, onChange, allLabel }
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
+        className="h-8 rounded-[var(--radius)] border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--focus)] focus-visible:ring-2 focus-visible:ring-[var(--focus)]/40"
       >
         <option value={ALL}>{allLabel}</option>
         {options.map((option) => (

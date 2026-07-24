@@ -159,6 +159,15 @@
   --glass-blur: 16px;
   --focus: var(--color-accent);
 
+  /* WS1-T2 — `.hmi-graph-paper` ground signature (see that utility's own doc comment). Glass: a
+     soft top-lit "light table" wash behind the grid, on top of the plain divider-colour lines. */
+  --graph-paper-line: var(--color-divider);
+  --graph-paper-wash: radial-gradient(
+    ellipse 100% 62% at 50% 26%,
+    color-mix(in srgb, var(--color-surface) 65%, transparent),
+    transparent 72%
+  );
+
   /* ---- Shadows — the shadcn shadow SCALE stays "none" (unchanged from the pre-WS1 flat ground
      rule): no current component reads --shadow-2xs..2xl via Tailwind's shadow-* utilities (they
      were deliberately avoided app-wide, see routes/_tokens.tsx's own doc comment on this). The new
@@ -274,6 +283,15 @@
   --glass-blur: 20px;
   --focus: var(--color-accent);
 
+  /* WS1-T2 — Console's ground signature is "luminous data lines" (spec brief), not a flood-lit
+     wash (that would compete with `--glow-run`'s own reserved-for-live-elements glow) — just the
+     grid lines themselves tinted toward the accent cyan instead of a plain divider tone.
+     `--graph-paper-wash` is explicitly turned off here (custom properties don't "fall through" to
+     :root for a property this rule already matches the element on — unlike the truly invariant
+     tokens like the navy ramp, this one must be redeclared per theme, same as `--elevation`). */
+  --graph-paper-line: color-mix(in srgb, var(--color-accent) 16%, var(--color-divider));
+  --graph-paper-wash: none;
+
   --background: var(--surface-base);
   --foreground: var(--text-strong);
   --card: var(--surface-card);
@@ -372,6 +390,13 @@
   --panel-fill: color-mix(in srgb, #ebe7dd 85%, transparent);
   --glass-blur: 0px;
   --focus: var(--navy-700);
+
+  /* WS1-T2 — Warmth's ground stays plain (`--color-divider` lines, no wash) — its material
+     signature lives in `--elevation` on the panels sitting ABOVE this ground (real-but-soft
+     contact shadow), not in the ground itself. Explicit `none` for the same reason as Console's
+     own override above (this property isn't theme-invariant, so it must be redeclared here, not
+     left to fall through to :root's Glass wash). */
+  --graph-paper-wash: none;
 
   --background: var(--surface-base);
   --foreground: var(--text-strong);
@@ -553,11 +578,23 @@
      is the only place that should render `.corner` spans — never hand-write them
      at a call site. Because the marks sit outside the box, a `.sheet` must never
      live inside `overflow:hidden`.
-     ========================================================================== */
+
+     WS1-T2 — `.sheet` is the ONE rule every panel in the app shares, so it's where
+     the per-theme signature lives: `border-radius: var(--radius-card)` (was a flat
+     0, per-theme now — Glass 8px soft/premium, Console 6px, Warmth 5px) and
+     `box-shadow: var(--elevation)` (Glass: whisper-soft ambient shadow; Console: a
+     hairline cyan ring + a deep drop shadow, its own "depth" signature distinct
+     from `--glow-run` below, which is reserved for LIVE/active elements only, not
+     every panel; Warmth: a real-but-soft physical contact shadow). The registration
+     corners still overhang square at `-6px` regardless of the panel's own radius —
+     at these small radii (5–8px) they read as external drafting marks near the
+     corner, not as part of the panel's own curve, so this doesn't fight the theme's
+     rounding. */
   .sheet {
     position: relative;
     border: 1px solid var(--color-divider);
-    border-radius: 0;
+    border-radius: var(--radius-card);
+    box-shadow: var(--elevation);
   }
   .sheet > .corner {
     position: absolute;
@@ -641,19 +678,30 @@
     background-color: var(--text-muted);
   }
 
-  /* 28px graph-paper ground — spec §5/§7, backdrop for schematic/canvas areas. */
+  /* 28px graph-paper ground — spec §5/§7, backdrop for schematic/canvas (BoardCanvas) areas.
+     WS1-T2 — the ground itself now carries part of the per-theme signature, via two tokens
+     declared once in :root (`--graph-paper-line`/`--graph-paper-wash`, defaulting to Glass's own
+     values) and overridden only where a theme actually differs (same "declare once, override the
+     delta" convention as the navy ramp/--radius-pill): Glass adds a soft radial "light table" wash
+     — the schematic reads as lit from above, per the brief's "bàn sáng gradient". Console instead
+     tints the grid LINES themselves toward the accent cyan (`--graph-paper-line` override, no
+     wash) — "thin luminous data lines" rather than a flood-lit surface, so it doesn't compete with
+     `--glow-run`'s own reserved-for-live-elements glow. Warmth turns the wash off too but leaves
+     `--graph-paper-line` at its :root default (plain `--color-divider`) — its material signature
+     lives in `--elevation` on the panels sitting above this ground, not in the ground itself. */
   .hmi-graph-paper {
-    background-image: repeating-linear-gradient(
+    background-image: var(--graph-paper-wash, none),
+      repeating-linear-gradient(
         0deg,
-        var(--color-divider) 0,
-        var(--color-divider) 1px,
+        var(--graph-paper-line, var(--color-divider)) 0,
+        var(--graph-paper-line, var(--color-divider)) 1px,
         transparent 1px,
         transparent 28px
       ),
       repeating-linear-gradient(
         90deg,
-        var(--color-divider) 0,
-        var(--color-divider) 1px,
+        var(--graph-paper-line, var(--color-divider)) 0,
+        var(--graph-paper-line, var(--color-divider)) 1px,
         transparent 1px,
         transparent 28px
       );
@@ -685,6 +733,34 @@
      hairline regardless of the viewBox scale factor. */
   .hmi-wire {
     vector-effect: non-scaling-stroke;
+  }
+
+  /* ==========================================================================
+     WS1-T2 — per-theme signature utilities. Every one of these is a thin wrapper
+     around a single already-defined form token (index.css's :root/`[data-theme]`
+     blocks) — no new hex, no per-theme branching at the call site.
+     ========================================================================== */
+
+  /* A live/active accent glow — `--glow-run` is a real box-shadow only on Console (a soft green
+     halo, tuned off the run-state hue); `none` on Glass/Warmth, so applying this class on those two
+     themes is always a no-op. Reserve it for the few things that are genuinely LIVE right now (a
+     running StatusLamp dot, the connectivity chip while online, an active/selected nav item) — NOT
+     every border or every "ok" badge, or Console reads as busy instead of high-tech (see this
+     class's call sites for the actual restraint being applied). */
+  .hmi-glow-run {
+    box-shadow: var(--glow-run);
+  }
+
+  /* Frosted overlay panel — `--panel-fill` (a translucent surface tint) + `--glass-blur` (backdrop
+     blur, 0px on Warmth = no blur at all, an intentionally OPAQUE material rather than glass) for
+     dialogs/drawers/popovers. Glass: soft frosted glass. Console: glassy translucent panel, "control
+     room" glass over whatever's behind it. Warmth: `--glass-blur: 0px` makes `backdrop-filter` a
+     no-op and `--panel-fill` alone (85% opaque) reads as a solid physical card, not glass — by
+     design, not by omission (Warmth's signature is material, not translucency). */
+  .hmi-panel-glass {
+    background: var(--panel-fill);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
   }
 
   /* ==========================================================================

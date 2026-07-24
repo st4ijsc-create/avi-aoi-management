@@ -90,7 +90,7 @@ export function CycleLogTable({ rows, className }: CycleLogTableProps) {
       </p>
       <div
         tabIndex={0}
-        className="hmi-scroll max-h-[28rem] overflow-y-auto border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+        className="hmi-scroll max-h-[28rem] overflow-y-auto border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
       >
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-surface-card">

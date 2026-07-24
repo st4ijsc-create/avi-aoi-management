@@ -15,11 +15,15 @@ function Slider({ className, "aria-label": ariaLabel, ...props }: SliderProps) {
   return (
     <SliderPrimitive.Root data-slot="slider" className={cn("w-full", className)} {...props}>
       <SliderPrimitive.Control className="relative flex h-5 w-full touch-none items-center select-none">
-        <SliderPrimitive.Track className="h-1 w-full rounded-none border border-border-strong bg-surface-muted">
-          <SliderPrimitive.Indicator className="rounded-none bg-navy-700" />
+        <SliderPrimitive.Track className="h-1 w-full rounded-[var(--radius-pill)] border border-border-strong bg-surface-muted">
+          <SliderPrimitive.Indicator className="rounded-[var(--radius-pill)] bg-navy-700" />
           <SliderPrimitive.Thumb
             aria-label={ariaLabel}
-            className="block size-5 rounded-none border border-navy-800 bg-navy-700 outline-none transition-transform data-dragging:scale-105 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-navy-700/50"
+            // WS1-T2 — the thumb keeps a squarish `--radius` (not `rounded-full`, unlike the
+            // Switch's circular toggle knob) — spec §5's original "square 20px thumb" reading, now
+            // per-theme instead of hard 0, so it still lands as a small fader cap, not a generic
+            // round slider handle.
+            className="block size-5 rounded-[var(--radius)] border border-navy-800 bg-navy-700 outline-none transition-transform data-dragging:scale-105 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-navy-700/50"
           />
         </SliderPrimitive.Track>
       </SliderPrimitive.Control>

@@ -88,7 +88,7 @@ function FilterSelect({ id, label, labelEn, value, options, optionLabel, onChang
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
+        className="h-8 rounded-[var(--radius)] border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--focus)] focus-visible:ring-2 focus-visible:ring-[var(--focus)]/40"
       >
         <option value={ALL}>{allLabel}</option>
         {options.map((option) => (
@@ -268,7 +268,7 @@ function MachineRow({ machine, isRunning, onOpen }: MachineRowProps) {
           href={`/hmi/${encodeURIComponent(machine.code)}`}
           aria-label={t("hmi.entryButtonAria", { code: machine.code })}
           title={t("hmi.entryButton")}
-          className="flex size-7 items-center justify-center border border-border-strong text-text-muted transition-colors hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] dark:hover:text-navy-200"
+          className="flex size-7 items-center justify-center border border-border-strong text-text-muted transition-colors hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] dark:hover:text-navy-200"
         >
           <Gauge className="size-3.5" aria-hidden="true" />
         </Link>
@@ -488,7 +488,7 @@ export default function Machines() {
             >
               <div
                 tabIndex={0}
-                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
               >
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-surface-card">

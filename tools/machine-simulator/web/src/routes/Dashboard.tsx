@@ -50,7 +50,7 @@ function EmptyState({
           type="button"
           onClick={onStart}
           disabled={pending}
-          className="inline-flex h-8 items-center gap-1.5 border border-navy-800 bg-navy-700 px-3 text-xs font-semibold tracking-wide text-white uppercase transition-colors hover:bg-navy-600 focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-1.5 border border-navy-800 bg-navy-700 px-3 text-xs font-semibold tracking-wide text-white uppercase transition-colors hover:bg-navy-600 focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
         >
           <PlayCircle className="size-3.5" aria-hidden="true" />
           {pending ? t("dashboard.empty.ctaPending") : t("dashboard.empty.cta")}

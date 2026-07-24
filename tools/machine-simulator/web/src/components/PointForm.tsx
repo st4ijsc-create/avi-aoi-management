@@ -53,7 +53,7 @@ const TOLERANCE_NONE = "__none__"
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 const TEXTAREA_CLASS =
-  "w-full min-w-0 border border-border-strong bg-surface-muted px-2.5 py-1.5 text-sm text-text-body transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
+  "w-full min-w-0 rounded-[var(--radius)] border border-border-strong bg-surface-muted px-2.5 py-1.5 text-sm text-text-body transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-[var(--focus)] focus-visible:ring-2 focus-visible:ring-[var(--focus)]/40"
 
 /** Prefills a brand-new point's normalized position from a `BoardCanvas` click (or the header
  * "+ Add point" button's center default) — `PointsEditor.tsx`'s seam into this form. */

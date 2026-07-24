@@ -103,7 +103,7 @@ export function TabRail({ active, onChange, className }: TabRailProps) {
             onKeyDown={(event) => handleKeyDown(event, index)}
             className={cn(
               "relative flex items-center gap-1.5 border-x border-t border-transparent px-3 text-xs font-semibold tracking-wide uppercase outline-none transition-colors",
-              "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]",
+              "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]",
               selected
                 ? "border-border-strong bg-surface-subtle text-text-strong after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-[var(--color-accent)]"
                 : "text-text-muted hover:text-text-body"

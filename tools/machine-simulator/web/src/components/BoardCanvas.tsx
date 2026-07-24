@@ -283,7 +283,7 @@ export function BoardCanvas({
                   // Instrument-mark treatment (spec §7 "points reading as instrument marks") — hollow
                   // ring rather than a filled disc, monospace/tabular code label, no drop shadow (the
                   // ground rule's one shadow exception is the E-STOP dome, spec §6).
-                  "absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center overflow-hidden border-2 bg-surface-card/80 font-mono text-[9px] leading-none font-semibold tabular-nums text-text-strong transition-transform outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-1",
+                  "absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center overflow-hidden border-2 bg-surface-card/80 font-mono text-[9px] leading-none font-semibold tabular-nums text-text-strong transition-transform outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:ring-offset-1",
                   shapeClassName(point.shape),
                   selected ? "z-20 scale-110 ring-2 ring-[var(--color-accent)] ring-offset-1" : "z-10 hover:scale-105"
                 )}

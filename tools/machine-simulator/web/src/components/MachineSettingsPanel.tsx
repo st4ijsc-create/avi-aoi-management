@@ -517,7 +517,7 @@ export function MachineSettingsPanel({
 
           <div
             tabIndex={0}
-            className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+            className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
           >
             <div className="grid grid-cols-[minmax(150px,1.3fr)_110px_150px_100px_150px_76px] gap-x-2 border-b border-border-strong px-3 py-1.5 text-[10px] font-semibold tracking-wide text-text-muted uppercase">
               <span>{t("machineSettings.columns.label")}</span>

@@ -90,7 +90,7 @@ function ErrorKiosk({ title, description }: { title: string; description: string
       <p className="max-w-md text-sm text-text-muted">{description}</p>
       <Link
         href="/machines"
-        className="mt-2 border border-border-strong px-3 py-1.5 text-sm text-text-body hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+        className="mt-2 border border-border-strong px-3 py-1.5 text-sm text-text-body hover:border-navy-600 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
       >
         {t("machines.title")}
       </Link>
@@ -354,7 +354,7 @@ export default function Hmi() {
             >
               <div
                 tabIndex={0}
-                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
               >
                 <ReadoutGrid
                   machine={machine}

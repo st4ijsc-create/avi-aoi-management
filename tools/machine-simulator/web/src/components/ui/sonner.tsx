@@ -36,7 +36,11 @@ function Toaster({ ...props }: ToasterProps) {
       toastOptions={{
         unstyled: false,
         classNames: {
-          toast: "!rounded-none !border !shadow-none",
+          // WS1-T2 — was a flat `!shadow-none`; toasts are transient overlay chrome, same family
+          // as dialogs/popovers, so they pick up the same per-theme `--elevation` (soft lift on
+          // Glass, cyan-ring+deep-shadow on Console, contact shadow on Warmth) instead of reading
+          // as pasted-on flat rectangles.
+          toast: "!rounded-[var(--radius-card)] !border !shadow-[var(--elevation)]",
         },
       }}
       {...props}

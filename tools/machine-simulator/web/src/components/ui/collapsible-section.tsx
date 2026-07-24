@@ -43,13 +43,13 @@ export function CollapsibleSection({
   const panelId = React.useId()
 
   return (
-    <div className={cn("overflow-hidden border border-border-strong", className)}>
+    <div className={cn("overflow-hidden rounded-[var(--radius-card)] border border-border-strong shadow-[var(--elevation)]", className)}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left outline-none transition-colors hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left outline-none transition-colors hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
       >
         <span className="flex min-w-0 items-baseline gap-2">
           {Icon ? <Icon className="size-4 shrink-0 self-center text-primary-text" aria-hidden="true" /> : null}

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
  * label — it's an idle/disabled indicator, never conveyed by color alone.
  */
 const statusBadgeVariants = cva(
-  "inline-flex h-5 w-fit shrink-0 items-center gap-1.5 rounded-none border px-2 text-[11px] font-semibold tracking-wide uppercase whitespace-nowrap",
+  "inline-flex h-5 w-fit shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border px-2 text-[11px] font-semibold tracking-wide uppercase whitespace-nowrap",
   {
     variants: {
       status: {
@@ -64,7 +64,11 @@ function StatusBadge({
           dipping a `text-ok-text`-on-`bg-ok/10` badge to ~3.28:1 (mid-pulse) against its required
           4.5:1 (Task 10 — MachineCard's active-OK status badge). A pulsing status dot next to
           stable, always-readable text is also the more common "this is live" affordance anyway. */}
-      <span aria-hidden="true" className={cn(dotVariants({ status }), pulse && "animate-pulse")} />
+      {/* WS1-T2 — `hmi-glow-run` (Console-only, `--glow-run: none` elsewhere) reserved to the one
+          combination that's genuinely "this is live right now": an OK status actively pulsing. A
+          static "ok" badge (a completed job's final verdict, say) never glows — only the pulsing
+          ones, matching every other live-only `--glow-run` call site in this pass. */}
+      <span aria-hidden="true" className={cn(dotVariants({ status }), pulse && "animate-pulse", pulse && status === "ok" && "hmi-glow-run")} />
       {children}
     </span>
   )

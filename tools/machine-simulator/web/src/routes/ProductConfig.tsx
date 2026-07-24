@@ -82,7 +82,7 @@ function FilterSelect({ id, label, labelEn, value, options, optionLabel, onChang
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--color-accent)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
+        className="h-8 rounded-[var(--radius)] border border-border-strong bg-surface-muted px-2 text-xs text-text-body outline-none transition-colors focus-visible:border-[var(--focus)] focus-visible:ring-2 focus-visible:ring-[var(--focus)]/40"
       >
         <option value={ALL}>{allLabel}</option>
         {options.map((option) => (
@@ -365,7 +365,7 @@ function CreateProductDialog({ open, onOpenChange, existingCodes }: CreateProduc
 
           <div
             tabIndex={0}
-            className="hmi-scroll max-h-[60vh] overflow-y-auto pr-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+            className="hmi-scroll max-h-[60vh] overflow-y-auto pr-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
           >
             <div className="flex flex-col gap-4">
               <FormField
@@ -572,7 +572,7 @@ export default function ProductConfig() {
             >
               <div
                 tabIndex={0}
-                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]"
+                className="hmi-scroll min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
               >
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-surface-card">

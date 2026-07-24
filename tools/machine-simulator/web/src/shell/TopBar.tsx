@@ -39,7 +39,7 @@ function ModeSwitch() {
     <div
       role="radiogroup"
       aria-label={t("shell.topBar.transportModeAria")}
-      className="flex items-center gap-px border border-border-strong bg-surface-muted p-0.5"
+      className="flex items-center gap-px rounded-[var(--radius)] border border-border-strong bg-surface-muted p-0.5"
     >
       {MODE_OPTIONS.map((option) => {
         const selected = current === option.value
@@ -52,7 +52,7 @@ function ModeSwitch() {
             disabled={isPending}
             onClick={() => setMode.mutate(option.value)}
             className={cn(
-              "h-6 px-2.5 text-[11px] font-semibold tracking-wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
+              "h-6 rounded-[var(--radius-sm)] px-2.5 text-[11px] font-semibold tracking-wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]",
               selected
                 ? "bg-navy-700 text-white"
                 : "text-text-muted hover:text-text-strong"
@@ -209,7 +209,7 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
           type="button"
           onClick={onOpenPalette}
           aria-label={t("shell.topBar.paletteAria")}
-          className="flex items-center gap-1.5 border border-border-strong bg-surface-muted px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-navy-50 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] dark:hover:bg-navy-800/40 dark:hover:text-navy-200"
+          className="flex items-center gap-1.5 rounded-[var(--radius)] border border-border-strong bg-surface-muted px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-navy-50 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] dark:hover:bg-navy-800/40 dark:hover:text-navy-200"
         >
           <Command className="size-3.5" aria-hidden="true" />
           <kbd className="font-mono tabular-nums">K</kbd>
