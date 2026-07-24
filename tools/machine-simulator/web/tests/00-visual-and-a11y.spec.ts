@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { setFleetRunning } from "./support/engine"
 import {
   gotoDashboard,
   gotoInspector,
@@ -36,15 +37,29 @@ import { primeAppStorage, type Theme } from "./support/theme"
  * settings-panel variant of the same primitives. Every screen/mask/assertion below is otherwise
  * unchanged.
  *
- * MUST run before any other spec file — file order matters here because `FleetHost` inside the
- * engine is a process-lifetime singleton (see `playwright.config.ts`'s top comment). Every screen
- * below is captured PRISTINE: the fleet has never been started in this engine process, so cycles,
- * scenario, and settings are all still at their hardcoded startup defaults. That's not "probably
- * stable" — masking live counters would only get you that — it's PROVABLY deterministic: cycles
- * literally cannot change without an explicit `POST /v1/fleet/start`, which nothing before this file
- * runs (numeric `00-` prefix + `workers: 1` + `fullyParallel: false` in the config fixes the order).
- * No `mask:` is needed anywhere in this file as a result — see `task-10-report.md` for the full
- * reasoning, and the functional specs (`01`–`06`) for how the POPULATED/live states are covered
+ * SHOULD run before any other spec file (numeric `00-` prefix + `workers: 1` + `fullyParallel: false`
+ * in the config fix the order) — file order matters here because `FleetHost` inside the engine is a
+ * process-lifetime singleton (see `playwright.config.ts`'s top comment). Every screen below is
+ * captured against a stopped fleet: cycles, scenario, and settings are all still at their hardcoded
+ * startup defaults on a genuinely fresh engine, since nothing before this file ever calls
+ * `POST /v1/fleet/start`.
+ *
+ * WS3-T3 (visual-determinism-report.md) — that "nothing before this file starts the fleet" invariant
+ * held in THEORY from file order alone, but proved fragile in practice: `playwright.config.ts`'s own
+ * `webServer` reuses an already-running dev server outside CI (`reuseExistingServer: !process.env.CI`),
+ * and `11-hmi.spec.ts`'s `afterEach` deliberately leaves the shared fleet RUNNING when the suite
+ * finishes — so a second `npm run test:e2e` invocation against that same still-warm process (a
+ * realistic local dev loop, not a hypothetical) started this file's very first test with cycles already
+ * climbing, and every data cell/sparkline captured here silently baked in whatever cycle count/pass
+ * rate happened to be live at that instant — a real, reproduced source of baseline drift across runs
+ * that no per-node mask (they cover UNPREDICTABLE positions, not "the whole tile happens to say a
+ * different number today") could paper over. Every test below now calls `setFleetRunning(request,
+ * false)` first — `FleetHost.Stop()` is a no-op if already stopped (the common case, cycles staying at
+ * their hardcoded startup default of 0), so this doesn't change what a normal file-order run captures;
+ * it just stops relying on that ordering ALONE to guarantee it, the same "establish your own
+ * precondition, don't inherit one from file order" discipline `11-hmi.spec.ts`'s own I-15 fix already
+ * applies. No `mask:` is needed anywhere in this file as a result — see `task-10-report.md` for the
+ * full reasoning, and the functional specs (`01`–`06`) for how the POPULATED/live states are covered
  * instead (DOM/role assertions, not pixel snapshots — the brief's own explicit fallback for
  * inherently-live regions).
  *
@@ -54,6 +69,13 @@ import { primeAppStorage, type Theme } from "./support/theme"
  * (Settings' 2×2 card grid, mainly) out of the shot instead of scrolling to it.
  */
 test.use({ viewport: { width: 1440, height: 1600 } })
+
+// WS3-T3 — see this file's top doc comment: establishes the "stopped fleet" precondition explicitly,
+// rather than relying solely on file order + an assumption about what an earlier `npm run test:e2e`
+// invocation against a reused dev server left the shared engine in.
+test.beforeEach(async ({ request }) => {
+  await setFleetRunning(request, false)
+})
 
 const GLASS_ONLY: Theme[] = ["glass"]
 const ALL_THEMES: Theme[] = ["glass", "console", "warmth"]

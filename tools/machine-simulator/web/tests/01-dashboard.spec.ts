@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
-import { setFleetRunning } from "./support/engine"
+import { ENGINE_URL, setFleetRunning } from "./support/engine"
 import { gotoDashboard } from "./support/screens"
 import { vi as viDict } from "../src/i18n/vi"
 
@@ -22,7 +22,22 @@ test.describe("dashboard — fleet start/stop", () => {
     await setFleetRunning(request, false)
   })
 
-  test("empty state renders, Start Fleet populates the grid, Stop Fleet freezes it", async ({ page }) => {
+  test("empty state renders, Start Fleet populates the grid, Stop Fleet freezes it", async ({ page, request }) => {
+    // WS3-T3 (visual-determinism-report.md) — this test's first assertion below only holds against a
+    // fleet that has NEVER produced a cycle, and `FleetHost` exposes no reset-to-seed endpoint (its
+    // cycle counters only ever climb for the lifetime of the engine process, see `FleetHost.cs`) — the
+    // ONLY way to reach that state is to be the very first spec to ever call `POST /v1/fleet/start` in
+    // this process, which is true for a normal `npm run test:e2e` run (file order: `00-` never starts
+    // the fleet, this file is next) but silently false the moment this file runs standalone
+    // (`--grep`/`--only`) after any other spec, or against a dev server reused from an earlier dirty
+    // session. Asserting the precondition explicitly turns that into a clear, actionable failure here
+    // instead of a confusing "empty-state text never appeared" timeout below.
+    const preflight = await (await request.get(`${ENGINE_URL}/v1/fleet`)).json()
+    expect(
+      preflight.kpis.totalCycles,
+      "expected a never-started fleet (0 total cycles) — this spec must run first against a fresh engine (`npm run test:e2e`, not this file standalone after others)"
+    ).toBe(0)
+
     await gotoDashboard(page)
 
     // Empty state: no cycles yet, roster known, fleet not running. (Not `getByRole("heading", …)` —

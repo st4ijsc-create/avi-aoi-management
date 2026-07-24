@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
-import { pullMachineConfig, resetEstop, setFleetRunning } from "./support/engine"
+import { applyScenarioPreset, pullMachineConfig, resetEstop, resetScenarioToNormal, setFleetRunning } from "./support/engine"
 import { gotoHmi } from "./support/screens"
 import { primeAppStorage, type Theme } from "./support/theme"
 import { vi as viDict } from "../src/i18n/vi"
@@ -29,14 +29,12 @@ import { vi as viDict } from "../src/i18n/vi"
  * per-dot masks (covering only each dot's CURRENT position) couldn't paper over dots baked into the
  * baseline at DIFFERENT positions — reproduced live as a 166px diff. This file now establishes its own
  * precondition instead of inheriting one from file order, so it holds standalone too.
+ *
+ * WS3-T3 (visual-determinism-report.md) — the schematic VISUAL cases below (`SCHEMATIC_CASES`) are the
+ * one exception to "every test in this file wants a running fleet": they explicitly stop it right
+ * before capturing (see that loop's own comment for why a frozen `Date.now()` alone — the original
+ * WS3-T2 approach — wasn't enough).
  */
-
-/** WS3-T2 — an instant guaranteed to sit past ANY real plan's `startedAt + durationSeconds` (cycle
- * durations across this fleet top out at a few seconds — see `AutomationSchematic.tsx`'s WS3-T2
- * remarks), used to freeze `Date.now()` for the schematic visual baselines below. See the visual
- * test's own comment for why this specific mechanism (not a CSS animation override) is what makes the
- * living twin's JS-driven motion/reveal deterministic. */
-const FROZEN_FUTURE_TIME = new Date("2100-01-01T00:00:00Z")
 
 test.describe("HMI operator panel", () => {
   test.beforeEach(async ({ request }) => {
@@ -95,6 +93,46 @@ test.describe("HMI operator panel", () => {
     // as an accessible `<title>` — not the engine's generic simulator point codes (see
     // `AoiSchematic.tsx`'s header comment on the positional-correspondence disclosure).
     await expect.poll(() => schematic.locator("circle title").count(), { timeout: 15_000 }).toBeGreaterThan(0)
+  })
+
+  // WS3-T3 (visual-determinism-report.md) — the living twin's ACTUAL live behaviour (head/carriage
+  // really moving frame-to-frame off the engine's real per-cycle `CyclePlan`; a point really lighting
+  // up in its own step's real OK/NG colour) is what the schematic VISUAL baselines below deliberately
+  // stop capturing (they now freeze the fleet for a deterministic idle pose instead — see that loop's
+  // own comment). This is the non-pixel replacement: real DOM/attribute assertions against the running
+  // fleet, so the twin's motion and per-point NG lighting stay covered by something a real regression
+  // there would actually fail, without a flaky pixel baseline standing in for it.
+  test("living twin: the head genuinely travels across a cycle, and a point lights up NG when its real step result is NG", async ({
+    page,
+    request,
+  }) => {
+    // A high-defect preset (35%/point, vs. the ~5% default) makes an NG measurement land within a
+    // handful of AOI cycles instead of possibly dozens — reset back to "normal" below regardless of
+    // outcome, so nothing downstream (including a re-run against a reused dev server) inherits it,
+    // the same "undo your own precondition" discipline `06-scenario.spec.ts`'s own afterEach uses.
+    await applyScenarioPreset(request, "high-defect")
+    try {
+      // Head motion: `AutomationSchematic.tsx`'s carriage group (`.hmi-gantry-head`) is a plain SVG
+      // `transform` attribute recomputed every `requestAnimationFrame` from the real cycle clock
+      // (`cycleTwin.ts`) — not a CSS animation — so a real regression that froze the twin (e.g. a
+      // stale `plan` never re-fetched, or `useCycleTwin` wired to the wrong `animate` gate) would leave
+      // this attribute constant forever. Sampling it once, then polling for ANY change, is a direct,
+      // non-pixel proof the head is actually moving.
+      await gotoHmi(page, "SCRW-01")
+      const head = page.locator(".hmi-gantry-head")
+      const initialTransform = await head.getAttribute("transform")
+      await expect.poll(() => head.getAttribute("transform"), { timeout: 10_000 }).not.toBe(initialTransform)
+
+      // Per-point NG lighting: `AoiSchematic.tsx` gives each live step's dot an accessible `<title>`
+      // of `"{code} — {ĐẠT|LỖI}"` once that step's real result is revealed — a real regression that
+      // broke the plan→dot result wiring (miscoloring every dot the same tone, or never revealing a
+      // result at all) would leave this NG title unreachable even under a 35% defect rate.
+      await gotoHmi(page, "AOI-01")
+      const ngTitles = page.locator(".hmi-aoi-points-group circle title", { hasText: viDict.hmi.progress.ngLabel })
+      await expect.poll(() => ngTitles.count(), { timeout: 20_000 }).toBeGreaterThan(0)
+    } finally {
+      await resetScenarioToNormal(request)
+    }
   })
 
   test("E-STOP latches a real fault: stops the fleet, locks controls, freezes the schematic; RESET clears it", async ({
@@ -229,6 +267,17 @@ test.describe("HMI operator panel", () => {
   // built the same way the AOI one always was — narrow, stable `hmi-*` hooks on the genuinely live
   // sub-elements (see each schematic's own comments), everything else (frame, rails, dimension
   // lines, graph paper) left UNmasked so a regression like C-4's is actually caught.
+  //
+  // WS3-T3 (visual-determinism-report.md) — neither AOI's `.hmi-aoi-points-group` nor automation's
+  // `.hmi-scrw-points-group` appear below anymore: the visual loop now captures these schematics with
+  // the fleet STOPPED (see that loop's own comment), which puts `plan` at `null`
+  // (`MachineState.ToDetail`'s own idle gate) and every schematic's OWN documented null-plan fallback
+  // (`AoiSchematic.tsx`'s `points.map`, `AutomationSchematic.tsx`'s `IDLE_POINTS`) draws neutral,
+  // un-lit dots at fixed configured positions — no live per-cycle draw left to mask. Everything else
+  // here (clock, nameplate lamp, caption/feeder/reading strips, readout grid, log, output bar) is left
+  // masked exactly as before: those still reflect whatever cycles/verdicts happened to accumulate
+  // BEFORE this test's own stop call, which is real, still-live data the engine has no way to reset to
+  // zero (see `01-dashboard.spec.ts`'s own remarks on `FleetHost` having no reset-to-seed endpoint).
   const SCHEMATIC_CASES: { slug: string; code: string; mask: (page: Page) => Locator[] }[] = [
     {
       slug: "aoi",
@@ -236,7 +285,6 @@ test.describe("HMI operator panel", () => {
       mask: (page) => [
         page.locator(".hmi-clock"),
         page.locator(".hmi-nameplate-lamp"),
-        page.locator(".hmi-aoi-points-group"),
         page.locator(".hmi-aoi-caption"),
         page.locator(".hmi-readout-value"),
         page.getByRole("log"),
@@ -258,10 +306,6 @@ test.describe("HMI operator panel", () => {
         page.locator(".hmi-readout-value"),
         page.getByRole("log"),
         page.locator(".hmi-output-bar"),
-        // WS3-T2 — the living twin: which of SCRW-01's 4 real fastening steps land OK/NG this cycle
-        // is a live per-cycle draw (same reasoning as AOI's own `.hmi-aoi-points-group` mask below),
-        // so this stable-box group mask stands in for it rather than pinning an exact colour sequence.
-        page.locator(".hmi-scrw-points-group"),
       ],
     },
     {
@@ -280,50 +324,32 @@ test.describe("HMI operator panel", () => {
 
   for (const { slug, code, mask } of SCHEMATIC_CASES) {
     for (const theme of THEMES) {
-      test(`visual — ${slug} — ${theme}`, async ({ page }) => {
-        // WS3-T2 — the living twin (`cycleTwin.ts`/`useCycleTwin.ts`) positions the head/carriage and
-        // reveals per-point results as a plain SVG-attribute recomputed every `requestAnimationFrame`
-        // from real wall-clock `Date.now()` vs. the live plan's own `startedAt`/`durationSeconds` —
-        // NOT a CSS `animation`, so the `animation: none !important` override below (still needed for
-        // the genuinely-ambient CSS loops that remain — belt ticks, IoT signal-pulse arcs) has no
-        // effect on it. Freezing `Date.now()` (`page.clock.setFixedTime`, real timers/network/rAF
-        // still tick normally) is what makes THIS deterministic instead: any fixed instant far past
-        // the live plan's own `startedAt + durationSeconds` clamps `computeCyclePlanClock` to the same
-        // "cycle complete" pose every run — every step revealed by its own real result, head/carriage
-        // resting at the LAST real point — regardless of which actual cycle is in flight when the
-        // test happens to run. This is a MEANINGFUL baseline (real per-point colours, real final
-        // position), not a trivial idle one, and needs no new masking for the pose itself — only the
-        // *which* result each point landed (a live per-cycle draw) still needs the existing stable-box
-        // group masks (`.hmi-aoi-points-group`/`.hmi-scrw-points-group`) below.
-        await page.clock.setFixedTime(FROZEN_FUTURE_TIME)
+      test(`visual — ${slug} — ${theme}`, async ({ page, request }) => {
+        // WS3-T3 (visual-determinism-report.md) — the previous approach here froze the BROWSER'S
+        // `Date.now()` (`page.clock.setFixedTime`) far past any real plan's `startedAt +
+        // durationSeconds`, trying to clamp the JS-driven twin (`cycleTwin.ts`) to a "cycle complete"
+        // pose. That froze the MOTION math, but not the underlying DATA: the plan/board-points the
+        // twin reads still came from whichever real cycle the shared engine (`FleetHost`, a
+        // process-lifetime singleton) happened to have committed most recently — a live, per-run
+        // draw — so which points landed OK/NG, and exactly where the head rested, still differed run
+        // to run (reproduced live as a ~0.01% diff bleeding into the unmasked "Cycle Rate" micro-label
+        // once an infinite CSS loop — gated on the schematic's own `.hmi-schematic-run` class while
+        // running — landed on a different sub-pixel frame across runs, a documented Playwright
+        // edge case for infinite animations).
+        //
+        // Stopping the fleet fixes the actual source, not a symptom: `MachineState.ToDetail` gates
+        // `plan` to `null` whenever the fleet isn't running, which routes every schematic to its own
+        // documented, fully static idle fallback (see `SCHEMATIC_CASES`'s own comment above) — the
+        // SAME pose every run, with zero live motion to freeze and zero infinite CSS animation classes
+        // applied (`.hmi-schematic-run`/`.hmi-driving` are both React-applied only while `animate`,
+        // which requires `isRunning`). This is a fully deterministic, real STRUCTURAL baseline (real
+        // frame geometry, real configured point positions/count from the linked product) — an honest
+        // idle capture, not a masked-live one; the twin's actual LIVE motion/NG-lighting behaviour
+        // is covered separately by this file's own non-pixel "living twin" test above (running fleet,
+        // no pixel snapshot).
+        await setFleetRunning(request, false)
         await primeAppStorage(page, { theme })
         await gotoHmi(page, code)
-        // H4 job 3 — Playwright's built-in `animations: "disabled"` (the config default this suite
-        // relies on) freezes CSS transitions and FINITE animations reliably, but `index.css`'s
-        // `.hmi-schematic-run` keyframes (gantry sweep, camera sweep, belt-tick dash, signal pulse,
-        // packet travel, etc. — all `animation-iteration-count: infinite`) are a documented
-        // Playwright edge case: forcing `animation-duration: 0s` on an INFINITE-iteration animation
-        // doesn't reliably land every element on the same deterministic frame across runs in headless
-        // Chromium, reproduced live as a ~1px sub-pixel shift bleeding into unmasked, otherwise-
-        // completely-static sibling text (the "Tốc độ chu kỳ / Cycle Rate" micro-label) once the
-        // suite's tolerance was tightened — not a hypothetical flake, caught 3/3 times on repeated
-        // fresh runs before this fix. `animation: none` is a stronger, unambiguous override than
-        // duration:0 for infinite animations (no "which frame did a 0-duration infinite loop land on"
-        // ambiguity — the element just renders its unanimated base state), applied here rather than in
-        // the app's own CSS so production keeps its real motion.
-        await page.addStyleTag({ content: ".hmi-schematic-run * { animation: none !important; }" })
-        // Belt-and-suspenders against the exact flake the comment above describes: force layout/paint
-        // to settle on the style injection AND on web-font readiness before the pixel comparison,
-        // rather than relying solely on `toHaveScreenshot`'s own internal stability retries (which
-        // compare successive screenshots to EACH OTHER, not to the saved baseline — they can agree
-        // with each other on a still-slightly-off sub-pixel snap and call that "stable").
-        await page.evaluate(() => document.fonts.ready)
-        // Two RAF round-trips: waits for the style-injection's layout/paint to actually land (not
-        // just for the promise above to resolve) before the pixel comparison — the standard
-        // Playwright idiom for "let a just-applied style mutation finish settling."
-        await page.evaluate(
-          () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-        )
         // H2b: the ORIGINAL mask list here (`.hmi-graph-paper`, `.hmi-readout-grid` — the whole
         // schematic body and the whole readout panel) is exactly why the live review's flaws
         // (schematic marooned in ~25% of its sheet, a dead band under the readouts, and later C-4's

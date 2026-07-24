@@ -34,6 +34,16 @@ export async function resetScenarioToNormal(request: APIRequestContext): Promise
   if (!res.ok()) throw new Error(`reset scenario to normal failed: ${res.status()}`)
 }
 
+/** Applies any named scenario preset (`FleetHost.ListPresets()`'s own vocabulary — "normal",
+ * "high-defect", "sensor-drift", "network-outage", "hotfolder-aoi") — the same call
+ * `06-scenario.spec.ts`'s UI click makes, exposed here for specs that need a real, elevated defect
+ * rate (e.g. WS3-T3's living-twin NG-coverage test in `11-hmi.spec.ts`) without going through the
+ * Scenario screen's own UI. */
+export async function applyScenarioPreset(request: APIRequestContext, name: string): Promise<void> {
+  const res = await request.post(`${ENGINE_URL}/v1/scenario/preset`, { data: { name } })
+  if (!res.ok()) throw new Error(`apply scenario preset "${name}" failed: ${res.status()}`)
+}
+
 /** Resets the engine-stored `settings.language` back to Vietnamese — the Settings functional spec
  * flips it while exercising the language selector; this undoes that so nothing downstream (including
  * a re-run of the pristine visual pass) sees an unexpected default. */
