@@ -448,7 +448,11 @@ export default function TokensShowcase() {
 
           <Section eyebrow="Type" title="Scale &amp; numerics">
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-              <div className="rounded-xl border border-border bg-surface-card p-5 shadow-sm">
+              {/* M-10 (branch-review) — `shadow-sm` dropped: it's a real Tailwind v4 utility that
+                  paints an actual drop shadow regardless of this app's own `--shadow-*` custom
+                  properties (set to `none` — Tailwind's `shadow-*` utilities don't read them), so it
+                  was quietly violating the "no drop shadows" rule this very page documents. */}
+              <div className="rounded-xl border border-border bg-surface-card p-5">
                 {typeScale.map((row) => (
                   <div
                     key={row.px}
@@ -463,7 +467,7 @@ export default function TokensShowcase() {
                   </div>
                 ))}
               </div>
-              <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface-card p-5 shadow-sm">
+              <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface-card p-5">
                 <div>
                   <span className="text-xs font-semibold tracking-wide text-text-muted uppercase">
                     Tabular numerals

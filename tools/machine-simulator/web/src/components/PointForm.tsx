@@ -83,7 +83,23 @@ function jsonToText(value: unknown): string {
   return value == null ? "" : JSON.stringify(value, null, 2)
 }
 
+// I-14 (branch-review) — a per-row REACT-ONLY identity, never sent to the server (the submit mapping
+// below lists every wire field explicitly, so `_key` is dropped on save automatically). `shotIndex`
+// itself can't serve as the list key: it's just a user-facing ordinal seeded from `form.lighting.length`
+// at add-time, so removing shot 0 and then adding a new one re-mints the SAME `shotIndex` the removed
+// row had, and it isn't rendered as an editable field either (nothing keeps it unique across edits).
+// Using array `index` as the key had the concrete bug this fixes: deleting shot 1 of 3 shifted every
+// row after it up by one array position, so React matched the OLD index-2 DOM node (inputs, focus,
+// open/closed state) to the NEW row 1's data instead of unmounting the removed row — visible as focus
+// landing on the wrong shot's field and uncontrolled input state bleeding across rows.
+let lightingKeySeq = 0
+function nextLightingKey(): string {
+  lightingKeySeq += 1
+  return `lighting-${lightingKeySeq}`
+}
+
 interface LightingShotFormValues {
+  _key: string
   shotIndex: string
   name: string
   lightSource: string
@@ -100,6 +116,7 @@ interface LightingShotFormValues {
 
 function blankLighting(index: number): LightingShotFormValues {
   return {
+    _key: nextLightingKey(),
     shotIndex: String(index),
     name: "",
     lightSource: "",
@@ -117,6 +134,7 @@ function blankLighting(index: number): LightingShotFormValues {
 
 function lightingToForm(shot: LightingShot): LightingShotFormValues {
   return {
+    _key: nextLightingKey(),
     shotIndex: String(shot.shotIndex),
     name: shot.name ?? "",
     lightSource: shot.lightSource ?? "",
@@ -1135,7 +1153,7 @@ export function PointForm({ product, point, newSeed, existingCodes, onSaved, onC
                 <p className="text-sm text-text-muted">{t("pointsEditor.form.lighting.empty")}</p>
               ) : (
                 form.lighting.map((shot, index) => (
-                  <div key={index} className="flex flex-col gap-3 border border-border-strong p-3">
+                  <div key={shot._key} className="flex flex-col gap-3 border border-border-strong p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold text-text-strong">
                         {t("pointsEditor.form.lighting.shotTitle", { index: index + 1 })}

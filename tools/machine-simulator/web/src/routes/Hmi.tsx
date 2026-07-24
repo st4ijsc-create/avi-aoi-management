@@ -52,6 +52,28 @@ function nextLocalId(): string {
   return `local-${localEventSeq}`
 }
 
+/**
+ * I-3 (branch-review) — `configCheck.data.products` is not necessarily one entry: an AOI/AVI machine's
+ * `/config/check` (no `productCode` filter, `Hmi.tsx` never passes one) returns EVERY product the
+ * ecosystem knows about, each with its OWN independent drift state (live-confirmed against the running
+ * Demo fleet: AOI-01/AOI-02 both come back `[MODEL-A: in_sync, MODEL-B: drift]`). The previous build
+ * read only `products[0]` for BOTH the product tile and the CONFIG STATE tile, so MODEL-B's real drift
+ * was silently invisible on every AOI panel — an operator staring at a green/"in sync" CONFIG STATE
+ * tile while a second product was, in fact, out of sync. Worst-wins across the whole list is the only
+ * honest single-tile summary: `drift` (a real, actionable problem) outranks `unknown` (we can't tell)
+ * outranks `in_sync` (fine) — same severity ordering `CONFIG_DRIFT_TONE` already encodes as
+ * warn > idle > run.
+ */
+const DRIFT_SEVERITY: Record<string, number> = { drift: 2, unknown: 1, in_sync: 0 }
+
+function worstDriftState(products: readonly { driftState: string }[]): string | null {
+  if (products.length === 0) return null
+  return products.reduce<string>(
+    (worst, p) => (DRIFT_SEVERITY[p.driftState] ?? 1) > (DRIFT_SEVERITY[worst] ?? 1) ? p.driftState : worst,
+    products[0].driftState
+  )
+}
+
 function LoadingKiosk() {
   return (
     <div className="flex h-svh w-full items-center justify-center bg-surface-subtle">
@@ -126,17 +148,34 @@ export default function Hmi() {
   // non-AOI classes (and `machine.driftState` itself only reflects a manual sync-config action THIS
   // session, not the real always-on checksum drift this hook exposes).
   const configCheck = useMachineConfigCheck(code)
-  const productCode = configCheck.data?.products?.[0]?.productModelCode
+  // I-3 — the full list (possibly >1 product, see `worstDriftState`'s doc comment above), NOT just
+  // the first entry. The schematic below still only DRAWS one product's points (it can't overlay two
+  // boards' measurement-point layouts at once — a real drawing constraint, not an oversight), so it
+  // keeps using this same first/primary entry; what changes is that the CONFIG STATE tile and the
+  // product tile (`ReadoutGrid.tsx`) now honestly reflect the WHOLE list instead of pretending it has
+  // exactly one element.
+  const productDrifts = configCheck.data?.configKind === "points" ? configCheck.data.products : []
+  const productCode = productDrifts[0]?.productModelCode
   const product = useProduct(productCode)
   const productPoints = useProductPoints(productCode)
 
   // Real checksum-based config-sync drift (`in_sync | drift | unknown`) — `ConfigDtos.cs`'s
-  // `MachineConfigCheckDto`: exactly one of `products`/`recipe` is populated per `configKind`.
+  // `MachineConfigCheckDto`: exactly one of `products`/`recipe` is populated per `configKind`. I-3:
+  // worst-wins across every product, not just the first — see `worstDriftState`.
   const configDriftState: string | null = configCheck.data
     ? configCheck.data.configKind === "points"
-      ? (configCheck.data.products[0]?.driftState ?? null)
+      ? worstDriftState(productDrifts)
       : (configCheck.data.recipe?.driftState ?? null)
     : null
+
+  // I-3 — the product tile (`ReadoutGrid.tsx`'s "product"/AOI class) must not silently claim a machine
+  // runs a single product when the config-check actually named more than one: "MODEL-A +1" style
+  // suffix rather than dropping the second product on the floor the way a bare product name would.
+  const primaryProductLabel = product.data?.name ?? productCode ?? null
+  const productTileLabel =
+    primaryProductLabel && productDrifts.length > 1
+      ? `${primaryProductLabel} +${productDrifts.length - 1}`
+      : primaryProductLabel
 
   // I-1 — branch-review: the engine's per-cycle `boardPoints` are generic simulator points
   // (`PT-001`…`PT-020`, `AoiInspectorSim.cs`) that share NO code vocabulary with the product's own
@@ -300,7 +339,7 @@ export default function Hmi() {
               deviceClass={machine.class}
               isRunning={running}
               cycles={machine.cycles}
-              aoiProductName={product.data?.name ?? productCode ?? null}
+              aoiProductName={primaryProductLabel}
               aoiPoints={aoiPoints}
               aoiUnlocatedDefects={aoiUnlocatedDefects}
               iotLatestReading={iotLatestReading}
@@ -319,7 +358,7 @@ export default function Hmi() {
               >
                 <ReadoutGrid
                   machine={machine}
-                  productLabel={isAoi ? (product.data?.name ?? productCode ?? null) : undefined}
+                  productLabel={isAoi ? productTileLabel : undefined}
                   configDriftState={configDriftState}
                 />
               </div>

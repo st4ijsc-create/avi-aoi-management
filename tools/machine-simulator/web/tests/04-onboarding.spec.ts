@@ -92,7 +92,19 @@ test.describe("onboarding — register → approve → claim → done → joins 
     // a substring match would also pick up.
     await expect(page.getByText(viDict.onboarding.done.savedFor({ code: serial }), { exact: true })).toBeVisible()
     await expect(page.getByText(viDict.onboarding.done.joinedFleet({ code: serial }))).toBeVisible()
-    const keyField = page.getByLabel("mk_ key")
+    // M-5/M-8 (branch-review) — this field used to be reached via its own hardcoded English
+    // `aria-label="mk_ key"`, standing in for a `FormField` that had no `htmlFor` at all (so its
+    // visible `<label>` wasn't actually associated with this input). Now that the `FormField` has a
+    // real `id`/`htmlFor` pair and the redundant aria-label is gone, the field's accessible name is
+    // its real, translated label — `onboarding.done.keyLabel`. Scoped by `#onb-done-key` rather than
+    // `getByLabel` here specifically: `onboarding.pasteCard.keyLabel` (the separate, always-mounted
+    // "paste an existing key" card lower on this same page) happens to resolve to the exact same vi
+    // copy ("Khóa mk_") — a real, pre-existing, coincidental label-text collision between two
+    // legitimately-different fields that a page-wide `getByLabel` can't disambiguate. The explicit
+    // `toHaveAccessibleName` assertion below still proves the thing M-8 actually fixed (a real
+    // computed accessible name from the associated `<label>`, not just "the input isn't empty").
+    const keyField = page.locator("#onb-done-key")
+    await expect(keyField).toHaveAccessibleName(viDict.onboarding.done.keyLabel)
     await expect(keyField).not.toHaveValue("")
 
     await page.getByRole("button", { name: viDict.onboarding.done.reveal }).click()

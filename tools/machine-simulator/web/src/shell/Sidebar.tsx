@@ -39,8 +39,9 @@ function isNavItemActive(location: string, path: string): boolean {
 }
 
 /** Looks up a dot-path key against a specific dictionary (not the active one) — used to render the
- * inactive-language gloss beside a nav label, same bilingual register `<MicroLabel>` uses
- * elsewhere. Nav labels are always plain strings (no interpolation vars), so no `Vars` handling. */
+ * inactive-language gloss beside a nav label, same bilingual register `useGloss()`/`Readout`'s
+ * `labelEn` use elsewhere. Nav labels are always plain strings (no interpolation vars), so no `Vars`
+ * handling. */
 function resolveLabel(dict: Dictionary, key: string): string {
   const parts = key.split(".")
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,7 +71,10 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="hmi-scroll flex flex-1 flex-col gap-px overflow-y-auto px-2 py-2" aria-label="Main">
+      <nav
+        className="hmi-scroll flex flex-1 flex-col gap-px overflow-y-auto px-2 py-2"
+        aria-label={t("shell.sidebar.navAria")}
+      >
         {NAV_ITEMS.map((item) => {
           const active = isNavItemActive(location, item.path)
           const Icon = item.icon

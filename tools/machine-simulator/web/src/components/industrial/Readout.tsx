@@ -101,8 +101,14 @@ export function Readout({
               isText ? "block max-w-full truncate text-[19px] leading-[1.15]" : "text-[38px] leading-[1.05]",
               TONE_TEXT[tone]
             )}
+            // M-4 (branch-review) — this `<span>` has the implicit `role="generic"`, which ARIA
+            // forbids naming (aria-label/aria-labelledby are prohibited attributes on that role, and
+            // axe's `aria-prohibited-attr` flags it); most screen readers ignore an aria-label here
+            // anyway. It's also redundant even where honoured: `truncate` only clips the value
+            // VISUALLY (CSS `text-overflow: ellipsis`), the full untruncated string stays the span's
+            // real text content, so the accessible name computed from that content already equals
+            // `fullText`. `title` alone is kept for the sighted-hover tooltip.
             title={isText ? fullText : undefined}
-            aria-label={isText && fullText ? fullText : undefined}
           >
             {value}
           </span>
@@ -121,7 +127,12 @@ export function Readout({
         >
           <span className={cn("hmi-micro min-w-0 truncate", stacked ? "w-full" : "flex-1")}>{label}</span>
           {labelEn ? (
-            <span className={cn("hmi-micro truncate text-text-muted/70", stacked ? "w-full" : "shrink-0")}>{labelEn}</span>
+            // M-1 (branch-review) — `text-text-muted/70` was dead: `.hmi-micro` (index.css) sets its
+            // own `color: var(--text-muted)` in the same `@layer utilities`, which wins the cascade
+            // over this Tailwind utility class, so the gloss never actually rendered at the reduced
+            // 70% opacity the class name promised (and the class itself would fail contrast if it
+            // ever DID take effect — `.hmi-micro`'s own muted tone is already tuned to pass).
+            <span className={cn("hmi-micro truncate", stacked ? "w-full" : "shrink-0")}>{labelEn}</span>
           ) : null}
         </div>
         {/* `hmi-readout-value` also covers `sub` (H4 job 3): some callers pass genuinely-live content

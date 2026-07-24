@@ -236,7 +236,11 @@ export default function Settings() {
       <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Sheet title={t("settings.connection.title")} titleEn={gloss("settings.connection.title")} bodyClassName="flex flex-col gap-4">
-          <FormField label="Server URL" labelEn="SERVER URL" htmlFor="settings-server-url">
+          <FormField
+            label={t("settings.connection.serverUrlLabel")}
+            labelEn={gloss("settings.connection.serverUrlLabel")}
+            htmlFor="settings-server-url"
+          >
             <Input
               id="settings-server-url"
               value={serverUrl}

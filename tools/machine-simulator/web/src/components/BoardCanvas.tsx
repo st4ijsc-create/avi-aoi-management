@@ -39,26 +39,34 @@ function colorForType(type: MeasurementType, tokens: ChartTokens): string {
   return tokens.chartSeries[(idx < 0 ? 0 : idx) % tokens.chartSeries.length]
 }
 
-/** Border-radius/style variety per `shape` so two overlapping points of the same measurementType (same
- * color) are still visually distinguishable at a glance — combined with `colorForType` this gives a
- * two-axis (color × shape) encoding instead of relying on color alone. */
+/** Rotation/border-style/fill variety per `shape` so two overlapping points of the same
+ * measurementType (same color) are still visually distinguishable at a glance — combined with
+ * `colorForType` this gives a two-axis (color × shape) encoding instead of relying on color alone.
+ *
+ * I-13 (branch-review) — this used to also carry `rounded-full`/`rounded-[5px]`/`rounded-[3px]`/
+ * `rounded-[4px]` per shape, which broke spec §1's non-negotiable "radius 0 everywhere" ground rule on
+ * the one canvas in the app that had quietly grown rounded corners. Every marker is now a plain square
+ * (or a square rotated 45° for `polygon`, which was already how that shape read a diamond — rotation
+ * needs no radius). The one real loss: `circle` and `rect` are now visually identical (both a plain
+ * square outline) where they used to differ by roundness — spec compliance wins over that nicety;
+ * `colorForType`'s measurementType color still carries the primary distinguishing signal. */
 function shapeClassName(shape: MeasurementPoint["shape"]): string {
   switch (shape) {
     case "rect":
-      return "rounded-[5px]"
+      return ""
     case "polygon":
-      return "rounded-[3px] rotate-45"
+      return "rotate-45"
     case "ring":
-      return "rounded-full border-[3px] bg-surface-card/40"
+      return "border-[3px] bg-surface-card/40"
     case "mask":
-      return "rounded-[5px] border-dashed"
+      return "border-dashed"
     case "array":
-      return "rounded-[4px] border-dotted"
+      return "border-dotted"
     case "line":
-      return "h-2.5! w-9! rounded-full"
+      return "h-2.5! w-9!"
     case "circle":
     default:
-      return "rounded-full"
+      return ""
   }
 }
 
@@ -113,10 +121,13 @@ interface BoardCanvasProps {
  * a plausible 4:3 when unset) via CSS `aspect-ratio` + `object-contain` on the `<img>` — since both
  * share the SAME ratio, the image fills the container edge-to-edge with no letterboxing, which is
  * what makes percentage-based marker positioning line up with the actual pixels of the image
- * underneath. When the reference image is missing or fails to load (the seeded demo products'
- * `assets/products/...` paths don't resolve to real files — see `ProductImageThumb.tsx`'s own doc
- * comment), falls back to the shared `hmi-graph-paper` ground so markers still have a legible surface
- * to sit on instead of a broken-image icon.
+ * underneath. When the reference image is missing or fails to load, falls back to the shared
+ * `hmi-graph-paper` ground so markers still have a legible surface to sit on instead of a
+ * broken-image icon. M-9 (branch-review) — the seeded demo products' PRODUCT-level board images
+ * (`model-a-board.png`/`model-b-board.png`) DO resolve; it's the per-point/fiducial images this
+ * component doesn't render (see `ProductImageThumb.tsx`'s own doc comment) that never had a real file
+ * behind them — `ProductConfigStore.SeedProducts` now seeds those as `null` rather than a 404-forever
+ * URL, so this fallback path is reached honestly (no URL at all) rather than via a failed fetch.
  *
  * H3d — restyled as the engineering-drawing sibling of the HMI AOI schematic (`AoiSchematic.tsx`,
  * spec §7 "make this the strongest one"): framed on the graph-paper ground with a technical caption

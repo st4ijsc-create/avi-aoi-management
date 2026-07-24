@@ -516,9 +516,17 @@ function DoneStep({
         <Input id="onb-done-code" readOnly value={machineCode} className="font-numeric" />
       </FormField>
 
-      <FormField label={t("onboarding.done.keyLabel")} labelEn={gloss("onboarding.done.keyLabel")}>
+      {/* M-8 (branch-review) — this `FormField` used to omit `htmlFor`, so its `<label>` rendered with
+          no `for` attribute: clicking the label text didn't focus the input, and a screen reader
+          didn't get this label as the input's accessible name at all — the `Input`'s own hardcoded
+          English `aria-label="mk_ key"` (M-5) was standing in for it (and would keep winning over the
+          label even once associated, since `aria-label` outranks an associated `<label>` in the
+          accessible-name computation). Adding `id`/`htmlFor` and dropping the redundant aria-label
+          together: the field's real, translated label (`onboarding.done.keyLabel` — "Khóa mk_"/"mk_
+          key", vi/en) now IS the accessible name, in both directions, in both languages. */}
+      <FormField label={t("onboarding.done.keyLabel")} labelEn={gloss("onboarding.done.keyLabel")} htmlFor="onb-done-key">
         <div className="flex items-center gap-1.5">
-          <Input readOnly value={revealed ? mkKey : maskKey(mkKey)} className="font-mono" aria-label="mk_ key" />
+          <Input id="onb-done-key" readOnly value={revealed ? mkKey : maskKey(mkKey)} className="font-mono" />
           <Button
             type="button"
             variant="outline"
@@ -851,7 +859,7 @@ export default function Onboarding() {
         >
           <div className="flex shrink-0 flex-col gap-4 p-4 pb-0">
             <ModeIndicator isDemo={isDemo} serverUrl={serverUrl} />
-            <StepIndicator steps={STEPS} currentIndex={stepIndex} />
+            <StepIndicator steps={STEPS} currentIndex={stepIndex} ariaLabel={t("onboarding.steps.progressAria")} />
           </div>
           <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto p-4 pt-0">
             {stepIndex === 0 ? (

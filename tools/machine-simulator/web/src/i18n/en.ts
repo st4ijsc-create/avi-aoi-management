@@ -29,6 +29,10 @@ export const en: Dictionary = {
     },
     sidebar: {
       brandSubtitle: "Machine Simulator",
+      // M-5 (branch-review) — `<nav aria-label>` was hardcoded English ("Main"), breaking vi/en
+      // parity for the one landmark a screen-reader user relies on to jump straight to primary
+      // navigation.
+      navAria: "Main",
     },
     topBar: {
       fallbackTitle: "ST4I Machine Simulator",
@@ -713,6 +717,10 @@ export const en: Dictionary = {
       poll: "Approval",
       claim: "Claim / Enroll",
       done: "Done",
+      // M-5 (branch-review) — `StepIndicator`'s own `aria-label` was hardcoded English
+      // ("Onboarding progress"), breaking vi/en parity for the one wizard-progress landmark a
+      // screen-reader user relies on throughout this whole flow.
+      progressAria: "Onboarding progress",
     },
     demoLiveToggle: {
       aria: "Onboarding path",
@@ -919,6 +927,11 @@ export const en: Dictionary = {
     subtitle: "Connection, operating mode, machine auth, and language — wired to /v1/settings and /v1/mode.",
     connection: {
       title: "Server connection",
+      // M-6 (branch-review) — this field used to be `<FormField label="Server URL" labelEn="SERVER
+      // URL">`: a literal string plus its own uppercase copy, not routed through `t()`/`gloss()` like
+      // every other field on this screen, so it never followed a language switch (a vi UI still showed
+      // "Server URL"/"SERVER URL" verbatim, in English, twice).
+      serverUrlLabel: "Server URL",
       verifyTlsLabel: "Verify TLS",
       verifyTlsHint: "Rejects invalid HTTPS certificates.",
       check: "Check connection",
@@ -1235,7 +1248,6 @@ export const en: Dictionary = {
     entryButton: "Machine HMI",
     entryButtonAria: (vars: Vars) => `Open machine HMI for ${vars.code}`,
     back: "Back to machine detail",
-    pageTitle: (vars: Vars) => `Machine HMI — ${vars.code}`,
     shift: (vars: Vars) => `SHIFT ${vars.n}`,
 
     tabs: {
@@ -1261,19 +1273,16 @@ export const en: Dictionary = {
 
     controls: {
       title: "PHYSICAL CONTROLS",
-      titleEn: "Điều khiển vật lý",
       start: "START",
       pause: "PAUSE",
       reset: "RESET",
       estop: "E-STOP",
       estopBanner: "E-STOP ENGAGED",
       estopHint: "Press RESET to unlock the controls",
-      locked: "Controls locked",
     },
 
     log: {
       title: "SYSTEM LOG",
-      titleEn: "Nhật ký hệ thống",
       empty: "No events yet.",
       estopEngaged: "E-STOP — fleet stopped, controls locked",
       estopFailed: "E-STOP FAILED — engine did not confirm the stop",
@@ -1285,7 +1294,6 @@ export const en: Dictionary = {
 
     progress: {
       title: "PRODUCTION PROGRESS",
-      titleEn: "Tiến độ sản xuất",
       okLabel: "OK",
       ngLabel: "NG",
       totalLabel: "TOTAL",
@@ -1301,9 +1309,6 @@ export const en: Dictionary = {
       remaining: "REMAINING (SIMULATED)",
       feederDisclosure: "Remaining-screw count is a simulated estimate derived from the cycle counter — not a real inventory signal from the machine.",
       zAxis: "Z-AXIS",
-      conveyor: "CONVEYOR",
-      camera: "CAMERA HEAD",
-      board: "PCB",
       node: "SENSOR NODE",
       uplink: "UPLINK",
       noProduct: "No product config linked",
@@ -1315,7 +1320,6 @@ export const en: Dictionary = {
 
     readoutPanel: {
       title: "OPERATING READOUTS",
-      titleEn: "Thông số vận hành",
     },
 
     readout: {
@@ -1338,6 +1342,12 @@ export const en: Dictionary = {
       observedSpan: "Observed Span",
       status: "Status",
       configStateNotApplicable: "N/A",
+      // I-5 — IoT has no pass/fail verdict at all (a sensor node reports a signal, not a judged
+      // board/screw), so this tile is dead by construction on the IoT class, same structural gap
+      // `configStateNotApplicable` (I-4) already names for CONFIG STATE. An explicit N/A reads as
+      // "not applicable to this machine class"; the previous bare "—" was indistinguishable from
+      // "waiting for data".
+      passRateNotApplicable: "N/A",
     },
   },
 

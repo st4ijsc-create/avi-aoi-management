@@ -44,7 +44,13 @@ test.describe("scenario", () => {
     // `exact: true` — the current-state status line ("burst — cycleRate=6.00x, …") contains this
     // same substring.
     await expect(page.getByText("6.00x", { exact: true })).toBeVisible()
-    // `activePreset` badge — a raw server-side token, intentionally not translated (Scenario.tsx).
-    await expect(page.getByText("burst", { exact: true })).toBeVisible()
+    // M-7 (branch-review) — the `activePreset` badge used to print the raw server-side token
+    // ("burst") untranslated while `PresetCard` resolved every other preset name through `t()`;
+    // `resolvePresetLabel` (Scenario.tsx) now covers this one too, so the badge reads the same
+    // translated `scenario.burst` copy the Burst button itself uses — which is exactly why a bare
+    // `getByText` now matches BOTH of them (button + badge) and needs scoping to the badge element.
+    await expect(
+      page.locator('[data-slot="status-badge"]').filter({ hasText: viDict.scenario.burst })
+    ).toBeVisible()
   })
 })

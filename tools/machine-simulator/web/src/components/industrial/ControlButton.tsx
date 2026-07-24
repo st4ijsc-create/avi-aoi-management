@@ -135,7 +135,7 @@ export function ControlButton({ variant, label, labelEn, className, disabled, pr
           variant's own already-appropriate color (white on start/estop, warn-text on pause, body text
           on reset) reads correctly at every variant without a per-variant contrast exception. */}
       {/* M-10 (mc-feature-review.md) — `aria-hidden`, same visual-gloss-register-not-a-second-accessible-name
-          pattern every other bilingual gloss in this project already follows (FormField/MicroLabel/
+          pattern every other bilingual gloss in this project already follows (FormField/Readout/
           CycleLogTable/TraceTable). Without this, E-STOP's accessible name computed as
           "DỪNG KHẨN E-STOP" / RESET's as "ĐẶT LẠI RESET" — the inverse of the gloss-hiding this project
           otherwise enforces everywhere else — which is also why 13-machine-settings.spec.ts's RESET

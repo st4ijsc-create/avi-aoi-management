@@ -111,8 +111,8 @@ interface SchematicCaptionStripProps {
 /** The "caption + short readout strip attached directly to the visualization" (layout analysis §1.2)
  * — one fixed-height row (`h-9`, so its own bounding box never depends on live content, the same
  * "mask a stable box, not the live text's own shrink-to-content extent" discipline the removed
- * in-canvas mask hooks used) truncated with an accessible `title` per spec `Readout`/`MicroLabel`
- * convention for text that can run long. */
+ * in-canvas mask hooks used) truncated with an accessible `title` per `Readout`'s own convention for
+ * text that can run long. */
 function SchematicCaptionStrip({
   deviceClass,
   cycles,

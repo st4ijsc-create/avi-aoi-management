@@ -32,6 +32,7 @@ export const vi = {
     },
     sidebar: {
       brandSubtitle: "Máy mô phỏng",
+      navAria: "Điều hướng chính",
     },
     topBar: {
       fallbackTitle: "Máy mô phỏng ST4I",
@@ -720,6 +721,7 @@ export const vi = {
       poll: "Chờ duyệt",
       claim: "Claim / Enroll",
       done: "Hoàn tất",
+      progressAria: "Tiến trình thêm máy",
     },
     demoLiveToggle: {
       aria: "Đường dẫn onboarding",
@@ -926,6 +928,7 @@ export const vi = {
     subtitle: "Kết nối, chế độ vận hành, xác thực máy và ngôn ngữ — kết nối trực tiếp tới /v1/settings và /v1/mode.",
     connection: {
       title: "Kết nối máy chủ",
+      serverUrlLabel: "Địa chỉ máy chủ (Server URL)",
       verifyTlsLabel: "Xác thực TLS (Verify TLS)",
       verifyTlsHint: "Từ chối chứng chỉ HTTPS không hợp lệ.",
       check: "Kiểm tra kết nối",
@@ -1250,7 +1253,6 @@ export const vi = {
     entryButton: "Bảng điều khiển máy",
     entryButtonAria: (vars: Vars) => `Mở bảng điều khiển máy ${vars.code}`,
     back: "Về chi tiết máy",
-    pageTitle: (vars: Vars) => `Bảng điều khiển máy ${vars.code}`,
     shift: (vars: Vars) => `CA ${vars.n}`,
 
     // Task 4 — the tab rail HMI_DESIGN_SPEC.md §8.1 has always reserved a row for, directly under the
@@ -1287,19 +1289,16 @@ export const vi = {
 
     controls: {
       title: "Điều khiển vật lý",
-      titleEn: "PHYSICAL CONTROLS",
       start: "BẮT ĐẦU",
       pause: "TẠM DỪNG",
       reset: "ĐẶT LẠI",
       estop: "DỪNG KHẨN",
       estopBanner: "ĐANG DỪNG KHẨN CẤP",
       estopHint: "Nhấn ĐẶT LẠI để gỡ khóa điều khiển",
-      locked: "Điều khiển đã khóa",
     },
 
     log: {
       title: "Nhật ký hệ thống",
-      titleEn: "SYSTEM LOG",
       empty: "Chưa có sự kiện nào.",
       estopEngaged: "DỪNG KHẨN — đã dừng fleet, khóa điều khiển",
       estopFailed: "LỖI DỪNG KHẨN — máy chủ không xác nhận đã dừng",
@@ -1311,7 +1310,6 @@ export const vi = {
 
     progress: {
       title: "Tiến độ sản xuất",
-      titleEn: "PRODUCTION PROGRESS",
       okLabel: "ĐẠT",
       ngLabel: "LỖI",
       totalLabel: "TỔNG",
@@ -1331,9 +1329,6 @@ export const vi = {
       remaining: "CÒN LẠI (MÔ PHỎNG)",
       feederDisclosure: "Số vít còn lại là ước tính mô phỏng theo số chu kỳ — không phải tín hiệu tồn kho thật từ máy.",
       zAxis: "TRỤC Z",
-      conveyor: "BĂNG TẢI",
-      camera: "ĐẦU CAMERA",
-      board: "BO MẠCH",
       node: "NÚT CẢM BIẾN",
       uplink: "TRẠM THU",
       noProduct: "Chưa gán sản phẩm cấu hình",
@@ -1355,7 +1350,6 @@ export const vi = {
 
     readoutPanel: {
       title: "Thông số vận hành",
-      titleEn: "OPERATING READOUTS",
     },
 
       // H5b — `metric`/`configState`/`passRate` shortened: live-reproduced ellipsis truncation at the
@@ -1387,6 +1381,9 @@ export const vi = {
       // applicable" reads honestly, unlike a bare em dash (which looks identical to "still waiting
       // for data").
       configStateNotApplicable: "KHÔNG ÁP DỤNG",
+      // I-5 — same "not applicable, not waiting" treatment as configStateNotApplicable (I-4): IoT
+      // sensor nodes have no pass/fail verdict, so this tile can never resolve to a real number.
+      passRateNotApplicable: "KHÔNG ÁP DỤNG",
     },
   },
 

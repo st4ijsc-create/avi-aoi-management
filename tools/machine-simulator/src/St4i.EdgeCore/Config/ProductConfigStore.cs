@@ -365,7 +365,18 @@ public sealed class ProductConfigStore
     /// can start from this SAME byte-identical seed and apply its own small, deliberate divergence on
     /// top — rather than duplicating ~300 lines of seed point data a second time. Every call returns a
     /// fresh set of instances (no shared mutable state with whatever <see cref="ProductConfigStore"/>
-    /// itself seeded into its own <see cref="_products"/>).</summary>
+    /// itself seeded into its own <see cref="_products"/>).
+    ///
+    /// M-9 (branch-review) — per-point <c>ReferenceImageUrl</c>/fiducial <c>TemplateImageUrl</c> were
+    /// removed from this seed data (they used to point at <c>assets/products/model-*/points/*.png</c>
+    /// and <c>assets/products/model-*/fid*.png</c>, none of which have ever had a real file behind
+    /// them — confirmed: only the two PRODUCT-level board images, <c>model-a-board.png</c>/
+    /// <c>model-b-board.png</c>, actually exist under <c>web/public/assets/products/</c>). Left as-is
+    /// they 404 forever; <c>BoardCanvas.tsx</c>/<c>ProductImageThumb.tsx</c> already have a graceful
+    /// "no image" fallback (an <c>ImageOff</c> icon) for a null/missing URL, so nulling these here
+    /// makes the UI show that HONEST empty state immediately instead of attempting-then-failing a
+    /// network request for a file that will never exist — same principle as the CONFIG STATE/pass-rate
+    /// tiles' own "N/A, not silently broken" fixes elsewhere in this pass.</summary>
     public static List<ProductModel> SeedProducts() => new() { SeedModelA(), SeedModelB() };
 
     private static ProductModel SeedModelA()
@@ -386,7 +397,6 @@ public sealed class ProductConfigStore
                 CropWidth = 48, CropHeight = 48, OrderIndex = 0, IsActive = true,
                 Shape = PointShape.Circle,
                 Lighting = new() { new() { ShotIndex = 0, Name = "Bright-field coax", LightSource = "LED_RING", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 80, AngleDeg = 90, ExposureUs = 1500, Gain = 1.0, FocusOffsetUm = 0, Purpose = "height" } },
-                ReferenceImageUrl = "assets/products/model-a/points/p01-c1.png",
                 LastModifiedAt = now,
             },
             new()
@@ -406,7 +416,6 @@ public sealed class ProductConfigStore
                     new() { ShotIndex = 0, Name = "Bright-field", LightSource = "LED_RING", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 75, AngleDeg = 90, ExposureUs = 1800, Gain = 1.0, Purpose = "shape" },
                     new() { ShotIndex = 1, Name = "Dark-field", LightSource = "LED_RING", Color = "amber", ColorHex = "#FFBF00", IntensityPct = 90, AngleDeg = 25, ExposureUs = 3200, Gain = 1.4, Purpose = "void" },
                 },
-                ReferenceImageUrl = "assets/products/model-a/points/p02-j3.png",
                 LastModifiedAt = now,
             },
             new()
@@ -420,7 +429,6 @@ public sealed class ProductConfigStore
                 Shape = PointShape.Rect, Geometry = ParseJson("""{"width":36,"height":18,"rotationDeg":0}"""),
                 OffsetXMax = 0.20, OffsetYMax = 0.20,
                 Lighting = new() { new() { ShotIndex = 0, Name = "Bright-field", LightSource = "LED_BAR", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 70, AngleDeg = 90, ExposureUs = 1200, Gain = 1.0, Purpose = "placement" } },
-                ReferenceImageUrl = "assets/products/model-a/points/p03-cn2.png",
                 LastModifiedAt = now,
             },
             new()
@@ -433,7 +441,6 @@ public sealed class ProductConfigStore
                 Shape = PointShape.Rect, Geometry = ParseJson("""{"width":80,"height":40}"""),
                 Criteria = ParseJson("""{"expectedPattern":"^SN-[0-9]{6}$","ocrMinConfidence":0.9,"decodeSymbology":"QR"}"""),
                 Lighting = new() { new() { ShotIndex = 0, Name = "Diffuse dome", LightSource = "DOME", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 60, AngleDeg = 0, ExposureUs = 900, Gain = 1.0, Purpose = "ocr" } },
-                ReferenceImageUrl = "assets/products/model-a/points/p04-label.png",
                 LastModifiedAt = now,
             },
             new()
@@ -447,7 +454,6 @@ public sealed class ProductConfigStore
                 CropWidth = 40, CropHeight = 24, OrderIndex = 4, IsActive = true,
                 Shape = PointShape.Rect,
                 Lighting = new() { new() { ShotIndex = 0, Name = "Bright-field", LightSource = "LED_RING", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 65, AngleDeg = 90, ExposureUs = 1100, Gain = 1.0, Purpose = "ocr" } },
-                ReferenceImageUrl = "assets/products/model-a/points/p05-r5.png",
                 LastModifiedAt = now,
             },
             new()
@@ -460,7 +466,6 @@ public sealed class ProductConfigStore
                 CropWidth = 24, CropHeight = 24, OrderIndex = 5, IsActive = true,
                 Shape = PointShape.Circle,
                 Lighting = new() { new() { ShotIndex = 0, Name = "RGB reference", LightSource = "LED_RING", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 60, AngleDeg = 45, ExposureUs = 2000, Gain = 1.2, Purpose = "color" } },
-                ReferenceImageUrl = "assets/products/model-a/points/p06-d1.png",
                 LastModifiedAt = now,
             },
             new()
@@ -473,7 +478,6 @@ public sealed class ProductConfigStore
                 CropWidth = 140, CropHeight = 110, OrderIndex = 6, IsActive = true,
                 Shape = PointShape.Polygon, Geometry = ParseJson("""{"points":[[0,0],[120,0],[120,90],[0,90]]}"""),
                 Lighting = new() { new() { ShotIndex = 0, Name = "Dark-field grazing", LightSource = "LED_RING", Color = "amber", ColorHex = "#FFBF00", IntensityPct = 95, AngleDeg = 15, ExposureUs = 4000, Gain = 1.6, Purpose = "surface" } },
-                ReferenceImageUrl = "assets/products/model-a/points/p07-housing.png",
                 LastModifiedAt = now,
             },
             new()
@@ -495,7 +499,6 @@ public sealed class ProductConfigStore
                 ThicknessMin = 0.02, ThicknessMax = 0.10,
                 Criteria = ParseJson("""{"xrayRequired":true,"minBallCountDetected":9}"""),
                 Lighting = new() { new() { ShotIndex = 0, Name = "X-ray oblique", LightSource = "XRAY", IntensityPct = 100, AngleDeg = 30, ExposureUs = 8000, Gain = 2.0, Purpose = "void_detection" } },
-                ReferenceImageUrl = "assets/products/model-a/points/p08-u1-xray.png",
                 LastModifiedAt = now,
             },
         };
@@ -512,8 +515,8 @@ public sealed class ProductConfigStore
             PointsConfigVersion = 3,
             Fiducials = new()
             {
-                new() { Code = "FID1", Name = "Top-left corner", Type = "cross", PositionX = 40, PositionY = 40, NormalizedX = 0.025, NormalizedY = 0.033, SearchWindowW = 24, SearchWindowH = 24, TemplateImageUrl = "assets/products/model-a/fid1.png", OrderIndex = 0 },
-                new() { Code = "FID2", Name = "Bottom-right corner", Type = "cross", PositionX = 1560, PositionY = 1160, NormalizedX = 0.975, NormalizedY = 0.967, SearchWindowW = 24, SearchWindowH = 24, TemplateImageUrl = "assets/products/model-a/fid2.png", OrderIndex = 1 },
+                new() { Code = "FID1", Name = "Top-left corner", Type = "cross", PositionX = 40, PositionY = 40, NormalizedX = 0.025, NormalizedY = 0.033, SearchWindowW = 24, SearchWindowH = 24, OrderIndex = 0 },
+                new() { Code = "FID2", Name = "Bottom-right corner", Type = "cross", PositionX = 1560, PositionY = 1160, NormalizedX = 0.975, NormalizedY = 0.967, SearchWindowW = 24, SearchWindowH = 24, OrderIndex = 1 },
             },
             Variants = new()
             {
@@ -551,7 +554,6 @@ public sealed class ProductConfigStore
                 CropWidth = 40, CropHeight = 40, OrderIndex = 0, IsActive = true,
                 Shape = PointShape.Circle,
                 Lighting = new() { new() { ShotIndex = 0, Name = "Bright-field", LightSource = "LED_RING", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 75, AngleDeg = 90, ExposureUs = 1400, Gain = 1.0, Purpose = "pitch" } },
-                ReferenceImageUrl = "assets/products/model-b/points/q01-j1.png",
                 LastModifiedAt = now,
             },
             new()
@@ -564,7 +566,6 @@ public sealed class ProductConfigStore
                 Shape = PointShape.Rect, Geometry = ParseJson("""{"width":50,"height":22}"""),
                 Criteria = ParseJson("""{"expectPresence":true}"""),
                 Lighting = new() { new() { ShotIndex = 0, Name = "Diffuse", LightSource = "DOME", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 55, AngleDeg = 0, ExposureUs = 1000, Gain = 1.0, Purpose = "presence" } },
-                ReferenceImageUrl = "assets/products/model-b/points/q02-f1.png",
                 LastModifiedAt = now,
             },
             new()
@@ -577,7 +578,6 @@ public sealed class ProductConfigStore
                 CropWidth = 80, CropHeight = 20, OrderIndex = 2, IsActive = true,
                 Shape = PointShape.Line, Geometry = ParseJson("""{"x1":380,"y1":560,"x2":460,"y2":560}"""),
                 Lighting = new() { new() { ShotIndex = 0, Name = "Bright-field", LightSource = "LED_BAR", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 70, AngleDeg = 90, ExposureUs = 1300, Gain = 1.0, Purpose = "width" } },
-                ReferenceImageUrl = "assets/products/model-b/points/q03-trace.png",
                 LastModifiedAt = now,
             },
             new()
@@ -591,7 +591,6 @@ public sealed class ProductConfigStore
                 Shape = PointShape.Rect, Geometry = ParseJson("""{"width":30,"height":18,"rotationDeg":0}"""),
                 TiltMax = 5.0,
                 Lighting = new() { new() { ShotIndex = 0, Name = "Bright-field", LightSource = "LED_RING", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 65, AngleDeg = 90, ExposureUs = 1200, Gain = 1.0, Purpose = "orientation" } },
-                ReferenceImageUrl = "assets/products/model-b/points/q04-d2.png",
                 LastModifiedAt = now,
             },
             new()
@@ -605,7 +604,6 @@ public sealed class ProductConfigStore
                 CropWidth = 44, CropHeight = 28, OrderIndex = 4, IsActive = true,
                 Shape = PointShape.Rect,
                 Lighting = new() { new() { ShotIndex = 0, Name = "Bright-field", LightSource = "LED_RING", Color = "white", ColorHex = "#FFFFFF", IntensityPct = 65, AngleDeg = 90, ExposureUs = 1100, Gain = 1.0, Purpose = "ocr" } },
-                ReferenceImageUrl = "assets/products/model-b/points/q05-c7.png",
                 LastModifiedAt = now,
             },
             new()
@@ -618,7 +616,6 @@ public sealed class ProductConfigStore
                 CropWidth = 100, CropHeight = 60, OrderIndex = 5, IsActive = true,
                 Shape = PointShape.Polygon, Geometry = ParseJson("""{"points":[[0,0],[90,0],[90,50],[0,50]]}"""),
                 Lighting = new() { new() { ShotIndex = 0, Name = "Dark-field grazing", LightSource = "LED_RING", Color = "amber", ColorHex = "#FFBF00", IntensityPct = 90, AngleDeg = 15, ExposureUs = 3600, Gain = 1.5, Purpose = "surface" } },
-                ReferenceImageUrl = "assets/products/model-b/points/q06-edge.png",
                 LastModifiedAt = now,
             },
         };
@@ -635,8 +632,8 @@ public sealed class ProductConfigStore
             PointsConfigVersion = 1,
             Fiducials = new()
             {
-                new() { Code = "FID1", Name = "Top-left corner", Type = "cross", PositionX = 30, PositionY = 30, NormalizedX = 0.025, NormalizedY = 0.033, SearchWindowW = 20, SearchWindowH = 20, TemplateImageUrl = "assets/products/model-b/fid1.png", OrderIndex = 0 },
-                new() { Code = "FID2", Name = "Bottom-right corner", Type = "cross", PositionX = 1170, PositionY = 870, NormalizedX = 0.975, NormalizedY = 0.967, SearchWindowW = 20, SearchWindowH = 20, TemplateImageUrl = "assets/products/model-b/fid2.png", OrderIndex = 1 },
+                new() { Code = "FID1", Name = "Top-left corner", Type = "cross", PositionX = 30, PositionY = 30, NormalizedX = 0.025, NormalizedY = 0.033, SearchWindowW = 20, SearchWindowH = 20, OrderIndex = 0 },
+                new() { Code = "FID2", Name = "Bottom-right corner", Type = "cross", PositionX = 1170, PositionY = 870, NormalizedX = 0.975, NormalizedY = 0.967, SearchWindowW = 20, SearchWindowH = 20, OrderIndex = 1 },
             },
             Variants = new() { new() { Code = "BASE", Name = "Base", IsBase = true, PointsConfigVersion = 1 } },
             Points = points,

@@ -50,6 +50,21 @@ const PRESET_META: Record<string, { i18nKey: string; icon: LucideIcon }> = {
   "hotfolder-aoi": { i18nKey: "hotfolderAoi", icon: FolderInput },
 }
 
+/**
+ * M-7 (branch-review) — the "current state" card used to print `current.activePreset` (the raw
+ * server preset name, e.g. `"high-defect"`) straight into the badge, unlike `PresetCard`/`handlePreset`
+ * just below, which both already resolve the SAME name through `t()`. Shared here so both call sites
+ * (the live-state badge, `handlePreset`'s toast) stay in sync — `"burst"` is a real `activePreset`
+ * value the server can report but isn't one of `PRESET_META`'s five named presets (it's the one-shot
+ * `handleBurst` action, `scenario.burst`'s own key), so it gets its own branch rather than falling
+ * through to the raw-name fallback meant for genuinely unrecognized future presets.
+ */
+function resolvePresetLabel(name: string, t: (key: string) => string): string {
+  if (name === "burst") return t("scenario.burst")
+  const meta = PRESET_META[name]
+  return meta ? t(`scenario.presets.${meta.i18nKey}.label`) : name
+}
+
 function formatMultiplier(n: number): string {
   return `${n.toFixed(2)}x`
 }
@@ -233,8 +248,7 @@ export default function Scenario() {
 
   const handlePreset = (name: string) => {
     setPendingPreset(name)
-    const meta = PRESET_META[name]
-    const presetLabel = meta ? t(`scenario.presets.${meta.i18nKey}.label`) : name
+    const presetLabel = resolvePresetLabel(name, t)
     applyPreset.mutate(name, {
       onSuccess: (data) => {
         lastEditAtRef.current = Date.now()
@@ -320,7 +334,11 @@ export default function Scenario() {
               <span className="font-numeric mt-1 text-sm text-text-body">{current?.statusLine ?? "—"}</span>
               {hotFolderStatus ? <span className="text-xs text-text-muted">{hotFolderStatus}</span> : null}
             </div>
-            {current ? <StatusBadge status={current.activePreset === "burst" ? "warn" : "info"}>{current.activePreset}</StatusBadge> : null}
+            {current ? (
+              <StatusBadge status={current.activePreset === "burst" ? "warn" : "info"}>
+                {resolvePresetLabel(current.activePreset, t)}
+              </StatusBadge>
+            ) : null}
           </Sheet>
 
           <Sheet
@@ -336,7 +354,7 @@ export default function Scenario() {
               min={0.25}
               max={8}
               step={0.05}
-              ariaLabel="Cycle rate multiplier"
+              ariaLabel={t("scenario.cycleRate")}
               onValueChange={(v) => {
                 setCycleRate(v)
                 applyDebounced({ cycleRate: v })
@@ -354,7 +372,7 @@ export default function Scenario() {
               min={0}
               max={1}
               step={0.01}
-              ariaLabel="Extra defect rate"
+              ariaLabel={t("scenario.defectRate")}
               onValueChange={(v) => {
                 setDefectRate(v)
                 applyDebounced({ defectRate: v })
@@ -372,7 +390,7 @@ export default function Scenario() {
               min={0}
               max={1}
               step={0.01}
-              ariaLabel="Fault rate"
+              ariaLabel={t("scenario.faultRate")}
               onValueChange={(v) => {
                 setFaultRate(v)
                 applyDebounced({ faultRate: v })

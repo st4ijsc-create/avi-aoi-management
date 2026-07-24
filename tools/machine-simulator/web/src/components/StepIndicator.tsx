@@ -14,6 +14,10 @@ interface StepIndicatorProps {
   /** Index of the step currently active/being worked on. Every index below this is "done"; every index
    * above is "upcoming". */
   currentIndex: number
+  /** M-5 (branch-review) — was hardcoded English (`"Onboarding progress"`), breaking vi/en parity.
+   * The caller now passes a translated string (this component takes no `useT()` dependency of its
+   * own, matching every other primitive in this file that's driven purely by props). */
+  ariaLabel: string
   className?: string
 }
 
@@ -22,9 +26,9 @@ interface StepIndicatorProps {
  * than decorating. Horizontal, connected by a rule that fills in as steps complete. Square hairline
  * chips (ground rule §1 — no `rounded-full`, unlike the earlier card-UI stepper this replaces), a
  * technical-drawing numbered sequence rather than a progress-bar wizard. */
-export function StepIndicator({ steps, currentIndex, className }: StepIndicatorProps) {
+export function StepIndicator({ steps, currentIndex, ariaLabel, className }: StepIndicatorProps) {
   return (
-    <ol className={cn("flex w-full items-start", className)} aria-label="Onboarding progress">
+    <ol className={cn("flex w-full items-start", className)} aria-label={ariaLabel}>
       {steps.map((step, i) => {
         const done = i < currentIndex
         const active = i === currentIndex

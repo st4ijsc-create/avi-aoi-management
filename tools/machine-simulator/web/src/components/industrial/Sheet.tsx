@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils"
 export interface SheetProps extends Omit<React.ComponentProps<"div">, "title"> {
   /** Panel title in the active UI language, rendered in the header row (Barlow Condensed). */
   title?: React.ReactNode
-  /** Uppercase gloss in the inactive language, shown beside `title` — same idiom as `<MicroLabel>`
-   * but inlined here since a sheet header is a very common place to want it without a second
-   * component. Ignored if `title` isn't set. */
+  /** Uppercase gloss in the inactive language, shown beside `title` — same `t()`/`gloss()` bilingual
+   * idiom `Readout`'s `label`/`labelEn` uses, inlined here since a sheet header is a very common place
+   * to want it without a second component. Ignored if `title` isn't set. */
   titleEn?: React.ReactNode
   /** Extra content in the header row's trailing slot (a status lamp, a version chip, …). */
   headerRight?: React.ReactNode

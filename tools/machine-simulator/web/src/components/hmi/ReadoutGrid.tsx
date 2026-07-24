@@ -252,7 +252,17 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
         tone: "neutral",
       },
       { key: "observedSpan", value: span ?? "—", labelKey: "hmi.readout.observedSpan", tone: "neutral" },
-      { key: "passRate", value: "—", labelKey: "hmi.readout.passRate", tone: "idle" },
+      {
+        // I-5 — this tile was hardcoded `"—"` unconditionally: IoT sensor nodes report a signal, not a
+        // judged pass/fail verdict, so a "pass rate" can never resolve for this class. A bare em dash
+        // reads identically to "waiting for data" (the same ambiguity the CONFIG STATE tile's own I-4
+        // fix already closed); an explicit N/A says "not applicable to this machine class" instead.
+        key: "passRate",
+        value: t("hmi.readout.passRateNotApplicable"),
+        labelKey: "hmi.readout.passRate",
+        tone: "idle",
+        valueType: "text",
+      },
       { key: "status", value: t(statusKey), labelKey: "hmi.readout.status", tone: statusTone, valueType: "text" },
       {
         key: "driver",

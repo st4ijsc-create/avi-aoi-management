@@ -4,8 +4,9 @@ import { useLanguage, useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 
 /** `ControlButton.labelEn` is a fixed ENGLISH gloss (spec §6: "large condensed label + English
- * gloss"), not the active-language-swap `MicroLabel`/`Readout` use — omitted only once the label
- * itself is already English (`useLanguage().language === "en"`), per that prop's own doc comment. */
+ * gloss"), not the active-language-swap `t()`/`gloss()` pairing `Readout`'s `label`/`labelEn` use —
+ * omitted only once the label itself is already English (`useLanguage().language === "en"`), per that
+ * prop's own doc comment. */
 const EN_LABEL: Record<"start" | "pause" | "reset" | "estop", string> = {
   start: "START",
   pause: "PAUSE",
