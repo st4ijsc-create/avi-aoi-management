@@ -73,6 +73,16 @@ public sealed class BaselineSnapshot
     public Dictionary<string, double> Values { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string? Checksum { get; set; }
     public DateTimeOffset PulledAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>I-2 (mc-feature-review.md) — the server-fetched value that <see cref="MachineConfigStore.PullBaseline"/>
+    /// REJECTED for a key because it fell outside <see cref="MachineParameterSchema.ValidateRange"/>'s
+    /// hard min/max — <see cref="Values"/> falls back to that parameter's schema default instead (never
+    /// the out-of-range number itself, so an out-of-range recipe can never silently become the effective
+    /// value/drive a simulator — see design doc §3: "dải tại máy phải nằm trong dải đó"). Empty for every
+    /// baseline that had nothing rejected (the overwhelming common case). A UI can use this to render "◉
+    /// khuyến nghị vượt dải, đã dùng mặc định" per key instead of showing it as a normal "recommended"
+    /// value — the distinct state the design review asked for.</summary>
+    public Dictionary<string, double> OutOfRangeRejected { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>One machine's whole operating-configuration record — everything <see cref="MachineConfigStore"/>

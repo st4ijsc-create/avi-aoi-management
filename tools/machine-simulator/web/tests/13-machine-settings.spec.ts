@@ -238,7 +238,12 @@ test.describe("Machine settings — HMI tab + machine detail panel", () => {
 
     const measure = () =>
       page.evaluate(() => {
-        const controlRail = document.querySelectorAll(".hmi-scroll")[1]
+        // M-5 (mc-feature-review.md) — was `document.querySelectorAll(".hmi-scroll")[1]` (positional):
+        // `MachineSettingsPanel` renders its OWN `.hmi-scroll` on the Settings tab, so index [1] could
+        // point at a different element than intended depending on the active tab. `data-testid`
+        // (ControlColumn.tsx) selects the control rail directly, regardless of how many other
+        // `.hmi-scroll` regions exist on the page.
+        const controlRail = document.querySelector('[data-testid="control-rail"]')!
         const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("E-STOP"))
         const r = btn?.getBoundingClientRect()
         return {

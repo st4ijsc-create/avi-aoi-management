@@ -86,6 +86,18 @@ public sealed record MachineSettingsPushResultDto(
 /// is the SPARSE map at whichever scope is being reported (machine-scoped when <see cref="ProductCode"/>
 /// is null, that one product's map when it isn't) — never both scopes combined, mirroring the server's
 /// own single "adjustments at this scope" field.
+///
+/// <see cref="CallingMachineCode"/> (I-4, mc-feature-review.md) — the URL-addressed fleet machine's OWN
+/// <c>MachineDescriptor.Code</c> (e.g. <c>"AOI-01"</c>), set by <c>MachineSettingsEndpoints.PushSettingsAsync</c>.
+/// This is NOT necessarily the identity a Live push actually authenticates as: production wires exactly
+/// ONE <see cref="LiveConfigSyncBackend"/> (one <c>mk_</c> key, one <c>machineCode</c> in Settings) for the
+/// WHOLE engine (a "one-engine-fakes-a-fleet" simulator — <see cref="St4i.EngineApi.Fleet.FleetHost.DefaultMachineCode"/>
+/// is a fleet-external placeholder, never one of the fleet roster's own codes). <see cref="LiveConfigSyncBackend.ReportSettingsAsync"/>
+/// compares this field against its own bound identity and refuses to send a report whose caller doesn't
+/// match — see that method's doc comment for why (never silently mis-attributing one fleet machine's
+/// report to whatever single machine the engine's <c>mk_</c> actually authenticates as on the real
+/// server). <see cref="SimulatedEcosystem"/> (Demo) ignores this field entirely — it is a local-only
+/// mirror with no server identity to mismatch.
 /// </summary>
 public sealed record MachineSettingsReportRequestDto(
     string ConfigKind,
@@ -94,7 +106,8 @@ public sealed record MachineSettingsReportRequestDto(
     IReadOnlyDictionary<string, ParameterAdjustment> Adjustments,
     IReadOnlyList<EffectiveParameter> Effective,
     string Checksum,
-    string? ReportedBy);
+    string? ReportedBy,
+    string? CallingMachineCode = null);
 
 /// <summary>
 /// Task 7 — result of <see cref="IConfigSyncBackend.ReportSettingsAsync"/>. <see cref="Attempted"/> is

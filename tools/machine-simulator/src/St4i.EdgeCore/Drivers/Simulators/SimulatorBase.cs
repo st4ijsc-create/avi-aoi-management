@@ -25,21 +25,39 @@ public abstract class SimulatorBase : IMachineSimulator
     /// null for the pre-Task-3 "fixed constants" construction path.</summary>
     protected MachineConfigStore? ConfigStore { get; }
 
+    /// <summary>I-5 (mc-feature-review.md) — the active scenario's <c>CycleRateMultiplier</c> (1.0 =
+    /// unscaled), baked in at construction the same way EngineApi's own <c>FleetHost</c> already bakes it
+    /// into the DESCRIPTOR's <c>CycleSeconds</c> for every non-config-aware sim (<c>StartLocked</c>
+    /// pre-scales <c>effectiveFleet</c> before calling <c>SimulatorFactory.Create</c> — safe to fix at
+    /// construction time because a multiplier change always restarts the whole pipeline, see
+    /// <c>FleetHost.ApplyScenario</c>'s <c>multiplierChanged</c> check; EdgeCore doesn't reference
+    /// EngineApi, same reason <c>MinCycleSecondsFloor</c> below is mirrored rather than shared). A
+    /// config-aware simulator's OWN
+    /// <see cref="CycleSecondsOverride"/> bypasses that descriptor entirely, which is exactly what let a
+    /// scenario multiplier silently do nothing for SCREWDRIVE/IOT before this fix — see
+    /// <see cref="ScrewdriveSim.CycleSecondsOverride"/>/<see cref="IotSensorSim.CycleSecondsOverride"/> for
+    /// where this is actually applied.</summary>
+    protected double CycleRateMultiplier { get; }
+
     /// <param name="configKind">When both this and <paramref name="configStore"/> are non-null, the
     /// machine's operating-configuration record is <see cref="MachineConfigStore.Ensure"/>d right here —
     /// so <see cref="ResolveEffectiveConfig"/> can never throw <see cref="KeyNotFoundException"/> later,
     /// no matter which order callers touch this machine's config in.</param>
+    /// <param name="cycleRateMultiplier">See <see cref="CycleRateMultiplier"/>. Defaults to 1.0 (every
+    /// pre-existing call site/test that doesn't pass one behaves exactly as before).</param>
     protected SimulatorBase(
         MachineDescriptor descriptor,
         int seed,
         string? configKind = null,
         MachineConfigStore? configStore = null,
-        Func<string?>? productCodeProvider = null)
+        Func<string?>? productCodeProvider = null,
+        double cycleRateMultiplier = 1.0)
     {
         Descriptor = descriptor ?? throw new ArgumentNullException(nameof(descriptor));
         _seed = seed;
         ConfigStore = configStore;
         _productCodeProvider = productCodeProvider;
+        CycleRateMultiplier = cycleRateMultiplier > 0 ? cycleRateMultiplier : 1.0;
 
         if (ConfigStore is not null && configKind is not null)
         {

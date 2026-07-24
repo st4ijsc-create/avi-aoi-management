@@ -301,16 +301,15 @@ public sealed class MachineConfigStore
                 cfg = SeedConfig(machineCode, configKind);
                 if (newValues is { Count: > 0 })
                 {
-                    var defs = MachineParameterSchema.ParametersFor(configKind);
-                    cfg.Baseline.Values = defs.ToDictionary(
-                        d => d.Key,
-                        d => newValues.TryGetValue(d.Key, out var v) ? v : d.Default,
-                        StringComparer.OrdinalIgnoreCase);
+                    var (values, rejected) = BuildValidatedBaselineValues(configKind, newValues);
+                    cfg.Baseline.Values = values;
+                    cfg.Baseline.OutOfRangeRejected = rejected;
                     cfg.Baseline.Checksum = ConfigChecksum.Compute(cfg.Baseline.Values);
                 }
 
                 _configs[machineCode] = cfg;
-                AppendHistoryLocked(cfg, "pull", null, null, null, by, null, null, null, $"Initial baseline pulled (v{cfg.Baseline.Version}).");
+                AppendHistoryLocked(cfg, "pull", null, null, null, by, null, null, null,
+                    BuildPullSummary($"Initial baseline pulled (v{cfg.Baseline.Version}).", cfg.Baseline.OutOfRangeRejected));
                 Save();
                 return DeepClone(cfg);
             }
@@ -321,24 +320,84 @@ public sealed class MachineConfigStore
                     $"Machine \"{machineCode}\" is configured as \"{cfg.ConfigKind}\" — cannot pull a \"{configKind}\" baseline onto it.");
             }
 
-            var schemaDefs = MachineParameterSchema.ParametersFor(configKind);
-            var values = newValues is { Count: > 0 }
-                ? schemaDefs.ToDictionary(d => d.Key, d => newValues.TryGetValue(d.Key, out var v) ? v : d.Default, StringComparer.OrdinalIgnoreCase)
-                : schemaDefs.ToDictionary(d => d.Key, d => d.Default, StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, double> refreshedValues;
+            Dictionary<string, double> refreshedRejected;
+            if (newValues is { Count: > 0 })
+            {
+                (refreshedValues, refreshedRejected) = BuildValidatedBaselineValues(configKind, newValues);
+            }
+            else
+            {
+                var schemaDefs = MachineParameterSchema.ParametersFor(configKind);
+                refreshedValues = schemaDefs.ToDictionary(d => d.Key, d => d.Default, StringComparer.OrdinalIgnoreCase);
+                refreshedRejected = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            }
 
             cfg.Baseline = new BaselineSnapshot
             {
                 Version = cfg.Baseline.Version + 1,
-                Values = values,
-                Checksum = ConfigChecksum.Compute(values),
+                Values = refreshedValues,
+                OutOfRangeRejected = refreshedRejected,
+                Checksum = ConfigChecksum.Compute(refreshedValues),
                 PulledAt = DateTimeOffset.UtcNow,
             };
 
-            AppendHistoryLocked(cfg, "pull", null, null, null, by, null, null, null, $"Baseline refreshed to v{cfg.Baseline.Version}.");
+            AppendHistoryLocked(cfg, "pull", null, null, null, by, null, null, null,
+                BuildPullSummary($"Baseline refreshed to v{cfg.Baseline.Version}.", refreshedRejected));
             Save();
             return DeepClone(cfg);
         }
     }
+
+    /// <summary>I-2 (mc-feature-review.md) — <see cref="PullBaseline"/> used to write server-fetched
+    /// <paramref name="newValues"/> straight into <see cref="BaselineSnapshot.Values"/> with NO range
+    /// check at all (unlike <see cref="SetAdjustment"/>, which always validates an operator edit via
+    /// <see cref="MachineParameterSchema.ValidateRange"/> first) — an out-of-range server recipe (e.g.
+    /// <c>torqueTarget=50</c> against the schema's own hard 0.10–20.00 range) became the effective value a
+    /// simulator actually runs on, shown to an operator as a normal "recommended" value. This validates
+    /// each incoming value the same way an operator edit already is: in-range values pass through
+    /// unchanged; an out-of-range value falls back to that parameter's schema DEFAULT (never clamped to
+    /// the nearest bound, never the raw out-of-range number — the machine must never silently run on a
+    /// value outside its own declared hard range) and is recorded in the returned <c>rejected</c> map so
+    /// the caller can flag it as a distinct state rather than a normal recommendation (see
+    /// <see cref="BaselineSnapshot.OutOfRangeRejected"/>'s doc comment). A key present in the schema but
+    /// absent from <paramref name="newValues"/> still falls back to its default, exactly as before — this
+    /// only changes behaviour for a key that WAS supplied but fell outside its own range.</summary>
+    private static (Dictionary<string, double> Values, Dictionary<string, double> Rejected) BuildValidatedBaselineValues(
+        string configKind, IReadOnlyDictionary<string, double> newValues)
+    {
+        var defs = MachineParameterSchema.ParametersFor(configKind);
+        var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        var rejected = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var def in defs)
+        {
+            if (!newValues.TryGetValue(def.Key, out var incoming))
+            {
+                values[def.Key] = def.Default;
+                continue;
+            }
+
+            try
+            {
+                MachineParameterSchema.ValidateRange(def, incoming);
+                values[def.Key] = incoming;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                values[def.Key] = def.Default;
+                rejected[def.Key] = incoming;
+            }
+        }
+
+        return (values, rejected);
+    }
+
+    private static string BuildPullSummary(string baseSummary, IReadOnlyDictionary<string, double> rejected) =>
+        rejected.Count == 0
+            ? baseSummary
+            : baseSummary + $" {rejected.Count} value(s) outside the parameter's own hard range were REJECTED and fell back to schema defaults: " +
+              string.Join(", ", rejected.Select(kv => $"{kv.Key}={kv.Value}")) + ".";
 
     // ─────────────────────────────────────────────────────────────────────
     // Push (report actual config) — history only, never mutates baseline or adjustments

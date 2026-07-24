@@ -90,7 +90,11 @@ export function ControlColumn({
         defence-in-depth CSS fallback only (never actually engaged — the regression test asserts
         `scrollHeight <= clientHeight`), not as the mechanism relied on to reach RESET.
       */}
-      <div className="hmi-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
+      {/* M-5 (mc-feature-review.md) — `data-testid` so `13-machine-settings.spec.ts`'s safety-rail test
+          can select THIS specific `.hmi-scroll` region directly instead of a positional
+          `document.querySelectorAll(".hmi-scroll")[1]` (fragile: `MachineSettingsPanel` renders its OWN
+          `.hmi-scroll` on the Settings tab, shifting every subsequent index). */}
+      <div data-testid="control-rail" className="hmi-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
         {/* Task 4 — the tab rail (spec §8.1) claims 32px that used to belong to this row's own
             budget; `p-1`/`pt-1`/`gap-1` (trimmed from `p-1.5`/`pt-2`/`gap-2`) claw back the same
             order of magnitude directly from this column's own wrapper, per §8.5's "the control rail

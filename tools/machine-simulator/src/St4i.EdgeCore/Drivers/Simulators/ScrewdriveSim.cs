@@ -52,8 +52,8 @@ public sealed class ScrewdriveSim : SimulatorBase
     /// even at extreme config values.</summary>
     private const double MinCycleSecondsFloor = 0.05;
 
-    public ScrewdriveSim(MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null)
-        : base(d, seed, MachineParameterSchema.ScrewProgram, configStore, productCodeProvider)
+    public ScrewdriveSim(MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null, double cycleRateMultiplier = 1.0)
+        : base(d, seed, MachineParameterSchema.ScrewProgram, configStore, productCodeProvider, cycleRateMultiplier)
     {
     }
 
@@ -82,7 +82,13 @@ public sealed class ScrewdriveSim : SimulatorBase
 
     /// <summary>Task 3 cadence model — see class remarks. Returns null (no override — the driver falls
     /// back to <see cref="MachineDescriptor.CycleSeconds"/>) when this instance has no
-    /// <see cref="MachineConfigStore"/> wired.</summary>
+    /// <see cref="MachineConfigStore"/> wired.
+    ///
+    /// I-5 (mc-feature-review.md) — the config-derived cadence is divided by <see cref="SimulatorBase.CycleRateMultiplier"/>
+    /// before the floor is applied, composing it with whichever scenario is active instead of silently
+    /// ignoring it (a config override used to always win outright over the descriptor-baked multiplier —
+    /// see that property's doc comment). A multiplier &gt;1 (e.g. <c>sensor-drift</c>'s 5x, Burst's 6x)
+    /// shortens the resulting cadence, exactly as it already does for every un-wired simulator.</summary>
     public override double? CycleSecondsOverride
     {
         get
@@ -93,7 +99,7 @@ public sealed class ScrewdriveSim : SimulatorBase
             var speedRpm = GetValue(cfg, "speedRpm", 450);
             var clampTimeMs = GetValue(cfg, "clampTimeMs", 250);
             var spinSeconds = SpinRevolutions * 60.0 / Math.Max(speedRpm, 1e-6);
-            var cycleSeconds = HandlingOverheadSeconds + spinSeconds + clampTimeMs / 1000.0;
+            var cycleSeconds = (HandlingOverheadSeconds + spinSeconds + clampTimeMs / 1000.0) / CycleRateMultiplier;
             return Math.Max(cycleSeconds, MinCycleSecondsFloor);
         }
     }

@@ -1,5 +1,6 @@
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers;
+using St4i.EdgeCore.Engine;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
@@ -94,6 +95,62 @@ public sealed class MachineConfigDrivesFleetTests
             // toward the new torqueTarget with the pipeline never having been stopped/restarted.
             Assert.True(afterMean > baselineMean + 2.0,
                 $"torque mean must shift toward the new live torqueTarget without any restart: baseline={baselineMean}, after={afterMean}");
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
+    /// <summary>I-5 (mc-feature-review.md) — before this fix, a scenario's <c>CycleRateMultiplier</c> and a
+    /// config-store cadence override fought instead of composing: the config override (present for
+    /// SCREWDRIVE/IOT the instant a <see cref="MachineConfigStore"/> is wired, which production always
+    /// is) always won outright, so a scenario like <c>sensor-drift</c> (5x, whose entire purpose is
+    /// accelerating IOT_SENSOR) had ZERO effect once this test's own IOT machine had a config override in
+    /// play. This is the "already-running fleet" proof <see cref="MachineConfigDrivesSimulationTests"/>
+    /// (EdgeCore, no <see cref="FleetHost"/> in the loop) can't reach on its own — SCENARIO ×
+    /// CONFIG-OVERRIDE together, through the real <c>FleetHost.StartLocked</c> → <c>SimulatorFactory.Create</c>
+    /// wiring, which <see cref="SetAdjustment_on_an_already_running_fleet_shifts_torque_output_with_no_restart"/>
+    /// above never exercises (it never sets a scenario).</summary>
+    [Fact]
+    public async Task Scenario_CycleRateMultiplier_composes_with_a_config_override_cadence_not_swallowed_by_it()
+    {
+        var store = new MachineConfigStore(TempDir());
+        var host = CreateHost(store);
+        const string code = "IOT-CFG-SCEN-01";
+
+        var registered = host.RegisterMachine(new MachineDescriptor(
+            code, "SN-IOT-SCEN", DeviceClass.Iot, "IOT_SENSOR", "telemetry",
+            DriverKind.Simulated, null, null, CycleSeconds: 5.0)); // deliberately SLOW un-configured/un-scaled descriptor
+        Assert.True(registered);
+
+        // Config override: sampleRateHz=2.0Hz -> unscaled cadence = min(1/2.0, 60) = 0.5s.
+        store.Ensure(code, MachineParameterSchema.IotSettings);
+        store.SetAdjustment(code, "sampleRateHz", 2.0, AdjustmentScope.Machine, null, "test", "faster sampling");
+
+        // Scenario: sensor-drift-shaped 5x multiplier, applied BEFORE Start so StartLocked picks it up
+        // immediately (no restart needed — the fleet isn't running yet).
+        host.ApplyScenario(new ScenarioConfig(CycleRateMultiplier: 5.0), presetName: "test-sensor-drift");
+
+        host.Start();
+        try
+        {
+            // Composed cadence = 0.5s / 5.0 = 0.1s -> 60 cycles in ~6s. If the multiplier were still being
+            // silently swallowed by the config override (the I-5 bug), cadence would stay at the unscaled
+            // 0.5s and 60 cycles would need ~30s — a SELF-CONTAINED, short deadline (not the class's shared
+            // 60s PollTimeout, which both regimes would clear) so a regression here actually fails fast
+            // instead of just passing slower.
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(8);
+            while (DateTime.UtcNow < deadline && (host.MachineDetail(code)?.Cycles ?? 0) < 60)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(100));
+            }
+
+            var cycles = host.MachineDetail(code)?.Cycles ?? 0;
+            Assert.True(cycles >= 60,
+                $"{code} should reach 60 cycles within 8s at the composed 0.1s cadence (0.5s unscaled ÷ 5x scenario multiplier) — " +
+                $"only reached {cycles}. A count well under 60 here means the scenario multiplier is being swallowed by the config override again (I-5).");
+            Assert.True(host.IsRunning);
         }
         finally
         {

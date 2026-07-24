@@ -32,13 +32,18 @@ public sealed class IotSensorSim : SimulatorBase
     /// shared — EdgeCore doesn't reference EngineApi).</summary>
     private const double MinCycleSecondsFloor = 0.05;
 
-    public IotSensorSim(MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null)
-        : base(d, seed, MachineParameterSchema.IotSettings, configStore, productCodeProvider)
+    public IotSensorSim(MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string?>? productCodeProvider = null, double cycleRateMultiplier = 1.0)
+        : base(d, seed, MachineParameterSchema.IotSettings, configStore, productCodeProvider, cycleRateMultiplier)
     {
     }
 
     /// <summary>Task 3 cadence model — see class remarks. Null (no override) when this instance has no
-    /// <see cref="MachineConfigStore"/> wired.</summary>
+    /// <see cref="MachineConfigStore"/> wired.
+    ///
+    /// I-5 (mc-feature-review.md) — divided by <see cref="SimulatorBase.CycleRateMultiplier"/> before the
+    /// floor, same composition <see cref="ScrewdriveSim.CycleSecondsOverride"/> applies — without this, a
+    /// scenario like <c>sensor-drift</c> (whose whole purpose is accelerating IOT_SENSOR) had no effect on
+    /// this machine type at all once a config store was wired (which production always is).</summary>
     public override double? CycleSecondsOverride
     {
         get
@@ -48,7 +53,7 @@ public sealed class IotSensorSim : SimulatorBase
 
             var sampleRateHz = GetValue(cfg, "sampleRateHz", 1.0);
             var reportIntervalSec = GetValue(cfg, "reportIntervalSec", 60.0);
-            var cadence = Math.Min(1.0 / Math.Max(sampleRateHz, 1e-6), reportIntervalSec);
+            var cadence = Math.Min(1.0 / Math.Max(sampleRateHz, 1e-6), reportIntervalSec) / CycleRateMultiplier;
             return Math.Max(cadence, MinCycleSecondsFloor);
         }
     }

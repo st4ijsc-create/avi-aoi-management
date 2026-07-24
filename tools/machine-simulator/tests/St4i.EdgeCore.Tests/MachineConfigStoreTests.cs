@@ -310,6 +310,64 @@ public class MachineConfigStoreTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // I-2 (mc-feature-review.md) — an out-of-range server baseline must never silently
+    // become the effective/driving value; it is rejected and flagged, schema default used instead.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PullBaseline_rejects_an_out_of_range_server_value_on_a_baseline_REFRESH_and_falls_back_to_the_schema_default()
+    {
+        var store = NewStore();
+        store.Ensure("SCRW-01", MachineParameterSchema.ScrewProgram); // schema torqueTarget range: 0.10-20.00, default 1.35
+
+        var pulled = store.PullBaseline("SCRW-01", MachineParameterSchema.ScrewProgram,
+            newValues: new Dictionary<string, double> { ["torqueTarget"] = 50.0, ["torqueTolerance"] = 0.20 }, by: "system");
+
+        // Out-of-range value REJECTED — schema default used, never the raw 50.0.
+        Assert.Equal(1.35, pulled.Baseline.Values["torqueTarget"]);
+        Assert.True(pulled.Baseline.OutOfRangeRejected.ContainsKey("torqueTarget"));
+        Assert.Equal(50.0, pulled.Baseline.OutOfRangeRejected["torqueTarget"]);
+
+        // The IN-range sibling value in the SAME pull is unaffected — only the offending key is rejected.
+        Assert.Equal(0.20, pulled.Baseline.Values["torqueTolerance"]);
+        Assert.False(pulled.Baseline.OutOfRangeRejected.ContainsKey("torqueTolerance"));
+
+        // The rejected value never becomes the effective/driving value either.
+        var effective = store.Resolve("SCRW-01", null).Parameters.Single(p => p.Def.Key == "torqueTarget");
+        Assert.Equal(1.35, effective.Value);
+        Assert.Equal(ConfigProvenance.Baseline, effective.Source);
+    }
+
+    [Fact]
+    public void PullBaseline_rejects_an_out_of_range_server_value_on_the_FIRST_ever_pull_for_a_brand_new_machine()
+    {
+        var store = NewStore();
+
+        // WELD-01 has never been seen — this is the SeedConfig+newValues branch, a separate code path
+        // from the refresh branch above (both must be guarded).
+        var pulled = store.PullBaseline("WELD-01", MachineParameterSchema.WeldProfile,
+            newValues: new Dictionary<string, double> { ["current"] = 99_999.0 }, by: "system"); // schema range 1-500
+
+        Assert.Equal(120, pulled.Baseline.Values["current"]); // schema default, not the rejected 99999
+        Assert.Equal(99_999.0, pulled.Baseline.OutOfRangeRejected["current"]);
+
+        var effective = store.Resolve("WELD-01", null).Parameters.Single(p => p.Def.Key == "current");
+        Assert.Equal(120, effective.Value);
+    }
+
+    [Fact]
+    public void PullBaseline_with_all_in_range_values_leaves_OutOfRangeRejected_empty()
+    {
+        var store = NewStore();
+        store.Ensure("SCRW-01", MachineParameterSchema.ScrewProgram);
+
+        var pulled = store.PullBaseline("SCRW-01", MachineParameterSchema.ScrewProgram,
+            newValues: new Dictionary<string, double> { ["torqueTarget"] = 1.50 }, by: "system");
+
+        Assert.Empty(pulled.Baseline.OutOfRangeRejected);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Push — reports actual config, never touches baseline
     // ─────────────────────────────────────────────────────────────────────
 

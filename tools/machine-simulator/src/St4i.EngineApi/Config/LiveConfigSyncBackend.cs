@@ -428,6 +428,36 @@ public sealed class LiveConfigSyncBackend : IConfigSyncBackend, IDisposable
                 Message: "Live chưa được cấu hình (thiếu serverUrl hoặc mk_ key) — not configured for Live.");
         }
 
+        // I-4 (mc-feature-review.md) — this instance is bound to exactly ONE calling identity
+        // (_machineCode/_mkKey), the same "one client == one machine" shape LiveTransport documents for
+        // telemetry. Production registers exactly ONE LiveConfigSyncBackend for the WHOLE engine
+        // (Program.cs), rebuilt from FleetHost's single Settings.machineCode — there is no per-fleet-machine
+        // mk_ selection at Live-push time today, even though CredentialStore itself supports one file per
+        // machine code (a fleet-wide capability nothing currently wires into a push). Before this fix,
+        // every URL-addressed machine's push silently went out under _machineCode regardless of which
+        // fleet machine actually triggered it — a multi-machine Live fleet would report EVERY machine's
+        // operating-config against whatever single machine the engine's mk_ happens to authenticate as on
+        // the real server (an incoherent (configKind, wrong machine) pairing; never a spoofing hole, since
+        // identity still only ever comes from the mk_ key, never the request body — see the server's
+        // reportSettings: it authenticates by key alone, the body's machineCode field is unused for this
+        // endpoint). Rather than silently mis-report, refuse the push here — the honest fix for a simulator
+        // whose Live identity model is genuinely single-machine: the operator must set Settings.machineCode
+        // to the ONE fleet machine this engine represents in Live mode; every OTHER fleet machine's push is
+        // refused with a clear, diagnosable message instead of landing on the wrong machine.
+        if (!string.IsNullOrEmpty(request.CallingMachineCode) &&
+            !string.Equals(request.CallingMachineCode, _machineCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return new MachineSettingsReportResultDto(
+                Attempted: false,
+                Success: false,
+                BackendName: Name,
+                Message: $"Live identity mismatch — cấu hình Settings đang xác thực là \"{_machineCode}\", " +
+                    $"không phải \"{request.CallingMachineCode}\" (máy vừa push). Bộ máy giả lập này chỉ đại diện " +
+                    $"MỘT máy thật trên máy chủ tại một thời điểm ở chế độ Live — đổi Settings.machineCode để " +
+                    $"đại diện đúng máy trước khi push (this simulator represents only ONE real machine's " +
+                    $"identity at a time in Live mode — not attempted, to avoid mis-reporting under the wrong machine).");
+        }
+
         var reqBody = new ReportSettingsWire(
             request.ConfigKind,
             _machineCode,

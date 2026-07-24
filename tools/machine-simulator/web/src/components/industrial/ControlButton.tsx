@@ -134,7 +134,13 @@ export function ControlButton({ variant, label, labelEn, className, disabled, pr
           measured 3.52:1 at 80% opacity (axe, H2), under the 4.5:1 AA floor. Full-opacity text in the
           variant's own already-appropriate color (white on start/estop, warn-text on pause, body text
           on reset) reads correctly at every variant without a per-variant contrast exception. */}
-      {labelEn ? <span className="text-[9px] leading-none font-medium tracking-wider uppercase">{labelEn}</span> : null}
+      {/* M-10 (mc-feature-review.md) — `aria-hidden`, same visual-gloss-register-not-a-second-accessible-name
+          pattern every other bilingual gloss in this project already follows (FormField/MicroLabel/
+          CycleLogTable/TraceTable). Without this, E-STOP's accessible name computed as
+          "DỪNG KHẨN E-STOP" / RESET's as "ĐẶT LẠI RESET" — the inverse of the gloss-hiding this project
+          otherwise enforces everywhere else — which is also why 13-machine-settings.spec.ts's RESET
+          locator had to defensively scope itself (a substring-matching accessible name). */}
+      {labelEn ? <span aria-hidden="true" className="text-[9px] leading-none font-medium tracking-wider uppercase">{labelEn}</span> : null}
     </button>
   )
 }

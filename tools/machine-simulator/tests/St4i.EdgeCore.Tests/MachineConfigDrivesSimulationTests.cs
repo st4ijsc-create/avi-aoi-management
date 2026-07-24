@@ -118,19 +118,65 @@ public class MachineConfigDrivesSimulationTests
         Assert.True(slower > baseline, $"raising clampTimeMs must lengthen cadence: baseline={baseline}, slower={slower}");
     }
 
+    /// <summary>I-5 (mc-feature-review.md) — before this fix, a config override ALWAYS won outright over
+    /// the scenario's CycleRateMultiplier (which only ever scaled MachineDescriptor.CycleSeconds, a value
+    /// this override ignores entirely), so a scenario like sensor-drift (5x) or Burst (6x) had ZERO effect
+    /// on a SCREWDRIVE machine once a config store was wired — which production always does. The
+    /// multiplier must now divide the config-derived cadence, composing with it instead of being silently
+    /// swallowed by it.</summary>
+    [Fact]
+    public void Screwdrive_CycleRateMultiplier_composes_with_the_config_derived_cadence_instead_of_being_ignored()
+    {
+        const string code = "SCRW-CFG-MULT";
+        var store = NewStore();
+        var d = ScrewDescriptor(code);
+        store.Ensure(code, MachineParameterSchema.ScrewProgram);
+
+        var unscaled = new ScrewdriveSim(d, seed: 1, store, () => null); // cycleRateMultiplier defaults to 1.0
+        var baseline = unscaled.CycleSecondsOverride;
+        Assert.NotNull(baseline);
+        Assert.Equal(0.85, baseline!.Value, 3); // schema defaults, same formula as the test above
+
+        var scaled5x = new ScrewdriveSim(d, seed: 1, store, () => null, cycleRateMultiplier: 5.0);
+        var fiveX = scaled5x.CycleSecondsOverride;
+        Assert.NotNull(fiveX);
+        Assert.Equal(baseline.Value / 5.0, fiveX!.Value, 3);
+
+        var scaled6x = new ScrewdriveSim(d, seed: 1, store, () => null, cycleRateMultiplier: 6.0); // Burst's own multiplier
+        var sixX = scaled6x.CycleSecondsOverride;
+        Assert.NotNull(sixX);
+        Assert.Equal(baseline.Value / 6.0, sixX!.Value, 3);
+
+        // A config adjustment (speedRpm) and the multiplier compose TOGETHER — not one replacing the other.
+        store.SetAdjustment(code, "speedRpm", 1800, AdjustmentScope.Machine, null, "test", "much faster spin");
+        var adjustedUnscaled = unscaled.CycleSecondsOverride!.Value;
+        var adjustedScaled = scaled5x.CycleSecondsOverride!.Value;
+        Assert.Equal(adjustedUnscaled / 5.0, adjustedScaled, 3);
+    }
+
     /// <summary>docs/plans Task 3 VERIFY bullet: "a machine-scoped adjustment affects every product, and
     /// a product-scoped one affects only that product — proven through actual simulated output, not just
-    /// the resolver." Reads <c>DeviceReading.Metrics[0].Nominal</c> (the torqueTarget actually fed into
-    /// the Gaussian draw for that cycle) across a single long-lived simulator instance while flipping a
-    /// closure-captured "current product" between cycles — the exact seam EngineApi's <c>FleetHost</c>
-    /// uses in production (<c>CurrentProductFor</c>), just driven directly here for a pure-EdgeCore
-    /// test.</summary>
+    /// the resolver."
+    ///
+    /// M-7 (mc-feature-review.md) — this used to read <c>Metrics[0].Nominal</c>, which
+    /// <see cref="ScrewdriveSim.NextCycle"/> sets DIRECTLY to the resolved <c>torqueTarget</c>
+    /// (<c>new MetricSample("torque", torque, "Nm", lsl, usl, torqueTarget)</c>) — it never passes through
+    /// the Gaussian draw (<c>torque = rng.NextGaussian(torqueTarget, torqueStd)</c>, the class's own doc
+    /// comment) at all. A regression that made the ACTUAL drawn torque ignore config entirely (while the
+    /// resolver still worked) would leave <c>Nominal == torqueTarget</c> and this test green — a resolver-
+    /// surfacing test wearing a "proven through actual simulated output" label. Reading <c>Metrics[0].Value</c>
+    /// instead (the real draw) with a tolerance wide enough to absorb the draw's own noise
+    /// (<c>torqueTarget·ProcessNoiseFraction</c> = 3% of target — well under 1.0 Nm here) but far narrower
+    /// than the gap to the WRONG value (schema default 1.35 vs machineValue 5.0/productValue 9.0, a
+    /// 3.65+/7.65+ Nm gap) makes this a genuine behavioral proof: a config-ignoring regression would miss
+    /// by multiple Nm, not by noise.</summary>
     [Fact]
     public void Screwdrive_machine_scoped_adjustment_affects_every_product_product_scoped_affects_only_that_product()
     {
         const string code = "SCRW-CFG-SCOPE";
         const double machineValue = 5.0;
         const double productValue = 9.0;
+        const double tolerance = 1.0; // >> draw noise (~0.15-0.27 Nm here), << gap to a wrong/default value
 
         var store = NewStore();
         var d = ScrewDescriptor(code);
@@ -142,23 +188,32 @@ public class MachineConfigDrivesSimulationTests
         store.SetAdjustment(code, "torqueTarget", machineValue, AdjustmentScope.Machine, null, "test", "machine-wide shift");
 
         currentProduct = "MODEL-A";
-        Assert.Equal(machineValue, sim.NextCycle(1).Metrics[0].Nominal);
+        AssertActualTorqueNear(machineValue, sim.NextCycle(1), tolerance);
         currentProduct = "MODEL-B";
-        Assert.Equal(machineValue, sim.NextCycle(2).Metrics[0].Nominal);
+        AssertActualTorqueNear(machineValue, sim.NextCycle(2), tolerance);
         currentProduct = null;
-        Assert.Equal(machineValue, sim.NextCycle(3).Metrics[0].Nominal);
+        AssertActualTorqueNear(machineValue, sim.NextCycle(3), tolerance);
 
         // Layer a product-scoped override for MODEL-A only — must win ONLY while MODEL-A is running.
         store.SetAdjustment(code, "torqueTarget", productValue, AdjustmentScope.Product, "MODEL-A", "test", "MODEL-A needs more torque");
 
         currentProduct = "MODEL-A";
-        Assert.Equal(productValue, sim.NextCycle(4).Metrics[0].Nominal);
+        AssertActualTorqueNear(productValue, sim.NextCycle(4), tolerance);
 
         currentProduct = "MODEL-B";
-        Assert.Equal(machineValue, sim.NextCycle(5).Metrics[0].Nominal);
+        AssertActualTorqueNear(machineValue, sim.NextCycle(5), tolerance);
 
         currentProduct = null;
-        Assert.Equal(machineValue, sim.NextCycle(6).Metrics[0].Nominal);
+        AssertActualTorqueNear(machineValue, sim.NextCycle(6), tolerance);
+    }
+
+    /// <summary>Asserts the ACTUAL drawn metric value (never <c>Nominal</c> — see M-7 doc comment above)
+    /// lands within <paramref name="tolerance"/> of <paramref name="expectedTarget"/>.</summary>
+    private static void AssertActualTorqueNear(double expectedTarget, DeviceReading reading, double tolerance)
+    {
+        var actual = reading.Metrics[0].Value;
+        Assert.True(Math.Abs(actual - expectedTarget) < tolerance,
+            $"actual drawn torque {actual} should be within {tolerance} Nm of the resolved torqueTarget {expectedTarget} (draw noise is a few tenths of a Nm here — a miss this large means the ACTUAL output isn't tracking config, not just noise).");
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -201,6 +256,31 @@ public class MachineConfigDrivesSimulationTests
         var reportBound = sim.CycleSecondsOverride;
         Assert.True(reportBound < slowSamplingOnly, $"lowering reportIntervalSec must shorten cadence when it's the binding constraint: before={slowSamplingOnly}, after={reportBound}");
         Assert.Equal(5.0, reportBound!.Value, 3);
+    }
+
+    /// <summary>I-5 (mc-feature-review.md) — same composition proof as
+    /// <see cref="Screwdrive_CycleRateMultiplier_composes_with_the_config_derived_cadence_instead_of_being_ignored"/>,
+    /// for IOT_SENSOR specifically — this is the machine type <c>sensor-drift</c>'s entire 5x multiplier
+    /// exists to accelerate (FleetHost preset comment: "tăng tốc chu kỳ để lộ sự kiện trôi hiệu chuẩn định
+    /// kỳ của IOT_SENSOR"), which was silently broken before this fix.</summary>
+    [Fact]
+    public void IotSensor_CycleRateMultiplier_composes_with_the_config_derived_cadence_instead_of_being_ignored()
+    {
+        const string code = "IOT-CFG-MULT";
+        var store = NewStore();
+        var d = IotDescriptor(code);
+        store.Ensure(code, MachineParameterSchema.IotSettings);
+
+        var unscaled = new IotSensorSim(d, seed: 1, store, () => null);
+        var baseline = unscaled.CycleSecondsOverride;
+        Assert.NotNull(baseline);
+        Assert.Equal(1.0, baseline!.Value, 3); // schema defaults, same as the test above
+
+        var sensorDrift = new IotSensorSim(d, seed: 1, store, () => null, cycleRateMultiplier: 5.0); // sensor-drift preset
+        var scaled = sensorDrift.CycleSecondsOverride;
+        Assert.NotNull(scaled);
+        Assert.Equal(baseline.Value / 5.0, scaled!.Value, 3);
+        Assert.Equal(0.2, scaled.Value, 3);
     }
 
     // ─────────────────────────────────────────────────────────────────────

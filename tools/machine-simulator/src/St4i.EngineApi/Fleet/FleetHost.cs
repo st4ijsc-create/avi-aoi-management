@@ -261,7 +261,14 @@ public sealed class FleetHost
         // SimulatorBase.ResolveEffectiveConfig's remarks), so nothing here needs to change on Restart
         // for a mid-run edit to show up; a restart is only needed for a scenario cycle-rate multiplier
         // change (see the surrounding ApplyScenario/RegisterMachine callers of this method).
-        var sims = effectiveFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor)).ToList();
+        //
+        // I-5 (mc-feature-review.md) — ALSO pass `multiplier` itself (not just the pre-scaled descriptor
+        // above) so a config-aware sim's own CycleSecondsOverride (Screwdrive/Iot — always non-null once
+        // _configStore is wired, which production always is) composes with the active scenario instead of
+        // overriding it outright. Safe to bake in at construction (not a live Func<double>, unlike
+        // _configStore itself): a multiplier change ALWAYS restarts this whole pipeline (multiplierChanged
+        // check in ApplyScenario/Burst), so it can never go stale for the lifetime of these sim instances.
+        var sims = effectiveFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
 
         var decorator = DriverDecoratorForTests;

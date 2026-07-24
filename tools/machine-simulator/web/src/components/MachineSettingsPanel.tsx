@@ -196,10 +196,15 @@ function EditParameterDialog({
               type="number"
               inputMode="decimal"
               step={def.step || undefined}
+              min={def.min}
+              max={def.max}
               value={rawValue}
               onChange={(event) => setRawValue(event.target.value)}
               aria-invalid={fieldError ? true : undefined}
-              aria-describedby={fieldError ? `setting-value-error-${def.key}` : undefined}
+              // M-8 (mc-feature-review.md) — always tied to the currently-rendered hint/error paragraph
+              // below (never only on error), so the allowed range is programmatically associated with the
+              // field in every state, not just after a rejected submit.
+              aria-describedby={fieldError ? `setting-value-error-${def.key}` : `setting-value-hint-${def.key}`}
               className="max-w-[180px]"
             />
             <span className="hmi-micro">{def.unit}</span>
@@ -209,7 +214,7 @@ function EditParameterDialog({
               {fieldError}
             </p>
           ) : (
-            <p className="text-[11px] text-text-muted">{rangeText}</p>
+            <p id={`setting-value-hint-${def.key}`} className="text-[11px] text-text-muted">{rangeText}</p>
           )}
         </div>
 

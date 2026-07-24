@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
 using St4i.EngineApi.Config;
@@ -93,8 +94,27 @@ public static class MachineSettingsEndpoints
         }
         catch (Exception ex) when (ex is ArgumentOutOfRangeException or InvalidOperationException or ArgumentException)
         {
-            return Results.BadRequest(new ApiErrorDto(ex.Message));
+            return Results.BadRequest(new ApiErrorDto(CleanMessage(ex)));
         }
+    }
+
+    /// <summary>M-6 (mc-feature-review.md) — <see cref="ArgumentOutOfRangeException"/> (thrown by
+    /// <see cref="MachineParameterSchema.ValidateRange"/> with the allowed range already baked into the
+    /// custom message) leaks .NET's own boilerplate verbatim into the REST error body an operator/HMI
+    /// reads: <c>.Message</c> for a <c>(paramName, actualValue, message)</c> exception comes back as
+    /// <c>"{message} (Parameter 'value')\r\nActual value was 99999."</c> — the "(Parameter '...')" suffix
+    /// glued onto the SAME line as the custom text (not a separate line), then a genuinely separate
+    /// "Actual value was ..." line. Two strips, in order: (1) keep only the text before the first
+    /// newline (drops the "Actual value was ..." line entirely — also harmless no-op for
+    /// <see cref="ArgumentException"/>'s own "productCode is required..." (paramName) case above, which
+    /// has no second line), (2) trim a trailing <c>" (Parameter '...')"</c> off whatever remains. The
+    /// developer-authored custom message always precedes both, so nothing actionable is lost.</summary>
+    private static readonly Regex ParameterSuffixPattern = new(@"\s*\(Parameter '[^']*'\)\s*$", RegexOptions.Compiled);
+
+    private static string CleanMessage(Exception ex)
+    {
+        var firstLine = ex.Message.Split('\r', '\n')[0].TrimEnd();
+        return ParameterSuffixPattern.Replace(firstLine, "").TrimEnd();
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -301,7 +321,9 @@ public static class MachineSettingsEndpoints
             // mirror above already succeeded — it is surfaced honestly via LiveReport instead.
             var scopedAdjustments = ResolveScopedAdjustments(cfg, effective.ProductCode);
             var report = await backend.ReportSettingsAsync(
-                new MachineSettingsReportRequestDto(configKind, effective.ProductCode, cfg.Baseline.Version, scopedAdjustments, effective.Parameters, checksum, body?.By),
+                new MachineSettingsReportRequestDto(
+                    configKind, effective.ProductCode, cfg.Baseline.Version, scopedAdjustments, effective.Parameters, checksum, body?.By,
+                    CallingMachineCode: machine.Code),
                 ct).ConfigureAwait(false);
 
             return Json(new MachineSettingsPushResultDto(

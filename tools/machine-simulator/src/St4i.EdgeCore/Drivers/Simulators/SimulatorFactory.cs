@@ -22,8 +22,18 @@ namespace St4i.EdgeCore.Drivers.Simulators;
 /// </summary>
 public static class SimulatorFactory
 {
+    /// <param name="cycleRateMultiplier">I-5 (mc-feature-review.md) — the active scenario's
+    /// <c>CycleRateMultiplier</c> (1.0 = unscaled), threaded into whichever simulators define a
+    /// config-derived <see cref="IMachineSimulator.CycleSecondsOverride"/> (Screwdrive/Iot today) so a
+    /// scenario multiplier composes with a config-store cadence override instead of being silently
+    /// ignored by it — see <see cref="ScrewdriveSim.CycleSecondsOverride"/>'s doc comment. AOI has no
+    /// cadence override, so it needs no multiplier here — its cadence already comes entirely from
+    /// <paramref name="d"/>.CycleSeconds, which the caller (<c>FleetHost.StartLocked</c>) already
+    /// pre-scales by this SAME multiplier before calling this factory. Defaults to 1.0 (every pre-existing
+    /// call site/test that doesn't pass one behaves exactly as before).</param>
     public static IMachineSimulator Create(
-        MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string, string?>? currentProductCode = null)
+        MachineDescriptor d, int seed, MachineConfigStore? configStore = null, Func<string, string?>? currentProductCode = null,
+        double cycleRateMultiplier = 1.0)
     {
         ArgumentNullException.ThrowIfNull(d);
 
@@ -33,23 +43,24 @@ public static class SimulatorFactory
 
         return (d.MachineType ?? "").Trim().ToUpperInvariant() switch
         {
-            "SCREWDRIVE" => new ScrewdriveSim(d, seed, configStore, productCodeProvider),
+            "SCREWDRIVE" => new ScrewdriveSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
             "DISPENSING" => new DispensingSim(d, seed),
             "WELDER" => new WelderSim(d, seed),
             "ASSEMBLY" => new AssemblySim(d, seed),
             "LEAK_TEST" => new LeakTestSim(d, seed),
             "FUNCTIONAL_TEST" => new FunctionalTestSim(d, seed),
-            "IOT_SENSOR" => new IotSensorSim(d, seed, configStore, productCodeProvider),
+            "IOT_SENSOR" => new IotSensorSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
             "AOI" or "AOI_AVI" or "AVI" => new AoiInspectorSim(d, seed, configStore: configStore, productCodeProvider: productCodeProvider),
-            _ => FallbackByDeviceClass(d, seed, configStore, productCodeProvider),
+            _ => FallbackByDeviceClass(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
         };
     }
 
-    private static IMachineSimulator FallbackByDeviceClass(MachineDescriptor d, int seed, MachineConfigStore? configStore, Func<string?>? productCodeProvider) =>
+    private static IMachineSimulator FallbackByDeviceClass(
+        MachineDescriptor d, int seed, MachineConfigStore? configStore, Func<string?>? productCodeProvider, double cycleRateMultiplier) =>
         d.DeviceClass switch
         {
-            DeviceClass.Iot => new IotSensorSim(d, seed, configStore, productCodeProvider),
+            DeviceClass.Iot => new IotSensorSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
             DeviceClass.AoiAvi => new AoiInspectorSim(d, seed, configStore: configStore, productCodeProvider: productCodeProvider),
-            _ => new ScrewdriveSim(d, seed, configStore, productCodeProvider),
+            _ => new ScrewdriveSim(d, seed, configStore, productCodeProvider, cycleRateMultiplier),
         };
 }

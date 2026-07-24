@@ -236,6 +236,12 @@ public sealed class MachineSettingsEndpointsTests
         Assert.Contains("50", error.Error);
         Assert.Contains("20000", error.Error);
 
+        // M-6 (mc-feature-review.md) — the range is present and actionable, but .NET's own
+        // ArgumentOutOfRangeException boilerplate ("(Parameter 'value')" / "Actual value was ...") must
+        // NOT leak into the REST body an operator/HMI reads.
+        Assert.DoesNotContain("Parameter", error.Error);
+        Assert.DoesNotContain("Actual value", error.Error);
+
         // The rejected write must not have been persisted.
         var cfg = store.GetConfig(AoiMachine.Code);
         Assert.True(cfg is null || !cfg.MachineAdjustments.ContainsKey("exposureUs"));
@@ -311,6 +317,37 @@ public sealed class MachineSettingsEndpointsTests
         var gain = dto.Effective.Single(p => p.Def.Key == "gain");
         Assert.Equal(1.0, gain.Value); // schema default
         Assert.Equal(ConfigProvenance.Baseline, gain.Source);
+    }
+
+    /// <summary>M-9 (mc-feature-review.md) — <see cref="Delete_setting_resets_to_the_layer_below"/> above
+    /// only covers machine→baseline (the ONLY adjustment layer present). This covers the other half:
+    /// deleting a PRODUCT-scoped adjustment while a MACHINE-scoped one still exists for the same key must
+    /// fall the effective value back to the MACHINE value with <c>machine</c> provenance — not baseline,
+    /// and not silently keep the just-deleted product value. The store logic (<c>RemoveAdjustment</c> +
+    /// re-<c>Resolve</c>) was already correct by inspection; this exercises it at the HTTP layer.</summary>
+    [Fact]
+    public void Delete_product_scoped_setting_falls_back_to_the_machine_scoped_layer_with_machine_provenance()
+    {
+        var fleetHost = NewFleetHostWithRegisteredMachines(AoiMachine);
+        var store = NewStore();
+        store.Ensure(AoiMachine.Code, MachineParameterSchema.AoiInspection);
+        store.SetAdjustment(AoiMachine.Code, "gain", 2.0, AdjustmentScope.Machine, null, "tech1", "machine-wide recalibration");
+        store.SetAdjustment(AoiMachine.Code, "gain", 4.0, AdjustmentScope.Product, "MODEL-B", "tech2", "MODEL-B needs more gain");
+
+        // Sanity: MODEL-B currently sees the product-scoped value.
+        var before = ExpectOk<MachineSettingsResponseDto>(MachineSettingsEndpoints.GetSettings(AoiMachine.Code, "MODEL-B", fleetHost, store));
+        Assert.Equal(4.0, before.Effective.Single(p => p.Def.Key == "gain").Value);
+        Assert.Equal(ConfigProvenance.MachineProduct, before.Effective.Single(p => p.Def.Key == "gain").Source);
+
+        var result = MachineSettingsEndpoints.DeleteSetting(AoiMachine.Code, "gain", "product", "MODEL-B", fleetHost, store);
+
+        var dto = ExpectOk<MachineSettingsResponseDto>(result);
+        var gain = dto.Effective.Single(p => p.Def.Key == "gain");
+        Assert.Equal(2.0, gain.Value); // falls to the MACHINE layer, not baseline (1.0) and not the deleted 4.0
+        Assert.Equal(ConfigProvenance.Machine, gain.Source);
+
+        // The machine-scoped adjustment itself is untouched by deleting the product-scoped one.
+        Assert.Equal(2.0, dto.MachineAdjustments["gain"].Value);
     }
 
     [Fact]
@@ -472,6 +509,40 @@ public sealed class MachineSettingsEndpointsTests
         Assert.Contains("\"productModelCode\":\"MODEL-B\"", body);
         Assert.Contains("\"exposureUs\":{\"value\":3200", body);
         Assert.DoesNotContain("\"gain\":", body); // the machine-scoped one must NOT leak into a product-scoped report
+    }
+
+    /// <summary>I-4 (mc-feature-review.md) — production NEVER constructs a per-machine
+    /// <see cref="LiveConfigSyncBackend"/> (unlike the test above, which hands in one whose
+    /// <c>machineCode</c> conveniently equals the URL machine, hiding the bug). Real wiring
+    /// (<c>St4i.EngineApi/Program.cs</c>) registers exactly ONE instance for the WHOLE engine, built with
+    /// <see cref="FleetHost.DefaultMachineCode"/> — this test reproduces that EXACT production
+    /// construction and pushes for a DIFFERENT fleet machine, proving the mismatch is refused rather than
+    /// silently reported under the wrong identity: no HTTP request is ever sent.</summary>
+    [Fact]
+    public async Task Push_in_Live_mode_refuses_a_report_when_the_URL_machine_does_not_match_the_engines_single_Live_identity()
+    {
+        var fleetHost = NewFleetHostWithRegisteredMachines(AoiMachine);
+        var store = NewStore();
+        store.Ensure(AoiMachine.Code, MachineParameterSchema.AoiInspection);
+
+        var h = new CapturingHandler(); // Responder never consulted — the request must never be sent.
+        // EXACT production shape (Program.cs): one shared backend, machineCode = FleetHost.DefaultMachineCode
+        // ("ENGINE-API-01") — a fleet-external placeholder, never one of the fleet roster's own codes
+        // (AoiMachine.Code is "TEST-AOI-XYZ" here, "AOI-01"/"SCRW-01"/... in the real roster).
+        using var live = LiveConfigSyncBackend.ForMachine("http://synapse.local", "mk_test", FleetHost.DefaultMachineCode, verifyTls: true, handler: h);
+
+        const string json = """{ "product": "MODEL-A" }""";
+        var result = await MachineSettingsEndpoints.PushSettingsAsync(
+            JsonRequest(json), AoiMachine.Code, fleetHost, store, live, CancellationToken.None);
+
+        var dto = ExpectOk<MachineSettingsPushResultDto>(result); // the LOCAL push (history mirror) still succeeds
+        Assert.False(dto.LiveReport.Attempted, "a Live identity mismatch must never even attempt the network call");
+        Assert.False(dto.LiveReport.Success);
+        Assert.Equal("Live", dto.LiveReport.BackendName);
+        Assert.Contains(FleetHost.DefaultMachineCode, dto.LiveReport.Message);
+        Assert.Contains(AoiMachine.Code, dto.LiveReport.Message);
+
+        Assert.Null(h.LastRequest); // never sent — the whole point of the guard
     }
 
     // ─────────────────────────────────────────────────────────────────────
