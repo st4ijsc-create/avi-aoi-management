@@ -36,9 +36,19 @@ function keyOf(t: any): string {
   return t[NAME_SYM];
 }
 
+/**
+ * One unique keyset. `where`, when present, models a PARTIAL unique index
+ * (e.g. Postgres `WHERE "productModelId" IS NULL`) — a conflict on this keyset
+ * only applies to rows for which `where(row)` is true (checked on BOTH the
+ * candidate row and the existing row, matching Postgres's own semantics: the
+ * index simply does not contain rows outside its predicate). Plain `string[]`
+ * entries (legacy shape, still accepted by setUnique) mean "always applies".
+ */
+type UniqueKeyset = { keys: string[]; where?: (row: Row) => boolean };
+
 export class FakeDb {
   store = new Map<string, Row[]>();
-  private uniqueKeys = new Map<string, string[][]>();
+  private uniqueKeys = new Map<string, UniqueKeyset[]>();
 
   private rows(t: any): Row[] {
     const k = keyOf(t);
@@ -50,7 +60,15 @@ export class FakeDb {
   seed(t: any, rows: Row[]) {
     this.store.set(keyOf(t), rows.map((r) => ({ ...r })));
   }
-  setUnique(t: any, keys: string[][]) { this.uniqueKeys.set(keyOf(t), keys); }
+  /**
+   * Register unique keysets for `t`. Accepts the legacy `string[][]` shape
+   * (each entry an unconditioned composite key) AND/OR `{keys, where}` entries
+   * for a PARTIAL unique index — pass either shape per-entry, mixed freely.
+   */
+  setUnique(t: any, keys: (string[] | UniqueKeyset)[]) {
+    const normalized = keys.map((k) => (Array.isArray(k) ? { keys: k } : k));
+    this.uniqueKeys.set(keyOf(t), normalized);
+  }
 
   select(_projection?: Record<string, any>) {
     const self = this;
@@ -130,8 +148,9 @@ export class FakeDb {
   private findConflict(table: any, row: Row): Row | null {
     const keysets = this.uniqueKeys.get(keyOf(table));
     if (!keysets) return null;
-    for (const keys of keysets) {
-      const hit = this.rows(table).find((r) => keys.every((k) => r[k] === row[k]));
+    for (const { keys, where } of keysets) {
+      if (where && !where(row)) continue; // candidate row falls outside this partial index
+      const hit = this.rows(table).find((r) => (!where || where(r)) && keys.every((k) => r[k] === row[k]));
       if (hit) return hit;
     }
     return null;
@@ -140,8 +159,9 @@ export class FakeDb {
   private checkUnique(table: any, row: Row) {
     const keysets = this.uniqueKeys.get(keyOf(table));
     if (!keysets) return;
-    for (const keys of keysets) {
-      const dup = this.rows(table).some((r) => keys.every((k) => r[k] === row[k]));
+    for (const { keys, where } of keysets) {
+      if (where && !where(row)) continue;
+      const dup = this.rows(table).some((r) => (!where || where(r)) && keys.every((k) => r[k] === row[k]));
       if (dup) {
         const err: any = new Error("duplicate key value violates unique constraint");
         err.code = "23505";

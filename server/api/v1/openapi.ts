@@ -496,6 +496,49 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           responses: { "200": { description: "Drift state" }, "401": { description: "Invalid key" }, "500": { description: "config-sync disabled" } },
         },
       },
+      "/api/machine/config-sync/report-settings": {
+        post: {
+          tags: ["Machine"],
+          summary: "Report the machine's ACTUAL operating config (Task 6, auth: mk_, scope equipment:read)",
+          description:
+            "docs/MACHINE_CONFIG_DESIGN.md §6. Requires server flag `MACHINE_OPERATING_CONFIG_REPORT_ENABLED` " +
+            "(else HTTP 500 PRECONDITION_FAILED — do NOT retry). Auth via Authorization: Bearer / X-API-Key / body.apiKey. " +
+            "Upserts ONE row in `machine_operating_config` keyed by (machineId, configKind, productModelId-or-null) — " +
+            "omit `productModelCode` for a machine-scoped report, include it for a machine×product-scoped report. " +
+            "Writes ONLY `machine_operating_config` — NEVER `machine_recipes` or any baseline. " +
+            "Returns `{success, id, machineId, configKind, scope, productModelId, checksum, reportedAt}`.",
+          requestBody: { required: true, content: { "application/json": { schema: {
+            type: "object", required: ["configKind"],
+            properties: {
+              configKind: { type: "string", maxLength: 32, description: "screw_program | dispense_program | weld_profile | iot_settings | aoi_inspection (open vocab)" },
+              apiKey: { type: "string" },
+              machineCode: { type: "string" },
+              productModelCode: { type: "string", description: "Omit ⇒ machine-scoped; set ⇒ machine×product-scoped." },
+              baselineVersion: { type: "string", maxLength: 64 },
+              adjustments: {
+                type: "object",
+                description: "Sparse map keyed by parameter key: { value, by?, at?, note? }.",
+                additionalProperties: { type: "object", properties: {
+                  value: { description: "string | number | boolean | null" },
+                  by: { type: "string", maxLength: 128 }, at: { type: "string", maxLength: 64 }, note: { type: "string", maxLength: 500 },
+                } },
+              },
+              effective: {
+                type: "array", maxItems: 200,
+                description: "The fully resolved parameter set the machine reports actually running.",
+                items: { type: "object", required: ["key", "value"], properties: {
+                  key: { type: "string", maxLength: 64 }, value: { description: "string | number | boolean | null" },
+                  source: { type: "string", enum: ["baseline", "machine", "machineProduct"] },
+                  baselineValue: { description: "string | number | boolean | null" },
+                } },
+              },
+              checksum: { type: "string", maxLength: 128 },
+              reportedBy: { type: "string", maxLength: 128 },
+            },
+          } } } },
+          responses: { "200": { description: "Report upserted" }, "401": { description: "Invalid key" }, "404": { description: "Unknown productModelCode" }, "500": { description: "report disabled (flag off)" } },
+        },
+      },
       // ── R0 (doc 16 Khối 0) — inbound ERP/MES intake. Gated by ERP_INBOUND_ENABLED. ──
       "/api/v1/orders": {
         post: {

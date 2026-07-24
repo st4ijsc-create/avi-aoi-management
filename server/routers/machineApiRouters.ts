@@ -64,6 +64,15 @@ import {
   readConfigState,
   routeConfigDriftAlert,
 } from "../services/configDriftService";
+// Task 6 (docs/MACHINE_CONFIG_DESIGN.md §6) — machine_operating_config REPORT-UP
+// (a machine reports its ACTUAL running config; writes ONLY this table, never
+// machine_recipes/any baseline). Gated by MACHINE_OPERATING_CONFIG_REPORT_ENABLED.
+import {
+  machineOperatingConfigReportEnabled,
+  upsertOperatingConfigReport,
+  findOperatingConfigGuardrailViolation,
+  isServerKnownConfigKind,
+} from "../services/machineOperatingConfigService";
 import { storagePut, storageGet, storageDelete, resolveImageToDataUrl } from "../storage";
 import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "../_core/socket";
 import { statsCache, CACHE_KEYS } from "../_core/cache";
@@ -4341,6 +4350,129 @@ export const machineApiRouter = router({
         checksum: input.checksum ?? null,
       });
       return { success: true, machineId: machine.id, configKind: input.configKind, driftState };
+    }),
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Task 6 (docs/MACHINE_CONFIG_DESIGN.md §6) — the machine REPORTS its ACTUAL
+  // operating config: scoped parameter adjustments + the resolved effective
+  // parameter set, upserted into `machine_operating_config` keyed by
+  // (machineId, configKind, productModelId-or-null). Distinct from
+  // ackConfigApplied above: that endpoint updates the desired/reported DRIFT
+  // shadow (machine_config_state); this one is a durable per-scope record of
+  // what the machine is currently tuned to, for an engineer to browse.
+  //
+  // CRITICAL: writes ONLY machine_operating_config — NEVER machine_recipes or
+  // any other baseline table (see machineOperatingConfigService.ts header).
+  //
+  // Gated by MACHINE_OPERATING_CONFIG_REPORT_ENABLED (default OFF ⇒
+  // PRECONDITION_FAILED, ship-dark — same shape as the CONFIG_SYNC_GENERIC_ENABLED
+  // gate above).
+  // ════════════════════════════════════════════════════════════════════════════
+  reportSettings: publicProcedure
+    .input(z.object({
+      configKind: z.string().trim().min(1).max(32),
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+      // Absent ⇒ machine-scoped report; present ⇒ machine×product-scoped report.
+      productModelCode: z.string().trim().min(1).max(128).optional(),
+      baselineVersion: z.string().trim().max(64).optional(),
+      // Sparse map of overridden parameters at this scope.
+      adjustments: z.record(
+        z.string().trim().min(1).max(64),
+        z.object({
+          value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+          by: z.string().trim().max(128).optional(),
+          at: z.string().trim().max(64).optional(),
+          note: z.string().trim().max(500).optional(),
+        }),
+      ).optional().default({}),
+      // The fully resolved parameter set the machine reports actually running.
+      effective: z.array(z.object({
+        key: z.string().trim().min(1).max(64),
+        value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+        source: z.enum(["baseline", "machine", "machineProduct"]).optional(),
+        baselineValue: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
+      })).max(200).optional().default([]),
+      checksum: z.string().trim().max(128).optional(),
+      reportedBy: z.string().trim().max(128).optional(),
+    }).refine((data) => data.apiKey || data.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (!machineOperatingConfigReportEnabled()) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Machine operating-config report is disabled on this server (MACHINE_OPERATING_CONFIG_REPORT_ENABLED).",
+        });
+      }
+      const { machine } = await authenticateMachine({
+        apiKey: input.apiKey,
+        machineCode: input.machineCode,
+        headerKey: machineHeaderKey(ctx),
+        scope: "equipment:read",
+        endpoint: "reportSettings",
+      });
+
+      // I-1 (mc-feature-review.md) — cross-check reported values against
+      // parameter_guardrails for the four server-known configKinds before
+      // writing anything. aoi_inspection has no server-side parameter schema
+      // by design (see findOperatingConfigGuardrailViolation's doc comment) —
+      // left unvalidated here, deliberately.
+      if (isServerKnownConfigKind(input.configKind)) {
+        const violation = await findOperatingConfigGuardrailViolation(machine.id, input.adjustments, input.effective);
+        if (violation) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Reported operating-config value violates a configured guardrail — ${violation}`,
+          });
+        }
+      }
+
+      let productModelId: number | null = null;
+      if (input.productModelCode) {
+        const productModel = await db.getProductModelByCode(input.productModelCode.trim());
+        if (!productModel) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        }
+        productModelId = productModel.id;
+      }
+
+      const row = await upsertOperatingConfigReport({
+        machineId: machine.id,
+        configKind: input.configKind,
+        productModelId,
+        baselineVersion: input.baselineVersion ?? null,
+        adjustments: input.adjustments,
+        effective: input.effective,
+        checksum: input.checksum ?? null,
+        reportedBy: input.reportedBy ?? null,
+      });
+
+      db.createAuditLog({
+        action: "machine.reportOperatingConfig",
+        entityType: "machine_operating_config",
+        entityId: row.id,
+        entityName: `${machine.code}:${input.configKind}`,
+        details: {
+          source: "machineApi.reportSettings",
+          machineId: machine.id,
+          configKind: input.configKind,
+          scope: row.scope,
+          productModelId,
+        },
+        status: "success",
+      }).catch(() => {});
+
+      return {
+        success: true,
+        id: row.id,
+        machineId: machine.id,
+        configKind: row.configKind,
+        scope: row.scope,
+        productModelId: row.productModelId,
+        checksum: row.checksum,
+        reportedAt: row.reportedAt,
+      };
     }),
 
   // ============================================================
