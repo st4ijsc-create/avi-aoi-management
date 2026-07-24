@@ -284,8 +284,12 @@ every driver ultimately targets.
 ## 13. Web UI standalone offline desktop package (Task 9) / Đóng gói web UI thành app desktop offline
 
 `web/` (Tasks 1-8) is a separate React/Vite UI for the same `St4i.EngineApi` engine host (Task 3) —
-7 screens, i18n (vi/en), dark mode. Task 9 packages it as a native, chrome-less desktop window that
-runs **fully offline** (Demo mode, the default) for a trade-exhibition machine with no internet.
+11 screens, i18n (vi/en), 3 themes. Task 9 packages it as a native, chrome-less desktop window.
+
+**WS2 (docs/PRODUCTION_UI_DESIGN.md) — this is a product sold to customers, not a demo tool first:**
+the engine's default transport mode is **Live** (connect a real ST4I ecosystem), not Demo. The
+**exhibition build** (offline, fabricated 11-machine fleet, what §13.2 below verified live) is now an
+explicit opt-in via one flag — see §13.5.
 
 ### 13.1 Dev mode — unchanged
 
@@ -363,20 +367,27 @@ publish-desktop/
     fleet.json, mapping/*.json <- default 11-machine roster (§10)
 ```
 
-**Run:** double-click `publish-desktop/St4i.DesktopShell.exe`. No dev server, no internet — Demo
-mode (the engine's default transport) fabricates the entire fleet locally. Engine port: **5199**
-(same fixed port as dev mode — `St4i.EngineApi.Program.cs`).
+**Run:** double-click `publish-desktop/St4i.DesktopShell.exe`. No dev server needed either way — what
+happens next depends on whether the exhibition flag is set (§13.5):
+- **Product (no flag, the default since WS2-T1):** the engine boots **Live**, connected to nothing
+  yet — the web UI shows the "Connect ecosystem" screen instead of an empty fleet grid until a real
+  ST4I server is configured, exactly like a fresh customer install.
+- **Exhibition (`ST4I_DEMO_ENABLED=true`):** boots straight into the offline, fabricated 11-machine
+  Demo fleet, zero clicks, zero network — the pre-WS2 behavior, still fully supported.
 
-**Verified LIVE (this task):** published the artifact per the commands above, copied the whole
-`publish-desktop/` folder to a clean directory outside the repo (no dev server, nothing else
-running on :5199/:5173), launched `St4i.DesktopShell.exe` — native window opened
-(`MainWindowTitle="ST4I Machine Simulator"`), engine child process (`St4i.EngineApi`, separate PID)
-came up and answered `GET /v1/fleet` within the poll window, dashboard rendered correctly (navy/white
-theme, Vietnamese UI, not blank), clicked **"Chạy Fleet"** — all 11 machines went online and started
-producing cycles (verified via a `GET /v1/fleet` snapshot mid-run: 34+ cycles, ~93% FPY, realistic
-per-machine sparklines/status), all with **zero network activity** (Demo mode). Closed the window —
-both the shell process and the engine child process exited cleanly, port 5199 freed, no orphan.
-Screenshots taken by capturing the actual native window's on-screen pixels (not a browser tab).
+Engine port: **5199** (same fixed port as dev mode — `St4i.EngineApi.Program.cs`).
+
+**Verified LIVE (Task 9, pre-WS2-T1 when Demo was still the engine's own default):** published the
+artifact per the commands above, copied the whole `publish-desktop/` folder to a clean directory
+outside the repo (no dev server, nothing else running on :5199/:5173), launched
+`St4i.DesktopShell.exe` — native window opened (`MainWindowTitle="ST4I Machine Simulator"`), engine
+child process (`St4i.EngineApi`, separate PID) came up and answered `GET /v1/fleet` within the poll
+window, dashboard rendered correctly (navy/white theme, Vietnamese UI, not blank), clicked **"Chạy
+Fleet"** — all 11 machines went online and started producing cycles (verified via a `GET /v1/fleet`
+snapshot mid-run: 34+ cycles, ~93% FPY, realistic per-machine sparklines/status), all with **zero
+network activity** (Demo mode). Closed the window — both the shell process and the engine child
+process exited cleanly, port 5199 freed, no orphan. Screenshots taken by capturing the actual native
+window's on-screen pixels (not a browser tab). §13.5 re-verifies the now-default Live/product path.
 
 ### 13.3 Dev-mode split vs. packaged split — do not confuse the two
 
@@ -473,3 +484,67 @@ sẽ tốn nhiều GB và nhiều phút, rủi ro treo máy ngay trước triể
 KHÔNG cài. Deliverable A (§13.2, WebView2 + EngineApi) đã build+publish+chạy thật LIVE offline,
 đó là thứ mang đi triển lãm. Phần Tauri ở trên là công thức đã ghi lại đầy đủ — CHƯA compile/verify
 — cho máy nào có sẵn Rust dùng sau này.)*
+
+### 13.5 Exhibition vs product packaging — the `ST4I_DEMO_ENABLED` flag / Đóng gói triển lãm vs sản phẩm
+
+WS2 (`docs/PRODUCTION_UI_DESIGN.md` §2.1/§2.2/§2.5) made this a **product sold to customers**, not a
+demo tool first — the packaged deliverable in §13.2 above is now used two different ways from the
+exact same `publish-desktop/` build, distinguished by a single opt-in flag. Nothing about the
+`dotnet publish`/`npm run build` steps in §13.2 changes; only how the resulting exe is *launched*
+does.
+
+| | Product build (default) | Exhibition build |
+|---|---|---|
+| Flag | *(absent)* | `ST4I_DEMO_ENABLED=true`, read once at engine startup by `St4i.EngineApi.Config.DemoModeGate` |
+| Engine boots into | **Live** — `TransportMode.Live`, connected to nothing until configured | **Demo** — the fabricated, offline 11-machine fleet, exactly like every build before WS2-T1 |
+| First launch shows | The **"Connect ecosystem"** screen (Dashboard/Machines) — enter the ST4I server URL, a live connection-status readout (idle/testing/connected/failed), a retry, and a link to Onboarding to register/claim this machine. Clears automatically the instant a real server answers. | The full dashboard/machine grid immediately — nothing to configure |
+| `PUT /v1/mode {Demo}` | Rejected (400, `"Demo mode is not enabled on this deployment."`) — defense in depth, not just a hidden button | Allowed (round-trips back to Live too) |
+| `GET /v1/capabilities` | `{demoEnabled:false, mode:"Live"}` | `{demoEnabled:true, mode:"Demo"}` |
+
+**How to ship the exhibition build:** after publishing per §13.2, copy
+`tools/machine-simulator/packaging/run-exhibition.bat` into the `publish-desktop/` folder (next to
+`St4i.DesktopShell.exe`) and have the operator double-click **that** instead of the `.exe` directly —
+it sets the flag, then launches the shell:
+
+```powershell
+copy tools\machine-simulator\packaging\run-exhibition.bat publish-desktop\
+```
+
+The launcher's whole content is one `set` + one `start`:
+
+```bat
+set ST4I_DEMO_ENABLED=true
+start "" "%~dp0St4i.DesktopShell.exe"
+```
+
+`St4i.DesktopShell`'s `MainWindow.xaml.cs` (`LaunchEngineProcess`) explicitly copies this flag from
+its own process environment onto the spawned `St4i.EngineApi.exe` child's — a plain `Process.Start`
+already inherits the whole parent environment by default when `StartInfo.EnvironmentVariables` is
+left untouched, but the copy is made explicit/greppable there rather than relying silently on that.
+Running `St4i.EngineApi.exe` standalone (no `St4i.DesktopShell`, e.g. a headless/server-only
+exhibition deployment) needs the same flag set on its OWN process instead — one line, no file needed:
+
+```powershell
+$env:ST4I_DEMO_ENABLED = "true"; .\St4i.EngineApi.exe        # PowerShell
+```
+
+```cmd
+set ST4I_DEMO_ENABLED=true && St4i.EngineApi.exe             :: cmd.exe
+```
+
+**Product build:** ship `publish-desktop/` with **no launcher, no flag** — the operator just
+double-clicks `St4i.DesktopShell.exe` as documented in §13.2. First run connects to nothing (a fresh
+install has no ecosystem configured yet): Dashboard and Machines both show the "Connect ecosystem"
+screen — enter the customer's real ST4I server URL (same field `Settings` → *Server connection*
+already exposes, wired into this screen directly rather than a second config surface), watch the
+status go idle → testing → connected, then follow the "Register / claim this machine" link into
+Onboarding. The screen disappears the moment the configured server answers — Dashboard/Machines
+immediately show the real fleet from then on, no reload needed (`GET /v1/settings/probe` is polled
+in the background the whole time this screen is up).
+
+*(VI: WS2 biến app này thành sản phẩm bán cho khách — cùng một bản build `publish-desktop/`, chỉ khác
+CÁCH chạy. Bản triển lãm: copy `packaging/run-exhibition.bat` cạnh `St4i.DesktopShell.exe`, bấm file
+đó thay vì bấm thẳng .exe — set cờ `ST4I_DEMO_ENABLED=true` rồi mới chạy shell, cờ này truyền xuống
+tiến trình engine con. Bản sản phẩm (mặc định): không cờ, không file phụ — bấm thẳng .exe, máy vào
+Live, hiện màn "Kết nối hệ sinh thái" cho tới khi nhập đúng địa chỉ máy chủ thật; màn này tự biến mất
+ngay khi máy chủ trả lời.)*

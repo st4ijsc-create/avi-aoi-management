@@ -713,6 +713,84 @@ export function useProbeSettings() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// WS2-T2 (docs/PRODUCTION_UI_DESIGN.md §2.4) — ecosystem connect gate. WS2-T1 flipped the engine's
+// default to Live with nothing configured, so a fresh product install's fleet-dependent screens
+// (Dashboard/Machines) have nothing meaningful to show until this machine actually reaches a real
+// ST4I ecosystem. Rather than render an empty/meaningless local fleet grid, those screens gate their
+// normal content behind `useEcosystemConnection().needsConnect` and show `EcosystemConnectPanel`
+// instead — this hook is the single source of truth both for THAT decision and for the panel's own
+// live status readout.
+// ─────────────────────────────────────────────────────────────────────────
+
+const ECOSYSTEM_PROBE_INTERVAL_MS = 8000
+
+export type EcosystemConnectionStatus = "idle" | "testing" | "connected" | "failed"
+
+export interface EcosystemConnectionState {
+  /** False until `/v1/mode` AND `/v1/settings` have both resolved at least once — a caller should keep
+   * showing its OWN existing loading state until this flips true, rather than flash the connect gate
+   * open only to close it again the instant the real mode/URL are known. */
+  loaded: boolean
+  mode: TransportMode
+  /** The currently-saved `Settings.serverUrl`, trimmed. */
+  serverUrl: string
+  status: EcosystemConnectionStatus
+  /** True whenever a fleet-dependent screen should show the connect gate instead of its normal
+   * content — Live mode with no configured URL, or configured but not currently reachable. Always
+   * false outside Live: Demo's fabricated fleet is legitimately populated, nothing to connect to. */
+  needsConnect: boolean
+  /** True while a probe triggered by `retry()` (or the background poll) is in flight — distinct from
+   * `status === "testing"` (the FIRST probe, before any result has ever landed), so a retry click can
+   * show its own pending spinner without the whole panel reverting to the "never tested" copy. */
+  isRetrying: boolean
+  /** Re-runs the reachability probe against the current `serverUrl` immediately, instead of waiting
+   * for the next background poll tick. */
+  retry: () => void
+}
+
+/** Polls `POST /v1/settings/probe` against the CURRENTLY SAVED `serverUrl` while in Live mode — the
+ * exact same connectivity check (`ResilienceProbe`) Settings' own "Check connection" button triggers
+ * manually, reused here as the automatic signal deciding whether `needsConnect` is true. Never probes
+ * in Demo mode or with an empty URL (`enabled` below), so the gate itself never activates outside the
+ * one case it's meant for. */
+export function useEcosystemConnection(): EcosystemConnectionState {
+  const modeQuery = useMode()
+  const settingsQuery = useSettings()
+  const mode = modeQuery.data?.mode ?? "Live"
+  const serverUrl = (settingsQuery.data?.serverUrl ?? "").trim()
+  const loaded = modeQuery.data !== undefined && settingsQuery.data !== undefined
+  const probeEnabled = loaded && mode === "Live" && serverUrl.length > 0
+
+  const probeQuery = useQuery({
+    queryKey: ["ecosystem-connect-probe", serverUrl],
+    queryFn: () => endpoints.probeSettings(serverUrl),
+    enabled: probeEnabled,
+    refetchInterval: ECOSYSTEM_PROBE_INTERVAL_MS,
+    retry: false,
+  })
+
+  const retry = React.useCallback(() => {
+    void probeQuery.refetch()
+  }, [probeQuery])
+
+  const base = { loaded, mode, serverUrl, isRetrying: probeQuery.isFetching, retry }
+
+  if (!loaded || mode !== "Live") {
+    return { ...base, status: "idle", needsConnect: false }
+  }
+  if (!serverUrl) {
+    return { ...base, status: "idle", needsConnect: true }
+  }
+  if (probeQuery.isPending) {
+    return { ...base, status: "testing", needsConnect: true }
+  }
+  if (probeQuery.data?.reachable) {
+    return { ...base, status: "connected", needsConnect: false }
+  }
+  return { ...base, status: "failed", needsConnect: true }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Scenario — Task 7
 // ─────────────────────────────────────────────────────────────────────────
 

@@ -173,6 +173,15 @@ public partial class MainWindow : Window
         return File.Exists(candidate) ? candidate : null;
     }
 
+    // St4i.EngineApi.Config.DemoModeGate.EnvVarName, kept in sync by convention (same reasoning as
+    // EnginePort above — this project doesn't reference EngineApi as a library, only spawns its
+    // published .exe as an opaque child process). WS2-T2 (docs/PRODUCTION_UI_DESIGN.md §2.5) —
+    // exhibition packaging: an operator drops a tiny launcher script beside THIS shell's own .exe
+    // (see packaging/run-exhibition.bat, referenced from README.md §13) that sets this env var before
+    // starting the shell; product packaging is just double-clicking the .exe directly, with nothing
+    // set, which boots the engine child Live (WS2-T1's default) instead.
+    private const string DemoEnabledEnvVar = "ST4I_DEMO_ENABLED";
+
     private static Process LaunchEngineProcess(string enginePath)
     {
         var logDir = Path.Combine(
@@ -190,6 +199,19 @@ public partial class MainWindow : Window
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
+
+        // WS2-T2 — explicit passthrough of the Demo-mode flag from THIS shell's own process
+        // environment to the spawned engine child. `Process.Start` already inherits the FULL parent
+        // environment by default whenever `StartInfo.EnvironmentVariables` is left untouched (Win32
+        // `CreateProcess` with a null environment block) — so this line is redundant in the common
+        // case, but it makes the passthrough explicit and greppable here rather than relying silently
+        // on that default (which a future change adding its own `psi.EnvironmentVariables` edits
+        // could break without anyone noticing this flag stopped propagating).
+        var demoFlag = Environment.GetEnvironmentVariable(DemoEnabledEnvVar);
+        if (!string.IsNullOrEmpty(demoFlag))
+        {
+            psi.EnvironmentVariables[DemoEnabledEnvVar] = demoFlag;
+        }
 
         var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         process.Start();

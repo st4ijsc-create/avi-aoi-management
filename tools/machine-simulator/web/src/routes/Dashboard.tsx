@@ -6,9 +6,10 @@ import { useLocation } from "wouter"
 
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
-import { useFleet, useFleetIsRunning, useStartFleet } from "@/lib/api"
+import { useEcosystemConnection, useFleet, useFleetIsRunning, useStartFleet } from "@/lib/api"
 import { fadeSlideUp, staggerContainer } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
+import { EcosystemConnectPanel } from "@/components/EcosystemConnect"
 import { KpiTile, KpiTileSkeleton } from "@/components/KpiTile"
 import { MachineCard, MachineCardSkeleton } from "@/components/MachineCard"
 import { Sparkline } from "@/components/Sparkline"
@@ -66,6 +67,7 @@ export default function Dashboard() {
   const { data, isPending, isError } = useFleet()
   const isRunning = useFleetIsRunning()
   const startFleet = useStartFleet()
+  const ecosystem = useEcosystemConnection()
   const [, navigate] = useLocation()
   const [cycleHistory, setCycleHistory] = React.useState<number[]>([])
 
@@ -87,6 +89,13 @@ export default function Dashboard() {
   const online = data?.kpis.online ?? 0
   const fpy = data?.kpis.fpy ?? 0
 
+  // WS2-T2 (docs/PRODUCTION_UI_DESIGN.md §2.4) — Live mode with no reachable ecosystem replaces the
+  // whole KPI+grid body below with the connect gate instead of a locally-fabricated 0/0 KPI row over
+  // an empty/meaningless grid. Gated on `!isPending && !isError` (same guards `showEmpty` already
+  // uses) so an engine that's merely still loading, or genuinely unreachable itself, keeps showing
+  // its EXISTING skeleton/error handling rather than being preempted by this.
+  const showConnectGate = !isPending && !isError && ecosystem.loaded && ecosystem.needsConnect
+
   return (
     <motion.div
       initial="hidden"
@@ -101,83 +110,89 @@ export default function Dashboard() {
         <p className="hmi-micro mt-1">{gloss("dashboard.title")}</p>
         <p className="mt-1 text-sm text-text-muted">
           {t("dashboard.subtitleBase")}
-          {roster > 0 ? t("dashboard.subtitleRoster", { roster }) : "."}
+          {roster > 0 && !showConnectGate ? t("dashboard.subtitleRoster", { roster }) : "."}
         </p>
       </div>
 
-      <motion.div
-        initial="hidden"
-        animate="visible"
-        variants={staggerContainer}
-        className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-3"
-      >
-        {isPending ? (
-          <>
-            <KpiTileSkeleton />
-            <KpiTileSkeleton />
-            <KpiTileSkeleton />
-          </>
-        ) : (
-          <>
-            <KpiTile
-              label={t("dashboard.kpi.machinesOnline")}
-              labelEn={gloss("dashboard.kpi.machinesOnline")}
-              value={String(online)}
-              unit={`/ ${roster}`}
-              delta={{
-                label:
-                  online === roster && roster > 0
-                    ? t("dashboard.kpi.onlineAll")
-                    : online > 0
-                      ? t("dashboard.kpi.onlineNotYet", { count: roster - online })
-                      : t("dashboard.kpi.onlineNone"),
-                // I-12: a fleet mid-start is a normal transient boot state, not a warning — every
-                // fleet passes through "some online" at every startup. `warn` here desensitizes the
-                // operator to amber; `info` (routes to the neutral tone, see DELTA_TONE) reads as "in
-                // progress" instead.
-                status: online === roster && roster > 0 ? "ok" : online > 0 ? "info" : "neutral",
-              }}
-            />
-            <KpiTile label={t("dashboard.kpi.totalCycles")} labelEn={gloss("dashboard.kpi.totalCycles")} value={totalCycles.toLocaleString()}>
-              <Sparkline data={cycleHistory} height={36} className="-mx-1" />
-            </KpiTile>
-            <KpiTile
-              label={t("dashboard.kpi.fpy")}
-              labelEn={gloss("dashboard.kpi.fpy")}
-              value={(fpy * 100).toFixed(1)}
-              unit="%"
-              gaugePct={hasCycles ? fpy * 100 : undefined}
-              delta={
-                hasCycles ? fpyDelta(t, fpy) : { label: t("dashboard.kpi.fpyNoCycles"), status: "neutral" }
-              }
-            />
-          </>
-        )}
-      </motion.div>
-
-      {showEmpty ? (
-        <EmptyState
-          onStart={() =>
-            startFleet.mutate(undefined, { onSuccess: () => toast.success(t("toast.fleetStarted")) })
-          }
-          pending={startFleet.isPending}
-          roster={roster}
-        />
+      {showConnectGate ? (
+        <EcosystemConnectPanel ecosystem={ecosystem} />
       ) : (
-        <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">
+        <>
           <motion.div
             initial="hidden"
             animate="visible"
             variants={staggerContainer}
-            className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+            className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-3"
           >
-            {isPending
-              ? Array.from({ length: 8 }, (_, i) => <MachineCardSkeleton key={i} />)
-              : (data?.machines ?? []).map((machine) => (
-                  <MachineCard key={machine.code} machine={machine} isRunning={isRunning} onOpen={openMachine} />
-                ))}
+            {isPending ? (
+              <>
+                <KpiTileSkeleton />
+                <KpiTileSkeleton />
+                <KpiTileSkeleton />
+              </>
+            ) : (
+              <>
+                <KpiTile
+                  label={t("dashboard.kpi.machinesOnline")}
+                  labelEn={gloss("dashboard.kpi.machinesOnline")}
+                  value={String(online)}
+                  unit={`/ ${roster}`}
+                  delta={{
+                    label:
+                      online === roster && roster > 0
+                        ? t("dashboard.kpi.onlineAll")
+                        : online > 0
+                          ? t("dashboard.kpi.onlineNotYet", { count: roster - online })
+                          : t("dashboard.kpi.onlineNone"),
+                    // I-12: a fleet mid-start is a normal transient boot state, not a warning — every
+                    // fleet passes through "some online" at every startup. `warn` here desensitizes the
+                    // operator to amber; `info` (routes to the neutral tone, see DELTA_TONE) reads as "in
+                    // progress" instead.
+                    status: online === roster && roster > 0 ? "ok" : online > 0 ? "info" : "neutral",
+                  }}
+                />
+                <KpiTile label={t("dashboard.kpi.totalCycles")} labelEn={gloss("dashboard.kpi.totalCycles")} value={totalCycles.toLocaleString()}>
+                  <Sparkline data={cycleHistory} height={36} className="-mx-1" />
+                </KpiTile>
+                <KpiTile
+                  label={t("dashboard.kpi.fpy")}
+                  labelEn={gloss("dashboard.kpi.fpy")}
+                  value={(fpy * 100).toFixed(1)}
+                  unit="%"
+                  gaugePct={hasCycles ? fpy * 100 : undefined}
+                  delta={
+                    hasCycles ? fpyDelta(t, fpy) : { label: t("dashboard.kpi.fpyNoCycles"), status: "neutral" }
+                  }
+                />
+              </>
+            )}
           </motion.div>
-        </div>
+
+          {showEmpty ? (
+            <EmptyState
+              onStart={() =>
+                startFleet.mutate(undefined, { onSuccess: () => toast.success(t("toast.fleetStarted")) })
+              }
+              pending={startFleet.isPending}
+              roster={roster}
+            />
+          ) : (
+            <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">
+              <motion.div
+                initial="hidden"
+                animate="visible"
+                variants={staggerContainer}
+                className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+              >
+                {isPending
+                  ? Array.from({ length: 8 }, (_, i) => <MachineCardSkeleton key={i} />)
+                  : (data?.machines ?? []).map((machine) => (
+                      <MachineCard key={machine.code} machine={machine} isRunning={isRunning} onOpen={openMachine} />
+                    ))}
+              </motion.div>
+            </div>
+          )}
+        </>
       )}
 
       {isError ? <p className="shrink-0 text-sm text-danger-text">{t("common.connectivityError")}</p> : null}

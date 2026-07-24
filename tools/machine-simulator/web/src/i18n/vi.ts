@@ -982,6 +982,31 @@ export const vi = {
     clean: "Đã lưu.",
   },
 
+  // WS2-T2 (docs/PRODUCTION_UI_DESIGN.md §2.4) — the Live-mode "connect to ecosystem" gate that
+  // Dashboard/Machines show instead of an empty/meaningless local fleet grid whenever this deployment
+  // hasn't reached a real ST4I server yet. Never rendered in Demo mode (see `useEcosystemConnection`
+  // in `lib/api.ts`) — Demo's fabricated fleet is legitimately populated, nothing to connect to.
+  ecosystemConnect: {
+    title: "Kết nối hệ sinh thái",
+    description:
+      "Máy đang ở chế độ Live nhưng chưa nối được hệ sinh thái ST4I thật — nhập địa chỉ máy chủ bên dưới rồi kiểm tra kết nối để xem đội máy thật.",
+    statusLabel: "Trạng thái kết nối",
+    status: {
+      idle: "Chưa kiểm tra",
+      testing: "Đang kiểm tra…",
+      connected: "Đã kết nối",
+      failed: "Không kết nối được",
+    },
+    emptyUrlHint: "Nhập địa chỉ máy chủ hệ sinh thái để bắt đầu.",
+    failedHint: "Máy chủ không phản hồi — kiểm tra địa chỉ, mạng, hoặc thử lại.",
+    saveAndTestBtn: "Lưu & kiểm tra",
+    saving: "Đang lưu…",
+    retryBtn: "Thử lại",
+    retrying: "Đang thử…",
+    registerCta: "Đăng ký / nhận máy này",
+    settingsCta: "Mở Cài đặt kết nối",
+  },
+
   boardView: {
     waiting: "Đang chờ chu kỳ kiểm tra đầu tiên…",
     pointsInspected: (vars: Vars) => `${vars.count} điểm đã kiểm tra`,

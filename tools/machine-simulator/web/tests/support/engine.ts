@@ -42,6 +42,18 @@ export async function resetSettingsLanguage(request: APIRequestContext): Promise
   if (!res.ok()) throw new Error(`reset settings language failed: ${res.status()}`)
 }
 
+/** WS2-T2 — restores the engine's transport mode to Demo and `Settings.serverUrl` to its hardcoded
+ * default (`FleetHost.DefaultServerUrl`, "http://localhost:5000") — undoes what
+ * `14-ecosystem-connect.spec.ts` deliberately flips to Live + an unreachable URL to exercise the
+ * ecosystem connect gate, so nothing downstream (including a re-run of the pristine visual pass,
+ * which assumes the webServer's own `ST4I_DEMO_ENABLED=true` Demo-mode boot state) inherits it. */
+export async function resetEcosystemMode(request: APIRequestContext): Promise<void> {
+  const modeRes = await request.put(`${ENGINE_URL}/v1/mode`, { data: { mode: "Demo" } })
+  if (!modeRes.ok()) throw new Error(`reset mode to Demo failed: ${modeRes.status()}`)
+  const settingsRes = await request.put(`${ENGINE_URL}/v1/settings`, { data: { serverUrl: "http://localhost:5000" } })
+  if (!settingsRes.ok()) throw new Error(`reset serverUrl failed: ${settingsRes.status()}`)
+}
+
 /**
  * Branch-review I-15 — pulls `productCode`'s config onto `machineCode`'s LOCAL `ProductConfigStore`
  * (`POST /v1/machines/{code}/config/pull`, the same call `02-machine-detail.spec.ts`'s "Pull" button

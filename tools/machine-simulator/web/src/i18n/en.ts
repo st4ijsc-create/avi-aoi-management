@@ -982,6 +982,27 @@ export const en: Dictionary = {
     clean: "Saved.",
   },
 
+  ecosystemConnect: {
+    title: "Connect ecosystem",
+    description:
+      "This machine is in Live mode but hasn't reached a real ST4I ecosystem yet — enter the server address below and check the connection to see the real fleet.",
+    statusLabel: "Connection status",
+    status: {
+      idle: "Not tested",
+      testing: "Testing…",
+      connected: "Connected",
+      failed: "Connection failed",
+    },
+    emptyUrlHint: "Enter the ecosystem server address to get started.",
+    failedHint: "The server didn't respond — check the address, the network, or retry.",
+    saveAndTestBtn: "Save & test",
+    saving: "Saving…",
+    retryBtn: "Retry",
+    retrying: "Retrying…",
+    registerCta: "Register / claim this machine",
+    settingsCta: "Open connection settings",
+  },
+
   boardView: {
     waiting: "Waiting for the first inspection cycle…",
     pointsInspected: (vars: Vars) => `${vars.count} points inspected`,
