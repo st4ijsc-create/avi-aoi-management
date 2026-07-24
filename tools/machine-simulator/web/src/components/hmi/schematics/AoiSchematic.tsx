@@ -251,21 +251,29 @@ export function AoiSchematic({ plan, animate, points, className }: AoiSchematicP
                 // update"). Animating: reveal in cycle order as the head actually arrives.
                 const revealed = clock ? i < clock.revealedCount : true
                 const resultLabel = step.result === "OK" ? t("hmi.progress.okLabel") : t("hmi.progress.ngLabel")
-                const tone = !revealed || !step.result ? "idle" : step.result === "OK" ? "run" : "fault"
+                const lit = revealed && !!step.result
+                const tone = !lit ? "idle" : step.result === "OK" ? "run" : "fault"
                 return (
                   <circle
                     key={step.pointCode}
                     cx={cx}
                     cy={cy}
-                    r={revealed && step.result ? 4.2 : 3.4}
-                    fill={revealed && step.result ? `var(--color-status-${tone})` : "none"}
+                    r={lit ? 4.2 : 3.4}
+                    fill={lit ? `var(--color-status-${tone})` : "none"}
                     stroke={`var(--color-status-${tone})`}
                     strokeWidth={1.3}
                     className="hmi-wire hmi-aoi-point"
-                    style={{ transition: "fill 140ms ease, stroke 140ms ease, r 140ms ease" }}
+                    // M-1 (prod-ui review) — a cycle boundary resets `revealedCount` to 0, so a dot that
+                    // was just fault/run flips back to idle on the SAME DOM node (`key={step.pointCode}`
+                    // is stable across cycles). Animating fill/stroke on THAT transition let the prior
+                    // red/green hue bleed through for ~140ms — a just-reset (pending) dot must read
+                    // idle-grey immediately, never a fading fault tail (§4: no-data ≠ fault). Only the
+                    // reveal path (idle → lit) gets the soft colour fade; the reset path (lit → idle)
+                    // snaps instantly. `r` keeps easing both ways — size alone carries no safety meaning.
+                    style={{ transition: lit ? "fill 140ms ease, stroke 140ms ease, r 140ms ease" : "r 140ms ease" }}
                   >
                     <title>
-                      {revealed && step.result
+                      {lit
                         ? t("hmi.schematic.measuredResult", { code: step.pointCode, result: resultLabel })
                         : t("hmi.schematic.configuredPosition", { code: step.pointCode })}
                     </title>

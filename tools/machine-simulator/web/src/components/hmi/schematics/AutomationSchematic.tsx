@@ -144,21 +144,25 @@ export function AutomationSchematic({ plan, animate, className }: AutomationSche
                 const cy = TABLE_Y + clamp01(step.normalizedY) * TABLE_H
                 const revealed = clock ? i < clock.revealedCount : true
                 const resultLabel = step.result === "OK" ? t("hmi.progress.okLabel") : t("hmi.progress.ngLabel")
-                const tone = !revealed || !step.result ? "idle" : step.result === "OK" ? "run" : "fault"
+                const lit = revealed && !!step.result
+                const tone = !lit ? "idle" : step.result === "OK" ? "run" : "fault"
                 return (
                   <circle
                     key={step.pointCode}
                     cx={cx}
                     cy={cy}
-                    r={revealed && step.result ? 3.4 : 2.4}
-                    fill={revealed && step.result ? `var(--color-status-${tone})` : "none"}
+                    r={lit ? 3.4 : 2.4}
+                    fill={lit ? `var(--color-status-${tone})` : "none"}
                     stroke={`var(--color-status-${tone})`}
                     strokeWidth={1.3}
                     className="hmi-wire"
-                    style={{ transition: "fill 140ms ease, stroke 140ms ease, r 140ms ease" }}
+                    // M-1 (prod-ui review) — see AoiSchematic.tsx's twin comment: snap fill/stroke
+                    // instantly on the reset/pending path (`key={step.pointCode}` is a stable DOM node
+                    // across cycles), keep the soft 140ms fade only on the idle→lit reveal path.
+                    style={{ transition: lit ? "fill 140ms ease, stroke 140ms ease, r 140ms ease" : "r 140ms ease" }}
                   >
                     <title>
-                      {revealed && step.result
+                      {lit
                         ? t("hmi.schematic.measuredResult", { code: step.pointCode, result: resultLabel })
                         : t("hmi.schematic.configuredPosition", { code: step.pointCode })}
                     </title>

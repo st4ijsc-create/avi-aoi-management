@@ -23,6 +23,7 @@ import { useLocation } from "wouter"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useLanguage, useT } from "@/i18n"
 import {
+  useCapabilities,
   useFleetIsRunning,
   useOnboardingClaim,
   useOnboardingEnroll,
@@ -85,27 +86,38 @@ function resultTone(result: OnboardingResult): LogTone {
 // Demo/Live toggle — a small segmented control, same visual language as TopBar's transport-mode
 // switch, but a different axis entirely: this flips OnboardingRegisterRequest.isDemo (whether THIS
 // wizard fabricates its own register→approve→claim flow instantly, or calls a real ST4I server).
+//
+// I-1 (prod-ui review) — this was the one Demo surface `useCapabilities().demoEnabled` DIDN'T gate
+// (TopBar's `ModeSwitch`/Settings' `ModeSelector` already filter their Demo option the same way): on a
+// flag-off product build the connect gate steers a fresh install straight into "register this
+// machine" → this wizard, which used to default to (and always offer) Demo regardless. `demoAvailable`
+// mirrors those two surfaces' `options.filter(...)` pattern — when false, Demo is dropped from the
+// radiogroup entirely (not merely disabled), leaving the single remaining Live option exactly like
+// TopBar/Settings degrade to a one-item control.
 // ─────────────────────────────────────────────────────────────────────────
 function DemoLiveToggle({
   isDemo,
   onChange,
   disabled,
+  demoAvailable,
 }: {
   isDemo: boolean
   onChange: (isDemo: boolean) => void
   disabled?: boolean
+  demoAvailable: boolean
 }) {
   const t = useT()
+  const options = [
+    { value: true, label: t("onboarding.demoLiveToggle.demo") },
+    { value: false, label: t("onboarding.demoLiveToggle.live") },
+  ].filter((option) => demoAvailable || option.value === false)
   return (
     <div
       role="radiogroup"
       aria-label={t("onboarding.demoLiveToggle.aria")}
       className="flex items-center gap-0.5 border border-border-strong bg-surface-muted p-0.5"
     >
-      {[
-        { value: true, label: t("onboarding.demoLiveToggle.demo") },
-        { value: false, label: t("onboarding.demoLiveToggle.live") },
-      ].map((option) => {
+      {options.map((option) => {
         const selected = isDemo === option.value
         return (
           <button
@@ -181,6 +193,7 @@ interface RegisterStepProps {
   onMachineType: (v: string) => void
   isDemo: boolean
   onIsDemo: (v: boolean) => void
+  demoAvailable: boolean
   serverUrl: string
   onServerUrl: (v: string) => void
   pending: boolean
@@ -196,6 +209,7 @@ function RegisterStep({
   onMachineType,
   isDemo,
   onIsDemo,
+  demoAvailable,
   serverUrl,
   onServerUrl,
   pending,
@@ -216,7 +230,7 @@ function RegisterStep({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-text-muted">{t("onboarding.register.description")}</p>
-        <DemoLiveToggle isDemo={isDemo} onChange={onIsDemo} disabled={pending} />
+        <DemoLiveToggle isDemo={isDemo} onChange={onIsDemo} disabled={pending} demoAvailable={demoAvailable} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -641,6 +655,11 @@ export default function Onboarding() {
   const settingsQuery = useSettings()
   const isRunning = useFleetIsRunning()
   const startFleet = useStartFleet()
+  // I-1 (prod-ui review) — same `useCapabilities().demoEnabled` gate TopBar/Settings already read;
+  // treated as unavailable until it resolves, so a flag-off deployment never flashes the Demo option
+  // before the capabilities fetch lands.
+  const capabilitiesQuery = useCapabilities()
+  const demoAvailable = capabilitiesQuery.data?.demoEnabled ?? false
 
   const register = useOnboardingRegister()
   const poll = useOnboardingPoll()
@@ -648,7 +667,27 @@ export default function Onboarding() {
   const enroll = useOnboardingEnroll()
 
   const [stepIndex, setStepIndex] = React.useState(0)
+  // I-1 — default stays Demo (`true`) on an exhibition build (`demoEnabled`), matching the pre-fix
+  // behaviour the whole onboarding e2e suite is built against (`playwright.config.ts` boots the
+  // engine with `ST4I_DEMO_ENABLED=true` specifically so the fleet is fabricated locally). M-2a's
+  // "default to Live even in Demo, for a product-first posture" was considered and deliberately NOT
+  // taken here: it would fight this file's own initial `React.useState` with no way to know
+  // `demoAvailable` before first paint, and would invert the default for every exhibition visitor —
+  // a bigger, separately-reviewable behaviour change, not the surgical I-1 fix.
   const [isDemo, setIsDemo] = React.useState(true)
+  // The actual gate this task requires: on a flag-OFF (product) deployment, force Live once we KNOW
+  // that (`capabilitiesQuery.isSuccess` — a resolved response, not just "still loading"). Gating on
+  // `capabilitiesQuery.isSuccess` rather than the coalesced `demoAvailable` matters: `demoAvailable` is
+  // ALSO `false` for the brief window before the fetch resolves (the same conservative "hide until
+  // proven available" default `TopBar`/`Settings` use), and a naive `if (!demoAvailable) setIsDemo(false)`
+  // fires during THAT window too — permanently flipping to Live with no way back, even once the
+  // response lands and turns out to be `demoEnabled:true` (reproduced live: the effect ran once before
+  // the fetch settled, and nothing ever re-ran it forward again since `demoAvailable` went straight from
+  // false→true, never through a "false→false" re-trigger). Checking `isSuccess` first means this only
+  // ever fires off a REAL, settled `demoEnabled:false`.
+  React.useEffect(() => {
+    if (capabilitiesQuery.isSuccess && !capabilitiesQuery.data.demoEnabled) setIsDemo(false)
+  }, [capabilitiesQuery.isSuccess, capabilitiesQuery.data])
   const [serialNumber, setSerialNumber] = React.useState("SIM-0001")
   const [name, setName] = React.useState(() => t("onboarding.register.defaultName"))
   const [nameTouched, setNameTouched] = React.useState(false)
@@ -872,6 +911,7 @@ export default function Onboarding() {
                 onMachineType={setMachineType}
                 isDemo={isDemo}
                 onIsDemo={setIsDemo}
+                demoAvailable={demoAvailable}
                 serverUrl={serverUrl}
                 onServerUrl={setServerUrl}
                 pending={register.isPending}

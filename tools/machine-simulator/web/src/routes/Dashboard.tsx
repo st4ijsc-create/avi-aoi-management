@@ -9,6 +9,7 @@ import { useT } from "@/i18n"
 import { useEcosystemConnection, useFleet, useFleetIsRunning, useStartFleet } from "@/lib/api"
 import { fadeSlideUp, staggerContainer } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
+import { Button } from "@/components/ui/button"
 import { EcosystemConnectPanel } from "@/components/EcosystemConnect"
 import { KpiTile, KpiTileSkeleton } from "@/components/KpiTile"
 import { MachineCard, MachineCardSkeleton } from "@/components/MachineCard"
@@ -47,15 +48,16 @@ function EmptyState({
           <p className="text-lg font-semibold text-text-strong">{t("dashboard.empty.title")}</p>
           <p className="max-w-sm text-sm text-text-muted">{t("dashboard.empty.description", { roster })}</p>
         </div>
-        <button
-          type="button"
-          onClick={onStart}
-          disabled={pending}
-          className="inline-flex h-8 items-center gap-1.5 border border-navy-800 bg-navy-700 px-3 text-xs font-semibold tracking-wide text-white uppercase transition-colors hover:bg-navy-600 focus-visible:ring-2 focus-visible:ring-[var(--focus)] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
-        >
+        {/* M-3 (prod-ui review) — was a raw `<button>` hardcoding `bg-navy-700`, so it stayed
+            brand-navy on Console where `--primary`/`--color-accent` repoints to cyan, unlike every
+            other primary action (e.g. TopBar's Start button below uses this same `Button` primitive).
+            The primitive's own `default` variant already carries the `dark:` (→ Console, see
+            index.css's `@custom-variant dark`) override to `var(--color-accent)`, so swapping to it
+            themes correctly on all 3 themes for free — no bespoke class list to keep in sync. */}
+        <Button onClick={onStart} disabled={pending} className="px-3">
           <PlayCircle className="size-3.5" aria-hidden="true" />
           {pending ? t("dashboard.empty.ctaPending") : t("dashboard.empty.cta")}
-        </button>
+        </Button>
       </Sheet>
     </motion.div>
   )

@@ -378,3 +378,76 @@ test.describe("onboarding — register → approve → claim → done → joins 
     await expect(page.getByText(viDict.toast.onboardingKeyStored({ code }))).toBeVisible()
   })
 })
+
+/**
+ * I-1 (prod-ui review) — the connect gate on a flag-off/Live-only deployment steers a fresh install
+ * straight into "register this machine" → this wizard. Before this fix, `Onboarding.tsx` was the ONE
+ * `useCapabilities().demoEnabled` surface WS2-T1 left un-gated: it defaulted to (and always offered)
+ * Demo regardless of `ST4I_DEMO_ENABLED`, so that first click could still fabricate a whole onboarding
+ * run (fake `mk_` key, phantom fleet machine) on a deployment meant to be Live-only.
+ *
+ * This suite's shared engine always boots with `ST4I_DEMO_ENABLED=true` (`playwright.config.ts`'s own
+ * comment explains why — Demo is what keeps the WHOLE suite deterministic/offline), so there is no
+ * second, flag-off engine process to point at here. Intercepting the one endpoint that reports the
+ * flag (`GET /v1/capabilities`) reproduces a flag-off deployment's view of the world for this page
+ * without a second process — every consumer of `useCapabilities()` (TopBar's `ModeSwitch`, Settings'
+ * `ModeSelector`, and this wizard's own `DemoLiveToggle`) reads the exact same query, so this is a
+ * faithful stand-in for "the flag is off", not a mock special-cased to the wizard alone.
+ */
+test.describe("I-1 (prod-ui review) — Demo gated out of onboarding when ST4I_DEMO_ENABLED is off", () => {
+  test("flag-off capabilities: Demo option is hidden on both the onboarding toggle and the topbar, and the wizard registers as Live", async ({
+    page,
+  }) => {
+    await page.route("**/v1/capabilities", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ demoEnabled: false, mode: "Live" }),
+      })
+    })
+
+    await gotoOnboarding(page)
+
+    // Onboarding's own Demo/Live toggle degrades to a single Live option — same shape TopBar/Settings
+    // already use when demoEnabled is false (`options.filter(...)`), not merely a disabled Demo button.
+    const demoLiveToggle = page.getByLabel(viDict.onboarding.demoLiveToggle.aria)
+    await expect(demoLiveToggle.getByRole("radio")).toHaveCount(1)
+    await expect(demoLiveToggle.getByRole("radio", { name: viDict.onboarding.demoLiveToggle.live, checked: true })).toBeVisible()
+    await expect(demoLiveToggle.getByRole("radio", { name: viDict.onboarding.demoLiveToggle.demo })).toHaveCount(0)
+
+    // TopBar's own transport-mode switch (same `useCapabilities()` gate, WS2-T1) degrades the same
+    // way — proof this is one consistent product posture, not a fix scoped to the wizard alone.
+    const transportModeSwitch = page.getByLabel(viDict.shell.topBar.transportModeAria)
+    await expect(transportModeSwitch.getByRole("radio")).toHaveCount(1)
+
+    // The wizard's fabricated-flow explanation sentence never renders — Live is genuinely the active
+    // mode, not just the toggle's visual selection with Demo copy still showing underneath.
+    await expect(page.getByText(viDict.onboarding.modeHint.demo)).toHaveCount(0)
+
+    // Live's own server-URL field is visible (`RegisterStep` only renders it when `!isDemo`) — concrete
+    // evidence the FORM STATE is Live, not just the radio's visual selection.
+    await expect(page.getByLabel(viDict.onboarding.register.serverUrlLabel)).toBeVisible()
+
+    // And the register call this deployment is steered toward genuinely carries `isDemo:false` — the
+    // engine-side defense in depth (`OnboardingEndpoints.TryResolveIsDemo`) never even gets a chance to
+    // refuse an explicit `isDemo:true`, because the web layer never sends one on a flag-off deployment.
+    const serial = `SIM-E2E-FLAGOFF-${Date.now()}`
+    await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
+    const registerRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/register") && req.method() === "POST")
+    await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
+    expect(JSON.parse((await registerRequest).postData() ?? "{}")).toMatchObject({ isDemo: false })
+
+    await assertNoSeriousA11yViolations(page)
+  })
+
+  test("flag on (this suite's real shared engine): Demo option is available again on the onboarding toggle", async ({ page }) => {
+    // No route interception — the real shared engine for this whole suite boots with
+    // ST4I_DEMO_ENABLED=true (playwright.config.ts), so this is the genuine exhibition-build capability
+    // response, not a mock. Companion to the flag-off test above: proves the gate is a real two-way
+    // switch (§2.2's "cờ bật Demo"), not a one-directional "always hide Demo" regression.
+    await gotoOnboarding(page)
+    const demoLiveToggle = page.getByLabel(viDict.onboarding.demoLiveToggle.aria)
+    await expect(demoLiveToggle.getByRole("radio", { name: viDict.onboarding.demoLiveToggle.demo, checked: true })).toBeVisible()
+    await expect(demoLiveToggle.getByRole("radio", { name: viDict.onboarding.demoLiveToggle.live })).toBeVisible()
+  })
+})
