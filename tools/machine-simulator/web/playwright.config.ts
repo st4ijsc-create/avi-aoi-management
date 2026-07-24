@@ -102,6 +102,16 @@ export default defineConfig({
       timeout: 120_000,
       stdout: "pipe",
       stderr: "pipe",
+      // WS2-T1 (docs/PRODUCTION_UI_DESIGN.md §2.2) — the engine's own default flipped from Demo to
+      // Live (a fresh install/product deployment now comes up Live, connected to nothing until
+      // configured). This whole suite is built on the OPPOSITE assumption (see this file's own top
+      // comment: "Demo mode is its default transport, so the whole fleet is fabricated locally with
+      // zero network dependency") and stays that way on purpose — Demo is what makes the suite
+      // deterministic and offline. Setting ST4I_DEMO_ENABLED=true here is what makes that true again:
+      // DemoModeGate reads it at startup and BOTH starts the engine directly in Demo mode (the same
+      // "exhibition packaging" contract §2.5 describes for a real `.exe`) AND permits `PUT /v1/mode`
+      // to switch there, so nothing downstream of this webServer needs its own mode-switch step.
+      env: { ST4I_DEMO_ENABLED: "true" },
     },
   ],
 })

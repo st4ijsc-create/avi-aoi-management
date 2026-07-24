@@ -103,6 +103,18 @@ export interface Health {
   mode: TransportMode
 }
 
+/**
+ * WS2-T1 (docs/PRODUCTION_UI_DESIGN.md §2.2) — `GET /v1/capabilities`. `demoEnabled` mirrors the
+ * engine's `ST4I_DEMO_ENABLED` env var, read ONCE at process startup (`DemoModeGate`) — fixed for the
+ * whole process lifetime, never flips mid-session. The shell reads this BEFORE deciding whether to
+ * render the DEMO option on the topbar/Settings mode selectors, instead of discovering it only from a
+ * rejected `PUT /v1/mode`.
+ */
+export interface Capabilities {
+  demoEnabled: boolean
+  mode: TransportMode
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // GET /v1/machines/{code} — Task 6. Wire shapes mirror `Fleet/Dtos.cs`'s
 // `MachineDetailDto` and `Fleet/MachineState.cs`'s `SpcSummaryDto` /
@@ -370,6 +382,7 @@ const endpoints = {
   mode: () => request<ModeState>("/v1/mode"),
   setMode: (mode: TransportMode) =>
     request<ModeState>("/v1/mode", { method: "PUT", body: JSON.stringify({ mode }) }),
+  capabilities: () => request<Capabilities>("/v1/capabilities"),
   startFleet: () => request<FleetActionResult>("/v1/fleet/start", { method: "POST" }),
   stopFleet: () => request<FleetActionResult>("/v1/fleet/stop", { method: "POST" }),
   // C-2/C-3 — both return the FULL fleet snapshot (not the smaller action-result shape /start and
@@ -503,6 +516,7 @@ export function useFleetEstopEngaged(): boolean {
 const QUERY_KEYS = {
   fleet: ["fleet"] as const,
   mode: ["mode"] as const,
+  capabilities: ["capabilities"] as const,
   health: ["health"] as const,
   machine: (code: string) => ["machine", code] as const,
   settings: ["settings"] as const,
@@ -539,6 +553,16 @@ export function useSetMode() {
     onSuccess: (data) => {
       queryClient.setQueryData(QUERY_KEYS.mode, data)
     },
+  })
+}
+
+/** WS2-T1 — `demoEnabled` is read once at engine startup and fixed for the process lifetime (see
+ * `Capabilities`'s own doc comment), so this deliberately does NOT poll like `useMode`/`useHealth` —
+ * one fetch on mount is enough for the whole session. */
+export function useCapabilities(): UseQueryResult<Capabilities> {
+  return useQuery({
+    queryKey: QUERY_KEYS.capabilities,
+    queryFn: endpoints.capabilities,
   })
 }
 

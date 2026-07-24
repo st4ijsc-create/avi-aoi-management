@@ -43,8 +43,17 @@ builder.Services.AddCors(options =>
 
 // ── EdgeCore composition root — mirrors the WPF app's App.xaml.cs ConfigureServices Live/Demo/Auto
 // transport-mode wiring byte-for-byte (now possible because SwitchableTransport/TransportCoordinator
-// live in EdgeCore, not the WPF project). DEFAULT MODE IS DEMO — bulletproof offline out of the box,
-// per the Task 3 brief.
+// live in EdgeCore, not the WPF project).
+//
+// WS2-T1 (docs/PRODUCTION_UI_DESIGN.md §2.1/§2.2) — DEFAULT MODE IS LIVE (this is a product sold to
+// customers, not a demo tool first): the initial TransportMode is Demo ONLY when DemoModeGate reads
+// ST4I_DEMO_ENABLED=true from the environment, matching the exhibition-packaging contract (§2.5) — a
+// `.exe` shipped with that flag set beside it comes up offline with the fabricated 11-machine fleet
+// already running, zero extra clicks; a customer deployment (flag absent, the default) comes up Live
+// and empty until connected to a real ST4I server. DemoModeGate itself also gates whether Demo can
+// EVER be switched to at runtime (see ModeEndpoints) — so a flag-off deployment can neither start in
+// nor be switched into Demo.
+builder.Services.AddSingleton<DemoModeGate>();
 builder.Services.AddSingleton<EventBus>();
 builder.Services.AddSingleton<DemoTransport>();
 builder.Services.AddSingleton(_ => LiveTransport.ForMachine(
@@ -61,7 +70,7 @@ builder.Services.AddSingleton(sp => new TransportCoordinator(
     sp.GetRequiredService<DemoTransport>(),
     sp.GetRequiredService<LiveTransport>(),
     sp.GetRequiredService<AutoTransport>(),
-    TransportMode.Demo));
+    sp.GetRequiredService<DemoModeGate>().Enabled ? TransportMode.Demo : TransportMode.Live));
 
 builder.Services.AddSingleton<FleetHost>();
 builder.Services.AddSingleton<OnboardingService>();
@@ -141,6 +150,7 @@ app.UseWebSockets();
 
 app.MapFleetEndpoints();
 app.MapModeEndpoints();
+app.MapCapabilitiesEndpoints();
 app.MapScenarioEndpoints();
 app.MapSettingsEndpoints();
 app.MapOnboardingEndpoints();

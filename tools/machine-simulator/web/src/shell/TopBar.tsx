@@ -6,6 +6,7 @@ import { useLocation } from "wouter"
 import { StatusLamp } from "@/components/industrial"
 import { useT } from "@/i18n"
 import {
+  useCapabilities,
   useFleetIsRunning,
   useHealth,
   useMode,
@@ -20,20 +21,28 @@ import { StatusBadge } from "@/components/ui/status-badge"
 import { NAV_ITEMS } from "@/shell/Sidebar"
 import { ThemeQuickSwitch } from "@/theme/ThemePicker"
 
+// WS2-T1 (docs/PRODUCTION_UI_DESIGN.md §2.3) — Auto dropped entirely from this list (it stays in the
+// wire contract/engine — `AutoTransport`/`TransportMode.Auto` — but is no longer a user-selectable
+// surface anywhere). Demo is filtered out below when the deployment's `ST4I_DEMO_ENABLED` flag is off,
+// leaving LIVE as the only option — never a bare, misleading control with nothing to switch between.
 const MODE_OPTIONS: { value: TransportMode; label: string }[] = [
   { value: "Live", label: "Live" },
   { value: "Demo", label: "Demo" },
-  { value: "Auto", label: "Auto" },
 ]
 
 function ModeSwitch() {
   const t = useT()
   const { data, isPending } = useMode()
+  const { data: capabilities } = useCapabilities()
   const setMode = useSetMode()
+  const demoEnabled = capabilities?.demoEnabled ?? false
+  const options = demoEnabled ? MODE_OPTIONS : MODE_OPTIONS.filter((option) => option.value === "Live")
   // Optimistic while the PUT is in flight (negligible on a local engine, but keeps the segmented
   // control feeling instant); once settled, the server-confirmed `data.mode` is the source of truth
-  // even if the mutation failed, so a failed PUT snaps back to reality instead of lying.
-  const current = (setMode.isPending ? setMode.variables : undefined) ?? data?.mode ?? "Demo"
+  // even if the mutation failed, so a failed PUT snaps back to reality instead of lying. WS2-T1: falls
+  // back to "Live" (was "Demo") — Live is the product default now (§2.1), and Demo may not even be a
+  // valid fallback to show selected when this deployment has it disabled.
+  const current = (setMode.isPending ? setMode.variables : undefined) ?? data?.mode ?? "Live"
 
   return (
     <div
@@ -41,7 +50,7 @@ function ModeSwitch() {
       aria-label={t("shell.topBar.transportModeAria")}
       className="flex items-center gap-px rounded-[var(--radius)] border border-border-strong bg-surface-muted p-0.5"
     >
-      {MODE_OPTIONS.map((option) => {
+      {options.map((option) => {
         const selected = current === option.value
         return (
           <button
@@ -118,7 +127,6 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
   const isRunning = useFleetIsRunning()
   const startFleet = useStartFleet()
   const stopFleet = useStopFleet()
-  const { data: modeData } = useMode()
   // Same query key/cadence EngineStatusLamp polls (TanStack Query dedupes — not a second network
   // poll). EngineStatusLamp only ever reflects connectivity (isError/isPending); `.ok` is a
   // DIFFERENT signal — a reachable engine whose fleet pipeline itself faulted (M-3/E1:
@@ -138,20 +146,12 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
       ? t(navMatch.labelKey)
       : t("shell.topBar.fallbackTitle")
 
-  // HealthDto only carries {ok, mode} — AutoTransport.IsFallingBack isn't exposed over HTTP, so
-  // there's no authoritative "did Auto actually fall back to Demo just now" signal to read. Auto
-  // mode's entire purpose is silently routing to Demo whenever Live is unreachable, which is always
-  // true in this exhibition setup (no real ST4I server at the configured URL) — so mode === "Auto"
-  // is used as the practical proxy for "currently serving from the demo transport."
-  const showDemoFallback = modeData?.mode === "Auto"
-
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface-base px-5">
       <div className="flex min-w-0 items-center gap-3">
         <h2 className="truncate font-heading text-base leading-none font-semibold tracking-tight text-text-strong">
           {pageTitle}
         </h2>
-        {showDemoFallback ? <StatusBadge status="warn">{t("shell.topBar.demoFallback")}</StatusBadge> : null}
         {showEngineFaulted ? <StatusBadge status="danger">{t("shell.topBar.engineFaulted")}</StatusBadge> : null}
       </div>
 

@@ -59,6 +59,14 @@ public sealed record MachineDetailDto(
 public sealed record ModeDto(TransportMode Mode);
 
 // ─────────────────────────────────────────────────────────────────────────
+// GET /v1/capabilities — WS2-T1: what this deployment allows, so the web shell knows whether to even
+// render the DEMO option (topbar segmented control, Settings mode selector) instead of discovering it
+// only after a rejected PUT /v1/mode. `Mode` is included too so a single fetch can seed both the
+// capability AND the current mode on first paint without a second round trip.
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record CapabilitiesDto(bool DemoEnabled, TransportMode Mode);
+
+// ─────────────────────────────────────────────────────────────────────────
 // POST /v1/scenario, /v1/scenario/preset, /v1/scenario/burst
 // ─────────────────────────────────────────────────────────────────────────
 public sealed record ScenarioRequest(double CycleRate = 1.0, double DefectRate = 0.0, double FaultRate = 0.0, bool NetworkOutage = false)
@@ -103,10 +111,21 @@ public sealed record ProbeRequest(string ServerUrl);
 
 // ─────────────────────────────────────────────────────────────────────────
 // POST /v1/onboarding/*
+//
+// WS2-T1 — `IsDemo` changed from a hardcoded `= true` default to `bool?` (default `null` = "caller
+// didn't say"). A `true`/`false` sent on the wire always wins unchanged. An OMITTED field used to
+// silently resolve to Demo unconditionally; it now can't distinguish "unset" from "false" at the DTO
+// level at all — that's deliberate, so `OnboardingEndpoints` can resolve the null case from the
+// engine's ACTIVE transport mode (Live by default post-WS2-T1, Demo on an exhibition/flagged
+// deployment) instead of a fact baked into the wire contract. `OnboardingService` itself (still
+// fleet/mode-free by design, see its own class doc) falls back to demo-fabrication (`req.IsDemo ??
+// true`) ONLY when constructed and called directly with no resolution step at all — the shape every
+// pre-existing unit test in this repo already uses — never reachable from the real HTTP endpoints,
+// which always resolve the null case before calling in.
 // ─────────────────────────────────────────────────────────────────────────
-public sealed record OnboardingRegisterRequest(string SerialNumber, string? Name, string? MachineType, bool IsDemo = true, string? ServerUrl = null);
+public sealed record OnboardingRegisterRequest(string SerialNumber, string? Name, string? MachineType, bool? IsDemo = null, string? ServerUrl = null);
 
-public sealed record OnboardingPollRequest(string SerialNumber, bool IsDemo = true, string? ServerUrl = null);
+public sealed record OnboardingPollRequest(string SerialNumber, bool? IsDemo = null, string? ServerUrl = null);
 
 /// <summary>E2: <c>Name</c>/<c>MachineType</c> added (optional — a client that doesn't send them still
 /// works, falling back to a generic Automation profile) so a successful claim can build the
@@ -115,9 +134,9 @@ public sealed record OnboardingPollRequest(string SerialNumber, bool IsDemo = tr
 /// earlier Register call keyed by serialNumber. The WEB wizard already tracks both at the top of its
 /// onboarding flow (used by Register/Enroll already) — E2 just needs it threaded into the Claim POST
 /// body too.</summary>
-public sealed record OnboardingClaimRequest(string SerialNumber, string? ClaimToken, bool IsDemo = true, string? ServerUrl = null, string? Name = null, string? MachineType = null);
+public sealed record OnboardingClaimRequest(string SerialNumber, string? ClaimToken, bool? IsDemo = null, string? ServerUrl = null, string? Name = null, string? MachineType = null);
 
-public sealed record OnboardingEnrollRequest(string SerialNumber, string? EnrollToken, string? Name, string? MachineType, bool IsDemo = true, string? ServerUrl = null);
+public sealed record OnboardingEnrollRequest(string SerialNumber, string? EnrollToken, string? Name, string? MachineType, bool? IsDemo = null, string? ServerUrl = null);
 
 public sealed record OnboardingPasteKeyRequest(string MachineCode, string MkKey);
 

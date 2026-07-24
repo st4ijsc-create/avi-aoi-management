@@ -50,7 +50,6 @@ export const vi = {
       engineConnected: "Đã kết nối engine",
       engineOffline: "Mất kết nối engine",
       connecting: "Đang kết nối…",
-      demoFallback: "Dự phòng Demo",
       engineFaulted: "Engine gặp lỗi",
       paletteAria: "Mở bảng lệnh (⌘K)",
     },
@@ -953,7 +952,6 @@ export const vi = {
       radioGroupAria: "Chế độ vận hành",
       live: { hint: "Gọi thẳng ST4I server thật." },
       demo: { hint: "Tự mô phỏng, không cần server." },
-      auto: { hint: "Ưu tiên Live, tự rơi về Demo khi mất kết nối." },
     },
     auth: {
       title: "Xác thực máy",

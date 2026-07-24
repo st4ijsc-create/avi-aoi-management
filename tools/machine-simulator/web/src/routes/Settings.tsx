@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useLanguage, useT } from "@/i18n"
 import {
+  useCapabilities,
   useMode,
   useOnboardingPasteKey,
   useProbeSettings,
@@ -28,7 +29,9 @@ import { StatusBadge } from "@/components/ui/status-badge"
 import { Switch } from "@/components/ui/switch"
 import { FormField } from "@/components/FormField"
 
-const MODE_VALUES: TransportMode[] = ["Live", "Demo", "Auto"]
+// WS2-T1 (docs/PRODUCTION_UI_DESIGN.md §2.3) — Auto dropped entirely (same rationale as TopBar's own
+// MODE_OPTIONS); Demo is filtered out below when this deployment's ST4I_DEMO_ENABLED flag is off.
+const MODE_VALUES: TransportMode[] = ["Live", "Demo"]
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -47,13 +50,21 @@ function formatSavedAt(iso: string): string {
 function ModeSelector() {
   const t = useT()
   const { data, isPending } = useMode()
+  const { data: capabilities } = useCapabilities()
   const setMode = useSetMode()
-  const current = (setMode.isPending ? setMode.variables : undefined) ?? data?.mode ?? "Demo"
+  const demoEnabled = capabilities?.demoEnabled ?? false
+  const values = demoEnabled ? MODE_VALUES : MODE_VALUES.filter((value) => value === "Live")
+  // WS2-T1: falls back to "Live" (was "Demo") — Live is the product default now (§2.1).
+  const current = (setMode.isPending ? setMode.variables : undefined) ?? data?.mode ?? "Live"
 
   return (
     <div className="flex flex-col gap-2">
-      <div role="radiogroup" aria-label={t("settings.mode.radioGroupAria")} className="grid grid-cols-3 gap-2">
-        {MODE_VALUES.map((value) => {
+      <div
+        role="radiogroup"
+        aria-label={t("settings.mode.radioGroupAria")}
+        className={cn("grid gap-2", values.length > 1 ? "grid-cols-2" : "grid-cols-1")}
+      >
+        {values.map((value) => {
           const selected = current === value
           return (
             <button

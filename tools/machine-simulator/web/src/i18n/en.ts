@@ -47,7 +47,6 @@ export const en: Dictionary = {
       engineConnected: "Engine connected",
       engineOffline: "Engine offline",
       connecting: "Connecting…",
-      demoFallback: "Demo fallback",
       engineFaulted: "Engine faulted",
       paletteAria: "Open command palette (⌘K)",
     },
@@ -953,7 +952,6 @@ export const en: Dictionary = {
       radioGroupAria: "Operating mode",
       live: { hint: "Calls the real ST4I server directly." },
       demo: { hint: "Self-simulates, no server required." },
-      auto: { hint: "Prefers Live, automatically falls back to Demo when disconnected." },
     },
     auth: {
       title: "Machine authentication",

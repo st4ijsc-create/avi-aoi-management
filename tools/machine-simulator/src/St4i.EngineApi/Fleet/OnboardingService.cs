@@ -10,12 +10,18 @@ namespace St4i.EngineApi.Fleet;
 /// Task 3 — <c>POST /v1/onboarding/{register|poll|claim|enroll|paste-key}</c>: register a machine →
 /// poll for admin approval → claim (mct_ one-time token) or enroll (met_ zero-touch token) → store the
 /// resulting mk_ key via <see cref="CredentialStore"/>. The headless-host analogue of the WPF app's
-/// <c>OnboardingViewModel</c> — same demo-fabrication contract (default <c>isDemo=true</c> so it works
-/// with no live server reachable; Register goes straight to "Pending", PollApproval resolves "Approved"
-/// immediately, Claim/Enroll mint a demo mk_ key locally), with Live mode (<c>isDemo=false</c>) doing
-/// the real thing over a raw <see cref="HttpClient"/> (register/poll/claim — the REST proxy contract
-/// verified against the real server, doc 61) or <see cref="St4iDeviceClient"/> (enroll only — no REST
-/// proxy exists for it, so its tRPC path is the sole way to reach it).
+/// <c>OnboardingViewModel</c> — same demo-fabrication contract (Register goes straight to "Pending",
+/// PollApproval resolves "Approved" immediately, Claim/Enroll mint a demo mk_ key locally) when
+/// <c>isDemo</c> resolves true, with Live mode (<c>isDemo=false</c>) doing the real thing over a raw
+/// <see cref="HttpClient"/> (register/poll/claim — the REST proxy contract verified against the real
+/// server, doc 61) or <see cref="St4iDeviceClient"/> (enroll only — no REST proxy exists for it, so its
+/// tRPC path is the sole way to reach it). WS2-T1: each request DTO's <c>IsDemo</c> is now
+/// <c>bool?</c> — an explicit wire value always wins; a request built directly (every unit test in this
+/// assembly) with <c>IsDemo</c> left at its default <see langword="null"/> still fabricates (Demo),
+/// same as before this task, since this class deliberately never resolves the null case from live
+/// engine state (see the remark below) — only <c>OnboardingEndpoints</c>, which DOES have
+/// <see cref="FleetHost"/>, resolves an omitted wire value from the engine's active transport mode
+/// before ever calling in here.
 ///
 /// E2: deliberately has NO dependency on <see cref="FleetHost"/> — a successful Claim/Enroll here just
 /// returns the provisioned <c>mk_</c> credential; joining the machine into the live simulated fleet is
@@ -36,7 +42,7 @@ public sealed class OnboardingService
         if (string.IsNullOrWhiteSpace(req.SerialNumber))
             return Task.FromResult(new OnboardingStepResult("Idle", null, null, false, "serialNumber is required."));
 
-        if (req.IsDemo)
+        if (req.IsDemo ?? true)
         {
             return Task.FromResult(new OnboardingStepResult("Pending", null, null, false,
                 $"[DEMO] Registered {req.SerialNumber} (\"{req.Name}\", {req.MachineType}) — registrationStatus=pending"));
@@ -47,7 +53,7 @@ public sealed class OnboardingService
 
     public Task<OnboardingStepResult> PollAsync(OnboardingPollRequest req, CancellationToken ct)
     {
-        if (req.IsDemo)
+        if (req.IsDemo ?? true)
         {
             return Task.FromResult(new OnboardingStepResult("Approved", null, null, true,
                 "[DEMO] Poll approval — isApproved=true (instant simulated approval)"));
@@ -58,7 +64,7 @@ public sealed class OnboardingService
 
     public Task<OnboardingStepResult> ClaimAsync(OnboardingClaimRequest req, CancellationToken ct)
     {
-        if (req.IsDemo)
+        if (req.IsDemo ?? true)
         {
             var code = string.IsNullOrWhiteSpace(req.SerialNumber) ? "SIM-DEMO" : req.SerialNumber;
             var key = FabricateMkKey();
@@ -71,7 +77,7 @@ public sealed class OnboardingService
 
     public Task<OnboardingStepResult> EnrollAsync(OnboardingEnrollRequest req, CancellationToken ct)
     {
-        if (req.IsDemo)
+        if (req.IsDemo ?? true)
         {
             var code = string.IsNullOrWhiteSpace(req.SerialNumber) ? "SIM-DEMO" : req.SerialNumber;
             var key = FabricateMkKey();
