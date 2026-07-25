@@ -215,35 +215,34 @@ interface AnomalyRow {
 }
 
 /**
- * Best-effort recent anomalies for scoped machines. The per-machine anomaly read
- * lives in the anomaly router as a non-exported helper, so we degrade quietly if
- * no callable source is available. NEVER throws.
+ * Recent anomalies for scoped machines, read from the REAL per-machine anomaly
+ * status reader (`readMachineStatuses`, exported from the anomaly router — it reads
+ * the latest scored row per machine from `ai_image_embeddings.metadata->'anomaly'`,
+ * the same source the production dashboard batch query uses).
+ *
+ * Previously this called `getAnomalyStats` (a thin passthrough to `getBankStats`,
+ * which returns `{totalVectors, distinctModelCodes, profiles}`) and read
+ * `latestIsAnomaly`/`latestScore`/`maxScore` off the result — fields `getBankStats`
+ * NEVER returns, so the anomaly section was dead code (could never surface a row).
+ *
+ * NEVER throws — any failure degrades to an empty list + a soft warning.
  */
 async function recentAnomalies(machines: ScopedMachine[], warnings: string[]): Promise<AnomalyRow[]> {
   if (machines.length === 0) return [];
   try {
-    const mod: any = await import("./aiAnomalyDetection").catch(() => null);
-    let getStats: any;
-    try {
-      getStats = mod?.getAnomalyStats;
-    } catch {
-      getStats = undefined;
-    }
-    if (typeof getStats !== "function") return [];
+    const { readMachineStatuses } = await import("../routers/aiAnomalyRouter");
+    const ids = machines.slice(0, MAX_MACHINES).map((m) => m.id);
+    const statuses = await readMachineStatuses(ids, null);
+    const codeById = new Map(machines.map((m) => [m.id, m.code] as const));
 
     const out: AnomalyRow[] = [];
-    for (const m of machines.slice(0, MAX_MACHINES)) {
-      let s: any = null;
-      try {
-        s = await getStats({ machineId: m.id, productModelId: null });
-      } catch {
-        s = null;
-      }
-      // Tolerant read: only surface a row when the source clearly flags anomaly.
-      const isAnomaly = !!(s?.latestIsAnomaly ?? s?.isAnomaly);
-      const score = Number(s?.latestScore ?? s?.maxScore ?? 0);
-      if (isAnomaly && Number.isFinite(score) && score > 0) {
-        out.push({ machineCode: m.code, score });
+    for (const [idStr, status] of Object.entries(statuses)) {
+      if (!status?.isAnomaly) continue;
+      const code = codeById.get(Number(idStr));
+      if (!code) continue;
+      const score = Number(status.latestScore ?? 0);
+      if (Number.isFinite(score) && score > 0) {
+        out.push({ machineCode: code, score });
       }
     }
     return out.sort((a, b) => b.score - a.score);

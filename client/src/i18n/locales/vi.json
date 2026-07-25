@@ -11367,7 +11367,7 @@
     "noResults": "Không tìm thấy hình ảnh tương tự",
     "createEmbedding": "Tạo Nhúng",
     "embed": "Nhúng",
-    "embedDesc": "Tạo nhúng cho hình ảnh để bật tìm kiếm tương đồng",
+    "embedDesc": "Nhúng ảnh (DINOv2 ONNX) được tạo tự động khi có ảnh mới — không cần thao tác thủ công. Tìm kiếm ảnh tự chuyển sang chế độ AI mô tả/label khi không có model chỉ mục phù hợp cho ảnh đó.",
     "embeddingId": "ID Nhúng",
     "enterEmbeddingId": "Nhập ID nhúng...",
     "embedded": "Đã Nhúng",
@@ -11429,7 +11429,8 @@
     "forecast": "Dự Báo",
     "recommendations": "Khuyến Nghị",
     "actionItems": "Mục Hành Động",
-    "bestMachine": "Máy Hoạt Động Tốt Nhất"
+    "bestMachine": "Máy Hoạt Động Tốt Nhất",
+    "metricsUnavailable": "Số liệu chưa khả dụng"
   },
   "ts": {
     "title": "Phân Tích Chuỗi Thời Gian",

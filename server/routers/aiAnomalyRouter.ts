@@ -83,7 +83,7 @@ function toNum(v: unknown): number | null {
  *   - latest*  ← dòng rn=1 (mới nhất)
  *   - recent.* ← đếm trên toàn cửa sổ (anomalyCount = số dòng (anomaly->>'isAnomaly')='true')
  */
-async function readMachineStatuses(
+export async function readMachineStatuses(
   machineIds: number[],
   productModelId: number | null,
 ): Promise<Record<number, MachineAnomalyStatus>> {

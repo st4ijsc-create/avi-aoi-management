@@ -37,6 +37,23 @@ describe("buildAiExportConfig", () => {
     expect(table.tableRows?.[0]).toEqual(["m1", "98.7%", "improving", "OK"]);
   });
 
+  // doc69 W0-5 item 2 — model-performance is now HONEST-EMPTY (dataAvailable:false)
+  // when there's no real signal wired; the export must say "unavailable", not a
+  // fabricated 0.0% / OK row.
+  it("model → dataAvailable:false renders 'metrics unavailable', not a fabricated 0.0%/OK row", () => {
+    const cfg = buildAiExportConfig(
+      "model",
+      {
+        narrative: "n",
+        models: [{ modelCode: "m1", dataAvailable: false, currentAccuracy: null, accuracyTrend: null, driftDetected: null }],
+      },
+      RANGE,
+      t,
+    );
+    const table = cfg.sections.find((s) => s.type === "table")!;
+    expect(table.tableRows?.[0]).toEqual(["m1", "Số liệu chưa khả dụng", "", ""]);
+  });
+
   it("executive → KPI stats + forecast", () => {
     const cfg = buildAiExportConfig(
       "executive",

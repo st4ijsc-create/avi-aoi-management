@@ -73,11 +73,19 @@ export interface ModelPerformanceReport {
   models: Array<{
     modelId: number;
     modelCode: string;
-    currentAccuracy: number;
-    accuracyTrend: "improving" | "stable" | "declining";
-    driftDetected: boolean;
-    totalPredictions: number;
-    avgLatencyMs: number;
+    /**
+     * doc69 W0-5 item 2 — HONEST-EMPTY: no real performance signal is wired yet
+     * (no ai_gateway_metrics / drift-monitor join). `dataAvailable: false` means
+     * every metric below is null — NOT a fabricated "healthy" reading. Consumers
+     * MUST branch on this before rendering the metrics as real numbers.
+     * TODO(doc69 A4): wire ai_gateway_metrics / aiDriftMonitor, flip to true.
+     */
+    dataAvailable: boolean;
+    currentAccuracy: number | null;
+    accuracyTrend: "improving" | "stable" | "declining" | null;
+    driftDetected: boolean | null;
+    totalPredictions: number | null;
+    avgLatencyMs: number | null;
   }>;
   retrainRecommendations: string[];
   narrative: string;
@@ -349,35 +357,24 @@ async function collectModelPerformanceData() {
     .where(eq(aiModels.status, "ACTIVE"))
     .orderBy(aiModels.code);
 
-  const models = [];
-  for (const m of result) {
-    // Use model metadata for performance tracking (no separate performance table)
-    const latestAccuracy = 0;
-    const accuracies: number[] = [];
-    let trend: "improving" | "stable" | "declining" = "stable";
-    if (accuracies.length >= 3) {
-      const first = accuracies.slice(0, Math.floor(accuracies.length / 2));
-      const second = accuracies.slice(Math.floor(accuracies.length / 2));
-      const firstAvg = first.reduce((a, b) => a + b, 0) / first.length;
-      const secondAvg = second.reduce((a, b) => a + b, 0) / second.length;
-      if (secondAvg - firstAvg > 0.01) trend = "improving";
-      else if (firstAvg - secondAvg > 0.01) trend = "declining";
-    }
-
-    const driftDetected = false;
-
-    models.push({
-      modelId: m.modelId,
-      modelCode: m.modelCode,
-      currentAccuracy: latestAccuracy,
-      accuracyTrend: trend,
-      driftDetected,
-      totalPredictions: 0,
-      avgLatencyMs: 0,
-    });
-  }
-
-  return models;
+  // doc69 W0-5 item 2 — HONEST-EMPTY (Wave-0 scope: stop lying, NOT full wiring).
+  // There is no real performance-tracking table/join yet (no ai_gateway_metrics /
+  // drift-monitor signal reaches this function) — it used to hardcode
+  // currentAccuracy=0 / driftDetected=false / totalPredictions=0 / avgLatencyMs=0,
+  // which reads as "every model is healthy" regardless of reality. Mark the data
+  // unavailable instead so the report (and its consumers) say "metrics unavailable"
+  // rather than a fabricated clean bill of health.
+  // TODO(doc69 A4): wire ai_gateway_metrics / aiDriftMonitor and flip dataAvailable.
+  return result.map((m) => ({
+    modelId: m.modelId,
+    modelCode: m.modelCode,
+    dataAvailable: false as const,
+    currentAccuracy: null,
+    accuracyTrend: null,
+    driftDetected: null,
+    totalPredictions: null,
+    avgLatencyMs: null,
+  }));
 }
 
 // ─── Report Generators ─────────────────────────────────────────────────────
@@ -521,19 +518,29 @@ export async function generateModelPerformanceReport(params: ReportParams): Prom
 
   const retrainRecommendations: string[] = [];
   for (const m of models) {
+    // doc69 W0-5 item 2 — no real signal for this model → do not fabricate a verdict
+    // (drift/decline/accuracy checks below all assume real metrics).
+    if (!m.dataAvailable) continue;
     if (m.driftDetected) {
       retrainRecommendations.push(`Model "${m.modelCode}" shows accuracy drift — recommend retraining`);
     }
     if (m.accuracyTrend === "declining") {
       retrainRecommendations.push(`Model "${m.modelCode}" accuracy is declining — investigate data distribution changes`);
     }
-    if (m.currentAccuracy < 0.9 && m.totalPredictions > 100) {
+    if (m.currentAccuracy != null && m.totalPredictions != null && m.currentAccuracy < 0.9 && m.totalPredictions > 100) {
       retrainRecommendations.push(`Model "${m.modelCode}" accuracy below 90% — consider model architecture update`);
     }
   }
 
   if (retrainRecommendations.length === 0) {
-    retrainRecommendations.push("All models performing within acceptable ranges — no immediate action needed");
+    const allUnavailable = models.length > 0 && models.every((m) => !m.dataAvailable);
+    retrainRecommendations.push(
+      allUnavailable
+        ? language === "vi"
+          ? "Số liệu hiệu suất model chưa khả dụng — chưa có nguồn dữ liệu thực (đang chờ nối dây, xem TODO doc69 A4)"
+          : "Model performance metrics unavailable — no real signal wired yet (see TODO doc69 A4)"
+        : "All models performing within acceptable ranges — no immediate action needed",
+    );
   }
 
   const narrativeResult = await generateNarrative(

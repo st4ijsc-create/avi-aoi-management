@@ -11384,7 +11384,7 @@
     "noResults": "No similar images found",
     "createEmbedding": "Create Embedding",
     "embed": "Embed",
-    "embedDesc": "Generate embeddings for images to enable similarity search",
+    "embedDesc": "Image embeddings (DINOv2 ONNX) are generated automatically for new images — no manual action needed. Search automatically switches to AI description/label mode when no matching indexed model exists for that image.",
     "embeddingId": "Embedding ID",
     "enterEmbeddingId": "Enter embedding ID...",
     "embedded": "Embedded",
@@ -11446,7 +11446,8 @@
     "forecast": "Forecast",
     "recommendations": "Recommendations",
     "actionItems": "Action Items",
-    "bestMachine": "Best Performing Machine"
+    "bestMachine": "Best Performing Machine",
+    "metricsUnavailable": "Metrics unavailable"
   },
   "ts": {
     "title": "Time Series Analysis",

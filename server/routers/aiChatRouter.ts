@@ -10,11 +10,18 @@ import { router, protectedProcedure } from "../_core/trpc";
 // P1 (doc 11) — unify on the RAG/KB backend. The non-stream `chat` mutation now
 // routes through `answerQuestion` (the SAME pipeline `streamAnswer` uses: tool →
 // RAG retrieval → LLM → extractive fallback), NOT the inferior no-RAG
-// `aiChatAssistant.processChat`. `getAvailableTools` still surfaces the tool
-// catalogue for the UI footer (read-only metadata).
+// `aiChatAssistant.processChat`.
+//
+// doc69 W0-5 item 3 — the UI tool-count footer used to read from
+// `aiChatAssistant.getAvailableTools()`, a hard-coded list of the 6 tools the
+// deprecated `processChat` backend knew about. That backend has been dead since P1
+// (doc 11) — the real assistant runs on the `aiLocalTools` registry (~67 tools:
+// read/write/client, F6/F7/P2 groups, programming copilot, etc.), so the footer was
+// silently advertising a stale 1/10th of the real tool surface. `listTools()` is the
+// real registry (server/services/aiLocalTools/toolRegistry.ts) — source the footer
+// from it. `aiChatAssistant.processChat` itself is untouched (separate Wave-5 cleanup).
 import { answerQuestion, type UserRole } from "../services/aiLocalKnowledgeService";
-import type { ToolExecContext, ToolLang } from "../services/aiLocalTools";
-import { getAvailableTools } from "../services/aiChatAssistant";
+import { listTools, type ToolExecContext, type ToolLang } from "../services/aiLocalTools";
 import { getDb } from "../db/connection";
 import { aiChatConversations, aiChatMessages } from "../../drizzle/schema/ai";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -339,8 +346,10 @@ export const aiChatRouter = router({
     }),
 
   // ─── Get Available Chat Tools ────────────────────────────────
+  // doc69 W0-5 item 3 — sourced from the REAL tool registry (~67 tools), not the
+  // deprecated aiChatAssistant.getAvailableTools() 6-tool stub. See import comment.
   tools: protectedProcedure
     .query(() => {
-      return getAvailableTools();
+      return listTools().map((t) => ({ name: t.name, description: t.description }));
     }),
 });

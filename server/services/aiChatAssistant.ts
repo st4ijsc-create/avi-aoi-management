@@ -18,17 +18,21 @@
  *   • non-stream → aiChatRouter.chat → answerQuestion()  ← was processChat
  *
  * `processChat` is retained ONLY because aiChatAssistant.ws-g3.test.ts pins its
- * GGUF-ordering/offline behavior. The only LIVE export consumed by app code is
- * `getAvailableTools` (UI tool-count footer on /ai-chat).
+ * GGUF-ordering/offline behavior.
  *
- * WAVE 2 cleanup: once the UI tool footer is sourced from the aiLocalTools
- * registry, delete `processChat` + its 6 tool impls + the ws-g3 test, and reduce
- * this file to `getAvailableTools` (or drop it entirely). See report.
+ * doc69 W0-5 item 3 (2026-07-25): the UI tool-count footer (aiChatRouter.tools) is
+ * now sourced from the REAL `aiLocalTools` registry (`listTools()`, ~67 tools), NOT
+ * `getAvailableTools` below — `getAvailableTools` is no longer consumed by app code,
+ * only by tests that still exercise this deprecated backend directly.
+ *
+ * WAVE 5 cleanup (this file's original "WAVE 2" note, renumbered — the trigger
+ * condition above is now met): delete `processChat` + its 6 tool impls +
+ * `getAvailableTools` + the ws-g3 test, and drop this file entirely.
  * ──────────────────────────────────────────────────────────────────────────
  */
 
 import { getDb } from "../db/connection";
-import { sql, eq, and, gte, lte, desc, count, avg, SQL } from "drizzle-orm";
+import { sql, eq, and, gte, lte, desc, count, avg, inArray, SQL } from "drizzle-orm";
 import {
   productInspections,
   measurementResults,
@@ -682,7 +686,7 @@ async function toolRunRCA(
       SELECT mpd.name, COUNT(*) as out_of_spec_count
       FROM measurement_results mr
       JOIN measurement_point_defs mpd ON mr."pointDefId" = mpd.id
-      WHERE mr."inspectionId" = ANY(${ngIds})
+      WHERE mr."inspectionId" = ANY(${sql`ARRAY[${sql.join(ngIds.map((id) => sql`${id}`), sql`,`)}]`}::int[])
         AND mr.result = 'NG'
       GROUP BY mpd.name
       ORDER BY out_of_spec_count DESC
@@ -747,7 +751,7 @@ async function toolGetModelPerformance(
     accuracy: modelVersions.accuracy,
   })
     .from(modelVersions)
-    .where(sql`${modelVersions.modelId} = ANY(${modelIds})`);
+    .where(inArray(modelVersions.modelId, modelIds));
 
   // Index metrics by modelId + version for fast lookup
   const metricsMap = new Map<string, typeof versionMetrics[0]>();

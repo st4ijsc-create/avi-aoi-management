@@ -56,12 +56,16 @@ export function buildAiExportConfig(
         title: t("rp.modelTitle", "Báo cáo hiệu suất mô hình AI"),
         type: "table",
         tableHeaders: ["Model", t("rp.accuracy", "Độ chính xác"), t("rp.trend", "Xu hướng"), "Drift"],
-        tableRows: d.models.map((m: any) => [
-          m.modelCode,
-          `${((m.currentAccuracy ?? 0) * 100).toFixed(1)}%`,
-          m.accuracyTrend ?? "",
-          m.driftDetected ? "⚠" : "OK",
-        ]),
+        tableRows: d.models.map((m: any) =>
+          m.dataAvailable === false
+            ? [m.modelCode, t("rp.metricsUnavailable", "Số liệu chưa khả dụng"), "", ""]
+            : [
+                m.modelCode,
+                `${((m.currentAccuracy ?? 0) * 100).toFixed(1)}%`,
+                m.accuracyTrend ?? "",
+                m.driftDetected ? "⚠" : "OK",
+              ],
+        ),
       });
   } else if (activeTab === "executive" && d) {
     if (d.kpis)

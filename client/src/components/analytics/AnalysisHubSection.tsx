@@ -334,7 +334,11 @@ export default function AnalysisHubSection() {
                 {Array.isArray(result.models) && result.models.length > 0 && (
                   <StringList
                     title={t("analysisHub.models", "Mô hình")}
-                    items={result.models.map((m: any) => `${m.modelCode}: acc ${(m.currentAccuracy * 100).toFixed(1)}% · ${m.accuracyTrend}${m.driftDetected ? " · DRIFT" : ""}`)}
+                    items={result.models.map((m: any) =>
+                      m.dataAvailable === false
+                        ? `${m.modelCode}: ${t("analysisHub.metricsUnavailable", "số liệu chưa khả dụng")}`
+                        : `${m.modelCode}: acc ${(m.currentAccuracy * 100).toFixed(1)}% · ${m.accuracyTrend}${m.driftDetected ? " · DRIFT" : ""}`,
+                    )}
                   />
                 )}
                 <StringList title={t("analysisHub.retrainRecommendations", "Khuyến nghị huấn luyện lại")} items={result.retrainRecommendations} icon={<Sparkles className="h-4 w-4 text-info" />} />

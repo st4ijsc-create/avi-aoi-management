@@ -11167,7 +11167,7 @@
     "noResults": "未找到相似图像",
     "createEmbedding": "创建嵌入",
     "embed": "嵌入",
-    "embedDesc": "为图像生成嵌入以启用相似性搜索",
+    "embedDesc": "图像嵌入（DINOv2 ONNX）会在有新图像时自动生成，无需手动操作。当没有匹配的已索引模型时，搜索会自动切换到 AI 描述/标签模式。",
     "embeddingId": "嵌入ID",
     "enterEmbeddingId": "输入嵌入ID...",
     "embedded": "已嵌入",
@@ -11229,7 +11229,8 @@
     "forecast": "预测",
     "recommendations": "建议",
     "actionItems": "行动项目",
-    "bestMachine": "最佳性能机器"
+    "bestMachine": "最佳性能机器",
+    "metricsUnavailable": "指标暂不可用"
   },
   "ts": {
     "title": "时间序列分析",

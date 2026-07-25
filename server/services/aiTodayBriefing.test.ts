@@ -36,8 +36,28 @@ vi.mock("./predictiveMaintenanceService", () => ({
   computeFailureRisk: (...a: any[]) => computeFailureRisk(a[0]),
 }));
 
-// ── Anomaly: absent by default (no callable export → anomaly section no-op). ──
-vi.mock("./aiAnomalyDetection", () => ({}));
+// ── Anomaly: real per-machine reader (server/routers/aiAnomalyRouter.readMachineStatuses).
+// Default: no data for any requested machine (mirrors the real "no scored rows yet" case).
+function defaultAnomalyStatuses(ids: number[]) {
+  const out: Record<number, any> = {};
+  for (const id of ids) {
+    out[id] = {
+      hasData: false,
+      latestScore: null,
+      latestThreshold: null,
+      isAnomaly: false,
+      latestAt: null,
+      recent: { windowCount: 0, anomalyCount: 0, anomalyRate: 0 },
+    };
+  }
+  return out;
+}
+const readMachineStatuses = vi.fn(async (ids: number[], _productModelId: number | null) =>
+  defaultAnomalyStatuses(ids),
+);
+vi.mock("../routers/aiAnomalyRouter", () => ({
+  readMachineStatuses: (...a: any[]) => readMachineStatuses(a[0], a[1]),
+}));
 
 // ── Yield trend. ──
 const getYieldTrendData = vi.fn(async (_f: any) => [] as any[]);
@@ -82,6 +102,7 @@ beforeEach(() => {
   getUserFactoryAssignments.mockResolvedValue([]);
   getMachinesWithHierarchy.mockResolvedValue(ADMIN_MACHINES as any);
   computeFailureRisk.mockResolvedValue({ failureRisk: 0, maintenanceUrgency: "LOW", predictedTimeframe: null });
+  readMachineStatuses.mockImplementation(async (ids: number[]) => defaultAnomalyStatuses(ids));
   getYieldTrendData.mockResolvedValue([]);
   paretoByDefectType.mockResolvedValue({ items: [] });
   countInbox.mockResolvedValue({ count: 0 });
@@ -97,6 +118,64 @@ describe("briefingRoleOf — role collapse", () => {
     expect(briefingRoleOf("quality_inspector")).toBe("quality");
     expect(briefingRoleOf("viewer")).toBe("viewer");
     expect(briefingRoleOf("user")).toBe("viewer");
+  });
+});
+
+describe("buildTodayBriefing — anomaly section reads the REAL per-machine reader (doc69 W0-5 item 1)", () => {
+  // Regression fixture: this is exactly the shape the OLD source (getAnomalyStats →
+  // getBankStats passthrough) actually returned — {totalVectors, distinctModelCodes,
+  // profiles}. It has NEITHER `latestIsAnomaly`/`latestScore`/`maxScore` NOR
+  // `isAnomaly`/`score`, so under the old tolerant read
+  // (`!!(s?.latestIsAnomaly ?? s?.isAnomaly)`) this would ALWAYS resolve to `isAnomaly:
+  // false` — the anomaly section could never surface a row, no matter what the DB held.
+  // We don't need to replay that dead code path here (it's deleted); this block instead
+  // proves the NEW source (readMachineStatuses) does surface a row when the DB says so.
+  it("surfaces a machine flagged isAnomaly:true by the real reader (was structurally impossible before the fix)", async () => {
+    getUserFactoryAssignments.mockResolvedValue([{ factoryCode: "F1" }, { factoryCode: "F2" }]);
+    readMachineStatuses.mockImplementation(async (ids: number[]) => {
+      const out = defaultAnomalyStatuses(ids);
+      if (out[1]) {
+        out[1] = {
+          hasData: true,
+          latestScore: 0.92,
+          latestThreshold: 0.5,
+          isAnomaly: true,
+          latestAt: new Date("2026-07-25T00:00:00Z"),
+          recent: { windowCount: 10, anomalyCount: 3, anomalyRate: 0.3 },
+        };
+      }
+      return out;
+    });
+
+    const b = await buildTodayBriefing({ id: 20, role: "maintenance" }, "vi");
+    const p = b.payload as any;
+    expect(p.machinesNeedingAttention.length).toBe(1);
+    expect(p.machinesNeedingAttention[0].machineCode).toBe("M1");
+    expect(p.machinesNeedingAttention[0].anomaly).toBe(0.92);
+    expect(b.severity).toBe("critical"); // score 0.92 ≥ 0.85 → critical
+  });
+
+  it("does NOT surface a row when the reader says isAnomaly:false, even with a positive score (no false positive)", async () => {
+    getUserFactoryAssignments.mockResolvedValue([{ factoryCode: "F1" }, { factoryCode: "F2" }]);
+    readMachineStatuses.mockImplementation(async (ids: number[]) => {
+      const out = defaultAnomalyStatuses(ids);
+      if (out[1]) out[1] = { ...out[1], hasData: true, latestScore: 0.1, isAnomaly: false };
+      return out;
+    });
+
+    const b = await buildTodayBriefing({ id: 21, role: "maintenance" }, "vi");
+    const p = b.payload as any;
+    expect(p.machinesNeedingAttention).toEqual([]);
+  });
+
+  it("degrades to empty + warning (never throws) when the reader rejects", async () => {
+    getUserFactoryAssignments.mockResolvedValue([{ factoryCode: "F1" }, { factoryCode: "F2" }]);
+    readMachineStatuses.mockRejectedValue(new Error("anomaly reader boom"));
+
+    const b = await buildTodayBriefing({ id: 22, role: "maintenance" }, "vi");
+    const p = b.payload as any;
+    expect(p.machinesNeedingAttention).toEqual([]);
+    expect(b.warnings.some((w) => w.includes("anomaly unavailable"))).toBe(true);
   });
 });
 

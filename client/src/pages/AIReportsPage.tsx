@@ -311,17 +311,25 @@ export default function AIReportsPage() {
                             {modelPerformance.data.models.map((m: any) => (
                               <TableRow key={m.modelId}>
                                 <TableCell className="font-mono text-xs">{m.modelCode}</TableCell>
-                                <TableCell>{(m.currentAccuracy * 100).toFixed(1)}%</TableCell>
-                                <TableCell>
-                                  <Badge variant={m.accuracyTrend === "improving" ? "default" : m.accuracyTrend === "declining" ? "destructive" : "secondary"}>
-                                    {m.accuracyTrend}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  {m.driftDetected
-                                    ? <AlertTriangle className="h-4 w-4 text-warning" aria-label="Drift detected" />
-                                    : <CheckCircle2 className="h-4 w-4 text-success" aria-label="No drift" />}
-                                </TableCell>
+                                {m.dataAvailable === false ? (
+                                  <TableCell colSpan={3} className="text-xs text-muted-foreground">
+                                    {t("rp.metricsUnavailable", "Số liệu chưa khả dụng")}
+                                  </TableCell>
+                                ) : (
+                                  <>
+                                    <TableCell>{(m.currentAccuracy * 100).toFixed(1)}%</TableCell>
+                                    <TableCell>
+                                      <Badge variant={m.accuracyTrend === "improving" ? "default" : m.accuracyTrend === "declining" ? "destructive" : "secondary"}>
+                                        {m.accuracyTrend}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      {m.driftDetected
+                                        ? <AlertTriangle className="h-4 w-4 text-warning" aria-label="Drift detected" />
+                                        : <CheckCircle2 className="h-4 w-4 text-success" aria-label="No drift" />}
+                                    </TableCell>
+                                  </>
+                                )}
                               </TableRow>
                             ))}
                           </TableBody>
