@@ -21,6 +21,9 @@ import {
 // rate-limit + A/B tagging + token/latency metering into ai_gateway_metrics). See
 // planGateway() below for the fail-open contract that keeps this behavior-preserving.
 import { planInference, RateLimitError, type GatewayPlan } from "./aiGateway";
+// doc69 G2-2 — AI safety layer. `planGateway()` below threads the gateway's redacted
+// `safeText` into the actual engine call (see planGateway's PlannedCall.safeText), and
+// callers run `sanitizeOutput` on the model's response before returning it.
 import type { TaskKind } from "./aiModelRouter";
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -140,35 +143,49 @@ export function getRecentEvents(limit = 100): AiProviderEvent[] {
   return recentEvents.slice(-limit).reverse();
 }
 
-// ─── AI Gateway adoption (doc69 G2-1) ──────────────────────────
+// ─── AI Gateway adoption (doc69 G2-1) + AI Safety (doc69 G2-2) ─
 //
-// Every real model call below is wrapped with a gateway "plan" purely for bookkeeping:
-// per-user rate-limit check, A/B tagging, and token/latency METERING into
-// ai_gateway_metrics. This is intentionally the "full adoption" shape from aiGateway.ts's
-// own doc comment (wrap the engine call, record afterwards) — but with ONE deliberate
-// deviation from routeInference(): we do NOT let a RateLimitError block the call.
+// Every real model call below is wrapped with a gateway "plan": per-user rate-limit check,
+// A/B tagging, token/latency METERING into ai_gateway_metrics, AND (G2-2) an injection scan
+// + secret/PII redaction of the prompt. This is intentionally the "full adoption" shape from
+// aiGateway.ts's own doc comment (wrap the engine call, record afterwards) — but with ONE
+// deliberate deviation from routeInference(): we do NOT let a RateLimitError block the call.
 //
 // Why: this module is a low-level choke point used by ~10 unrelated services (reports,
 // RCA batch jobs, vision/OCR, chat tool-selection, inspection/annotation routers via
 // _core/llm.ts) that today NEVER get rate-limited — some of them (aiBatchRcaScheduler)
 // legitimately burst dozens of calls back-to-back with no per-request userId, which would
-// collide in the gateway's single "anon" bucket. This task is a BEHAVIOR-PRESERVING
-// refactor (metering/limit *visibility*, not enforcement) — real blocking/enforcement is
-// the next task (doc69 G2-2, the AI-safety layer). So: when the gateway's budget is
-// exhausted, planInference() ALREADY records the rejection (outcome "rate_limited") before
-// throwing — we catch that specific error and proceed WITHOUT a plan, so the underlying
-// engine call always still happens, exactly like before this task. Any other unexpected
-// error from planInference (should not happen — it is documented fail-open internally) is
-// NOT swallowed, since that would hide a real bug.
+// collide in the gateway's single "anon" bucket. Rate-limiting stays BEHAVIOR-PRESERVING
+// (metering/limit *visibility*, not enforcement): when the gateway's budget is exhausted,
+// planInference() ALREADY records the rejection (outcome "rate_limited") before throwing —
+// we catch that specific error and proceed WITHOUT a plan, so the underlying engine call
+// always still happens, exactly like before G2-1. Any other unexpected error from
+// planInference (should not happen — it is documented fail-open internally) is NOT
+// swallowed, since that would hide a real bug — this includes SafetyBlockedError, which
+// stays OFF by default (AI_SAFETY_BLOCK_HIGH_RISK) and, when explicitly enabled, is meant
+// to propagate exactly like any other engine failure (callers already catch-and-degrade to
+// their offline/rule-based fallback, see aiProviderGatewayRouting.test.ts §3).
+//
+// G2-2 redaction, unlike rate-limiting, is NOT best-effort/skippable: `safeText` is what
+// actually reaches ggufGenerateText/JSON/describeImage below — see each call site.
+interface PlannedCall {
+  plan: GatewayPlan | null;
+  /** doc69 G2-2 — sanitized prompt (secrets/PII redacted); THIS is what must reach the
+   * engine, not the raw `text` argument. Falls back to the raw text only in the (should
+   * never happen) case a RateLimitError is thrown without the redacted text attached. */
+  safeText: string;
+}
+
 function planGateway(
   task: TaskKind,
   text: string | undefined,
   userId: number | undefined,
-): GatewayPlan | null {
+): PlannedCall {
   try {
-    return planInference({ task, text, userId });
+    const plan = planInference({ task, text, userId });
+    return { plan, safeText: plan.safeText };
   } catch (err) {
-    if (err instanceof RateLimitError) return null;
+    if (err instanceof RateLimitError) return { plan: null, safeText: err.safeText ?? text ?? "" };
     throw err;
   }
 }
@@ -209,11 +226,12 @@ export function getProviderConfig() {
 
 async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
   const start = Date.now();
-  const plan = planGateway(req.task ?? "report", req.prompt, req.userId);
+  // doc69 G2-2 — `safeText` is the redacted prompt; it (NOT req.prompt) is what reaches the engine.
+  const { plan, safeText } = planGateway(req.task ?? "report", req.prompt, req.userId);
   try {
     const r = await ggufGenerateText({
       systemPrompt: req.systemPrompt,
-      prompt: req.prompt,
+      prompt: safeText,
       maxTokens: req.maxTokens ?? 1024,
       temperature: req.temperature ?? 0.7,
       language: req.language,
@@ -225,7 +243,8 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
     // doc 48 R1 — PIN the model (2nd arg → engine getOrLoadModel). undefined = engine default.
     }, req.modelId);
     const result: NarrativeResult = {
-      text: r.text,
+      // doc69 G2-2 — output safety: redact any secret the model echoed back before it returns.
+      text: plan?.sanitizeOutput(r.text) ?? r.text,
       provider: "gguf",
       model: r.modelId,
       totalTimeMs: r.totalTimeMs,
@@ -294,16 +313,22 @@ export async function generateInsightJson<T = unknown>(
     // doc comment for the fail-open contract). Callers doing RCA-flavored insight generation
     // (e.g. aiInsightsService) already pin their own model via req.modelId — this task label
     // only affects gateway metering/rate-limit bucketing, not model choice.
-    const plan = planGateway(req.task ?? "extract", req.prompt, req.userId);
+    // doc69 G2-2 — safeText (redacted) reaches the engine below, same as runText().
+    const { plan, safeText } = planGateway(req.task ?? "extract", req.prompt, req.userId);
     try {
       const r = await ggufGenerateJSON<T>(req.jsonSchema, {
         systemPrompt: req.systemPrompt,
-        prompt: req.prompt,
+        prompt: safeText,
         maxTokens: req.maxTokens ?? 1024,
         temperature: req.temperature ?? 0.2,
         language: req.language,
       // doc 48 R1 — PIN the model (3rd arg → engine getOrLoadModel). undefined = engine default.
       }, req.modelId);
+      // doc69 G2-2 — output safety SCAN ONLY here (flags/stats), deliberately NOT applied to
+      // r.raw/r.data: `data` is already the PARSED object by this point, and rewriting `raw`
+      // without also deep-rewriting `data` would make the two inconsistent for callers that
+      // compare them. Structured-output redaction is left to a follow-up if it proves needed.
+      plan?.sanitizeOutput(r.raw);
       const result: InsightJsonResult<T> = {
         data: r.data,
         raw: r.raw,
@@ -388,18 +413,19 @@ export async function describeImage(req: DescribeImageRequest): Promise<Describe
 
   // doc69 G2-1 — meter/rate-limit ONLY the real inference below; the honest-degrade branch
   // above returns before any model is invoked, so there is nothing to gateway-plan there.
-  const plan = planGateway(req.task ?? "vision", req.prompt, req.userId);
+  // doc69 G2-2 — safeText (redacted prompt) reaches the engine below.
+  const { plan, safeText } = planGateway(req.task ?? "vision", req.prompt, req.userId);
   try {
     const r = await ggufDescribeImage({
       image: req.image,
-      prompt: req.prompt,
+      prompt: safeText,
       systemPrompt: req.systemPrompt,
       maxTokens: req.maxTokens ?? 512,
       temperature: req.temperature ?? 0.2,
       language: req.language,
     });
     const result: DescribeImageResult = {
-      text: r.text,
+      text: plan?.sanitizeOutput(r.text) ?? r.text,
       provider: "gguf",
       model: r.modelId,
       totalTimeMs: r.totalTimeMs,
@@ -459,12 +485,13 @@ export async function* generateNarrativeStream(
   const start = Date.now();
   const { generateTextStream: ggufStream } = await import("./aiGgufEngine");
   // doc69 G2-1 — same fail-open gateway plan as the non-streaming paths (see planGateway()).
-  const plan = planGateway(req.task ?? "report", req.prompt, req.userId);
+  // doc69 G2-2 — safeText (redacted prompt) reaches the engine below.
+  const { plan, safeText } = planGateway(req.task ?? "report", req.prompt, req.userId);
   try {
     for await (const c of ggufStream(
       {
         systemPrompt: req.systemPrompt,
-        prompt: req.prompt,
+        prompt: safeText,
         maxTokens: req.maxTokens ?? 1024,
         temperature: req.temperature ?? 0.7,
         language: req.language,
@@ -475,11 +502,14 @@ export async function* generateNarrativeStream(
       signal,
     )) {
       if (c.type === "token") {
+        // doc69 G2-2 — individual token chunks are NOT safety-checked mid-stream (a secret
+        // could straddle a chunk boundary, so per-token redaction would be unreliable and
+        // could corrupt the incremental render); only the aggregated `fullText` below is.
         yield { type: "token", token: c.token, provider: "gguf", model: c.modelId };
       } else if (c.type === "done") {
         yield {
           type: "done",
-          fullText: c.fullText,
+          fullText: plan && c.fullText != null ? plan.sanitizeOutput(c.fullText) : c.fullText,
           provider: "gguf",
           model: c.modelId,
           fallbackUsed: false,

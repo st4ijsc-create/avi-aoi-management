@@ -24,8 +24,15 @@
 
 import { route, getRouterStats as getInMemoryRouterStats } from "./aiModelRouter";
 import type { RouteInput, RouteDecision, TaskKind } from "./aiModelRouter";
+// doc69 G2-2 — AI safety layer (injection scan + secret/PII redaction). Wired INSIDE
+// planInference so every existing caller of the gateway (aiProviderRouter's ~10 services,
+// _core/llm.ts transitively, aiChatAssistant's direct planInference calls) gets it for
+// free once they read `plan.safeText` instead of their own raw prompt — see the doc
+// comment on GatewayPlan.safeText below for the exact contract.
+import { applySafety, applyOutputSafety, type SafetyFlagsSummary } from "./ai/aiSafety";
 
 export type { RouteInput, RouteDecision, TaskKind } from "./aiModelRouter";
+export type { SafetyFlagsSummary } from "./ai/aiSafety";
 
 // ─── Public request / result types ─────────────────────────────
 
@@ -34,7 +41,7 @@ export interface GatewayRequest extends RouteInput {
   userId?: number;
 }
 
-export type Outcome = "ok" | "error" | "rate_limited";
+export type Outcome = "ok" | "error" | "rate_limited" | "blocked";
 
 /** Token accounting + outcome a caller reports back after running the inference. */
 export interface InferenceOutcome {
@@ -54,6 +61,23 @@ export interface GatewayPlan {
   abVariant: "A" | "B" | null;
   /** Record token/latency/outcome for this request (idempotent — only the first call counts). */
   record: (o: InferenceOutcome) => void;
+  /**
+   * doc69 G2-2 — sanitized version of the request's `text` (secrets/PII redacted with a stable
+   * placeholder; identical to the input when AI_SAFETY_ENABLED is off or nothing matched).
+   * Callers that build their model prompt FROM `req.text` should use THIS instead of the raw
+   * text so redaction actually reaches the model — computing `plan.decision` alone does not
+   * sanitize anything, since routing/decision-making never touched the prompt.
+   */
+  safeText: string;
+  /** doc69 G2-2 — compact input-safety summary (injection risk + redaction counts), no raw text. */
+  safetyFlags: SafetyFlagsSummary;
+  /**
+   * doc69 G2-2 — run OUTPUT safety (leak-check + secret redaction) on the model's response
+   * text. Call this right before returning/emitting the response. Fail-safe: returns `text`
+   * unchanged if the safety layer throws or is disabled. Also bumps the light in-memory
+   * safety stats (see `getSafetyStats()`).
+   */
+  sanitizeOutput: (text: string) => string;
 }
 
 export class RateLimitError extends Error {
@@ -62,9 +86,28 @@ export class RateLimitError extends Error {
     message: string,
     readonly retryAfterMs: number,
     readonly tier: number,
+    /** doc69 G2-2 — the redacted prompt, so FAIL-OPEN callers that swallow this error (e.g.
+     * aiProviderRouter's planGateway) can still use the sanitized text for the engine call
+     * instead of falling back to the raw, unredacted request text. */
+    readonly safeText?: string,
+    readonly safetyFlags?: SafetyFlagsSummary,
   ) {
     super(message);
     this.name = "RateLimitError";
+  }
+}
+
+/** doc69 G2-2 — thrown ONLY when AI_SAFETY_BLOCK_HIGH_RISK is explicitly enabled AND the
+ * injection scan resolves to risk:'high'. Default posture is flag-only (this never throws
+ * unless an operator opts in), see `safetyBlockHighRiskEnabled()`. */
+export class SafetyBlockedError extends Error {
+  readonly code = "AI_SAFETY_BLOCKED" as const;
+  constructor(
+    message: string,
+    readonly matched: string[],
+  ) {
+    super(message);
+    this.name = "SafetyBlockedError";
   }
 }
 
@@ -86,6 +129,13 @@ function envFlag(name: string): boolean {
   const v = (process.env[name] || "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
+/** Like envFlag, but the FEATURE DEFAULTS ON (unset/empty → true). Used for safe/non-breaking
+ * protections (e.g. redaction) that should be on unless an operator explicitly opts out. */
+function envFlagDefaultOn(name: string): boolean {
+  const raw = (process.env[name] ?? "").trim().toLowerCase();
+  if (raw === "") return true;
+  return raw !== "0" && raw !== "false" && raw !== "no" && raw !== "off";
+}
 
 /**
  * Per-user, per-minute request budget for EXPENSIVE tiers (deep / vision / HITL = tier ≥ 2).
@@ -94,6 +144,25 @@ function envFlag(name: string): boolean {
 const LIMIT_WINDOW_MS = 60_000;
 const LIMIT_CHEAP_PER_MIN = envInt("AI_GATEWAY_LIMIT_CHEAP_PER_MIN", 120); // tier 0/1
 const LIMIT_DEEP_PER_MIN = envInt("AI_GATEWAY_LIMIT_DEEP_PER_MIN", 30); // tier ≥ 2
+
+/**
+ * doc69 G2-2 — AI Safety layer switches.
+ *   AI_SAFETY_ENABLED (default ON): runs injection scan + secret/PII redaction on the input,
+ *     and makes `applyOutputSafety`/`GatewayPlan.sanitizeOutput` available for the output side.
+ *     Redaction is safe/non-breaking by construction (masks substrings, never changes meaning),
+ *     so defaulting this ON costs nothing when the request has no secrets/PII in it. Set to
+ *     "false"/"0"/"off" to fully disable (e.g. to isolate a false-positive report).
+ *   AI_SAFETY_BLOCK_HIGH_RISK (default OFF): when a request's injection scan resolves to
+ *     risk:'high', THROW SafetyBlockedError instead of just flagging it. Default OFF because
+ *     the pattern list is a heuristic and a false positive here would reject a legitimate call
+ *     outright — flag-only is the safe default; an operator opts into hard-blocking.
+ */
+function safetyEnabled(): boolean {
+  return envFlagDefaultOn("AI_SAFETY_ENABLED");
+}
+function safetyBlockHighRiskEnabled(): boolean {
+  return envFlag("AI_SAFETY_BLOCK_HIGH_RISK");
+}
 
 /** A/B split: fraction of traffic [0,1] tagged variant "B". 0 = A/B off (default). */
 function abSplit(): number {
@@ -292,6 +361,109 @@ function bumpHotCache(r: MetricRow): void {
   hot.fastModelConfigured = r.fastModelConfigured;
 }
 
+// ─── AI Safety — compact flag stats (doc69 G2-2) ───────────────
+// In-memory only, restart-resettable — mirrors the existing `hot` cache's role: a cheap,
+// dashboard-ready aggregate of COUNTS/FLAGS ONLY, never the raw prompt/response text. A full
+// durable prompt/response audit trail is explicitly deferred to doc69 G2-5; this is the
+// lightweight "just the flags/counts" record the G2-2 brief asks for.
+
+interface HotSafetyStats {
+  inputScanned: number;
+  inputInjectionNone: number;
+  inputInjectionLow: number;
+  inputInjectionHigh: number;
+  inputBlocked: number;
+  inputRedactedRequests: number;
+  inputRedactedTotal: number;
+  outputScanned: number;
+  outputLeakFlagged: number;
+  outputRedactedTotal: number;
+}
+const hotSafety: HotSafetyStats = {
+  inputScanned: 0,
+  inputInjectionNone: 0,
+  inputInjectionLow: 0,
+  inputInjectionHigh: 0,
+  inputBlocked: 0,
+  inputRedactedRequests: 0,
+  inputRedactedTotal: 0,
+  outputScanned: 0,
+  outputLeakFlagged: 0,
+  outputRedactedTotal: 0,
+};
+
+function bumpInputSafetyStats(flags: SafetyFlagsSummary, blocked: boolean): void {
+  hotSafety.inputScanned++;
+  if (flags.risk === "high") hotSafety.inputInjectionHigh++;
+  else if (flags.risk === "low") hotSafety.inputInjectionLow++;
+  else hotSafety.inputInjectionNone++;
+  if (blocked) hotSafety.inputBlocked++;
+  if (flags.redactedCount > 0) {
+    hotSafety.inputRedactedRequests++;
+    hotSafety.inputRedactedTotal += flags.redactedCount;
+  }
+}
+
+function bumpOutputSafetyStats(flags: SafetyFlagsSummary): void {
+  hotSafety.outputScanned++;
+  if (flags.matched.length > 0) hotSafety.outputLeakFlagged++;
+  hotSafety.outputRedactedTotal += flags.redactedCount;
+}
+
+/** Compact, restart-resettable safety counters (no raw text) — for a dashboard/monitor. */
+export function getSafetyStats(): HotSafetyStats {
+  return { ...hotSafety };
+}
+
+const NEUTRAL_INPUT_FLAGS: SafetyFlagsSummary = {
+  scope: "input",
+  risk: "none",
+  matched: [],
+  redactedCount: 0,
+  redactionTypes: [],
+};
+const NEUTRAL_OUTPUT_FLAGS: SafetyFlagsSummary = {
+  scope: "output",
+  risk: "none",
+  matched: [],
+  redactedCount: 0,
+  redactionTypes: [],
+};
+
+/**
+ * Fail-safe wrapper around `applySafety` (INPUT side): disabled → pass-through untouched;
+ * throws → log + pass-through untouched (NEVER breaks the caller because safety errored).
+ * Always bumps the compact in-memory stats when enabled, regardless of outcome.
+ */
+function safeApplyInput(text: string | undefined): { text: string; flags: SafetyFlagsSummary } {
+  const original = text ?? "";
+  if (!safetyEnabled()) return { text: original, flags: NEUTRAL_INPUT_FLAGS };
+  try {
+    const result = applySafety(original);
+    bumpInputSafetyStats(result.flags, false);
+    return result;
+  } catch (err) {
+    console.warn("[aiGateway] aiSafety.applySafety threw — proceeding UNREDACTED (fail-safe):", (err as Error)?.message);
+    return { text: original, flags: NEUTRAL_INPUT_FLAGS };
+  }
+}
+
+/**
+ * Fail-safe wrapper around `applyOutputSafety` (OUTPUT side). Same fail-safe/disabled
+ * contract as `safeApplyInput`.
+ */
+function safeApplyOutput(text: string): { text: string; flags: SafetyFlagsSummary } {
+  if (!safetyEnabled()) return { text, flags: NEUTRAL_OUTPUT_FLAGS };
+  try {
+    const result = applyOutputSafety(text);
+    bumpOutputSafetyStats(result.flags);
+    return result;
+  } catch (err) {
+    console.warn("[aiGateway] aiSafety.applyOutputSafety threw — proceeding UNREDACTED (fail-safe):", (err as Error)?.message);
+    return { text, flags: NEUTRAL_OUTPUT_FLAGS };
+  }
+}
+
 // ─── Core API ──────────────────────────────────────────────────
 
 /**
@@ -307,6 +479,22 @@ export function planInference(req: GatewayRequest): GatewayPlan {
   const decision = route(req); // pure decision (also feeds the legacy in-memory router counter)
   const abVariant = assignVariant(req.userId);
 
+  // doc69 G2-2 — AI Safety: ALWAYS computed (fail-safe, see safeApplyInput) before the
+  // rate-limit check below, so `safeText`/`safetyFlags` are available even on the
+  // RateLimitError throw path (attached to the error) for fail-open callers like
+  // aiProviderRouter's planGateway that swallow RateLimitError and still call the engine.
+  const safety = safeApplyInput(req.text);
+
+  // Hard-block is OPT-IN (AI_SAFETY_BLOCK_HIGH_RISK, default OFF) — see safetyBlockHighRiskEnabled().
+  if (safety.flags.risk === "high" && safetyBlockHighRiskEnabled()) {
+    bumpInputSafetyStats(safety.flags, true); // count as blocked in addition to the scan already counted above
+    enqueue(toRow(req, decision, abVariant, { outcome: "blocked" }));
+    throw new SafetyBlockedError(
+      `AI safety: request blocked (injection risk 'high', matched: ${safety.flags.matched.join(", ")}).`,
+      safety.flags.matched,
+    );
+  }
+
   const retry = checkRateLimit(req.userId, decision.tier);
   if (retry != null) {
     // Record the rejection (so dashboards show throttling) before throwing.
@@ -315,6 +503,8 @@ export function planInference(req: GatewayRequest): GatewayPlan {
       `AI rate limit exceeded for tier ${decision.tier}. Retry in ~${Math.ceil(retry / 1000)}s.`,
       retry,
       decision.tier,
+      safety.text,
+      safety.flags,
     );
   }
 
@@ -325,22 +515,30 @@ export function planInference(req: GatewayRequest): GatewayPlan {
     enqueue(toRow(req, decision, abVariant, o));
   };
 
-  return { decision, abVariant, record };
+  const sanitizeOutput = (text: string): string => safeApplyOutput(text).text;
+
+  return { decision, abVariant, record, safeText: safety.text, safetyFlags: safety.flags, sanitizeOutput };
 }
 
 /**
  * Full-adoption wrapper: route + rate-limit + A/B, then run `exec(decision)` while the
  * gateway times it and records token/latency/outcome automatically. `exec` receives the
  * routing decision and must return the inference result + its token counts.
+ *
+ * doc69 G2-2 — `exec` also receives `safeText`: the SANITIZED (secrets/PII-redacted)
+ * version of `req.text`. Use it in place of the raw request text when building the actual
+ * model prompt so the AI Safety layer's redaction reaches the model (may throw
+ * {@link SafetyBlockedError} instead of {@link RateLimitError} when AI_SAFETY_BLOCK_HIGH_RISK
+ * is explicitly enabled and the request scores injection risk 'high' — default OFF).
  */
 export async function routeInference<T>(
   req: GatewayRequest,
-  exec: (decision: RouteDecision, abVariant: "A" | "B" | null) => Promise<{ result: T; tokensIn?: number; tokensOut?: number }>,
+  exec: (decision: RouteDecision, abVariant: "A" | "B" | null, safeText: string) => Promise<{ result: T; tokensIn?: number; tokensOut?: number }>,
 ): Promise<{ result: T; decision: RouteDecision; abVariant: "A" | "B" | null }> {
-  const plan = planInference(req); // may throw RateLimitError
+  const plan = planInference(req); // may throw RateLimitError | SafetyBlockedError
   const start = Date.now();
   try {
-    const { result, tokensIn, tokensOut } = await exec(plan.decision, plan.abVariant);
+    const { result, tokensIn, tokensOut } = await exec(plan.decision, plan.abVariant, plan.safeText);
     plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - start, outcome: "ok" });
     return { result, decision: plan.decision, abVariant: plan.abVariant };
   } catch (err) {

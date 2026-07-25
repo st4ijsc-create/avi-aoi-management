@@ -296,12 +296,13 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
     const selectionPrompt = buildToolSelectionPrompt();
 
     // AI Gateway: plan (route + rate-limit + A/B + meter) the intent-classification call.
+    // doc69 G2-2 — safeText is the redacted userMessage; it (not the raw message) reaches the model.
     const selPlan = planInference({ task: "intent", text: request.userMessage, userId: request.userId });
     const selStart = Date.now();
     const selectionResult = await chatCompletion({
       messages: [
         { role: "system", content: selectionPrompt },
-        { role: "user", content: request.userMessage },
+        { role: "user", content: selPlan.safeText },
       ],
       maxTokens: 256,
       temperature: 0.1, // Low temperature for deterministic classification
@@ -341,25 +342,32 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
   try {
     const { chatCompletion } = await import("./aiGgufEngine");
     const { planInference } = await import("./aiGateway");
+    // doc69 G2-2 — redact tool-result JSON (query results, never a secret by design, but
+    // defense-in-depth per the brief's "prompt/messages/tool-result text" scope) before it
+    // is embedded in the prompt. Reuses the same pure redactor planInference uses internally.
+    const { redactSecretsAndPII } = await import("./ai/aiSafety");
     const systemPrompt = buildSystemPrompt(request.language ?? "vi") +
       "\nYou have access to factory inspection data. Use the provided data to answer the user's question naturally.";
 
     const dataContext = Object.keys(toolResults).length > 0
-      ? `\n\n[Factory Data]\n${JSON.stringify(toolResults, null, 2)}`
+      ? `\n\n[Factory Data]\n${redactSecretsAndPII(JSON.stringify(toolResults, null, 2)).text}`
       : "";
+
+    // AI Gateway: route final answer by difficulty (dễ→3B/Tier1, khó→7B/Tier2) + tuned
+    // decoding, with per-user rate-limit + A/B + token/latency metering.
+    // doc69 G2-2 — safeText is the redacted userMessage; used below INSTEAD OF the raw
+    // request.userMessage so a pasted secret never reaches the model.
+    const ansPlan = planInference({ task: "chat", text: request.userMessage, userId: request.userId });
 
     const messages = [
       { role: "system" as const, content: systemPrompt },
       ...request.messages.slice(-10).filter(m => m.role === "user" || m.role === "assistant").map(m => ({
         role: m.role as "user" | "assistant",
-        content: m.content,
+        content: redactSecretsAndPII(m.content).text,
       })),
-      { role: "user" as const, content: request.userMessage + dataContext },
+      { role: "user" as const, content: ansPlan.safeText + dataContext },
     ];
 
-    // AI Gateway: route final answer by difficulty (dễ→3B/Tier1, khó→7B/Tier2) + tuned
-    // decoding, with per-user rate-limit + A/B + token/latency metering.
-    const ansPlan = planInference({ task: "chat", text: request.userMessage, userId: request.userId });
     const ansStart = Date.now();
     const result = await chatCompletion(
       { messages, maxTokens: ansPlan.decision.maxTokens, temperature: ansPlan.decision.temperature },
@@ -376,8 +384,9 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
       ? `\n\n_Sử dụng local LLM (GGUF) — không cần API key._`
       : `\n\n_Powered by local LLM (GGUF) — no API key needed._`;
 
+    // doc69 G2-2 — output safety: redact any secret the model echoed back before it returns.
     return {
-      reply: result.text + footer,
+      reply: ansPlan.sanitizeOutput(result.text) + footer,
       toolsUsed,
       tokensUsed: result.tokensGenerated + result.tokensPrompt,
     };
