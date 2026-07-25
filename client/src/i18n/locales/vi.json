@@ -5761,6 +5761,7 @@
       "aiAgentOps": "Vận hành Agent",
       "aiAnalyticsReports": "Phân tích & Báo cáo",
       "aiVisionLab": "Phòng thí nghiệm thị giác",
+      "aiKnowledgeTraining": "Tri thức & Huấn luyện",
       "aiModels": "Mô hình",
       "aiSettings": "Cài đặt",
       "securityAccess": "Bảo mật & Truy cập",
@@ -6127,8 +6128,12 @@
     "aiTimeSeriesDesc": "Phát hiện bất thường và dự báo",
     "aiDataProcessing": "Xử Lý Dữ Liệu",
     "aiDataProcessingDesc": "Pipeline dữ liệu nâng cao và tiền xử lý ảnh",
+    "aiDatasets": "Bộ dữ liệu",
+    "aiDatasetsDesc": "Materialize dataset train/val/test từ dữ liệu đã gán nhãn",
     "aiPerformance": "Hiệu suất AI",
     "aiPerformanceDesc": "Bảng điều khiển độ chính xác và hiệu suất mô hình",
+    "aiExperiments": "Thử nghiệm",
+    "aiExperimentsDesc": "Đánh giá before/after và A/B canary cho mô hình AI",
     "aiBatchJobs": "Suy luận hàng loạt",
     "aiBatchJobsDesc": "Chạy công việc suy luận hàng loạt",
     "aiABTesting": "Kiểm thử A/B",
@@ -11861,6 +11866,14 @@
       "selectedOps": "Phép biến đổi đã chọn",
       "summary": "Tổng quan tăng cường dữ liệu"
     }
+  },
+  "aiExperiments": {
+    "title": "Thử nghiệm AI",
+    "description": "Đánh giá before/after và A/B canary cho mô hình AI"
+  },
+  "aiDatasets": {
+    "title": "Bộ dữ liệu AI",
+    "description": "Materialize dataset train/val/test từ dữ liệu đã gán nhãn"
   },
   "aiEval": {
     "selectModel": "Chọn model...",

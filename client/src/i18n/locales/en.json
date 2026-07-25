@@ -5781,6 +5781,7 @@
       "aiAgentOps": "Agent Operations",
       "aiAnalyticsReports": "Analytics & Reports",
       "aiVisionLab": "Vision Lab",
+      "aiKnowledgeTraining": "Knowledge & Training",
       "aiModels": "Models",
       "aiSettings": "Settings",
       "securityAccess": "Security & Access",
@@ -6147,8 +6148,12 @@
     "aiTimeSeriesDesc": "Anomaly detection and forecasting",
     "aiDataProcessing": "Data Processing",
     "aiDataProcessingDesc": "Advanced data pipeline and image preprocessing",
+    "aiDatasets": "Datasets",
+    "aiDatasetsDesc": "Materialize train/val/test dataset splits from labeled data",
     "aiPerformance": "AI Performance",
     "aiPerformanceDesc": "Model accuracy and performance dashboard",
+    "aiExperiments": "Experiments",
+    "aiExperimentsDesc": "Before/after evaluation and A/B canary for AI models",
     "aiBatchJobs": "Batch Inference",
     "aiBatchJobsDesc": "Run batch inference jobs",
     "aiABTesting": "A/B Testing",
@@ -11878,6 +11883,14 @@
       "selectedOps": "Selected Operations",
       "summary": "Augmentation Summary"
     }
+  },
+  "aiExperiments": {
+    "title": "AI Experiments",
+    "description": "Before/after evaluation and A/B canary for AI models"
+  },
+  "aiDatasets": {
+    "title": "AI Datasets",
+    "description": "Materialize train/val/test dataset splits from labeled data"
   },
   "aiEval": {
     "selectModel": "Select model...",

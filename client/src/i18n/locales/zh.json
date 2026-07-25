@@ -5558,6 +5558,7 @@
       "aiAgentOps": "Agent 运维",
       "aiAnalyticsReports": "分析与报告",
       "aiVisionLab": "视觉实验室",
+      "aiKnowledgeTraining": "知识与训练",
       "aiModels": "模型",
       "aiSettings": "设置",
       "securityAccess": "安全与访问",
@@ -5926,8 +5927,12 @@
     "aiTimeSeriesDesc": "异常检测与预测",
     "aiDataProcessing": "数据处理",
     "aiDataProcessingDesc": "高级数据管道与图像预处理",
+    "aiDatasets": "数据集",
+    "aiDatasetsDesc": "从已标注数据构建训练/验证/测试数据集切分",
     "aiPerformance": "AI 性能",
     "aiPerformanceDesc": "模型准确率与性能仪表板",
+    "aiExperiments": "实验",
+    "aiExperimentsDesc": "AI 模型的前后对比评估与 A/B 金丝雀发布",
     "aiBatchJobs": "批量推理",
     "aiBatchJobsDesc": "运行批量推理任务",
     "aiABTesting": "A/B 测试",
@@ -11661,6 +11666,14 @@
       "selectedOps": "已选操作",
       "summary": "增强摘要"
     }
+  },
+  "aiExperiments": {
+    "title": "AI 实验",
+    "description": "AI 模型的前后对比评估与 A/B 金丝雀发布"
+  },
+  "aiDatasets": {
+    "title": "AI 数据集",
+    "description": "从已标注数据构建训练/验证/测试数据集切分"
   },
   "aiEval": {
     "selectModel": "选择模型...",

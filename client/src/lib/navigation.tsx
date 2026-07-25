@@ -1314,6 +1314,10 @@ export const navGroups: NavGroup[] = [
       { key: "agentOps", label: "nav.section.aiAgentOps" },
       { key: "analyticsReports", label: "nav.section.aiAnalyticsReports" },
       { key: "visionLab", label: "nav.section.aiVisionLab" },
+      // doc 69 Wave E1 (T7) — NEW section T6 deferred: durable training assets
+      // (dataset splits today; Knowledge Base RAG docs + Training Studio are
+      // later E3 tasks, NOT built here — see doc 69 §B1.2/§B3).
+      { key: "knowledgeTraining", label: "nav.section.aiKnowledgeTraining" },
       { key: "models", label: "nav.section.aiModels" },
       { key: "settings", label: "nav.section.aiSettings" },
     ],
@@ -1430,6 +1434,17 @@ export const navGroups: NavGroup[] = [
         section: "analyticsReports",
       },
       {
+        // doc 69 Wave E1 (T7) — split out of AIPerformanceDashboard's evaluation
+        // (before/after) + A/B canary tabs. Same RBAC gate as /ai-performance.
+        href: "/ai-experiments",
+        label: "nav.aiExperiments",
+        icon: <FlaskConical className="h-4 w-4" />,
+        description: "nav.aiExperimentsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "analyticsReports",
+      },
+      {
         href: "/ai-time-series",
         label: "nav.aiTimeSeries",
         icon: <TrendingUp className="h-4 w-4" />,
@@ -1501,6 +1516,20 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "analytics_root_cause",
         permissionCategory: "analytics",
         section: "visionLab",
+      },
+      // ─ Knowledge & Training (doc 69 Wave E1 / T7 — NEW section) ─
+      {
+        // Split out of AIDataProcessingPage's dataset tab: a dataset split is a
+        // durable training asset, not an ephemeral pipeline step. Same RBAC
+        // gate as /ai-data-processing. Knowledge Base (RAG docs, /ai-knowledge)
+        // and Training Studio are later E3 tasks — NOT added here.
+        href: "/ai-datasets",
+        label: "nav.aiDatasets",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.aiDatasetsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "knowledgeTraining",
       },
       // ─ Models ─
       {

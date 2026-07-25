@@ -82,6 +82,10 @@ const CausalGraphEditorPage = React.lazy(() => import("./pages/CausalGraphEditor
 const HistoryExportScheduling = React.lazy(() => import("./pages/HistoryExportScheduling")); // doc64 S5-OPT: eager→lazy
 const CorporateDashboard = React.lazy(() => import("./pages/CorporateDashboard")); // doc64 S5-OPT: eager→lazy
 const AIPerformanceDashboard = React.lazy(() => import("./pages/AIPerformanceDashboard"));
+// doc 69 Wave E1 (T7) — split out of AIPerformanceDashboard (evaluation before/after
+// + A/B canary tabs) and AIDataProcessingPage (dataset-split tab) respectively.
+const AIExperimentsPage = React.lazy(() => import("./pages/AIExperimentsPage"));
+const AIDatasetsPage = React.lazy(() => import("./pages/AIDatasetsPage"));
 const BatchInferencePage = React.lazy(() => import("./pages/BatchInferencePage"));
 const ModelMonitoringPage = React.lazy(() => import("./pages/ModelMonitoringPage"));
 const ModelVersionsPage = React.lazy(() => import("./pages/ModelVersionsPage"));
@@ -491,12 +495,18 @@ function Router() {
       <Route path="/ai-brain"><RouteGuard navHref="/ai-brain"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-monitoring"><RouteGuard navHref="/ai-monitoring"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-performance"><RouteGuard navHref="/ai-performance"><AIPageWrapper><AIPerformanceDashboard /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 69 Wave E1 (T7) — split from AIPerformanceDashboard (evaluation before/after
+          + A/B canary); same RBAC guard as /ai-performance. */}
+      <Route path="/ai-experiments"><RouteGuard navHref="/ai-experiments"><AIPageWrapper><AIExperimentsPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-models"><RouteGuard navHref="/ai-models"><AIPageWrapper><AIModelManagementPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/model-versions"><RouteGuard navHref="/model-versions"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-settings"><RouteGuard navHref="/ai-settings"><AIPageWrapper><AISettingsPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-active-learning"><RouteGuard navHref="/ai-active-learning"><AIPageWrapper><AIActiveLearningPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-batch-jobs"><RouteGuard navHref="/ai-batch-jobs"><AIPageWrapper><BatchInferencePage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-data-processing"><RouteGuard navHref="/ai-data-processing"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 69 Wave E1 (T7) — split from AIDataProcessingPage (dataset-split tab, a
+          durable Knowledge & Training asset); same RBAC guard as /ai-data-processing. */}
+      <Route path="/ai-datasets"><RouteGuard navHref="/ai-datasets"><AIPageWrapper><AIDatasetsPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-time-series"><RouteGuard navHref="/ai-time-series"><AIPageWrapper><AITimeSeriesPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-reports"><RouteGuard navHref="/ai-reports"><AIPageWrapper><AIReportsPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-quality-gate"><RouteGuard navHref="/ai-quality-gate"><AIPageWrapper><AIQualityGatePage /></AIPageWrapper></RouteGuard></Route>
