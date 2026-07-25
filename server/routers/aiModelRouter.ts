@@ -6,7 +6,7 @@ import * as db from "../db";
 import {
   uploadModelFile,
   uploadModelVersion,
-  activateModelVersion,
+  activateModelVersionManual,
   getModelFileUrl,
   registerModel,
 } from "../services/aiModelService";
@@ -159,10 +159,19 @@ export const aiModelRouter = router({
     .input(z.object({
       modelId: z.number(),
       versionId: z.number(),
+      // W0-2 (doc 69) — explicit, audited override for a version that hasn't passed
+      // (or hasn't run) the eval quality gate. See aiModelService.activateModelVersionManual.
+      force: z.boolean().optional(),
+      reason: z.string().min(1).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const activated = await activateModelVersionManual(input.modelId, input.versionId, {
+        force: input.force,
+        reason: input.reason,
+        actorUserId: ctx.user.id,
+      });
       evictSessionCache(input.modelId);
-      return activateModelVersion(input.modelId, input.versionId);
+      return activated;
     }),
 
   getFileUrl: protectedProcedure

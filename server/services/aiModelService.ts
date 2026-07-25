@@ -1,10 +1,11 @@
 import { storagePut, storageGet } from "../storage";
 import {
   createAiModel, getAiModelById, getAiModelByCode, updateAiModel,
-  createModelVersion, getModelVersions, updateModelVersion,
+  createModelVersion, getModelVersions, getModelVersionById, updateModelVersion,
 } from "../db/ai";
+import { createAuditLog } from "../db/system";
 import type {
-  InsertAiModel, InsertModelVersion, ModelStage, ModelStageHistoryEntry,
+  InsertAiModel, InsertModelVersion, ModelStage, ModelStageHistoryEntry, ModelVersion,
 } from "../../drizzle/schema";
 
 const MODEL_STORAGE_PREFIX = "ai-models";
@@ -161,6 +162,119 @@ export async function activateModelVersion(
   });
 
   return target;
+}
+
+// ── W0-2 (doc 69) — MANUAL activation eval quality gate ─────────────────────────
+//
+// The automated training pipeline (aiTrainingPipeline.runTrainingPipeline) already
+// enforces the eval quality gate (compareBeforeAfter().gate.pass) before it will ever
+// activate a version — see aiTrainingPipeline.ts Stage 5/6 (`promotionAllowed`). But
+// the MANUAL path — aiModelRouter.ts `activateVersion` (adminProcedure, used by the
+// AI Model Management UI) — called the raw activateModelVersion() above DIRECTLY,
+// with no gate check at all: an admin could flip any version (never evaluated, or one
+// that FAILED the quality gate) to ACTIVE and start serving it for production
+// inference.
+//
+// activateModelVersionManual() is the gated entry point for that path. It reads the
+// SAME persisted field the automated pipeline writes — model_versions.evalReport as a
+// CompareReport, i.e. `evalReport.gate.pass` (see aiEvalHarness.compareBeforeAfter;
+// the identical field-path check already exists as modelStagePipeline.evalGatePassedOf
+// for the canary→production gate) — and requires it to be true before activating.
+// `force: true` + a non-empty `reason` is an explicit, audited override for
+// legitimate cases (e.g. activating a first/bootstrap model that has never been
+// evaluated, or a knowing admin override) — it always writes an audit_logs entry via
+// createAuditLog (the same mechanism other sensitive mutations use, e.g.
+// thresholdApprovalRouter's `revert`) capturing actor/modelId/versionId/reason.
+//
+// Deliberately NOT folded into the raw activateModelVersion() above — that shared
+// primitive is also used by modelStagePipeline.promoteStage (which already enforces
+// its OWN, stricter two-person + eval-gate check via evaluatePromotion BEFORE ever
+// calling it — so it already satisfies this gate by construction) and by
+// modelAutoRollback (an automated SAFETY-NET mechanism that must be able to roll back
+// to a prior stable version even when that version predates evalReport tracking —
+// gating it there could block the very rollback meant to protect production). Gating
+// only the manual entry point closes the real bypass without touching those
+// already-correct, already-audited paths.
+
+export interface ManualActivateOptions {
+  /** Explicit override — bypasses the eval quality gate. Requires `reason`. */
+  force?: boolean;
+  /** Required when force === true; also recorded on the audit log entry. */
+  reason?: string;
+  /** Acting admin's user id — recorded as the audit log's actor. */
+  actorUserId?: number | null;
+}
+
+/** True only when evalReport.gate.pass === true (mirrors modelStagePipeline.evalGatePassedOf). */
+function evalGatePassed(evalReport: unknown): boolean {
+  const report = evalReport as { gate?: { pass?: unknown } } | null | undefined;
+  return report?.gate?.pass === true;
+}
+
+/**
+ * MANUAL activation entry point — the gated call the admin-facing `activateVersion`
+ * tRPC mutation uses instead of the raw activateModelVersion() (see design note
+ * above). Throws (no activation, no audit write) when the gate fails and no override
+ * is given, or when force:true is given without a reason.
+ */
+export async function activateModelVersionManual(
+  modelId: number,
+  versionId: number,
+  opts: ManualActivateOptions = {},
+): Promise<ModelVersion> {
+  const target = await getModelVersionById(versionId);
+  if (!target || target.modelId !== modelId) {
+    throw new Error(`Version ${versionId} not found for model ${modelId}`);
+  }
+
+  const gatePassed = evalGatePassed(target.evalReport);
+  const forced = opts.force === true;
+
+  if (forced) {
+    if (!opts.reason || !opts.reason.trim()) {
+      throw new Error("Overriding the eval quality gate (force:true) requires a non-empty reason.");
+    }
+  } else if (!gatePassed) {
+    throw new Error(
+      `Cannot activate model ${modelId} version ${versionId} (${target.version}): the eval quality gate ` +
+      `has not passed (evalReport.gate.pass !== true). Pass { force: true, reason } to explicitly override (audited).`,
+    );
+  }
+
+  await activateModelVersion(modelId, versionId, {
+    actor: opts.actorUserId ?? null,
+    via: "manual",
+    reason: forced ? opts.reason : undefined,
+  });
+
+  if (forced) {
+    try {
+      await createAuditLog({
+        userId: opts.actorUserId ?? null,
+        action: "ai_model_version.activate_override",
+        entityType: "model_version",
+        entityId: versionId,
+        entityName: target.version,
+        details: {
+          modelId,
+          versionId,
+          version: target.version,
+          reason: opts.reason,
+          gateOverridden: !gatePassed,
+          gateHadPassed: gatePassed,
+        },
+        status: "success",
+      });
+    } catch (err) {
+      console.warn(
+        "[aiModelService] createAuditLog failed for gate override (activation already applied):",
+        (err as Error)?.message ?? err,
+      );
+    }
+  }
+
+  const updated = await getModelVersionById(versionId);
+  return updated ?? target;
 }
 
 /**
