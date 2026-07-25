@@ -31,6 +31,10 @@ import {
   TrendingDown,
   Zap,
   BarChart3,
+  Clock,
+  Brain,
+  Play,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -376,7 +380,164 @@ export default function ModelMonitoringPage() {
             />
           </Card>
         )}
+
+        {/* AI Operations — job queue + batch RCA cron (re-homed here from the removed
+            AI Settings "Monitoring" tab, doc-69/T7; these have no other home). */}
+        <div className="pt-2 space-y-4">
+          <h2 className="text-base font-semibold text-muted-foreground">{t('modelMonitoring.operations')}</h2>
+          <AiJobQueueCard />
+          <BatchRcaCronCard />
+        </div>
       </PageContainer>
     </DashboardLayout>
+  );
+}
+
+// ─── AI Job Queue (re-homed from AI Settings "Monitoring" tab, doc-69/T7) ────
+
+function AiJobQueueCard() {
+  const { t } = useTranslation();
+  const jobsQuery = trpc.aiSettings.listAiJobs.useQuery({ limit: 50 }, { refetchInterval: 5_000 });
+  const cancelJob = trpc.aiSettings.cancelAiJob.useMutation({
+    onSuccess: () => jobsQuery.refetch(),
+  });
+
+  const jobList = jobsQuery.data?.jobs ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Clock className="h-4 w-4" />
+          {t('modelMonitoring.jobs')}
+        </CardTitle>
+        <CardDescription>{t('modelMonitoring.jobsDesc')}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {jobsQuery.isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : jobList.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('modelMonitoring.noJobs')}</p>
+        ) : (
+          <ScrollArea className="h-64 w-full">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Kind</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Prompt len</TableHead>
+                  <TableHead>Cache key</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {jobList.map((j) => (
+                  <TableRow key={j.id}>
+                    <TableCell className="font-mono text-xs whitespace-nowrap">
+                      {format(new Date(j.createdAt), 'HH:mm:ss')}
+                    </TableCell>
+                    <TableCell className="text-xs">{j.kind}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={j.status === 'completed' ? 'default' : j.status === 'failed' ? 'destructive' : 'secondary'}
+                        className="text-xs"
+                      >
+                        {j.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right text-xs">{j.requestSummary?.promptLength ?? '—'}</TableCell>
+                    <TableCell className="font-mono text-xs truncate max-w-40" title={j.requestSummary?.cacheKey ?? ''}>
+                      {j.requestSummary?.cacheKey ?? '—'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {j.status === 'queued' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={cancelJob.isPending}
+                          onClick={() => cancelJob.mutate({ id: j.id })}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Batch RCA Cron (re-homed from AI Settings "Monitoring" tab, doc-69/T7) ──
+
+function BatchRcaCronCard() {
+  const { t } = useTranslation();
+  const rcaQuery = trpc.aiSettings.getBatchRcaStatus.useQuery(undefined, { refetchInterval: 30_000 });
+  const runRca = trpc.aiSettings.runBatchRcaNow.useMutation({
+    onSuccess: (r) => {
+      toast.success(`Batch RCA: ${r.succeeded}/${r.machinesProcessed} OK in ${r.durationMs}ms`);
+      rcaQuery.refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const rcaStatus = rcaQuery.data;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="h-4 w-4" />
+            {t('modelMonitoring.batchRcaCron')}
+          </CardTitle>
+          <CardDescription>
+            {rcaStatus
+              ? `${rcaStatus.cron} (${rcaStatus.timezone}) · ${rcaStatus.enabled ? 'enabled' : 'disabled'}`
+              : t('modelMonitoring.loading')}
+          </CardDescription>
+        </div>
+        <Button size="sm" onClick={() => runRca.mutate()} disabled={runRca.isPending}>
+          {runRca.isPending ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}
+          {t('modelMonitoring.runNow')}
+        </Button>
+      </CardHeader>
+      <CardContent className="text-sm">
+        {rcaStatus?.lastRunStats ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <div className="text-xs text-muted-foreground">Machines</div>
+              <div className="font-bold">{rcaStatus.lastRunStats.machinesProcessed}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Succeeded</div>
+              <div className="font-bold text-success">{rcaStatus.lastRunStats.succeeded}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Failed</div>
+              <div className="font-bold text-destructive">{rcaStatus.lastRunStats.failed}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Duration</div>
+              <div className="font-bold">{rcaStatus.lastRunStats.durationMs} ms</div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-muted-foreground">{t('modelMonitoring.noRcaRuns')}</p>
+        )}
+        <p className="text-xs text-muted-foreground mt-2">
+          {rcaStatus?.lastRunAt ? format(new Date(rcaStatus.lastRunAt), 'yyyy-MM-dd HH:mm') : t('modelMonitoring.neverRun')}
+        </p>
+      </CardContent>
+    </Card>
   );
 }

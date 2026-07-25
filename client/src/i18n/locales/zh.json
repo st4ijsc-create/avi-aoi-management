@@ -11424,7 +11424,16 @@
     "performanceTrend": "性能趋势（最近 {{count}} 个快照）",
     "selectModelHint": "选择模型以查看健康指标和警报",
     "noAlertsDesc": "该模型没有开放的漂移告警。",
-    "selectModelTitle": "选择一个模型"
+    "selectModelTitle": "选择一个模型",
+    "operations": "AI 运维",
+    "jobs": "AI 作业",
+    "jobsDesc": "异步叙述/洞察作业（每 5 秒自动刷新）。",
+    "noJobs": "无作业。",
+    "batchRcaCron": "批量根因分析定时任务",
+    "runNow": "立即运行",
+    "loading": "加载中…",
+    "noRcaRuns": "尚无批量运行记录。",
+    "neverRun": "从未运行"
   },
   "aiSettings": {
     "title": "AI设置",
@@ -11433,8 +11442,7 @@
       "apiKeys": "API密钥",
       "modelConfig": "模型配置",
       "system": "系统",
-      "hybrid": "混合提供方",
-      "monitoring": "监控"
+      "hybrid": "混合提供方"
     },
     "saved": "设置已保存",
     "apiKeys": {
@@ -11498,22 +11506,6 @@
       "provider": "主提供方与回退",
       "providerDesc": "选择主 AI 提供方；发生失败或熔断打开时将自动启用回退。",
       "resetAll": "全部重置"
-    },
-    "monitoring": {
-      "avgLatency": "平均延迟",
-      "batchRca": "批量根因分析",
-      "batchRcaCron": "批量根因分析定时任务",
-      "jobs": "AI 作业",
-      "jobsDesc": "异步叙述/洞察作业（每 5 秒自动刷新）。",
-      "loading": "加载中…",
-      "neverRun": "从未运行",
-      "noData": "尚无事件。",
-      "noJobs": "无作业。",
-      "noRcaRuns": "尚无批量运行记录。",
-      "perProvider": "各提供方统计（最近 100 个事件）",
-      "queue": "作业队列",
-      "runNow": "立即运行",
-      "successRate": "成功率"
     }
   },
   "aiModels": {

@@ -11641,7 +11641,16 @@
     "performanceTrend": "Performance Trend (last {{count}} snapshots)",
     "selectModelHint": "Select a model to view health metrics and alerts",
     "noAlertsDesc": "This model has no open drift alerts.",
-    "selectModelTitle": "Select a model"
+    "selectModelTitle": "Select a model",
+    "operations": "AI Operations",
+    "jobs": "AI Jobs",
+    "jobsDesc": "Async narrative/insight jobs (auto-refresh 5s).",
+    "noJobs": "No jobs.",
+    "batchRcaCron": "Batch RCA Cron",
+    "runNow": "Run now",
+    "loading": "loading...",
+    "noRcaRuns": "No batch runs recorded yet.",
+    "neverRun": "never run"
   },
   "aiSettings": {
     "title": "AI Settings",
@@ -11650,8 +11659,7 @@
       "apiKeys": "API Keys",
       "modelConfig": "Model Config",
       "system": "System",
-      "hybrid": "Hybrid Provider",
-      "monitoring": "Monitoring"
+      "hybrid": "Hybrid Provider"
     },
     "saved": "Settings saved",
     "apiKeys": {
@@ -11715,22 +11723,6 @@
       "provider": "Primary Provider & Fallback",
       "providerDesc": "Choose primary AI provider; fallback automatically engages on failure or open circuit.",
       "resetAll": "Reset all"
-    },
-    "monitoring": {
-      "avgLatency": "Avg Latency",
-      "batchRca": "Batch RCA",
-      "batchRcaCron": "Batch RCA Cron",
-      "jobs": "AI Jobs",
-      "jobsDesc": "Async narrative/insight jobs (auto-refresh 5s).",
-      "loading": "loading...",
-      "neverRun": "never run",
-      "noData": "No events yet.",
-      "noJobs": "No jobs.",
-      "noRcaRuns": "No batch runs recorded yet.",
-      "perProvider": "Per-Provider Stats (last 100 events)",
-      "queue": "Job Queue",
-      "runNow": "Run now",
-      "successRate": "Success Rate"
     }
   },
   "aiModels": {

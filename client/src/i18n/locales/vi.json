@@ -11624,7 +11624,16 @@
     "performanceTrend": "Xu Hướng Hiệu Suất ({{count}} snapshots gần nhất)",
     "selectModelHint": "Chọn mô hình để xem số liệu sức khỏe và cảnh báo",
     "noAlertsDesc": "Model này không có cảnh báo trôi (drift) đang mở.",
-    "selectModelTitle": "Chọn một model"
+    "selectModelTitle": "Chọn một model",
+    "operations": "Vận hành AI",
+    "jobs": "Tác vụ AI",
+    "jobsDesc": "Tác vụ diễn giải/thông tin bất đồng bộ (tự làm mới 5 giây).",
+    "noJobs": "Không có tác vụ.",
+    "batchRcaCron": "Cron RCA theo lô",
+    "runNow": "Chạy ngay",
+    "loading": "đang tải...",
+    "noRcaRuns": "Chưa ghi nhận lần chạy theo lô nào.",
+    "neverRun": "chưa chạy"
   },
   "aiSettings": {
     "title": "Cài Đặt AI",
@@ -11633,8 +11642,7 @@
       "apiKeys": "Khóa API",
       "modelConfig": "Cấu Hình Mô Hình",
       "system": "Hệ Thống",
-      "hybrid": "Nhà cung cấp lai",
-      "monitoring": "Giám sát"
+      "hybrid": "Nhà cung cấp lai"
     },
     "saved": "Đã lưu cài đặt",
     "apiKeys": {
@@ -11698,22 +11706,6 @@
       "provider": "Nhà cung cấp chính & dự phòng",
       "providerDesc": "Chọn nhà cung cấp AI chính; dự phòng tự kích hoạt khi lỗi hoặc mạch bị ngắt.",
       "resetAll": "Đặt lại tất cả"
-    },
-    "monitoring": {
-      "avgLatency": "Độ trễ TB",
-      "batchRca": "RCA theo lô",
-      "batchRcaCron": "Cron RCA theo lô",
-      "jobs": "Tác vụ AI",
-      "jobsDesc": "Tác vụ diễn giải/thông tin bất đồng bộ (tự làm mới 5 giây).",
-      "loading": "đang tải...",
-      "neverRun": "chưa chạy",
-      "noData": "Chưa có sự kiện nào.",
-      "noJobs": "Không có tác vụ.",
-      "noRcaRuns": "Chưa ghi nhận lần chạy theo lô nào.",
-      "perProvider": "Thống kê theo nhà cung cấp (100 sự kiện gần nhất)",
-      "queue": "Hàng đợi tác vụ",
-      "runNow": "Chạy ngay",
-      "successRate": "Tỷ lệ thành công"
     }
   },
   "aiModels": {
