@@ -13,6 +13,7 @@ import { getDb } from "../db/connection";
 import { aiApiKeys, aiSystemConfig, aiImageEmbeddings } from "../../drizzle/schema/ai";
 import { eq, desc, sql } from "drizzle-orm";
 import { extractEmbedding, storeEmbedding } from "../services/aiImageEmbedding";
+import { encryptSecret, decryptSecret, isEncrypted } from "../services/security/secretBox";
 
 // ─── Pipeline helpers ─────────────────────────────────────────────────────────
 
@@ -53,6 +54,50 @@ async function upsertConfigValue(db: DbType, key: string, value: string): Promis
     .onConflictDoUpdate({ target: aiSystemConfig.key, set: { value, updatedAt: new Date() } });
 }
 
+// ─── API key at-rest secret helpers (doc 69 W0-4) ─────────────────────────────
+//
+// The `aiApiKeys.encryptedKey` column used to hold `Buffer.from(apiKey).toString("base64")`
+// — reversible ENCODING, not encryption (doc-51 P0 finding). It now stores the output of
+// `secretBox.encryptSecret` (AES-256-GCM, `enc:v1:...`). The decrypted plaintext must NEVER
+// be sent to a client — only a last-4 mask is exposed, and only for internal use (masking /
+// a future reachability check) do we ever call `resolveAndMigrateApiKeySecret`.
+
+/** Last-4 mask for display — never return the full secret over the wire. */
+function maskKeyTail(secret: string | null): string | null {
+  if (!secret) return null;
+  return secret.length <= 4 ? secret : secret.slice(-4);
+}
+
+/**
+ * Decrypt a stored `aiApiKeys.encryptedKey` value for INTERNAL use only (masking). Handles
+ * legacy rows written by the pre-W0-4 base64 "encoding" gracefully: decodes them and
+ * opportunistically re-encrypts at rest with secretBox so they self-heal on next read
+ * (best-effort — a failed re-write never blocks the read, e.g. no SECRET_ENCRYPTION_KEY set).
+ */
+async function resolveAndMigrateApiKeySecret(
+  db: DbType,
+  row: { id: number; encryptedKey: string },
+): Promise<string | null> {
+  const { encryptedKey } = row;
+  if (isEncrypted(encryptedKey)) return decryptSecret(encryptedKey);
+
+  // Legacy base64 "encoding" from the pre-W0-4 code path — Buffer base64-decode never
+  // throws in Node, so this can't crash even on an unexpected/corrupt value.
+  const legacyPlaintext = Buffer.from(encryptedKey, "base64").toString("utf8");
+  try {
+    const reEncrypted = encryptSecret(legacyPlaintext);
+    if (reEncrypted) {
+      await db
+        .update(aiApiKeys)
+        .set({ encryptedKey: reEncrypted, updatedAt: new Date() })
+        .where(eq(aiApiKeys.id, row.id));
+    }
+  } catch {
+    // best-effort migration; the read path must still succeed even if this write fails
+  }
+  return legacyPlaintext;
+}
+
 export const aiSettingsRouter = router({
   // ═══════════════ API Key Management ═══════════════
 
@@ -60,20 +105,31 @@ export const aiSettingsRouter = router({
     const db = await getDb();
     if (!db) return [];
     const keys = await db
-      .select({
-        id: aiApiKeys.id,
-        name: aiApiKeys.name,
-        provider: aiApiKeys.provider,
-        endpoint: aiApiKeys.endpoint,
-        status: aiApiKeys.status,
-        lastTestedAt: aiApiKeys.lastTestedAt,
-        createdBy: aiApiKeys.createdBy,
-        createdAt: aiApiKeys.createdAt,
-        updatedAt: aiApiKeys.updatedAt,
-      })
+      .select()
       .from(aiApiKeys)
       .orderBy(desc(aiApiKeys.createdAt));
-    return keys;
+    // The plaintext secret is decrypted here ONLY to derive a last-4 mask — it is never
+    // included in the returned objects (doc-51 P0 / doc-69 W0-4: list/get must not leak
+    // the raw key, not even base64-encoded).
+    const result = [];
+    for (const k of keys) {
+      const plaintext = await resolveAndMigrateApiKeySecret(db, k);
+      result.push({
+        id: k.id,
+        name: k.name,
+        provider: k.provider,
+        endpoint: k.endpoint,
+        status: k.status,
+        lastTestedAt: k.lastTestedAt,
+        createdBy: k.createdBy,
+        createdAt: k.createdAt,
+        updatedAt: k.updatedAt,
+        // FE's ApiKeyEntry.maskedKey is `string | undefined` (optional prop) — use
+        // undefined, not null, so this stays a plain additive field for existing callers.
+        maskedKey: maskKeyTail(plaintext) ?? undefined,
+      });
+    }
+    return result;
   }),
 
   createApiKey: adminProcedure
@@ -92,8 +148,16 @@ export const aiSettingsRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message: "Database not available",
         });
-      // Store key with basic base64 obfuscation (in production, use proper encryption)
-      const encryptedKey = Buffer.from(input.apiKey).toString("base64");
+      // doc 69 W0-4: real encryption at rest (AES-256-GCM via secretBox) — replaces the
+      // prior Buffer.from(...).toString("base64"), which was reversible ENCODING, not
+      // encryption (doc-51 P0 finding).
+      const encryptedKey = encryptSecret(input.apiKey);
+      if (!encryptedKey) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to encrypt API key",
+        });
+      }
       const [result] = await db
         .insert(aiApiKeys)
         .values({
@@ -156,17 +220,23 @@ export const aiSettingsRouter = router({
           code: "NOT_FOUND",
           message: "API key not found",
         });
-      // Simulate API key test — in production, make a real API call
-      const isValid = key.encryptedKey.length > 0;
+      // doc 69 W0-4: the system is 100% local (cloud LLM removed at WS-G3) — there is no
+      // real provider endpoint to call here. The previous "isValid = encryptedKey.length > 0"
+      // check was a FABRICATED pass (doc-51 P0 finding). Report an honest "not supported"
+      // result instead of a fake success, and do NOT overwrite `status` with a made-up
+      // verdict (we didn't actually test connectivity, so we don't get to say active/error).
+      const testedAt = new Date();
       await db
         .update(aiApiKeys)
-        .set({
-          lastTestedAt: new Date(),
-          status: isValid ? "active" : "error",
-          updatedAt: new Date(),
-        })
+        .set({ lastTestedAt: testedAt, updatedAt: testedAt })
         .where(eq(aiApiKeys.id, input.id));
-      return { success: isValid, testedAt: new Date() };
+      return {
+        success: false,
+        supported: false,
+        testedAt,
+        message:
+          "Connectivity testing is not available: this deployment runs local-only inference (no outbound calls to cloud AI providers).",
+      };
     }),
 
   toggleApiKey: adminProcedure
