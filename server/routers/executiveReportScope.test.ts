@@ -45,6 +45,27 @@ vi.mock("../services/reportScheduler", () => ({
   getExecutiveReportSchedulerStatus: (...a: unknown[]) => getExecutiveReportSchedulerStatus(...a),
 }));
 
+// ─── Mock the DB used ONLY by `firstFactoryCodeInScope`'s corporate→factories fallback
+// (server/_core/aiAnalyticsScope.ts) — every other scope path (admin, single-factory,
+// multi-factory-with-direct-assignments) never touches the DB at all (mirrors the same
+// mock pattern as server/routers/aiAnalyticsScope.test.ts). ────────────────────────────
+const mockGetDb = vi.fn();
+vi.mock("../db/connection", () => ({
+  getDb: (...a: unknown[]) => mockGetDb(...a),
+}));
+
+/** Fluent drizzle-query-builder stub for `select(...).from(...).where(...).orderBy(...).limit(n)`. */
+function dbFactoryRowsStub(rows: Array<{ code: string }>) {
+  const builder: Record<string, ReturnType<typeof vi.fn>> = {};
+  const self = () => builder as unknown as ReturnType<typeof dbFactoryRowsStub>;
+  builder.select = vi.fn(self);
+  builder.from = vi.fn(self);
+  builder.where = vi.fn(self);
+  builder.orderBy = vi.fn(self);
+  builder.limit = vi.fn(async (n: number) => rows.slice(0, n));
+  return builder;
+}
+
 const importRouter = async () => (await import("./executiveReportRouter")).executiveReportRouter;
 const ctxFor = (id: number, role: string) => ({ user: { id, role } }) as never;
 
@@ -73,6 +94,7 @@ beforeEach(() => {
   getExecutiveSummaries.mockReset();
   runExecutiveReportNow.mockReset();
   getExecutiveReportSchedulerStatus.mockClear();
+  mockGetDb.mockReset();
   delete process.env.AI_ANALYTICS_RATE_LIMIT_PER_MIN;
 });
 
@@ -95,11 +117,60 @@ describe("executiveReportRouter.list — factory scope (doc 69 T9)", () => {
     );
   });
 
-  it("(b) THE LEAK, closed: a factory-scoped user with MULTIPLE assigned factories is rejected instead of getting an unscoped (all-factory) read — before this task there was no ownership check at all and this call would have returned every factory's data", async () => {
-    mockScope({ factoryCodes: ["F01", "F02"] });
+  it("(b) REVIEW FIX (Important): a factory-scoped user with MULTIPLE assigned factories no longer gets FORBIDDEN on mount — defaults to their FIRST in-scope factory, deterministically (sorted, not insertion-order)", async () => {
+    // Before the review fix this call threw FORBIDDEN, hard-erroring ManagementInsight.tsx
+    // /controlTower/panels.tsx/ExecutiveMobile.tsx on mount for every multi-factory
+    // manager. factoryCodes given OUT OF ORDER on purpose ("F02" before "F01") to prove
+    // the pick is alphabetically sorted, not whatever order the assignment rows came back
+    // in — genuinely deterministic across calls/caches.
+    mockScope({ factoryCodes: ["F02", "F01"] });
+    getExecutiveSummaries.mockResolvedValue([makeRow(1, "F01")]);
     const caller = (await importRouter()).createCaller(ctxFor(102, "supervisor"));
 
-    await expect(caller.list({ limit: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const result = await caller.list({ limit: 10 });
+
+    expect(result).toEqual([makeRow(1, "F01")]);
+    // THE LEAK STAYS CLOSED: the service is called with exactly ONE of the caller's own
+    // factories (never `undefined` = every factory, never "F02" picked arbitrarily).
+    expect(getExecutiveSummaries).toHaveBeenCalledOnce();
+    expect(getExecutiveSummaries).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 10, factoryCode: "F01" }),
+    );
+  });
+
+  it("REVIEW FIX: multi-factory user can still explicitly pick ANY of their OWN factories via the new optional factoryCode input — not just the default", async () => {
+    mockScope({ factoryCodes: ["F01", "F02"] });
+    getExecutiveSummaries.mockResolvedValue([makeRow(2, "F02")]);
+    const caller = (await importRouter()).createCaller(ctxFor(109, "supervisor"));
+
+    const result = await caller.list({ limit: 10, factoryCode: "F02" });
+
+    expect(result).toEqual([makeRow(2, "F02")]);
+    expect(getExecutiveSummaries).toHaveBeenCalledWith(expect.objectContaining({ factoryCode: "F02" }));
+  });
+
+  it("REVIEW FIX: explicit factoryCode OUTSIDE the caller's scope is still FORBIDDEN — the leak stays closed even with the new optional input", async () => {
+    mockScope({ factoryCodes: ["F01", "F02"] });
+    const caller = (await importRouter()).createCaller(ctxFor(110, "supervisor"));
+
+    await expect(caller.list({ limit: 10, factoryCode: "F99" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(getExecutiveSummaries).not.toHaveBeenCalled();
+  });
+
+  it("REVIEW FIX: a single-factory manager's explicit factoryCode for their OWN factory works", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    getExecutiveSummaries.mockResolvedValue([makeRow(3, "F01")]);
+    const caller = (await importRouter()).createCaller(ctxFor(111, "operator"));
+
+    await caller.list({ limit: 10, factoryCode: "F01" });
+    expect(getExecutiveSummaries).toHaveBeenCalledWith(expect.objectContaining({ factoryCode: "F01" }));
+  });
+
+  it("REVIEW FIX: a single-factory manager's explicit factoryCode for a DIFFERENT factory is FORBIDDEN — proves the single-factory silent-narrow path was NOT weakened", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    const caller = (await importRouter()).createCaller(ctxFor(112, "operator"));
+
+    await expect(caller.list({ limit: 10, factoryCode: "F02" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(getExecutiveSummaries).not.toHaveBeenCalled();
   });
 
@@ -124,9 +195,22 @@ describe("executiveReportRouter.list — factory scope (doc 69 T9)", () => {
     );
   });
 
-  it("a corporate-only user (no direct factory assignment) is ambiguous → FORBIDDEN, never guessed", async () => {
+  it("REVIEW FIX (Important): a corporate-only user (no direct factory assignment) no longer gets FORBIDDEN on mount — defaults to the first factory owned by their corporate (real DB lookup)", async () => {
     mockScope({ factoryCodes: [], corporateCodes: ["C1"] });
+    mockGetDb.mockResolvedValue(dbFactoryRowsStub([{ code: "F05" }]));
+    getExecutiveSummaries.mockResolvedValue([makeRow(5, "F05")]);
     const caller = (await importRouter()).createCaller(ctxFor(105, "supervisor"));
+
+    const result = await caller.list({ limit: 10 });
+
+    expect(result).toEqual([makeRow(5, "F05")]);
+    expect(getExecutiveSummaries).toHaveBeenCalledWith(expect.objectContaining({ factoryCode: "F05" }));
+  });
+
+  it("a corporate-only user whose corporate currently owns ZERO factories is still FORBIDDEN — nothing resolvable, fail CLOSED (never falls back to the unscoped/global view)", async () => {
+    mockScope({ factoryCodes: [], corporateCodes: ["C9"] });
+    mockGetDb.mockResolvedValue(dbFactoryRowsStub([]));
+    const caller = (await importRouter()).createCaller(ctxFor(106, "supervisor"));
 
     await expect(caller.list({ limit: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(getExecutiveSummaries).not.toHaveBeenCalled();
@@ -185,13 +269,31 @@ describe("executiveReportRouter.latest — factory scope + on-demand scoped gene
     expect(runExecutiveReportNow).not.toHaveBeenCalled();
   });
 
-  it("THE LEAK, closed: a factory-scoped user with MULTIPLE assigned factories is rejected — before this task `latest` had no ownership check and would have returned the system-wide aggregate to any authenticated user", async () => {
-    mockScope({ factoryCodes: ["F01", "F02"] });
+  it("REVIEW FIX (Important): a factory-scoped user with MULTIPLE assigned factories no longer gets FORBIDDEN on mount — `latest` (called with NO input by ManagementInsight.tsx/controlTower/panels.tsx/ExecutiveMobile.tsx) defaults to their FIRST in-scope factory instead of hard-erroring", async () => {
+    mockScope({ factoryCodes: ["F02", "F01"] }); // out-of-order — proves the pick is sorted
+    getExecutiveSummaries.mockResolvedValue([makeRow(11, "F01")]);
     const caller = (await importRouter()).createCaller(ctxFor(204, "supervisor"));
 
-    await expect(caller.latest(undefined)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(getExecutiveSummaries).not.toHaveBeenCalled();
+    const result = await caller.latest(undefined);
+
+    expect(result).toEqual(makeRow(11, "F01"));
+    // THE LEAK STAYS CLOSED: called with exactly ONE of the caller's own factories, never
+    // the system-wide aggregate (factoryCode: undefined) and no on-demand generation
+    // needed since a row already exists for the defaulted factory.
+    expect(getExecutiveSummaries).toHaveBeenCalledWith(expect.objectContaining({ factoryCode: "F01" }));
     expect(runExecutiveReportNow).not.toHaveBeenCalled();
+  });
+
+  it("REVIEW FIX: explicit factoryCode input to `latest` is validated the same way as `list` — in-scope works, out-of-scope FORBIDDEN", async () => {
+    mockScope({ factoryCodes: ["F01", "F02"] });
+    getExecutiveSummaries.mockResolvedValue([makeRow(12, "F02")]);
+    const okCaller = (await importRouter()).createCaller(ctxFor(212, "supervisor"));
+    const result = await okCaller.latest({ factoryCode: "F02" });
+    expect(result).toEqual(makeRow(12, "F02"));
+    expect(getExecutiveSummaries).toHaveBeenCalledWith(expect.objectContaining({ factoryCode: "F02" }));
+
+    const forbidCaller = (await importRouter()).createCaller(ctxFor(213, "supervisor"));
+    await expect(forbidCaller.latest({ factoryCode: "F99" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("(d) exceeding the per-user rate limit returns TOO_MANY_REQUESTS", async () => {

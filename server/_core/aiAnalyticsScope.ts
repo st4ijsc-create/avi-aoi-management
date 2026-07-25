@@ -35,7 +35,7 @@
  * before invoking them.
  */
 import { TRPCError } from "@trpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { User } from "../../drizzle/schema";
 import { factories, machines, productionLines, stations, workshops } from "../../drizzle/schema";
 import { getDb } from "../db/connection";
@@ -101,6 +101,38 @@ export async function isFactoryCodeInScope(scope: FactoryScope, factoryCode: str
   if (scope.corporateCodes.length === 0) return false;
   const corporateCode = await getFactoryCorporateCode(factoryCode);
   return !!corporateCode && scope.corporateCodes.includes(corporateCode);
+}
+
+/**
+ * doc 69 T9 review fix (Important) — deterministically pick ONE factory code out of a
+ * non-global scope, for read-only endpoints that must never hard-error a caller who is
+ * legitimately assigned to more than one factory (or is corporate-only) just because they
+ * didn't specify which one they meant. `enforceAnalyticsFactoryScope` still throws
+ * FORBIDDEN for that ambiguous case where the caller is expected to disambiguate
+ * (aiInspectionAnalyticsRouter); this helper is for callers that instead want to fall back
+ * to "show me MY OWN data, whichever factory happens to come first" rather than erroring.
+ *
+ * Directly-assigned factories win (sorted ascending so the pick is stable regardless of
+ * assignment-row insertion order or cache state). A corporate-only caller (no direct
+ * factory assignment) falls back to the alphabetically-first factory owned by any of their
+ * assigned corporates. Returns null only when nothing is resolvable at all (0 factories, 0
+ * corporates, or a corporate that currently owns no factories) — callers MUST treat null
+ * as "cannot default, go through the normal FORBIDDEN path", never as "show everything".
+ */
+export async function firstFactoryCodeInScope(scope: FactoryScope): Promise<string | null> {
+  if (scope.factoryCodes.length > 0) {
+    return [...scope.factoryCodes].sort()[0];
+  }
+  if (scope.corporateCodes.length === 0) return null;
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select({ code: factories.code })
+    .from(factories)
+    .where(inArray(factories.corporateCode, scope.corporateCodes))
+    .orderBy(asc(factories.code))
+    .limit(1);
+  return row?.code ?? null;
 }
 
 /** machines.id → its owning factory's code (station → line → workshop → factory), or null. */
