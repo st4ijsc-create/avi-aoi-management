@@ -85,7 +85,9 @@ const AIPerformanceDashboard = React.lazy(() => import("./pages/AIPerformanceDas
 const BatchInferencePage = React.lazy(() => import("./pages/BatchInferencePage"));
 const ModelMonitoringPage = React.lazy(() => import("./pages/ModelMonitoringPage"));
 const ModelVersionsPage = React.lazy(() => import("./pages/ModelVersionsPage"));
-const AIHub = React.lazy(() => import("./pages/AIHub"));
+// doc 69 T6 — AIHub retired: merged into AIHome (/ai-home). Source file kept on
+// disk unreferenced (not deleted, per task brief) — /ai-hub now redirects below.
+const AIHome = React.lazy(() => import("./pages/AIHome"));
 const AIChatPage = React.lazy(() => import("./pages/AIChatPage"));
 const AIQualityGatePage = React.lazy(() => import("./pages/AIQualityGatePage"));
 const AIActiveLearningPage = React.lazy(() => import("./pages/AIActiveLearningPage"));
@@ -103,7 +105,8 @@ const AdvancedVisionLabPage = React.lazy(() => import("./pages/AdvancedVisionLab
 const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
 const AIBrainDashboard = React.lazy(() => import("./pages/AIBrainDashboard"));
 const ManagementInsight = React.lazy(() => import("./pages/ManagementInsight")); // B4.5: manager-facing insight (NL Q&A + exec summary + AI alerts)
-const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowledgeBasePage"));
+// doc 69 T6 — /ai-local-kb was a mislabeled chatbot (not a real knowledge base);
+// route now redirects to /ai-chat. Source file kept on disk unreferenced.
 const TechnicianCopilot = React.lazy(() => import("./pages/TechnicianCopilot")); // LUỒNG ③: RCA Copilot — one-tap fix approval
 const OperatorHome = React.lazy(() => import("./pages/OperatorHome")); // Role landing: simplified big-button floor operator shell
 const QualityHome = React.lazy(() => import("./pages/QualityHome")); // Role landing: quality_inspector inspection workspace (P1 doc 07 §④)
@@ -123,7 +126,9 @@ const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4
 const MasterDataManagement = React.lazy(() => import("./pages/MasterDataManagement")); // Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)
 const DataManagementHub = React.lazy(() => import("./pages/DataManagementHub")); // doc 59 Cụm D: hub "nhà Data" thống nhất (rail category ⇄ launcher)
 const ProductWorkspaceHub = React.lazy(() => import("./pages/ProductWorkspaceHub")); // doc 59 Cụm E
-const AIStudioHub = React.lazy(() => import("./pages/AIStudioHub")); // doc 59 Cụm H
+// doc 69 T6 — AIStudioHub retired: merged into AIHome (/ai-home). Source file
+// kept on disk unreferenced (not deleted, per task brief) — /ai-studio now
+// redirects below.
 const MaintenanceWorkspaceHub = React.lazy(() => import("./pages/MaintenanceWorkspaceHub")); // doc 59 Cụm I
 const ReportingStudio = React.lazy(() => import("./pages/ReportingStudio")); // doc 59 Cụm G
 const SettingsHub = React.lazy(() => import("./pages/SettingsHub")); // doc 59 cụm phụ — Settings hub
@@ -471,11 +476,17 @@ function Router() {
       <Route path="/analytics-setting"><Redirect to="/reports" /></Route>
 
       {/* ── AI ───────────────────────────────────────────────────────────── */}
-      {/* Workspace (read-open to all roles): chat / hub / management-insight. */}
+      {/* doc 69 T6 — single AI taxonomy: AI Home merges the old AIHub (/ai-hub)
+          + AIStudioHub (/ai-studio) tile walls into one landing; both old URLs
+          keep working via redirect. Workspace (read-open to all roles): chat /
+          AI Home / management-insight / inbox. */}
       <Route path="/ai-chat"><AIPageWrapper><AIChatPage /></AIPageWrapper></Route>
-      <Route path="/ai-hub"><AIPageWrapper><AIHub /></AIPageWrapper></Route>
+      <Route path="/ai-home"><AIPageWrapper><AIHome /></AIPageWrapper></Route>
+      <Route path="/ai-hub"><Redirect to="/ai-home" /></Route>
       <Route path="/management-insight"><AIPageWrapper><ManagementInsight /></AIPageWrapper></Route>
-      <Route path="/ai-local-kb"><AIPageWrapper><AILocalKnowledgeBasePage /></AIPageWrapper></Route>
+      {/* /ai-local-kb was a mislabeled chatbot (not a real knowledge base) — the
+          real RAG knowledge base is a later task (doc 69 Wave E3). */}
+      <Route path="/ai-local-kb"><Redirect to="/ai-chat" /></Route>
       {/* AI Control Plane / Ops / Vision — admin-gated. */}
       <Route path="/ai-brain"><RouteGuard navHref="/ai-brain"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-monitoring"><RouteGuard navHref="/ai-monitoring"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></RouteGuard></Route>
@@ -523,7 +534,8 @@ function Router() {
       <Route path="/data-management"><RouteGuard navHref="/data-management"><DataManagementHub /></RouteGuard></Route>
       {/* doc 59 Cụm E/H/I — hub-launcher hợp nhất (additive, giữ mọi route con). */}
       <Route path="/product-workspace"><RouteGuard navHref="/product-workspace"><ProductWorkspaceHub /></RouteGuard></Route>
-      <Route path="/ai-studio"><RouteGuard requireRole={["admin"]}><AIPageWrapper><AIStudioHub /></AIPageWrapper></RouteGuard></Route>
+      {/* doc 69 T6 — AIStudioHub retired: merged into AI Home. Old URL keeps working. */}
+      <Route path="/ai-studio"><Redirect to="/ai-home" /></Route>
       <Route path="/maintenance-hub"><RouteGuard navHref="/maintenance-hub"><MaintenanceWorkspaceHub /></RouteGuard></Route>
       {/* doc 59 cụm phụ — Settings + Engineering-Studio hub-launcher (additive). */}
       <Route path="/settings-hub"><RouteGuard navHref="/settings-hub"><SettingsHub /></RouteGuard></Route>

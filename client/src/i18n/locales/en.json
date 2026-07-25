@@ -5777,6 +5777,12 @@
       "aiControlPlane": "AI Control Plane",
       "aiOps": "AI Ops",
       "aiVision": "AI Vision",
+      "aiAssistant": "Assistant",
+      "aiAgentOps": "Agent Operations",
+      "aiAnalyticsReports": "Analytics & Reports",
+      "aiVisionLab": "Vision Lab",
+      "aiModels": "Models",
+      "aiSettings": "Settings",
       "securityAccess": "Security & Access",
       "platform": "Platform",
       "productProgram": "Product & Program",
@@ -6117,6 +6123,12 @@
     "enhancedAuditDesc": "Detailed audit logs with advanced filtering",
     "aiHub": "AI Hub",
     "aiHubDesc": "Central AI feature dashboard",
+    "aiHome": "AI Home",
+    "aiHomeDesc": "AI starting point — quick chat, every AI tool in one catalog",
+    "aiInspectionAnalytics": "Inspection Analytics",
+    "aiInspectionAnalyticsDesc": "Defect trends, yield forecasts, SPC & risk scoring for inspection data",
+    "aiGgufModels": "GGUF Models",
+    "aiGgufModelsDesc": "Manage local LLM (.gguf) models for chat & analytics",
     "aiChat": "AI Chat",
     "aiChatDesc": "AI-powered chat assistant for data queries",
     "technicianCopilot": "Technician Copilot",
@@ -10951,6 +10963,18 @@
     "status": {
       "label": "AI provider:",
       "noModel": "No model loaded"
+    }
+  },
+  "aiHome": {
+    "title": "AI Home",
+    "subtitle": "AI starting point — quick chat, every AI tool in one catalog",
+    "openChat": "Open AI Chat",
+    "categoriesLabel": "AI Groups",
+    "agentActivity": {
+      "title": "Agent Activity",
+      "badge": "Coming soon",
+      "desc": "A live agent status/task/savings board will show up here.",
+      "cta": "View AI Brain"
     }
   },
   "mgmtInsight": {

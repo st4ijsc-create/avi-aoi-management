@@ -5554,6 +5554,12 @@
       "aiControlPlane": "AI 控制台",
       "aiOps": "AI 运维",
       "aiVision": "AI 视觉",
+      "aiAssistant": "助手",
+      "aiAgentOps": "Agent 运维",
+      "aiAnalyticsReports": "分析与报告",
+      "aiVisionLab": "视觉实验室",
+      "aiModels": "模型",
+      "aiSettings": "设置",
       "securityAccess": "安全与访问",
       "platform": "平台",
       "productProgram": "产品与程序",
@@ -5896,6 +5902,12 @@
     "enhancedAuditDesc": "带高级筛选的详细审计日志",
     "aiHub": "AI 中心",
     "aiHubDesc": "AI 功能中心仪表板",
+    "aiHome": "AI 主页",
+    "aiHomeDesc": "AI 起点 — 快速对话、统一工具目录",
+    "aiInspectionAnalytics": "AI检测分析",
+    "aiInspectionAnalyticsDesc": "缺陷趋势、良率预测、SPC 与风险评估",
+    "aiGgufModels": "GGUF 模型",
+    "aiGgufModelsDesc": "管理本地 LLM（.gguf）模型，用于对话与分析",
     "aiChat": "AI 对话",
     "aiChatDesc": "AI 驱动的数据查询助手",
     "technicianCopilot": "技术副驾",
@@ -10734,6 +10746,18 @@
     "status": {
       "label": "AI 提供方：",
       "noModel": "未加载模型"
+    }
+  },
+  "aiHome": {
+    "title": "AI 主页",
+    "subtitle": "AI 起点 — 快速对话、统一工具目录",
+    "openChat": "打开 AI 对话",
+    "categoriesLabel": "AI 分组",
+    "agentActivity": {
+      "title": "Agent 活动",
+      "badge": "即将推出",
+      "desc": "实时 Agent 状态/任务/节省看板将在此显示。",
+      "cta": "查看 AI Brain"
     }
   },
   "mgmtInsight": {

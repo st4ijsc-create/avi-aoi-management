@@ -88,6 +88,7 @@
   Star,
   Repeat,
   Waypoints,
+  FileStack,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -1286,9 +1287,18 @@ export const navGroups: NavGroup[] = [
   },
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 6. AI — AI Workspace (chat / copilot / management-insight) is READ-OPEN to
-  //    EVERY role (no requiredPermission). AI Control Plane / AI Ops / AI Vision
-  //    are admin-gated (requiredRole:'admin').
+  // 6. AI — doc 69 Wave E1 (T6): SINGLE AI taxonomy. The rail is now the only
+  //    index of the ~20 AI pages — previously they were indexed a 3rd time by
+  //    two separate hub walls (AIHub's read-open 20-tile grid + AIStudioHub's
+  //    admin-only 20-tool launcher, both at /ai-hub and /ai-studio). Both are
+  //    RETIRED and MERGED into one "AI Home" landing (/ai-home, App.tsx
+  //    redirects the old URLs) that presents this SAME taxonomy as tiles.
+  //    "Assistant" (Chat/Inbox/Management Insight) + AI Home itself are
+  //    tier:'simple' — rescued from the group's tier:'advanced' so they stay
+  //    visible in Simple mode (doc 22 P4). The deeper Agent Operations /
+  //    Analytics & Reports / Vision Lab / Models / Settings sections keep
+  //    their original per-item requiredRole/requiredPermission gates
+  //    UNCHANGED and stay hidden in Simple mode (untagged → advanced default).
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: "ai",
@@ -1296,33 +1306,48 @@ export const navGroups: NavGroup[] = [
     icon: <Sparkles className="h-4 w-4" />,
     description: "nav.aiGroupDesc",
     defaultOpen: false,
-    // doc 22 P4 — AI Control Plane / Ops / Vision are engineering internals; the
-    // whole module is hidden in Simple mode. (The read-open AI Workspace chat/inbox
-    // stays reachable via /ai-chat + the Me group, which remain Simple.)
     tier: "advanced",
     // No permissionCategory → group is visible to every authenticated role; the
-    // AI Workspace items below are read-open. Admin-only items below still gate.
+    // Assistant items below are read-open. Admin-only items below still gate.
     sections: [
-      { key: "aiWorkspace", label: "nav.section.aiWorkspace" },
-      { key: "aiControlPlane", label: "nav.section.aiControlPlane" },
-      { key: "aiOps", label: "nav.section.aiOps" },
-      { key: "aiVision", label: "nav.section.aiVision" },
+      { key: "assistant", label: "nav.section.aiAssistant" },
+      { key: "agentOps", label: "nav.section.aiAgentOps" },
+      { key: "analyticsReports", label: "nav.section.aiAnalyticsReports" },
+      { key: "visionLab", label: "nav.section.aiVisionLab" },
+      { key: "models", label: "nav.section.aiModels" },
+      { key: "settings", label: "nav.section.aiSettings" },
     ],
     items: [
-      // ─ AI Workspace (read-open, all roles) ─
+      // ─ AI Home — merged landing (doc 69 B1.2), leading row (no section,
+      //   same pattern as /control-tower in the Overview group). Read-open +
+      //   tier:'simple' so every role has a single front door into AI. ─
+      {
+        href: "/ai-home",
+        label: "nav.aiHome",
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.aiHomeDesc",
+        tier: "simple",
+      },
+      // ─ Assistant (read-open, all roles; rescued to Simple mode) ─
       {
         href: "/ai-chat",
         label: "nav.aiChat",
         icon: <MessageSquare className="h-4 w-4" />,
         description: "nav.aiChatDesc",
-        section: "aiWorkspace",
+        section: "assistant",
+        tier: "simple",
       },
       {
-        href: "/ai-hub",
-        label: "nav.aiHub",
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "nav.aiHubDesc",
-        section: "aiWorkspace",
+        // doc 69 T6 — fix orphan: promoted into the AI taxonomy's Assistant
+        // section. Was already reachable via the header AIActionInboxLauncher
+        // and the "Me" group's personal shortcut row (nav.inbox); both of
+        // those stay unchanged — this ADDS the AI-context entry point.
+        href: "/inbox",
+        label: "nav.inbox",
+        icon: <Inbox className="h-4 w-4" />,
+        description: "nav.inboxDesc",
+        section: "assistant",
+        tier: "simple",
       },
       // doc 41 (2026-07-11) — /programming-copilot entry TRÙNG ở đây ĐÃ GỠ. Copilot lập
       // trình là một EXTENSION nhúng trong các editor (Engineering Workspace / IR / POU),
@@ -1333,19 +1358,10 @@ export const navGroups: NavGroup[] = [
         label: "nav.managementInsight",
         icon: <Sparkles className="h-4 w-4" />,
         description: "nav.managementInsightDesc",
-        section: "aiWorkspace",
+        section: "assistant",
+        tier: "simple",
       },
-      // ─ AI Control Plane (admin) ─
-      {
-        // doc 59 Cụm H — AI Studio: hub-launcher hợp nhất ~17 surface control-plane.
-        href: "/ai-studio",
-        label: "AI Studio",
-        icon: <FlaskConical className="h-4 w-4" />,
-        description: "Một cửa: mô hình · giám sát · vận hành · vision lab · cài đặt",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiControlPlane",
-      },
+      // ─ Agent Operations (admin) ─
       {
         href: "/ai-brain",
         label: "nav.aiBrainDashboard",
@@ -1353,7 +1369,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiBrainDashboardDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "agentOps",
       },
       {
         href: "/ai-monitoring",
@@ -1362,7 +1378,47 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiMonitoringDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "agentOps",
+      },
+      {
+        href: "/ai-active-learning",
+        label: "nav.aiActiveLearning",
+        icon: <GraduationCap className="h-4 w-4" />,
+        description: "nav.aiActiveLearningDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      {
+        href: "/ai-batch-jobs",
+        label: "nav.aiBatchJobs",
+        icon: <Layers className="h-4 w-4" />,
+        description: "nav.aiBatchJobsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      {
+        href: "/ai-data-processing",
+        label: "nav.aiDataProcessing",
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.aiDataProcessingDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      // ─ Analytics & Reports ─
+      {
+        // doc 69 T6 — fix orphan: page existed (App.tsx guards it explicitly
+        // with requirePermission="analytics_ai_performance") but had NO nav
+        // row anywhere before this.
+        href: "/ai-inspection-analytics",
+        label: "nav.aiInspectionAnalytics",
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.aiInspectionAnalyticsDesc",
+        requiredPermission: "analytics_ai_performance",
+        permissionCategory: "analytics",
+        section: "analyticsReports",
       },
       {
         href: "/ai-performance",
@@ -1371,8 +1427,82 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiPerformanceDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "analyticsReports",
       },
+      {
+        href: "/ai-time-series",
+        label: "nav.aiTimeSeries",
+        icon: <TrendingUp className="h-4 w-4" />,
+        description: "nav.aiTimeSeriesDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "analyticsReports",
+      },
+      {
+        href: "/ai-reports",
+        label: "nav.aiReports",
+        icon: <FileBarChart className="h-4 w-4" />,
+        description: "nav.aiReportsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "analyticsReports",
+      },
+      // ─ Vision Lab ─
+      {
+        href: "/ai-quality-gate",
+        label: "nav.aiQualityGate",
+        icon: <ShieldCheck className="h-4 w-4" />,
+        description: "nav.aiQualityGateDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        href: "/ai-image-search",
+        label: "nav.aiImageSearch",
+        icon: <Search className="h-4 w-4" />,
+        description: "nav.aiImageSearchDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        href: "/ai-advanced-vision-lab",
+        label: "nav.advancedVisionLab",
+        icon: <Camera className="h-4 w-4" />,
+        description: "nav.advancedVisionLabDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        href: "/anomaly-banks",
+        label: "nav.anomalyBanks",
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.anomalyBanksDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        href: "/mask-annotation",
+        label: "nav.maskAnnotation",
+        icon: <Brush className="h-4 w-4" />,
+        description: "nav.maskAnnotationDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "visionLab",
+      },
+      {
+        href: "/causal-graph",
+        label: "nav.causalGraph",
+        icon: <Workflow className="h-4 w-4" />,
+        description: "nav.causalGraphDesc",
+        requiredPermission: "analytics_root_cause",
+        permissionCategory: "analytics",
+        section: "visionLab",
+      },
+      // ─ Models ─
       {
         href: "/ai-models",
         label: "nav.aiModelManagement",
@@ -1380,7 +1510,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiModelManagementDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "models",
       },
       {
         href: "/model-versions",
@@ -1389,7 +1519,18 @@ export const navGroups: NavGroup[] = [
         description: "nav.modelVersionsDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
-        section: "aiControlPlane",
+        section: "models",
+      },
+      {
+        // doc 69 T6 — fix orphan: page existed (App.tsx guards it explicitly
+        // with requireRole={["admin"]}) but had NO nav row anywhere before this.
+        href: "/ai-gguf-models",
+        label: "nav.aiGgufModels",
+        icon: <FileStack className="h-4 w-4" />,
+        description: "nav.aiGgufModelsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "models",
       },
       {
         // Automation Orchestration (Khối 4, I2) — advisory robot-behaviour anomaly
@@ -1402,8 +1543,9 @@ export const navGroups: NavGroup[] = [
         description: "nav.robotModelHealthDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
-        section: "aiControlPlane",
+        section: "models",
       },
+      // ─ Settings ─
       {
         href: "/ai-settings",
         label: "nav.aiSettings",
@@ -1412,108 +1554,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
-        section: "aiControlPlane",
-      },
-      // ─ AI Ops (admin) ─
-      {
-        href: "/ai-active-learning",
-        label: "nav.aiActiveLearning",
-        icon: <GraduationCap className="h-4 w-4" />,
-        description: "nav.aiActiveLearningDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      {
-        href: "/ai-batch-jobs",
-        label: "nav.aiBatchJobs",
-        icon: <Layers className="h-4 w-4" />,
-        description: "nav.aiBatchJobsDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      {
-        href: "/ai-data-processing",
-        label: "nav.aiDataProcessing",
-        icon: <Database className="h-4 w-4" />,
-        description: "nav.aiDataProcessingDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      {
-        href: "/ai-time-series",
-        label: "nav.aiTimeSeries",
-        icon: <TrendingUp className="h-4 w-4" />,
-        description: "nav.aiTimeSeriesDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      {
-        href: "/ai-reports",
-        label: "nav.aiReports",
-        icon: <FileBarChart className="h-4 w-4" />,
-        description: "nav.aiReportsDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiOps",
-      },
-      // ─ AI Vision (admin) ─
-      {
-        href: "/ai-quality-gate",
-        label: "nav.aiQualityGate",
-        icon: <ShieldCheck className="h-4 w-4" />,
-        description: "nav.aiQualityGateDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/ai-image-search",
-        label: "nav.aiImageSearch",
-        icon: <Search className="h-4 w-4" />,
-        description: "nav.aiImageSearchDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/ai-advanced-vision-lab",
-        label: "nav.advancedVisionLab",
-        icon: <Camera className="h-4 w-4" />,
-        description: "nav.advancedVisionLabDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/anomaly-banks",
-        label: "nav.anomalyBanks",
-        icon: <Database className="h-4 w-4" />,
-        description: "nav.anomalyBanksDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/mask-annotation",
-        label: "nav.maskAnnotation",
-        icon: <Brush className="h-4 w-4" />,
-        description: "nav.maskAnnotationDesc",
-        requiredRole: 'admin',
-        permissionCategory: "admin",
-        section: "aiVision",
-      },
-      {
-        href: "/causal-graph",
-        label: "nav.causalGraph",
-        icon: <Workflow className="h-4 w-4" />,
-        description: "nav.causalGraphDesc",
-        requiredPermission: "analytics_root_cause",
-        permissionCategory: "analytics",
-        section: "aiVision",
+        section: "settings",
       },
     ],
   },
@@ -2280,11 +2321,10 @@ export function hasAccessToItem(
  * (/scheduled-reports, /robot-model-health, /causal-graph, /products…) GIỮ trong menu.
  */
 const COLLAPSED_INTO_HUB: ReadonlySet<string> = new Set([
-  // → /ai-studio (hub admin-only; 16 row đều requiredRole:'admin')
-  "/ai-models", "/model-versions", "/ai-brain", "/ai-monitoring", "/ai-performance",
-  "/ai-active-learning", "/ai-batch-jobs", "/ai-data-processing", "/ai-time-series",
-  "/ai-reports", "/ai-quality-gate", "/ai-image-search", "/ai-advanced-vision-lab",
-  "/anomaly-banks", "/mask-annotation", "/ai-settings",
+  // doc 69 T6 — the 16 rows previously folded into /ai-studio (now retired/merged
+  // into /ai-home) were REMOVED from this set: the AI rail is now the single
+  // taxonomy (doc 69 B1.2) — folding its own rows into its own hub landing would
+  // defeat that goal. All AI rows show directly in the rail again.
   // → /data-management (hub gate masterdata)
   "/master-data", "/operator-badges", "/master-data-audit", "/data-quality", "/component-library",
   // → /product-workspace (hub gate history_view)

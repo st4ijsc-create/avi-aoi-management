@@ -5757,6 +5757,12 @@
       "aiControlPlane": "Trung tâm điều khiển AI",
       "aiOps": "Vận hành AI",
       "aiVision": "Thị giác AI",
+      "aiAssistant": "Trợ lý",
+      "aiAgentOps": "Vận hành Agent",
+      "aiAnalyticsReports": "Phân tích & Báo cáo",
+      "aiVisionLab": "Phòng thí nghiệm thị giác",
+      "aiModels": "Mô hình",
+      "aiSettings": "Cài đặt",
       "securityAccess": "Bảo mật & Truy cập",
       "platform": "Nền tảng",
       "productProgram": "Sản phẩm & Chương trình",
@@ -6097,6 +6103,12 @@
     "enhancedAuditDesc": "Nhật ký kiểm toán chi tiết với bộ lọc nâng cao",
     "aiHub": "Trung tâm AI",
     "aiHubDesc": "Bảng điều khiển trung tâm tính năng AI",
+    "aiHome": "AI Home",
+    "aiHomeDesc": "Điểm khởi đầu AI — trò chuyện nhanh, mọi công cụ AI theo một danh mục duy nhất",
+    "aiInspectionAnalytics": "Phân tích kiểm tra AI",
+    "aiInspectionAnalyticsDesc": "Xu hướng lỗi, dự báo yield, SPC & đánh giá rủi ro cho dữ liệu kiểm tra",
+    "aiGgufModels": "Mô hình GGUF",
+    "aiGgufModelsDesc": "Quản lý model LLM cục bộ (.gguf) cho chat & phân tích",
     "aiChat": "Trò chuyện AI",
     "aiChatDesc": "Trợ lý chat AI cho truy vấn dữ liệu",
     "technicianCopilot": "Trợ lý Kỹ thuật",
@@ -10934,6 +10946,18 @@
     "status": {
       "label": "Nhà cung cấp AI:",
       "noModel": "Chưa tải model"
+    }
+  },
+  "aiHome": {
+    "title": "AI Home",
+    "subtitle": "Điểm khởi đầu AI — trò chuyện nhanh, mọi công cụ AI theo một danh mục duy nhất",
+    "openChat": "Mở trò chuyện AI",
+    "categoriesLabel": "Nhóm AI",
+    "agentActivity": {
+      "title": "Hoạt động Agent",
+      "badge": "Sắp ra mắt",
+      "desc": "Bảng theo dõi agent trực tiếp (trạng thái, việc đang làm, token tiết kiệm) sẽ hiển thị ở đây.",
+      "cta": "Xem AI Brain"
     }
   },
   "mgmtInsight": {

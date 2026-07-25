@@ -150,7 +150,10 @@ export const APPS: AppDescriptor[] = [
     labelKey: "nav.app.ai",
     blurbKey: "nav.app.aiDesc",
     icon: Sparkles,
-    landingHref: "/ai-hub",
+    // doc 69 T6 — /ai-hub retired/merged into /ai-home (App.tsx keeps /ai-hub
+    // as a redirect for old bookmarks; this internal link points straight at
+    // the new landing).
+    landingHref: "/ai-home",
     navGroupIds: ["ai"],
     moduleCodes: ["MOD_AI"],
     order: 60,

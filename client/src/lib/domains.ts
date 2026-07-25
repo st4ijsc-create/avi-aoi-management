@@ -75,7 +75,9 @@ export const DOMAINS: DomainTile[] = [
     icon: BrainCircuit,
     labelKey: "domains.ai.label",
     blurbKey: "domains.ai.blurb",
-    href: "/ai-hub",
+    // doc 69 T6 — /ai-hub retired/merged into /ai-home (still redirects for
+    // old bookmarks; this internal link points straight at the new landing).
+    href: "/ai-home",
   },
   {
     key: "analytics",

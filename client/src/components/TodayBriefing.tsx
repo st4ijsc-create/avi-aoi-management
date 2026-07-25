@@ -273,7 +273,8 @@ export function TodayBriefing({ className }: { className?: string }) {
     const q = `${t("today.askPrefix")} ${row?.machineCode ?? ""} — ${row?.reason ?? ""}`.trim();
     setLocation(`/ai-chat?q=${encodeURIComponent(q)}`);
   };
-  const handleInbox = () => setLocation("/ai-hub");
+  // doc 69 T6 — /ai-hub retired/merged into /ai-home.
+  const handleInbox = () => setLocation("/ai-home");
 
   return (
     <div
