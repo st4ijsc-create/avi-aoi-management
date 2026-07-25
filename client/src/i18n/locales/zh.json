@@ -7366,6 +7366,8 @@
     "rootCauses": "根本原因",
     "rootCauseAnalysisDesc": "根本原因分析描述",
     "rootCauseAnalysis": "根本原因分析",
+    "causalGraphButton": "因果图",
+    "causalGraphDrawerDesc": "用于根因分析的设备 ↔ 缺陷 ↔ 原因 ↔ 措施关系图",
     "reviewedToday": "已审核today",
     "retry": "重试",
     "resultDistributionDesc": "结果分布图",
@@ -10917,6 +10919,19 @@
     "pdmValueDays": "{{risk}}% · ~{{days}} 天",
     "latestInsight": "最新建议"
   },
+  "repairAI": {
+    "title": "维修 AI 助手",
+    "openButton": "AI 助手",
+    "askAI": "就此序列号问 AI",
+    "askQuestion": "板卡序列号 {{serial}} 在设备 {{machine}} 上出现 {{defect}} 缺陷。可能的原因和修复方法是什么？",
+    "askQuestionNoDefect": "板卡序列号 {{serial}} 正在维修站。AI 有诊断建议吗？",
+    "unknownMachine": "未知",
+    "noMachine": "该序列号尚未关联设备——暂无按设备的 AI 信号。",
+    "similarTitle": "查找相似缺陷",
+    "similarCta": "查找相似图片",
+    "similarSearching": "正在查找相似图片…",
+    "similarNoImage": "没有可比对的缺陷图片"
+  },
   "connectivity": {
     "title": "连接 (MQTT / UNS)",
     "groups": {
@@ -12914,6 +12929,14 @@
   "qualityCockpit": {
     "title": "质量驾驶舱",
     "subtitle": "统一质量工作区 — 在同一范围内查看 SPC、帕累托、缺陷热力图、闸门与标注",
+    "aiInsight": {
+      "title": "AI 信号",
+      "selectMachine": "选择设备以查看该范围的 AI 信号",
+      "hasExcursion": "存在正在进行的 SPC 异常",
+      "noExcursion": "没有正在进行的 SPC 异常",
+      "explainExcursion": "解释此 SPC 异常",
+      "askQuestion": "解释此 SPC 违规：规则 {{rule}}，测量点 #{{point}}，严重程度 {{severity}}，检测时间 {{time}}。可能的原因和纠正措施是什么？"
+    },
     "tabs": {
       "spc": "SPC",
       "pareto": "帕累托",

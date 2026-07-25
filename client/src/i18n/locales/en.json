@@ -7589,6 +7589,8 @@
     "rootCauses": "Root causes",
     "rootCauseAnalysisDesc": "Root cause analysis desc",
     "rootCauseAnalysis": "Root cause analysis",
+    "causalGraphButton": "Causal graph",
+    "causalGraphDrawerDesc": "Machine ↔ defect ↔ cause ↔ action graph used for root-cause analysis",
     "reviewedToday": "Reviewed today",
     "retry": "Retry",
     "resultDistributionDesc": "Result distribution desc",
@@ -11134,6 +11136,19 @@
     "pdmValueDays": "{{risk}}% · ~{{days}} days",
     "latestInsight": "Latest recommendation"
   },
+  "repairAI": {
+    "title": "Repair AI assistant",
+    "openButton": "AI assistant",
+    "askAI": "Ask AI about this serial",
+    "askQuestion": "Board serial {{serial}} has defect {{defect}} on machine {{machine}}. What could be the cause and the fix?",
+    "askQuestionNoDefect": "Board serial {{serial}} is at the repair station. Does AI have any diagnostic suggestions?",
+    "unknownMachine": "unknown",
+    "noMachine": "No machine linked to this serial yet — no per-machine AI signal available.",
+    "similarTitle": "Find similar defects",
+    "similarCta": "Find similar images",
+    "similarSearching": "Searching for similar images…",
+    "similarNoImage": "No defect image to compare"
+  },
   "connectivity": {
     "title": "Connectivity (MQTT / UNS)",
     "groups": {
@@ -13131,6 +13146,14 @@
   "qualityCockpit": {
     "title": "Quality Cockpit",
     "subtitle": "One quality workspace — SPC, Pareto, defect heatmap, gates and annotation in a shared scope",
+    "aiInsight": {
+      "title": "AI signal",
+      "selectMachine": "Select a machine to see the AI signal for this scope",
+      "hasExcursion": "An SPC excursion is active",
+      "noExcursion": "No active SPC excursion",
+      "explainExcursion": "Explain this SPC excursion",
+      "askQuestion": "Explain this SPC violation: rule {{rule}} at measurement point #{{point}}, severity {{severity}}, detected at {{time}}. What are the likely causes and corrective actions?"
+    },
     "tabs": {
       "spc": "SPC",
       "pareto": "Pareto",

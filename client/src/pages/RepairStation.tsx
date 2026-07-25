@@ -29,6 +29,8 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MetricCard, PageContainer, PageHeader, SectionCard, StatusBadge } from "@/components/patterns";
+import { ContextDrawer } from "@/components/workspace";
+import RepairAISummary from "@/components/RepairAISummary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -475,6 +477,7 @@ function SerialWorkPanel({
   const { t } = useTranslation();
   const [note, setNote] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const open = rows.filter((r) => r.status !== "closed");
   const history = rows.filter((r) => r.status === "closed");
@@ -531,7 +534,18 @@ function SerialWorkPanel({
 
   const actionLabel = (target: DispositionStatus) => t(`disposition.action.${target}`, target);
 
+  // AI drawer context — the focused NG point's own image (if any) + a human
+  // label, used to scope RepairAISummary's "find similar" + "Hỏi AI" actions.
+  const primaryMeasurement = measurements[0];
+  const defectImageUrl = primaryMeasurement
+    ? ((primaryMeasurement as { defectCropUrl?: string | null }).defectCropUrl ?? primaryMeasurement.imageUrl)
+    : null;
+  const defectLabel = primaryMeasurement
+    ? (primaryMeasurement.defectNameVi ?? primaryMeasurement.defectName ?? primaryMeasurement.pointName ?? null)
+    : null;
+
   return (
+    <>
     <SectionCard
       icon={<Wrench className="h-4 w-4" />}
       title={
@@ -557,12 +571,18 @@ function SerialWorkPanel({
       }
       action={
         focus ? (
-          <Link href={`/inspection/${focus.inspectionId}`}>
-            <Button size="sm" variant="outline" className="gap-1">
-              <ExternalLink className="h-3.5 w-3.5" />
-              {t("repairStation.openInspection", "Inspection detail")}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" className="gap-1" onClick={() => setAiOpen(true)}>
+              <Sparkles className="h-3.5 w-3.5" />
+              {t("repairAI.openButton", "Trợ lý AI")}
             </Button>
-          </Link>
+            <Link href={`/inspection/${focus.inspectionId}`}>
+              <Button size="sm" variant="outline" className="gap-1">
+                <ExternalLink className="h-3.5 w-3.5" />
+                {t("repairStation.openInspection", "Inspection detail")}
+              </Button>
+            </Link>
+          </div>
         ) : undefined
       }
     >
@@ -755,5 +775,21 @@ function SerialWorkPanel({
         </div>
       )}
     </SectionCard>
+    <ContextDrawer
+      open={aiOpen}
+      onOpenChange={setAiOpen}
+      title={t("repairAI.title", "Trợ lý AI sửa chữa")}
+      description={serial}
+    >
+      <RepairAISummary
+        serial={serial}
+        machineId={detail?.machine?.id ?? null}
+        machineCode={detail?.machine?.code ?? null}
+        machineName={detail?.machine?.name ?? null}
+        defectImageUrl={defectImageUrl}
+        defectLabel={defectLabel}
+      />
+    </ContextDrawer>
+    </>
   );
 }

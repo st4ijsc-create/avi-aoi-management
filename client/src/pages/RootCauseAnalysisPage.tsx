@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { ContextDrawer } from "@/components/workspace";
+import { CausalGraphEditorPageContent } from "./CausalGraphEditorPage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -44,7 +46,8 @@ import {
   Target,
   Zap,
   Pencil,
-  Trash2
+  Trash2,
+  Network
 } from "lucide-react";
 import { 
   BarChart, 
@@ -70,6 +73,10 @@ export function RootCauseAnalysisPageContent() {
   const { hasPermission } = usePermissions();
   const canEdit = hasPermission("analytics_root_cause", "canEdit");
   const canDelete = hasPermission("analytics_root_cause", "canDelete");
+  // doc 69 §B1.3 (T8/E1) — Causal-Graph embed: same permission the standalone
+  // /causal-graph route + CausalGraphEditorPageContent itself already gate on.
+  const canViewCausal = hasPermission("analytics_root_cause", "canView");
+  const [causalOpen, setCausalOpen] = useState(false);
   const [analysisType, setAnalysisType] = useState<AnalysisType>("DEFECT_ANALYSIS");
   const [machineId, setMachineId] = useState<number | undefined>();
   const [productModelId, setProductModelId] = useState<number | undefined>();
@@ -182,6 +189,14 @@ export function RootCauseAnalysisPageContent() {
           title={t('reports.rootCauseAnalysis')}
           description={t('reports.rootCauseAnalysisDesc')}
           badge={<ViewOnlyBadge module="analytics_root_cause" />}
+          actions={
+            canViewCausal ? (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCausalOpen(true)}>
+                <Network className="h-4 w-4" />
+                {t('reports.causalGraphButton', 'Đồ thị nhân quả')}
+              </Button>
+            ) : undefined
+          }
         />
 
         {/* Analysis Configuration */}
@@ -595,6 +610,21 @@ export function RootCauseAnalysisPageContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* doc 69 §B1.3 (T8/E1) — Causal-Graph embed: same component behind the
+          standalone /causal-graph route, reused (not duplicated). Wider than
+          the default ContextDrawer width to fit the node-graph canvas. */}
+      {canViewCausal && (
+        <ContextDrawer
+          open={causalOpen}
+          onOpenChange={setCausalOpen}
+          title={t('reports.causalGraphButton', 'Đồ thị nhân quả')}
+          description={t('reports.causalGraphDrawerDesc', 'Đồ thị máy ↔ lỗi ↔ nguyên nhân ↔ hành động dùng cho phân tích nguyên nhân gốc')}
+          className="flex w-[95vw] flex-col gap-0 p-0 sm:w-[85vw] sm:max-w-[1100px]"
+        >
+          <CausalGraphEditorPageContent />
+        </ContextDrawer>
+      )}
     </>
   );
 }

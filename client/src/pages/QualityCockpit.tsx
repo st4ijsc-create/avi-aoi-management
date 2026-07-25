@@ -49,6 +49,9 @@ import { FalseCallEscapePanel } from "@/components/FalseCallEscapePanel";
 // ranking from the HARVESTED corrections ledger (complementary to the panel
 // above, which reads inspection-row NTF flips only).
 import { FalseCallTrendCard } from "@/components/FalseCallTrendCard";
+// Doc 69 §B1.3 (T8/E1) — contextual AI embed: anomaly/PdM/insight for the
+// cockpit's current machine scope + "Explain this SPC excursion" deep-link.
+import QualityAIInsightCard from "@/components/QualityAIInsightCard";
 
 function getDefaultDateRange() {
   const end = new Date();
@@ -276,6 +279,9 @@ export default function QualityCockpit() {
         />
 
         <ScopeSelector scope={scope} onChange={setScope} />
+
+        {/* Doc 69 §B1.3 (T8/E1) — AI signal for the current scope + SPC-excursion explain */}
+        <QualityAIInsightCard machineId={scope.machineId} />
 
         {/* Doc 27 A9 — false-call ↔ escape paired KPI (AOI tuning trade-off),
             driven by the shared cockpit scope. */}

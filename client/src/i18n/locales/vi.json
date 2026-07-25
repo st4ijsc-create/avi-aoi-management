@@ -7563,6 +7563,8 @@
     "selectPlaceholder": "Chọn Chỗ nhập...",
     "selectAlertToView": "Chọn Cảnh báo đến Xem",
     "rootCauseAnalysis": "Phân tích nguyên nhân gốc",
+    "causalGraphButton": "Đồ thị nhân quả",
+    "causalGraphDrawerDesc": "Đồ thị máy ↔ lỗi ↔ nguyên nhân ↔ hành động dùng cho phân tích nguyên nhân gốc",
     "reportByCorporate": "Báo cáo theo Tập đoàn",
     "qualityReportDesc": "Báo cáo chất lượng tổng hợp",
     "predictedPositive": "Dự đoán dương",
@@ -11117,6 +11119,19 @@
     "pdmValueDays": "{{risk}}% · ~{{days}} ngày",
     "latestInsight": "Khuyến nghị mới nhất"
   },
+  "repairAI": {
+    "title": "Trợ lý AI sửa chữa",
+    "openButton": "Trợ lý AI",
+    "askAI": "Hỏi AI về serial này",
+    "askQuestion": "Board serial {{serial}} bị lỗi {{defect}} trên máy {{machine}}. Nguyên nhân có thể là gì và cách khắc phục?",
+    "askQuestionNoDefect": "Board serial {{serial}} đang ở trạm sửa chữa. AI có gợi ý gì để chẩn đoán không?",
+    "unknownMachine": "chưa rõ",
+    "noMachine": "Chưa xác định máy cho serial này — chưa có tín hiệu AI theo máy.",
+    "similarTitle": "Tìm lỗi tương tự",
+    "similarCta": "Tìm ảnh tương tự",
+    "similarSearching": "Đang tìm ảnh tương tự…",
+    "similarNoImage": "Không có ảnh lỗi để so sánh"
+  },
   "connectivity": {
     "title": "Kết nối (MQTT / UNS)",
     "groups": {
@@ -13114,6 +13129,14 @@
   "qualityCockpit": {
     "title": "Cockpit chất lượng",
     "subtitle": "Một không gian chất lượng — SPC, Pareto, heatmap lỗi, cổng và chú thích trong cùng phạm vi",
+    "aiInsight": {
+      "title": "Tín hiệu AI",
+      "selectMachine": "Chọn máy để xem tín hiệu AI cho phạm vi này",
+      "hasExcursion": "Có excursion SPC đang mở",
+      "noExcursion": "Không có excursion SPC đang mở",
+      "explainExcursion": "Giải thích excursion SPC này",
+      "askQuestion": "Giải thích vi phạm SPC: luật {{rule}} tại điểm đo #{{point}}, mức độ {{severity}}, phát hiện lúc {{time}}. Nguyên nhân khả dĩ và hành động khắc phục là gì?"
+    },
     "tabs": {
       "spc": "SPC",
       "pareto": "Pareto",
