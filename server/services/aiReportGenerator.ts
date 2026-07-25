@@ -289,12 +289,25 @@ async function collectTopDefects(startDate: Date, endDate: Date, machineId?: num
   }));
 }
 
-async function collectMachinePerformance(startDate: Date, endDate: Date) {
+// doc 69 W0-3 security review fix (Important #2) — `machineId` is OPTIONAL and, when
+// given, scopes this sub-aggregation to that single machine. Before this fix,
+// generateRCAReport always called this GLOBALLY regardless of its own (correctly
+// machine-scoped) stats/topDefects — so a factory-scoped RCA report's `correlations[]`
+// and "worst machine" still leaked every OTHER factory's machines. Callers that
+// legitimately want the full cross-factory ranking (generateExecutiveSummary, which is
+// now admin-only — see aiAnalyticsScope.enforceGlobalReportScope) simply omit machineId.
+async function collectMachinePerformance(startDate: Date, endDate: Date, machineId?: number) {
   const db = await getDb();
   if (!db) {
     console.error("[collectMachinePerformance] Database connection unavailable (DB_UNAVAILABLE)");
     return [];
   }
+
+  const conditions: SQL[] = [
+    gte(productInspections.inspectionTime, startDate),
+    lte(productInspections.inspectionTime, endDate),
+  ];
+  if (machineId) conditions.push(eq(productInspections.machineId, machineId));
 
   const result = await db.select({
     machineId: productInspections.machineId,
@@ -305,10 +318,7 @@ async function collectMachinePerformance(startDate: Date, endDate: Date) {
   })
     .from(productInspections)
     .leftJoin(machines, eq(productInspections.machineId, machines.id))
-    .where(and(
-      gte(productInspections.inspectionTime, startDate),
-      lte(productInspections.inspectionTime, endDate),
-    ))
+    .where(and(...conditions))
     .groupBy(productInspections.machineId, machines.code)
     .orderBy(desc(sql`COUNT(*)`));
 
@@ -441,7 +451,7 @@ export async function generateRCAReport(params: ReportParams & { triggerReason?:
   const [stats, topDefects, machinePerf] = await Promise.all([
     collectInspectionStats(startDate, endDate, machineId),
     collectTopDefects(startDate, endDate, machineId),
-    collectMachinePerformance(startDate, endDate),
+    collectMachinePerformance(startDate, endDate, machineId),
   ]);
 
   const total = stats?.total ?? 0;

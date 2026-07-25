@@ -5,9 +5,7 @@
  */
 
 import { z } from "zod";
-import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
-import type { TrpcContext } from "../_core/context";
 import {
   generateDailyQualitySummary,
   generateRCAReport,
@@ -18,25 +16,13 @@ import {
 // doc 69 W0-3 — factory-scope + per-user rate limit (security gap: NO ownership check
 // existed against the calling user, and only the global/IP rate limiter guarded these
 // expensive report-generation mutations). See server/_core/aiAnalyticsScope.ts.
-import { enforceReportFactoryScope, enforceAiAnalyticsRateLimit } from "../_core/aiAnalyticsScope";
-
-/**
- * doc 69 W0-3 — apply the per-user rate limit + factory-scope enforcement to a report
- * filter before it reaches the (user-unaware) aiReportGenerator service. See
- * server/_core/aiAnalyticsScope.ts `enforceReportFactoryScope` for the exact rule
- * (machineId REQUIRED for scoped/non-admin users — the service has no factory-level
- * filter to silently narrow to).
- */
-async function applyReportScope(
-  ctx: { user: TrpcContext["user"] },
-  input: { machineId?: number; factoryId?: number },
-): Promise<void> {
-  if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
-  }
-  enforceAiAnalyticsRateLimit(ctx.user.id);
-  await enforceReportFactoryScope({ user: ctx.user, machineId: input.machineId, factoryId: input.factoryId });
-}
+//
+// SECURITY REVIEW FOLLOW-UP (Wave 0 fix #1): `modelPerformance`/`executiveSummary` are
+// inherently global reports (the service ignores machineId for them) — `applyReportScope`
+// cannot narrow them, so they use `applyGlobalReportScope` (admin-only) instead. Both
+// helpers now live in aiAnalyticsScope.ts so server/routers/aiAnalysisHubRouter.ts (the
+// sibling that bypassed all of this entirely) can reuse them verbatim (fix #3).
+import { applyReportScope, applyGlobalReportScope } from "../_core/aiAnalyticsScope";
 
 const reportParamsSchema = z.object({
   startDate: z.string().transform(s => new Date(s)),
@@ -77,11 +63,15 @@ export const aiReportRouter = router({
 
   /**
    * Generate Model Performance report.
+   *
+   * doc 69 W0-3 security review fix #1 — this report is inherently global (the service
+   * ignores machineId and returns the full AI model list), so it's restricted to the
+   * global (admin) role rather than factory-narrowed.
    */
   modelPerformance: protectedProcedure
     .input(reportParamsSchema)
     .mutation(async ({ input, ctx }) => {
-      await applyReportScope(ctx, input);
+      await applyGlobalReportScope(ctx);
       return generateModelPerformanceReport({
         ...input,
         reportType: "model_performance",
@@ -90,11 +80,14 @@ export const aiReportRouter = router({
 
   /**
    * Generate Executive Summary (weekly/monthly).
+   *
+   * doc 69 W0-3 security review fix #1 — inherently global (all-factory KPIs/machine
+   * rankings, machineId ignored by the service) → global (admin) role only.
    */
   executiveSummary: protectedProcedure
     .input(reportParamsSchema)
     .mutation(async ({ input, ctx }) => {
-      await applyReportScope(ctx, input);
+      await applyGlobalReportScope(ctx);
       return generateExecutiveSummary({
         ...input,
         reportType: "executive",
@@ -102,7 +95,10 @@ export const aiReportRouter = router({
     }),
 
   /**
-   * Unified report generation endpoint.
+   * Unified report generation endpoint. Branches its scope guard by reportType — the
+   * two inherently-global types (model_performance/executive) get the admin-only guard,
+   * the two machineId-filterable types (daily/rca) get the factory-scope guard. Without
+   * this branch, `generate` would have remained a full bypass of fix #1 above.
    */
   generate: protectedProcedure
     .input(reportParamsSchema.extend({
@@ -110,7 +106,11 @@ export const aiReportRouter = router({
       triggerReason: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      await applyReportScope(ctx, input);
+      if (input.reportType === "model_performance" || input.reportType === "executive") {
+        await applyGlobalReportScope(ctx);
+      } else {
+        await applyReportScope(ctx, input);
+      }
       return generateReport(input);
     }),
 });

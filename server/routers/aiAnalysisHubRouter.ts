@@ -39,6 +39,15 @@ import {
 
 import { resolveSafeImagePath } from "../utils/safeImagePath";
 
+// doc 69 W0-3 security review fix #3 — this router calls the EXACT SAME
+// aiReportGenerator functions as server/routers/aiReportRouter.ts but, before this fix,
+// applied NO factory-scope check and NO per-user rate limit at all: any authenticated
+// user could reach cross-factory report data through this sibling endpoint even after
+// aiReportRouter itself was locked down. Reuses the identical composed guards (see
+// server/_core/aiAnalyticsScope.ts) — same rate-limit bucket, same scope rules, same
+// admin-only restriction on the two inherently-global report types.
+import { applyReportScope, applyGlobalReportScope } from "../_core/aiAnalyticsScope";
+
 // ─── Helpers ──────────────────────────────────────────────────
 function resolveImagePath(imageKey: string): string {
   return resolveSafeImagePath(imageKey);
@@ -383,7 +392,8 @@ export const aiAnalysisHubRouter = router({
    */
   dailyQualitySummary: protectedProcedure
     .input(reportParamsSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await applyReportScope(ctx, input);
       const result = await generateDailyQualitySummary({ ...input, reportType: "daily" });
       return { analysisType: "daily_quality_summary", ...result };
     }),
@@ -393,27 +403,32 @@ export const aiAnalysisHubRouter = router({
    */
   rootCauseAnalysis: protectedProcedure
     .input(reportParamsSchema.extend({ triggerReason: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await applyReportScope(ctx, input);
       const result = await generateRCAReport({ ...input, reportType: "rca" });
       return { analysisType: "root_cause_analysis", ...result };
     }),
 
   /**
-   * Generate model performance report.
+   * Generate model performance report. doc 69 W0-3 fix #1 — inherently global
+   * (ignores machineId), so admin-only rather than factory-narrowed.
    */
   modelPerformanceReport: protectedProcedure
     .input(reportParamsSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await applyGlobalReportScope(ctx);
       const result = await generateModelPerformanceReport({ ...input, reportType: "model_performance" });
       return { analysisType: "model_performance_report", ...result };
     }),
 
   /**
-   * Generate executive summary report.
+   * Generate executive summary report. doc 69 W0-3 fix #1 — inherently global
+   * (all-factory KPIs/machine rankings), so admin-only rather than factory-narrowed.
    */
   executiveSummary: protectedProcedure
     .input(reportParamsSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await applyGlobalReportScope(ctx);
       const result = await generateExecutiveSummary({ ...input, reportType: "executive" });
       return { analysisType: "executive_summary", ...result };
     }),

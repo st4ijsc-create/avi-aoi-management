@@ -61,27 +61,34 @@ vi.mock("../services/aiInspectionAnalytics", () => ({
 }));
 
 const generateDailyQualitySummary = vi.fn(async (params: unknown) => ({ params, ok: true }));
+const generateRCAReport = vi.fn(async (params: unknown) => ({ params, ok: true }));
+const generateModelPerformanceReport = vi.fn(async (params: unknown) => ({ params, ok: true }));
+const generateExecutiveSummary = vi.fn(async (params: unknown) => ({ params, ok: true }));
+const generateReport = vi.fn(async (params: unknown) => ({ params, ok: true }));
 vi.mock("../services/aiReportGenerator", () => ({
   generateDailyQualitySummary: (...a: unknown[]) => generateDailyQualitySummary(...a),
-  generateRCAReport: vi.fn(async () => ({})),
-  generateModelPerformanceReport: vi.fn(async () => ({})),
-  generateExecutiveSummary: vi.fn(async () => ({})),
-  generateReport: vi.fn(async () => ({})),
+  generateRCAReport: (...a: unknown[]) => generateRCAReport(...a),
+  generateModelPerformanceReport: (...a: unknown[]) => generateModelPerformanceReport(...a),
+  generateExecutiveSummary: (...a: unknown[]) => generateExecutiveSummary(...a),
+  generateReport: (...a: unknown[]) => generateReport(...a),
 }));
 
 import { cacheService } from "../services/cacheService";
 
 const importAnalyticsRouter = async () => (await import("./aiInspectionAnalyticsRouter")).aiInspectionAnalyticsRouter;
 const importReportRouter = async () => (await import("./aiReportRouter")).aiReportRouter;
+// doc 69 W0-3 security review fix #3 — same aiReportGenerator mocks above also cover
+// this sibling router (it imports the exact same service functions).
+const importHubRouter = async () => (await import("./aiAnalysisHubRouter")).aiAnalysisHubRouter;
 
 const period = { startDate: "2026-07-01T00:00:00.000Z", endDate: "2026-07-02T00:00:00.000Z" };
 const ctxFor = (id: number, role: string) => ({ user: { id, role } }) as never;
 
-function mockScope(opts: { isAdmin?: boolean; factoryCodes?: string[] }) {
+function mockScope(opts: { isAdmin?: boolean; factoryCodes?: string[]; corporateCodes?: string[] }) {
   mockGetUserAssignmentCodes.mockResolvedValue({
     isAdmin: !!opts.isAdmin,
     factoryCodes: opts.factoryCodes ?? [],
-    corporateCodes: [],
+    corporateCodes: opts.corporateCodes ?? [],
   });
 }
 
@@ -92,6 +99,10 @@ beforeEach(() => {
   getDefectPareto.mockClear();
   getMachinePerformance.mockClear();
   generateDailyQualitySummary.mockClear();
+  generateRCAReport.mockClear();
+  generateModelPerformanceReport.mockClear();
+  generateExecutiveSummary.mockClear();
+  generateReport.mockClear();
   cacheService.clear();
   delete process.env.AI_ANALYTICS_ROLLOUT_PERCENT; // default 100% — every userId in rollout
   delete process.env.AI_ANALYTICS_RATE_LIMIT_PER_MIN;
@@ -261,5 +272,191 @@ describe("aiReportRouter — factory scope (doc69 T3)", () => {
 
     await caller.dailySummary({ ...period });
     await expect(caller.dailySummary({ ...period })).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+  });
+
+  it("finding #4 — a CORPORATE-scoped user (corporateCodes only, no direct factory assignment) is ALLOWED", async () => {
+    // Before the fix, resolveFactoryScope dropped corporateCodes entirely, so this user
+    // (factoryCodes=[]) fell into "no assignments at all" → wrongly FORBIDDEN, mirroring
+    // getAccessFilterConditions's real corporateCode-OR-factoryCode grant.
+    mockScope({ factoryCodes: [], corporateCodes: ["C1"] });
+    // Single canned row serves BOTH getMachineFactoryCode (`code`) and
+    // getFactoryCorporateCode (`corporateCode`) — machine 50 belongs to factory F05,
+    // which belongs to corporate C1.
+    mockGetDb.mockResolvedValue(dbRowsStub([{ code: "F05", corporateCode: "C1" }]));
+    const caller = (await importReportRouter()).createCaller(ctxFor(306, "supervisor"));
+
+    await caller.dailySummary({ ...period, machineId: 50 });
+    expect(generateDailyQualitySummary).toHaveBeenCalledOnce();
+  });
+
+  it("finding #4 — a corporate-scoped user is still REJECTED for a machine outside their corporate", async () => {
+    mockScope({ factoryCodes: [], corporateCodes: ["C1"] });
+    // Machine 51 belongs to factory F09, which belongs to a DIFFERENT corporate C9.
+    mockGetDb.mockResolvedValue(dbRowsStub([{ code: "F09", corporateCode: "C9" }]));
+    const caller = (await importReportRouter()).createCaller(ctxFor(307, "supervisor"));
+
+    await expect(caller.dailySummary({ ...period, machineId: 51 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(generateDailyQualitySummary).not.toHaveBeenCalled();
+  });
+});
+
+describe("aiReportRouter — inherently-global reports restricted to admin (doc69 W0-3 fix #1)", () => {
+  it("modelPerformance: a factory-scoped (non-admin) user is FORBIDDEN — the service ignores machineId and returns ALL models", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    const caller = (await importReportRouter()).createCaller(ctxFor(401, "supervisor"));
+
+    await expect(caller.modelPerformance({ ...period })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(generateModelPerformanceReport).not.toHaveBeenCalled();
+  });
+
+  it("modelPerformance: admin succeeds", async () => {
+    mockScope({ isAdmin: true });
+    const caller = (await importReportRouter()).createCaller(ctxFor(402, "admin"));
+
+    await caller.modelPerformance({ ...period });
+    expect(generateModelPerformanceReport).toHaveBeenCalledOnce();
+  });
+
+  it("executiveSummary: a factory-scoped (non-admin) user is FORBIDDEN — the service returns ALL-factory KPIs regardless of machineId", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    const caller = (await importReportRouter()).createCaller(ctxFor(403, "supervisor"));
+
+    // Even supplying an in-scope machineId must not help — the service ignores it entirely.
+    await expect(caller.executiveSummary({ ...period, machineId: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(generateExecutiveSummary).not.toHaveBeenCalled();
+  });
+
+  it("executiveSummary: admin succeeds", async () => {
+    mockScope({ isAdmin: true });
+    const caller = (await importReportRouter()).createCaller(ctxFor(404, "admin"));
+
+    await caller.executiveSummary({ ...period });
+    expect(generateExecutiveSummary).toHaveBeenCalledOnce();
+  });
+
+  it("generate(reportType=model_performance): non-admin FORBIDDEN, admin OK — the unified endpoint must not bypass fix #1", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    const caller = (await importReportRouter()).createCaller(ctxFor(405, "supervisor"));
+    await expect(caller.generate({ ...period, reportType: "model_performance" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(generateReport).not.toHaveBeenCalled();
+
+    mockScope({ isAdmin: true });
+    const adminCaller = (await importReportRouter()).createCaller(ctxFor(406, "admin"));
+    await adminCaller.generate({ ...period, reportType: "model_performance" });
+    expect(generateReport).toHaveBeenCalledOnce();
+  });
+
+  it("generate(reportType=executive): non-admin FORBIDDEN, admin OK", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    const caller = (await importReportRouter()).createCaller(ctxFor(407, "supervisor"));
+    await expect(caller.generate({ ...period, reportType: "executive" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(generateReport).not.toHaveBeenCalled();
+
+    mockScope({ isAdmin: true });
+    const adminCaller = (await importReportRouter()).createCaller(ctxFor(408, "admin"));
+    await adminCaller.generate({ ...period, reportType: "executive" });
+    expect(generateReport).toHaveBeenCalledOnce();
+  });
+
+  it("generate(reportType=daily) still goes through the factory-scope path, not the admin-only path", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    mockGetDb.mockResolvedValue(dbRowsStub([{ code: "F99" }])); // machine outside F01
+    const caller = (await importReportRouter()).createCaller(ctxFor(409, "supervisor"));
+
+    await expect(caller.generate({ ...period, reportType: "daily", machineId: 60 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(generateReport).not.toHaveBeenCalled();
+  });
+});
+
+describe("aiAnalysisHubRouter — sibling bypass closed, same scope+rate-limit+admin rules apply (doc69 W0-3 fix #3)", () => {
+  it("dailyQualitySummary: cross-factory machineId is FORBIDDEN — before this fix ANY authenticated user reached this unfiltered", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    mockGetDb.mockResolvedValue(dbRowsStub([{ code: "F99" }]));
+    const caller = (await importHubRouter()).createCaller(ctxFor(501, "operator"));
+
+    await expect(caller.dailyQualitySummary({ ...period, machineId: 70 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(generateDailyQualitySummary).not.toHaveBeenCalled();
+  });
+
+  it("dailyQualitySummary: in-scope machineId succeeds and reaches the service", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    mockGetDb.mockResolvedValue(dbRowsStub([{ code: "F01" }]));
+    const caller = (await importHubRouter()).createCaller(ctxFor(502, "operator"));
+
+    const result = await caller.dailyQualitySummary({ ...period, machineId: 71 });
+    expect(generateDailyQualitySummary).toHaveBeenCalledOnce();
+    expect(result.analysisType).toBe("daily_quality_summary");
+  });
+
+  it("rootCauseAnalysis: cross-factory machineId is FORBIDDEN", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    mockGetDb.mockResolvedValue(dbRowsStub([{ code: "F99" }]));
+    const caller = (await importHubRouter()).createCaller(ctxFor(503, "operator"));
+
+    await expect(caller.rootCauseAnalysis({ ...period, machineId: 72 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(generateRCAReport).not.toHaveBeenCalled();
+  });
+
+  it("rootCauseAnalysis: in-scope machineId succeeds", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    mockGetDb.mockResolvedValue(dbRowsStub([{ code: "F01" }]));
+    const caller = (await importHubRouter()).createCaller(ctxFor(504, "operator"));
+
+    await caller.rootCauseAnalysis({ ...period, machineId: 73 });
+    expect(generateRCAReport).toHaveBeenCalledOnce();
+  });
+
+  it("modelPerformanceReport: non-admin FORBIDDEN (fix #1 applies here too, not just aiReportRouter)", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    const caller = (await importHubRouter()).createCaller(ctxFor(505, "supervisor"));
+
+    await expect(caller.modelPerformanceReport({ ...period })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(generateModelPerformanceReport).not.toHaveBeenCalled();
+  });
+
+  it("modelPerformanceReport: admin succeeds", async () => {
+    mockScope({ isAdmin: true });
+    const caller = (await importHubRouter()).createCaller(ctxFor(506, "admin"));
+
+    await caller.modelPerformanceReport({ ...period });
+    expect(generateModelPerformanceReport).toHaveBeenCalledOnce();
+  });
+
+  it("executiveSummary: non-admin FORBIDDEN", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    const caller = (await importHubRouter()).createCaller(ctxFor(507, "supervisor"));
+
+    await expect(caller.executiveSummary({ ...period })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(generateExecutiveSummary).not.toHaveBeenCalled();
+  });
+
+  it("executiveSummary: admin succeeds", async () => {
+    mockScope({ isAdmin: true });
+    const caller = (await importHubRouter()).createCaller(ctxFor(508, "admin"));
+
+    await caller.executiveSummary({ ...period });
+    expect(generateExecutiveSummary).toHaveBeenCalledOnce();
+  });
+
+  it("per-user rate limit now applies on this router too — before this fix it had NONE", async () => {
+    mockScope({ factoryCodes: ["F01"] });
+    mockGetDb.mockResolvedValue(dbRowsStub([{ code: "F01" }]));
+    process.env.AI_ANALYTICS_RATE_LIMIT_PER_MIN = "1";
+    const caller = (await importHubRouter()).createCaller(ctxFor(509, "operator"));
+
+    await caller.dailyQualitySummary({ ...period, machineId: 74 });
+    await expect(caller.dailyQualitySummary({ ...period, machineId: 74 })).rejects.toMatchObject({
+      code: "TOO_MANY_REQUESTS",
+    });
   });
 });

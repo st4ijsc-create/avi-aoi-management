@@ -49,11 +49,19 @@ export interface FactoryScope {
   isGlobal: boolean;
   /** Assigned factory codes for a non-global user (possibly empty = no access at all). */
   factoryCodes: string[];
+  /**
+   * Assigned corporate codes. `getAccessFilterConditions` (the pattern this module
+   * mirrors) grants by `corporateCode OR factoryCode` — a corporate-level user
+   * (factoryCodes empty, corporateCodes set) legitimately has access to every factory
+   * under that corporate. Dropping this (as the original T3 pass did) wrongly denied
+   * corporate-scoped users. See `isFactoryCodeInScope`.
+   */
+  corporateCodes: string[];
 }
 
 export async function resolveFactoryScope(user: Pick<User, "id" | "role">): Promise<FactoryScope> {
-  const { factoryCodes, isAdmin } = await getUserAssignmentCodes(user.id, String(user.role));
-  return { isGlobal: isAdmin, factoryCodes };
+  const { factoryCodes, corporateCodes, isAdmin } = await getUserAssignmentCodes(user.id, String(user.role));
+  return { isGlobal: isAdmin, factoryCodes, corporateCodes };
 }
 
 /** factories.id → factories.code, or null when not found / DB unavailable. */
@@ -66,6 +74,33 @@ export async function getFactoryCodeById(factoryId: number): Promise<string | nu
     .where(eq(factories.id, factoryId))
     .limit(1);
   return row?.code ?? null;
+}
+
+/** factories.code → its owning corporates.code, or null when not found / no corporate / DB unavailable. */
+export async function getFactoryCorporateCode(factoryCode: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select({ corporateCode: factories.corporateCode })
+    .from(factories)
+    .where(eq(factories.code, factoryCode))
+    .limit(1);
+  return row?.corporateCode ?? null;
+}
+
+/**
+ * True when `factoryCode` is within `scope` — either directly assigned, OR (mirroring
+ * `getAccessFilterConditions`'s OR-of-corporate-or-factory rule) owned by one of the
+ * user's assigned corporates. Reduces to a plain `factoryCodes.includes(...)` check
+ * when the user has no corporate assignments (corporateCodes=[]), so this is a
+ * behavior-preserving superset of the pre-existing check for every caller that only
+ * ever had factory-level assignments.
+ */
+export async function isFactoryCodeInScope(scope: FactoryScope, factoryCode: string): Promise<boolean> {
+  if (scope.factoryCodes.includes(factoryCode)) return true;
+  if (scope.corporateCodes.length === 0) return false;
+  const corporateCode = await getFactoryCorporateCode(factoryCode);
+  return !!corporateCode && scope.corporateCodes.includes(corporateCode);
 }
 
 /** machines.id → its owning factory's code (station → line → workshop → factory), or null. */
@@ -135,7 +170,7 @@ export async function enforceAnalyticsFactoryScope<T extends AnalyticsScopeInput
     return { factoryCode: params.factoryCode };
   }
 
-  if (scope.factoryCodes.length === 0) {
+  if (scope.factoryCodes.length === 0 && scope.corporateCodes.length === 0) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Tài khoản chưa được gán nhà máy nào — không có dữ liệu phân tích để xem.",
@@ -144,7 +179,7 @@ export async function enforceAnalyticsFactoryScope<T extends AnalyticsScopeInput
 
   let factoryCode: string;
   if (params.factoryCode) {
-    if (!scope.factoryCodes.includes(params.factoryCode)) {
+    if (!(await isFactoryCodeInScope(scope, params.factoryCode))) {
       throw new TRPCError({
         code: "FORBIDDEN",
         message: `Nhà máy "${params.factoryCode}" nằm ngoài phạm vi được gán cho tài khoản này.`,
@@ -162,7 +197,7 @@ export async function enforceAnalyticsFactoryScope<T extends AnalyticsScopeInput
 
   if (params.machineId != null) {
     const machineFactory = await getMachineFactoryCode(params.machineId);
-    if (!machineFactory || !scope.factoryCodes.includes(machineFactory)) {
+    if (!machineFactory || !(await isFactoryCodeInScope(scope, machineFactory))) {
       throw new TRPCError({
         code: "FORBIDDEN",
         message: "Máy được yêu cầu nằm ngoài phạm vi nhà máy được gán cho tài khoản này.",
@@ -204,7 +239,7 @@ export async function enforceReportFactoryScope(params: ReportScopeInput): Promi
   const scope = await resolveFactoryScope(params.user);
   if (scope.isGlobal) return;
 
-  if (scope.factoryCodes.length === 0) {
+  if (scope.factoryCodes.length === 0 && scope.corporateCodes.length === 0) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Tài khoản chưa được gán nhà máy nào — không có báo cáo để tạo.",
@@ -219,7 +254,7 @@ export async function enforceReportFactoryScope(params: ReportScopeInput): Promi
   }
 
   const machineFactory = await getMachineFactoryCode(params.machineId);
-  if (!machineFactory || !scope.factoryCodes.includes(machineFactory)) {
+  if (!machineFactory || !(await isFactoryCodeInScope(scope, machineFactory))) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Máy được yêu cầu nằm ngoài phạm vi nhà máy được gán cho tài khoản này.",
@@ -228,13 +263,65 @@ export async function enforceReportFactoryScope(params: ReportScopeInput): Promi
 
   if (params.factoryId != null) {
     const factoryCode = await getFactoryCodeById(params.factoryId);
-    if (!factoryCode || !scope.factoryCodes.includes(factoryCode)) {
+    if (!factoryCode || !(await isFactoryCodeInScope(scope, factoryCode))) {
       throw new TRPCError({
         code: "FORBIDDEN",
         message: "factoryId được yêu cầu nằm ngoài phạm vi được gán cho tài khoản này.",
       });
     }
   }
+}
+
+/**
+ * doc 69 W0-3 SECURITY REVIEW FIX (Important #1) — `generateExecutiveSummary` and
+ * `generateModelPerformanceReport` (server/services/aiReportGenerator.ts) are
+ * INHERENTLY global: they ignore `machineId` entirely and aggregate across every
+ * factory in the system (executive summary's KPIs/machine-rankings; model performance's
+ * global AI model list). `enforceReportFactoryScope` above cannot narrow them — there is
+ * no factory-level filter to narrow WITH. Wave 0 fix: close the leak by restricting
+ * these two report types to the global (admin) role outright. A factory-scoped variant
+ * would require the service itself to accept and apply a factory filter — deferred to
+ * Wave 2 (service-layer change, out of scope here).
+ */
+export async function enforceGlobalReportScope(user: Pick<User, "id" | "role">): Promise<void> {
+  const scope = await resolveFactoryScope(user);
+  if (scope.isGlobal) return;
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message:
+      "Báo cáo này tổng hợp dữ liệu TOÀN HỆ THỐNG (không lọc theo máy/nhà máy) — chỉ tài khoản quản trị toàn cục mới được xem.",
+  });
+}
+
+// ─── Composed router-boundary guards ───────────────────────────────────────────────
+// Reused VERBATIM by both server/routers/aiReportRouter.ts and
+// server/routers/aiAnalysisHubRouter.ts (doc 69 W0-3 security review fix #3 — the hub
+// router exposed the exact same aiReportGenerator functions with NO scope/rate-limit
+// check at all, bypassing every guard applied to aiReportRouter).
+
+export interface ReportScopeCtx {
+  user: Pick<User, "id" | "role"> | null | undefined;
+}
+
+/** Rate-limit + factory-scope guard for machineId-filterable report endpoints (dailySummary/rcaReport/generate). */
+export async function applyReportScope(
+  ctx: ReportScopeCtx,
+  input: { machineId?: number; factoryId?: number },
+): Promise<void> {
+  if (!ctx.user) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+  }
+  enforceAiAnalyticsRateLimit(ctx.user.id);
+  await enforceReportFactoryScope({ user: ctx.user, machineId: input.machineId, factoryId: input.factoryId });
+}
+
+/** Rate-limit + admin-only guard for inherently-global report endpoints (modelPerformance/executiveSummary). */
+export async function applyGlobalReportScope(ctx: ReportScopeCtx): Promise<void> {
+  if (!ctx.user) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+  }
+  enforceAiAnalyticsRateLimit(ctx.user.id);
+  await enforceGlobalReportScope(ctx.user);
 }
 
 // ─── Per-user rate limit (reuses aiGateway's in-process fixed-window limiter) ─────
