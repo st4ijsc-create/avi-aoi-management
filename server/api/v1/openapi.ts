@@ -804,12 +804,16 @@ export function buildV1OpenApiSpec(serverUrl = "/"): Record<string, unknown> {
           summary: "Promote (activate) a model version — flag-gated, default OFF",
           description:
             "Requires scope `models:write`. Gated by `V1_MODEL_MUTATIONS_ENABLED` (default OFF → structured 501 " +
-            "`v1_model_mutations_disabled`). When ON, wraps the SAME internal aiModelService.activateModelVersion path.",
+            "`v1_model_mutations_disabled`). When ON, wraps the SAME internal aiModelService.activateModelVersionManual " +
+            "path the admin UI's manual activation uses — the eval quality gate (evalReport.gate.pass) is enforced; " +
+            "an un-evaluated or gate-failing version is rejected (422 `eval_gate_rejected`) unless the body supplies " +
+            "`{ force: true, reason }`, which is recorded as an audited override.",
           parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
-          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["versionId"], properties: { versionId: { type: "integer" } } } } } },
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["versionId"], properties: { versionId: { type: "integer" }, force: { type: "boolean" }, reason: { type: "string" } } } } } },
           responses: {
             "200": { description: "Promoted", content: jsonOk() },
             "400": { description: "Missing/invalid versionId", content: jsonErr() },
+            "422": { description: "Eval quality gate rejected (pass { force: true, reason } to override)", content: jsonErr() },
             "501": { description: "Mutations not opened (V1_MODEL_MUTATIONS_ENABLED)", content: jsonErr() },
             ...errResponses({ "404": { description: "Model/version not found", content: jsonErr() } }),
           },

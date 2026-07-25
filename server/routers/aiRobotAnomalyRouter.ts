@@ -119,16 +119,26 @@ export const aiRobotAnomalyRouter = router({
       return runRollbackForModel(input.modelId);
     }),
 
-  /** Manually roll a model back to a chosen version (allowed regardless of the flag). */
+  /**
+   * Manually roll a model back to a chosen version (allowed regardless of the flag).
+   * doc69 W0-2 follow-up: the target is an ARBITRARY human choice (not constrained by
+   * pickRollbackTarget), so manualRollback() now enforces the SAME eval quality gate
+   * as manual activation. A target whose evalReport.gate.pass !== true is rejected
+   * unless `force: true` (+ this `reason`, doubling as the audited override reason).
+   */
   manualRollback: protectedProcedure
     .use(requirePermission("machine_control", "canEdit"))
     .input(z.object({
       modelId: z.number().int().positive(),
       toVersionId: z.number().int().positive(),
       reason: z.string().max(500).optional(),
+      force: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const outcome = await manualRollback(input.modelId, input.toVersionId, ctx.user.id, input.reason ?? "Manual rollback");
+      const outcome = await manualRollback(
+        input.modelId, input.toVersionId, ctx.user.id, input.reason ?? "Manual rollback",
+        { force: input.force === true },
+      );
       if (!outcome.rolledBack) throw new TRPCError({ code: "BAD_REQUEST", message: outcome.reason });
       return outcome;
     }),

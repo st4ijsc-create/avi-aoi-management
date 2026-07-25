@@ -28,7 +28,7 @@ import {
   type ModelVersion,
   type InsertModelRollbackEvent,
 } from "../../../drizzle/schema";
-import { activateModelVersion } from "../aiModelService";
+import { activateModelVersion, activateModelVersionManual } from "../aiModelService";
 
 export function isModelAutoRollbackEnabled(): boolean {
   return process.env.AI_MODEL_AUTOROLLBACK_ENABLED === "true";
@@ -261,16 +261,41 @@ export async function runRollbackForModel(modelId: number): Promise<RollbackOutc
   };
 }
 
+export interface ManualRollbackOptions {
+  /** Explicit, audited override — bypasses the eval quality gate on the target version. */
+  force?: boolean;
+}
+
 /**
  * Manual rollback (operator-triggered). Flips to `toVersionId` and records a
  * `manual` event. Flag-gated only for the AUTOMATIC sweep — a human with the perm
  * may roll back regardless of the flag (mirrors manual activation).
+ *
+ * doc69 W0-2 follow-up: a human picking an ARBITRARY target version through this
+ * path is exactly the manual-activation gate bypass W0-2 closed for `activateVersion`
+ * — a target version chosen here never went through `pickRollbackTarget`'s
+ * constraints. This now enforces the SAME eval quality gate policy via the SAME
+ * gated primitive, aiModelService.activateModelVersionManual: allowed when the
+ * target's evalReport.gate.pass === true; otherwise requires `{ force: true }` (the
+ * `reason` argument doubles as the audited override reason, mirroring how
+ * activateVersion reuses its own `reason`) — writing the SAME
+ * `ai_model_version.activate_override` audit_logs entry manual activation writes.
+ * A gate rejection is returned as `{ rolledBack: false, reason }` (NOT thrown) —
+ * same contract as the "not found" / "no db" cases below — so both existing callers
+ * (aiRobotAnomalyRouter.manualRollback, POST /api/v1/models/:id/rollback), which
+ * already turn a falsy `rolledBack` into a 4xx, need no error-shape changes.
+ *
+ * Deliberately NOT applied to the AUTOMATED runRollbackForModel safety net below
+ * (still calls the raw activateModelVersion) — that exemption is legitimate: it must
+ * not be blocked by missing eval history, and its target is already constrained by
+ * pickRollbackTarget (not an arbitrary human choice).
  */
 export async function manualRollback(
   modelId: number,
   toVersionId: number,
   triggeredBy: number,
   reason = "Manual rollback",
+  opts: ManualRollbackOptions = {},
 ): Promise<RollbackOutcome> {
   const db = await getDb();
   if (!db) return { rolledBack: false, modelId, reason: "no db" };
@@ -280,7 +305,19 @@ export async function manualRollback(
   const target = versions.find((v) => v.id === toVersionId);
   if (!target) return { rolledBack: false, modelId, reason: `version ${toVersionId} not found for model ${modelId}` };
 
-  await activateModelVersion(modelId, toVersionId);
+  try {
+    await activateModelVersionManual(modelId, toVersionId, {
+      force: opts.force === true,
+      reason,
+      actorUserId: triggeredBy,
+    });
+  } catch (err) {
+    return {
+      rolledBack: false,
+      modelId,
+      reason: (err as Error)?.message ?? "eval quality gate rejected the rollback target",
+    };
+  }
 
   const [event] = await db
     .insert(modelRollbackEvents)

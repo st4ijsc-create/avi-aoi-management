@@ -20,9 +20,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../db/connection";
-import { aiModels, modelVersions, auditLogs } from "../../drizzle/schema";
+import { aiModels, modelVersions, modelRollbackEvents, auditLogs } from "../../drizzle/schema";
 import { createAiModel, createModelVersion } from "../db/ai";
 import { activateModelVersionManual } from "./aiModelService";
+import { manualRollback } from "./ai/modelAutoRollback";
 
 describe("activateModelVersionManual — eval quality gate on MANUAL activation", () => {
   let modelId: number;
@@ -46,6 +47,7 @@ describe("activateModelVersionManual — eval quality gate on MANUAL activation"
     // role has no DELETE grant on it, confirmed live: "permission denied for table
     // audit_logs"), so the audit rows this suite writes are intentionally NOT cleaned
     // up here — harmless leftovers in the isolated *_test DB.
+    await db.delete(modelRollbackEvents).where(eq(modelRollbackEvents.modelId, modelId));
     if (versionIds.length > 0) {
       await db.delete(modelVersions).where(inArray(modelVersions.id, versionIds));
     }
@@ -160,5 +162,86 @@ describe("activateModelVersionManual — eval quality gate on MANUAL activation"
     const db = await getDb();
     const logs = await db!.select().from(auditLogs).where(eq(auditLogs.entityId, v.id));
     expect(logs.find((l) => l.action === "ai_model_version.activate_override")).toBeUndefined();
+  });
+
+  // ── doc69 W0-2 follow-up — manualRollback() enforces the SAME gate policy ─────
+  //
+  // BUG this closes: modelAutoRollback.manualRollback() (called by aiRobotAnomalyRouter's
+  // `manualRollback` — a live protectedProcedure, flag-independent, a human picks ANY
+  // target version via the RobotModelHealth "Manual rollback" dialog) called the RAW
+  // ungated activateModelVersion() directly — the exact same bypass W0-2 closed for
+  // `activateVersion`. manualRollback() now delegates the status flip to the SAME
+  // activateModelVersionManual() gate above, so the policy (and audit trail) is
+  // identical. The AUTOMATED runRollbackForModel safety net is deliberately NOT
+  // gated here (untouched — still calls the raw activateModelVersion) since its
+  // target is already constrained by pickRollbackTarget and it must not be blocked
+  // by missing eval history.
+  describe("manualRollback — eval quality gate on HUMAN-triggered rollback (doc69 W0-2 follow-up)", () => {
+    it("rejects a rollback target without a passing evalReport.gate.pass (no force) — no event, no activation", async () => {
+      const v = await seedVersion("0.6.0-rollback-fail-gate", {
+        gate: { pass: false, reason: "regressed", accuracyDelta: -0.2 },
+      });
+      const outcome = await manualRollback(modelId, v.id, 1, "trying to roll back to an unvetted build");
+      expect(outcome.rolledBack).toBe(false);
+      expect(outcome.reason).toMatch(/quality gate/i);
+      expect(await readStatus(v.id)).not.toBe("ACTIVE");
+
+      const db = await getDb();
+      const events = await db!.select().from(modelRollbackEvents).where(eq(modelRollbackEvents.toVersionId, v.id));
+      expect(events).toHaveLength(0);
+    });
+
+    it("rejects a rollback target with no evalReport at all (no force)", async () => {
+      const v = await seedVersion("0.65.0-rollback-no-eval", null);
+      const outcome = await manualRollback(modelId, v.id, 1, "rolling back");
+      expect(outcome.rolledBack).toBe(false);
+      expect(outcome.reason).toMatch(/quality gate/i);
+      expect(await readStatus(v.id)).not.toBe("ACTIVE");
+    });
+
+    it("succeeds rolling back to a target whose evalReport.gate.pass === true (no force needed)", async () => {
+      const v = await seedVersion("0.7.0-rollback-pass-gate", {
+        gate: { pass: true, reason: "ok", accuracyDelta: 0.01 },
+      });
+      const outcome = await manualRollback(modelId, v.id, 1, "rolling back to a known-good build");
+      expect(outcome.rolledBack).toBe(true);
+      expect(await readStatus(v.id)).toBe("ACTIVE");
+
+      const db = await getDb();
+      const events = await db!.select().from(modelRollbackEvents).where(eq(modelRollbackEvents.toVersionId, v.id));
+      expect(events.length).toBeGreaterThanOrEqual(1);
+      expect(events[0].trigger).toBe("manual");
+
+      const logs = await db!.select().from(auditLogs).where(eq(auditLogs.entityId, v.id));
+      expect(logs.find((l) => l.action === "ai_model_version.activate_override")).toBeUndefined();
+    });
+
+    it("force:true rolls back to a failing-gate target AND writes the SAME audit override entry", async () => {
+      const v = await seedVersion("0.8.0-rollback-force", {
+        gate: { pass: false, reason: "regressed", accuracyDelta: -0.15 },
+      });
+      const outcome = await manualRollback(
+        modelId, v.id, 9, "Known incident — target predates eval-gate tracking, verified stable manually",
+        { force: true },
+      );
+      expect(outcome.rolledBack).toBe(true);
+      expect(await readStatus(v.id)).toBe("ACTIVE");
+
+      const db = await getDb();
+      const events = await db!.select().from(modelRollbackEvents).where(eq(modelRollbackEvents.toVersionId, v.id));
+      expect(events.length).toBeGreaterThanOrEqual(1);
+
+      const logs = await db!.select().from(auditLogs).where(eq(auditLogs.entityId, v.id));
+      const entry = logs.find((l) => l.action === "ai_model_version.activate_override");
+      expect(entry).toBeTruthy();
+      expect(entry!.userId).toBe(9); // acting user id threaded through as triggeredBy → actorUserId
+      expect(entry!.entityType).toBe("model_version");
+    });
+
+    it("no-target / no-db outcomes are unaffected (pre-existing contract preserved)", async () => {
+      const outcome = await manualRollback(modelId, 99999999, 1, "bogus target");
+      expect(outcome.rolledBack).toBe(false);
+      expect(outcome.reason).toMatch(/not found/i);
+    });
   });
 });

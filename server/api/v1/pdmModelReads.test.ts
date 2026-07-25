@@ -42,7 +42,9 @@ const h = vi.hoisted(() => ({
     factors: [{ name: "trend", contribution: 55, description: "declining" }],
     dataPoints: 42,
   })),
-  activateModelVersion: vi.fn(async (_modelId: number, versionId: number) => ({ id: versionId, version: "1.1.0" })),
+  // doc69 W0-2 follow-up: /promote now routes through the GATED wrapper, not the
+  // raw activateModelVersion.
+  activateModelVersionManual: vi.fn(async (_modelId: number, versionId: number, _opts?: unknown) => ({ id: versionId, version: "1.1.0" })),
   manualRollback: vi.fn(async (modelId: number, toVersionId: number) => ({
     rolledBack: true,
     modelId,
@@ -135,7 +137,7 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 vi.mock("../../services/predictiveMaintenanceService", () => ({ computeFailureRisk: h.computeFailureRisk }));
-vi.mock("../../services/aiModelService", () => ({ activateModelVersion: h.activateModelVersion }));
+vi.mock("../../services/aiModelService", () => ({ activateModelVersionManual: h.activateModelVersionManual }));
 vi.mock("../../services/ai/modelAutoRollback", () => ({
   manualRollback: h.manualRollback,
   pickRollbackTarget: h.pickRollbackTarget,
@@ -265,22 +267,59 @@ describe("W0-F G4.27 — model registry", () => {
       const body = await res.json();
       expect(body.error.code).toBe("v1_model_mutations_disabled");
     }
-    expect(h.activateModelVersion).not.toHaveBeenCalled();
+    expect(h.activateModelVersionManual).not.toHaveBeenCalled();
     expect(h.manualRollback).not.toHaveBeenCalled();
   });
 
-  it("flag ON: promote wraps activateModelVersion (same internal path)", async () => {
+  it("flag ON: promote wraps the GATED activateModelVersionManual path (doc69 W0-2)", async () => {
     process.env.V1_MODEL_MUTATIONS_ENABLED = "true";
-    h.activateModelVersion.mockClear();
+    h.activateModelVersionManual.mockClear();
     const res = await call("/api/v1/models/3/promote", "MASTER", { method: "POST", body: JSON.stringify({ versionId: 30 }) });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(h.activateModelVersion).toHaveBeenCalledWith(3, 30);
+    expect(h.activateModelVersionManual).toHaveBeenCalledWith(3, 30, { force: false, reason: undefined, actorUserId: null });
     expect(body.data.promotedVersionId).toBe(30);
 
     // missing versionId → 400
     const bad = await call("/api/v1/models/3/promote", "MASTER", { method: "POST", body: JSON.stringify({}) });
     expect(bad.status).toBe(400);
+  });
+
+  it("flag ON: promote surfaces an eval-gate rejection as 422 eval_gate_rejected (doc69 W0-2)", async () => {
+    process.env.V1_MODEL_MUTATIONS_ENABLED = "true";
+    h.activateModelVersionManual.mockImplementationOnce(async () => {
+      throw new Error(
+        "Cannot activate model 3 version 30 (1.1.0): the eval quality gate has not passed " +
+        "(evalReport.gate.pass !== true). Pass { force: true, reason } to explicitly override (audited).",
+      );
+    });
+    const res = await call("/api/v1/models/3/promote", "MASTER", { method: "POST", body: JSON.stringify({ versionId: 30 }) });
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe("eval_gate_rejected");
+  });
+
+  it("flag ON: promote maps an unknown-version rejection to 404 not_found (preserved)", async () => {
+    process.env.V1_MODEL_MUTATIONS_ENABLED = "true";
+    h.activateModelVersionManual.mockImplementationOnce(async () => {
+      throw new Error("Version 999 not found for model 3");
+    });
+    const res = await call("/api/v1/models/3/promote", "MASTER", { method: "POST", body: JSON.stringify({ versionId: 999 }) });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("not_found");
+  });
+
+  it("flag ON: promote threads force+reason through for an audited override (doc69 W0-2)", async () => {
+    process.env.V1_MODEL_MUTATIONS_ENABLED = "true";
+    h.activateModelVersionManual.mockClear();
+    const res = await call("/api/v1/models/3/promote", "MASTER", {
+      method: "POST",
+      body: JSON.stringify({ versionId: 30, force: true, reason: "API override: known-good rebuild" }),
+    });
+    expect(res.status).toBe(200);
+    expect(h.activateModelVersionManual).toHaveBeenCalledWith(3, 30, {
+      force: true, reason: "API override: known-good rebuild", actorUserId: null,
+    });
   });
 
   it("flag ON: rollback wraps manualRollback; auto-selects a stable target when toVersionId omitted", async () => {
