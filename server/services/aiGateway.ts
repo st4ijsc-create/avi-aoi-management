@@ -139,6 +139,32 @@ function checkRateLimit(userId: number | undefined, tier: number): number | null
   }
 }
 
+/**
+ * Generic per-user fixed-window limiter — REUSES the exact same in-process `windows`
+ * store and window length as `checkRateLimit` above, but keyed by a caller-supplied
+ * bucket name + max instead of an inference tier. Lets non-inference call-sites (e.g.
+ * the AI analytics/report routers, doc 69 W0-3) throttle per-`userId` without
+ * borrowing budget from actual LLM inference tiers, while still sharing the same
+ * mechanism (and its GC) rather than standing up a parallel limiter. Fail-open, same
+ * as checkRateLimit: returns null (allowed) on any internal error.
+ */
+export function checkNamedRateLimit(userId: number | undefined, bucket: string, maxPerMinute: number): number | null {
+  try {
+    const key = `${userId ?? "anon"}:${bucket}`;
+    const now = Date.now();
+    let w = windows.get(key);
+    if (!w || w.resetAt <= now) {
+      w = { count: 0, resetAt: now + LIMIT_WINDOW_MS };
+      windows.set(key, w);
+    }
+    if (w.count >= maxPerMinute) return Math.max(1, w.resetAt - now);
+    w.count++;
+    return null;
+  } catch {
+    return null; // fail-open: never let the limiter break the request
+  }
+}
+
 // Opportunistic GC of stale windows so the map can't grow unbounded.
 function gcWindows(): void {
   const now = Date.now();
