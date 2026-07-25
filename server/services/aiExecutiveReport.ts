@@ -31,6 +31,15 @@ export interface KpiBundle {
   period: ReportPeriod;
   lang: ReportLang;
   window: { start: string; end: string };
+  /**
+   * doc 69 T9 (security fast-follow) — set when this bundle was narrowed to a single
+   * factory's data (factory-scoped caller). Undefined = system-wide (global/admin),
+   * matching every pre-existing report. Persisted verbatim into `ai_insights.contextJson`
+   * (see `persistExecutiveSummary`/`getExecutiveSummaries`) so scoped rows can be
+   * filtered back out for the caller that generated them, never mixed with another
+   * factory's or the global aggregate.
+   */
+  factoryCode?: string;
   /** Throughput / sản lượng */
   totalInspections: number;
   okCount: number;
@@ -121,10 +130,19 @@ export function periodWindow(period: ReportPeriod, now: Date = new Date()): { st
 async function collectInspectionTotals(
   start: Date,
   end: Date,
+  factoryCode?: string,
 ): Promise<{ total: number; ok: number; ng: number } | null> {
   const db = await getDb();
   if (!db) return null;
   const { productInspections } = await import("../../drizzle/schema");
+  const conditions = [
+    sql`${productInspections.inspectionTime} >= ${start.toISOString()}`,
+    sql`${productInspections.inspectionTime} <= ${end.toISOString()}`,
+  ];
+  // doc 69 T9 — productInspections carries a native `factoryCode` column (indexed:
+  // idx_inspections_factory), so a factory-scoped caller's totals can be narrowed
+  // exactly like `getYieldTrendData`'s own `factoryCode` filter below.
+  if (factoryCode) conditions.push(eq(productInspections.factoryCode, factoryCode));
   const [row] = await db
     .select({
       total: sql<number>`COUNT(*)`,
@@ -132,20 +150,39 @@ async function collectInspectionTotals(
       ng: sql<number>`COUNT(*) FILTER (WHERE ${productInspections.overallResult} = 'NG')`,
     })
     .from(productInspections)
-    .where(
-      and(
-        sql`${productInspections.inspectionTime} >= ${start.toISOString()}`,
-        sql`${productInspections.inspectionTime} <= ${end.toISOString()}`,
-      ),
-    );
+    .where(and(...conditions));
   return { total: Number(row?.total) || 0, ok: Number(row?.ok) || 0, ng: Number(row?.ng) || 0 };
+}
+
+/**
+ * Máy đang hoạt động thuộc một nhà máy cụ thể (cho PdM risk, khi bundle bị siết theo
+ * factory) — doc 69 T9. `getMachines()` (nguồn cho đường KHÔNG siết) không lọc theo
+ * nhà máy; ở đây tái dùng `getMachinesWithHierarchy()` (đã JOIN tới `factories`) và lọc
+ * trong bộ nhớ theo `factory.code`, tránh phải thêm hàm export mới trong hierarchy.ts.
+ */
+async function getMachinesForFactory(factoryCode: string): Promise<Array<{ id: number; code: string }>> {
+  const { getMachinesWithHierarchy } = await import("../db/hierarchy");
+  const rows = await getMachinesWithHierarchy();
+  return (rows || [])
+    .filter((r: any) => r?.factory?.code === factoryCode)
+    .map((r: any) => r.machine)
+    .filter((m: any): m is { id: number; code: string } => !!m);
 }
 
 /**
  * Thu thập một bundle KPI gọn cho kỳ. Mỗi nguồn được bọc try/catch riêng — một nguồn
  * lỗi sẽ ghi vào dataWarnings và để giá trị mặc định, KHÔNG ném ra ngoài.
+ *
+ * `factoryCode` (doc 69 T9, security fast-follow): khi được cung cấp, MỌI nguồn KPI bên
+ * dưới được siết về đúng một nhà máy đó (không còn tổng hợp toàn hệ thống). Bỏ trống =
+ * hành vi TOÀN CỤC gốc (dùng bởi scheduler cron + trigger admin thủ công) — không đổi.
  */
-export async function gatherKpis(period: ReportPeriod, lang: ReportLang = "vi", now?: Date): Promise<KpiBundle> {
+export async function gatherKpis(
+  period: ReportPeriod,
+  lang: ReportLang = "vi",
+  now?: Date,
+  factoryCode?: string,
+): Promise<KpiBundle> {
   const { start, end } = periodWindow(period, now);
   const dataWarnings: string[] = [];
 
@@ -153,10 +190,10 @@ export async function gatherKpis(period: ReportPeriod, lang: ReportLang = "vi", 
   let totals = { total: 0, ok: 0, ng: 0 };
   let prevNgRate = 0;
   try {
-    const cur = await collectInspectionTotals(start, end);
+    const cur = await collectInspectionTotals(start, end, factoryCode);
     if (cur) totals = cur;
     const durationMs = end.getTime() - start.getTime();
-    const prev = await collectInspectionTotals(new Date(start.getTime() - durationMs), start);
+    const prev = await collectInspectionTotals(new Date(start.getTime() - durationMs), start, factoryCode);
     if (prev && prev.total > 0) prevNgRate = (prev.ng / prev.total) * 100;
   } catch (err) {
     dataWarnings.push(`inspection totals unavailable: ${String((err as any)?.message || err)}`);
@@ -172,7 +209,9 @@ export async function gatherKpis(period: ReportPeriod, lang: ReportLang = "vi", 
   try {
     const { getYieldTrendData } = await import("../db/statistics");
     const interval = period === "shift" ? "hour" : period === "week" ? "day" : "hour";
-    const trend = await getYieldTrendData({ startDate: start, endDate: end, interval });
+    // doc 69 T9 — getYieldTrendData already accepts a factoryCode filter; simply thread
+    // it through instead of always aggregating every factory.
+    const trend = await getYieldTrendData({ startDate: start, endDate: end, interval, factoryCode });
     ngRateSeries = (trend || []).map((r: any) => ({
       t: String(r.timeInterval),
       ngRate: Number(r.ngRate) || 0,
@@ -186,7 +225,21 @@ export async function gatherKpis(period: ReportPeriod, lang: ReportLang = "vi", 
   let topDefects: KpiBundle["topDefects"] = [];
   try {
     const { paretoByDefectType } = await import("./paretoAnalysisService");
-    const pareto = await paretoByDefectType({ startDate: start, endDate: end, limit: 5 });
+    // doc 69 T9 — paretoByDefectType filters by numeric factoryId (joins through
+    // workshop→line→station), not factoryCode; resolve the code once when scoped.
+    // FAIL CLOSED: if a factoryCode was requested but doesn't resolve to a real
+    // factory, do NOT silently fall through to an unscoped (all-factory) query —
+    // that would re-open the exact leak this task closes for an edge case. Skip
+    // the section instead (recorded as a data warning, same as any other source
+    // outage) and let the rest of the bundle proceed.
+    let factoryId: number | undefined;
+    if (factoryCode) {
+      const { getFactoryByCode } = await import("../db/hierarchy");
+      const factory = await getFactoryByCode(factoryCode);
+      if (!factory?.id) throw new Error(`unknown factoryCode "${factoryCode}"`);
+      factoryId = factory.id;
+    }
+    const pareto = await paretoByDefectType({ startDate: start, endDate: end, limit: 5, factoryId });
     topDefects = (pareto?.items || []).slice(0, 5).map((it) => ({
       type: it.category,
       count: it.count,
@@ -200,9 +253,18 @@ export async function gatherKpis(period: ReportPeriod, lang: ReportLang = "vi", 
   let pdmRiskMachines: KpiBundle["pdmRiskMachines"] = [];
   try {
     const maxMachines = Number(process.env.EXEC_REPORT_PDM_MAX_MACHINES || "20");
-    const { getMachines } = await import("../db/hierarchy");
     const { computeFailureRisk } = await import("./predictiveMaintenanceService");
-    const machineRows = (await getMachines()).slice(0, maxMachines);
+    // doc 69 T9 — a factory-scoped bundle must only risk-score machines belonging to
+    // that factory (getMachinesForFactory, join-filtered); the unscoped/global path
+    // (scheduler + admin trigger) is byte-for-byte unchanged (getMachines(), no join).
+    let allMachines: Array<{ id: number; code: string }>;
+    if (factoryCode) {
+      allMachines = await getMachinesForFactory(factoryCode);
+    } else {
+      const { getMachines } = await import("../db/hierarchy");
+      allMachines = await getMachines();
+    }
+    const machineRows = allMachines.slice(0, maxMachines);
     const risks = await Promise.all(
       machineRows.map(async (m: any) => {
         try {
@@ -230,6 +292,7 @@ export async function gatherKpis(period: ReportPeriod, lang: ReportLang = "vi", 
     period,
     lang,
     window: { start: start.toISOString(), end: end.toISOString() },
+    ...(factoryCode ? { factoryCode } : {}),
     totalInspections: totals.total,
     okCount: totals.ok,
     ngCount: totals.ng,
@@ -391,13 +454,25 @@ function parseLlmText(text: string): { headline: string; highlights: string[]; r
 
 /**
  * Sinh tóm tắt điều hành có cấu trúc cho kỳ. KHÔNG ném — LLM lỗi → fallback offline.
+ *
+ * doc 69 T9 (security fast-follow):
+ *  - `factoryCode` — khi có, TOÀN BỘ bundle KPI (`gatherKpis`) bị siết về một nhà máy
+ *    (xem đó). Bỏ trống = hành vi TOÀN CỤC gốc (scheduler cron + trigger admin) —
+ *    không đổi.
+ *  - `opts.skipLlm` — bỏ qua tầng LLM sâu (Tier-2/deep model), luôn dùng tóm tắt
+ *    rule-based (`offlineSummary`). Dùng cho đường ĐỌC theo-nhu-cầu của người dùng bị
+ *    siết nhà máy (router `executiveReportRouter.latest`) — tránh việc MỘT LƯỢT TẢI
+ *    TRANG kích hoạt suy luận LLM tốn kém/tranh chấp GPU với các tính năng AI khác;
+ *    scheduler cron + `generateNow` (admin) không đặt cờ này nên vẫn dùng LLM như cũ.
  */
 export async function generateExecutiveSummary(
   period: ReportPeriod,
   lang: ReportLang = (process.env.EXEC_REPORT_LANG as ReportLang) || "vi",
   now?: Date,
+  factoryCode?: string,
+  opts?: { skipLlm?: boolean },
 ): Promise<ExecutiveSummaryStructured> {
-  const kpis = await gatherKpis(period, lang, now);
+  const kpis = await gatherKpis(period, lang, now, factoryCode);
 
   let generatedBy: "gguf" | "offline" = "offline";
   let model: string | undefined;
@@ -405,7 +480,10 @@ export async function generateExecutiveSummary(
   let degradedReason: string | undefined;
   let parsed = offlineSummary(kpis);
 
-  try {
+  // doc 69 T9 — skipLlm bypasses this whole block; `parsed`/`generatedBy` above
+  // (already the honest, real-KPI-driven rule-based summary) fall straight through
+  // to the return statement below unchanged.
+  if (!opts?.skipLlm) try {
     // Model Router: task:"report" → hard → Tier 2 (deep model) decode params.
     const { route } = await import("./aiModelRouter");
     const decision = route({ task: "report", requiredQuality: "high" });
@@ -500,10 +578,18 @@ export const EXEC_REPORT_SOURCE = "exec_report";
 function summaryTitle(s: ExecutiveSummaryStructured): string {
   const pl = periodLabel(s.period, s.lang);
   const prefix = s.lang === "vi" ? "Báo cáo điều hành" : "Executive report";
-  return `${prefix} — ${pl} (${s.window.end.slice(0, 16).replace("T", " ")})`.slice(0, 255);
+  const scope = s.kpis.factoryCode ? ` [${s.kpis.factoryCode}]` : "";
+  return `${prefix}${scope} — ${pl} (${s.window.end.slice(0, 16).replace("T", " ")})`.slice(0, 255);
 }
 
-/** Lưu summary vào ai_insights; trả về id (hoặc null nếu DB không sẵn sàng). Không ném. */
+/**
+ * Lưu summary vào ai_insights; trả về id (hoặc null nếu DB không sẵn sàng). Không ném.
+ *
+ * doc 69 T9 (security fast-follow) — tag `reportFactoryCode` vào contextJson (mirror
+ * `reportPeriod`, cùng cơ chế lọc) khi `s.kpis.factoryCode` được set (bundle đã bị siết
+ * về một nhà máy). `null` = báo cáo TOÀN CỤC (mọi hàng trước task này, + mọi hàng do
+ * scheduler/generateNow sinh — không đổi) — never conflated with a factory-scoped row.
+ */
 export async function persistExecutiveSummary(s: ExecutiveSummaryStructured): Promise<number | null> {
   try {
     const db = await getDb();
@@ -519,7 +605,11 @@ export async function persistExecutiveSummary(s: ExecutiveSummaryStructured): Pr
         title: summaryTitle(s),
         body,
         recommendation,
-        contextJson: { ...(s as unknown as Record<string, unknown>), reportPeriod: s.period },
+        contextJson: {
+          ...(s as unknown as Record<string, unknown>),
+          reportPeriod: s.period,
+          reportFactoryCode: s.kpis.factoryCode ?? null,
+        },
       })
       .returning({ id: aiInsights.id });
     return row?.id ?? null;
@@ -532,32 +622,49 @@ export async function persistExecutiveSummary(s: ExecutiveSummaryStructured): Pr
 export interface PersistedExecSummary {
   id: number;
   period: ReportPeriod | null;
+  /** doc 69 T9 — null/undefined = system-wide (global) report; set = scoped to one factory. */
+  factoryCode?: string | null;
   title: string;
   severity: string;
   createdAt: Date;
   summary: ExecutiveSummaryStructured | null;
 }
 
-/** Lấy các báo cáo điều hành đã lưu (mới nhất trước), tuỳ chọn lọc theo kỳ. */
+/**
+ * Lấy các báo cáo điều hành đã lưu (mới nhất trước), tuỳ chọn lọc theo kỳ.
+ *
+ * doc 69 T9 (security fast-follow) — `factoryCode`, khi được truyền, lọc NGAY TRONG SQL
+ * (jsonb `->>`) trước `LIMIT`, không phải lọc hậu-kỳ trong JS như `period` từng làm —
+ * nếu không, một người dùng bị siết nhà máy có thể xin `limit` hàng lâu đời hơn số hàng
+ * thực sự thuộc nhà máy họ trong N bản ghi TOÀN HỆ THỐNG mới nhất (gần như luôn rỗng vì
+ * đa số lịch sử vẫn là báo cáo toàn cục). Bỏ trống `factoryCode` = hành vi ADMIN/TOÀN CỤC
+ * gốc — thấy MỌI hàng (cả toàn cục lẫn theo-nhà-máy), không đổi.
+ */
 export async function getExecutiveSummaries(opts?: {
   period?: ReportPeriod;
   limit?: number;
+  factoryCode?: string;
 }): Promise<PersistedExecSummary[]> {
   const db = await getDb();
   if (!db) return [];
   const limit = Math.min(Math.max(opts?.limit ?? 20, 1), 100);
+  const conditions = [eq(aiInsights.source, EXEC_REPORT_SOURCE)];
+  if (opts?.period) {
+    conditions.push(sql`${aiInsights.contextJson}->>'reportPeriod' = ${opts.period}`);
+  }
+  if (opts?.factoryCode) {
+    conditions.push(sql`${aiInsights.contextJson}->>'reportFactoryCode' = ${opts.factoryCode}`);
+  }
   const rows = await db
     .select()
     .from(aiInsights)
-    .where(eq(aiInsights.source, EXEC_REPORT_SOURCE))
+    .where(and(...conditions))
     .orderBy(desc(aiInsights.createdAt))
     .limit(limit);
-  const filtered = opts?.period
-    ? rows.filter((r) => (r.contextJson as any)?.reportPeriod === opts.period)
-    : rows;
-  return filtered.map((r) => ({
+  return rows.map((r) => ({
     id: r.id,
     period: ((r.contextJson as any)?.reportPeriod as ReportPeriod) ?? null,
+    factoryCode: ((r.contextJson as any)?.reportFactoryCode as string | null | undefined) ?? null,
     title: r.title,
     severity: r.severity,
     createdAt: r.createdAt,
@@ -765,16 +872,32 @@ export async function notifyExecutiveSummary(
  * Sinh + lưu một báo cáo điều hành ngay (không chờ cron). Dùng cho admin/UI/test.
  * Trả về summary và id đã lưu (id=null nếu DB không sẵn sàng). Không ném.
  * Sau khi lưu, PUSH thông báo tới quản lý nếu EXEC_REPORT_NOTIFY_ENABLED (mặc định bật).
+ *
+ * doc 69 T9 (security fast-follow):
+ *  - `factoryCode` — thread through to `generateExecutiveSummary`/`persistExecutiveSummary`
+ *    so the persisted row is tagged (see there). Scheduler cron (`reportScheduler.ts
+ *    runExecutiveReport`) and the admin `generateNow` mutation both call this with NO
+ *    factoryCode — their behavior (global report, LLM narrative, notify) is unchanged.
+ *  - `opts.notify` (default true) — the ROUTER's on-demand path for a factory-scoped
+ *    reader (`executiveReportRouter.latest`) passes `false`: `resolveExecReportRecipients`
+ *    is role-based only (NOT factory-aware — see its own docstring), so notifying on a
+ *    mere READ from one factory's viewer would broadcast to every admin/supervisor
+ *    system-wide for a report they didn't ask for. Only an actual admin action (cron tick
+ *    or the admin's own manual "Tạo ngay" button) should ever trigger a push.
+ *  - `opts.skipLlm` — threaded to `generateExecutiveSummary` (see there).
  */
 export async function runExecutiveReportNow(
   period: ReportPeriod = "day",
   lang?: ReportLang,
+  factoryCode?: string,
+  opts?: { notify?: boolean; skipLlm?: boolean },
 ): Promise<{ summary: ExecutiveSummaryStructured; insightId: number | null }> {
-  const summary = await generateExecutiveSummary(period, lang);
+  const summary = await generateExecutiveSummary(period, lang, undefined, factoryCode, { skipLlm: opts?.skipLlm });
   const insightId = await persistExecutiveSummary(summary);
 
   // PUSH (in-app + optional email). Default ON; fail-safe (never throws).
-  const notifyEnabled = (process.env.EXEC_REPORT_NOTIFY_ENABLED || "true").toLowerCase() !== "false";
+  const notifyEnabled =
+    (opts?.notify ?? true) && (process.env.EXEC_REPORT_NOTIFY_ENABLED || "true").toLowerCase() !== "false";
   if (notifyEnabled) {
     await notifyExecutiveSummary(summary, insightId);
   }
