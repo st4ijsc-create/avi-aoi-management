@@ -12,6 +12,7 @@
 import * as cron from "node-cron";
 import { sql } from "drizzle-orm";
 import { getDb } from "../db";
+import { rootCauseAnalysis } from "../../drizzle/schema";
 import { generateRCAInsights } from "./aiInsightsService";
 // B2.4 — auto-ingest hook (flag-gated RAG_AUTO_INGEST_ENABLED, default OFF).
 import { ingestKnowledgeRecordAsync } from "./aiLocalKnowledgeService";
@@ -54,7 +55,12 @@ async function fetchActiveMachines(db: any, since: Date, until: Date): Promise<M
     ORDER BY COUNT(*) DESC
     LIMIT ${MAX_MACHINES_PER_RUN}
   `)) as any;
-  return result.rows || [];
+  // W0-1 fix (doc 69): the postgres-js driver used by this project's drizzle
+  // connection returns query rows DIRECTLY (no `.rows` wrapper — see the
+  // established `result.rows || result` pattern in server/db/statistics.ts /
+  // server/db/inspection.ts). `result.rows || []` always evaluated to `[]`,
+  // so the scheduler always saw "0 active machines" and never ran.
+  return result.rows || result || [];
 }
 
 async function fetchInspectionRows(db: any, machineId: number, since: Date, until: Date): Promise<InspectionRow[]> {
@@ -71,7 +77,8 @@ async function fetchInspectionRows(db: any, machineId: number, since: Date, unti
       AND i."createdAt" BETWEEN ${sinceIso}::timestamptz AND ${untilIso}::timestamptz
     LIMIT 100000
   `)) as any;
-  return result.rows || [];
+  // W0-1 fix (doc 69): same `.rows` accessor bug as fetchActiveMachines above.
+  return result.rows || result || [];
 }
 
 function buildTopFactors(rows: InspectionRow[]) {
@@ -146,15 +153,26 @@ export async function runBatchRCAOnce(): Promise<{ machinesProcessed: number; su
         productModelCode: null,
       });
 
-      await db.execute(sql`
-        INSERT INTO root_cause_analysis
-          (analysisType, machineId, machineCode, startDate, endDate, dataPointsAnalyzed,
-           topFactors, aiInsights, paretoData, status, requestedBy, requestedByName, processingTime, "createdAt")
-        VALUES
-          ('DEFECT_ANALYSIS', ${m.id}, ${m.code}, ${since.toISOString()}::timestamptz, ${until.toISOString()}::timestamptz, ${rows.length},
-           ${JSON.stringify(topFactors)}, ${JSON.stringify(aiInsights)}, ${JSON.stringify(paretoData)},
-           'COMPLETED', ${SYSTEM_USER_ID}, 'SYSTEM_BATCH', ${0}, NOW())
-      `);
+      // W0-1 fix (doc 69): was a raw INSERT with unquoted camelCase column names
+      // (Postgres folds them to lowercase → "column analysistype does not exist"),
+      // silently swallowed by the per-machine try/catch below → nothing persisted.
+      // The drizzle builder quotes identifiers correctly and matches the physical
+      // schema (drizzle/schema/ai.ts — quoted-camelCase columns).
+      await db.insert(rootCauseAnalysis).values({
+        analysisType: "DEFECT_ANALYSIS",
+        machineId: m.id,
+        machineCode: m.code,
+        startDate: since,
+        endDate: until,
+        dataPointsAnalyzed: rows.length,
+        topFactors,
+        aiInsights,
+        paretoData,
+        status: "COMPLETED",
+        requestedBy: SYSTEM_USER_ID,
+        requestedByName: "SYSTEM_BATCH",
+        processingTime: 0,
+      });
       succeeded++;
 
       // B2.4 — fire-and-forget: feed this RCA back into the KB so future

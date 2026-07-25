@@ -209,7 +209,14 @@ export const rootCauseAnalysis = pgTable("root_cause_analysis", {
   aiInsights: json("aiInsights").$type<{
     summary: string;
     rootCauses: Array<{cause: string; probability: number; evidence: string}>;
-    recommendations: Array<{action: string; priority: "high" | "medium" | "low"; expectedImpact: string}>;
+    // W0-1 (doc 69): was declared as Array<{action;priority;expectedImpact}>,
+    // but the actual producer (aiInsightsService.generateRCAInsights — used by
+    // both rootCauseRouter.analyze and aiBatchRcaScheduler) has always emitted
+    // a flat string[] (see aiBatchRcaScheduler.ts's `.join("; ")` on this
+    // field). The prior raw-SQL INSERT never type-checked this, masking the
+    // mismatch. aiRcaCopilot.persistRca's richer per-recommendation object is
+    // written via an explicit `as any` and is unaffected by this correction.
+    recommendations: string[];
     preventiveMeasures: string[];
   }>(),
   // Pareto analysis

@@ -3,7 +3,8 @@ import { requirePermission } from "../_core/accessControl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
+import { predictiveAlerts, rootCauseAnalysis } from "../../drizzle/schema";
 import { pearsonCorrelation, correlationPValue } from "../utils/statistics";
 import { generateRCAInsights } from "../services/aiInsightsService";
 
@@ -57,9 +58,15 @@ export const rootCauseRouter = router({
         LIMIT 500000
       `;
       
+      // W0-1 fix (doc 69): the postgres-js driver used by this project's
+      // drizzle connection returns query rows DIRECTLY (no `.rows` wrapper —
+      // see the established `result.rows || result` pattern already used in
+      // server/db/statistics.ts / server/db/inspection.ts / server/utils/kpi.ts).
+      // `result.rows || []` always evaluated to `[]` here, so this aggregation
+      // silently saw zero inspections regardless of the identifier-quoting fix.
       const result = await db.execute(query) as any;
-      const rows = result.rows || [];
-      
+      const rows = result.rows || result || [];
+
       // Calculate statistics
       const totalInspections = new Set(rows.map((r: any) => r.id)).size;
       const ngCount = rows.filter((r: any) => r.result === 'NG').length;
@@ -151,11 +158,11 @@ export const rootCauseRouter = router({
       let productModelCode: string | null = null;
       if (input.machineId) {
         const machineResult = await db.execute(sql`SELECT code FROM machines WHERE id = ${input.machineId}`) as any;
-        machineCode = machineResult.rows?.[0]?.code ?? null;
+        machineCode = (machineResult.rows ?? machineResult)?.[0]?.code ?? null;
       }
       if (input.productModelId) {
         const productResult = await db.execute(sql`SELECT code FROM product_models WHERE id = ${input.productModelId}`) as any;
-        productModelCode = productResult.rows?.[0]?.code ?? null;
+        productModelCode = (productResult.rows ?? productResult)?.[0]?.code ?? null;
       }
 
       // Generate AI insights via LLM (falls back to rule-based if OPENAI_API_KEY not set)
@@ -168,15 +175,32 @@ export const rootCauseRouter = router({
         productModelCode,
       });
       
-      // Save analysis result
-      const insertResult = await db.execute(
-        sql`INSERT INTO root_cause_analysis 
-          (analysisType, machineId, machineCode, productModelId, productModelCode, factoryId, startDate, endDate, dataPointsAnalyzed, correlationMatrix, topFactors, aiInsights, paretoData, status, requestedBy, requestedByName, processingTime)
-          VALUES (${input.analysisType}, ${input.machineId || null}, ${machineCode}, ${input.productModelId || null}, ${productModelCode}, ${input.factoryId || null}, ${input.startDate}, ${input.endDate}, ${rows.length}, ${JSON.stringify(correlationMatrix)}, ${JSON.stringify(topFactors)}, ${JSON.stringify(aiInsights)}, ${JSON.stringify(paretoData)}, 'COMPLETED', ${ctx.user.id}, ${ctx.user.name || 'Unknown'}, ${Date.now() - startTime}) RETURNING id`
-      ) as any;
-      
+      // Save analysis result — W0-1 fix (doc 69): was a raw INSERT with unquoted
+      // camelCase column names (Postgres folds to lowercase → column does not
+      // exist), so this write silently failed to persist. The drizzle builder
+      // quotes identifiers correctly and matches the physical schema.
+      const [insertResult] = await db.insert(rootCauseAnalysis).values({
+        analysisType: input.analysisType,
+        machineId: input.machineId ?? null,
+        machineCode,
+        productModelId: input.productModelId ?? null,
+        productModelCode,
+        factoryId: input.factoryId ?? null,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        dataPointsAnalyzed: rows.length,
+        correlationMatrix,
+        topFactors,
+        aiInsights,
+        paretoData,
+        status: "COMPLETED",
+        requestedBy: ctx.user.id,
+        requestedByName: ctx.user.name || "Unknown",
+        processingTime: Date.now() - startTime,
+      }).returning({ id: rootCauseAnalysis.id });
+
       return {
-        id: insertResult.rows?.[0]?.id,
+        id: insertResult?.id,
         analysisType: input.analysisType,
         dataPointsAnalyzed: rows.length,
         topFactors,
@@ -200,15 +224,17 @@ export const rootCauseRouter = router({
       
       let query = sql`SELECT * FROM root_cause_analysis WHERE 1=1`;
       if (input?.analysisType) {
-        query = sql`${query} AND analysisType = ${input.analysisType}`;
+        query = sql`${query} AND "analysisType" = ${input.analysisType}`;
       }
       if (input?.machineId) {
-        query = sql`${query} AND machineId = ${input.machineId}`;
+        query = sql`${query} AND "machineId" = ${input.machineId}`;
       }
       query = sql`${query} ORDER BY "createdAt" DESC LIMIT ${input?.limit || 20}`;
       
       const result = await db.execute(query) as any;
-      return (result.rows || []).map((row: any) => ({
+      // W0-1 fix (doc 69): see the comment on rootCauseRouter.analyze above —
+      // db.execute() rows come back directly, not under `.rows`.
+      return ((result.rows || result || []) as any[]).map((row: any) => ({
         id: row.id,
         analysisType: row.analysisType,
         machineId: row.machineId,
@@ -239,12 +265,15 @@ export const rootCauseRouter = router({
       const result = await db.execute(
         sql`SELECT * FROM root_cause_analysis WHERE id = ${input.id}`
       ) as any;
-      
-      if (!result.rows?.length) {
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `result.rows?.length` was always undefined → always NOT_FOUND.
+      const resultRows = (result.rows ?? result ?? []) as any[];
+
+      if (!resultRows.length) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
       }
-      
-      const row = result.rows[0];
+
+      const row = resultRows[0];
       return {
         id: row.id,
         analysisType: row.analysisType,
@@ -287,13 +316,17 @@ export const rootCauseRouter = router({
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
 
       const existingResult = await db.execute(
-        sql`SELECT id, aiInsights FROM root_cause_analysis WHERE id = ${input.id}`
+        sql`SELECT id, "aiInsights" FROM root_cause_analysis WHERE id = ${input.id}`
       ) as any;
-      if (!existingResult.rows?.length) {
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `existingResult.rows?.length` was always undefined, so this
+      // pre-read ALWAYS threw NOT_FOUND and the write below never ran.
+      const existingRows = (existingResult.rows ?? existingResult ?? []) as any[];
+      if (!existingRows.length) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
       }
 
-      const existingRow = existingResult.rows[0];
+      const existingRow = existingRows[0];
       const aiInsights = typeof existingRow.aiInsights === 'string'
         ? JSON.parse(existingRow.aiInsights)
         : (existingRow.aiInsights ?? {});
@@ -309,14 +342,17 @@ export const rootCauseRouter = router({
       review.reviewedAt = new Date().toISOString();
       const nextInsights = { ...(aiInsights ?? {}), review };
 
+      // W0-1 fix (doc 69): was a raw UPDATE with unquoted `aiInsights` (Postgres
+      // folds to `aiinsights` → column does not exist), silently discarding the
+      // review triage data. The drizzle builder quotes identifiers correctly.
       if (input.status !== undefined) {
-        await db.execute(
-          sql`UPDATE root_cause_analysis SET status = ${input.status}, aiInsights = ${JSON.stringify(nextInsights)} WHERE id = ${input.id}`
-        );
+        await db.update(rootCauseAnalysis)
+          .set({ status: input.status, aiInsights: nextInsights })
+          .where(eq(rootCauseAnalysis.id, input.id));
       } else {
-        await db.execute(
-          sql`UPDATE root_cause_analysis SET aiInsights = ${JSON.stringify(nextInsights)} WHERE id = ${input.id}`
-        );
+        await db.update(rootCauseAnalysis)
+          .set({ aiInsights: nextInsights })
+          .where(eq(rootCauseAnalysis.id, input.id));
       }
 
       return { success: true, id: input.id, review };
@@ -333,7 +369,8 @@ export const rootCauseRouter = router({
       const existingResult = await db.execute(
         sql`SELECT id FROM root_cause_analysis WHERE id = ${input.id}`
       ) as any;
-      if (!existingResult.rows?.length) {
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under `.rows`.
+      if (!((existingResult.rows ?? existingResult ?? []) as any[]).length) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
       }
 
@@ -406,12 +443,15 @@ export const predictiveAlertRouter = router({
       const result = await db.execute(
         sql`SELECT * FROM predictive_alerts WHERE id = ${input.id}`
       ) as any;
-      
-      if (!result.rows?.length) {
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `result.rows?.length` was always undefined → always NOT_FOUND.
+      const resultRows = (result.rows ?? result ?? []) as any[];
+
+      if (!resultRows.length) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert not found' });
       }
-      
-      const row = result.rows[0];
+
+      const row = resultRows[0];
       return {
         id: row.id,
         alertType: row.alertType,
@@ -445,11 +485,15 @@ export const predictiveAlertRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(
-        sql`UPDATE predictive_alerts SET status = 'ACKNOWLEDGED', acknowledgedBy = ${ctx.user.id}, acknowledgedAt = NOW() WHERE id = ${input.id}`
-      );
-      
+
+      // W0-1 fix (doc 69): was a raw UPDATE with unquoted `acknowledgedBy`/
+      // `acknowledgedAt` (Postgres folds to lowercase → column does not exist),
+      // silently discarding the acknowledgement. The drizzle builder quotes
+      // identifiers correctly and the write now actually persists.
+      await db.update(predictiveAlerts)
+        .set({ status: 'ACKNOWLEDGED', acknowledgedBy: ctx.user.id, acknowledgedAt: new Date() })
+        .where(eq(predictiveAlerts.id, input.id));
+
       return { success: true };
     }),
 
@@ -462,11 +506,18 @@ export const predictiveAlertRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
-      
-      await db.execute(
-        sql`UPDATE predictive_alerts SET status = 'RESOLVED', resolvedBy = ${ctx.user.id}, resolvedAt = NOW(), resolutionNotes = ${input.resolutionNotes || null} WHERE id = ${input.id}`
-      );
-      
+
+      // W0-1 fix (doc 69): was a raw UPDATE with unquoted `resolvedBy`/
+      // `resolvedAt`/`resolutionNotes` — same silent no-persist bug as above.
+      await db.update(predictiveAlerts)
+        .set({
+          status: 'RESOLVED',
+          resolvedBy: ctx.user.id,
+          resolvedAt: new Date(),
+          resolutionNotes: input.resolutionNotes || null,
+        })
+        .where(eq(predictiveAlerts.id, input.id));
+
       return { success: true };
     }),
 
@@ -498,19 +549,28 @@ export const predictiveAlertRouter = router({
       const daysAgo = new Date();
       daysAgo.setDate(daysAgo.getDate() - (input?.daysToAnalyze || 30));
       
-      // Get inspection data
+      // Get inspection data — W0-1 fix (doc 69): this SELECT had two distinct
+      // bugs: (1) unquoted camelCase identifiers (i.machineId/productModelId,
+      // Postgres folds to lowercase → column does not exist) and a reference to
+      // a non-existent `i.result` (real column is `i."overallResult"`, see
+      // drizzle/schema/inspection.ts); (2) `machines` has NO `factoryId` column
+      // at all — factory is only reachable via the station → line → workshop →
+      // factory chain (same chain rootCauseRouter.analyze already uses above).
       let query = sql`
-        SELECT 
+        SELECT
           CAST(i."createdAt" AS DATE) as date,
           m.id as machine_id, m.code as machine_code,
           pm.id as product_model_id, pm.code as product_model_code,
           f.id as factory_id,
           COUNT(*) as total,
-          SUM(CASE WHEN i.result = 'NG' THEN 1 ELSE 0 END) as ng_count
+          SUM(CASE WHEN i."overallResult" = 'NG' THEN 1 ELSE 0 END) as ng_count
         FROM product_inspections i
-        LEFT JOIN machines m ON i.machineId = m.id
-        LEFT JOIN product_models pm ON i.productModelId = pm.id
-        LEFT JOIN factories f ON m.factoryId = f.id
+        LEFT JOIN machines m ON i."machineId" = m.id
+        LEFT JOIN product_models pm ON i."productModelId" = pm.id
+        LEFT JOIN stations st ON m."stationId" = st.id
+        LEFT JOIN production_lines pl ON st."lineId" = pl.id
+        LEFT JOIN workshops w ON pl."workshopId" = w.id
+        LEFT JOIN factories f ON w."factoryId" = f.id
         WHERE i."createdAt" >= ${daysAgo.toISOString()}
       `;
       
@@ -524,8 +584,11 @@ export const predictiveAlertRouter = router({
       query = sql`${query} GROUP BY CAST(i."createdAt" AS DATE), m.id, m.code, pm.id, pm.code, f.id ORDER BY date ASC`;
       
       const result = await db.execute(query) as any;
-      const rows = result.rows || [];
-      
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `result.rows || []` always evaluated to `[]`, so this endpoint
+      // ALWAYS returned "not enough data" / created zero alerts.
+      const rows = result.rows || result || [];
+
       if (rows.length < 7) {
         return { success: true, alertsCreated: 0, message: 'Not enough data for prediction' };
       }
@@ -560,35 +623,33 @@ export const predictiveAlertRouter = router({
         
         if (predictedRate > threshold && slope > 0.5) {
           const lastRow = data[data.length - 1];
-          
-          // Create alert
-          await db.execute(
-            sql`INSERT INTO predictive_alerts 
-              (alertType, severity, title, description, predictedValue, currentValue, threshold, confidenceScore, predictedTimeframe, machineId, machineCode, productModelId, productModelCode, factoryId, aiAnalysis, status)
-              VALUES (
-                'DEFECT_SPIKE',
-                ${predictedRate > 20 ? 'CRITICAL' : predictedRate > 15 ? 'HIGH' : 'MEDIUM'},
-                ${`Predicted defect spike for ${machineCode}`},
-                ${`Analysis shows defect rate trending upward. Current rate: ${avgRate.toFixed(1)}%, Predicted: ${predictedRate.toFixed(1)}%`},
-                ${predictedRate},
-                ${avgRate},
-                ${threshold},
-                ${Math.min(85, 60 + n)},
-                'next 7 days',
-                ${lastRow.machine_id},
-                ${machineCode},
-                ${lastRow.product_model_id},
-                ${lastRow.product_model_code},
-                ${lastRow.factory_id},
-                ${JSON.stringify({
-                  factors: [{ name: 'Trend', contribution: 80, description: `Slope: ${slope.toFixed(2)}%/day` }],
-                  recommendations: ['Review machine calibration', 'Check material quality', 'Inspect tooling wear'],
-                  dataPoints: n,
-                  modelUsed: 'Linear Regression',
-                })},
-                'ACTIVE'
-              )`
-          );
+
+          // Create alert — W0-1 fix (doc 69): was a raw INSERT with unquoted
+          // camelCase column names, silently failing to persist. The drizzle
+          // builder quotes identifiers correctly.
+          await db.insert(predictiveAlerts).values({
+            alertType: 'DEFECT_SPIKE',
+            severity: predictedRate > 20 ? 'CRITICAL' : predictedRate > 15 ? 'HIGH' : 'MEDIUM',
+            title: `Predicted defect spike for ${machineCode}`,
+            description: `Analysis shows defect rate trending upward. Current rate: ${avgRate.toFixed(1)}%, Predicted: ${predictedRate.toFixed(1)}%`,
+            predictedValue: predictedRate.toFixed(4),
+            currentValue: avgRate.toFixed(4),
+            threshold: threshold.toFixed(4),
+            confidenceScore: Math.min(85, 60 + n).toFixed(2),
+            predictedTimeframe: 'next 7 days',
+            machineId: lastRow.machine_id ?? null,
+            machineCode,
+            productModelId: lastRow.product_model_id ?? null,
+            productModelCode: lastRow.product_model_code ?? null,
+            factoryId: lastRow.factory_id ?? null,
+            aiAnalysis: {
+              factors: [{ name: 'Trend', contribution: 80, description: `Slope: ${slope.toFixed(2)}%/day` }],
+              recommendations: ['Review machine calibration', 'Check material quality', 'Inspect tooling wear'],
+              dataPoints: n,
+              modelUsed: 'Linear Regression',
+            },
+            status: 'ACTIVE',
+          });
           alertsCreated++;
         }
       }
@@ -619,7 +680,10 @@ export const predictiveAlertRouter = router({
         critical: 0,
       };
       
-      for (const row of result.rows || []) {
+      // W0-1 fix (doc 69): db.execute() rows come back directly, not under
+      // `.rows` — `result.rows || []` always evaluated to `[]`, so stats() had
+      // always reported all-zero counts regardless of actual data.
+      for (const row of (result.rows || result || []) as any[]) {
         const count = parseInt(row.count);
         stats.total += count;
         stats.byStatus[row.status] = (stats.byStatus[row.status] || 0) + count;
