@@ -78,6 +78,14 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /**
+   * doc69 G2-1 — optional caller user id, threaded straight into aiProviderRouter's
+   * gateway plan (per-user rate-limit + metrics attribution). No current caller
+   * (inspectionRouters/annotationRouters) passes this yet — it is purely additive so a
+   * future ctx-aware caller can supply it without any other signature change. Omitted →
+   * undefined → the gateway treats it as a system/anonymous caller (tolerated, verified).
+   */
+  userId?: number;
 };
 
 export type ToolCall = {
@@ -325,6 +333,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
     maxTokens,
     max_tokens,
+    userId,
   } = params;
 
   const { systemPrompt, prompt, images } = await splitMessages(messages);
@@ -354,6 +363,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       prompt: prompt || systemPrompt,
       systemPrompt: systemPrompt || undefined,
       maxTokens: effectiveMaxTokens,
+      userId,
     });
 
     // Vision + structured output → coerce the description into the schema.
@@ -363,6 +373,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
         prompt: `${prompt}\n\n[Image analysis]\n${description.text}`,
         systemPrompt: systemPrompt || undefined,
         maxTokens: effectiveMaxTokens,
+        userId,
       });
       return wrapAsInvokeResult(insight.raw, { model: insight.model });
     }
@@ -378,6 +389,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       prompt,
       systemPrompt: systemPrompt || undefined,
       maxTokens: effectiveMaxTokens,
+      userId,
     });
     return wrapAsInvokeResult(insight.raw, { model: insight.model });
   }
@@ -388,6 +400,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     prompt,
     systemPrompt: systemPrompt || undefined,
     maxTokens: effectiveMaxTokens,
+    userId,
   });
   return wrapAsInvokeResult(narrative.text, {
     model: narrative.model,

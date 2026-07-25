@@ -16,6 +16,12 @@ import {
   generateJSON as ggufGenerateJSON,
   describeImage as ggufDescribeImage,
 } from "./aiGgufEngine";
+// doc69 G2-1 — route every model call through the AI Gateway (routing already happens via
+// req.modelId set by the caller; the gateway here is ADDITIVE bookkeeping only: per-user
+// rate-limit + A/B tagging + token/latency metering into ai_gateway_metrics). See
+// planGateway() below for the fail-open contract that keeps this behavior-preserving.
+import { planInference, RateLimitError, type GatewayPlan } from "./aiGateway";
+import type { TaskKind } from "./aiModelRouter";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -25,6 +31,17 @@ export type Capability = "text" | "json" | "vision";
 export interface NarrativeRequest {
   systemPrompt?: string;
   prompt: string;
+  /**
+   * doc69 G2-1 — AI Gateway task kind for routing/rate-limit/metering bucketing ONLY.
+   * Does NOT influence model selection here (callers already control that via `modelId`
+   * and their own maxTokens/temperature) — it only tells the gateway which task-shaped
+   * bucket to meter this call under. Defaults to "report" when omitted (narrative
+   * generation is predominantly report/summary text in this codebase today).
+   */
+  task?: TaskKind;
+  /** doc69 G2-1 — caller's user id, threaded to the AI Gateway for per-user rate-limit +
+   * metrics attribution. Omit for system/cron callers — the gateway tolerates undefined. */
+  userId?: number;
   /**
    * doc 48 R1 — PIN the GGUF model for this generation (basename sans ".gguf", e.g. the
    * Model Router's `decision.modelId`). Threaded straight into the engine's getOrLoadModel(),
@@ -82,6 +99,10 @@ export interface DescribeImageRequest {
   language?: "en" | "vi";
   /** Ignored — cloud vision removed. Kept for backward compatibility. */
   useCloudVision?: boolean;
+  /** doc69 G2-1 — AI Gateway task override for metering bucketing. Defaults to "vision". */
+  task?: TaskKind;
+  /** doc69 G2-1 — caller's user id for gateway rate-limit + metrics attribution. */
+  userId?: number;
 }
 
 export interface DescribeImageResult {
@@ -117,6 +138,39 @@ function emit(ev: AiProviderEvent) {
 
 export function getRecentEvents(limit = 100): AiProviderEvent[] {
   return recentEvents.slice(-limit).reverse();
+}
+
+// ─── AI Gateway adoption (doc69 G2-1) ──────────────────────────
+//
+// Every real model call below is wrapped with a gateway "plan" purely for bookkeeping:
+// per-user rate-limit check, A/B tagging, and token/latency METERING into
+// ai_gateway_metrics. This is intentionally the "full adoption" shape from aiGateway.ts's
+// own doc comment (wrap the engine call, record afterwards) — but with ONE deliberate
+// deviation from routeInference(): we do NOT let a RateLimitError block the call.
+//
+// Why: this module is a low-level choke point used by ~10 unrelated services (reports,
+// RCA batch jobs, vision/OCR, chat tool-selection, inspection/annotation routers via
+// _core/llm.ts) that today NEVER get rate-limited — some of them (aiBatchRcaScheduler)
+// legitimately burst dozens of calls back-to-back with no per-request userId, which would
+// collide in the gateway's single "anon" bucket. This task is a BEHAVIOR-PRESERVING
+// refactor (metering/limit *visibility*, not enforcement) — real blocking/enforcement is
+// the next task (doc69 G2-2, the AI-safety layer). So: when the gateway's budget is
+// exhausted, planInference() ALREADY records the rejection (outcome "rate_limited") before
+// throwing — we catch that specific error and proceed WITHOUT a plan, so the underlying
+// engine call always still happens, exactly like before this task. Any other unexpected
+// error from planInference (should not happen — it is documented fail-open internally) is
+// NOT swallowed, since that would hide a real bug.
+function planGateway(
+  task: TaskKind,
+  text: string | undefined,
+  userId: number | undefined,
+): GatewayPlan | null {
+  try {
+    return planInference({ task, text, userId });
+  } catch (err) {
+    if (err instanceof RateLimitError) return null;
+    throw err;
+  }
 }
 
 // ─── Circuit breaker shim (no-op in local-only mode) ──────────
@@ -155,6 +209,7 @@ export function getProviderConfig() {
 
 async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
   const start = Date.now();
+  const plan = planGateway(req.task ?? "report", req.prompt, req.userId);
   try {
     const r = await ggufGenerateText({
       systemPrompt: req.systemPrompt,
@@ -179,6 +234,12 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
       tokensPerSecond: r.tokensPerSecond,
       fallbackUsed: false,
     };
+    plan?.record({
+      tokensIn: r.tokensPrompt,
+      tokensOut: r.tokensGenerated,
+      latencyMs: r.totalTimeMs,
+      outcome: "ok",
+    });
     emit({
       ts: Date.now(),
       capability: "text",
@@ -192,6 +253,7 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
     });
     return result;
   } catch (err: any) {
+    plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
     emit({
       ts: Date.now(),
       capability: "text",
@@ -228,6 +290,11 @@ export async function generateInsightJson<T = unknown>(
 ): Promise<InsightJsonResult<T>> {
   const exec = async (): Promise<InsightJsonResult<T>> => {
     const start = Date.now();
+    // doc69 G2-1 — structured-JSON extraction defaults to task "extract" (see planGateway()
+    // doc comment for the fail-open contract). Callers doing RCA-flavored insight generation
+    // (e.g. aiInsightsService) already pin their own model via req.modelId — this task label
+    // only affects gateway metering/rate-limit bucketing, not model choice.
+    const plan = planGateway(req.task ?? "extract", req.prompt, req.userId);
     try {
       const r = await ggufGenerateJSON<T>(req.jsonSchema, {
         systemPrompt: req.systemPrompt,
@@ -245,6 +312,12 @@ export async function generateInsightJson<T = unknown>(
         totalTimeMs: r.totalTimeMs,
         fallbackUsed: false,
       };
+      plan?.record({
+        tokensIn: r.tokensPrompt,
+        tokensOut: r.tokensGenerated,
+        latencyMs: r.totalTimeMs,
+        outcome: "ok",
+      });
       emit({
         ts: Date.now(),
         capability: "json",
@@ -256,6 +329,7 @@ export async function generateInsightJson<T = unknown>(
       });
       return result;
     } catch (err: any) {
+      plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
       emit({
         ts: Date.now(),
         capability: "json",
@@ -312,6 +386,9 @@ export async function describeImage(req: DescribeImageRequest): Promise<Describe
     };
   }
 
+  // doc69 G2-1 — meter/rate-limit ONLY the real inference below; the honest-degrade branch
+  // above returns before any model is invoked, so there is nothing to gateway-plan there.
+  const plan = planGateway(req.task ?? "vision", req.prompt, req.userId);
   try {
     const r = await ggufDescribeImage({
       image: req.image,
@@ -328,6 +405,12 @@ export async function describeImage(req: DescribeImageRequest): Promise<Describe
       totalTimeMs: r.totalTimeMs,
       fallbackUsed: false,
     };
+    plan?.record({
+      tokensIn: r.tokensPrompt,
+      tokensOut: r.tokensGenerated,
+      latencyMs: r.totalTimeMs,
+      outcome: "ok",
+    });
     emit({
       ts: Date.now(),
       capability: "vision",
@@ -339,6 +422,7 @@ export async function describeImage(req: DescribeImageRequest): Promise<Describe
     });
     return result;
   } catch (err: any) {
+    plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
     emit({
       ts: Date.now(),
       capability: "vision",
@@ -374,6 +458,8 @@ export async function* generateNarrativeStream(
 ): AsyncGenerator<NarrativeStreamChunk> {
   const start = Date.now();
   const { generateTextStream: ggufStream } = await import("./aiGgufEngine");
+  // doc69 G2-1 — same fail-open gateway plan as the non-streaming paths (see planGateway()).
+  const plan = planGateway(req.task ?? "report", req.prompt, req.userId);
   try {
     for await (const c of ggufStream(
       {
@@ -401,6 +487,12 @@ export async function* generateNarrativeStream(
           tokensGenerated: c.tokensGenerated,
           tokensPerSecond: c.tokensPerSecond,
         };
+        plan?.record({
+          tokensIn: c.tokensPrompt,
+          tokensOut: c.tokensGenerated,
+          latencyMs: c.totalTimeMs,
+          outcome: "ok",
+        });
         emit({
           ts: Date.now(),
           capability: "text",
@@ -413,10 +505,12 @@ export async function* generateNarrativeStream(
           tokensPerSecond: c.tokensPerSecond,
         });
       } else if (c.type === "error") {
+        plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
         yield { type: "error", error: c.error, provider: "gguf" };
       }
     }
   } catch (err: any) {
+    plan?.record({ latencyMs: Date.now() - start, outcome: "error" });
     emit({
       ts: Date.now(),
       capability: "text",
