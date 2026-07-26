@@ -277,6 +277,39 @@ class RedisService {
   }
 
   /**
+   * doc69 G2-4 — ATOMIC durable counter for a fixed-window rate limiter (`INCR` + `EXPIRE`
+   * on first increment). Backs aiGateway's Redis rate limit so the count survives a process
+   * restart and is shared correctly across multiple app instances/nodes (unlike the previous
+   * in-process `Map`-based counter).
+   *
+   * Trả về:
+   *   • `{ count, ttlMs }` — count sau lần tăng này, cùng TTL còn lại (ms) của cửa sổ.
+   *   • `null` — Redis chưa kết nối/chưa cấu hình, hoặc thao tác lỗi. Caller BẮT BUỘC fallback
+   *     sang cơ chế đếm khác (vd in-memory) — fail-open, KHÔNG BAO GIỜ throw.
+   *
+   * `INCR` tự nó nguyên tử (1 lệnh Redis) nên nhiều node tăng đồng thời không bao giờ mất lượt.
+   * `EXPIRE`/`PTTL` là round-trip riêng, KHÔNG nằm trong đảm bảo nguyên tử — hiếm khi (hai
+   * caller cùng thấy count===1) key mới có thể sống hơi lâu hơn dự kiến (tự phục hồi ở cửa sổ
+   * kế tiếp); không bao giờ gây ĐẾM THIẾU.
+   */
+  async incrWithExpire(key: string, windowSeconds: number): Promise<{ count: number; ttlMs: number } | null> {
+    if (!(this.isConnected && this.redis) || !(windowSeconds > 0)) return null;
+    const fullKey = this.getFullKey(key);
+    try {
+      const count = await this.redis.incr(fullKey);
+      if (count === 1) {
+        await this.redis.expire(fullKey, Math.ceil(windowSeconds));
+        return { count, ttlMs: windowSeconds * 1000 };
+      }
+      const pttl = await this.redis.pttl(fullKey);
+      return { count, ttlMs: pttl > 0 ? pttl : windowSeconds * 1000 };
+    } catch (err: any) {
+      console.error(`[Redis] incrWithExpire error: ${err?.message ?? err}`);
+      return null; // fail-open: caller falls back to in-memory
+    }
+  }
+
+  /**
    * Delete cached value
    */
   async delete(key: string): Promise<boolean> {

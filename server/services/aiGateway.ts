@@ -5,21 +5,32 @@
  * batch). It promotes the pure Model Router (aiModelRouter.route) into a real gateway:
  *
  *   1. ROUTE   — pick tier + model via the existing pure `route()` decision engine.
- *   2. LIMIT   — enforce a per-user, per-tier token-bucket rate limit (in-process).
- *   3. A/B     — optional split flag: deterministically tag a fraction of traffic as
+ *   2. LIMIT   — enforce a per-user, per-tier token-bucket rate limit. doc69 G2-4: backed by
+ *                a durable Redis atomic counter when configured (survives restart, correct
+ *                across nodes), transparently falling back to the original in-process `Map`
+ *                when Redis is off/unavailable — see `durableRateLimitEnabled()`.
+ *   3. QUOTA   — doc69 G2-4, OPT-IN (`AI_QUOTA_ENFORCE`, default OFF): per-user rolling-24h
+ *                token budget (`ai_gateway_quota` table), read against `ai_gateway_metrics`.
+ *   4. LICENSE — doc69 G2-4, OPT-IN (`AI_GATEWAY_LICENSE_GATE_ENABLED`, default OFF): binds AI
+ *                availability to the EXISTING `MOD_AI` module/edition license gate.
+ *   5. A/B     — optional split flag: deterministically tag a fraction of traffic as
  *                variant "B" so call-sites / analytics can compare two routing arms.
- *   4. METER   — record tokens-in / tokens-out / latency / model / tier / outcome to a
+ *   6. METER   — record tokens-in / tokens-out / latency / model / tier / outcome to a
  *                durable table (ai_gateway_metrics), batched + async off the hot path.
  *
  * Backwards compatible by design. The decision (RouteDecision) returned by
  * `planInference()` is byte-identical to what `route()` returned before, so existing
  * call-sites can adopt the gateway incrementally:
- *   • cheapest adoption: replace `route(req)` with `planInference(req)` (adds limit + A/B
- *     + a metrics handle) and call `plan.record({...})` after the inference completes.
+ *   • cheapest adoption: replace `route(req)` with `await planInference(req)` (adds limit +
+ *     A/B + a metrics handle) and call `plan.record({...})` after the inference completes.
+ *     doc69 G2-4 — `planInference` is now ASYNC (it may need to await the durable rate-limit /
+ *     quota / license checks above); every call-site awaits it.
  *   • full adoption: wrap the engine call in `routeInference(req, exec)` and the gateway
  *     times it, records metrics, and surfaces rate-limit errors for you.
  *
- * NOTHING here loads a model or blocks; metrics are buffered and flushed by a timer.
+ * NOTHING here loads a model synchronously or blocks the process; metrics are buffered and
+ * flushed by a timer. The QUOTA/LICENSE checks above are OFF by default (opt-in), so a
+ * deployment that never turns them on pays zero extra latency/DB round-trips for them.
  */
 
 import { route, getRouterStats as getInMemoryRouterStats } from "./aiModelRouter";
@@ -39,9 +50,16 @@ export type { SafetyFlagsSummary } from "./ai/aiSafety";
 export interface GatewayRequest extends RouteInput {
   /** Who triggered it (for per-user rate-limit + metrics). Omit for system/cron callers. */
   userId?: number;
+  /**
+   * doc69 G2-4 — caller's role, consulted ONLY for the opt-in per-role quota fallback
+   * (`AI_QUOTA_ENFORCE`, see aiGatewayQuota.ts). Optional; omitting it just means a caller
+   * without a per-user quota row falls through to the deployment default / env default
+   * instead of a per-role one.
+   */
+  role?: string;
 }
 
-export type Outcome = "ok" | "error" | "rate_limited" | "blocked";
+export type Outcome = "ok" | "error" | "rate_limited" | "blocked" | "quota_exceeded";
 
 /** Token accounting + outcome a caller reports back after running the inference. */
 export interface InferenceOutcome {
@@ -111,6 +129,41 @@ export class SafetyBlockedError extends Error {
   }
 }
 
+/**
+ * doc69 G2-4 — thrown ONLY when `AI_QUOTA_ENFORCE` is explicitly enabled AND the caller's
+ * rolling-24h token usage has exceeded their configured (or default) daily budget. Default
+ * posture is OFF (see `quotaEnforceEnabled()` below) — this never throws unless an operator
+ * opts in; real budgets are a product decision, not something this task turns on for anyone.
+ * Shape mirrors {@link RateLimitError} so callers can extend the same "catch + degrade
+ * gracefully" handling to it if/when they choose to.
+ */
+export class QuotaExceededError extends Error {
+  readonly code = "AI_QUOTA_EXCEEDED" as const;
+  constructor(
+    message: string,
+    readonly usedTokens: number,
+    readonly budgetTokens: number,
+  ) {
+    super(message);
+    this.name = "QuotaExceededError";
+  }
+}
+
+/**
+ * doc69 G2-4 — thrown ONLY when `AI_GATEWAY_LICENSE_GATE_ENABLED` is explicitly enabled AND
+ * the deployment's license/edition does not include `MOD_AI` (see
+ * `aiGatewayLicenseGateEnabled()` below and `server/_core/moduleGate.ts`). Default posture is
+ * OFF; wiring reuses the EXACT SAME entitlement resolution `moduleGate()` already enforces for
+ * `aiCopilotRouter` — no new licensing model is invented here.
+ */
+export class LicenseGateError extends Error {
+  readonly code = "AI_MODULE_NOT_LICENSED" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "LicenseGateError";
+  }
+}
+
 // ─── Config (env-tunable) ──────────────────────────────────────
 
 function envInt(name: string, fallback: number): number {
@@ -164,6 +217,48 @@ function safetyBlockHighRiskEnabled(): boolean {
   return envFlag("AI_SAFETY_BLOCK_HIGH_RISK");
 }
 
+/**
+ * doc69 G2-4 — durable Redis-backed rate limit switch. Default ON: when Redis is actually
+ * configured (`REDIS_URL` set — see `redisService.isConfigured()`), the gateway's per-user/
+ * tier rate limit is backed by an atomic Redis `INCR`+`EXPIRE` counter (survives a process
+ * restart, correct across multiple app instances/nodes). When Redis is NOT configured, this
+ * flag is explicitly turned off, or a Redis call fails, the gateway transparently falls back
+ * to the original in-process `windows` Map — same fail-open contract as before this task; this
+ * task adds DURABILITY of the counting, it does not change WHEN a request gets limited.
+ */
+function durableRateLimitEnabled(): boolean {
+  return envFlagDefaultOn("AI_RATE_LIMIT_REDIS_ENABLED");
+}
+
+/**
+ * doc69 G2-4 — per-user daily token QUOTA enforcement switch. Default OFF: ships dark so no
+ * deployment is newly blocked until an operator opts in (real budgets are a product decision,
+ * per the task brief). When on, `planInference` consults `aiGatewayQuota.checkQuota()` after
+ * the rate-limit check and throws {@link QuotaExceededError} for a user who has exhausted
+ * their rolling-24h token budget. Fail-safe: any error resolving the quota (DB down, table
+ * not yet migrated, …) is treated as "allow" — infra issues must never block inference.
+ */
+function quotaEnforceEnabled(): boolean {
+  return envFlag("AI_QUOTA_ENFORCE");
+}
+
+/**
+ * doc69 G2-4 — bind AI-feature availability to the EXISTING per-module license/edition gate
+ * (`server/_core/moduleGate.ts`, module code `MOD_AI`) inside the gateway choke point itself,
+ * not just the one router (`aiCopilotRouter`) that already shadows `moduleProcedure("MOD_AI")`.
+ * Default OFF (opt-in) — most callers of `planInference` (chat/RAG/vision/batch — see
+ * aiChatAssistant.ts, aiLocalKnowledgeService.ts, aiProviderRouter.ts) have NEVER been
+ * module-gated before; defaulting this ON could newly block AI for a deployment whose license
+ * predates `MOD_AI` being explicit in its `allowed_modules` — exactly the "do NOT newly
+ * disable AI for anyone" case the task brief calls out. An operator explicitly opts in here;
+ * enforcement is still additionally governed by the SAME `LICENSE_MODULE_GATE_ENABLED`/
+ * no-brick machinery `moduleGate.ts` already enforces (this flag only decides whether the
+ * GATEWAY itself also asks the question, on top of the flag `moduleGate` already requires).
+ */
+function aiGatewayLicenseGateEnabled(): boolean {
+  return envFlag("AI_GATEWAY_LICENSE_GATE_ENABLED");
+}
+
 /** A/B split: fraction of traffic [0,1] tagged variant "B". 0 = A/B off (default). */
 function abSplit(): number {
   if (!envFlag("AI_GATEWAY_AB_ENABLED")) return 0;
@@ -187,10 +282,13 @@ function bucketFor(tier: number): { name: "cheap" | "deep"; max: number } {
 }
 
 /**
- * Returns null when allowed; otherwise the ms until the window resets (rate-limited).
- * Increments the counter on allow.
+ * In-memory fixed-window check (the ORIGINAL implementation, unchanged). Returns null when
+ * allowed; otherwise the ms until the window resets (rate-limited). Increments the counter
+ * on allow. This is now the FALLBACK path used by `checkRateLimit` below when the durable
+ * Redis-backed counter is disabled/unavailable — kept as its own function so behaviour on a
+ * single node with no Redis is byte-identical to before this task.
  */
-function checkRateLimit(userId: number | undefined, tier: number): number | null {
+function checkRateLimitMemory(userId: number | undefined, tier: number): number | null {
   try {
     const { name, max } = bucketFor(tier);
     const key = `${userId ?? "anon"}:${name}`;
@@ -209,13 +307,49 @@ function checkRateLimit(userId: number | undefined, tier: number): number | null
 }
 
 /**
+ * doc69 G2-4 — DURABLE rate-limit check: tries the Redis-backed atomic counter first (so the
+ * count survives a restart and is correct across multiple app instances/nodes), falling back
+ * to the in-process `checkRateLimitMemory` when Redis is disabled/not configured/errors. This
+ * is a straight DURABILITY upgrade of `checkRateLimitMemory` — it does not change the max
+ * budgets, the window length, or the fail-open contract (any infra error → fall back to
+ * memory → and THAT is fail-open too, exactly as before this task).
+ *
+ * Returns null when allowed; otherwise the ms until the window resets (rate-limited).
+ */
+async function checkRateLimit(userId: number | undefined, tier: number): Promise<number | null> {
+  const { name, max } = bucketFor(tier);
+  if (durableRateLimitEnabled()) {
+    try {
+      const { redisService } = await import("./redisService");
+      if (redisService.isConfigured()) {
+        const key = `ai:ratelimit:${userId ?? "anon"}:${name}`;
+        const windowSeconds = Math.ceil(LIMIT_WINDOW_MS / 1000);
+        const result = await redisService.incrWithExpire(key, windowSeconds);
+        if (result != null) {
+          return result.count > max ? Math.max(1, result.ttlMs) : null;
+        }
+        // result === null → Redis not connected right now / errored → fall through to memory.
+      }
+    } catch {
+      // fall through to memory — infra errors must never break inference
+    }
+  }
+  return checkRateLimitMemory(userId, tier);
+}
+
+/**
  * Generic per-user fixed-window limiter — REUSES the exact same in-process `windows`
- * store and window length as `checkRateLimit` above, but keyed by a caller-supplied
+ * store and window length as `checkRateLimitMemory` above, but keyed by a caller-supplied
  * bucket name + max instead of an inference tier. Lets non-inference call-sites (e.g.
  * the AI analytics/report routers, doc 69 W0-3) throttle per-`userId` without
  * borrowing budget from actual LLM inference tiers, while still sharing the same
  * mechanism (and its GC) rather than standing up a parallel limiter. Fail-open, same
- * as checkRateLimit: returns null (allowed) on any internal error.
+ * as checkRateLimitMemory: returns null (allowed) on any internal error.
+ *
+ * doc69 G2-4 — intentionally NOT upgraded to the durable Redis-backed path: this limiter is
+ * a general per-userId+bucket utility used outside actual LLM inference (see
+ * `aiAnalyticsScope.ts`), out of scope for "the gateway's token-bucket" this task durability-
+ * hardens. It stays in-process/restart-resettable exactly as before.
  */
 export function checkNamedRateLimit(userId: number | undefined, bucket: string, maxPerMinute: number): number | null {
   try {
@@ -466,16 +600,44 @@ function safeApplyOutput(text: string): { text: string; flags: SafetyFlagsSummar
 
 // ─── Core API ──────────────────────────────────────────────────
 
+/** doc69 G2-4 — fail-safe wrapper around moduleGate.isModuleLicensed; see aiGatewayLicenseGateEnabled(). */
+async function checkAiModuleLicensed(): Promise<boolean> {
+  try {
+    const { isModuleLicensed } = await import("../_core/moduleGate");
+    return await isModuleLicensed("MOD_AI");
+  } catch (err) {
+    console.warn("[aiGateway] license gate check failed — allowing (fail-safe):", (err as Error)?.message);
+    return true;
+  }
+}
+
+/** doc69 G2-4 — fail-safe wrapper around aiGatewayQuota.checkQuota; see quotaEnforceEnabled(). */
+async function checkAiQuota(
+  userId: number | undefined,
+  role: string | undefined,
+): Promise<{ allowed: boolean; usedTokens: number; budgetTokens: number } | null> {
+  try {
+    const { checkQuota } = await import("./aiGatewayQuota");
+    return await checkQuota(userId, role);
+  } catch (err) {
+    console.warn("[aiGateway] quota check failed — allowing (fail-safe):", (err as Error)?.message);
+    return null;
+  }
+}
+
 /**
  * Plan an inference: route it, enforce the rate limit, assign an A/B variant, and hand
  * back a `record()` callback to meter the outcome. Throws {@link RateLimitError} when the
- * caller's per-tier budget is exhausted (caller maps it to a 429 / friendly message).
+ * caller's per-tier budget is exhausted (caller maps it to a 429 / friendly message);
+ * doc69 G2-4 also adds {@link LicenseGateError} (opt-in edition/license gate) and
+ * {@link QuotaExceededError} (opt-in per-user daily token budget) — both OFF by default.
  *
  * This is the recommended low-friction adoption: callers that already use `route()` swap
- * to `planInference()`, use `plan.decision` exactly as before, and call `plan.record()`
- * once the engine returns.
+ * to `await planInference()`, use `plan.decision` exactly as before, and call `plan.record()`
+ * once the engine returns. doc69 G2-4 — this function is ASYNC (it may await the durable
+ * rate-limit / quota / license checks above); every call-site must `await` it.
  */
-export function planInference(req: GatewayRequest): GatewayPlan {
+export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
   const decision = route(req); // pure decision (also feeds the legacy in-memory router counter)
   const abVariant = assignVariant(req.userId);
 
@@ -495,7 +657,20 @@ export function planInference(req: GatewayRequest): GatewayPlan {
     );
   }
 
-  const retry = checkRateLimit(req.userId, decision.tier);
+  // doc69 G2-4 — edition/license gate: OPT-IN (default OFF — see aiGatewayLicenseGateEnabled()),
+  // wires AI availability to the EXISTING MOD_AI module gate (server/_core/moduleGate.ts). Ahead
+  // of the rate-limit check so a not-licensed request never consumes rate-limit budget.
+  if (aiGatewayLicenseGateEnabled()) {
+    const licensed = await checkAiModuleLicensed();
+    if (!licensed) {
+      enqueue(toRow(req, decision, abVariant, { outcome: "blocked" }));
+      throw new LicenseGateError(
+        "AI feature not licensed for this deployment/edition (module MOD_AI). Upgrade your license/edition to enable AI.",
+      );
+    }
+  }
+
+  const retry = await checkRateLimit(req.userId, decision.tier);
   if (retry != null) {
     // Record the rejection (so dashboards show throttling) before throwing.
     enqueue(toRow(req, decision, abVariant, { outcome: "rate_limited" }));
@@ -506,6 +681,20 @@ export function planInference(req: GatewayRequest): GatewayPlan {
       safety.text,
       safety.flags,
     );
+  }
+
+  // doc69 G2-4 — per-user daily token quota: OPT-IN (default OFF — see quotaEnforceEnabled()).
+  // Ships dark: when off, no extra DB round-trip happens at all (checkAiQuota is never called).
+  if (quotaEnforceEnabled()) {
+    const quota = await checkAiQuota(req.userId, req.role);
+    if (quota && !quota.allowed) {
+      enqueue(toRow(req, decision, abVariant, { outcome: "quota_exceeded" }));
+      throw new QuotaExceededError(
+        `Daily AI token quota exceeded (${quota.usedTokens}/${quota.budgetTokens} tokens in the last 24h).`,
+        quota.usedTokens,
+        quota.budgetTokens,
+      );
+    }
   }
 
   let recorded = false;
@@ -535,7 +724,7 @@ export async function routeInference<T>(
   req: GatewayRequest,
   exec: (decision: RouteDecision, abVariant: "A" | "B" | null, safeText: string) => Promise<{ result: T; tokensIn?: number; tokensOut?: number }>,
 ): Promise<{ result: T; decision: RouteDecision; abVariant: "A" | "B" | null }> {
-  const plan = planInference(req); // may throw RateLimitError | SafetyBlockedError
+  const plan = await planInference(req); // may throw RateLimitError | SafetyBlockedError | QuotaExceededError | LicenseGateError
   const start = Date.now();
   try {
     const { result, tokensIn, tokensOut } = await exec(plan.decision, plan.abVariant, plan.safeText);

@@ -1703,3 +1703,31 @@ export const aiGatewayMetrics = pgTable("ai_gateway_metrics", {
 
 export type AiGatewayMetric = typeof aiGatewayMetrics.$inferSelect;
 export type InsertAiGatewayMetric = typeof aiGatewayMetrics.$inferInsert;
+
+// ============= AI Gateway Quota (doc69 G2-4) =============
+// Per-user/role DAILY (rolling 24h) token budget, enforced by aiGateway.planInference when
+// AI_QUOTA_ENFORCE is on (default OFF). Usage itself is read from ai_gateway_metrics above —
+// this table only stores the budget. See drizzle/0298_ai_gateway_quota.sql for the exact DDL
+// (incl. the two partial-unique indexes this schema definition documents but does not encode
+// — drizzle-kit push is not the deploy path here; the hand-authored migration is authoritative).
+export const aiGatewayQuota = pgTable("ai_gateway_quota", {
+  id: serial("id").primaryKey(),
+  // Scope: userId set → per-user row (highest priority). userId null + role set → per-role
+  // default. Both null → deployment-wide default. See 0298's partial unique indexes for the
+  // "at most one ENABLED row per scope" constraint (not expressible in this generic index()).
+  userId: integer("userId"),
+  role: varchar("role", { length: 32 }),
+  dailyTokenBudget: integer("dailyTokenBudget").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_gateway_quota_user").on(table.userId),
+  index("idx_ai_gateway_quota_role").on(table.role),
+  index("idx_ai_gateway_quota_created").on(table.createdAt),
+]);
+
+export type AiGatewayQuota = typeof aiGatewayQuota.$inferSelect;
+export type InsertAiGatewayQuota = typeof aiGatewayQuota.$inferInsert;

@@ -1072,7 +1072,7 @@ async function generateWithOllama(
   // fail-safe input redaction (`plan.safeText`, used for the question below), a per-user
   // rate-limit + A/B slot (previously bypassed for this endpoint), and `record()`/
   // `sanitizeOutput()` for gateway metering + output redaction further down.
-  const plan = planInference({ task: "chat", text: question, userId });
+  const plan = await planInference({ task: "chat", text: question, userId });
 
   const contextBlock = retrieve.citations
     .map((c, i) => {
@@ -1207,7 +1207,7 @@ export async function* generateWithOllamaStream(
 ): AsyncGenerator<string> {
   // doc69 G2-3 — AI Gateway (see the identical comment on generateWithOllama above; same
   // {task:"chat", text: question} input preserves the pinned-model decision byte-for-byte).
-  const plan = planInference({ task: "chat", text: question, userId });
+  const plan = await planInference({ task: "chat", text: question, userId });
 
   const contextBlock = retrieve.citations
     .map((c, i) => {

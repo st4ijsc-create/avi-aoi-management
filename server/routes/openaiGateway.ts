@@ -173,9 +173,9 @@ interface PlannedCall {
    * thrown without redacted text attached, which should never happen). */
   safeText: string;
 }
-function planGatewayFailOpen(task: TaskKind, text: string | undefined): PlannedCall {
+async function planGatewayFailOpen(task: TaskKind, text: string | undefined): Promise<PlannedCall> {
   try {
-    const plan = planInference({ task, text });
+    const plan = await planInference({ task, text });
     return { plan, safeText: plan.safeText };
   } catch (err) {
     if (err instanceof RateLimitError) return { plan: null, safeText: err.safeText ?? text ?? "" };
@@ -361,7 +361,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const ggufMessagesRaw = toGgufMessages(messages);
       const lastIdx = ggufMessagesRaw.length - 1;
       const representativeText = lastIdx >= 0 ? ggufMessagesRaw[lastIdx].content : "";
-      const planned = planGatewayFailOpen(inferTaskFromLabel(modelLabel), representativeText);
+      const planned = await planGatewayFailOpen(inferTaskFromLabel(modelLabel), representativeText);
       plan = planned.plan;
       // Redact every OTHER message directly/ungated (defense-in-depth, mirrors
       // aiChatAssistant's treatment of prior-turn/tool-result text); the last (most recent)
@@ -553,7 +553,7 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       // source of truth for generation, and the fail-open rate-limit rationale). `suffix`
       // (FIM's surrounding code context) is redacted directly/ungated, mirroring
       // aiChatAssistant's treatment of supplementary content.
-      const planned = planGatewayFailOpen(isFim ? "fim" : "code", prompt);
+      const planned = await planGatewayFailOpen(isFim ? "fim" : "code", prompt);
       plan = planned.plan;
       const safeSuffix = suffix ? redactSecretsAndPII(suffix).text : suffix;
 

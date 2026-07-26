@@ -297,7 +297,7 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
 
     // AI Gateway: plan (route + rate-limit + A/B + meter) the intent-classification call.
     // doc69 G2-2 — safeText is the redacted userMessage; it (not the raw message) reaches the model.
-    const selPlan = planInference({ task: "intent", text: request.userMessage, userId: request.userId });
+    const selPlan = await planInference({ task: "intent", text: request.userMessage, userId: request.userId });
     const selStart = Date.now();
     const selectionResult = await chatCompletion({
       messages: [
@@ -357,7 +357,7 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
     // decoding, with per-user rate-limit + A/B + token/latency metering.
     // doc69 G2-2 — safeText is the redacted userMessage; used below INSTEAD OF the raw
     // request.userMessage so a pasted secret never reaches the model.
-    const ansPlan = planInference({ task: "chat", text: request.userMessage, userId: request.userId });
+    const ansPlan = await planInference({ task: "chat", text: request.userMessage, userId: request.userId });
 
     const messages = [
       { role: "system" as const, content: systemPrompt },

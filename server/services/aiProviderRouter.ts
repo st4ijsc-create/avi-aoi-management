@@ -180,13 +180,13 @@ interface PlannedCall {
   safeText: string;
 }
 
-function planGateway(
+async function planGateway(
   task: TaskKind,
   text: string | undefined,
   userId: number | undefined,
-): PlannedCall {
+): Promise<PlannedCall> {
   try {
-    const plan = planInference({ task, text, userId });
+    const plan = await planInference({ task, text, userId });
     return { plan, safeText: plan.safeText };
   } catch (err) {
     if (err instanceof RateLimitError) return { plan: null, safeText: err.safeText ?? text ?? "" };
@@ -231,7 +231,7 @@ export function getProviderConfig() {
 async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
   const start = Date.now();
   // doc69 G2-2 — `safeText` is the redacted prompt; it (NOT req.prompt) is what reaches the engine.
-  const { plan, safeText } = planGateway(req.task ?? "report", req.prompt, req.userId);
+  const { plan, safeText } = await planGateway(req.task ?? "report", req.prompt, req.userId);
   try {
     const r = await ggufGenerateText({
       systemPrompt: req.systemPrompt,
@@ -318,7 +318,7 @@ export async function generateInsightJson<T = unknown>(
     // (e.g. aiInsightsService) already pin their own model via req.modelId — this task label
     // only affects gateway metering/rate-limit bucketing, not model choice.
     // doc69 G2-2 — safeText (redacted) reaches the engine below, same as runText().
-    const { plan, safeText } = planGateway(req.task ?? "extract", req.prompt, req.userId);
+    const { plan, safeText } = await planGateway(req.task ?? "extract", req.prompt, req.userId);
     try {
       const r = await ggufGenerateJSON<T>(req.jsonSchema, {
         systemPrompt: req.systemPrompt,
@@ -418,7 +418,7 @@ export async function describeImage(req: DescribeImageRequest): Promise<Describe
   // doc69 G2-1 — meter/rate-limit ONLY the real inference below; the honest-degrade branch
   // above returns before any model is invoked, so there is nothing to gateway-plan there.
   // doc69 G2-2 — safeText (redacted prompt) reaches the engine below.
-  const { plan, safeText } = planGateway(req.task ?? "vision", req.prompt, req.userId);
+  const { plan, safeText } = await planGateway(req.task ?? "vision", req.prompt, req.userId);
   try {
     const r = await ggufDescribeImage({
       image: req.image,
@@ -504,7 +504,7 @@ export async function* generateNarrativeStream(
   const { generateTextStream: ggufStream } = await import("./aiGgufEngine");
   // doc69 G2-1 — same fail-open gateway plan as the non-streaming paths (see planGateway()).
   // doc69 G2-2 — safeText (redacted prompt) reaches the engine below.
-  const { plan, safeText } = planGateway(req.task ?? "report", req.prompt, req.userId);
+  const { plan, safeText } = await planGateway(req.task ?? "report", req.prompt, req.userId);
   // doc69 W1-2 fix — one stateful redactor instance per stream (never module-level: concurrent
   // streams must not share hold-back state). See the class doc comment in aiSafety.ts.
   const redactor = new StreamingSecretRedactor();

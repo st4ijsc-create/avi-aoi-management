@@ -116,6 +116,38 @@ async function resolveEntitlement(): Promise<Entitlement> {
 }
 
 /**
+ * doc69 G2-4 — ctx-independent version of the EXACT SAME entitlement decision `moduleGate`
+ * makes below, for non-tRPC callers that want to gate a feature by the same license/edition
+ * rule without a tRPC middleware context (e.g. `aiGateway.planInference`, which is called
+ * from many services/service-to-service paths, not only tRPC procedures). Entitlement itself
+ * is deployment-global (not per-request), so no `ctx` is actually needed — this just exposes
+ * the same decision as a plain async function so there is ONE entitlement engine, not two.
+ *
+ * Same behaviour table as `moduleGate` (flag OFF / LICENSE_BYPASS / unknown-or-core module /
+ * no-brick-unconfigured / resolution failure ⇒ true; genuinely-not-licensed ⇒ false).
+ */
+export async function isModuleLicensed(moduleCode: string): Promise<boolean> {
+  if (!ENV.licenseModuleGate) return true;
+  if (ENV.licenseBypass) return true;
+
+  const mod = getModuleByCode(moduleCode);
+  if (!mod || mod.isCore) return true;
+
+  try {
+    const entitlement = await resolveEntitlement();
+    if (!entitlement.configured) return true; // no-brick: unconfigured deployment → allow
+    return entitlement.allowed.includes(moduleCode);
+  } catch (err) {
+    console.warn(
+      `[moduleGate] isModuleLicensed(${moduleCode}) entitlement resolution failed — allowing (fail-safe): ${
+        (err as Error)?.message ?? err
+      }`,
+    );
+    return true;
+  }
+}
+
+/**
  * tRPC middleware factory — enforce that the caller's license includes `moduleCode`.
  *
  * Returns a plain middleware function (same shape as `requirePermission`) so it can
