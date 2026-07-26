@@ -165,6 +165,14 @@ export const rootCauseRouter = router({
         productModelCode = (productResult.rows ?? productResult)?.[0]?.code ?? null;
       }
 
+      // LEGACY (doc69 A2): topFactors above is a relabeled Pareto count (measurement-point
+      // NG frequency), and generateRCAInsights below is the SHALLOW LLM-over-aggregate-counts
+      // path — no SPC/anomaly/vision/causal-graph/quantitative-correlation evidence. The
+      // evidence-rich engine is aiRcaCopilot.runRca, exposed as aiRcaCopilotRouter.diagnose
+      // when AI_RCA_COPILOT_ENABLED is on. This endpoint is a distinct manual "Analyze" action
+      // (RCA history UI) and is intentionally NOT flag-branched here — converging it onto the
+      // copilot is a separate follow-up. Kept as-is (do not delete): still the only
+      // DEFECT/YIELD/QUALITY/MACHINE_ANALYSIS entry point when the copilot flag is off.
       // Generate AI insights via LLM (falls back to rule-based if OPENAI_API_KEY not set)
       const aiInsights = await generateRCAInsights(topFactors, {
         totalInspections,
@@ -546,9 +554,10 @@ export const predictiveAlertRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
       
+      const now = new Date();
       const daysAgo = new Date();
       daysAgo.setDate(daysAgo.getDate() - (input?.daysToAnalyze || 30));
-      
+
       // Get inspection data — W0-1 fix (doc 69): this SELECT had two distinct
       // bugs: (1) unquoted camelCase identifiers (i.machineId/productModelId,
       // Postgres folds to lowercase → column does not exist) and a reference to
@@ -602,58 +611,79 @@ export const predictiveAlertRouter = router({
       }
       
       let alertsCreated = 0;
-      
+
+      // doc69 Wave 2 / A2 — REAL forecast signal (replaces the fake heuristic):
+      // the previous inline 7-point OLS + hardcoded "predictedRate > 10%" gate +
+      // hardcoded recommendation strings, mislabeled `modelUsed: 'Linear
+      // Regression'`, are GONE. Per eligible machine, the actual predicted
+      // defect-rate/severity/confidence/recommendations now come from the
+      // yield-forecast engine (Holt-Winters/EWMA/Linear per data-length, real
+      // confidence tied to forecast error) + the real defect Pareto (+ optional
+      // quantitative upstream correlation when RCA_QUANTITATIVE_ENABLED).
+      const { forecastYield, getDefectTrend, getDefectPareto } = await import("../services/aiInspectionAnalytics");
+      const { deriveDefectSpikeSignal } = await import("../services/aiPredictiveAlertService");
+      const { correlateStationDefect } = await import("../services/ai/defectCorrelationService");
+
       for (const [machineCode, data] of Object.entries(machineData)) {
+        // Cheap pre-filter only (matches the old minimum-data bar) — the
+        // AUTHORITATIVE eligibility/decision comes from deriveDefectSpikeSignal
+        // below, fed by the real (factory-day-bucketed) trend/forecast.
         if (data.length < 7) continue;
-        
-        // Calculate trend using simple linear regression
-        const defectRates = data.map((d: any) => d.total > 0 ? (d.ng_count / d.total) * 100 : 0);
-        const n = defectRates.length;
-        const sumX = (n * (n - 1)) / 2;
-        const sumY = defectRates.reduce((a: number, b: number) => a + b, 0);
-        const sumXY = defectRates.reduce((sum: number, y: number, i: number) => sum + i * y, 0);
-        const sumX2 = (n * (n - 1) * (2 * n - 1)) / 6;
-        
-        const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-        const avgRate = sumY / n;
-        const predictedRate = avgRate + slope * 7; // Predict 7 days ahead
-        
-        // Check if prediction exceeds threshold
-        const threshold = 10; // 10% defect rate threshold
-        
-        if (predictedRate > threshold && slope > 0.5) {
-          const lastRow = data[data.length - 1];
+
+        const lastRow = data[data.length - 1];
+        const machineId: number | null = lastRow.machine_id ?? null;
+        if (machineId == null) continue; // can't scope the real forecast engine without a machine — honest skip
+
+        try {
+          const period = { startDate: daysAgo, endDate: now, machineId };
+          const [trend, forecast, pareto] = await Promise.all([
+            getDefectTrend(period),
+            forecastYield(period, 7),
+            getDefectPareto(period),
+          ]);
+
+          // Optional additive evidence — flag-gated + fail-safe inside the
+          // service itself (RCA_QUANTITATIVE_ENABLED, default OFF → ok:false).
+          const correlation = await correlateStationDefect({ machineId });
+          const correlationFactors = correlation.ok ? correlation.factors : [];
+
+          const signal = deriveDefectSpikeSignal({ trend, forecast, pareto, correlationFactors });
+          if (!signal) continue; // insufficient data / not a real rising trend — no fabricated alert
 
           // Create alert — W0-1 fix (doc 69): was a raw INSERT with unquoted
           // camelCase column names, silently failing to persist. The drizzle
-          // builder quotes identifiers correctly.
+          // builder quotes identifiers correctly. Persistence path unchanged;
+          // only the SIGNAL feeding it is now real (doc69 A2).
           await db.insert(predictiveAlerts).values({
-            alertType: 'DEFECT_SPIKE',
-            severity: predictedRate > 20 ? 'CRITICAL' : predictedRate > 15 ? 'HIGH' : 'MEDIUM',
+            alertType: signal.alertType,
+            severity: signal.severity,
             title: `Predicted defect spike for ${machineCode}`,
-            description: `Analysis shows defect rate trending upward. Current rate: ${avgRate.toFixed(1)}%, Predicted: ${predictedRate.toFixed(1)}%`,
-            predictedValue: predictedRate.toFixed(4),
-            currentValue: avgRate.toFixed(4),
-            threshold: threshold.toFixed(4),
-            confidenceScore: Math.min(85, 60 + n).toFixed(2),
-            predictedTimeframe: 'next 7 days',
-            machineId: lastRow.machine_id ?? null,
+            description: `Analysis shows defect rate trending upward. Current rate: ${signal.currentValue.toFixed(1)}%, Predicted: ${signal.predictedValue.toFixed(1)}%`,
+            predictedValue: signal.predictedValue.toFixed(4),
+            currentValue: signal.currentValue.toFixed(4),
+            threshold: signal.alertThreshold.toFixed(4),
+            confidenceScore: signal.confidenceScore.toFixed(2),
+            predictedTimeframe: signal.predictedTimeframe,
+            machineId,
             machineCode,
             productModelId: lastRow.product_model_id ?? null,
             productModelCode: lastRow.product_model_code ?? null,
             factoryId: lastRow.factory_id ?? null,
             aiAnalysis: {
-              factors: [{ name: 'Trend', contribution: 80, description: `Slope: ${slope.toFixed(2)}%/day` }],
-              recommendations: ['Review machine calibration', 'Check material quality', 'Inspect tooling wear'],
-              dataPoints: n,
-              modelUsed: 'Linear Regression',
+              factors: signal.factors,
+              recommendations: signal.recommendations,
+              dataPoints: signal.dataPoints,
+              modelUsed: signal.modelUsed,
             },
             status: 'ACTIVE',
           });
           alertsCreated++;
+        } catch (err) {
+          // Fail-safe per machine — one machine's forecast failure never aborts the batch.
+          console.error(`[predictiveAlertRouter.generatePredictions] forecast failed for machine ${machineCode}:`, err);
         }
       }
-      
+
       return { success: true, alertsCreated };
     }),
 

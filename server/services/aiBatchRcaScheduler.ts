@@ -16,6 +16,10 @@ import { rootCauseAnalysis } from "../../drizzle/schema";
 import { generateRCAInsights } from "./aiInsightsService";
 // B2.4 — auto-ingest hook (flag-gated RAG_AUTO_INGEST_ENABLED, default OFF).
 import { ingestKnowledgeRecordAsync } from "./aiLocalKnowledgeService";
+// doc69 Wave 2 / A2 — converge batch RCA onto the evidence-rich copilot
+// (Pareto+SPC+anomaly+VLM+audit+GraphRAG+quantitative-correlation) when
+// AI_RCA_COPILOT_ENABLED is on. Flag OFF (default) keeps the shallow fallback below.
+import { isRcaCopilotEnabled, runRca, persistRca, type RcaResult } from "./aiRcaCopilot";
 
 const DEFAULT_CRON = process.env.AI_BATCH_RCA_CRON || "0 2 * * *"; // 02:00 daily
 const TIMEZONE = process.env.AI_BATCH_RCA_TZ || "Asia/Ho_Chi_Minh";
@@ -139,6 +143,41 @@ export async function runBatchRCAOnce(): Promise<{ machinesProcessed: number; su
 
   for (const m of machines) {
     try {
+      if (isRcaCopilotEnabled()) {
+        // ── doc69 Wave 2 / A2 — converged path: evidence-rich RCA via aiRcaCopilot
+        // (Pareto+SPC+anomaly+VLM+audit+GraphRAG+quantitative-correlation), not just
+        // aggregate Pareto counts. Fail-safe: runRca/persistRca never throw; a null
+        // rcaId (persist failure) is counted as a per-machine failure without
+        // aborting the batch (caught below too, defense in depth). ──
+        const result: RcaResult = await runRca({ machineId: m.id, lang: "vi" });
+        const rcaId = await persistRca({ result, requestedBy: SYSTEM_USER_ID, requestedByName: "SYSTEM_BATCH" });
+        if (rcaId == null) {
+          failed++;
+          continue;
+        }
+        succeeded++;
+
+        // B2.4 — same fire-and-forget KB ingest as the legacy path, sourced from
+        // the copilot's real hypotheses instead of relabeled Pareto counts.
+        const top = result.hypotheses[0];
+        ingestKnowledgeRecordAsync({
+          sourceId: `rca:${m.code}:${until.toISOString().slice(0, 10)}`,
+          title: `RCA — ${m.code} (${until.toISOString().slice(0, 10)})`,
+          sourceType: "incident",
+          text: top
+            ? `Machine ${m.code} RCA (evidence-rich). Top cause: ${top.cause} (${Math.round(top.confidence * 100)}%).\n` +
+              `Evidence: ${top.evidence.join("; ")}\n` +
+              `Recommended fix: ${top.recommendedFix.rationale}`
+            : `Machine ${m.code} RCA (evidence-rich). ${result.note ?? "Needs human investigation — insufficient evidence."}`,
+          keywords: ["rca", "defect", m.code.toLowerCase()],
+        });
+        continue;
+      }
+
+      // LEGACY (doc69 A2): superseded by aiRcaCopilot when AI_RCA_COPILOT_ENABLED is
+      // on (branch above). Kept as the FALLBACK for default (flag-off) behavior —
+      // shallow Pareto-relabeling only (topFactors = NG frequency by measurement
+      // point), no SPC/anomaly/vision/causal-graph/quantitative-correlation evidence.
       const rows = await fetchInspectionRows(db, m.id, since, until);
       const totalInspections = new Set(rows.map(r => r.id)).size;
       const ngCount = rows.filter(r => r.result === "NG").length;

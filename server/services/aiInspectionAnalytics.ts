@@ -139,6 +139,21 @@ export interface YieldForecast {
   confidence: number;
 }
 
+/**
+ * doc69 Wave 2 / A2 — which forecastYield() strategy applies for a given trend
+ * length. Exported (single source of truth, shared with forecastYield's own
+ * branching below) so callers that need to LABEL the forecast — e.g. the
+ * predictive-alert signal derivation — can report the ACTUAL method used
+ * instead of a hardcoded/mislabeled name.
+ */
+export type YieldForecastMethod = "holt-winters" | "ewma" | "linear-trend";
+
+export function yieldForecastMethodFor(dataPointsLength: number): YieldForecastMethod {
+  if (dataPointsLength >= 14) return "holt-winters";
+  if (dataPointsLength >= 7) return "ewma";
+  return "linear-trend";
+}
+
 export interface CorrelationResult {
   factor1: string;
   factor2: string;
@@ -882,12 +897,14 @@ export async function forecastYield(
 
   const data = trend.map(t => t.yieldRate);
   const lastDate = new Date(trend[trend.length - 1].date);
-  const forecasts: YieldForecast[] = [];
 
-  if (data.length >= 14) {
+  // doc69 A2: branch via the shared classifier (yieldForecastMethodFor) instead of
+  // inlined literals, so external callers can label the ACTUAL method identically.
+  const method = yieldForecastMethodFor(data.length);
+  if (method === "holt-winters") {
     // HIGH confidence: Holt-Winters with seasonal pattern
     return forecastWithHoltWinters(data, lastDate, horizonDays, 0.9);
-  } else if (data.length >= 7) {
+  } else if (method === "ewma") {
     // MEDIUM confidence: EWMA (Exponential Weighted Moving Average)
     return forecastWithEWMA(data, lastDate, horizonDays, 0.6);
   } else {
