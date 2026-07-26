@@ -22,11 +22,13 @@ import { describe, it, expect, beforeAll } from "vitest";
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { robots, robotTelemetry, robotBehaviorAnomalies } from "../../drizzle/schema";
+import { cacheService } from "./cacheService";
 import {
   buildAnalyticsConditions,
   getDefectTrend,
   getMachinePerformance,
   getByMachineTypeBreakdown,
+  getCorrelationAnalysis,
   getRobotsSection,
   generateComprehensiveReport,
 } from "./aiInspectionAnalytics";
@@ -175,12 +177,83 @@ describe("machineType as an analytics filter + byMachineType breakdown (DB integ
   });
 });
 
+// ─── (2b) getCorrelationAnalysis — internal cache key includes machineType ──
+// Review fix (Important): the cache key used to omit machineType even though
+// the SQL condition filters by it, so a filtered call could return a stale
+// cache HIT computed for the unfiltered request (or vice-versa). Proven here
+// via an observable behavioural difference (sampleSize), not just the key
+// string, in BOTH call orders.
+
+describe("getCorrelationAnalysis — cache key includes machineType (fix)", () => {
+  const ts = Date.now() + 2; // distinct from the other describe blocks in this file
+  const factoryCode = `TEST_FAC_CORR_${ts}`;
+  const windowStart = new Date("2026-06-01T00:00:00Z");
+  const windowEnd = new Date("2026-06-10T00:00:00Z");
+
+  beforeAll(async () => {
+    const factoryId = await db.createFactory({ code: factoryCode, name: "CORR fac" });
+    const workshopId = await db.createWorkshop({ factoryId, code: `TEST_WS_CORR_${ts}`, name: "CORR ws" });
+    const lineId = await db.createProductionLine({ workshopId, code: `TEST_LINE_CORR_${ts}`, name: "CORR line" });
+    const stationId = await db.createStation({ lineId, code: `TEST_ST_CORR_${ts}`, name: "CORR st", orderIndex: 1 });
+
+    const aoiMachineId = await db.createMachine({
+      stationId, code: `M_CORR_AOI_${ts}`, name: "CORR AOI machine", machineType: "AOI", apiKey: `test_corr_aoi_${ts}`,
+    });
+    const aviMachineId = await db.createMachine({
+      stationId, code: `M_CORR_AVI_${ts}`, name: "CORR AVI machine", machineType: "AVI", apiKey: `test_corr_avi_${ts}`,
+    });
+
+    // 6 distinct calendar days per machine (>= 5 needed for the "Defect Rate
+    // vs Cycle Time" correlation row to be emitted) so sampleSize is a clean,
+    // directly-observable proxy for "which filter actually ran": 6 for a
+    // machineType-scoped call, 12 (6+6) for the unfiltered call.
+    for (let day = 1; day <= 6; day++) {
+      const inspectionTime = new Date(`2026-06-0${day}T09:00:00Z`);
+      await db.createProductInspection({
+        machineId: aoiMachineId, factoryCode, serialNumber: `SN_CORR_AOI_${ts}_${day}`,
+        overallResult: "OK", originalResult: "OK", cycleTime: (10 + day).toFixed(2),
+        inspectionTime,
+      } as any);
+      await db.createProductInspection({
+        machineId: aviMachineId, factoryCode, serialNumber: `SN_CORR_AVI_${ts}_${day}`,
+        overallResult: "OK", originalResult: "OK", cycleTime: (20 + day).toFixed(2),
+        inspectionTime,
+      } as any);
+    }
+  });
+
+  function sampleSizeOf(result: Awaited<ReturnType<typeof getCorrelationAnalysis>>) {
+    return result.find(c => c.factor1 === "Defect Rate" && c.factor2 === "Cycle Time")?.sampleSize;
+  }
+
+  it("unfiltered THEN machineType:'AOI' — the second call is NOT a cache hit of the unfiltered result", async () => {
+    cacheService.clear();
+
+    const unfiltered = await getCorrelationAnalysis({ startDate: windowStart, endDate: windowEnd, factoryCode });
+    expect(sampleSizeOf(unfiltered)).toBe(12);
+
+    const aoiOnly = await getCorrelationAnalysis({ startDate: windowStart, endDate: windowEnd, factoryCode, machineType: "AOI" });
+    expect(sampleSizeOf(aoiOnly)).toBe(6); // would be 12 (wrong) if the cache key omitted machineType
+  });
+
+  it("machineType:'AOI' THEN unfiltered (reverse order) — the second call is NOT a cache hit of the filtered result", async () => {
+    cacheService.clear();
+
+    const aoiOnly = await getCorrelationAnalysis({ startDate: windowStart, endDate: windowEnd, factoryCode, machineType: "AOI" });
+    expect(sampleSizeOf(aoiOnly)).toBe(6);
+
+    const unfiltered = await getCorrelationAnalysis({ startDate: windowStart, endDate: windowEnd, factoryCode });
+    expect(sampleSizeOf(unfiltered)).toBe(12); // would be 6 (wrong) if the cache key omitted machineType
+  });
+});
+
 // ─── (3) getRobotsSection — robot/OT KPIs (DB integration) ─────────────────
 
 describe("getRobotsSection — robot/OT KPIs routed into analytics (doc69 Wave2/A1)", () => {
   const ts = Date.now() + 1; // distinct from the describe block above
   const factoryCode = `TEST_FAC_ROB_${ts}`;
   const robotCode = `TEST_ROBOT_${ts}`;
+  const lineOnlyRobotCode = `TEST_ROBOT_LINEONLY_${ts}`;
   let robotId: number;
 
   beforeAll(async () => {
@@ -208,6 +281,23 @@ describe("getRobotsSection — robot/OT KPIs routed into analytics (doc69 Wave2/
       .returning({ id: robots.id });
     robotId = robotRow.id;
 
+    // Review fix (Minor): a robot assigned via `lineId` only (no `stationId`)
+    // must still be visible to a scoped user of that line's factory. Kept
+    // disabled/offline so the pre-existing activeRobots/onlineRobots
+    // assertions below (which target the station-based robot) stay unchanged
+    // — only totalRobots grows to reflect the second in-scope robot.
+    await database.insert(robots).values({
+      code: lineOnlyRobotCode,
+      name: "MT line-only test robot",
+      vendor: "sim",
+      kind: "agv",
+      endpoint: "sim://test-lineonly",
+      isEnabled: false,
+      status: "offline",
+      lineId,
+      lastSeenAt: new Date(),
+    });
+
     await database.insert(robotTelemetry).values({
       robotId,
       mode: "auto",
@@ -230,7 +320,7 @@ describe("getRobotsSection — robot/OT KPIs routed into analytics (doc69 Wave2/
   it("scoped to the seeded factory: returns the robot with its latest telemetry + anomaly", async () => {
     const section = await getRobotsSection({ factoryCode });
 
-    expect(section.totalRobots).toBe(1);
+    expect(section.totalRobots).toBe(2); // station-scoped robot + lineId-only robot (fix)
     expect(section.activeRobots).toBe(1);
     expect(section.onlineRobots).toBe(1); // status='idle' !== 'offline'
 
@@ -243,6 +333,13 @@ describe("getRobotsSection — robot/OT KPIs routed into analytics (doc69 Wave2/
     expect(section.recentAnomalies).toHaveLength(1);
     expect(section.recentAnomalies[0]).toMatchObject({ robotId, kind: "cycle_time_trend", severity: "high" });
     expect(section.anomalyCountBySeverity.high).toBe(1);
+  });
+
+  it("a robot assigned via lineId only (no stationId) is visible to its factory's scoped user (fix)", async () => {
+    const section = await getRobotsSection({ factoryCode });
+    const lineOnlyRobot = section.robots.find(r => r.robotCode === lineOnlyRobotCode);
+    expect(lineOnlyRobot).toBeDefined();
+    expect(lineOnlyRobot!.isEnabled).toBe(false);
   });
 
   it("scoped to a DIFFERENT factory: fail-safe EMPTY section — no cross-factory leak, no throw", async () => {

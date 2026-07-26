@@ -463,6 +463,11 @@ export interface RobotsSection {
   onlineRobots: number; // robots.status !== 'offline'
   robots: RobotHealthSnapshot[];
   recentAnomalies: RobotAnomalySummary[];
+  /**
+   * Severity counts over `recentAnomalies` ONLY (the capped top-50 most recent,
+   * not a true aggregate over all in-scope anomalies) — a factory with >50
+   * recent anomalies will under-count older/lower-ranked severities here.
+   */
   anomalyCountBySeverity: Record<string, number>;
 }
 
@@ -1126,8 +1131,9 @@ export async function getCorrelationAnalysis(params: AnalyticsPeriod): Promise<C
     `factory:${params.factoryCode ?? "all"}`,
     `line:${params.lineCode ?? "all"}`,
     `product:${params.productModel?.trim() || "all"}`,
+    `machineType:${params.machineType?.trim() || "all"}`,
   ].join(":");
-  
+
   // Check cache first
   const cached = cacheService.get<CorrelationResult[]>(cacheKey);
   if (cached) {
@@ -1578,10 +1584,14 @@ export async function getByMachineTypeBreakdown(params: AnalyticsPeriod): Promis
  * Tenant/factory scope: robots have no `factoryCode` column, so this mirrors
  * `aiAnalyticsScope.getMachineFactoryCode`'s join chain (stations → lines →
  * workshops → factories) over `robots.stationId` to resolve which robots belong
- * to a scoped caller's factory. `factoryCode` undefined (global/admin — already
- * enforced at the router boundary by `enforceAnalyticsFactoryScope`) → no
- * restriction. A robot with no stationId (or one that doesn't resolve to the
- * scoped factory) is simply excluded for a SCOPED caller — fail-closed, never a
+ * to a scoped caller's factory. A robot is ALSO in-scope when its `lineId`
+ * resolves to the caller's factory (lines → workshops → factories) — a robot
+ * assigned directly to a line (no stationId) must not be invisible to its own
+ * factory's scoped users. The two resolutions are unioned; either one matching
+ * is enough. `factoryCode` undefined (global/admin — already enforced at the
+ * router boundary by `enforceAnalyticsFactoryScope`) → no restriction. A robot
+ * with neither stationId nor lineId (or where neither resolves to the scoped
+ * factory) is simply excluded for a SCOPED caller — fail-closed, never a
  * cross-factory leak. Always fail-safe: DB errors / no robot data → the empty
  * section, never an exception that would break the rest of the report.
  */
@@ -1604,7 +1614,11 @@ export async function getRobotsSection(params: { factoryCode?: string } = {}): P
   try {
     let robotRows: (typeof robots.$inferSelect)[];
     if (params.factoryCode) {
-      const scopedIds = await db
+      // Resolve scope BOTH ways — a robot is in-scope if either its station's
+      // factory OR its line's factory matches the caller's factory. Union of
+      // ids, still fail-closed (only ADDS robots whose resolved factory is in
+      // scope; never widens beyond that).
+      const viaStation = await db
         .select({ id: robots.id })
         .from(robots)
         .innerJoin(stations, eq(robots.stationId, stations.id))
@@ -1612,7 +1626,14 @@ export async function getRobotsSection(params: { factoryCode?: string } = {}): P
         .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
         .innerJoin(factories, eq(workshops.factoryId, factories.id))
         .where(eq(factories.code, params.factoryCode));
-      const ids = scopedIds.map(r => r.id);
+      const viaLine = await db
+        .select({ id: robots.id })
+        .from(robots)
+        .innerJoin(productionLines, eq(robots.lineId, productionLines.id))
+        .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
+        .innerJoin(factories, eq(workshops.factoryId, factories.id))
+        .where(eq(factories.code, params.factoryCode));
+      const ids = Array.from(new Set([...viaStation.map(r => r.id), ...viaLine.map(r => r.id)]));
       if (ids.length === 0) return empty; // scoped caller with zero robots in their factory
       robotRows = await db.select().from(robots).where(inArray(robots.id, ids)).orderBy(desc(robots.updatedAt));
     } else {
@@ -1645,6 +1666,8 @@ export async function getRobotsSection(params: { factoryCode?: string } = {}): P
       .orderBy(desc(robotBehaviorAnomalies.detectedAt))
       .limit(50);
 
+    // NOTE: computed over `anomalyRows` (capped at 50, most recent first) — see
+    // the `anomalyCountBySeverity` doc comment on RobotsSection above.
     const anomalyCountBySeverity: Record<string, number> = {};
     for (const a of anomalyRows) {
       anomalyCountBySeverity[a.severity] = (anomalyCountBySeverity[a.severity] ?? 0) + 1;
