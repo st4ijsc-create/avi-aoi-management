@@ -34,8 +34,48 @@ import { toast } from "sonner";
 
 type ReportType = "daily" | "rca" | "model" | "executive";
 
+type NarrativeMeta = { generatedBy?: string; confidence?: number; model?: string } | undefined;
+
+/**
+ * doc69 A4 (audit U3) — provenance chip for an AI-narrative section: is the prose
+ * model-authored (GGUF llama.cpp / OpenAI) or a rule-based offline template? Fed
+ * by the `narrativeMetadata.generatedBy` field every report already returns
+ * (server/services/aiReportGenerator.ts `generateNarrative`) — this only renders
+ * it, no new server wiring needed. Renders nothing when metadata is absent (older
+ * cached results / unexpected shape) rather than guessing.
+ */
+function NarrativeProvenanceBadge({ meta, t }: { meta: NarrativeMeta; t: (k: string, d?: string) => string }) {
+  if (!meta?.generatedBy) return null;
+  const isOffline = meta.generatedBy === "offline";
+  const label =
+    meta.generatedBy === "gguf"
+      ? t("rp.provenanceGguf", "AI (GGUF Qwen3 cục bộ)")
+      : meta.generatedBy === "openai"
+        ? t("rp.provenanceOpenai", "AI (OpenAI)")
+        : t("rp.provenanceOffline", "Bản mẫu (ngoại tuyến)");
+  return (
+    <div className="flex items-center gap-2 mb-1.5">
+      <Badge
+        variant={isOffline ? "secondary" : "outline"}
+        className="text-[10px] py-0 h-5 font-normal"
+        title={t("rp.provenanceHint", "Nguồn tạo nội dung tường thuật của báo cáo này")}
+      >
+        {label}
+      </Badge>
+      {!isOffline && meta.model && (
+        <span className="text-[10px] text-muted-foreground font-mono">{meta.model}</span>
+      )}
+    </div>
+  );
+}
+
 export default function AIReportsPage() {
   const { t } = useTranslation();
+  // i18next's TFunction has an overloaded signature that TS won't structurally
+  // match against a plain `(k, d?) => string` prop type (same reason
+  // buildExportConfig below wraps `t` instead of passing it directly) — wrap
+  // once here and reuse for every NarrativeProvenanceBadge instance.
+  const tr = useCallback((k: string, d?: string) => (d !== undefined ? t(k, d) : t(k)), [t]);
   const [activeTab, setActiveTab] = useState<ReportType>("daily");
   const [dateRange, setDateRange] = useState({
     from: new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0],
@@ -204,6 +244,7 @@ export default function AIReportsPage() {
                     </div>
                     {dailySummary.data.narrative && (
                       <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <NarrativeProvenanceBadge meta={dailySummary.data.narrativeMetadata as NarrativeMeta} t={tr} />
                         <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg">
                           {dailySummary.data.narrative}
                         </pre>
@@ -248,6 +289,7 @@ export default function AIReportsPage() {
                   <div className="space-y-4">
                     {rcaReport.data.narrative && (
                       <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <NarrativeProvenanceBadge meta={rcaReport.data.narrativeMetadata as NarrativeMeta} t={tr} />
                         <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg">
                           {rcaReport.data.narrative}
                         </pre>
@@ -305,6 +347,7 @@ export default function AIReportsPage() {
                   <div className="space-y-4">
                     {modelPerformance.data.narrative && (
                       <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <NarrativeProvenanceBadge meta={modelPerformance.data.narrativeMetadata as NarrativeMeta} t={tr} />
                         <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg">
                           {modelPerformance.data.narrative}
                         </pre>
@@ -316,8 +359,10 @@ export default function AIReportsPage() {
                           <TableHeader>
                             <TableRow>
                               <TableHead>Model</TableHead>
+                              <TableHead>{t("rp.volume", "Số lượt suy luận")}</TableHead>
+                              <TableHead>{t("rp.latencyP95", "Độ trễ p95")}</TableHead>
+                              <TableHead>{t("rp.errorRate", "Tỷ lệ lỗi")}</TableHead>
                               <TableHead>{t("rp.accuracy", "Độ chính xác")}</TableHead>
-                              <TableHead>{t("rp.trend", "Xu hướng")}</TableHead>
                               <TableHead>Drift</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -326,21 +371,28 @@ export default function AIReportsPage() {
                               <TableRow key={m.modelId}>
                                 <TableCell className="font-mono text-xs">{m.modelCode}</TableCell>
                                 {m.dataAvailable === false ? (
-                                  <TableCell colSpan={3} className="text-xs text-muted-foreground">
+                                  <TableCell colSpan={5} className="text-xs text-muted-foreground">
                                     {t("rp.metricsUnavailable", "Số liệu chưa khả dụng")}
                                   </TableCell>
                                 ) : (
                                   <>
-                                    <TableCell>{(m.currentAccuracy * 100).toFixed(1)}%</TableCell>
+                                    {/* doc69 A4 — dataAvailable:true only guarantees SOME field
+                                        is real; each cell below still branches on its own
+                                        nullness (e.g. currentAccuracy has no real source yet
+                                        even when latency/error/drift do) rather than assuming
+                                        every metric is populated. */}
+                                    <TableCell>{m.totalPredictions ?? "—"}</TableCell>
+                                    <TableCell>{m.p95LatencyMs != null ? `${m.p95LatencyMs} ms` : "—"}</TableCell>
+                                    <TableCell>{m.errorRate != null ? `${(m.errorRate * 100).toFixed(1)}%` : "—"}</TableCell>
+                                    <TableCell>{m.currentAccuracy != null ? `${(m.currentAccuracy * 100).toFixed(1)}%` : "—"}</TableCell>
                                     <TableCell>
-                                      <Badge variant={m.accuracyTrend === "improving" ? "default" : m.accuracyTrend === "declining" ? "destructive" : "secondary"}>
-                                        {m.accuracyTrend}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                      {m.driftDetected
-                                        ? <AlertTriangle className="h-4 w-4 text-warning" aria-label="Drift detected" />
-                                        : <CheckCircle2 className="h-4 w-4 text-success" aria-label="No drift" />}
+                                      {m.driftDetected === true ? (
+                                        <AlertTriangle className="h-4 w-4 text-warning" aria-label={t("rp.driftDetected", "Phát hiện dịch chuyển")} />
+                                      ) : m.driftDetected === false ? (
+                                        <CheckCircle2 className="h-4 w-4 text-success" aria-label={t("rp.noDrift", "Không dịch chuyển")} />
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground" aria-label={t("rp.driftUnknown", "Chưa kiểm tra")}>—</span>
+                                      )}
                                     </TableCell>
                                   </>
                                 )}
@@ -399,6 +451,7 @@ export default function AIReportsPage() {
                     )}
                     {executiveSummary.data.narrative && (
                       <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <NarrativeProvenanceBadge meta={executiveSummary.data.narrativeMetadata as NarrativeMeta} t={tr} />
                         <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg">
                           {executiveSummary.data.narrative}
                         </pre>

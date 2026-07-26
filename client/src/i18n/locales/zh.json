@@ -11277,7 +11277,17 @@
     "recommendations": "建议",
     "actionItems": "行动项目",
     "bestMachine": "最佳性能机器",
-    "metricsUnavailable": "指标暂不可用"
+    "metricsUnavailable": "指标暂不可用",
+    "volume": "推理次数",
+    "latencyP95": "p95 延迟",
+    "errorRate": "错误率",
+    "driftDetected": "检测到漂移",
+    "noDrift": "无漂移",
+    "driftUnknown": "尚未检查",
+    "provenanceGguf": "AI（本地 GGUF Qwen3）",
+    "provenanceOpenai": "AI（OpenAI）",
+    "provenanceOffline": "模板（离线）",
+    "provenanceHint": "本报告叙述内容的生成来源"
   },
   "ts": {
     "title": "时间序列分析",

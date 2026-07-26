@@ -11477,7 +11477,17 @@
     "recommendations": "Khuyến Nghị",
     "actionItems": "Mục Hành Động",
     "bestMachine": "Máy Hoạt Động Tốt Nhất",
-    "metricsUnavailable": "Số liệu chưa khả dụng"
+    "metricsUnavailable": "Số liệu chưa khả dụng",
+    "volume": "Số Lượt Suy Luận",
+    "latencyP95": "Độ Trễ p95",
+    "errorRate": "Tỷ Lệ Lỗi",
+    "driftDetected": "Phát hiện dịch chuyển",
+    "noDrift": "Không dịch chuyển",
+    "driftUnknown": "Chưa kiểm tra",
+    "provenanceGguf": "AI (GGUF Qwen3 cục bộ)",
+    "provenanceOpenai": "AI (OpenAI)",
+    "provenanceOffline": "Bản Mẫu (Ngoại Tuyến)",
+    "provenanceHint": "Nguồn tạo nội dung tường thuật của báo cáo này"
   },
   "ts": {
     "title": "Phân Tích Chuỗi Thời Gian",

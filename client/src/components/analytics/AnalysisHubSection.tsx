@@ -334,11 +334,23 @@ export default function AnalysisHubSection() {
                 {Array.isArray(result.models) && result.models.length > 0 && (
                   <StringList
                     title={t("analysisHub.models", "Mô hình")}
-                    items={result.models.map((m: any) =>
-                      m.dataAvailable === false
-                        ? `${m.modelCode}: ${t("analysisHub.metricsUnavailable", "số liệu chưa khả dụng")}`
-                        : `${m.modelCode}: acc ${(m.currentAccuracy * 100).toFixed(1)}% · ${m.accuracyTrend}${m.driftDetected ? " · DRIFT" : ""}`,
-                    )}
+                    items={result.models.map((m: any) => {
+                      // doc69 A4 — dataAvailable:true no longer guarantees EVERY field is
+                      // non-null (currentAccuracy stays null — no real accuracy source
+                      // exists yet — even when latency/error/drift ARE real). Build the
+                      // summary from whichever real fields are present instead of assuming
+                      // currentAccuracy is a number (was a NaN%/undefined-trend bug).
+                      if (m.dataAvailable === false) {
+                        return `${m.modelCode}: ${t("analysisHub.metricsUnavailable", "số liệu chưa khả dụng")}`;
+                      }
+                      const parts: string[] = [];
+                      if (m.currentAccuracy != null) parts.push(`acc ${(m.currentAccuracy * 100).toFixed(1)}%`);
+                      if (m.totalPredictions != null) parts.push(`${m.totalPredictions} ${t("analysisHub.predictions", "lượt suy luận")}`);
+                      if (m.p95LatencyMs != null) parts.push(`p95 ${m.p95LatencyMs}ms`);
+                      if (m.errorRate != null) parts.push(`${t("analysisHub.errorRate", "lỗi")} ${(m.errorRate * 100).toFixed(1)}%`);
+                      if (m.driftDetected === true) parts.push("DRIFT");
+                      return `${m.modelCode}: ${parts.length > 0 ? parts.join(" · ") : t("analysisHub.metricsUnavailable", "số liệu chưa khả dụng")}`;
+                    })}
                   />
                 )}
                 <StringList title={t("analysisHub.retrainRecommendations", "Khuyến nghị huấn luyện lại")} items={result.retrainRecommendations} icon={<Sparkles className="h-4 w-4 text-info" />} />

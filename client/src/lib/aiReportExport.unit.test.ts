@@ -26,19 +26,45 @@ describe("buildAiExportConfig", () => {
     );
   });
 
-  it("model → table of models with accuracy + drift", () => {
+  it("model → table of models with real latency/error/volume (doc69 A4), accuracy still null (no real source)", () => {
     const cfg = buildAiExportConfig(
       "model",
-      { narrative: "n", models: [{ modelCode: "m1", currentAccuracy: 0.987, accuracyTrend: "improving", driftDetected: false }] },
+      {
+        narrative: "n",
+        models: [{
+          modelCode: "m1",
+          dataAvailable: true,
+          currentAccuracy: null,
+          accuracyTrend: null,
+          driftDetected: false,
+          totalPredictions: 120,
+          p95LatencyMs: 340,
+          errorRate: 0.032,
+        }],
+      },
       RANGE,
       t,
     );
     const table = cfg.sections.find((s) => s.type === "table")!;
-    expect(table.tableRows?.[0]).toEqual(["m1", "98.7%", "improving", "OK"]);
+    expect(table.tableRows?.[0]).toEqual(["m1", "120", "340 ms", "3.2%", "—", "OK"]);
   });
 
-  // doc69 W0-5 item 2 — model-performance is now HONEST-EMPTY (dataAvailable:false)
-  // when there's no real signal wired; the export must say "unavailable", not a
+  it("model → currentAccuracy real (future source) renders as a percentage, not '—'", () => {
+    const cfg = buildAiExportConfig(
+      "model",
+      {
+        narrative: "n",
+        models: [{ modelCode: "m1", dataAvailable: true, currentAccuracy: 0.987, accuracyTrend: "improving", driftDetected: true }],
+      },
+      RANGE,
+      t,
+    );
+    const table = cfg.sections.find((s) => s.type === "table")!;
+    expect(table.tableRows?.[0]).toEqual(["m1", "—", "—", "—", "98.7%", "⚠"]);
+  });
+
+  // doc69 W0-5 item 2 / A4 — model-performance is HONEST-EMPTY (dataAvailable:false)
+  // when there's no real signal wired at all; the export must say "unavailable", not a
   // fabricated 0.0% / OK row.
   it("model → dataAvailable:false renders 'metrics unavailable', not a fabricated 0.0%/OK row", () => {
     const cfg = buildAiExportConfig(
@@ -51,7 +77,24 @@ describe("buildAiExportConfig", () => {
       t,
     );
     const table = cfg.sections.find((s) => s.type === "table")!;
-    expect(table.tableRows?.[0]).toEqual(["m1", "Số liệu chưa khả dụng", "", ""]);
+    expect(table.tableRows?.[0]).toEqual(["m1", "Số liệu chưa khả dụng", "", "", "", ""]);
+  });
+
+  // doc69 A4 — driftDetected can now be null (monitor disabled/under-sampled) even
+  // when OTHER fields (latency/error/volume) are real; must render "—", not fabricate
+  // "OK" (which would falsely claim "checked, no drift found").
+  it("model → driftDetected null (monitor not evaluated) renders '—', not a fabricated OK", () => {
+    const cfg = buildAiExportConfig(
+      "model",
+      {
+        narrative: "n",
+        models: [{ modelCode: "m1", dataAvailable: true, currentAccuracy: null, accuracyTrend: null, driftDetected: null, totalPredictions: 5 }],
+      },
+      RANGE,
+      t,
+    );
+    const table = cfg.sections.find((s) => s.type === "table")!;
+    expect(table.tableRows?.[0]).toEqual(["m1", "5", "—", "—", "—", "—"]);
   });
 
   it("executive → KPI stats + forecast", () => {

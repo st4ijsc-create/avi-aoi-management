@@ -55,15 +55,29 @@ export function buildAiExportConfig(
       sections.push({
         title: t("rp.modelTitle", "Báo cáo hiệu suất mô hình AI"),
         type: "table",
-        tableHeaders: ["Model", t("rp.accuracy", "Độ chính xác"), t("rp.trend", "Xu hướng"), "Drift"],
+        tableHeaders: [
+          "Model",
+          t("rp.volume", "Số lượt suy luận"),
+          t("rp.latencyP95", "Độ trễ p95"),
+          t("rp.errorRate", "Tỷ lệ lỗi"),
+          t("rp.accuracy", "Độ chính xác"),
+          "Drift",
+        ],
+        // doc69 A4 — dataAvailable:true no longer implies EVERY metric is a real
+        // number (currentAccuracy stays null — no real accuracy source exists yet
+        // even when latency/error/drift ARE real) — each cell falls back to "—"
+        // independently instead of assuming currentAccuracy is numeric (was a
+        // `(null * 100).toFixed(1)` → "NaN%" bug).
         tableRows: d.models.map((m: any) =>
           m.dataAvailable === false
-            ? [m.modelCode, t("rp.metricsUnavailable", "Số liệu chưa khả dụng"), "", ""]
+            ? [m.modelCode, t("rp.metricsUnavailable", "Số liệu chưa khả dụng"), "", "", "", ""]
             : [
                 m.modelCode,
-                `${((m.currentAccuracy ?? 0) * 100).toFixed(1)}%`,
-                m.accuracyTrend ?? "",
-                m.driftDetected ? "⚠" : "OK",
+                m.totalPredictions != null ? String(m.totalPredictions) : "—",
+                m.p95LatencyMs != null ? `${m.p95LatencyMs} ms` : "—",
+                m.errorRate != null ? `${(m.errorRate * 100).toFixed(1)}%` : "—",
+                m.currentAccuracy != null ? `${(m.currentAccuracy * 100).toFixed(1)}%` : "—",
+                m.driftDetected === true ? "⚠" : m.driftDetected === false ? "OK" : "—",
               ],
         ),
       });

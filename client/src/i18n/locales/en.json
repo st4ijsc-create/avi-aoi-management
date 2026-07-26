@@ -11494,7 +11494,17 @@
     "recommendations": "Recommendations",
     "actionItems": "Action Items",
     "bestMachine": "Best Performing Machine",
-    "metricsUnavailable": "Metrics unavailable"
+    "metricsUnavailable": "Metrics unavailable",
+    "volume": "Inference Volume",
+    "latencyP95": "p95 Latency",
+    "errorRate": "Error Rate",
+    "driftDetected": "Drift detected",
+    "noDrift": "No drift",
+    "driftUnknown": "Not checked",
+    "provenanceGguf": "AI (local GGUF Qwen3)",
+    "provenanceOpenai": "AI (OpenAI)",
+    "provenanceOffline": "Template (offline)",
+    "provenanceHint": "Source of this report's narrative content"
   },
   "ts": {
     "title": "Time Series Analysis",

@@ -25,8 +25,10 @@ import {
   measurementPointDefs,
   dailyStatistics,
   machines,
+  inferenceResults,
 } from "../../drizzle/schema";
 import { aiModels } from "../../drizzle/schema/ai";
+import { checkConfidenceDrift } from "./aiDriftMonitor";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -74,18 +76,47 @@ export interface ModelPerformanceReport {
     modelId: number;
     modelCode: string;
     /**
-     * doc69 W0-5 item 2 — HONEST-EMPTY: no real performance signal is wired yet
-     * (no ai_gateway_metrics / drift-monitor join). `dataAvailable: false` means
-     * every metric below is null — NOT a fabricated "healthy" reading. Consumers
-     * MUST branch on this before rendering the metrics as real numbers.
-     * TODO(doc69 A4): wire ai_gateway_metrics / aiDriftMonitor, flip to true.
+     * doc69 A4 — true when AT LEAST ONE real operational signal was found for this
+     * model in the report window: either `inference_results` rows (latency/error/
+     * volume — see `collectModelOperationalStats`) or an evaluated aiDriftMonitor
+     * check. `false` means every metric below is null — NOT a fabricated "healthy"
+     * reading. Note this is granular per FIELD, not just per model: a model can have
+     * `dataAvailable:true` (real latency/error/volume) while `currentAccuracy` is
+     * STILL null, because no real accuracy source exists anywhere in this system yet
+     * (see comment on `currentAccuracy` below). Consumers must branch on each field's
+     * own nullness, not assume `dataAvailable:true` ⇒ every field is non-null.
      */
     dataAvailable: boolean;
+    /**
+     * Always null — doc69 A4 STOP-LYING scope explicitly excludes accuracy: there is
+     * no real accuracy/label-comparison source wired anywhere in this codebase yet
+     * (server/db/aiAdvanced.ts's own getInferenceStatsForPeriod hardcodes the same
+     * `accuracy: null` for the identical reason). Do NOT fabricate a number here —
+     * when a real accuracy source (e.g. getLabelAccuracy / eval reports) exists,
+     * wire it and flip this to real values.
+     */
     currentAccuracy: number | null;
+    /** Always null — derived from currentAccuracy, which is always null (see above). */
     accuracyTrend: "improving" | "stable" | "declining" | null;
+    /**
+     * Real value from aiDriftMonitor.checkConfidenceDrift when it could EVALUATE
+     * (enough samples in both baseline+recent windows AND AI_DRIFT_MONITOR_ENABLED).
+     * null — not false — when the monitor is disabled or under-sampled: "we didn't
+     * check" must never be reported as "no drift found".
+     */
     driftDetected: boolean | null;
+    /** Severity of the above, from aiDriftMonitor. Null under the same conditions as driftDetected. */
+    driftSeverity: "NONE" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+    /** Real inference_results row count for this model in the report window (call volume). Null when zero rows. */
     totalPredictions: number | null;
+    /** Real avg(processingTimeMs) from inference_results. Null when no rows. */
     avgLatencyMs: number | null;
+    /** Real p50 latency (percentile_cont) from inference_results. Null when no rows. */
+    p50LatencyMs: number | null;
+    /** Real p95 latency (percentile_cont) from inference_results. Null when no rows. */
+    p95LatencyMs: number | null;
+    /** Real (FAILED+TIMEOUT)/total fraction [0,1] from inference_results. Null when no rows. */
+    errorRate: number | null;
   }>;
   retrainRecommendations: string[];
   narrative: string;
@@ -340,7 +371,75 @@ async function collectMachinePerformance(startDate: Date, endDate: Date, machine
   }));
 }
 
-async function collectModelPerformanceData() {
+/** Minimum inference_results rows in-window before we flag an error-rate concern (avoid noise on tiny samples). */
+const MIN_SAMPLES_FOR_ERROR_ALERT = 20;
+
+interface ModelOperationalStats {
+  totalPredictions: number;
+  avgLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  errorRate: number;
+}
+
+/**
+ * doc69 A4 — REAL per-model latency/throughput/error-rate signal, read from
+ * `inference_results` (written by aiInferenceEngine.runInference on every actual
+ * vision-model inference — the ONLY table in this codebase that ties inference
+ * telemetry back to `ai_models.id`). `ai_gateway_metrics` was considered first (it
+ * is what G2 metering populates) but its `model` column is the resolved GGUF/LLM
+ * basename routed through the chat/RCA/report narrative gateway — a DIFFERENT
+ * model namespace from the ONNX/vision defect-detection models this report lists
+ * (`ai_models.code`, format ONNX/TENSORRT/etc.). Joining those two would either
+ * never match (dead code dressed up as "wired") or silently mix two unrelated
+ * model universes — so this reads the table that is actually keyed by `modelId`.
+ * Returns null (honest-empty) when there is no inference activity for this model
+ * in the window — NOT zeros.
+ */
+async function collectModelOperationalStats(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  modelId: number,
+  startDate: Date,
+  endDate: Date,
+): Promise<ModelOperationalStats | null> {
+  const [row] = await db.select({
+    total: sql<number>`COUNT(*)`.as("total"),
+    avgLatencyMs: sql<number>`COALESCE(AVG(${inferenceResults.processingTimeMs}), 0)`.as("avgLatencyMs"),
+    p50LatencyMs: sql<number>`COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${inferenceResults.processingTimeMs}), 0)`.as("p50LatencyMs"),
+    p95LatencyMs: sql<number>`COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ${inferenceResults.processingTimeMs}), 0)`.as("p95LatencyMs"),
+    errCount: sql<number>`COUNT(*) FILTER (WHERE ${inferenceResults.status} IN ('FAILED', 'TIMEOUT'))`.as("errCount"),
+  })
+    .from(inferenceResults)
+    .where(and(
+      eq(inferenceResults.modelId, modelId),
+      gte(inferenceResults.createdAt, startDate),
+      lte(inferenceResults.createdAt, endDate),
+    ));
+
+  const total = Number(row?.total) || 0;
+  if (total === 0) return null; // honest-empty: no real inference activity in this window
+
+  return {
+    totalPredictions: total,
+    avgLatencyMs: Math.round(Number(row?.avgLatencyMs) || 0),
+    p50LatencyMs: Math.round(Number(row?.p50LatencyMs) || 0),
+    p95LatencyMs: Math.round(Number(row?.p95LatencyMs) || 0),
+    errorRate: total > 0 ? (Number(row?.errCount) || 0) / total : 0,
+  };
+}
+
+/**
+ * doc69 A4 — wires the previously HONEST-EMPTY (T5/doc69 W0-5) model-performance
+ * collector to the REAL signals that exist:
+ *  - latency/throughput/error-rate ← inference_results (see collectModelOperationalStats)
+ *  - drift ← aiDriftMonitor.checkConfidenceDrift (confidence-distribution PSI/mean-shift)
+ *  - accuracy ← still no real source anywhere in this system → stays honestly null
+ * `emitAlert:false` on the drift check: report generation is a READ path (may be
+ * triggered repeatedly by dashboard refreshes / scheduled reports) and must not
+ * have the side effect of writing model_drift_alerts rows — that's aiDriftMonitor's
+ * own scheduled-check responsibility, not this report's.
+ */
+async function collectModelPerformanceData(startDate: Date, endDate: Date) {
   const db = await getDb();
   if (!db) {
     console.error("[collectModelPerformanceData] Database connection unavailable (DB_UNAVAILABLE)");
@@ -357,23 +456,47 @@ async function collectModelPerformanceData() {
     .where(eq(aiModels.status, "ACTIVE"))
     .orderBy(aiModels.code);
 
-  // doc69 W0-5 item 2 — HONEST-EMPTY (Wave-0 scope: stop lying, NOT full wiring).
-  // There is no real performance-tracking table/join yet (no ai_gateway_metrics /
-  // drift-monitor signal reaches this function) — it used to hardcode
-  // currentAccuracy=0 / driftDetected=false / totalPredictions=0 / avgLatencyMs=0,
-  // which reads as "every model is healthy" regardless of reality. Mark the data
-  // unavailable instead so the report (and its consumers) say "metrics unavailable"
-  // rather than a fabricated clean bill of health.
-  // TODO(doc69 A4): wire ai_gateway_metrics / aiDriftMonitor and flip dataAvailable.
-  return result.map((m) => ({
-    modelId: m.modelId,
-    modelCode: m.modelCode,
-    dataAvailable: false as const,
-    currentAccuracy: null,
-    accuracyTrend: null,
-    driftDetected: null,
-    totalPredictions: null,
-    avgLatencyMs: null,
+  return Promise.all(result.map(async (m) => {
+    let stats: ModelOperationalStats | null = null;
+    try {
+      stats = await collectModelOperationalStats(db, m.modelId, startDate, endDate);
+    } catch (err) {
+      console.error(`[collectModelPerformanceData] operational-stats query failed for model ${m.modelId}:`, err);
+    }
+
+    let driftDetected: boolean | null = null;
+    let driftSeverity: "NONE" | "MEDIUM" | "HIGH" | "CRITICAL" | null = null;
+    try {
+      const drift = await checkConfidenceDrift({
+        modelId: m.modelId,
+        modelVersion: m.modelVersion ?? undefined,
+        now: endDate,
+        emitAlert: false,
+      });
+      if (drift.evaluated) {
+        driftDetected = drift.drift;
+        driftSeverity = drift.severity;
+      }
+    } catch (err) {
+      console.error(`[collectModelPerformanceData] drift check failed for model ${m.modelId}:`, err);
+    }
+
+    return {
+      modelId: m.modelId,
+      modelCode: m.modelCode,
+      dataAvailable: stats != null || driftDetected != null,
+      // doc69 A4 — intentionally still null: no real accuracy source exists (see
+      // interface comment). This is NOT a leftover — do not "fix" by fabricating.
+      currentAccuracy: null,
+      accuracyTrend: null,
+      driftDetected,
+      driftSeverity,
+      totalPredictions: stats?.totalPredictions ?? null,
+      avgLatencyMs: stats?.avgLatencyMs ?? null,
+      p50LatencyMs: stats?.p50LatencyMs ?? null,
+      p95LatencyMs: stats?.p95LatencyMs ?? null,
+      errorRate: stats?.errorRate ?? null,
+    };
   }));
 }
 
@@ -513,13 +636,13 @@ export async function generateRCAReport(params: ReportParams & { triggerReason?:
  * Generate Model Performance report.
  */
 export async function generateModelPerformanceReport(params: ReportParams): Promise<ModelPerformanceReport> {
-  const { language = "en" } = params;
-  const models = await collectModelPerformanceData();
+  const { startDate, endDate, language = "en" } = params;
+  const models = await collectModelPerformanceData(startDate, endDate);
 
   const retrainRecommendations: string[] = [];
   for (const m of models) {
-    // doc69 W0-5 item 2 — no real signal for this model → do not fabricate a verdict
-    // (drift/decline/accuracy checks below all assume real metrics).
+    // doc69 A4 — no real signal for this model in this window → do not fabricate a
+    // verdict (drift/decline/accuracy/error-rate checks below all assume real metrics).
     if (!m.dataAvailable) continue;
     if (m.driftDetected) {
       retrainRecommendations.push(`Model "${m.modelCode}" shows accuracy drift — recommend retraining`);
@@ -530,6 +653,12 @@ export async function generateModelPerformanceReport(params: ReportParams): Prom
     if (m.currentAccuracy != null && m.totalPredictions != null && m.currentAccuracy < 0.9 && m.totalPredictions > 100) {
       retrainRecommendations.push(`Model "${m.modelCode}" accuracy below 90% — consider model architecture update`);
     }
+    // doc69 A4 — NEW: real error-rate signal from inference_results (was unavailable before).
+    if (m.errorRate != null && m.totalPredictions != null && m.totalPredictions >= MIN_SAMPLES_FOR_ERROR_ALERT && m.errorRate > 0.1) {
+      retrainRecommendations.push(
+        `Model "${m.modelCode}" inference error rate ${(m.errorRate * 100).toFixed(1)}% over ${m.totalPredictions} predictions — investigate pipeline/model health`,
+      );
+    }
   }
 
   if (retrainRecommendations.length === 0) {
@@ -537,8 +666,8 @@ export async function generateModelPerformanceReport(params: ReportParams): Prom
     retrainRecommendations.push(
       allUnavailable
         ? language === "vi"
-          ? "Số liệu hiệu suất model chưa khả dụng — chưa có nguồn dữ liệu thực (đang chờ nối dây, xem TODO doc69 A4)"
-          : "Model performance metrics unavailable — no real signal wired yet (see TODO doc69 A4)"
+          ? "Số liệu hiệu suất model chưa khả dụng cho kỳ báo cáo này — chưa có hoạt động suy luận thực nào được ghi nhận"
+          : "Model performance metrics unavailable for this period — no real inference activity recorded yet"
         : "All models performing within acceptable ranges — no immediate action needed",
     );
   }

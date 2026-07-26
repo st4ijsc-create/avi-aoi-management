@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import {
   analyzeTimeSeries,
@@ -21,7 +21,8 @@ import {
   type MultivariatePoint,
 } from "../services/aiTimeSeriesEngine";
 import { getDb } from "../db/connection";
-import { dailyStatistics } from "../../drizzle/schema";
+import { dailyStatistics, machines } from "../../drizzle/schema";
+import { MACHINE_TYPES } from "../constants/machineTypes";
 
 const timeSeriesPointSchema = z.object({
   timestamp: z.number(),
@@ -57,6 +58,11 @@ export const aiTimeSeriesRouter = router({
       numTrees: z.number().int().min(1).max(1000).optional(),
       sampleSize: z.number().int().min(1).max(10000).optional(),
       horizon: z.number().int().min(1).max(365).optional(),
+      // doc69 A4 (audit U5) — only consumed by algorithm:"isolation_forest"; lets a
+      // caller pin the PRNG seed for reproducible anomaly scores (e.g. re-running
+      // the exact same analysis for an audit trail). Omitting it uses the engine's
+      // fixed default seed, which is ALSO deterministic (not Math.random anymore).
+      seed: z.number().int().optional(),
     }))
     .mutation(({ input }) => {
       return analyzeTimeSeries(input.data as TimeSeriesPoint[], {
@@ -69,6 +75,7 @@ export const aiTimeSeriesRouter = router({
         numTrees: input.numTrees,
         sampleSize: input.sampleSize,
         horizon: input.horizon,
+        seed: input.seed,
       });
     }),
 
@@ -103,11 +110,12 @@ export const aiTimeSeriesRouter = router({
       numTrees: z.number().int().min(1).max(1000).default(100),
       sampleSize: z.number().int().min(1).max(10000).default(256),
       threshold: z.number().min(0).max(1).default(0.65),
+      seed: z.number().int().optional(),
     }))
     .mutation(({ input }) => {
       return analyzeMultivariate(
         input.data as MultivariatePoint[],
-        { numTrees: input.numTrees, sampleSize: input.sampleSize, threshold: input.threshold },
+        { numTrees: input.numTrees, sampleSize: input.sampleSize, threshold: input.threshold, seed: input.seed },
       );
     }),
 
@@ -144,6 +152,13 @@ export const aiTimeSeriesRouter = router({
       metric: z.enum(["defect_rate", "yield_rate", "inspection_count", "throughput"]),
       period: z.enum(["1d", "7d", "30d", "90d"]).default("30d"),
       analysisType: z.enum(["analyze", "forecast", "anomaly", "decompose", "changepoints"]).default("analyze"),
+      // doc69 A4 (audit U5) — previously this always blended EVERY machine
+      // (every AOI/AVI/SPI/... station) into one series; a single mixed line was
+      // often meaningless (e.g. an AOI's defect_rate scale vs an SPI's aren't
+      // comparable). Both optional — omitting both preserves the old all-machines
+      // behaviour exactly.
+      machineId: z.number().int().positive().optional(),
+      machineType: z.enum(MACHINE_TYPES).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -153,6 +168,13 @@ export const aiTimeSeriesRouter = router({
       const endDate = new Date();
       const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
 
+      const conditions = [gte(dailyStatistics.date, startDate), lte(dailyStatistics.date, endDate)];
+      if (input.machineId) conditions.push(eq(dailyStatistics.machineId, input.machineId));
+      if (input.machineType) conditions.push(eq(machines.machineType, input.machineType));
+
+      // Always leftJoin machines (cheap, indexed FK) so the machineType filter
+      // above can apply without a second query shape — same pattern as
+      // aiReportGenerator.collectMachinePerformance.
       const rows = await db
         .select({
           date: dailyStatistics.date,
@@ -161,7 +183,8 @@ export const aiTimeSeriesRouter = router({
           ng: sql<number>`COALESCE(SUM(${dailyStatistics.ngCount}), 0)::int`,
         })
         .from(dailyStatistics)
-        .where(and(gte(dailyStatistics.date, startDate), lte(dailyStatistics.date, endDate)))
+        .leftJoin(machines, eq(dailyStatistics.machineId, machines.id))
+        .where(and(...conditions))
         .groupBy(dailyStatistics.date)
         .orderBy(dailyStatistics.date);
 
@@ -215,7 +238,10 @@ export const aiTimeSeriesRouter = router({
           }));
           const fp = ewmaForecast(tsPoints, 0.3, horizon);
           return {
-            summary: `Holt-Winters / EWMA forecast · ${metricLabel} · next ${horizon} periods`,
+            // doc69 A4 (audit U5) — this branch only ever calls ewmaForecast (pure
+            // EWMA), never holtWinters; the summary previously claimed "Holt-Winters
+            // / EWMA" regardless, mislabeling the actual algorithm used.
+            summary: `EWMA forecast · ${metricLabel} · next ${horizon} periods`,
             dataPoints: [
               ...history,
               ...fp.map((f, i) => ({
