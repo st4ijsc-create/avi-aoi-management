@@ -302,6 +302,13 @@ cd web && npm run dev                             # Vite dev server on :5173, pr
 `web/src/lib/api.ts`/`inspector.ts` default to `http://localhost:5199` in dev
 (`import.meta.env.DEV`) — this split is untouched by Task 9.
 
+> **WS-D note:** every `/v1/*` route now requires an authenticated session (see §14). The FIRST time
+> you open the web UI against a fresh `security.db` you'll land on a **Bootstrap** screen (create the
+> first Admin account) instead of the Dashboard — this is expected, not a broken build. To skip it
+> entirely (auto-login as `demo-admin`, the exhibition contract), set `ST4I_DEMO_ENABLED=true` on the
+> `St4i.EngineApi` process before `dotnet run` (see §14.6). The Playwright suite already does this for
+> you — `web/playwright.config.ts`'s `webServer` entry sets it on the engine it spawns.
+
 ### 13.2 Deliverable A (ships) — WebView2 desktop shell, no Rust needed
 
 **Environment reality this build targets:** Rust/Cargo/rustup are **absent** on the exhibition build
@@ -548,3 +555,143 @@ CÁCH chạy. Bản triển lãm: copy `packaging/run-exhibition.bat` cạnh `St
 tiến trình engine con. Bản sản phẩm (mặc định): không cờ, không file phụ — bấm thẳng .exe, máy vào
 Live, hiện màn "Kết nối hệ sinh thái" cho tới khi nhập đúng địa chỉ máy chủ thật; màn này tự biến mất
 ngay khi máy chủ trả lời.)*
+
+---
+
+## 14. Security (WS-D) — local cookie auth, RBAC, audit log / Bảo mật cục bộ
+
+WS-D added a full local security layer in front of `St4i.EngineApi`: every `/v1/*` route requires an
+authenticated session **by default** — the only anonymous routes are `/v1/health`, `/v1/capabilities`,
+the four `/v1/auth/bootstrap-status|bootstrap|login` routes, and the SPA fallback (`index.html`).
+Everything below is enforced **server-side** (ASP.NET Core cookie auth + named authorization
+policies) — the web UI's own route-guards/hidden buttons are front-line UX only, never the real gate.
+
+**EN/VI:** WS-D thêm một lớp bảo mật cục bộ đầy đủ trước `St4i.EngineApi` — mọi route `/v1/*` mặc định
+đều cần phiên đăng nhập; chỉ health/capabilities/bootstrap-status/bootstrap/login và trang SPA fallback
+là ẩn danh. Tất cả được chặn ở PHÍA SERVER, giao diện web chỉ là lớp UX hỗ trợ.
+
+### 14.1 Cookie auth + first-run bootstrap
+
+- Session cookie: `HttpOnly`, `SameSite=Lax`, `SecurePolicy=SameAsRequest`, 8h sliding expiration.
+  Every request re-validates the cookie's baked-in `security_stamp` against the user row's CURRENT
+  one — a password/role/disable change invalidates every other outstanding session on its very next
+  use, not just at next login.
+- **First run** against an empty `security.db` (no users yet): `GET /v1/auth/bootstrap-status` reports
+  `needsBootstrap: true` and the web UI shows a **Bootstrap** screen instead of the Dashboard — create
+  the first account, username + password, which is minted as **Admin**. `POST /v1/auth/bootstrap` is
+  anonymous but one-shot: a second call (once any user exists) is rejected with `409 Conflict`.
+- After that: `POST /v1/auth/login` (username + password) mints the cookie; `POST /v1/auth/logout`;
+  `GET /v1/auth/me`; `POST /v1/auth/change-password` (self-service, new password ≥ 8 chars, bumps the
+  stamp and so invalidates every other session for that account, including — on its next validation —
+  this one).
+- Login timing is equalized across "unknown username" / "disabled account" / "wrong password" (a
+  throwaway password-hash verification is run on the two rejecting branches that don't already pay
+  that cost) — a classic username-enumeration side channel closed by design, not an afterthought.
+
+### 14.2 Three roles / Ba vai trò
+
+Each role maps to a named ASP.NET Core authorization policy (`Policies.Operator/Engineer/Admin`, each
+an OR-set over the role strings — Admin satisfies all three), applied per-route across every mapped
+`/v1/*` endpoint. `RbacPolicyTests` exhaustively sweeps every registered route's metadata and asserts
+it carries exactly its intended policy (or `AllowAnonymous`) — not a sampled spot-check.
+
+| Role | Can do |
+|---|---|
+| **Operator** (least-privileged) | View everything (fleet/machine/product/recipe/config/machine-settings/scenario/historian/OEE), start/stop/e-stop the fleet, manage their own session (logout / me / change-password). No configuration writes. |
+| **Engineer** | Everything Operator can, **plus** configure: edit products/points/recipes, machine-config & machine-settings pull/push + sync, `Settings` (server URL / language / machine code), scenario mutations + presets/burst, onboarding (register/claim), OEE settings, the Inspector WebSocket stream. |
+| **Admin** | Everything Engineer can, **plus** administer: user management (`/users` — create, change role, disable/enable, reset password), the `/audit` log (read + verify chain integrity), historian prune, and one in-handler escalation — see §14.4. |
+
+*(VI: Operator chỉ xem + vận hành fleet. Engineer thêm quyền cấu hình (sản phẩm/điểm đo/recipe/machine-
+config/settings/scenario/onboarding). Admin thêm quyền quản trị (người dùng, nhật ký kiểm toán, prune
+historian, và việc tắt xác thực TLS — xem §14.4).)*
+
+### 14.3 Audit log — honest threat model
+
+Every sensitive mutation (auth events, user management, settings/`verifyTls` changes, machine-config
+sync, scenario actions, product/recipe/point edits, fleet actions, the startup binding-risk check,
+…) is written to a hash-chained `audit_log` table living in the same `security.db` — actor, role,
+action, target, old/new value JSON, correlation id, an advisory client IP, and a timestamp. Each row's
+hash commits to the previous row's hash; the `/audit` screen's **"Verify chain integrity"** button
+(Admin-only) walks the whole chain and reports intact vs. broken.
+
+> **Honest limitation — read before calling this "tamper-proof" anywhere else.** This chain is
+> tamper-**evident** against in-app modification and interior row deletion **only**. It is keyless and
+> fully self-contained (nothing outside `security.db` to check against), so it does **not** resist a
+> local actor with direct file-level access to `security.db` — e.g. editing the file with the process
+> stopped, or a SQLite client against it with sufficient OS permissions. Such an actor can
+> tail-truncate the chain, forge new rows using the same public hash algorithm, or re-forge it
+> entirely from row 1 onward, all **undetected** by chain verification (which only checks internal
+> consistency of whatever rows currently sit in the table — never against an independent record of
+> what *should* be there). A keyed HMAC (an off-box key) and/or an external append-only/WORM anchor
+> would close this gap and is **explicitly deferred to ecosystem/Site scope** (tracked as XC-R39), not
+> built in this workstream. The `/audit` screen itself only ever surfaces this caveat via an info
+> tooltip — it never claims "tamper-proof" or "immutable" as headline copy.
+
+*(VI: Nhật ký kiểm toán dạng chuỗi hash chỉ phát hiện được sửa/xoá qua chính ứng dụng — KHÔNG chống lại
+việc chỉnh sửa trực tiếp file `security.db` khi tiến trình đã dừng. HMAC có khoá ngoài + neo WORM bên
+ngoài sẽ khắc phục việc này, nhưng đó là phạm vi hệ sinh thái/Site (XC-R39), chưa làm ở đây.)*
+
+### 14.4 `verifyTls` — default-on, Admin-gated to disable
+
+Every transport this codebase constructs defaults `verifyTls: true`. `PUT /v1/settings` lets any
+Engineer change `serverUrl`/`language`/`machineCode` freely, but flipping `verifyTls` to **`false`**
+(accepting an unverified/self-signed server certificate) is escalated **in-handler** to Admin-only —
+a materially bigger security decision than the route's own Engineer-tier policy allows, and one that
+depends on the request BODY rather than the route, so it can't be expressed as a second
+`RequireAuthorization` policy. A `true → false` transition is also its own dedicated audit action
+(`settings.verifyTls_disabled`), distinct from the general `settings.update` row, so it's trivially
+filterable in `/audit`.
+
+### 14.5 Loopback-default binding + non-loopback HTTP warning
+
+This engine is meant to be reached over loopback only — dev mode via Vite's own proxy (§14.8),
+packaged mode via `St4i.DesktopShell`'s WebView2 pointed at `localhost:5199` (§13.2). Once Kestrel has
+actually bound its listening addresses at startup, the host checks every bound URL and logs a
+`Warning` (plus always writing a `system.startup` audit row, safe-or-not) whenever any address serves
+**plain HTTP on a non-loopback host** — i.e. anything other than `localhost` / `127.0.0.1` / `[::1]`.
+An HTTPS binding is never flagged regardless of host; a loopback HTTP binding is never flagged either.
+The risk being flagged is real and specific: session cookies and any credentials sent to this API
+would traverse whatever network reaches that address in **cleartext**. Fix: bind loopback-only, or put
+the host behind HTTPS.
+
+### 14.6 `ST4I_DEMO_ENABLED` — exhibition auto-login (demo-admin)
+
+On an exhibition build (`ST4I_DEMO_ENABLED=true`, §13.5), a middleware transparently provisions (once,
+idempotently, under a lock) and signs in a real `demo-admin` **Admin** account for any request that
+isn't already authenticated — no login/bootstrap screen, matching the "zero clicks" exhibition
+contract. `demo-admin`'s password is a random value nobody is ever meant to type (the only way in is
+this auto-login seam) — it still goes through the exact same one-way `PasswordHasher` as every other
+account, never stored/logged in the clear. On a **product** build (`ST4I_DEMO_ENABLED` unset, the
+default since WS2-T1) this middleware is a complete no-op and the normal bootstrap/login flow (§14.1)
+applies from the very first run — no backdoor exists on a real customer deployment.
+
+### 14.7 Lock-out recovery
+
+There is **no** offline `--reset-admin-password` (or any other) CLI recovery verb in this build —
+`St4i.EngineApi`'s `Program.cs` takes no command-line arguments at all today. Recovery instead relies
+on always having **at least one other enabled Admin**: any Admin can reset any user's password
+(`POST /v1/users/{id}/reset-password`) or re-enable/re-promote another account from the `/users`
+screen. The server-enforced, race-proof "last enabled Admin" guard (`UserEndpoints.IsLastEnabledAdmin`
+— refuses to disable or demote-away-from-Admin the sole remaining enabled Admin, even under concurrent
+requests) exists specifically to keep this recovery path from ever locking itself out through the
+UI/API.
+
+**Operational recommendation:** bootstrap/create **at least 2** Admin accounts on any real deployment.
+If every Admin account's password is genuinely forgotten with no other recovery path, the only
+remaining option is direct SQLite surgery on `security.db` (e.g. clearing the `users` table to
+re-trigger `bootstrap-status: needsBootstrap=true`) — not a supported or scripted path in this build.
+
+*(VI: KHÔNG có lệnh dòng lệnh `--reset-admin-password` để khôi phục ngoại tuyến. Cách khôi phục là luôn
+giữ ≥2 tài khoản Admin đang bật — một Admin có thể reset mật khẩu Admin khác qua màn `/users`. Nếu MẤT
+hết Admin, chỉ còn cách can thiệp trực tiếp vào file `security.db`, không có kịch bản hỗ trợ sẵn.)*
+
+### 14.8 Dev Vite `/v1` proxy — same-origin cookies
+
+`web/vite.config.ts`'s dev server (`:5173`) proxies every `/v1/*` request — REST **and** the
+Inspector's WebSocket upgrade (`ws: true`) — to the fixed-port engine (`:5199`), making the dev server
+and the API **same-origin** from the browser's point of view. This is load-bearing, not cosmetic:
+`/v1/auth/*`'s `SameSite=Lax` session cookie is only ever sent back on a same-origin fetch — without
+this proxy, a direct cross-port fetch from `:5173` straight to `:5199` would never see the cookie come
+back on the next request, and login would appear to silently fail. `web/src/lib/api.ts`'s `BASE_URL`
+doc comment documents the client-side half of this same contract (and why the packaged build in §13.2
+needs no such proxy at all — one process, one origin, no cross-port split to bridge).
