@@ -125,6 +125,101 @@ function thinkingModelId(): string | undefined {
 }
 
 /**
+ * doc69 G2-6 — Thinking-tier HONESTY. Before this, `AI_THINKING_TIER_ENABLED=true` with
+ * `GGUF_THINKING_MODEL` unset fell back to the deep model SILENTLY (deepModelFor's old
+ * `if (!tid) return fallback;` early-return never warned) — an operator could believe the
+ * tier was live when it was inert. This is the single, pure ("no I/O beyond an fs.existsSync
+ * via ggufModelFileExists, no logging") status snapshot both the router's own one-time warning
+ * AND external health surfaces (aiGgufEngine.getEngineHealth, startup reporting) read from —
+ * one source of truth instead of duplicated flag-checking logic.
+ */
+export interface ThinkingTierStatus {
+  /** Master switch (AI_THINKING_TIER_ENABLED). */
+  enabled: boolean;
+  /** GGUF_THINKING_MODEL resolves to a non-empty basename. */
+  modelConfigured: boolean;
+  /** The configured model's .gguf file exists under GGUF_MODELS_DIR/uploads. */
+  fileExists: boolean;
+  /** True only when enabled + configured + file present — i.e. hard rca/report CAN escalate. */
+  active: boolean;
+  /** Human-readable one-line summary safe to log or surface in a health payload. */
+  reason: string;
+}
+
+/** Pure status snapshot — reads env + fs.existsSync only; never logs, never throws. */
+export function getThinkingTierStatus(): ThinkingTierStatus {
+  const enabled = thinkingTierEnabled();
+  if (!enabled) {
+    return {
+      enabled,
+      modelConfigured: false,
+      fileExists: false,
+      active: false,
+      reason: "disabled (AI_THINKING_TIER_ENABLED is off) — hard rca/report use the default deep model",
+    };
+  }
+  const tid = thinkingModelId();
+  if (!tid) {
+    return {
+      enabled,
+      modelConfigured: false,
+      fileExists: false,
+      active: false,
+      reason: "AI_THINKING_TIER_ENABLED is on but GGUF_THINKING_MODEL is unset — inactive, falling back to the default deep model",
+    };
+  }
+  const fileExists = ggufModelFileExists(tid);
+  if (!fileExists) {
+    return {
+      enabled,
+      modelConfigured: true,
+      fileExists: false,
+      active: false,
+      reason: `AI_THINKING_TIER_ENABLED is on and GGUF_THINKING_MODEL="${tid}" is set but its .gguf file was not found under GGUF_MODELS_DIR — inactive, falling back to the default deep model`,
+    };
+  }
+  return {
+    enabled,
+    modelConfigured: true,
+    fileExists: true,
+    active: true,
+    reason: `active — hard rca/report route to GGUF_THINKING_MODEL="${tid}"`,
+  };
+}
+
+// Log a distinct "inactive" reason at most once per process (route()-time warning — fires only
+// when a hard rca/report request actually hits deepModelFor(), see below).
+const warnedThinkingReasons = new Set<string>();
+function warnThinkingInactive(reason: string): void {
+  if (warnedThinkingReasons.has(reason)) return;
+  warnedThinkingReasons.add(reason);
+  console.warn(
+    `[aiModelRouter] Thinking tier misconfigured: ${reason}. Download the Thinking GGUF or unset ` +
+      `AI_THINKING_TIER_ENABLED. See docs/ECOSYSTEM/PHASE_B_AI_BRAIN_RUNBOOK.md.`,
+  );
+}
+
+// Startup-time warning (see reportThinkingTierStatus): independent of any route() call, so an
+// operator sees the drift immediately at boot rather than only after the first hard rca/report
+// request. Fires at most once per process.
+let thinkingStartupWarned = false;
+
+/**
+ * Call once at server startup (see `_core/index.ts`, alongside `reportAiModelAvailability`).
+ * Logs ONE clear warning if the flag is on but the tier is inactive; silent when the tier is
+ * either off (default) or genuinely active. Returns the status so callers can also feed it into
+ * a health payload / db_feature_status row without a second computation. Never throws.
+ */
+export function reportThinkingTierStatus(): ThinkingTierStatus {
+  const status = getThinkingTierStatus();
+  if (status.enabled && !status.active && !thinkingStartupWarned) {
+    thinkingStartupWarned = true;
+    console.warn(`[aiModelRouter] Thinking tier INACTIVE at startup: ${status.reason}.`);
+  }
+  return status;
+}
+
+/**
  * Which tasks may escalate to the Thinking model. Conservative: ONLY deep RCA/report — these
  * are the long-chain reasoning jobs the Thinking variant helps most, and they tolerate the extra
  * latency + cold-load + token budget. "planning"-style requests surface as rca/report here
@@ -136,34 +231,22 @@ const THINKING_TASKS: ReadonlySet<TaskKind> = new Set<TaskKind>(["rca", "report"
 /**
  * Resolve the deep-tier model for a HARD task. Returns the Thinking model basename ONLY when
  * ALL of: master flag on · GGUF_THINKING_MODEL set · the file exists on disk · task qualifies.
- * Otherwise returns the default deep model (byte-identical to legacy behaviour). Fail-safe:
- * a missing model file logs once and falls back — it NEVER throws and NEVER routes to a model
- * that cannot be loaded.
+ * Otherwise returns the default deep model (byte-identical to legacy behaviour). Fail-safe: any
+ * inactive reason (flag off, model unset, file missing) logs ONCE (via getThinkingTierStatus +
+ * warnThinkingInactive — doc69 G2-6 honesty fix, see above) and falls back — it NEVER throws and
+ * NEVER routes to a model that cannot be loaded.
  */
 function deepModelFor(task: TaskKind, difficulty: Difficulty): { id: string | undefined; thinking: boolean } {
   const fallback = { id: defaultModelId(), thinking: false };
   if (difficulty !== "hard") return fallback;
   if (!THINKING_TASKS.has(task)) return fallback;
-  if (!thinkingTierEnabled()) return fallback;
-  const tid = thinkingModelId();
-  if (!tid) return fallback;
-  if (!ggufModelFileExists(tid)) {
-    warnThinkingFileMissing(tid);
+  const status = getThinkingTierStatus();
+  if (!status.enabled) return fallback;
+  if (!status.active) {
+    warnThinkingInactive(status.reason);
     return fallback;
   }
-  return { id: tid, thinking: true };
-}
-
-// Log a missing thinking-model file at most once per filename to avoid log spam.
-const warnedMissingThinking = new Set<string>();
-function warnThinkingFileMissing(tid: string): void {
-  if (warnedMissingThinking.has(tid)) return;
-  warnedMissingThinking.add(tid);
-  console.warn(
-    `[aiModelRouter] AI_THINKING_TIER_ENABLED is on but GGUF_THINKING_MODEL "${tid}.gguf" was not ` +
-      `found in GGUF_MODELS_DIR — falling back to the default deep model (GGUF_DEFAULT_MODEL). ` +
-      `Download the Thinking GGUF or unset the flag. See docs/ECOSYSTEM/PHASE_B_AI_BRAIN_RUNBOOK.md.`,
-  );
+  return { id: thinkingModelId(), thinking: true };
 }
 
 // ─── Doc 34 (P0) — Code / FIM tier resolution ──────────────────

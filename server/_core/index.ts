@@ -5287,6 +5287,18 @@ async function startServer() {
     console.error("[AIModels] init failed:", (err as any)?.message || err);
   }
 
+  // doc69 G2-6 — Thinking-tier honesty: AI_THINKING_TIER_ENABLED=true with GGUF_THINKING_MODEL
+  // unset (or its file missing) used to fall back to the deep model SILENTLY. Report it once at
+  // boot, independent of any request ever reaching the tier, so ops sees config drift immediately
+  // instead of discovering it later via getEngineHealth().thinkingTier. Non-fatal; the safe
+  // thinking→deep fallback itself is unchanged (see aiModelRouter.ts deepModelFor).
+  try {
+    const { reportThinkingTierStatus } = await import("../services/aiModelRouter");
+    reportThinkingTierStatus();
+  } catch (err) {
+    console.error("[AIModels] thinking-tier status check failed:", (err as any)?.message || err);
+  }
+
   // P1 WS1.1 — Data retention pruning: MOVED to the W4-D background scheduler
   // set (backgroundJobs.ts); it now also runs on the dedicated jobs DB pool.
 

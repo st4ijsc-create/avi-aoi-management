@@ -778,16 +778,32 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
   // R5 — offload deep-model text generation to a PERSISTENT llama-server (own
   // VRAM) when configured, keeping the in-process embedder free of contention.
   // OFF by default → falls straight through to the in-process path below.
+  // doc69 G2-6 — FAIL-SAFE: a short preflightHealthy() probe runs first so a down/unreachable
+  // server is skipped in ~2s (LLAMA_SERVER_HEALTH_TIMEOUT_MS) instead of waiting out the full
+  // generation timeout; the try/catch below still covers a server that passes preflight but
+  // fails/times out during the actual call. Either way, in-process runs and the answer is
+  // still returned — unless LLAMA_SERVER_STRICT=true, which throws instead of silently
+  // degrading (see module header of aiLlamaServerClient.ts).
   {
     const srv = await import("./aiLlamaServerClient");
     if (srv.shouldUseServerForText(modelId)) {
-      try {
-        return await srv.serverGenerateText(options, modelId);
-      } catch (e) {
-        if (srv.llamaServerStrict()) throw e;
+      const healthy = await srv.preflightHealthy().catch(() => false);
+      if (!healthy) {
+        if (srv.llamaServerStrict()) {
+          throw new Error("[aiGgufEngine] llama-server preflight health check failed (LLAMA_SERVER_STRICT=true)");
+        }
         console.warn(
-          `[aiGgufEngine] llama-server generation failed, falling back in-process: ${(e as Error)?.message || e}`,
+          "[aiGgufEngine] llama-server preflight health check failed — falling back in-process (server unreachable/unhealthy)",
         );
+      } else {
+        try {
+          return await srv.serverGenerateText(options, modelId);
+        } catch (e) {
+          if (srv.llamaServerStrict()) throw e;
+          console.warn(
+            `[aiGgufEngine] llama-server generation failed, falling back in-process: ${(e as Error)?.message || e}`,
+          );
+        }
       }
     }
   }
@@ -927,16 +943,27 @@ export async function generateJSON<T = unknown>(
 ): Promise<{ data: T; raw: string; tokensGenerated: number; tokensPrompt: number; totalTimeMs: number; tokensPerSecond: number; modelId: string; }> {
   // R5 — schema-constrained JSON via the PERSISTENT llama-server when configured
   // (own VRAM), keeping the in-process embedder free. OFF by default → in-process.
+  // doc69 G2-6 — same preflight-then-generate fail-safe as generateText() above.
   {
     const srv = await import("./aiLlamaServerClient");
     if (srv.shouldUseServerForText(modelId)) {
-      try {
-        return await srv.serverGenerateJSON<T>(jsonSchema, options, modelId);
-      } catch (e) {
-        if (srv.llamaServerStrict()) throw e;
+      const healthy = await srv.preflightHealthy().catch(() => false);
+      if (!healthy) {
+        if (srv.llamaServerStrict()) {
+          throw new Error("[aiGgufEngine] llama-server preflight health check failed (LLAMA_SERVER_STRICT=true)");
+        }
         console.warn(
-          `[aiGgufEngine] llama-server JSON generation failed, falling back in-process: ${(e as Error)?.message || e}`,
+          "[aiGgufEngine] llama-server preflight health check failed — falling back in-process (server unreachable/unhealthy)",
         );
+      } else {
+        try {
+          return await srv.serverGenerateJSON<T>(jsonSchema, options, modelId);
+        } catch (e) {
+          if (srv.llamaServerStrict()) throw e;
+          console.warn(
+            `[aiGgufEngine] llama-server JSON generation failed, falling back in-process: ${(e as Error)?.message || e}`,
+          );
+        }
       }
     }
   }
@@ -1713,6 +1740,13 @@ export async function getEngineHealth(): Promise<{
   gpuMode: string;
   modelsDir: string;
   queue: { running: number; queued: number; max: number };
+  /** doc69 G2-6 — thinking-tier HONESTY: surfaces whether AI_THINKING_TIER_ENABLED is
+   *  actually active (flag + GGUF_THINKING_MODEL + file all line up) so operators aren't
+   *  misled by a flag that silently falls back to the default deep model. */
+  thinkingTier: { enabled: boolean; modelConfigured: boolean; fileExists: boolean; active: boolean; reason: string };
+  /** doc69 G2-6 — persistent llama-server status. `healthy` is only probed (network) when
+   *  `enabled` is true, so this stays a zero-cost no-op for everyone with the default OFF. */
+  llamaServer: { enabled: boolean; strict: boolean; healthy: boolean | null };
 }> {
   const engineReady = !!llamaInstance;
   ensureModelsDir();
@@ -1730,6 +1764,19 @@ export async function getEngineHealth(): Promise<{
     }
   }
 
+  // Dynamic imports: avoid a static circular import (aiModelRouter imports this module for
+  // ggufModelFileExists) and keep this health check cheap when llama-server is off (no network).
+  const { getThinkingTierStatus } = await import("./aiModelRouter");
+  const thinkingTier = getThinkingTierStatus();
+
+  const srv = await import("./aiLlamaServerClient");
+  const llamaServerEnabled = srv.llamaServerEnabled();
+  const llamaServer = {
+    enabled: llamaServerEnabled,
+    strict: srv.llamaServerStrict(),
+    healthy: llamaServerEnabled ? await srv.llamaServerHealthy().catch(() => false) : null,
+  };
+
   return {
     operational: engineReady && loadedModels.size > 0,
     engineReady,
@@ -1743,6 +1790,8 @@ export async function getEngineHealth(): Promise<{
     gpuMode: process.env.GGUF_GPU === "false" ? "cpu" : "auto (CUDA/Vulkan)",
     modelsDir: GGUF_MODELS_DIR,
     queue: getGgufQueueStats(),
+    thinkingTier,
+    llamaServer,
   };
 }
 

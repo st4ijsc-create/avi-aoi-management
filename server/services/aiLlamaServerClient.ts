@@ -19,6 +19,14 @@
  * other model stay in-process. On a server error the engine falls back in-process
  * unless LLAMA_SERVER_STRICT=true (then it throws, so honest-degrade/offline
  * templates kick in rather than a silent wrong-path).
+ *
+ * doc69 G2-6 — ROBUSTNESS: the engine (aiGgufEngine.generateText/generateJSON) runs
+ * preflightHealthy() (short timeout, LLAMA_SERVER_HEALTH_TIMEOUT_MS, default 2s) before EVERY
+ * server-routed call. Unhealthy/unreachable → skip straight to in-process (no waiting out the
+ * long generation timeout). Healthy but the generation call itself still fails/times out
+ * (LLAMA_SERVER_TIMEOUT_MS, default 120s) → the existing try/catch below still falls back
+ * in-process. Both paths log a clear console.warn (or throw under LLAMA_SERVER_STRICT). The
+ * answer is NEVER lost to a down/flaky server as long as in-process inference is available.
  */
 import type { GgufGenerateOptions, GgufGenerateResult } from "./aiGgufEngine";
 
@@ -63,7 +71,15 @@ function authHeaders(): Record<string, string> {
   return key ? { authorization: `Bearer ${key}` } : {};
 }
 
-/** Liveness probe (used by the runbook/health surface). */
+/**
+ * Liveness probe (used by the runbook/health surface + preflightHealthy() below).
+ *
+ * doc69 G2-6 fix: the /v1/models fallback USED TO fire without an abort signal at all — a
+ * server that accepts the TCP connection but never responds (hung, overloaded, mid-restart)
+ * could make this "short timeout" health check hang indefinitely, defeating its entire purpose.
+ * Both requests now share the SAME AbortController, so the whole probe is bounded by `timeoutMs`
+ * regardless of which branch it takes.
+ */
 export async function llamaServerHealthy(timeoutMs = 3000): Promise<boolean> {
   if (!baseUrl()) return false;
   const ctrl = new AbortController();
@@ -74,7 +90,7 @@ export async function llamaServerHealthy(timeoutMs = 3000): Promise<boolean> {
     return res.ok;
   } catch {
     try {
-      const res = await fetch(`${baseUrl()}/v1/models`, { headers: authHeaders() });
+      const res = await fetch(`${baseUrl()}/v1/models`, { headers: authHeaders(), signal: ctrl.signal });
       return res.ok;
     } catch {
       return false;
@@ -82,6 +98,26 @@ export async function llamaServerHealthy(timeoutMs = 3000): Promise<boolean> {
   } finally {
     clearTimeout(t);
   }
+}
+
+/** Short timeout (default 2s) for the PRE-generation preflight probe below — deliberately much
+ *  shorter than LLAMA_SERVER_TIMEOUT_MS (generation timeout, default 120s) so a down/unresponsive
+ *  server is detected in ~2s instead of only after a long hung POST. Configurable in case the
+ *  server's /health itself is slow (e.g. under heavy load) — raise if false negatives occur. */
+function healthCheckTimeoutMs(): number {
+  const n = Number(process.env.LLAMA_SERVER_HEALTH_TIMEOUT_MS ?? 2000);
+  return Number.isFinite(n) && n > 0 ? n : 2000;
+}
+
+/**
+ * doc69 G2-6 — Fast pre-flight liveness check the engine (aiGgufEngine) runs immediately before
+ * EVERY server-routed generation call. This is what makes the server→in-process fallback FAST
+ * (~2s) rather than merely eventually-correct (waiting out the full generation timeout on a
+ * hung connection). Wraps llamaServerHealthy() with the short healthCheckTimeoutMs(); never
+ * throws (llamaServerHealthy already swallows all transport errors and resolves false).
+ */
+export async function preflightHealthy(): Promise<boolean> {
+  return llamaServerHealthy(healthCheckTimeoutMs());
 }
 
 /** POST an OpenAI chat-completion to the server and return the raw JSON + timing. */
