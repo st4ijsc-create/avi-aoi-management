@@ -57,7 +57,7 @@ beforeEach(() => {
 
 const SHUTDOWN_FLUSH_MARKER = Symbol.for("st4i.aiLlmAudit.beforeExitFlushWired");
 
-afterEach(() => {
+afterEach(async () => {
   for (const k of ENV_KEYS) delete process.env[k];
   // Review fix tests register a REAL `process.on("beforeExit", ...)` listener (lazily, via
   // `recordLlmAudit`/`ensureLlmAuditShutdownFlush`). `ensureLlmAuditShutdownFlush` guards
@@ -68,6 +68,24 @@ afterEach(() => {
   // the FIRST test's `recordLlmAudit` call would ever actually register a listener).
   delete (process as unknown as Record<symbol, boolean>)[SHUTDOWN_FLUSH_MARKER];
   process.removeAllListeners("beforeExit");
+  // Flake fix (doc69 G2-5a Wave 1 W1-4, review-confirmed): every test loads a FRESH
+  // `aiLlmAudit` module instance via `loadFresh()`'s `vi.resetModules()`, and several tests
+  // (e.g. "registering the shutdown hook is idempotent" below) call `recordLlmAudit` without
+  // ever calling `flushLlmAudit()` — that arms this instance's real (unref'd) flush
+  // `setInterval` (default ~5s, see `AI_LLM_AUDIT_FLUSH_MS`) and leaves it running. Because
+  // `vi.resetModules()` only resets the MODULE REGISTRY (so the next test gets a fresh
+  // `buffer`/`flushTimer` closure) — it does NOT clear real timers already armed by a PRIOR
+  // module instance — that stray interval keeps firing in the background and can call the
+  // shared `insertValuesMock` mid-run, unpredictably corrupting a LATER test's call-count
+  // assertions (or, in a combined multi-file `vitest run`, a later FILE's — real timers are
+  // process-wide, not per-file, when files share a `pool: threads` worker). Since
+  // `vi.resetModules()` was NOT called since the test body ran, this `import()` still resolves
+  // to the SAME cached instance the test used, so `stopLlmAuditFlushTimer()` here reliably
+  // disarms it (no-op if that instance never armed one). This mirrors — but does not replace —
+  // the `beforeExit` cleanup above; the timer and the shutdown listener are two independent
+  // pieces of process-wide state this file must reset after every case.
+  const { stopLlmAuditFlushTimer } = await import("./aiLlmAudit");
+  stopLlmAuditFlushTimer();
 });
 
 // ─── 1. Direct unit tests of aiLlmAudit.ts ──────────────────────────────────

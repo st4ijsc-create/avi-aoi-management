@@ -118,6 +118,26 @@ function ensureFlushTimer(): void {
   if (typeof flushTimer.unref === "function") flushTimer.unref();
 }
 
+/**
+ * Test/ops helper (review fix, doc69 G2-5a Wave 1 W1-4 flake fix): clear the flush interval
+ * armed by `ensureFlushTimer`. Production never calls this (the timer is meant to live for the
+ * process's lifetime, same as `aiGateway.ts`'s own metrics timer) — it exists so tests that
+ * `vi.resetModules()` between cases can stop THIS module instance's real timer before moving
+ * on, instead of leaving an unref'd-but-still-firing `setInterval` pointed at a stale closure
+ * (stale `buffer`/mocked `getDb`) alive in the shared worker process. Without this, a timer
+ * armed by one test (or one test FILE, since `pool: threads` workers run multiple files
+ * sequentially and real timers are process-wide, not reset by `vi.resetModules()`) can fire
+ * during a LATER, unrelated test and call the shared mock unexpectedly — a cross-test/cross-file
+ * flake, not a production concern (`.unref()` already guarantees it can never hang process exit).
+ * Idempotent + safe to call even if no timer was ever armed.
+ */
+export function stopLlmAuditFlushTimer(): void {
+  if (flushTimer) {
+    clearInterval(flushTimer);
+    flushTimer = null;
+  }
+}
+
 // ─── Crash-safe shutdown flush (review fix, doc69 G2-5a Wave 1 W1-4b) ──────────────────────
 // See the module doc comment's "SHUTDOWN" paragraph for the full rationale/idiom reference.
 //
