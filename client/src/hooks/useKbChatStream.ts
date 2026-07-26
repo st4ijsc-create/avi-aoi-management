@@ -139,6 +139,14 @@ export interface KbClientAction {
   route: string;
   values?: Record<string, unknown>;
   message: string;
+  /**
+   * doc69 G2-7 — true when the backend ATTACHED this directive to ground a
+   * how-to answer (server/services/aiOperationalGrounding.ts), as opposed to an
+   * explicit user command ("mở trang X"). The caller must NOT auto-navigate when
+   * this is true — render a tappable "Mở màn X" button instead, since the user
+   * didn't ask to leave the answer they're reading.
+   */
+  suggested?: boolean;
 }
 
 /** Final aggregated result returned by startKbStream when the stream completes. */
@@ -158,6 +166,11 @@ export interface KbStreamResult {
   pendingAction: KbPendingAction | null;
   // P3/D8 (doc 34) — set when an image was attached (VL reading or degrade note).
   vision: KbVisionNote | null;
+  // doc69 G2-7 — navigate/prefill_form directive fired during this turn (mirrors
+  // toolResult/pendingAction: also delivered live via onClientAction, but
+  // aggregated here too so callers that only read the final result — not the
+  // live callback — can still render the "ask→do" button after the turn ends).
+  clientAction: KbClientAction | null;
 }
 
 export interface KbStreamContext {
@@ -237,6 +250,7 @@ export function useKbChatStream() {
       let cached: boolean | undefined;
       let pendingAction: KbPendingAction | null = null;
       let vision: KbVisionNote | null = null;
+      let clientAction: KbClientAction | null = null;
       let accumulated = "";
 
       try {
@@ -321,6 +335,7 @@ export function useKbChatStream() {
                 callbacks?.onPendingAction?.(pendingAction);
               } else if (payload.type === "client_action" && payload.clientAction) {
                 // FE-only directive: navigate / prefill_form. No DB mutation.
+                clientAction = payload.clientAction;
                 callbacks?.onClientAction?.(payload.clientAction);
               } else if (payload.type === "token" && payload.token) {
                 accumulated += payload.token;
@@ -374,6 +389,7 @@ export function useKbChatStream() {
           cached,
           pendingAction,
           vision,
+          clientAction,
         };
       } catch (err: any) {
         if (err?.name === "AbortError") {

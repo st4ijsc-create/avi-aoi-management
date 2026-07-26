@@ -53,6 +53,7 @@ import {
   ChevronRight,
   ImagePlus,
   Eye,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -88,6 +89,9 @@ interface KbAnswerExtras {
   pendingAction: KbPendingAction | null;
   // P3/D8 (doc 34) — vision step for the latest answer (VL reading or degrade note).
   vision: KbVisionNote | null;
+  // doc69 G2-7 — how-to answer grounded in a KNOWN operational card: a 1-tap
+  // "Mở màn X" button (NOT auto-navigated — see onClientAction below).
+  navigateAction: { route: string; message: string } | null;
 }
 
 export default function AIChatPage() {
@@ -323,9 +327,14 @@ export default function AIChatPage() {
           // P3/D8 (doc 34) — live VL step (shown above the streaming answer).
           onVision: (v) => setStreamVision(v),
           // FE-only directive: navigate / prefill_form. No DB mutation; never
-          // auto-executes a write. Same behaviour as the bubble.
+          // auto-executes a write. Same behaviour as the bubble — EXCEPT doc69
+          // G2-7's `suggested` (grounded from a how-to answer, not an explicit
+          // "mở trang X" command): that one must NOT auto-navigate the user away
+          // from the answer they're reading. It's surfaced as a button instead
+          // (rendered in renderKbExtras via lastExtras.navigateAction below).
           onClientAction: (ca) => {
             if (!ca.route) return;
+            if (ca.suggested) return; // handled via lastExtras.navigateAction, not here
             if (ca.action === "prefill_form" && ca.values) {
               publishPrefill(ca.route, ca.values);
             }
@@ -347,6 +356,10 @@ export default function AIChatPage() {
           cached: kbResult.cached,
           pendingAction: kbResult.pendingAction,
           vision: kbResult.vision,
+          navigateAction:
+            kbResult.clientAction?.suggested && kbResult.clientAction.route
+              ? { route: kbResult.clientAction.route, message: kbResult.clientAction.message }
+              : null,
         });
         setStreamToolResult(null);
         setStreamVision(null);
@@ -547,6 +560,25 @@ export default function AIChatPage() {
         {extras.vision && renderVisionNote(extras.vision)}
         {/* Tool result card (reused from the bubble) */}
         {extras.toolResult && <AIToolResultCard toolResult={extras.toolResult} />}
+
+        {/* doc69 G2-7 — "ask→do": 1-tap "Mở màn X" button for a how-to answer
+            grounded in a KNOWN operational card. NEVER auto-navigates — the user
+            taps to leave the answer they're reading. */}
+        {extras.navigateAction && (
+          <button
+            type="button"
+            onClick={() => setLocation(extras.navigateAction!.route)}
+            className="w-full flex items-center justify-between gap-2 text-xs rounded-md border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors px-2.5 py-1.5 text-left"
+          >
+            <span className="flex items-center gap-1.5 text-foreground/90">
+              <ExternalLink className="h-3.5 w-3.5 text-primary shrink-0" />
+              {extras.navigateAction.message}
+            </span>
+            <span className="text-primary font-medium shrink-0">
+              {t("aiChat.openScreen", "Mở màn hình")}
+            </span>
+          </button>
+        )}
 
         {/* P3/W3.1 (doc 11) — proposed write-action: confirmed/cancelled INLINE
             via the shared card (same component + mutations the bubble uses). The

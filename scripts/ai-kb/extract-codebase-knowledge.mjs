@@ -220,12 +220,18 @@ function extractRoutes(appTsxContent) {
       }
     }
 
-    // Access: RouteGuard requireRole={[...]} / requiredPermission="x" / navHref="x"
+    // Access: RouteGuard requireRole={[...]} / requirePermission="x" / navHref="x"
+    // doc69 G2-7 fix: RouteGuard.tsx's real prop is `requirePermission` (not
+    // `requiredPermission` — that name never appears anywhere in App.tsx). The old
+    // regex here never matched, so routes-catalog.json's requiredPermission was
+    // always null even for the 40+ routes that DO declare it (e.g. /war-room
+    // requirePermission="machine_status"). Fixed so operational-card generation
+    // (doc69 G2-7) — and every existing "route" KB chunk — gets the real value.
     const roleM = block.match(/requireRole=\{\[([^\]]*)\]\}/);
     const requiredRole = roleM
       ? roleM[1].split(",").map((s) => s.replace(/['"\s]/g, "")).filter(Boolean)
       : [];
-    const permM = block.match(/requiredPermission=["']([^"']+)["']/);
+    const permM = block.match(/requirePermission=["']([^"']+)["']/);
     const requiredPermission = permM ? permM[1] : null;
     const navHrefM = block.match(/navHref=["']([^"']+)["']/);
     const guarded = /<RouteGuard/.test(block);

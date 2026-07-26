@@ -19,6 +19,12 @@ import { guardGeneratedText, isDegenerateStream } from "./ai/generationGuard";
 // is reimplemented here.
 import { redactSecretsAndPII, StreamingSecretRedactor } from "./ai/aiSafety";
 import { planInference } from "./aiGateway";
+// doc69 G2-7 (Wave E4) — "ask→do" 1-tap navigate: attaches a client `navigate`
+// action to a how-to answer grounded in a KNOWN, whitelisted operational card
+// (see aiOperationalGrounding.ts's top-of-file doc comment for the fail-safe
+// gating). Pure/no side effects beyond a cached read of
+// knowledge/operational-cards.json — never throws, never blocks the answer.
+import { resolveOperationalNavigate } from "./aiOperationalGrounding";
 
 export type KbIntent =
   | "how_to"
@@ -101,6 +107,12 @@ export interface KbAnswerResult extends KbRetrieveResult {
   structured?: KbStructuredResponse;
   /** GĐ2 — set when a write-tool was matched: confirm card to render (no execute). */
   pendingAction?: PendingActionDTO | null;
+  /**
+   * doc69 G2-7 — set when this is a how-to answer grounded in a KNOWN, whitelisted
+   * operational card: a `navigate` directive (suggested: true) the FE renders as a
+   * 1-tap "Mở màn X" button. null for every other answer (fail-safe, additive).
+   */
+  clientAction?: ClientActionDirective | null;
 }
 
 /**
@@ -1829,6 +1841,14 @@ export async function answerQuestion(
     answer = appendHintsFooter(answer, retrieve);
   }
 
+  // doc69 G2-7 — "ask→do": attach a 1-tap navigate action when this is a how-to
+  // answer grounded in a KNOWN, whitelisted operational card. Fail-safe (null on
+  // any non-match); see aiOperationalGrounding.ts for the full gating.
+  const clientAction = resolveOperationalNavigate(
+    { intent: retrieve.intent, language: retrieve.language, citations: retrieve.citations },
+    { execCtx },
+  );
+
   const result: KbAnswerResult = {
     ...retrieve,
     answer,
@@ -1838,6 +1858,7 @@ export async function answerQuestion(
     toolResult: toolResult ?? null,
     toolName: toolExec.decision.tool ?? null,
     structured: extractStructuredResponse(answer),
+    clientAction,
   };
 
   // Cache only stable (non-tool, no-history) answers.
@@ -1973,6 +1994,12 @@ export async function* streamAnswer(
         confidence: v.confidence,
         citations: v.citations,
       };
+      // doc69 G2-7 — a cached answer carries the SAME grounded navigate action it
+      // was cached with (KbAnswerResult.clientAction), so repeat-asking a cached
+      // how-to question still shows the 1-tap button on the SSE path.
+      if (v.clientAction) {
+        yield { type: "client_action", toolName: null, clientAction: v.clientAction };
+      }
       yield { type: "token", token: v.answer ?? "" };
       yield {
         type: "done",
@@ -1995,6 +2022,19 @@ export async function* streamAnswer(
     confidence: retrieve.confidence,
     citations: retrieve.citations,
   };
+
+  // doc69 G2-7 — "ask→do": attach a 1-tap navigate action when this is a how-to
+  // answer grounded in a KNOWN, whitelisted operational card. Resolved right
+  // after retrieval (depends only on intent + citations, not on the generated
+  // answer text) so the FE gets it as early as the explicit-command client_action
+  // path does. Fail-safe (null on any non-match); see aiOperationalGrounding.ts.
+  const groundedClientAction = resolveOperationalNavigate(
+    { intent: retrieve.intent, language: retrieve.language, citations: retrieve.citations },
+    { execCtx },
+  );
+  if (groundedClientAction) {
+    yield { type: "client_action", toolName: null, clientAction: groundedClientAction };
+  }
 
   if (toolResult) {
     yield {
@@ -2101,6 +2141,10 @@ export async function* streamAnswer(
       toolResult: null,
       toolName: null,
       structured: extractStructuredResponse(accumulated),
+      // doc69 G2-7 — persist the grounded navigate action (if any) so a cached
+      // replay of this question (see the cached-answer branch above) still
+      // yields client_action.
+      clientAction: groundedClientAction,
     };
     answerCache.set(key, {
       expiresAt: now + ANSWER_CACHE_TTL_MS,

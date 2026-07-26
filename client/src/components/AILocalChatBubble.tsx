@@ -35,6 +35,7 @@ import {
   ChevronRight,
   ImagePlus,
   Eye,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -171,6 +172,9 @@ interface ChatMessage {
   pendingAction?: PendingAction | null;
   actionState?: "pending" | "executed" | "cancelled" | "denied" | "expired";
   actionMessage?: string | null;
+  // doc69 G2-7 — how-to answer grounded in a KNOWN operational card: a 1-tap
+  // "Mở màn X" button (NOT auto-navigated — see the client_action handler below).
+  navigateAction?: { route: string; message: string } | null;
 }
 
 // GĐ2 — pending write-action types (PendingAction / PendingActionChange) moved
@@ -521,6 +525,9 @@ export function AILocalChatBubble() {
       let toolNameValue: string | null = null;
       let pendingActionPayload: PendingAction | null = null;
       let visionPayload: KbVisionNote | null = null;
+      // doc69 G2-7 — set only by the non-streaming /ask fallback below (the SSE
+      // path sets ChatMessage.navigateAction directly via setMessages, live).
+      let navigateActionPayload: { route: string; message: string } | null = null;
       let accumulatedContent = "";
 
       try {
@@ -569,6 +576,8 @@ export function AILocalChatBubble() {
                   route: string;
                   values?: Record<string, unknown>;
                   message: string;
+                  // doc69 G2-7 — see ChatMessage.navigateAction's doc comment.
+                  suggested?: boolean;
                 };
                 error?: string;
                 structured?: NonNullable<ChatMessage["result"]>["structured"];
@@ -618,10 +627,20 @@ export function AILocalChatBubble() {
                 // GĐ3a Mục 5 — navigate / prefill_form. No DB mutation; FE only.
                 const ca = payload.clientAction;
                 if (ca.route) {
-                  if (ca.action === "prefill_form" && ca.values) {
-                    publishPrefill(ca.route, ca.values);
+                  if (ca.suggested) {
+                    // doc69 G2-7 — grounded from a how-to answer, NOT an explicit
+                    // "mở trang X" command: never auto-navigate away from the
+                    // answer the user is reading. Surface a 1-tap button instead.
+                    const nav = { route: ca.route, message: ca.message };
+                    setMessages((prev) =>
+                      prev.map((m) => (m.id === assistantMsgId ? { ...m, navigateAction: nav } : m)),
+                    );
+                  } else {
+                    if (ca.action === "prefill_form" && ca.values) {
+                      publishPrefill(ca.route, ca.values);
+                    }
+                    setLocation(ca.route);
                   }
-                  setLocation(ca.route);
                 }
               } else if (payload.type === "token" && payload.token) {
                 accumulatedContent += payload.token;
@@ -695,6 +714,14 @@ export function AILocalChatBubble() {
               if (json.data.pendingAction) {
                 pendingActionPayload = json.data.pendingAction as PendingAction;
               }
+              // doc69 G2-7 — a suggested navigate action from the how-to grounding
+              // (never auto-navigate; same button-only treatment as the SSE path).
+              if (json.data.clientAction?.suggested && json.data.clientAction?.route) {
+                navigateActionPayload = {
+                  route: json.data.clientAction.route,
+                  message: json.data.clientAction.message,
+                };
+              }
             } else {
               accumulatedContent =
                 "Xin lỗi, có lỗi xảy ra khi xử lý câu hỏi. Vui lòng thử lại.";
@@ -728,6 +755,7 @@ export function AILocalChatBubble() {
                 pendingAction: pendingActionPayload,
                 actionState: pendingActionPayload ? "pending" : m.actionState,
                 vision: visionPayload ?? m.vision ?? null,
+                navigateAction: navigateActionPayload ?? m.navigateAction ?? null,
               }
             : m,
         ),
@@ -1241,6 +1269,24 @@ export function AILocalChatBubble() {
                           ) : (
                             <>
                               {msg.toolResult && <AIToolResultCard toolResult={msg.toolResult} />}
+                              {/* doc69 G2-7 — "ask→do": 1-tap "Mở màn X" button for a
+                                  how-to answer grounded in a KNOWN operational card.
+                                  NEVER auto-navigates. */}
+                              {msg.navigateAction && (
+                                <button
+                                  type="button"
+                                  onClick={() => setLocation(msg.navigateAction!.route)}
+                                  className="w-full flex items-center justify-between gap-2 text-[11px] rounded-md border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors px-2 py-1.5 text-left"
+                                >
+                                  <span className="flex items-center gap-1.5 text-foreground/90">
+                                    <ExternalLink className="size-3 text-primary shrink-0" />
+                                    {msg.navigateAction.message}
+                                  </span>
+                                  <span className="text-primary font-medium shrink-0">
+                                    {t("aiChat.openScreen", "Mở màn hình")}
+                                  </span>
+                                </button>
+                              )}
                               {msg.pendingAction && (
                                 <ConfirmActionCard
                                   action={msg.pendingAction}

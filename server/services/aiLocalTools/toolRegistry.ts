@@ -120,6 +120,16 @@ export interface ClientActionDirective {
   values?: Record<string, unknown>;
   /** Localized human-readable confirmation message. */
   message: string;
+  /**
+   * doc69 G2-7 — true when this directive was ATTACHED by the assistant to ground
+   * a how-to answer (server/services/aiOperationalGrounding.ts), as opposed to an
+   * explicit user command ("mở trang X" → the navigate/prefill_form tools above).
+   * Undefined/false for every existing explicit-command directive (byte-identical
+   * behavior preserved). The FE must NOT auto-navigate when this is true — render
+   * a tappable "Mở màn X" button instead, since the user didn't ask to leave the
+   * answer they're reading.
+   */
+  suggested?: boolean;
 }
 
 /**
