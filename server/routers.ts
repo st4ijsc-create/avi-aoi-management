@@ -126,6 +126,7 @@ import { aiRcaCopilotRouter } from "./routers/aiRcaCopilotRouter"; // Technician
 import { aiThresholdAdvisorRouter } from "./routers/aiThresholdAdvisorRouter"; // Technician Copilot ②: Threshold/Param Advisor (recommend + HITL apply)
 import { aiSetupAdvisorRouter } from "./routers/aiSetupAdvisorRouter"; // Technician Copilot ①: Setup Advisor (pre-fill new-machine config from similar template)
 import { aiAgentRouter } from "./routers/aiAgentRouter"; // GĐ3b: multi-step agentic orchestrator (on top of HITL)
+import { aiAgentCenterRouter } from "./routers/aiAgentCenterRouter"; // doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
 import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
 import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
 import { aiSegmentationRouter } from "./routers/aiSegmentationRouter"; // B7: segmentation mask + sub-pixel metrology
@@ -670,6 +671,8 @@ export const appRouter = router({
   aiSetupAdvisor: aiSetupAdvisorRouter,
   // AI Agent — GĐ3b multi-step agentic orchestrator (on top of HITL)
   aiAgent: aiAgentRouter,
+  // AI Agent Command Center — doc69 GĐ4/Wave E2 (E2-1): unified agent roster read-model (ops-scoped)
+  aiAgentCenter: aiAgentCenterRouter,
   // AI Confidence Calibration — ECE / reliability diagram (B2)
   aiCalibration: aiCalibrationRouter,
   // AI Anomaly Detection — unsupervised PatchCore-style memory bank + kNN (B3)
