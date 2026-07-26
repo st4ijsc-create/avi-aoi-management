@@ -30,7 +30,7 @@ const ANALYTICS_TTL_MS = 5 * 60 * 1000;
 // Build cache key from period input + endpoint name + extras
 function analyticsCacheKey(
   endpoint: string,
-  input: { startDate: Date; endDate: Date; machineId?: number; factoryCode?: string; lineCode?: string; productModel?: string },
+  input: { startDate: Date; endDate: Date; machineId?: number; factoryCode?: string; lineCode?: string; productModel?: string; machineType?: string },
   extras?: Record<string, unknown>,
 ): string {
   const base = [
@@ -41,6 +41,10 @@ function analyticsCacheKey(
     input.factoryCode ?? "all",
     input.lineCode ?? "all",
     input.productModel ?? "all",
+    // doc 69 Wave 2 / A1 — machineType must be part of the cache key, otherwise a
+    // filtered and an unfiltered request for the same period/machine/factory/line
+    // would collide on the SAME cache entry and one would serve the other's data.
+    input.machineType ?? "all",
   ].join(":");
   if (extras) {
     const extra = Object.entries(extras)
@@ -81,6 +85,9 @@ const periodInput = z.object({
   factoryCode: z.string().optional(),
   lineCode: z.string().optional(),
   productModel: z.string().optional(),
+  // doc 69 Wave 2 / A1 — machineType as a first-class filter dimension (AOI/AVI/
+  // SPI/...). Optional + additive: omitted → identical behavior to before this task.
+  machineType: z.string().optional(),
 })
   .refine(
     (data) => {
