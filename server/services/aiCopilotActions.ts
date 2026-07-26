@@ -33,6 +33,9 @@ import {
   logUpdate,
   type AuditContext,
 } from "./auditTrailService";
+// doc 69 Giai đoạn 4/Wave 3 D2 — bounded-autonomy policy (master flag OFF default;
+// see server/services/ai/autonomyPolicy.ts for the full predicate + kill-switch).
+import { evaluateAutonomy, isAutonomyEnabled, recordAutonomousExecution } from "./ai/autonomyPolicy";
 
 // TTL for a proposed action before it expires (5 minutes — Mục 2).
 const PENDING_TTL_MS = 5 * 60 * 1000;
@@ -105,6 +108,15 @@ export interface ProposeResult {
   denied?: boolean;
   reason?: string;
   message?: string;
+  /**
+   * D2 — present ONLY when the bounded-autonomy tier attempted (and here, succeeded
+   * at) auto-confirming this proposal without a human. Absent for every legacy
+   * caller/response (master flag OFF ⇒ this field never appears). `true` ⇔
+   * `executionResult.status === "executed"`.
+   */
+  autoConfirmed?: boolean;
+  /** D2 — the confirmAction() result from the autonomous confirm attempt, when one ran. */
+  executionResult?: ConfirmResult;
 }
 
 export interface ConfirmResult {
@@ -254,7 +266,31 @@ export async function proposeAction(
     expiresAt,
   });
 
-  // Audit: proposed.
+  // ── D2 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy: may this proposal skip ONLY
+  // the human wait? Master flag OFF (default) ⇒ evaluateAutonomy short-circuits
+  // immediately (no DB/contract work at all) and everything below is BYTE-IDENTICAL
+  // to the pre-D2 flow. When allowed, the confirmation is driven through the SAME
+  // confirmAction() used by a human click — RBAC re-check, guardrail enforcement,
+  // idempotency and args-from-DB all still run; autonomy supplies only the token
+  // (== the row id it just created) instead of a human doing so.
+  const autonomyDecision = await evaluateAutonomy(
+    { type: tool.name, idempotencyKey, contract: contract ?? null, args },
+    { user: ctx.user, tool: tool.name, actionId, lang: ctx.lang, req: ctx.req },
+  );
+  let autoConfirmResult: ConfirmResult | undefined;
+  if (autonomyDecision.allowed) {
+    autoConfirmResult = await confirmAction(actionId, actionId, ctx.user, ctx.lang, ctx.req, {}, {
+      reason: autonomyDecision.reason,
+    });
+    if (autoConfirmResult.status === "executed") {
+      recordAutonomousExecution(ctx.user.id);
+    }
+  }
+
+  // Audit: proposed (+ the autonomy decision — only recorded when the master flag is
+  // ON, so an auditor can see WHY an eligible-looking action did/did not auto-run,
+  // without adding noise to the overwhelming majority of deployments where autonomy
+  // is globally off).
   await logCrudOperation(buildAuditCtx(ctx.user, ctx.req), {
     action: AUDIT_ACTIONS.AI_ACTION_PROPOSED,
     entityType: ENTITY_TYPES.AI_ACTION,
@@ -268,6 +304,15 @@ export async function proposeAction(
         requiredPermission: perm,
         args: sanitizeArgs(args),
         preview: { entityType: preview.entityType, entityId: preview.entityId, warnings: preview.warnings },
+        ...(isAutonomyEnabled()
+          ? {
+              autonomy: {
+                allowed: autonomyDecision.allowed,
+                reason: autonomyDecision.reason,
+                executed: autoConfirmResult?.status === "executed",
+              },
+            }
+          : {}),
       },
     },
     status: "success",
@@ -292,6 +337,10 @@ export async function proposeAction(
       ...(contract?.expected ? { expected: contract.expected } : {}),
       ...(contract?.explain ? { explain: contract.explain } : {}),
     },
+    // D2 — surfaced ONLY when an autonomous confirm attempt actually ran.
+    ...(autoConfirmResult
+      ? { autoConfirmed: autoConfirmResult.status === "executed", executionResult: autoConfirmResult }
+      : {}),
   };
 }
 
@@ -307,6 +356,15 @@ export async function confirmAction(
   lang: ToolLang,
   req?: ToolExecContext["req"],
   deps: ConfirmContractDeps = {},
+  /**
+   * D2 — set ONLY by the bounded-autonomy wiring in proposeAction() when it drives
+   * this SAME confirm path programmatically instead of a human clicking confirm.
+   * Purely additive: every existing caller omits it and the RETURNED ConfirmResult
+   * shape is completely unchanged (see aiCopilotActions.contract.test.ts's exact
+   * `Object.keys(res)` assertion) — it only tags the audit metadata below so an
+   * auditor can tell an autonomous execution apart from a human one.
+   */
+  autonomy?: { reason: string },
 ): Promise<ConfirmResult> {
   const db = await getDb();
   if (!db) return { ok: false, status: "invalid", message: "DB_UNAVAILABLE" };
@@ -347,7 +405,10 @@ export async function confirmAction(
     action: AUDIT_ACTIONS.AI_ACTION_CONFIRMED,
     entityType: ENTITY_TYPES.AI_ACTION,
     entityName: row.tool,
-    details: { operation: "AI_ACTION_CONFIRMED", metadata: { actionId, tool: row.tool, requiredPermission: perm } },
+    details: {
+      operation: "AI_ACTION_CONFIRMED",
+      metadata: { actionId, tool: row.tool, requiredPermission: perm, ...autonomyAuditMeta(autonomy) },
+    },
     status: "success",
   });
 
@@ -361,7 +422,14 @@ export async function confirmAction(
       entityName: row.tool,
       details: {
         operation: "AI_ACTION_DENIED",
-        metadata: { actionId, tool: row.tool, requiredPermission: perm, denyReason: "MISSING_PERMISSION", stage: "execute" },
+        metadata: {
+          actionId,
+          tool: row.tool,
+          requiredPermission: perm,
+          denyReason: "MISSING_PERMISSION",
+          stage: "execute",
+          ...autonomyAuditMeta(autonomy),
+        },
       },
       status: "failure",
     });
@@ -404,6 +472,7 @@ export async function confirmAction(
               denyReason: enforcement.reason,
               stage: "contract",
               tokenBurned: enforcement.burnToken ?? false,
+              ...autonomyAuditMeta(autonomy),
             },
           },
           status: "failure",
@@ -434,7 +503,18 @@ export async function confirmAction(
     details: {
       operation: "AI_ACTION_EXECUTED",
       changes: previewBefore?.changes,
-      metadata: { actionId, tool: row.tool, requiredPermission: perm, args: sanitizeArgs(row.argsJson as Record<string, unknown>) },
+      metadata: {
+        actionId,
+        tool: row.tool,
+        requiredPermission: perm,
+        args: sanitizeArgs(row.argsJson as Record<string, unknown>),
+        // D2 — the brief-mandated explicit marker: "the execution audit for an
+        // auto-confirmed action must be clearly marked (autoConfirmed:true + the
+        // policy decision/reason + the confirming principal recorded as the
+        // autonomy tier, not a human user)".
+        ...(autonomy ? { autoConfirmed: true } : {}),
+        ...autonomyAuditMeta(autonomy),
+      },
     },
     status: "success",
   });
@@ -522,6 +602,18 @@ async function auditConfirmFailure(
     details: { operation: "AI_ACTION_DENIED", metadata: { actionId, tool, denyReason: reason, stage: "confirm" } },
     status: "failure",
   });
+}
+
+/**
+ * D2 — audit metadata marker threaded onto every audit row confirmAction() writes
+ * during an autonomous confirm attempt (CONFIRMED/DENIED/EXECUTED alike), so an
+ * auditor can tell "this confirm was driven by the autonomy tier, not a human
+ * click" from the audit trail alone. `autonomyReason` is the evaluateAutonomy()
+ * decision reason (always "OK" here — a non-OK reason never reaches confirmAction).
+ * Absent (⇒ {}) for every legacy human-confirm call.
+ */
+function autonomyAuditMeta(autonomy: { reason: string } | undefined): Record<string, unknown> {
+  return autonomy ? { autonomyAttempt: true, autonomyReason: autonomy.reason, confirmedBy: "autonomy" } : {};
 }
 
 /** Redact obviously-sensitive arg keys before they hit the audit log. */
@@ -658,6 +750,44 @@ async function enforceAdviceContract(
   // confirm). No separate four-eyes channel is wired into the copilot confirm path
   // today, so the requirement maps to the confirm action itself.
   return { ok: true };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// D2 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy contract pre-check.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bounded-autonomy pre-check, called from server/services/ai/autonomyPolicy.ts
+ * evaluateAutonomy() BEFORE it ever decides to drive confirmAction() programmatically.
+ * Reuses `enforceAdviceContract` (the EXACT SAME guardrail/policy_permit/twin_validation
+ * checks the human-confirm path runs) — it is NOT reimplemented here — but is STRICTER
+ * in two ways that only matter for the human-wait-skipping path:
+ *
+ *   - No contract at all ⇒ ineligible (NO_ADVICE_CONTRACT). Autonomy must never guess at
+ *     a safety envelope that was never attached to the proposal.
+ *   - `requires: ["human_approval"]` ⇒ PERMANENTLY ineligible (HUMAN_APPROVAL_REQUIRED),
+ *     regardless of guardrail/policy/twin outcome. Unlike the confirm path (where this
+ *     requirement is satisfied by the human who is, in that flow, actually clicking
+ *     confirm), autonomy has no human to satisfy it with — pretending otherwise would
+ *     defeat the entire point of the requirement.
+ *
+ * Unconditional: unlike the confirm path's enforcement (gated by isAdviceContractEnabled()
+ * so a human-confirm keeps legacy byte-for-byte behavior when the flag is off), the
+ * autonomy pre-check ALWAYS runs when reached — autonomy has its own, independent safety
+ * bar that does not depend on the global advice-contract toggle.
+ */
+export async function evaluateContractForAutonomy(
+  contract: AdviceContract | null,
+  ctx: { user: CopilotUser; tool: string; actionId: string; args: Record<string, unknown>; lang: ToolLang },
+  deps: ConfirmContractDeps = {},
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!contract) return { ok: false, reason: "NO_ADVICE_CONTRACT" };
+  const requires = Array.isArray(contract.requires) ? contract.requires : [];
+  if (requires.includes("human_approval")) {
+    return { ok: false, reason: "HUMAN_APPROVAL_REQUIRED" };
+  }
+  const result = await enforceAdviceContract(contract, ctx, deps);
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason };
 }
 
 /** Localized message for a contract reject (vi default, en/zh variants). */
