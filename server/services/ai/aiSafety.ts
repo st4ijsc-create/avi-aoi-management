@@ -278,7 +278,17 @@ export function redactSecretsOnly(text: string): RedactionResult {
  * pathological/never-closing PEM block), the fragment is force-flushed (best-effort
  * redacted — any complete sub-secrets inside it are already masked) once it reaches this many
  * characters, and the redactor resets. Guarantees `StreamingSecretRedactor` can never hold
- * forever or grow its buffer unbounded. */
+ * forever or grow its buffer unbounded.
+ *
+ * IMPORTANT — this cap is not only a guard against a pathological never-closing block: a
+ * perfectly well-formed, COMPLETE secret can also hit it and leak at the force-flush, simply by
+ * being larger than ~8KB before its closing delimiter is ever seen (e.g. a large RSA/keystore
+ * dump, or any PEM body alone exceeding this size). In that case the force-flush fires before
+ * the closing `-----END...-----` has streamed in, so the secret is emitted RAW/unredacted at
+ * that point — this is a documented best-effort tradeoff (bounded memory over guaranteed
+ * redaction of arbitrarily large secrets), not a bug. See
+ * `aiSafetyStreamingFuzz.test.ts`'s "length exceeds STREAM_HOLD_CAP" case, which asserts only
+ * bounded/finite output and does NOT assert redaction for this scenario. */
 export const STREAM_HOLD_CAP = 8192;
 
 // Held back when NO secret-start signal is present — just enough to catch a short secret
