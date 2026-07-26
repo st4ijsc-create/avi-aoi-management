@@ -34,6 +34,7 @@ export const vi = {
       inspector: "Theo dõi API",
       scenario: "Kịch bản",
       historian: "Lịch sử dữ liệu",
+      reports: "Báo cáo OEE",
       settings: "Cài đặt",
     },
     sidebar: {
@@ -1543,6 +1544,57 @@ export const vi = {
     },
   },
 
+  // Task 13 (WS-A, docs/plans/2026-07-26-ws-a-historian-blueprint.md) — `/reports`, the per-machine
+  // OEE screen (`routes/Reports.tsx`). Loss is split into exactly THREE honest buckets (Downtime/
+  // Speed/Quality) — never the "six big losses" framework some OEE literature uses; see
+  // `OeeLossChart.tsx`'s own doc comment for why.
+  reports: {
+    title: "Báo cáo OEE",
+    description:
+      "Tính sẵn sàng, hiệu suất, chất lượng và OEE cho một máy — cùng với 3 nhóm tổn thất và mục tiêu có thể chỉnh sửa, tính trên lịch sử dữ liệu đã lưu trữ.",
+    filters: {
+      machine: "Máy",
+      from: "Từ ngày",
+      to: "Đến ngày",
+    },
+    export: {
+      pdf: "Xuất PDF",
+    },
+    empty: {
+      noMachines: "Chưa có máy nào trong đội máy.",
+    },
+    loadFailed: "Không thể tải dữ liệu OEE.",
+    kpi: {
+      availability: "Tính sẵn sàng",
+      performance: "Hiệu suất",
+      quality: "Chất lượng",
+      oee: "OEE",
+    },
+    lossChart: {
+      title: "Tổn thất OEE (3 nhóm)",
+      downtime: "Tổn thất dừng máy",
+      speed: "Tổn thất tốc độ",
+      quality: "Tổn thất chất lượng",
+      yAxisLabel: "Phút",
+      tooltipMinutes: (vars: Vars) => `${vars.minutes} phút`,
+      tooltipSeconds: (vars: Vars) => `${vars.seconds} giây`,
+      minutesShort: (vars: Vars) => `${vars.minutes} phút`,
+      total: (vars: Vars) => `Tổng tổn thất: ${vars.minutes} phút`,
+    },
+    targets: {
+      title: "Mục tiêu OEE",
+      idealCycleLabel: "Thời gian chu kỳ lý tưởng (giây)",
+      ratioLabel: "Tỷ lệ sản xuất theo kế hoạch (0–1)",
+      overridden: "Đã tuỳ chỉnh",
+      baseline: "Mặc định",
+      save: "Lưu mục tiêu",
+      saving: "Đang lưu…",
+      invalidNumber: "Nhập một số hợp lệ cho cả hai trường.",
+      saveFailedFallback: "Máy chủ từ chối giá trị này.",
+      loadFailed: "Không thể tải mục tiêu OEE.",
+    },
+  },
+
   toast: {
     fleetStarted: "Đã chạy fleet.",
     fleetStartFailed: "Không thể chạy fleet.",
@@ -1551,6 +1603,8 @@ export const vi = {
     scenarioBurstApplied: "Đã kích hoạt Burst.",
     settingsSaved: "Đã lưu cài đặt.",
     settingsSaveFailed: "Không thể lưu cài đặt.",
+    oeeTargetsSaved: "Đã lưu mục tiêu OEE.",
+    oeeTargetsSaveFailed: "Không thể lưu mục tiêu OEE.",
     onboardingKeyStored: (vars: Vars) => `Đã lưu khóa cho ${vars.code}.`,
     configPulled: (vars: Vars) => `Đã kéo cấu hình cho ${vars.code} (v${vars.version}).`,
     configPullFailed: "Kéo cấu hình thất bại.",

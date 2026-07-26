@@ -1,5 +1,6 @@
 import * as React from "react"
 import {
+  BarChart3,
   Boxes,
   Database,
   Factory,
@@ -35,6 +36,11 @@ export const NAV_ITEMS: NavItem[] = [
   // as "stored records" (vs. e.g. `Clock`/`History`, which read more like "recent activity") — matches
   // this screen's own subject: long-lived historian rows, not a live tick.
   { labelKey: "shell.nav.historian", path: "/historian", icon: Database },
+  // Task 13 (WS-A) — per-machine OEE screen (`routes/Reports.tsx`): A/P/Q/OEE tiles, the honest
+  // 3-bucket loss chart, editable targets, PDF export. `BarChart3` reads as "reporting/analytics"
+  // (distinct from `Database`'s "stored records" reading just above), matching this screen's own
+  // subject: computed KPI rollups, not raw browsable rows.
+  { labelKey: "shell.nav.reports", path: "/reports", icon: BarChart3 },
   { labelKey: "shell.nav.settings", path: "/settings", icon: Settings },
 ]
 

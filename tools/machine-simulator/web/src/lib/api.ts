@@ -1024,3 +1024,182 @@ export function buildHistorianExportCsvUrl(filter: HistorianResultsFilter): stri
   })
   return `${BASE_URL}/v1/historian/results/export.csv${qs ? `?${qs}` : ""}`
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// OEE — Task 13 (WS-A, docs/plans/2026-07-26-ws-a-historian-blueprint.md). `/reports`
+// (`routes/Reports.tsx`) — per-machine Availability/Performance/Quality/OEE + an honestly-labeled
+// THREE-bucket loss breakdown (Downtime/Speed/Quality — never a finer "six big losses" split, see
+// `OeeCalculator.cs`'s own doc comment: reason codes don't exist yet, so this calculator/UI stops at
+// the three buckets today's inputs can honestly support) computed server-side over the SAME durable
+// per-cycle result log Tasks 8/10 already wrote. Wire shapes mirror
+// `St4i.EngineApi.Endpoints.HistorianDtos`'s `OeeResultDto`/`OeeSettingsDto`/
+// `OeeSettingsUpdateRequest` exactly.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `OeeResultDto` — `availability`/`performance`/`quality`/`oee` are fractions in `[0, 1]` (multiply
+ * by 100 for a percentage display, same convention `dashboard.kpi.fpy` already uses), never NaN/
+ * Infinity/over 1 (`OeeCalculator.Calculate` clamps/guards every division). The three loss fields are
+ * plain seconds (the underlying C# `TimeSpan`s flattened via `.TotalSeconds`), never negative. */
+export interface OeeResult {
+  machineCode: string
+  from: string
+  to: string
+  availability: number
+  performance: number
+  quality: number
+  oee: number
+  plannedProductionSeconds: number
+  runSeconds: number
+  downtimeLossSeconds: number
+  speedLossSeconds: number
+  qualityLossSeconds: number
+  totalCount: number
+  goodCount: number
+  idealCycleSeconds: number
+}
+
+/** `OeeSettingsDto` — the RESOLVED/effective settings for one machine: `idealCycleSeconds` is either
+ * the stored override or the machine's own baseline cycle time (`isOverridden` tells the two apart),
+ * `plannedProductionRatio` always has a real value (defaults to `1.0` server-side for a machine with
+ * no stored entry — never `null`). */
+export interface OeeSettings {
+  machineCode: string
+  idealCycleSeconds: number
+  isOverridden: boolean
+  plannedProductionRatio: number
+}
+
+/** `OeeSettingsUpdateRequest` — both fields optional/nullable on the wire: an omitted field leaves
+ * that setting unchanged server-side (see `OeeSettingsStore.Set`'s own doc comment). The server
+ * REJECTS (never clamps) a `plannedProductionRatio` outside `[0, 1]` or an `idealCycleSecondsOverride`
+ * `<= 0` — a 400 with `{ error: "<message>" }`, surfaced via `OeeSettingsApiError` below. */
+export interface OeeSettingsUpdateInput {
+  idealCycleSecondsOverride?: number
+  plannedProductionRatio?: number
+}
+
+/** `machine`/`from`/`to` query-string vocabulary shared by `/oee`, `/oee/fleet` (no `machine` there —
+ * see `useOeeFleet`) and `/report.pdf`. `from`/`to` are both optional — the server defaults `to` to
+ * now and `from` to `to - 24h` when omitted (`HistorianEndpoints.TryResolveRange`), same as
+ * `HistorianResultsFilter`'s own from/to. */
+export interface OeeFilter {
+  machine?: string
+  from?: string
+  to?: string
+}
+
+function buildOeeQueryString(filter: OeeFilter): string {
+  const params = new URLSearchParams()
+  if (filter.machine) params.set("machine", filter.machine)
+  if (filter.from) params.set("from", filter.from)
+  if (filter.to) params.set("to", filter.to)
+  return params.toString()
+}
+
+/** Mirrors `MachineSettingsApiError` (`lib/machineSettingsApi.ts`) — the shared `request<T>`/
+ * `EngineApiError` above only carry a status code, not the server's own `ApiErrorDto.Error` text.
+ * The Targets panel is the one caller here that needs to show the EXACT 400 wording
+ * ("plannedProductionRatio must be in the range [0, 1]." / "idealCycleSecondsOverride must be > 0.")
+ * rather than a generic "request failed" — this tiny dedicated error class (and the `putOeeSettings`
+ * fetch below it) captures that body instead of changing `request<T>`'s contract for every other
+ * endpoint in this file. */
+export class OeeSettingsApiError extends Error {
+  status: number
+  /** The server's own `ApiErrorDto.error` text — undefined only for a genuinely unparseable body
+   * (a 500, a network-layer failure a proxy injected, …). */
+  serverMessage?: string
+
+  constructor(status: number, serverMessage?: string) {
+    super(serverMessage ?? `request failed: ${status}`)
+    this.name = "OeeSettingsApiError"
+    this.status = status
+    this.serverMessage = serverMessage
+  }
+}
+
+async function putOeeSettings(machine: string, input: OeeSettingsUpdateInput): Promise<OeeSettings> {
+  const res = await fetch(`${BASE_URL}/v1/historian/oee/settings?machine=${encodeURIComponent(machine)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    let serverMessage: string | undefined
+    try {
+      const body = (await res.json()) as { error?: string }
+      serverMessage = body?.error
+    } catch {
+      // Non-JSON body (rare — a proxy/500 page) — fall back to the generic message.
+    }
+    throw new OeeSettingsApiError(res.status, serverMessage)
+  }
+  return (await res.json()) as OeeSettings
+}
+
+const oeeEndpoints = {
+  oee: (filter: OeeFilter) => request<OeeResult>(`/v1/historian/oee?${buildOeeQueryString(filter)}`),
+  // No `machine` — the fleet endpoint always returns one entry per roster machine (see
+  // `GetOeeFleetAsync`), so `filter` here is deliberately typed without it.
+  oeeFleet: (filter: Omit<OeeFilter, "machine">) => request<OeeResult[]>(`/v1/historian/oee/fleet?${buildOeeQueryString(filter)}`),
+  oeeSettings: (machine: string) => request<OeeSettings>(`/v1/historian/oee/settings?machine=${encodeURIComponent(machine)}`),
+}
+
+/** `GET /v1/historian/oee?machine=&from=&to=` — on-demand (`enabled: !!machine`): `Reports.tsx`
+ * mounts before a machine selection resolves from the fleet roster, so this stays idle rather than
+ * firing against `/v1/historian/oee?machine=undefined`. One-shot (no `refetchInterval`), same
+ * "browse over already-settled history" reasoning `useHistorianResults` documents — a filter change
+ * (including `from`/`to`) naturally refetches since it's part of the query key. */
+export function useOee(machine: string | undefined, from?: string, to?: string): UseQueryResult<OeeResult> {
+  return useQuery({
+    queryKey: ["oee", machine, from, to] as const,
+    queryFn: () => oeeEndpoints.oee({ machine, from, to }),
+    enabled: !!machine,
+  })
+}
+
+/** `GET /v1/historian/oee/fleet?from=&to=` — every roster machine's OEE for the same period, in
+ * roster order. No `machine` filter (the endpoint doesn't take one). */
+export function useOeeFleet(from?: string, to?: string): UseQueryResult<OeeResult[]> {
+  return useQuery({
+    queryKey: ["oee-fleet", from, to] as const,
+    queryFn: () => oeeEndpoints.oeeFleet({ from, to }),
+  })
+}
+
+/** `GET /v1/historian/oee/settings?machine=` — on-demand, same `enabled: !!machine` gate as
+ * `useOee`. */
+export function useOeeSettings(machine: string | undefined): UseQueryResult<OeeSettings> {
+  return useQuery({
+    queryKey: ["oee-settings", machine] as const,
+    queryFn: () => oeeEndpoints.oeeSettings(machine as string),
+    enabled: !!machine,
+  })
+}
+
+/** `PUT /v1/historian/oee/settings?machine=` — on success, writes the fresh settings straight into
+ * the `["oee-settings", machine]` cache entry (so the Targets panel reflects the resolved value/
+ * `isOverridden` flag immediately) AND invalidates `["oee", machine]` (every from/to variant for this
+ * machine) since a new ideal-cycle-seconds/planned-ratio changes the Performance/Availability math a
+ * subsequent `useOee` read would compute. A rejected (400) call throws `OeeSettingsApiError` and
+ * touches neither cache entry — the caller's own `onError`/`mutation.error` is how the Targets panel
+ * surfaces that inline instead of crashing. */
+export function useUpdateOeeSettings(machine: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: OeeSettingsUpdateInput) => putOeeSettings(machine as string, input),
+    onSuccess: (data) => {
+      if (!machine) return
+      queryClient.setQueryData(["oee-settings", machine], data)
+      queryClient.invalidateQueries({ queryKey: ["oee", machine] })
+    },
+  })
+}
+
+/** Builds the `report.pdf` URL for a plain `<a download href>` — same brief as
+ * `buildHistorianExportCsvUrl`: no fetch/blob code, the browser downloads it directly. Takes the same
+ * `machine`/`from`/`to` filter `useOee` reads with, so a caller can hand this the exact same filter
+ * object it queries the screen with. */
+export function buildOeeReportPdfUrl(filter: OeeFilter): string {
+  const qs = buildOeeQueryString(filter)
+  return `${BASE_URL}/v1/historian/report.pdf${qs ? `?${qs}` : ""}`
+}

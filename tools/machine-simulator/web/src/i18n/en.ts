@@ -28,6 +28,7 @@ export const en: Dictionary = {
       inspector: "API Inspector",
       scenario: "Scenario",
       historian: "Historian",
+      reports: "OEE Reports",
       settings: "Settings",
     },
     sidebar: {
@@ -1481,6 +1482,53 @@ export const en: Dictionary = {
     },
   },
 
+  reports: {
+    title: "OEE Reports",
+    description:
+      "Availability, performance, quality, and OEE for one machine — plus the 3 loss buckets and editable targets, computed over the durably-stored historian log.",
+    filters: {
+      machine: "Machine",
+      from: "From date",
+      to: "To date",
+    },
+    export: {
+      pdf: "Export PDF",
+    },
+    empty: {
+      noMachines: "No machines in the fleet yet.",
+    },
+    loadFailed: "Couldn't load OEE data.",
+    kpi: {
+      availability: "Availability",
+      performance: "Performance",
+      quality: "Quality",
+      oee: "OEE",
+    },
+    lossChart: {
+      title: "OEE loss (3 buckets)",
+      downtime: "Downtime loss",
+      speed: "Speed loss",
+      quality: "Quality loss",
+      yAxisLabel: "Minutes",
+      tooltipMinutes: (vars: Vars) => `${vars.minutes} min`,
+      tooltipSeconds: (vars: Vars) => `${vars.seconds}s`,
+      minutesShort: (vars: Vars) => `${vars.minutes} min`,
+      total: (vars: Vars) => `Total loss: ${vars.minutes} min`,
+    },
+    targets: {
+      title: "OEE Targets",
+      idealCycleLabel: "Ideal Cycle Time (seconds)",
+      ratioLabel: "Planned Production Ratio (0–1)",
+      overridden: "Overridden",
+      baseline: "Default",
+      save: "Save Targets",
+      saving: "Saving…",
+      invalidNumber: "Enter a valid number for both fields.",
+      saveFailedFallback: "The server rejected these values.",
+      loadFailed: "Couldn't load OEE targets.",
+    },
+  },
+
   toast: {
     fleetStarted: "Fleet started.",
     fleetStartFailed: "Couldn't start the fleet.",
@@ -1489,6 +1537,8 @@ export const en: Dictionary = {
     scenarioBurstApplied: "Burst triggered.",
     settingsSaved: "Settings saved.",
     settingsSaveFailed: "Couldn't save settings.",
+    oeeTargetsSaved: "OEE targets saved.",
+    oeeTargetsSaveFailed: "Couldn't save OEE targets.",
     onboardingKeyStored: (vars: Vars) => `Key stored for ${vars.code}.`,
     configPulled: (vars: Vars) => `Pulled config for ${vars.code} (v${vars.version}).`,
     configPullFailed: "Couldn't pull config.",
