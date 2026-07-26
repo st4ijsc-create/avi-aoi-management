@@ -24,3 +24,24 @@ public sealed record HistorianStatsDto(long ResultRowCount, long TelemetryRowCou
 public sealed record PruneRequest(int OlderThanDays);
 
 public sealed record PruneResultDto(int DeletedRows);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Task 9 (WS-A) — the OEE surface's wire shapes. Same flattened-scalar discipline as the rest of this
+// file: <see cref="St4i.EdgeCore.Metrics.OeeResult"/>'s <see cref="TimeSpan"/> fields are converted to
+// plain seconds (<c>.TotalSeconds</c>) here rather than serialized as .NET's own "d.hh:mm:ss" TimeSpan
+// wire format, and <see cref="St4i.EdgeCore.Historian.OeeMachineSettings"/>'s raw nullable override is
+// flattened into an always-populated <c>IdealCycleSeconds</c> (override ?? the fleet roster's
+// <c>MachineDescriptor.CycleSeconds</c>) plus a separate <c>IsOverridden</c> flag, so a caller never has
+// to know the fallback rule itself.
+// ─────────────────────────────────────────────────────────────────────────
+
+public sealed record OeeResultDto(
+    string MachineCode, DateTimeOffset From, DateTimeOffset To,
+    double Availability, double Performance, double Quality, double Oee,
+    double PlannedProductionSeconds, double RunSeconds,
+    double DowntimeLossSeconds, double SpeedLossSeconds, double QualityLossSeconds,
+    long TotalCount, long GoodCount, double IdealCycleSeconds);
+
+public sealed record OeeSettingsDto(string MachineCode, double IdealCycleSeconds, bool IsOverridden, double PlannedProductionRatio);
+
+public sealed record OeeSettingsUpdateRequest(double? IdealCycleSecondsOverride, double? PlannedProductionRatio);

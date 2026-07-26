@@ -122,6 +122,13 @@ builder.Services.AddSingleton(sp =>
         logError: (ex, msg) => logger.LogError(ex, "{HistorianMsg}", msg));
 });
 
+// Task 9 (WS-A) — per-machine OEE settings (ideal-cycle override + planned-production ratio), a plain
+// JSON-file-backed store (WS-A-T5) that was never wired into DI until now. Default-dir ctor (no arg) so
+// it resolves the SAME %ProgramData%\ST4I\sim\historian folder SqliteHistorianStore's own default ctor
+// above resolves historian.db from — every historian-adjacent file lives in one place. Tests construct
+// their own instance pointed at a temp directory instead of resolving this registration.
+builder.Services.AddSingleton<St4i.EdgeCore.Historian.OeeSettingsStore>();
+
 // H4 job 1 fix — WebApplicationBuilder's default WebRootPath is `{ContentRootPath}/wwwroot`, and
 // ContentRootPath defaults to the CURRENT WORKING DIRECTORY, which under `dotnet run` is the PROJECT
 // SOURCE directory (confirmed via the "Content root path:" startup log line) — NOT the build output
