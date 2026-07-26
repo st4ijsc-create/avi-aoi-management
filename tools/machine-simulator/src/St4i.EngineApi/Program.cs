@@ -171,6 +171,7 @@ app.MapSettingsEndpoints();
 app.MapOnboardingEndpoints();
 app.MapConfigEndpoints();
 app.MapMachineSettingsEndpoints();
+app.MapHistorianEndpoints();
 app.MapInspectorStream();
 
 app.MapFallbackToFile("index.html");
