@@ -342,3 +342,106 @@ describe("generateModelPerformanceReport — real signals (doc69 A4)", () => {
     expect(m2.totalPredictions).toBeNull();
   });
 });
+
+/**
+ * Review-found gap (same PR as A4, doc69/T5 parity): `generateOfflineNarrative`'s
+ * model-performance branch computed `driftCount` and, when it was 0, always printed
+ * "All models performing within acceptable ranges" — WITHOUT checking whether any
+ * model actually had `dataAvailable:true`. So when every model was honest-empty,
+ * the offline-template narrative read self-contradictorily: "...All models
+ * performing within acceptable ranges. Recommendation: Model performance metrics
+ * unavailable for this period — no real inference activity recorded yet."
+ *
+ * T5 already guarded the sibling `retrainRecommendations` offline fallback (~:665)
+ * with an `allUnavailable` check; these tests prove `generateOfflineNarrative`
+ * mirrors that guard. The offline template is reached by making the mocked
+ * aiProviderRouter `generateNarrative` reject, which drives the real
+ * `generateNarrative` wrapper in aiReportGenerator.ts to its offline-template
+ * last resort (see `report.narrativeMetadata.generatedBy === "offline"`).
+ */
+describe("generateModelPerformanceReport — offline narrative honesty (doc69/T5 parity, review fix)", () => {
+  it("offline fallback + every model honest-empty → narrative must NOT claim 'within acceptable ranges'; must say unavailable instead", async () => {
+    modelRows = [{ modelId: 1, modelCode: "m1", modelVersion: "1", status: "ACTIVE" }];
+    mockGenerateNarrative.mockRejectedValueOnce(new Error("router unavailable"));
+
+    const report = await generateModelPerformanceReport({ ...period, reportType: "model_performance", language: "en" });
+
+    expect(report.narrativeMetadata?.generatedBy).toBe("offline");
+    expect(report.narrative).not.toMatch(/within acceptable ranges/i);
+    expect(report.narrative).not.toMatch(/within range/i);
+    expect(report.narrative).toMatch(/unavailable/i);
+  });
+
+  it("offline fallback + vi language + every model honest-empty → localized text, no fabricated health claim", async () => {
+    modelRows = [{ modelId: 1, modelCode: "m1", modelVersion: "1", status: "ACTIVE" }];
+    mockGenerateNarrative.mockRejectedValueOnce(new Error("router unavailable"));
+
+    const report = await generateModelPerformanceReport({ ...period, reportType: "model_performance", language: "vi" });
+
+    expect(report.narrativeMetadata?.generatedBy).toBe("offline");
+    expect(report.narrative).not.toMatch(/ngưỡng cho phép/);
+    expect(report.narrative).toContain("chưa khả dụng");
+  });
+
+  it("offline fallback + multiple models all honest-empty → narrative still must not fabricate health", async () => {
+    modelRows = [
+      { modelId: 1, modelCode: "m1", modelVersion: "1", status: "ACTIVE" },
+      { modelId: 2, modelCode: "m2", modelVersion: "2", status: "ACTIVE" },
+    ];
+    mockGenerateNarrative.mockRejectedValueOnce(new Error("router unavailable"));
+
+    const report = await generateModelPerformanceReport({ ...period, reportType: "model_performance", language: "en" });
+
+    expect(report.narrative).not.toMatch(/within acceptable ranges/i);
+    expect(report.narrative).toMatch(/unavailable/i);
+  });
+
+  it("offline fallback + at least one model has REAL data and no drift → narrative still reports health normally (not weakened)", async () => {
+    modelRows = [{ modelId: 1, modelCode: "aoi-defect-v3", modelVersion: "3", status: "ACTIVE" }];
+    statsRowsByModel[1] = { total: 120, avgLatencyMs: 45, p50LatencyMs: 38, p95LatencyMs: 90, errCount: 0 };
+    mockGenerateNarrative.mockRejectedValueOnce(new Error("router unavailable"));
+
+    const report = await generateModelPerformanceReport({ ...period, reportType: "model_performance", language: "en" });
+
+    expect(report.narrativeMetadata?.generatedBy).toBe("offline");
+    expect(report.narrative).toMatch(/within acceptable ranges/i);
+  });
+
+  it("offline fallback + mixed fleet (one real, one honest-empty), no drift → narrative still reports health normally (driftCount 0, not allUnavailable)", async () => {
+    modelRows = [
+      { modelId: 1, modelCode: "healthy-model", modelVersion: "1", status: "ACTIVE" },
+      { modelId: 2, modelCode: "silent-model", modelVersion: "1", status: "ACTIVE" },
+    ];
+    statsRowsByModel[1] = { total: 200, avgLatencyMs: 15, p50LatencyMs: 12, p95LatencyMs: 30, errCount: 0 };
+    mockGenerateNarrative.mockRejectedValueOnce(new Error("router unavailable"));
+
+    const report = await generateModelPerformanceReport({ ...period, reportType: "model_performance", language: "en" });
+
+    expect(report.narrative).toMatch(/within acceptable ranges/i);
+  });
+
+  it("offline fallback + drift found on a real model → narrative reports drift count, not the acceptable-ranges/unavailable clause", async () => {
+    modelRows = [{ modelId: 1, modelCode: "aoi-defect-v3", modelVersion: "3", status: "ACTIVE" }];
+    statsRowsByModel[1] = { total: 50, avgLatencyMs: 20, p50LatencyMs: 18, p95LatencyMs: 40, errCount: 0 };
+    mockCheckConfidenceDrift.mockResolvedValue({
+      enabled: true,
+      modelId: 1,
+      evaluated: true,
+      drift: true,
+      severity: "HIGH",
+      psi: 0.4,
+      meanShift: 0.2,
+      stdShift: 0.1,
+      baseline: { count: 80, mean: 0.9, std: 0.05, histogram: [] },
+      recent: { count: 80, mean: 0.6, std: 0.1, histogram: [] },
+      reasons: ["confidence PSI 0.400 > 0.25"],
+    });
+    mockGenerateNarrative.mockRejectedValueOnce(new Error("router unavailable"));
+
+    const report = await generateModelPerformanceReport({ ...period, reportType: "model_performance", language: "en" });
+
+    expect(report.narrative).toMatch(/1 model\(s\) show accuracy drift/i);
+    expect(report.narrative).not.toMatch(/within acceptable ranges/i);
+    expect(report.narrative).not.toMatch(/unavailable/i);
+  });
+});

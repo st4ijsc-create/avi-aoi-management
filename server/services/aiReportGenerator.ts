@@ -185,16 +185,29 @@ function generateOfflineNarrative(systemPrompt: string, data: string): string {
 
     // Model performance report
     if ("models" in d && "retrainRecommendations" in d) {
-      const models = (d.models as Array<{ modelCode: string; currentAccuracy: number; driftDetected: boolean }> | undefined) ?? [];
+      const models = (d.models as Array<{ modelCode: string; currentAccuracy: number; driftDetected: boolean; dataAvailable?: boolean }> | undefined) ?? [];
       const recs = (d.retrainRecommendations as string[] | undefined) ?? [];
       const driftCount = models.filter(m => m.driftDetected).length;
+      // doc69/T5 parity — mirror the allUnavailable guard used for retrainRecommendations
+      // (~:665): when every model is honest-empty (no real inference activity), the
+      // offline narrative must NOT assert "performing within acceptable ranges" — that's
+      // a fabricated health claim over data we never collected.
+      const allUnavailable = models.length > 0 && models.every((m) => !m.dataAvailable);
       if (isVi) {
         return `Báo cáo hiệu suất gồm ${models.length} mô hình AI. ` +
-          (driftCount > 0 ? `${driftCount} mô hình phát hiện dịch chuyển độ chính xác. ` : "Tất cả mô hình hoạt động trong ngưỡng cho phép. ") +
+          (driftCount > 0
+            ? `${driftCount} mô hình phát hiện dịch chuyển độ chính xác. `
+            : allUnavailable
+              ? "Số liệu hiệu suất model chưa khả dụng cho kỳ báo cáo này — chưa có hoạt động suy luận thực nào được ghi nhận. "
+              : "Tất cả mô hình hoạt động trong ngưỡng cho phép. ") +
           (recs.length > 0 ? `Khuyến nghị: ${recs[0]}.` : "");
       }
       return `Performance report covers ${models.length} AI models. ` +
-        (driftCount > 0 ? `${driftCount} model(s) show accuracy drift. ` : "All models performing within acceptable ranges. ") +
+        (driftCount > 0
+          ? `${driftCount} model(s) show accuracy drift. `
+          : allUnavailable
+            ? "Model performance metrics unavailable for this period — no real inference activity recorded yet. "
+            : "All models performing within acceptable ranges. ") +
         (recs.length > 0 ? `Recommendation: ${recs[0]}.` : "");
     }
 
