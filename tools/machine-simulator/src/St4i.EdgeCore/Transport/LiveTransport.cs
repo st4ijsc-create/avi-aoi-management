@@ -59,6 +59,17 @@ public sealed class LiveTransport : ITransport, IDisposable
     /// call more than once — <see cref="HttpClient.Dispose"/> itself is idempotent.</summary>
     public void Dispose() => _client.Dispose();
 
+    /// <summary>
+    /// WS-C-T3 — passthrough to the wrapped SDK's own <c>St4iDeviceClient.FlushQueueAsync</c>: attempts to
+    /// resend everything currently sitting in the on-disk (or in-memory, if <c>queuePath</c> was null)
+    /// backlog, and returns exactly what the SDK returns — (sent, kept): how many it managed to resend
+    /// successfully vs. how many are still left queued afterward. Exposed because <see cref="SendAsync"/>
+    /// only flushes OPPORTUNISTICALLY as a side effect of sending something NEW (see the SDK's own
+    /// SendWithRetryAsync) — LiveTransport otherwise gave callers no way to trigger a replay explicitly,
+    /// e.g. right after a restart, before any new reading is even available to send.
+    /// </summary>
+    public Task<(int sent, int kept)> FlushBacklogAsync(CancellationToken ct = default) => _client.FlushQueueAsync(ct);
+
     // ─────────────────────────────────────────────────────────────────────
     // SendAsync — dispatch by ReadingKind to the matching typed SDK call.
     // ─────────────────────────────────────────────────────────────────────
