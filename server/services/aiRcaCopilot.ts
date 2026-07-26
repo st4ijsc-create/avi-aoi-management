@@ -477,9 +477,15 @@ function hasMeaningfulEvidence(ev: EvidenceBundle): boolean {
 
 async function synthesize(input: RunRcaInput, lang: ToolLang, ev: EvidenceBundle): Promise<RawHypothesis[]> {
   try {
-    const { route } = await import("./aiModelRouter");
+    // doc69 G2-3 (Wave 1, W1-1b) — migrated from a raw route() call to routeInference so
+    // this previously-unmetered background inference is now visible in ai_gateway_metrics.
+    // SAME {task,text} input `route()` always used → decision.modelId/maxTokens/temperature/
+    // contextSize are byte-identical to before (model selection UNCHANGED); this only adds
+    // metering + a rate-limit slot. Already fail-safe: any throw here (including
+    // RateLimitError) is caught by this function's own outer try/catch below, degrading to
+    // `[]` exactly like every other synthesis failure mode already did.
+    const { routeInference } = await import("./aiGateway");
     const { generateJSON } = await import("./aiGgufEngine");
-    const decision = route({ task: "rca", text: input.defectType ?? "rca" });
 
     const sys =
       "You are an SMT/AOI manufacturing root-cause analyst. Using ONLY the supplied evidence, " +
@@ -496,18 +502,24 @@ async function synthesize(input: RunRcaInput, lang: ToolLang, ev: EvidenceBundle
       `create_maintenance_workorder.\n` +
       `Return up to ${MAX_HYPOTHESES} hypotheses ranked by confidence (0..1, descending).`;
 
-    const out = await generateJSON<{ hypotheses?: RawHypothesis[] }>(
-      RCA_JSON_SCHEMA,
-      {
-        systemPrompt: sys,
-        prompt: userPrompt,
-        maxTokens: Math.min(decision.maxTokens, 1024),
-        temperature: decision.temperature,
-        contextSize: decision.contextSize,
+    const { result } = await routeInference<{ hypotheses?: RawHypothesis[] }>(
+      { task: "rca", text: input.defectType ?? "rca" },
+      async (decision) => {
+        const out = await generateJSON<{ hypotheses?: RawHypothesis[] }>(
+          RCA_JSON_SCHEMA,
+          {
+            systemPrompt: sys,
+            prompt: userPrompt,
+            maxTokens: Math.min(decision.maxTokens, 1024),
+            temperature: decision.temperature,
+            contextSize: decision.contextSize,
+          },
+          decision.modelId,
+        );
+        return { result: out.data, tokensIn: out.tokensPrompt, tokensOut: out.tokensGenerated };
       },
-      decision.modelId,
     );
-    return Array.isArray(out.data?.hypotheses) ? out.data.hypotheses : [];
+    return Array.isArray(result?.hypotheses) ? result.hypotheses : [];
   } catch (err) {
     console.warn("[aiRcaCopilot] synthesis failed:", err);
     return [];

@@ -155,22 +155,32 @@ export async function classifyIssue(input: ClassifyIssueInput): Promise<Classify
 
   try {
     const { generateJSON, isGgufAvailable } = await import("./aiGgufEngine");
-    const { route } = await import("./aiModelRouter");
+    // doc69 G2-3 (Wave 1, W1-1b) — migrated from a raw route() call to routeInference so
+    // this previously-unmetered background inference is now visible in ai_gateway_metrics.
+    // SAME {task,text} input `route()` always used → decision.modelId is byte-identical to
+    // before (model selection UNCHANGED); this only adds metering + a rate-limit slot.
+    // Already fail-safe: any throw here (including RateLimitError) is caught by this
+    // function's own outer try/catch below, degrading to `safeDefault` exactly like every
+    // other classification failure mode already did.
+    const { routeInference } = await import("./aiGateway");
 
     if (!(await isGgufAvailable())) return safeDefault;
 
-    // Model Router: intent classification is Tier 1 (fast model when GGUF_FAST_MODEL is set).
-    const decision = route({ task: "intent", text: description });
-
-    const { data } = await generateJSON<{ reason?: unknown; state?: unknown; title?: unknown }>(
-      ISSUE_SCHEMA,
-      {
-        prompt: buildPrompt(description, lang, machineCode),
-        maxTokens: 120,
-        temperature: 0,
-        topP: 0.8,
+    const { result: data } = await routeInference<{ reason?: unknown; state?: unknown; title?: unknown } | undefined>(
+      { task: "intent", text: description },
+      async (decision) => {
+        const out = await generateJSON<{ reason?: unknown; state?: unknown; title?: unknown }>(
+          ISSUE_SCHEMA,
+          {
+            prompt: buildPrompt(description, lang, machineCode),
+            maxTokens: 120,
+            temperature: 0,
+            topP: 0.8,
+          },
+          decision.modelId,
+        );
+        return { result: out.data, tokensIn: out.tokensPrompt, tokensOut: out.tokensGenerated };
       },
-      decision.modelId,
     );
 
     if (!data || (typeof data.reason !== "string" && typeof data.state !== "string")) {

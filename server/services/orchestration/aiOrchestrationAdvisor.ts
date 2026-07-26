@@ -33,7 +33,9 @@ import {
   getCapabilitiesForMachine,
   type EquipmentCapability,
 } from "../equipment/capabilityModel";
-import { route } from "../aiModelRouter";
+// doc69 G2-3 (Wave 1, W1-1b) — routeInference (not the pure route()) so this previously-
+// unmetered background inference (callModel below) is now visible in ai_gateway_metrics.
+import { routeInference } from "../aiGateway";
 
 export type AdvisorLang = "vi" | "en" | "zh";
 
@@ -389,23 +391,31 @@ function validateAndSimulate(
  * raw object or throws (callers wrap in try/catch). Uses the router to pick the deep tier.
  */
 async function callModel(prompt: string): Promise<RawWorkflow> {
-  // Route as a deep planning/RCA task → deep model tier. (route() is pure; we only read it
-  // to derive the deep model id + a sane context budget — keeps behaviour consistent with
-  // the rest of the AI stack.)
-  const decision = route({ task: "rca", requiredQuality: "high", text: prompt });
+  // Route as a deep planning/RCA task → deep model tier. SAME {task,requiredQuality,text}
+  // input the pure route() call always used → decision.contextSize/modelId are byte-
+  // identical to before (model selection UNCHANGED); routeInference only adds metering + a
+  // rate-limit slot. Every caller of `callModel` already wraps it in try/catch (this
+  // function's own doc comment: "throws (callers wrap in try/catch)"), so a RateLimitError
+  // degrades exactly like any other inference failure already did.
   const { generateJSON } = await import("../aiGgufEngine");
-  const { data } = await generateJSON<RawWorkflow>(
-    WORKFLOW_SCHEMA,
-    {
-      prompt,
-      maxTokens: 1536,
-      temperature: 0,
-      topP: 0.8,
-      contextSize: decision.contextSize,
+  const { result } = await routeInference<RawWorkflow>(
+    { task: "rca", requiredQuality: "high", text: prompt },
+    async (decision) => {
+      const out = await generateJSON<RawWorkflow>(
+        WORKFLOW_SCHEMA,
+        {
+          prompt,
+          maxTokens: 1536,
+          temperature: 0,
+          topP: 0.8,
+          contextSize: decision.contextSize,
+        },
+        decision.modelId,
+      );
+      return { result: out.data ?? {}, tokensIn: out.tokensPrompt, tokensOut: out.tokensGenerated };
     },
-    decision.modelId,
   );
-  return data ?? {};
+  return result;
 }
 
 async function isAiAvailable(): Promise<boolean> {

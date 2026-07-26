@@ -6,6 +6,19 @@ import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 import { loadSemanticGraph, expandWithGraph } from "./aiSemanticGraph";
 // FE-W0.3 (doc 46 §2.3) — degenerate-loop guard (pure, dependency-free).
 import { guardGeneratedText, isDegenerateStream } from "./ai/generationGuard";
+// doc69 G2-3 (Wave 1, W1-1b) — this file is the MAIN production RAG assistant (reached via
+// aiLocalKnowledgeApi.ts's /ask + /stream) and previously called aiGgufEngine directly,
+// bypassing the AI Gateway entirely: zero safety (no redaction), zero metering on the
+// surface users actually chat with. `planInference` (aiGateway's "cheapest adoption" path,
+// see its own top-of-file doc comment) is wired into `generateWithOllama`/
+// `generateWithOllamaStream` below with the SAME `{task:"chat", text: question}` input this
+// file already used for `route()`, so `plan.decision.modelId` is byte-identical to before
+// (pinned-model behavior preserved) — it only ADDS flag-gated/fail-safe input redaction
+// (`plan.safeText`), output redaction (`plan.sanitizeOutput`/`StreamingSecretRedactor`), and
+// gateway metering (`plan.record`). Reuses the G2-2 primitives verbatim — no redaction logic
+// is reimplemented here.
+import { redactSecretsAndPII, StreamingSecretRedactor } from "./ai/aiSafety";
+import { planInference } from "./aiGateway";
 
 export type KbIntent =
   | "how_to"
@@ -1017,7 +1030,9 @@ function formatHistoryBlock(history: ConversationMessage[]): string {
       const isUser = m.role === "user";
       const label = isUser ? "Người dùng" : "Trợ lý (tóm tắt)";
       const max = isUser ? USER_SNIPPET_MAX : ASSISTANT_SNIPPET_MAX;
-      const oneLine = m.content.replace(/\s+/g, " ").trim();
+      // doc69 G2-3 — redact secrets/PII from prior turns before they re-enter a new prompt
+      // (defense-in-depth; a secret pasted 2 turns ago must not keep echoing forward).
+      const oneLine = redactSecretsAndPII(m.content.replace(/\s+/g, " ").trim()).text;
       const snippet =
         oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
       return `${label}: ${snippet}`;
@@ -1049,14 +1064,26 @@ async function generateWithOllama(
   history: ConversationMessage[] = [],
   userLevel: UserLevel = "technical",
   toolSummary?: string | null,
+  userId?: number,
 ): Promise<string | null> {
+  // doc69 G2-3 — AI Gateway: SAME input this function always passed to `route()` below
+  // (`{task:"chat", text: question}`), so `plan.decision.modelId` is byte-identical to
+  // before — model pinning is preserved, nothing is "double-routed". This ADDS: flag-gated
+  // fail-safe input redaction (`plan.safeText`, used for the question below), a per-user
+  // rate-limit + A/B slot (previously bypassed for this endpoint), and `record()`/
+  // `sanitizeOutput()` for gateway metering + output redaction further down.
+  const plan = planInference({ task: "chat", text: question, userId });
+
   const contextBlock = retrieve.citations
     .map((c, i) => {
       const raw = retrieve.contexts[i] ?? "";
       const ctx = raw.length > CONTEXT_CHUNK_CHAR_CAP
         ? `${raw.slice(0, CONTEXT_CHUNK_CHAR_CAP)}…`
         : raw;
-      return `[${i + 1}] ${c.title} | ${c.sourcePath}\n${ctx}`;
+      // doc69 G2-3 — redact any secret/PII that made it into an ingested KB chunk before it
+      // reaches the model prompt (defense-in-depth; unconditional per aiSafety's "redaction
+      // is always safe to apply" posture — mirrors aiChatAssistant's tool-result redaction).
+      return `[${i + 1}] ${c.title} | ${c.sourcePath}\n${redactSecretsAndPII(ctx).text}`;
     })
     .join("\n\n");
 
@@ -1064,8 +1091,10 @@ async function generateWithOllama(
   const historyBlock = formatHistoryBlock(history);
   const hintsBlock = formatHintsBlock(retrieve);
 
-  const toolBlock = toolSummary
-    ? `\n=== Dữ liệu thời gian thực (từ CSDL) ===\n${toolSummary}\nƯU TIÊN dùng dữ liệu này để trả lời. Không bịa số liệu.\n`
+  // doc69 G2-3 — redact live-DB tool-result text before it is embedded in the prompt.
+  const safeToolSummary = toolSummary ? redactSecretsAndPII(toolSummary).text : toolSummary;
+  const toolBlock = safeToolSummary
+    ? `\n=== Dữ liệu thời gian thực (từ CSDL) ===\n${safeToolSummary}\nƯU TIÊN dùng dữ liệu này để trả lời. Không bịa số liệu.\n`
     : "";
 
   const prompt = [
@@ -1083,7 +1112,8 @@ async function generateWithOllama(
     "=== Ngữ cảnh từ knowledge base ===",
     contextBlock,
     hintsBlock ? "\n" + hintsBlock + "\nGHI NHỚ: trong câu trả lời PHẢI trích nguyên văn ≥1 mục từ HINTS dưới dạng inline code (`...`) khi nó liên quan đến câu hỏi.\n" : "",
-    `\n=== Câu hỏi hiện tại ===\n${question}`,
+    // doc69 G2-3 — `plan.safeText` (redacted question), not raw `question`.
+    `\n=== Câu hỏi hiện tại ===\n${plan.safeText}`,
     "=== Câu trả lời (chỉ trả lời câu hỏi hiện tại, không lặp lại lịch sử) ===",
   ]
     .filter(Boolean)
@@ -1092,27 +1122,36 @@ async function generateWithOllama(
   // Default: use bundled GGUF engine (RTX 5090 local). Fallback to Ollama HTTP only if USE_LEGACY_OLLAMA=true.
   const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question);
   if (!USE_LEGACY_OLLAMA) {
+    let start = 0;
     try {
       const { generateText: ggufGen, isGgufAvailable } = await import("./aiGgufEngine");
       if (await isGgufAvailable()) {
         // doc 48 R1 — PIN a generative model. Without a modelId the engine's
         // getOrLoadModel(undefined) reuses the FIRST resident model, which is the RAG
-        // embedder → gibberish answers. Mirror the chat path (aiChatAssistant): let the
-        // Model Router pick the tier by difficulty and pass decision.modelId to the engine.
-        const { route } = await import("./aiModelRouter");
-        const decision = route({ task: "chat", text: question });
+        // embedder → gibberish answers. `plan.decision` already carries the SAME
+        // Model-Router pick `route({task:"chat", text: question})` produced before.
+        start = Date.now();
         const result = await ggufGen({
           prompt,
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
           repeatPenalty: KB_QA_REPEAT_PENALTY,
-        }, decision.modelId);
-        // FE-W0.3 (doc 46 §2.3) — guard the completed answer; degenerate → null → fallback.
-        return guardKbAnswer(result.text);
+        }, plan.decision.modelId);
+        // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
+        plan.record({
+          tokensIn: result.tokensPrompt,
+          tokensOut: result.tokensGenerated,
+          latencyMs: Date.now() - start,
+          outcome: "ok",
+        });
+        // doc69 G2-3 — output safety FIRST (redact any echoed secret) then the existing
+        // FE-W0.3 degenerate-loop guard; degenerate → null → fallback.
+        return guardKbAnswer(plan.sanitizeOutput(result.text));
       }
       // GGUF not available — fall through to Ollama path.
     } catch (err) {
+      plan.record({ latencyMs: start ? Date.now() - start : 0, outcome: "error" });
       console.warn("[aiLocalKnowledge] GGUF generate failed, falling back to Ollama:", err);
     }
   }
@@ -1164,14 +1203,20 @@ export async function* generateWithOllamaStream(
   history: ConversationMessage[] = [],
   userLevel: UserLevel = "technical",
   toolSummary?: string | null,
+  userId?: number,
 ): AsyncGenerator<string> {
+  // doc69 G2-3 — AI Gateway (see the identical comment on generateWithOllama above; same
+  // {task:"chat", text: question} input preserves the pinned-model decision byte-for-byte).
+  const plan = planInference({ task: "chat", text: question, userId });
+
   const contextBlock = retrieve.citations
     .map((c, i) => {
       const raw = retrieve.contexts[i] ?? "";
       const ctx = raw.length > CONTEXT_CHUNK_CHAR_CAP
         ? `${raw.slice(0, CONTEXT_CHUNK_CHAR_CAP)}…`
         : raw;
-      return `[${i + 1}] ${c.title} | ${c.sourcePath}\n${ctx}`;
+      // doc69 G2-3 — see generateWithOllama's identical comment.
+      return `[${i + 1}] ${c.title} | ${c.sourcePath}\n${redactSecretsAndPII(ctx).text}`;
     })
     .join("\n\n");
 
@@ -1179,8 +1224,10 @@ export async function* generateWithOllamaStream(
   const historyBlock = formatHistoryBlock(history);
   const hintsBlock = formatHintsBlock(retrieve);
 
-  const toolBlock = toolSummary
-    ? `\n=== Dữ liệu thời gian thực (từ CSDL) ===\n${toolSummary}\nƯU TIÊN dùng dữ liệu này để trả lời. Không bịa số liệu.\n`
+  // doc69 G2-3 — redact live-DB tool-result text before it is embedded in the prompt.
+  const safeToolSummary = toolSummary ? redactSecretsAndPII(toolSummary).text : toolSummary;
+  const toolBlock = safeToolSummary
+    ? `\n=== Dữ liệu thời gian thực (từ CSDL) ===\n${safeToolSummary}\nƯU TIÊN dùng dữ liệu này để trả lời. Không bịa số liệu.\n`
     : "";
 
   const prompt = [
@@ -1198,7 +1245,8 @@ export async function* generateWithOllamaStream(
     "=== Ngữ cảnh từ knowledge base ===",
     contextBlock,
     hintsBlock ? "\n" + hintsBlock + "\nGHI NHỚ: trong câu trả lời PHẢI trích nguyên văn ≥1 mục từ HINTS dưới dạng inline code (`...`) khi nó liên quan đến câu hỏi.\n" : "",
-    `\n=== Câu hỏi hiện tại ===\n${question}`,
+    // doc69 G2-3 — `plan.safeText` (redacted question), not raw `question`.
+    `\n=== Câu hỏi hiện tại ===\n${plan.safeText}`,
     "=== Câu trả lời (chỉ trả lời câu hỏi hiện tại, không lặp lại lịch sử) ===",
   ]
     .filter(Boolean)
@@ -1207,32 +1255,48 @@ export async function* generateWithOllamaStream(
   // Default: use bundled GGUF engine streaming. Fallback to Ollama HTTP if USE_LEGACY_OLLAMA=true.
   const numPredict = pickNumPredict(retrieve.intent, !!toolSummary, question);
   if (!USE_LEGACY_OLLAMA) {
+    let start = 0;
     try {
       const { generateTextStream: ggufStream, isGgufAvailable } = await import("./aiGgufEngine");
       if (await isGgufAvailable()) {
         // doc 48 R1 — PIN a generative model (see generateWithOllama above). modelId is the 2nd
         // arg to generateTextStream; without it the stream lands on the resident embedder.
-        const { route } = await import("./aiModelRouter");
-        const decision = route({ task: "chat", text: question });
+        // `plan.decision` already carries the SAME Model-Router pick as before.
+        // doc69 G2-3 — output safety: one redactor instance per stream (stateful — holds
+        // back a growing secret across chunk boundaries; see aiSafety.ts's class doc).
+        const redactor = new StreamingSecretRedactor();
+        let tokensIn = 0;
+        let tokensOut = 0;
+        start = Date.now();
         for await (const chunk of ggufStream({
           prompt,
           maxTokens: numPredict,
           temperature: 0.15,
           topP: 0.9,
           repeatPenalty: KB_QA_REPEAT_PENALTY,
-        }, decision.modelId)) {
+        }, plan.decision.modelId)) {
           // GGUF engine yields { type: "token" | "done" | "error", token?, ... }
           // We must extract the string token, not yield the whole object
           // (which would stringify to "[object Object]" downstream).
           if (chunk.type === "token" && typeof chunk.token === "string" && chunk.token.length > 0) {
-            yield chunk.token;
+            const safe = redactor.push(chunk.token);
+            if (safe) yield safe;
+          } else if (chunk.type === "done") {
+            tokensIn = chunk.tokensPrompt ?? 0;
+            tokensOut = chunk.tokensGenerated ?? 0;
           } else if (chunk.type === "error") {
             throw new Error(chunk.error || "GGUF stream error");
           }
         }
+        // Release whatever the redactor was still holding back (e.g. a short tail).
+        const tail = redactor.flush();
+        if (tail) yield tail;
+        // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
+        plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - start, outcome: "ok" });
         return;
       }
     } catch (err) {
+      plan.record({ latencyMs: start ? Date.now() - start : 0, outcome: "error" });
       console.warn("[aiLocalKnowledge] GGUF stream failed, falling back to Ollama:", err);
     }
   }
@@ -1723,6 +1787,7 @@ export async function answerQuestion(
           history,
           userLevel,
           summary,
+          execCtx?.user?.id,
         );
         if (llmAnswer) {
           provider = "ollama";
@@ -1742,7 +1807,7 @@ export async function answerQuestion(
     answer = appendHintsFooter(answer, retrieve, true);
   } else if (retrieve.confidence >= 0.30) {
     try {
-      const llmAnswer = await generateWithOllama(question, retrieve, history, userLevel);
+      const llmAnswer = await generateWithOllama(question, retrieve, history, userLevel, undefined, execCtx?.user?.id);
       if (llmAnswer) {
         provider = "ollama";
         answer = llmAnswer;
@@ -1956,6 +2021,7 @@ export async function* streamAnswer(
         history,
         userLevel,
         toolResult?.textSummary,
+        execCtx?.user?.id,
       );
       // FE-W0.3 (doc 46 §2.3) — incremental degenerate-loop guard: re-check the
       // accumulated text every STREAM_GUARD_STEP_CHARS once past the min, and BREAK

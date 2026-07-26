@@ -23,8 +23,11 @@ vi.mock("./aiGgufEngine", () => ({
   generateJSON: (...a: unknown[]) => generateJSON(...a),
   isGgufAvailable: (...a: unknown[]) => isGgufAvailable(...a),
 }));
+// doc69 G2-3 — classifyIssue() now goes through aiGateway.routeInference (for metering),
+// which reads aiModelRouter.getRouterStats() too (not just route()) — stub it alongside.
 vi.mock("./aiModelRouter", () => ({
   route: () => ({ modelId: "fast-model", tier: 1, requiresHitl: false }),
+  getRouterStats: () => ({ total: 0, byTier: {}, fastModelConfigured: false }),
 }));
 
 beforeEach(() => {

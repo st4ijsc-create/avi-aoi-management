@@ -866,19 +866,31 @@ export async function classifyToolIntentLLM(question: string): Promise<ToolDecis
     // Default: bundled GGUF engine with grammar-constrained JSON (always parseable).
     try {
       const { generateJSON, isGgufAvailable } = await import("../aiGgufEngine");
-      const { route } = await import("../aiModelRouter");
+      // doc69 G2-3 (Wave 1, W1-1b) — migrated from a raw route() call to routeInference so
+      // this previously-unmetered background inference is now visible in ai_gateway_metrics.
+      // SAME {task,text} input `route()` always used → decision.modelId is byte-identical to
+      // before (model selection UNCHANGED); this only adds metering + a rate-limit slot.
+      // Already fail-safe: any throw here (including RateLimitError) is caught below,
+      // falling through to the legacy Ollama HTTP path exactly like every other GGUF
+      // classify failure already did.
+      const { routeInference } = await import("../aiGateway");
       if (await isGgufAvailable()) {
         // Model Router: intent classification is Tier 1 (fast model when GGUF_FAST_MODEL set).
-        const intentRoute = route({ task: "intent", text: question });
-        const { data } = await generateJSON<{ tool?: unknown; args?: unknown }>(
-          TOOL_INTENT_SCHEMA,
-          {
-            prompt: buildClassifierPrompt(question),
-            maxTokens: 120,
-            temperature: 0,
-            topP: 0.8,
+        const { result: data } = await routeInference<{ tool?: unknown; args?: unknown } | undefined>(
+          { task: "intent", text: question },
+          async (intentRoute) => {
+            const out = await generateJSON<{ tool?: unknown; args?: unknown }>(
+              TOOL_INTENT_SCHEMA,
+              {
+                prompt: buildClassifierPrompt(question),
+                maxTokens: 120,
+                temperature: 0,
+                topP: 0.8,
+              },
+              intentRoute.modelId,
+            );
+            return { result: out.data, tokensIn: out.tokensPrompt, tokensOut: out.tokensGenerated };
           },
-          intentRoute.modelId,
         );
         if (data && typeof data.tool === "string") {
           parsed = {

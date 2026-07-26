@@ -43,6 +43,15 @@ import {
   isGgufAvailable,
   type GgufChatMessage,
 } from "../services/aiGgufEngine";
+// doc69 G2-3 (Wave 1, W1-1b) — this gateway calls the GGUF engine directly, bypassing the
+// AI Gateway entirely (zero safety, zero metering on the external IDE / API surface). Wire
+// `planInference` in for safety (input/output redaction) + metering, WITHOUT letting the
+// gateway's own routing decision override the model the caller explicitly requested via
+// `body.model` (resolved by `resolveModelId` below) — this surface's contract is "you get
+// the model you asked for", unlike the KB assistant's router-picked model. Reuses the G2-2
+// primitives verbatim; no redaction logic is reimplemented here.
+import { planInference, RateLimitError, SafetyBlockedError, type TaskKind } from "../services/aiGateway";
+import { redactSecretsAndPII, StreamingSecretRedactor } from "../services/ai/aiSafety";
 
 // ─── Config helpers (read at call-time so flags flip without a module reload) ──
 
@@ -111,6 +120,18 @@ function resolveModelId(requested?: string): string | undefined {
 /** Backing basename for a logical model (for the models-list `root`/transparency). */
 function backingFor(logical: LogicalModel): string {
   return resolveModelId(logical) || envStr("GGUF_DEFAULT_MODEL") || logical;
+}
+
+/**
+ * doc69 G2-3 — best-effort TaskKind classification for gateway metering/rate-limit
+ * bucketing ONLY. Never used to pick the actual generation model (see the import comment
+ * above) — `resolveModelId` remains the single source of truth for that.
+ */
+function inferTaskFromLabel(label: string, fallback: TaskKind = "chat"): TaskKind {
+  const key = (label || "").trim().toLowerCase();
+  if (key === "code" || key === "coder") return "code";
+  if (key === "fim" || key === "infill") return "fim";
+  return fallback;
 }
 
 // ─── OpenAI shape helpers ──────────────────────────────────────────────────────
@@ -274,7 +295,24 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const maxTokens = Number.isFinite(body.max_tokens) ? Number(body.max_tokens) : 1024;
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;
-      const ggufMessages = toGgufMessages(messages);
+
+      // doc69 G2-3 — AI Gateway: `modelId` above (resolved from the caller's EXPLICIT
+      // `body.model`) is what actually generates the response; `planInference` below is
+      // used ONLY for the flag-gated/fail-safe redaction of the most-recent message + the
+      // metrics row (may throw RateLimitError/SafetyBlockedError — mapped to 429/400 in the
+      // catch block below). No numeric per-user principal exists on this surface (shared
+      // static Bearer API key + optional SPIFFE service identity, not a user session).
+      const ggufMessagesRaw = toGgufMessages(messages);
+      const lastIdx = ggufMessagesRaw.length - 1;
+      const representativeText = lastIdx >= 0 ? ggufMessagesRaw[lastIdx].content : "";
+      const plan = planInference({ task: inferTaskFromLabel(modelLabel), text: representativeText });
+      // Redact every OTHER message directly/ungated (defense-in-depth, mirrors
+      // aiChatAssistant's treatment of prior-turn/tool-result text); the last (most recent)
+      // message uses `plan.safeText` so the AI_SAFETY_ENABLED flag governs it uniformly.
+      const ggufMessages: GgufChatMessage[] = ggufMessagesRaw.map((m, i) => ({
+        ...m,
+        content: i === lastIdx ? plan.safeText : redactSecretsAndPII(m.content).text,
+      }));
       const id = genId("chatcmpl");
       const created = nowUnix();
 
@@ -305,18 +343,33 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           modelId,
           abort.signal,
         );
+        // doc69 G2-3 — stateful per-request redactor: holds back a growing secret across
+        // chunk boundaries so it never reaches the SSE client unredacted (reuses the exact
+        // G2-2 class — see its doc comment in ai/aiSafety.ts).
+        const redactor = new StreamingSecretRedactor();
+        let tokensIn = 0;
+        let tokensOut = 0;
+        let outcome: "ok" | "error" = "ok";
+        const streamStart = Date.now();
         for await (const chunk of stream) {
           if (res.destroyed) break;
           if (chunk.type === "token" && chunk.token) {
-            const delta = {
-              id,
-              object: "chat.completion.chunk",
-              created,
-              model: modelLabel,
-              choices: [{ index: 0, delta: { content: chunk.token }, finish_reason: null }],
-            };
-            res.write(`data: ${JSON.stringify(delta)}\n\n`);
+            const safe = redactor.push(chunk.token);
+            if (safe) {
+              const delta = {
+                id,
+                object: "chat.completion.chunk",
+                created,
+                model: modelLabel,
+                choices: [{ index: 0, delta: { content: safe }, finish_reason: null }],
+              };
+              res.write(`data: ${JSON.stringify(delta)}\n\n`);
+            }
+          } else if (chunk.type === "done") {
+            tokensIn = chunk.tokensPrompt ?? 0;
+            tokensOut = chunk.tokensGenerated ?? 0;
           } else if (chunk.type === "error") {
+            outcome = "error";
             const errChunk = {
               id,
               object: "chat.completion.chunk",
@@ -328,6 +381,20 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
             res.write(`data: ${JSON.stringify(errChunk)}\n\n`);
           }
         }
+        // Release whatever the redactor was still holding back (e.g. a short tail).
+        const tail = redactor.flush();
+        if (tail && !res.destroyed) {
+          const delta = {
+            id,
+            object: "chat.completion.chunk",
+            created,
+            model: modelLabel,
+            choices: [{ index: 0, delta: { content: tail }, finish_reason: null }],
+          };
+          res.write(`data: ${JSON.stringify(delta)}\n\n`);
+        }
+        // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
+        plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - streamStart, outcome });
 
         const doneChunk = {
           id,
@@ -343,10 +410,18 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       }
 
       // ── Non-streaming ──
+      const start = Date.now();
       const result = await chatCompletion(
         { messages: ggufMessages, maxTokens, temperature, topP },
         modelId,
       );
+      // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
+      plan.record({
+        tokensIn: result.tokensPrompt,
+        tokensOut: result.tokensGenerated,
+        latencyMs: Date.now() - start,
+        outcome: "ok",
+      });
       res.json({
         id,
         object: "chat.completion",
@@ -355,7 +430,8 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         choices: [
           {
             index: 0,
-            message: { role: "assistant", content: result.text },
+            // doc69 G2-3 — output safety: redact any secret the model echoed back.
+            message: { role: "assistant", content: plan.sanitizeOutput(result.text) },
             finish_reason: "stop",
           },
         ],
@@ -366,6 +442,18 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         },
       });
     } catch (err: any) {
+      // doc69 G2-3 — planInference's own throws (rate limit / opt-in hard-block); the
+      // gateway already recorded a metric for these before throwing (see aiGateway.ts).
+      if (err instanceof RateLimitError) {
+        if (!res.headersSent) jsonError(res, 429, err.message, "server_error", "rate_limited");
+        else res.end();
+        return;
+      }
+      if (err instanceof SafetyBlockedError) {
+        if (!res.headersSent) jsonError(res, 400, err.message, "invalid_request_error", "safety_blocked");
+        else res.end();
+        return;
+      }
       if (!res.headersSent) {
         jsonError(res, 500, err?.message || "chat completion failed", "server_error");
       } else {
@@ -395,10 +483,17 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       const temperature = Number.isFinite(body.temperature) ? Number(body.temperature) : isFim ? 0.2 : 0.7;
       const topP = Number.isFinite(body.top_p) ? Number(body.top_p) : undefined;
 
+      // doc69 G2-3 — AI Gateway (see /chat/completions above for the "never override the
+      // caller's explicit model" rationale — `modelId` above stays the single source of
+      // truth for generation). `suffix` (FIM's surrounding code context) is redacted
+      // directly/ungated, mirroring aiChatAssistant's treatment of supplementary content.
+      const plan = planInference({ task: isFim ? "fim" : "code", text: prompt });
+      const safeSuffix = suffix ? redactSecretsAndPII(suffix).text : suffix;
+
       // Native fill-in-middle via the engine's generateFim (LlamaCompletion.generateInfillCompletion
       // when the coder model supports infill; raw completion otherwise) — no chat template, so the
       // model returns clean inline code for Continue autocomplete. `suffix` present → real infill.
-      const fimOpts = { prefix: prompt, suffix, maxTokens, temperature, topP };
+      const fimOpts = { prefix: plan.safeText, suffix: safeSuffix, maxTokens, temperature, topP };
 
       const id = genId("cmpl");
       const created = nowUnix();
@@ -412,14 +507,24 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
           Connection: "keep-alive",
           "X-Accel-Buffering": "no",
         });
+        const streamStart = Date.now();
         try {
           const result = await generateFim(fimOpts, modelId);
+          // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
+          plan.record({
+            tokensIn: result.tokensPrompt,
+            tokensOut: result.tokensGenerated,
+            latencyMs: Date.now() - streamStart,
+            outcome: "ok",
+          });
           if (!res.destroyed && result.text) {
             res.write(
-              `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: result.text, finish_reason: null }] })}\n\n`,
+              // doc69 G2-3 — output safety: redact any secret the model echoed back.
+              `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: plan.sanitizeOutput(result.text), finish_reason: null }] })}\n\n`,
             );
           }
         } catch (e: any) {
+          plan.record({ latencyMs: Date.now() - streamStart, outcome: "error" });
           res.write(
             `data: ${JSON.stringify({ id, object: "text_completion", created, model: modelLabel, choices: [{ index: 0, text: "", finish_reason: "error" }], error: { message: e?.message || "generation error" } })}\n\n`,
           );
@@ -433,13 +538,22 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
       }
 
       // ── Non-streaming ──
+      const start = Date.now();
       const result = await generateFim(fimOpts, modelId);
+      // doc69 G2-3 — gateway metering: this traffic was previously completely invisible.
+      plan.record({
+        tokensIn: result.tokensPrompt,
+        tokensOut: result.tokensGenerated,
+        latencyMs: Date.now() - start,
+        outcome: "ok",
+      });
       res.json({
         id,
         object: "text_completion",
         created,
         model: modelLabel,
-        choices: [{ index: 0, text: result.text, finish_reason: "stop", logprobs: null }],
+        // doc69 G2-3 — output safety: redact any secret the model echoed back.
+        choices: [{ index: 0, text: plan.sanitizeOutput(result.text), finish_reason: "stop", logprobs: null }],
         usage: {
           prompt_tokens: result.tokensPrompt,
           completion_tokens: result.tokensGenerated,
@@ -447,6 +561,18 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         },
       });
     } catch (err: any) {
+      // doc69 G2-3 — planInference's own throws (rate limit / opt-in hard-block); the
+      // gateway already recorded a metric for these before throwing (see aiGateway.ts).
+      if (err instanceof RateLimitError) {
+        if (!res.headersSent) jsonError(res, 429, err.message, "server_error", "rate_limited");
+        else res.end();
+        return;
+      }
+      if (err instanceof SafetyBlockedError) {
+        if (!res.headersSent) jsonError(res, 400, err.message, "invalid_request_error", "safety_blocked");
+        else res.end();
+        return;
+      }
       if (!res.headersSent) {
         jsonError(res, 500, err?.message || "completion failed", "server_error");
       } else {

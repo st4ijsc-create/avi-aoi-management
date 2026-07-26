@@ -62,7 +62,12 @@ vi.mock("./aiVisionLanguage", () => ({ describeDefect: (...a: any[]) => describe
 
 // ── Keep synthesis empty (no real model) → runRca honestly degrades but still
 //    returns the populated evidence bundle we assert on. ──
-vi.mock("./aiModelRouter", () => ({ route: () => ({ modelId: "x", maxTokens: 256, temperature: 0.2, contextSize: 2048 }) }));
+// doc69 G2-3 — synthesize() now goes through aiGateway.routeInference (for metering), which
+// reads aiModelRouter.getRouterStats() too (not just route()) — stub it alongside route().
+vi.mock("./aiModelRouter", () => ({
+  route: () => ({ modelId: "x", maxTokens: 256, temperature: 0.2, contextSize: 2048 }),
+  getRouterStats: () => ({ total: 0, byTier: {}, fastModelConfigured: false }),
+}));
 vi.mock("./aiGgufEngine", () => ({ generateJSON: vi.fn(async () => ({ data: { hypotheses: [] } })) }));
 
 import { runRca } from "./aiRcaCopilot";
