@@ -11,6 +11,7 @@ import RecipeConfigDetail from "@/routes/RecipeConfigDetail"
 import Onboarding from "@/routes/Onboarding"
 import ApiInspector from "@/routes/ApiInspector"
 import Scenario from "@/routes/Scenario"
+import Historian from "@/routes/Historian"
 import Settings from "@/routes/Settings"
 import NotFound from "@/routes/NotFound"
 import { Sidebar } from "@/shell/Sidebar"
@@ -48,6 +49,7 @@ export function Shell() {
             <Route path="/onboarding" component={Onboarding} />
             <Route path="/inspector" component={ApiInspector} />
             <Route path="/scenario" component={Scenario} />
+            <Route path="/historian" component={Historian} />
             <Route path="/settings" component={Settings} />
             <Route component={NotFound} />
           </Switch>

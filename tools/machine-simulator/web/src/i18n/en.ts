@@ -27,6 +27,7 @@ export const en: Dictionary = {
       onboarding: "Onboarding",
       inspector: "API Inspector",
       scenario: "Scenario",
+      historian: "Historian",
       settings: "Settings",
     },
     sidebar: {
@@ -1434,6 +1435,49 @@ export const en: Dictionary = {
       invalidNumber: "Enter a valid number.",
       outOfRange: (vars: Vars) => `${vars.key} must be between ${vars.min} and ${vars.max} ${vars.unit} (got ${vars.value}).`,
       serverErrorFallback: "The server rejected this value.",
+    },
+  },
+
+  historian: {
+    title: "Historian",
+    description:
+      "Browse durably-stored cycle results across the whole fleet — filter by machine, time, serial, or verdict, and export to CSV.",
+    filters: {
+      machine: "Machine",
+      allMachines: "All machines",
+      from: "From date",
+      to: "To date",
+      serial: "Serial",
+      serialPlaceholder: "Search by serial number…",
+      verdict: "Verdict",
+      allVerdicts: "All verdicts",
+      clear: "Clear filters",
+    },
+    export: {
+      csv: "Export CSV",
+    },
+    table: {
+      time: "Time",
+      machine: "Machine",
+      serial: "Serial",
+      verdict: "Verdict",
+      keyMetric: "Key metric",
+      ngPoints: "NG / Points",
+      genealogyAction: "View genealogy",
+      empty: "No historian records match the current filters.",
+      loadFailed: "Couldn't load the historian.",
+    },
+    pagination: {
+      showing: (vars: Vars) => `Showing ${vars.from}–${vars.to} of ${vars.total} records`,
+      prev: "Prev",
+      next: "Next",
+    },
+    genealogy: {
+      title: (vars: Vars) => `Genealogy — Serial ${vars.serial}`,
+      description: "Every historian record on file for this serial, across every machine.",
+      loading: "Loading genealogy…",
+      empty: "No records found for this serial.",
+      failed: "Couldn't load genealogy.",
     },
   },
 

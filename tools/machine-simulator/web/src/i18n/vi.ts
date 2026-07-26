@@ -33,6 +33,7 @@ export const vi = {
       onboarding: "Thêm máy mới",
       inspector: "Theo dõi API",
       scenario: "Kịch bản",
+      historian: "Lịch sử dữ liệu",
       settings: "Cài đặt",
     },
     sidebar: {
@@ -1494,6 +1495,51 @@ export const vi = {
       // — see `mc-task12-report.md`'s `torqueTarget must be between 0.10 and 20.00 Nm (got 999.00).`
       outOfRange: (vars: Vars) => `${vars.key} phải nằm trong khoảng ${vars.min}–${vars.max} ${vars.unit} (đã nhập ${vars.value}).`,
       serverErrorFallback: "Máy chủ từ chối giá trị này.",
+    },
+  },
+
+  // Task 12 (WS-A, docs/plans/2026-07-26-ws-a-historian-blueprint.md) — `/historian`, the durable
+  // per-cycle result log browse/filter/export screen (`routes/Historian.tsx`).
+  historian: {
+    title: "Lịch sử dữ liệu",
+    description:
+      "Duyệt kết quả chu kỳ đã lưu trữ lâu dài trên toàn đội máy — lọc theo máy, thời gian, serial hoặc kết quả, và xuất ra CSV.",
+    filters: {
+      machine: "Máy",
+      allMachines: "Tất cả máy",
+      from: "Từ ngày",
+      to: "Đến ngày",
+      serial: "Serial",
+      serialPlaceholder: "Tìm theo số serial…",
+      verdict: "Kết quả",
+      allVerdicts: "Tất cả kết quả",
+      clear: "Xóa bộ lọc",
+    },
+    export: {
+      csv: "Xuất CSV",
+    },
+    table: {
+      time: "Thời gian",
+      machine: "Máy",
+      serial: "Serial",
+      verdict: "Kết quả",
+      keyMetric: "Chỉ số chính",
+      ngPoints: "Lỗi / Điểm đo",
+      genealogyAction: "Xem phả hệ",
+      empty: "Không có bản ghi lịch sử nào khớp với bộ lọc hiện tại.",
+      loadFailed: "Không thể tải lịch sử dữ liệu.",
+    },
+    pagination: {
+      showing: (vars: Vars) => `Hiển thị ${vars.from}–${vars.to} trên ${vars.total} bản ghi`,
+      prev: "Trước",
+      next: "Sau",
+    },
+    genealogy: {
+      title: (vars: Vars) => `Phả hệ — Serial ${vars.serial}`,
+      description: "Toàn bộ bản ghi lịch sử đã ghi nhận cho serial này, trên mọi máy.",
+      loading: "Đang tải phả hệ…",
+      empty: "Không tìm thấy bản ghi nào cho serial này.",
+      failed: "Không thể tải phả hệ.",
     },
   },
 

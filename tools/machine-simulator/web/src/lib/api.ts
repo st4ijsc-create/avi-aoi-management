@@ -382,6 +382,86 @@ export interface SyncConfigResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// GET /v1/historian/results, /v1/historian/serial/{serial}, /v1/historian/results/export.csv —
+// Task 12 (WS-A, docs/plans/2026-07-26-ws-a-historian-blueprint.md). Wire shapes mirror
+// `St4i.EngineApi.Endpoints.HistorianDtos`'s `HistorianResultDto`/`HistorianResultsPageDto` exactly
+// (camelCase, same fields) — the read-only browse/export surface over the durable per-cycle result
+// log Tasks 8/10 of that same workstream already wrote (`HistorianEndpoints.cs`). Telemetry/
+// genealogy/measurements JSON blobs are deliberately absent here, same as the DTO itself — a client
+// wanting those hits a different endpoint (out of this task's scope).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** One durable result row — `HistorianResultDto`. `recipeCode`/`recipeVersion`/`keyMetric*` are
+ * `null` whenever the underlying reading never carried one (e.g. an IoT telemetry row has no
+ * recipe/key-metric the way an AOI/AVI or Automation ProcessResult row does). */
+export interface HistorianResultDto {
+  id: number
+  machineCode: string
+  deviceClass: string
+  machineType: string
+  /** `ReadingKind.ToString()` — `"ProcessResult" | "Telemetry" | "Inspection"` in this build. */
+  readingKind: string
+  cycleCounter: number
+  serialNumber: string
+  /** `Verdict.ToString()` — the SAME `"Pass" | "Warn" | "Fail" | "Skip"` vocabulary `CycleLogRow`'s
+   * own `verdict` field already uses, so `CycleLogTable`'s exported `verdictMeta`/`StatusBadge`
+   * apply here unchanged (no second verdict→tone map). */
+  verdict: string
+  recipeCode: string | null
+  recipeVersion: string | null
+  keyMetricName: string | null
+  keyMetricValue: number | null
+  keyMetricUnit: string | null
+  ngCount: number
+  pointCount: number
+  ackSuccess: boolean
+  ackDuplicate: boolean
+  ackQueued: boolean
+  eventTimeUtc: string
+  ingestedAtUtc: string
+}
+
+/** `HistorianResultsPageDto` — one page of `QueryResultsAsync`'s frozen paginated result. */
+export interface HistorianResultsPageDto {
+  items: HistorianResultDto[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** `GET /v1/historian/results`'s own query-string vocabulary (`HistorianEndpoints.GetResultsAsync`)
+ * — every field optional/omittable, same as the server's own `string?`/`int?` parameters. `limit`/
+ * `offset` drive `useHistorianResults`'s pagination; `buildHistorianExportCsvUrl` below always
+ * drops them regardless of what's set here — the CSV endpoint takes the SAME machine/from/to/
+ * serial/verdict/kind filters but no limit/offset (it exports the full filtered set, never one page
+ * of it — see `HistorianEndpoints.BuildExportCsvAsync`). */
+export interface HistorianResultsFilter {
+  machine?: string
+  /** ISO 8601 — anything `DateTimeOffset.TryParse` (`DateTimeStyles.RoundtripKind`) accepts
+   * server-side; a plain `YYYY-MM-DD` (an HTML `<input type="date">`'s own value shape) parses fine. */
+  from?: string
+  to?: string
+  serial?: string
+  verdict?: string
+  kind?: string
+  limit?: number
+  offset?: number
+}
+
+function buildHistorianQueryString(filter: HistorianResultsFilter): string {
+  const params = new URLSearchParams()
+  if (filter.machine) params.set("machine", filter.machine)
+  if (filter.from) params.set("from", filter.from)
+  if (filter.to) params.set("to", filter.to)
+  if (filter.serial) params.set("serial", filter.serial)
+  if (filter.verdict) params.set("verdict", filter.verdict)
+  if (filter.kind) params.set("kind", filter.kind)
+  if (filter.limit !== undefined) params.set("limit", String(filter.limit))
+  if (filter.offset !== undefined) params.set("offset", String(filter.offset))
+  return params.toString()
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Fetchers
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -451,6 +531,11 @@ const endpoints = {
     request<OnboardingResult>("/v1/onboarding/enroll", { method: "POST", body: JSON.stringify(input) }),
   onboardingPasteKey: (input: OnboardingPasteKeyInput) =>
     request<OnboardingResult>("/v1/onboarding/paste-key", { method: "POST", body: JSON.stringify(input) }),
+
+  historianResults: (filter: HistorianResultsFilter) =>
+    request<HistorianResultsPageDto>(`/v1/historian/results?${buildHistorianQueryString(filter)}`),
+  historianBySerial: (serial: string) =>
+    request<HistorianResultDto[]>(`/v1/historian/serial/${encodeURIComponent(serial)}`),
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -892,4 +977,50 @@ export function useOnboardingEnroll() {
 
 export function useOnboardingPasteKey() {
   return useMutation({ mutationFn: endpoints.onboardingPasteKey })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Historian — Task 12 (WS-A, docs/plans/2026-07-26-ws-a-historian-blueprint.md). Read-only browse
+// surface over the durable per-cycle result log `St4i.EdgeCore.Historian` already writes
+// (`HistorianEndpoints.cs`, Tasks 8/10 of the same workstream) — `/historian` (`Historian.tsx`) is
+// the sole consumer. Deliberately ONE-SHOT (no `refetchInterval`, unlike `useFleet`/`useMachine`):
+// this is a browse/audit screen over already-settled history, not a live tick.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `GET /v1/historian/results?…` — the filter object IS the query key, so any change to any filter
+ * field (including `offset`, i.e. a page turn) naturally refetches with no manual invalidation. */
+export function useHistorianResults(filter: HistorianResultsFilter): UseQueryResult<HistorianResultsPageDto> {
+  return useQuery({
+    queryKey: ["historian-results", filter] as const,
+    queryFn: () => endpoints.historianResults(filter),
+  })
+}
+
+/** `GET /v1/historian/serial/{serial}` — every row (any machine) recorded against one serial
+ * number, the genealogy view a result row's "View genealogy" action opens in a `dialog.tsx` popup.
+ * `enabled: !!serial` lets the dialog mount before a serial is chosen without firing a request
+ * against `/v1/historian/serial/undefined`. */
+export function useHistorianBySerial(serial: string | undefined): UseQueryResult<HistorianResultDto[]> {
+  return useQuery({
+    queryKey: ["historian-by-serial", serial ?? ""] as const,
+    queryFn: () => endpoints.historianBySerial(serial as string),
+    enabled: !!serial,
+  })
+}
+
+/** Builds the `export.csv` URL for a plain `<a download href>` — brief: no fetch/blob code, the
+ * browser downloads it directly. Same machine/from/to/serial/verdict/kind filters
+ * `useHistorianResults` takes, but ALWAYS drops `limit`/`offset` even if the passed-in filter carries
+ * them (the export endpoint has no pagination concept — see `HistorianResultsFilter`'s own doc
+ * comment) — so a caller can hand this the exact same filter object it queries the page with. */
+export function buildHistorianExportCsvUrl(filter: HistorianResultsFilter): string {
+  const qs = buildHistorianQueryString({
+    machine: filter.machine,
+    from: filter.from,
+    to: filter.to,
+    serial: filter.serial,
+    verdict: filter.verdict,
+    kind: filter.kind,
+  })
+  return `${BASE_URL}/v1/historian/results/export.csv${qs ? `?${qs}` : ""}`
 }

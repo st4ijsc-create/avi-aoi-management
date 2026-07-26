@@ -1,6 +1,7 @@
 import * as React from "react"
 import {
   Boxes,
+  Database,
   Factory,
   LayoutDashboard,
   PlugZap,
@@ -30,6 +31,10 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "shell.nav.onboarding", path: "/onboarding", icon: PlugZap },
   { labelKey: "shell.nav.inspector", path: "/inspector", icon: Terminal },
   { labelKey: "shell.nav.scenario", path: "/scenario", icon: SlidersHorizontal },
+  // Task 12 (WS-A) — durable-results browse/export screen (`routes/Historian.tsx`). `Database` reads
+  // as "stored records" (vs. e.g. `Clock`/`History`, which read more like "recent activity") — matches
+  // this screen's own subject: long-lived historian rows, not a live tick.
+  { labelKey: "shell.nav.historian", path: "/historian", icon: Database },
   { labelKey: "shell.nav.settings", path: "/settings", icon: Settings },
 ]
 
