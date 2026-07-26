@@ -9,12 +9,14 @@ import {
   Settings,
   SlidersHorizontal,
   Terminal,
+  Users,
 } from "lucide-react"
 import { Link, useLocation } from "wouter"
 
 import { useLanguage, useT } from "@/i18n"
 import { en } from "@/i18n/en"
 import { vi, type Dictionary } from "@/i18n/vi"
+import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 
 export interface NavItem {
@@ -23,6 +25,13 @@ export interface NavItem {
   labelKey: string
   path: string
   icon: React.ComponentType<{ className?: string }>
+  /** WS-D-D7 (blueprint §6) — the minimum role allowed to SEE this nav entry at all (undefined means
+   * every authenticated role). Checked via {@link ROLE_RANK}, not string equality, so a future
+   * `minRole:"Engineer"` entry would also show for Admin — Admin is always a superset of every lower
+   * role's own nav surface. The server's own per-route policy (`Policies.Admin`/etc.) is the REAL
+   * gate regardless; this only keeps the sidebar/command-palette from listing a route whose every
+   * underlying request would just 403 for the current user. */
+  minRole?: string
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -42,7 +51,29 @@ export const NAV_ITEMS: NavItem[] = [
   // subject: computed KPI rollups, not raw browsable rows.
   { labelKey: "shell.nav.reports", path: "/reports", icon: BarChart3 },
   { labelKey: "shell.nav.settings", path: "/settings", icon: Settings },
+  // WS-D-D7 — Admin-only account management (`routes/Users.tsx`). `Users` (plural person glyph) reads
+  // as "manage people/accounts", distinct from every icon above (all either a screen-shape or a single
+  // status glyph) — the one nav entry actually about WHO can use this deployment, not what it does.
+  { labelKey: "shell.nav.users", path: "/users", icon: Users, minRole: "Admin" },
 ]
+
+/** Rank order for {@link NavItem.minRole} comparisons — Operator < Engineer < Admin, same hierarchy
+ * `Policies.cs`'s server-side `RequireRole` OR-chains already encode (`Policies.Admin` = Admin alone,
+ * `Policies.Engineer` = Engineer or Admin, `Policies.Operator` = any of the three). */
+const ROLE_RANK: Record<string, number> = { Operator: 0, Engineer: 1, Admin: 2 }
+
+function meetsMinRole(minRole: string | undefined, userRole: string | undefined): boolean {
+  if (!minRole) return true
+  if (!userRole) return false
+  return (ROLE_RANK[userRole] ?? -1) >= (ROLE_RANK[minRole] ?? Number.POSITIVE_INFINITY)
+}
+
+/** `NAV_ITEMS` filtered down to what `userRole` is allowed to even see — shared by `Sidebar` and
+ * `CommandPalette` so the two surfaces never disagree about which nav entries exist for the signed-in
+ * user. */
+export function visibleNavItems(userRole: string | undefined): NavItem[] {
+  return NAV_ITEMS.filter((item) => meetsMinRole(item.minRole, userRole))
+}
 
 function isNavItemActive(location: string, path: string): boolean {
   if (path === "/") return location === "/"
@@ -69,6 +100,8 @@ export function Sidebar() {
   const t = useT()
   const { language } = useLanguage()
   const glossDict = language === "vi" ? en : vi
+  const { user } = useAuth()
+  const items = React.useMemo(() => visibleNavItems(user?.role), [user?.role])
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-sidebar">
@@ -86,7 +119,7 @@ export function Sidebar() {
         className="hmi-scroll flex flex-1 flex-col gap-px overflow-y-auto px-2 py-2"
         aria-label={t("shell.sidebar.navAria")}
       >
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const active = isNavItemActive(location, item.path)
           const Icon = item.icon
           return (

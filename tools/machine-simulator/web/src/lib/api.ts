@@ -1241,3 +1241,130 @@ export function buildOeeReportPdfUrl(filter: OeeFilter): string {
   const qs = buildOeeQueryString(filter)
   return `${BASE_URL}/v1/historian/report.pdf${qs ? `?${qs}` : ""}`
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Users — WS-D-D7 (`routes/Users.tsx`, Admin-only account management). Wire shapes mirror
+// `St4i.EngineApi.Auth.UserDtos` exactly. `UserDto` has NO password-hash/security-stamp field at
+// all — never redacted client-side, simply never on the wire in the first place (see
+// `UserEndpoints.cs`'s own doc comment).
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface UserDto {
+  id: number
+  username: string
+  role: string
+  displayName: string | null
+  disabled: boolean
+  lastLoginAtUtc: string | null
+}
+
+export interface CreateUserInput {
+  username: string
+  password: string
+  role: string
+  displayName?: string
+}
+
+/** Mirrors `OeeSettingsApiError` above — the shared `request<T>`/`EngineApiError` only carry a status
+ * code, but the Users screen needs the server's EXACT `ApiErrorDto.error` wording for a 409 duplicate
+ * username, a 400 weak password/invalid role, or the 400 last-enabled-Admin lock-out guard, rather than
+ * a generic "request failed" toast. */
+export class UsersApiError extends Error {
+  status: number
+  /** The server's own `ApiErrorDto.error` text — undefined only for a genuinely unparseable body. */
+  serverMessage?: string
+
+  constructor(status: number, serverMessage?: string) {
+    super(serverMessage ?? `request failed: ${status}`)
+    this.name = "UsersApiError"
+    this.status = status
+    this.serverMessage = serverMessage
+  }
+}
+
+async function usersRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  })
+  if (res.status === 401) unauthorizedHandler?.()
+  if (!res.ok) {
+    let serverMessage: string | undefined
+    try {
+      const body = (await res.json()) as { error?: string }
+      serverMessage = body?.error
+    } catch {
+      // Non-JSON body (rare — a proxy/500 page) — fall back to the generic message.
+    }
+    throw new UsersApiError(res.status, serverMessage)
+  }
+  return (await res.json()) as T
+}
+
+const usersEndpoints = {
+  users: () => usersRequest<UserDto[]>("/v1/users"),
+  createUser: (input: CreateUserInput) =>
+    usersRequest<UserDto>("/v1/users", { method: "POST", body: JSON.stringify(input) }),
+  setUserRole: (id: number, role: string) =>
+    usersRequest<UserDto>(`/v1/users/${id}/role`, { method: "PUT", body: JSON.stringify({ role }) }),
+  setUserDisabled: (id: number, disabled: boolean) =>
+    usersRequest<UserDto>(`/v1/users/${id}/${disabled ? "disable" : "enable"}`, { method: "POST" }),
+  resetUserPassword: (id: number, newPassword: string) =>
+    usersRequest<UserDto>(`/v1/users/${id}/reset-password`, { method: "POST", body: JSON.stringify({ newPassword }) }),
+}
+
+const USERS_QUERY_KEY = ["users"] as const
+
+/** `GET /v1/users` — Admin-only roster. A non-admin never mounts this in the first place
+ * (`Users.tsx`'s own `RequireRole` gate), so the 403 a real Operator/Engineer would get back is
+ * defense-in-depth here, not the normal path — surfaced the same way every other gated query's
+ * rejection is (`isError`), no special-casing needed. */
+export function useUsers(): UseQueryResult<UserDto[]> {
+  return useQuery({
+    queryKey: USERS_QUERY_KEY,
+    queryFn: usersEndpoints.users,
+  })
+}
+
+/** `POST /v1/users` — every caller invalidates (not `setQueryData`s) `["users"]` on success: the
+ * roster is small and Admin-only, so a refetch is cheap and keeps `lastLoginAtUtc`/ordering exactly
+ * server-authoritative rather than hand-assembling a `UserDto` client-side. */
+export function useCreateUser() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: usersEndpoints.createUser,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+  })
+}
+
+/** `PUT /v1/users/{id}/role` — rejected (400) with `UsersApiError` when `id` is the last enabled
+ * Admin being demoted away from Admin (`UserEndpoints.cs`'s lock-out guard). */
+export function useSetUserRole() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, role }: { id: number; role: string }) => usersEndpoints.setUserRole(id, role),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+  })
+}
+
+/** `POST /v1/users/{id}/disable` or `.../enable` (one hook, `disabled` picks the verb) — rejected
+ * (400) with `UsersApiError` when disabling `id` would leave zero enabled Admins. */
+export function useSetUserDisabled() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, disabled }: { id: number; disabled: boolean }) => usersEndpoints.setUserDisabled(id, disabled),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+  })
+}
+
+/** `POST /v1/users/{id}/reset-password` — the new password never round-trips back (the response is
+ * just the target's `UserDto`), so there's nothing to write into the cache beyond invalidating. */
+export function useResetUserPassword() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, newPassword }: { id: number; newPassword: string }) =>
+      usersEndpoints.resetUserPassword(id, newPassword),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
+  })
+}

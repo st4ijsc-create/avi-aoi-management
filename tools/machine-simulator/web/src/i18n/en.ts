@@ -68,6 +68,7 @@ export const en: Dictionary = {
       historian: "Historian",
       reports: "OEE Reports",
       settings: "Settings",
+      users: "Users",
     },
     sidebar: {
       brandSubtitle: "Machine Simulator",
@@ -1567,6 +1568,68 @@ export const en: Dictionary = {
     },
   },
 
+  // WS-D-D7 — `/users` (`routes/Users.tsx`, Admin-only): roster table, add-user/reset-password
+  // dialogs, per-row role/disable-enable actions, and the client-side "not authorized"/last-admin-
+  // guard copy (the REAL enforcement is server-side — see `UserEndpoints.cs` — these are just the
+  // friendlier front-line messages for the common case).
+  users: {
+    title: "Users",
+    description: "Manage local sign-in accounts — role, enable/disable, password reset. Only Admins see this screen.",
+    addUser: "Add user",
+    table: {
+      username: "Username",
+      role: "Role",
+      displayName: "Display name",
+      status: "Status",
+      lastLogin: "Last login",
+      actions: "Actions",
+      roleAria: (vars: Vars) => `${vars.username}'s role`,
+    },
+    status: {
+      enabled: "Enabled",
+      disabled: "Disabled",
+    },
+    never: "Never",
+    actions: {
+      disable: "Disable",
+      enable: "Enable",
+      resetPassword: "Reset password",
+    },
+    lastAdminGuard: "Can't do that — this is the last enabled Admin, and this action would leave no one able to administer the system.",
+    createDialog: {
+      title: "Add user",
+      description: "Create a new local sign-in account.",
+      usernameLabel: "Username",
+      usernamePlaceholder: "e.g. operator1",
+      passwordLabel: "Password",
+      displayNameLabel: "Display name (optional)",
+      roleLabel: "Role",
+      cancel: "Cancel",
+      submit: "Create user",
+      submitting: "Creating…",
+      usernameRequired: "Username is required.",
+      usernameDuplicate: (vars: Vars) => `Username "${vars.username}" already exists.`,
+      passwordTooShort: (vars: Vars) => `Password must be at least ${vars.count} characters.`,
+    },
+    resetPasswordDialog: {
+      title: (vars: Vars) => `Reset password for ${vars.username}`,
+      description: "This user will need to sign in again with the new password; any current sessions are revoked.",
+      newPasswordLabel: "New password",
+      cancel: "Cancel",
+      submit: "Reset password",
+      submitting: "Resetting…",
+      passwordTooShort: (vars: Vars) => `Password must be at least ${vars.count} characters.`,
+    },
+    empty: {
+      title: "No users yet",
+      description: "The user roster is empty.",
+    },
+    notAuthorized: {
+      title: "Not authorized",
+      description: "Only Admin accounts can manage users.",
+    },
+  },
+
   toast: {
     fleetStarted: "Fleet started.",
     fleetStartFailed: "Couldn't start the fleet.",
@@ -1606,5 +1669,15 @@ export const en: Dictionary = {
     fiducialDeleted: "Fiducial deleted.",
     variantSaved: "Variant added.",
     variantSaveFailed: "Couldn't save the variant.",
+    userCreated: (vars: Vars) => `Created user ${vars.username}.`,
+    userCreateFailed: "Couldn't create the user.",
+    userRoleUpdated: (vars: Vars) => `Updated ${vars.username}'s role.`,
+    userRoleUpdateFailed: "Couldn't update the role.",
+    userDisabled: (vars: Vars) => `Disabled ${vars.username}.`,
+    userEnabled: (vars: Vars) => `Enabled ${vars.username}.`,
+    userStatusUpdateFailed: "Couldn't update the user's status.",
+    userPasswordReset: (vars: Vars) => `Reset ${vars.username}'s password.`,
+    userPasswordResetFailed: "Couldn't reset the password.",
+    logoutFailed: "Couldn't log out.",
   },
 }

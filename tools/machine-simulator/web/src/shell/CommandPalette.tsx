@@ -3,9 +3,10 @@ import { Palette, Search, Wrench } from "lucide-react"
 import { useLocation } from "wouter"
 
 import { useT } from "@/i18n"
+import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogPortal, DialogOverlay } from "@/components/ui/dialog"
-import { NAV_ITEMS, type NavItem } from "@/shell/Sidebar"
+import { visibleNavItems, type NavItem } from "@/shell/Sidebar"
 
 // `/recipes` (Task C6) is reachable here and via `ConfigModeToggle` (rendered in both
 // `ProductConfig.tsx`'s and `RecipeConfig.tsx`'s own headers) rather than as a `Sidebar.tsx`
@@ -16,8 +17,6 @@ const EXTRA_ITEMS: NavItem[] = [
   { labelKey: "shell.commandPalette.designTokens", path: "/tokens", icon: Palette },
   { labelKey: "shell.commandPalette.recipeConfig", path: "/recipes", icon: Wrench },
 ]
-
-const ALL_ITEMS: NavItem[] = [...NAV_ITEMS, ...EXTRA_ITEMS]
 
 const LISTBOX_ID = "command-palette-listbox"
 
@@ -32,18 +31,23 @@ interface CommandPaletteProps {
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const t = useT()
+  const { user } = useAuth()
   const [, navigate] = useLocation()
   const [query, setQuery] = React.useState("")
   const [activeIndex, setActiveIndex] = React.useState(0)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
+  // WS-D-D7 — same `minRole` filter `Sidebar.tsx` applies, so the palette never offers a jump to a
+  // route (e.g. `/users`) the current user's own nav rail wouldn't show them either.
+  const allItems = React.useMemo(() => [...visibleNavItems(user?.role), ...EXTRA_ITEMS], [user?.role])
+
   const results = React.useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (q.length === 0) return ALL_ITEMS
-    return ALL_ITEMS.filter((item) => t(item.labelKey).toLowerCase().includes(q))
+    if (q.length === 0) return allItems
+    return allItems.filter((item) => t(item.labelKey).toLowerCase().includes(q))
     // `t` changes identity with the active language, so this recomputes on a language switch too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, t])
+  }, [query, t, allItems])
 
   // Reset transient state every time the palette opens, and land focus in the search box.
   React.useEffect(() => {

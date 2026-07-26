@@ -75,6 +75,7 @@ export const vi = {
       historian: "Lịch sử dữ liệu",
       reports: "Báo cáo OEE",
       settings: "Cài đặt",
+      users: "Người dùng",
     },
     sidebar: {
       brandSubtitle: "Máy mô phỏng",
@@ -1634,6 +1635,68 @@ export const vi = {
     },
   },
 
+  // WS-D-D7 — `/users` (`routes/Users.tsx`, Admin-only): roster table, add-user/reset-password
+  // dialogs, per-row role/disable-enable actions, and the client-side "not authorized"/last-admin-
+  // guard copy (the REAL enforcement is server-side — see `UserEndpoints.cs` — these are just the
+  // friendlier front-line messages for the common case).
+  users: {
+    title: "Người dùng",
+    description: "Quản lý tài khoản đăng nhập cục bộ — vai trò, khóa/mở khóa, đặt lại mật khẩu. Chỉ Admin mới thấy màn hình này.",
+    addUser: "Thêm người dùng",
+    table: {
+      username: "Tên đăng nhập",
+      role: "Vai trò",
+      displayName: "Tên hiển thị",
+      status: "Trạng thái",
+      lastLogin: "Đăng nhập gần nhất",
+      actions: "Hành động",
+      roleAria: (vars: Vars) => `Vai trò của ${vars.username}`,
+    },
+    status: {
+      enabled: "Đang hoạt động",
+      disabled: "Đã khóa",
+    },
+    never: "Chưa từng",
+    actions: {
+      disable: "Khóa",
+      enable: "Mở khóa",
+      resetPassword: "Đặt lại mật khẩu",
+    },
+    lastAdminGuard: "Không thể thực hiện — đây là Admin cuối cùng đang hoạt động, thao tác này sẽ khiến không ai quản trị được hệ thống.",
+    createDialog: {
+      title: "Thêm người dùng",
+      description: "Tạo một tài khoản đăng nhập cục bộ mới.",
+      usernameLabel: "Tên đăng nhập",
+      usernamePlaceholder: "vd: operator1",
+      passwordLabel: "Mật khẩu",
+      displayNameLabel: "Tên hiển thị (tùy chọn)",
+      roleLabel: "Vai trò",
+      cancel: "Hủy",
+      submit: "Tạo người dùng",
+      submitting: "Đang tạo…",
+      usernameRequired: "Cần nhập tên đăng nhập.",
+      usernameDuplicate: (vars: Vars) => `Tên đăng nhập "${vars.username}" đã tồn tại.`,
+      passwordTooShort: (vars: Vars) => `Mật khẩu phải có ít nhất ${vars.count} ký tự.`,
+    },
+    resetPasswordDialog: {
+      title: (vars: Vars) => `Đặt lại mật khẩu cho ${vars.username}`,
+      description: "Người dùng này sẽ cần đăng nhập lại bằng mật khẩu mới; mọi phiên đăng nhập hiện tại sẽ bị hủy.",
+      newPasswordLabel: "Mật khẩu mới",
+      cancel: "Hủy",
+      submit: "Đặt lại mật khẩu",
+      submitting: "Đang đặt lại…",
+      passwordTooShort: (vars: Vars) => `Mật khẩu phải có ít nhất ${vars.count} ký tự.`,
+    },
+    empty: {
+      title: "Chưa có người dùng nào",
+      description: "Danh sách người dùng đang trống.",
+    },
+    notAuthorized: {
+      title: "Không có quyền truy cập",
+      description: "Chỉ tài khoản Admin mới có thể quản lý người dùng.",
+    },
+  },
+
   toast: {
     fleetStarted: "Đã chạy fleet.",
     fleetStartFailed: "Không thể chạy fleet.",
@@ -1673,6 +1736,16 @@ export const vi = {
     fiducialDeleted: "Đã xóa fiducial.",
     variantSaved: "Đã thêm biến thể.",
     variantSaveFailed: "Lưu biến thể thất bại.",
+    userCreated: (vars: Vars) => `Đã tạo người dùng ${vars.username}.`,
+    userCreateFailed: "Không thể tạo người dùng.",
+    userRoleUpdated: (vars: Vars) => `Đã cập nhật vai trò của ${vars.username}.`,
+    userRoleUpdateFailed: "Không thể cập nhật vai trò.",
+    userDisabled: (vars: Vars) => `Đã khóa ${vars.username}.`,
+    userEnabled: (vars: Vars) => `Đã mở khóa ${vars.username}.`,
+    userStatusUpdateFailed: "Không thể cập nhật trạng thái người dùng.",
+    userPasswordReset: (vars: Vars) => `Đã đặt lại mật khẩu cho ${vars.username}.`,
+    userPasswordResetFailed: "Không thể đặt lại mật khẩu.",
+    logoutFailed: "Không thể đăng xuất.",
   },
 }
 

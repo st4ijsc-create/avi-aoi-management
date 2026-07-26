@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Command, Loader2, Play, Square } from "lucide-react"
+import { ChevronDown, Command, LogOut, Loader2, Play, Square, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { useLocation } from "wouter"
 
@@ -15,8 +15,10 @@ import {
   useStopFleet,
   type TransportMode,
 } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuPortal, MenuPositioner, MenuSeparator, MenuTrigger } from "@/components/ui/menu"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { NAV_ITEMS } from "@/shell/Sidebar"
 import { ThemeQuickSwitch } from "@/theme/ThemePicker"
@@ -117,6 +119,71 @@ function Clock() {
   )
 }
 
+/**
+ * WS-D-D6/D7 — the real logout affordance D6 deferred to this task: username + role badge (the
+ * `auth.userMenu.*` vocabulary D6 already landed, unused until now) and a Logout item that calls
+ * `useAuth().logout()` — the SAME call `tests/17-auth.spec.ts` already exercises directly via
+ * `page.request.post`, now reachable from the actual UI. No explicit navigate on success: `logout()`
+ * writes `["auth","me"]` to `null` (`lib/auth.ts`), which flips `App.tsx`'s `AuthGate` straight to
+ * `<Login/>` on its own next render — same reactive-gate pattern every other auth transition in this
+ * app already uses, nothing bespoke needed here.
+ */
+function UserMenu() {
+  const t = useT()
+  const { user, logout } = useAuth()
+  const [loggingOut, setLoggingOut] = React.useState(false)
+
+  if (!user) return null
+
+  async function handleLogout() {
+    setLoggingOut(true)
+    try {
+      await logout()
+    } catch {
+      toast.error(t("toast.logoutFailed"))
+      setLoggingOut(false)
+    }
+  }
+
+  return (
+    <Menu>
+      <MenuTrigger
+        className="flex items-center gap-1.5 rounded-[var(--radius)] border border-border-strong bg-surface-muted px-2.5 py-1.5 text-xs text-text-body transition-colors hover:bg-navy-50 hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)] dark:hover:bg-navy-800/40 dark:hover:text-navy-200"
+        aria-label={t("auth.userMenu.signedInAs", { username: user.username })}
+      >
+        <UserRound className="size-3.5" aria-hidden="true" />
+        <span className="max-w-24 truncate font-medium">{user.username}</span>
+        <ChevronDown className="size-3 shrink-0 text-text-muted" aria-hidden="true" />
+      </MenuTrigger>
+      <MenuPortal>
+        <MenuPositioner align="end">
+          <MenuPopup>
+            <MenuGroup>
+              <MenuGroupLabel>
+                <span className="flex flex-col gap-0.5 normal-case">
+                  <span className="truncate text-xs font-semibold text-text-strong">
+                    {t("auth.userMenu.signedInAs", { username: user.username })}
+                  </span>
+                  <span className="text-[11px] text-text-muted">{t("auth.userMenu.role", { role: user.role })}</span>
+                </span>
+              </MenuGroupLabel>
+            </MenuGroup>
+            <MenuSeparator />
+            <MenuItem
+              disabled={loggingOut}
+              onClick={handleLogout}
+              className="text-danger-text data-highlighted:bg-destructive/10 data-highlighted:text-danger-text"
+            >
+              <LogOut className="size-3.5" aria-hidden="true" />
+              {loggingOut ? t("auth.userMenu.loggingOut") : t("auth.userMenu.logout")}
+            </MenuItem>
+          </MenuPopup>
+        </MenuPositioner>
+      </MenuPortal>
+    </Menu>
+  )
+}
+
 interface TopBarProps {
   onOpenPalette: () => void
 }
@@ -214,6 +281,10 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
           <Command className="size-3.5" aria-hidden="true" />
           <kbd className="font-mono tabular-nums">K</kbd>
         </button>
+
+        <div className="h-7 w-px bg-border" aria-hidden="true" />
+
+        <UserMenu />
       </div>
     </header>
   )

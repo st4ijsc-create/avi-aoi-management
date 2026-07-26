@@ -124,6 +124,15 @@ export async function gotoSettings(page: Page): Promise<void> {
   await expect(page.locator("#settings-server-url")).toHaveValue(/\S/, { timeout: 15_000 })
 }
 
+/** WS-D-D7 — `/users` (Admin-only account management). Waits past the roster query's own loading
+ * skeleton — the table header only renders once `useUsers()` has resolved at least once. */
+export async function gotoUsers(page: Page): Promise<void> {
+  await page.goto("/users")
+  await expect(page.getByRole("heading", { name: viDict.users.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  await expect(page.getByRole("columnheader", { name: viDict.users.table.username })).toBeVisible()
+}
+
 export async function gotoScenario(page: Page): Promise<void> {
   await page.goto("/scenario")
   await expect(page.getByRole("heading", { name: viDict.scenario.title, level: 1 })).toBeVisible()

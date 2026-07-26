@@ -14,6 +14,7 @@ import Scenario from "@/routes/Scenario"
 import Historian from "@/routes/Historian"
 import Reports from "@/routes/Reports"
 import Settings from "@/routes/Settings"
+import Users from "@/routes/Users"
 import NotFound from "@/routes/NotFound"
 import { Sidebar } from "@/shell/Sidebar"
 import { TopBar } from "@/shell/TopBar"
@@ -53,6 +54,7 @@ export function Shell() {
             <Route path="/historian" component={Historian} />
             <Route path="/reports" component={Reports} />
             <Route path="/settings" component={Settings} />
+            <Route path="/users" component={Users} />
             <Route component={NotFound} />
           </Switch>
         </main>
