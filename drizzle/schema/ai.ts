@@ -1629,6 +1629,34 @@ export type InsertAiPendingAction = typeof aiPendingActions.$inferInsert;
 // awaiting_confirm); the cursor only moves past a write after the user confirms it
 // (confirmStep → core confirmAction). Migration: drizzle/0017_ai_agent_sessions.sql.
 
+/**
+ * Deterministic, minimal condition a `branch` step evaluates against the
+ * observations gathered so far (read-step results only — no LLM at eval time).
+ * `when.path` is resolved against the payload of the most recent DONE read-step
+ * observation (or the most recent one whose `tool` matches `observationTool`,
+ * when given) using dotted-path lookup (e.g. "data.count"). `thenGoto`/
+ * `elseGoto` are step INDICES the orchestrator jumps the cursor to — both MUST
+ * be forward-only (> the branch step's own index); the orchestrator re-checks
+ * this at eval time and fails safe (fall-through) on any violation. Omitting
+ * `thenGoto`/`elseGoto` means "fall through" for that outcome — identical to
+ * today's no-condition skip behavior.
+ */
+export interface AgentBranchCondition {
+  when: {
+    /** Dotted path into the observation payload, e.g. "data.count". Empty/"" = the whole payload. */
+    path: string;
+    op: "eq" | "neq" | "gt" | "lt" | "exists" | "contains";
+    /** Comparison value (unused by "exists"). */
+    value?: unknown;
+    /** Restrict which read step's payload to inspect by tool name (default: most recent read observation). */
+    observationTool?: string;
+  };
+  /** Step index to jump to when the condition is true. Omitted = fall through. */
+  thenGoto?: number;
+  /** Step index to jump to when the condition is false. Omitted = fall through. */
+  elseGoto?: number;
+}
+
 /** A single planned step produced by the planner (validated against the registry). */
 export interface AgentPlanStep {
   /** read = run immediately; write = HITL propose+confirm; guidance/navigate/prefill = client directive; branch = conditional cursor jump. */
@@ -1639,6 +1667,8 @@ export interface AgentPlanStep {
   args?: Record<string, unknown>;
   /** Short human-readable reason this step exists. */
   rationale?: string;
+  /** `branch` steps only. Absent = today's unconditional skip/fall-through behavior. */
+  condition?: AgentBranchCondition;
 }
 
 export interface AgentPlan {
@@ -1672,6 +1702,15 @@ export const aiAgentSessions = pgTable("ai_agent_sessions", {
   stepResults: json("stepResults").$type<AgentStepResult[]>().default([]).notNull(),
   linkedActionIds: json("linkedActionIds").$type<string[]>().default([]).notNull(),
   writeCount: integer("writeCount").default(0).notNull(),
+  /**
+   * Wave 3 / D1 — observe→replan budget counter (migration 0302, NOT applied by
+   * this task; owner `aoi` runs it — see brief). Nullable/additive: reads treat
+   * a missing value (column not yet migrated, or a pre-migration row) as 0 via
+   * `?? 0`; `aiAgentOrchestrator` also falls back to an explicit legacy column
+   * list on 42703 (undefined_column) so session loading never breaks before the
+   * migration runs. Survives a process restart because it lives on the session row.
+   */
+  replanCount: integer("replanCount").default(0),
   playbookId: varchar("playbookId", { length: 120 }),
   lang: varchar("lang", { length: 5 }).default("vi").notNull(),
   expiresAt: timestamp("expiresAt").notNull(),

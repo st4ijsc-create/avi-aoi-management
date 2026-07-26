@@ -77,11 +77,17 @@ vi.mock("./aiCopilotActions", () => ({
   cancelAction: (...a: unknown[]) => cancelAction(...a),
 }));
 
-// ── Mock the planner (deterministic plans). ──
+// ── Mock the planner (deterministic plans). replanFromObservations defaults to
+//    "no change" so pre-existing tests (which don't care about replanning) see
+//    IDENTICAL behavior to before D1 — see aiAgentOrchestrator.replan.test.ts
+//    for the observe→replan / branch-condition test suite. ──
 const planGoal = vi.fn();
+const replanFromObservations = vi.fn(async () => ({ changed: false, steps: [], available: true }));
 vi.mock("./aiAgentPlanner", () => ({
   planGoal: (...a: unknown[]) => planGoal(...a),
+  replanFromObservations: (...a: unknown[]) => replanFromObservations(...a),
   AGENT_MAX_STEPS: 6,
+  AGENT_MAX_REPLANS: 2,
 }));
 
 // ── Mock the tool registry: provide read/write/client tools. ──
