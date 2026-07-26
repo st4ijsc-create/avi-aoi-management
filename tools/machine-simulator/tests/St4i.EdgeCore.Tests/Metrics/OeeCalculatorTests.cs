@@ -69,12 +69,36 @@ public class OeeCalculatorTests
     [Fact]
     public void Performance_never_exceeds_one_even_when_ideal_run_time_exceeds_actual_run_time()
     {
-        // idealRunSeconds = 5.0 * 100 = 500s > RunTime (100s) -> would be a ratio of 5 unclamped.
+        // idealRunSeconds = 5.0 * 100 = 500s > RunTime (100s) -> raw speed-loss delta (RunTime - idealRunSeconds)
+        // is negative; this exercises the SpeedLoss clamp, not just the Performance clamp.
         var input = new OeeInputAggregate("M-01", From, To, TotalCount: 100, GoodCount: 100, RunTime: TimeSpan.FromSeconds(100));
 
         var result = OeeCalculator.Calculate(input, TimeSpan.FromSeconds(100), idealCycleSeconds: 5.0);
 
         Assert.Equal(1.0, result.Performance);
+        Assert.Equal(TimeSpan.Zero, result.SpeedLossTime);
+    }
+
+    [Fact]
+    public void DowntimeLossTime_is_clamped_to_zero_when_run_time_exceeds_planned_time()
+    {
+        // RunTime (100s) > plannedProductionTime (50s) -> raw delta (planned - run) is negative;
+        // exercises the DowntimeLoss clamp.
+        var input = new OeeInputAggregate("M-01", From, To, TotalCount: 100, GoodCount: 100, RunTime: TimeSpan.FromSeconds(100));
+
+        var result = OeeCalculator.Calculate(input, TimeSpan.FromSeconds(50), idealCycleSeconds: 1.0);
+
+        Assert.Equal(TimeSpan.Zero, result.DowntimeLossTime);
+    }
+
+    [Fact]
+    public void QualityLossTime_is_zero_when_every_unit_is_good()
+    {
+        var input = new OeeInputAggregate("M-01", From, To, TotalCount: 100, GoodCount: 100, RunTime: TimeSpan.FromSeconds(100));
+
+        var result = OeeCalculator.Calculate(input, TimeSpan.FromSeconds(100), idealCycleSeconds: 1.0);
+
+        Assert.Equal(TimeSpan.Zero, result.QualityLossTime);
     }
 
     [Fact]
