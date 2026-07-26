@@ -65,7 +65,22 @@ describe("hashDatasetSamples", () => {
 });
 
 describe("hashSegDatasetSamples", () => {
-  it("same images+labels (mask order shuffled within an image) → identical hash", () => {
+  it("same images+labels+geometry (mask order shuffled within an image) → identical hash", () => {
+    const a: SegSample[] = [{
+      imageUrl: "img1.jpg",
+      masks: [{ label: "scratch", points: [[0, 0], [1, 0], [1, 1]] }, { label: "dent", points: [[0.2, 0.2], [0.3, 0.2], [0.3, 0.3]] }],
+      source: "qc_segmentation",
+    }];
+    const b: SegSample[] = [{
+      imageUrl: "img1.jpg",
+      // Same two masks, listed in the opposite order — mask ORDER must not affect the hash.
+      masks: [{ label: "dent", points: [[0.2, 0.2], [0.3, 0.2], [0.3, 0.3]] }, { label: "scratch", points: [[0, 0], [1, 0], [1, 1]] }],
+      source: "qc_segmentation",
+    }];
+    expect(hashSegDatasetSamples(a)).toBe(hashSegDatasetSamples(b));
+  });
+
+  it("F3-fix: different mask GEOMETRY (same image + same labels) → different hash (real content hash, not collision-prone)", () => {
     const a: SegSample[] = [{
       imageUrl: "img1.jpg",
       masks: [{ label: "scratch", points: [[0, 0], [1, 0], [1, 1]] }, { label: "dent", points: [[0, 0], [1, 0], [1, 1]] }],
@@ -73,12 +88,17 @@ describe("hashSegDatasetSamples", () => {
     }];
     const b: SegSample[] = [{
       imageUrl: "img1.jpg",
+      // Same image, same set of labels — but the polygons themselves differ.
       masks: [{ label: "dent", points: [[9, 9], [8, 8], [7, 7]] }, { label: "scratch", points: [[2, 2], [3, 3], [4, 4]] }],
       source: "qc_segmentation",
     }];
-    // Mask geometry (points) doesn't affect the id — only imageUrl + sorted labels — so this
-    // is same hash even though point coordinates differ (the id is imageUrl+labels by design).
-    expect(hashSegDatasetSamples(a)).toBe(hashSegDatasetSamples(b));
+    expect(hashSegDatasetSamples(a)).not.toBe(hashSegDatasetSamples(b));
+  });
+
+  it("editing a mask label (same geometry) → different hash", () => {
+    const a: SegSample[] = [{ imageUrl: "img1.jpg", masks: [{ label: "scratch", points: [[0, 0], [1, 0], [1, 1]] }], source: "qc_segmentation" }];
+    const b: SegSample[] = [{ imageUrl: "img1.jpg", masks: [{ label: "dent", points: [[0, 0], [1, 0], [1, 1]] }], source: "qc_segmentation" }];
+    expect(hashSegDatasetSamples(a)).not.toBe(hashSegDatasetSamples(b));
   });
 
   it("different image set → different hash", () => {
@@ -140,5 +160,93 @@ describe("computeDatasetManifestHash (fs round-trip)", () => {
     const NEVER_BUILT_ID = 900099;
     expect(() => computeDatasetManifestHash(NEVER_BUILT_ID)).not.toThrow();
     expect(computeDatasetManifestHash(NEVER_BUILT_ID)).toBe(computeContentHash([]));
+  });
+});
+
+// F3 review fix — `computeDatasetManifestHash` must be DATASET-TYPE-AWARE: it has
+// to dispatch to the SAME hasher the builder used at pin time
+// (`hashSegDatasetSamples` for segmentation manifests, `hashDatasetSamples` for
+// classification manifests), or a recompute on a seg dataset would (a) collide
+// with any other seg manifest of the same image set regardless of masks, and
+// (b) diverge from what `pinDatasetContentHash` actually stored — breaking
+// lineage verification for segmentation models.
+describe("computeDatasetManifestHash — dataset-type-aware (F3 review fix)", () => {
+  const SEG_DATASET_ID = 900101;
+  const SEG_OTHER_ID = 900102;
+  const CLS_DATASET_ID = 900103;
+
+  function writeSegManifests(id: number, train: SegSample[], val: SegSample[], test: SegSample[]): void {
+    const dir = datasetDir(id);
+    fs.mkdirSync(dir, { recursive: true });
+    const write = (name: string, samples: SegSample[]) => {
+      // Mirrors `writeSegJsonl` — {imageUrl, masks:[{label,points}], source}.
+      const lines = samples.map((s) => JSON.stringify({ imageUrl: s.imageUrl, masks: s.masks, source: s.source }));
+      fs.writeFileSync(path.join(dir, name), lines.join("\n") + (lines.length ? "\n" : ""), "utf-8");
+    };
+    write("train.jsonl", train);
+    write("val.jsonl", val);
+    write("test.jsonl", test);
+  }
+
+  function writeClsManifests(id: number, train: DatasetSample[], val: DatasetSample[], test: DatasetSample[]): void {
+    const dir = datasetDir(id);
+    fs.mkdirSync(dir, { recursive: true });
+    const write = (name: string, samples: DatasetSample[]) => {
+      const lines = samples.map((s) => JSON.stringify(s));
+      fs.writeFileSync(path.join(dir, name), lines.join("\n") + (lines.length ? "\n" : ""), "utf-8");
+    };
+    write("train.jsonl", train);
+    write("val.jsonl", val);
+    write("test.jsonl", test);
+  }
+
+  afterEach(() => {
+    for (const id of [SEG_DATASET_ID, SEG_OTHER_ID, CLS_DATASET_ID]) {
+      fs.rmSync(datasetDir(id), { recursive: true, force: true });
+    }
+  });
+
+  it("seg dataset: recompute equals the value pinDatasetContentHash stores at build time (same manifest → same hash)", () => {
+    const train: SegSample[] = [{ imageUrl: "1.jpg", masks: [{ label: "scratch", points: [[0, 0], [1, 0], [1, 1]] }], source: "qc_segmentation" }];
+    const val: SegSample[] = [{ imageUrl: "2.jpg", masks: [{ label: "dent", points: [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]] }], source: "qc_segmentation" }];
+    const test: SegSample[] = [];
+    writeSegManifests(SEG_DATASET_ID, train, val, test);
+
+    // This is exactly what `buildSegmentationDataset` computes over ALL pre-split
+    // samples and hands to `pinDatasetContentHash` at build time.
+    const pinnedAtBuildTime = hashSegDatasetSamples([...train, ...val, ...test]);
+    expect(computeDatasetManifestHash(SEG_DATASET_ID)).toBe(pinnedAtBuildTime);
+  });
+
+  it("seg dataset: does NOT collapse to the classification hasher's (wrong) result", () => {
+    const train: SegSample[] = [{ imageUrl: "1.jpg", masks: [{ label: "scratch", points: [[0, 0], [1, 0], [1, 1]] }], source: "qc_segmentation" }];
+    writeSegManifests(SEG_DATASET_ID, train, [], []);
+    // The classification hasher only reads `imageUrl`/`label`; seg records have no
+    // `label`, so it would degrade every seg manifest to the same "imageUrl::undefined"
+    // id. Guard the regression by asserting the recompute is NOT that wrong value.
+    const wrongClassificationHash = hashDatasetSamples(train as unknown as DatasetSample[]);
+    expect(computeDatasetManifestHash(SEG_DATASET_ID)).not.toBe(wrongClassificationHash);
+  });
+
+  it("seg dataset with different masks (same images) → different recomputed hash", () => {
+    writeSegManifests(
+      SEG_DATASET_ID,
+      [{ imageUrl: "1.jpg", masks: [{ label: "scratch", points: [[0, 0], [1, 0], [1, 1]] }], source: "qc_segmentation" }],
+      [], [],
+    );
+    writeSegManifests(
+      SEG_OTHER_ID,
+      // Same image, same label — different mask geometry.
+      [{ imageUrl: "1.jpg", masks: [{ label: "scratch", points: [[0.5, 0.5], [0.6, 0.5], [0.6, 0.6]] }], source: "qc_segmentation" }],
+      [], [],
+    );
+    expect(computeDatasetManifestHash(SEG_DATASET_ID)).not.toBe(computeDatasetManifestHash(SEG_OTHER_ID));
+  });
+
+  it("classification dataset: dispatch unchanged (still hashDatasetSamples)", () => {
+    const train: DatasetSample[] = [{ imageUrl: "1.jpg", label: "OK", source: "label_queue" }];
+    const val: DatasetSample[] = [{ imageUrl: "2.jpg", label: "NG", source: "label_queue" }];
+    writeClsManifests(CLS_DATASET_ID, train, val, []);
+    expect(computeDatasetManifestHash(CLS_DATASET_ID)).toBe(hashDatasetSamples([...train, ...val]));
   });
 });
