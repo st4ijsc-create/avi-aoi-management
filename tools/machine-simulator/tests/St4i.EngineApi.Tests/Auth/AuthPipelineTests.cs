@@ -27,7 +27,19 @@ namespace St4i.EngineApi.Tests.Auth;
 /// additionally serializes every factory build in THIS class against each other (methods within one xUnit
 /// test class already run sequentially by default, but this also covers the (small, pre-existing) risk of
 /// racing a DIFFERENT test class that touches the same real env vars).
+///
+/// WS-D-D3 — that "small, pre-existing risk" stopped being small once a THIRD class
+/// (<c>AuditEndpointsTests</c>) started doing the same env-var swap: three classes each with their OWN
+/// private <c>EnvLock</c> (xUnit runs different test classes in parallel by default — each implicit
+/// per-class collection is its own thread) is enough for the race to show up in practice, not just in
+/// theory. <c>[Collection(SecurityEnvVarTests.CollectionName)]</c> below puts this class in the SAME
+/// xUnit collection as <see cref="RbacPolicyTests"/> and <c>AuditEndpointsTests</c> — xUnit always runs
+/// every test in one collection sequentially relative to the others in that SAME collection (regardless
+/// of whether a <c>[CollectionDefinition]</c> exists for the name), which is a stronger guarantee than
+/// this class's own <c>EnvLock</c> could ever provide on its own (that lock only ever serialized calls
+/// against ITSELF).
 /// </summary>
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class AuthPipelineTests
 {
     private static readonly SemaphoreSlim EnvLock = new(1, 1);

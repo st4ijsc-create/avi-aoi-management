@@ -34,7 +34,13 @@ namespace St4i.EngineApi.Tests.Auth;
 ///
 /// Plus the two D1-carried hardening minors: login timing equalization (unknown/disabled-user paths
 /// still 401, never 500) and change-password's null/empty NewPassword 400.
+///
+/// WS-D-D3 — see <see cref="SecurityEnvVarTests"/>'s doc comment: this class shares its
+/// <c>[Collection(...)]</c> tag with <see cref="AuthPipelineTests"/>/<c>AuditEndpointsTests</c> so xUnit
+/// runs all three sequentially relative to each other, instead of racing over the same real process
+/// environment variables.
 /// </summary>
+[Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class RbacPolicyTests
 {
     private static readonly SemaphoreSlim EnvLock = new(1, 1);
@@ -181,6 +187,8 @@ public sealed class RbacPolicyTests
 
         // Admin
         new("/v1/historian/prune", new[] { "POST" }, Policies.Admin),
+        new("/v1/audit", new[] { "GET" }, Policies.Admin),
+        new("/v1/audit/verify", new[] { "GET" }, Policies.Admin),
     };
 
     [Fact]

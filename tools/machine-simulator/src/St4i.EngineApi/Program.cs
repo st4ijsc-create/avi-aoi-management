@@ -66,6 +66,15 @@ builder.Services.AddDataProtection()
 
 builder.Services.AddSingleton<IUserStore>(_ => new SqliteUserStore(securityDir));
 
+// WS-D-D3 — the tamper-evident, hash-chained audit log (SAME security.db/directory as the user store
+// above — SecurityDb's migration ladder now carries both the `users` and `audit_log` tables). Singleton
+// so its in-process AppendAsync lock (see SqliteAuditStore's doc comment) actually serializes every
+// append across the whole app, not just within one request. AuditRecorder is the thin per-request helper
+// handlers will call (wiring it into each mutating handler is D4 — this task only registers it so it's
+// available to call).
+builder.Services.AddSingleton<IAuditStore>(_ => new SqliteAuditStore(securityDir));
+builder.Services.AddSingleton<AuditRecorder>();
+
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
@@ -334,6 +343,7 @@ app.MapOnboardingEndpoints();
 app.MapConfigEndpoints();
 app.MapMachineSettingsEndpoints();
 app.MapHistorianEndpoints();
+app.MapAuditEndpoints();
 app.MapInspectorStream();
 
 // WS-D-D1 — ENDPOINT, so it inherits the FallbackPolicy above like every other mapped route; without

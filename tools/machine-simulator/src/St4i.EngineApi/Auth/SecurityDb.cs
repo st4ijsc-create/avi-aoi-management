@@ -55,6 +55,34 @@ public sealed class SecurityDb
               last_login_at_utc TEXT NULL);
             """,
         }),
+
+        // WS-D-D3 — the tamper-evident, append-only, hash-chained audit log (see SqliteAuditStore for
+        // the hash-chain mechanics). `id` doubles as the chain's seq order; `prev_hash`/`row_hash` are
+        // 64-hex SHA-256 digests. No FK to `users.id` (actor_role is denormalized — the role the actor
+        // held AT THE TIME of the action, which must never change retroactively if the user's role
+        // changes later).
+        (2, new[]
+        {
+            """
+            CREATE TABLE IF NOT EXISTS audit_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              at_utc TEXT NOT NULL,
+              actor_username TEXT NOT NULL,
+              actor_role TEXT NOT NULL,
+              action TEXT NOT NULL,
+              target_type TEXT NULL,
+              target_id TEXT NULL,
+              old_value TEXT NULL,
+              new_value TEXT NULL,
+              correlation_id TEXT NULL,
+              client_ip TEXT NULL,
+              prev_hash TEXT NOT NULL,
+              row_hash TEXT NOT NULL);
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_audit_at ON audit_log(at_utc);",
+            "CREATE INDEX IF NOT EXISTS ix_audit_actor ON audit_log(actor_username);",
+            "CREATE INDEX IF NOT EXISTS ix_audit_action ON audit_log(action);",
+        }),
     };
 
     /// <param name="directory">Explicit directory override (tests), or <see langword="null"/> to resolve
