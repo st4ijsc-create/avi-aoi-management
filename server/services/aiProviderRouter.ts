@@ -24,6 +24,9 @@ import { planInference, RateLimitError, type GatewayPlan } from "./aiGateway";
 // doc69 G2-2 — AI safety layer. `planGateway()` below threads the gateway's redacted
 // `safeText` into the actual engine call (see planGateway's PlannedCall.safeText), and
 // callers run `sanitizeOutput` on the model's response before returning it.
+// doc69 review fix — `redactSecretsOnly` is used by `generateNarrativeStream` to redact
+// secret-shaped text on individual streamed token chunks (see STREAM_SECRET_HOLD_BACK below).
+import { redactSecretsOnly } from "./ai/aiSafety";
 import type { TaskKind } from "./aiModelRouter";
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -478,6 +481,17 @@ export interface NarrativeStreamChunk {
   error?: string;
 }
 
+// doc69 review fix — streaming per-chunk secret redaction. A trailing window of
+// not-yet-released text is held back across "token" events so a secret pattern split across
+// two chunk boundaries (e.g. "sk-ABCDEF" + "GHIJKLMNOP...") is still caught before it reaches
+// the SSE client, instead of only being redacted in the aggregated `fullText` on "done" (too
+// late — the raw token chunks already went out by then). Cheap/pragmatic on purpose: an
+// unbounded-length secret fragmented across MANY tiny chunks can still leak past this window;
+// the real safety boundary is the INPUT redaction above (`safeText`) — this is defense-in-depth
+// on the OUTPUT side only, using ONLY the secret/API-key patterns (not the full PII scan, and
+// not the injection scanner), see `redactSecretsOnly()`.
+const STREAM_SECRET_HOLD_BACK = 64;
+
 export async function* generateNarrativeStream(
   req: NarrativeRequest,
   signal?: AbortSignal,
@@ -487,6 +501,8 @@ export async function* generateNarrativeStream(
   // doc69 G2-1 — same fail-open gateway plan as the non-streaming paths (see planGateway()).
   // doc69 G2-2 — safeText (redacted prompt) reaches the engine below.
   const { plan, safeText } = planGateway(req.task ?? "report", req.prompt, req.userId);
+  // doc69 review fix — trailing hold-back buffer, see STREAM_SECRET_HOLD_BACK doc comment.
+  let streamHeld = "";
   try {
     for await (const c of ggufStream(
       {
@@ -502,11 +518,28 @@ export async function* generateNarrativeStream(
       signal,
     )) {
       if (c.type === "token") {
-        // doc69 G2-2 — individual token chunks are NOT safety-checked mid-stream (a secret
-        // could straddle a chunk boundary, so per-token redaction would be unreliable and
-        // could corrupt the incremental render); only the aggregated `fullText` below is.
-        yield { type: "token", token: c.token, provider: "gguf", model: c.modelId };
+        // doc69 review fix — redact secret-shaped text on the token chunk itself (not just the
+        // aggregated fullText on "done") using a small sliding buffer so a secret straddling a
+        // chunk boundary is still caught. `streamHeld` already holds previously-redacted text
+        // (idempotent to re-scan), so this is safe to re-run each iteration.
+        const combined = streamHeld + (c.token ?? "");
+        const redacted = redactSecretsOnly(combined).text;
+        let toRelease: string;
+        if (redacted.length > STREAM_SECRET_HOLD_BACK) {
+          toRelease = redacted.slice(0, redacted.length - STREAM_SECRET_HOLD_BACK);
+          streamHeld = redacted.slice(redacted.length - STREAM_SECRET_HOLD_BACK);
+        } else {
+          toRelease = "";
+          streamHeld = redacted;
+        }
+        yield { type: "token", token: toRelease, provider: "gguf", model: c.modelId };
       } else if (c.type === "done") {
+        if (streamHeld) {
+          // Flush whatever remains in the hold-back buffer so the total streamed token text
+          // (minus any redactions) matches the source — nothing is silently dropped.
+          yield { type: "token", token: streamHeld, provider: "gguf", model: c.modelId };
+          streamHeld = "";
+        }
         yield {
           type: "done",
           fullText: plan && c.fullText != null ? plan.sanitizeOutput(c.fullText) : c.fullText,

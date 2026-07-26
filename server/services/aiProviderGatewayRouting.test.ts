@@ -226,6 +226,80 @@ describe("generateNarrativeStream — behavior preserved", () => {
   });
 });
 
+// ─── 2b. Review fix: per-chunk stream secret redaction ──────────────────────
+
+describe("generateNarrativeStream — per-chunk secret redaction (review fix)", () => {
+  // Deliberately split so NEITHER half alone satisfies the api_key pattern's `{16,}` minimum
+  // (half1 has only 9 alnum chars after "sk-"; the pattern needs a straight run of a
+  // contiguous alnum run of at least 16) — the match only completes once both chunks have
+  // arrived and are scanned together, which is exactly the boundary-straddle case this fix
+  // must catch.
+  const SECRET = "sk-ABCDEFGHIJ0123456789"; // "sk-" + 20 alnum chars
+  const half1 = SECRET.slice(0, 12); // "sk-ABCDEFGHI" — 9 alnum chars after prefix, no match alone
+  const half2 = SECRET.slice(12); // "J0123456789" — completes the run to 20 chars once combined
+
+  it("redacts a secret that appears only in the streamed tokens (split across a chunk boundary) before the consumer ever sees the raw value", async () => {
+    const { router } = await loadFresh();
+    // The model echoes the secret split across TWO separate token chunks, straddling the
+    // hold-back window boundary — exactly the leak this fix closes.
+    async function* fakeStream() {
+      yield { type: "token" as const, token: `Here is the key: ${half1}` };
+      yield { type: "token" as const, token: `${half2} — done.` };
+      yield {
+        type: "done" as const,
+        fullText: `Here is the key: ${SECRET} — done.`,
+        tokensGenerated: 10,
+        tokensPrompt: 5,
+        totalTimeMs: 12,
+        tokensPerSecond: 80,
+        modelId: "stub-stream-model",
+      };
+    }
+    generateTextStreamMock.mockReturnValue(fakeStream());
+
+    const tokenChunks: Array<{ token?: string }> = [];
+    for await (const c of router.generateNarrativeStream({ prompt: "repeat the key back" })) {
+      if (c.type === "token") tokenChunks.push(c);
+    }
+
+    // Every individual token chunk the consumer actually receives must never carry the raw
+    // secret — this is the point of the fix (the old code only redacted the aggregated
+    // fullText on "done", by which point the raw chunks had already reached the client).
+    for (const c of tokenChunks) {
+      expect(c.token ?? "").not.toContain(SECRET);
+    }
+    const joined = tokenChunks.map((c) => c.token ?? "").join("");
+    expect(joined).not.toContain(SECRET);
+    expect(joined).toContain("[REDACTED_SECRET]");
+  });
+
+  it("does not corrupt legitimate streamed manufacturing text (no secret present)", async () => {
+    const { router } = await loadFresh();
+    async function* fakeStream() {
+      yield { type: "token" as const, token: "Tỷ lệ lỗi hôm nay " };
+      yield { type: "token" as const, token: "là 2.1%, giảm so với hôm qua." };
+      yield {
+        type: "done" as const,
+        fullText: "Tỷ lệ lỗi hôm nay là 2.1%, giảm so với hôm qua.",
+        tokensGenerated: 12,
+        tokensPrompt: 5,
+        totalTimeMs: 10,
+        tokensPerSecond: 120,
+        modelId: "stub-stream-model",
+      };
+    }
+    generateTextStreamMock.mockReturnValue(fakeStream());
+
+    const tokenChunks: Array<{ token?: string }> = [];
+    for await (const c of router.generateNarrativeStream({ prompt: "tóm tắt" })) {
+      if (c.type === "token") tokenChunks.push(c);
+    }
+
+    const joined = tokenChunks.map((c) => c.token ?? "").join("");
+    expect(joined).toBe("Tỷ lệ lỗi hôm nay là 2.1%, giảm so với hôm qua.");
+  });
+});
+
 // ─── 3. Behavior preserved: offline/degradation fallback contract ──────────
 
 describe("offline/degradation fallback — behavior preserved (engine failure still surfaces, never swallowed)", () => {

@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import {
   scanForInjection,
   redactSecretsAndPII,
+  redactSecretsOnly,
   checkOutput,
   applySafety,
   applyOutputSafety,
@@ -175,6 +176,91 @@ describe("redactSecretsAndPII — PII", () => {
     const r = redactSecretsAndPII("Số hotline: +84912345678");
     expect(r.text).toContain("[REDACTED_PHONE]");
     expect(r.text).not.toContain("+84912345678");
+  });
+});
+
+describe("redactSecretsAndPII — phone context awareness (review fix)", () => {
+  it("does NOT redact a bare numeric lot value ('Số lô: ...-A' — the reported false positive)", () => {
+    const text = "Số lô: 0912345678-A";
+    const r = redactSecretsAndPII(text);
+    expect(r.text).toBe(text);
+    expect(r.redactions.find((x) => x.type === "phone")).toBeUndefined();
+  });
+
+  const lotLabelCases: Array<[string, string]> = [
+    ["Lô (VI)", "Lô sản xuất: 0912345678"],
+    ["Lot (EN)", "Lot number: 0912345678"],
+    ["Batch", "Batch: 0512345678 shipped today"],
+    ["Serial", "Serial: 0812345678"],
+    ["SN", "SN: 0712345678"],
+    ["Mã", "Mã sản phẩm: 0912345678"],
+    ["Barcode", "Barcode 0912345678 scanned OK"],
+  ];
+  for (const [label, text] of lotLabelCases) {
+    it(`does not redact a digit run labeled as ${label}`, () => {
+      const r = redactSecretsAndPII(text);
+      expect(r.text).toBe(text);
+      expect(r.redactions.find((x) => x.type === "phone")).toBeUndefined();
+    });
+  }
+
+  it("does NOT redact a bare phone-shaped digit run with no surrounding context at all", () => {
+    const text = "Giá trị đo: 0912345678";
+    const r = redactSecretsAndPII(text);
+    expect(r.text).toBe(text);
+    expect(r.redactions).toHaveLength(0);
+  });
+
+  const contextCases: Array<[string, string]> = [
+    ["sđt", "SĐT: 0912345678"],
+    ["số điện thoại", "Số điện thoại: 0912345678"],
+    ["liên hệ (existing)", "Liên hệ: 0912345678 hoặc gặp trực tiếp tại xưởng."],
+    ["hotline (existing, +84 form)", "Số hotline: +84912345678"],
+    ["gọi", "Gọi ngay 0912345678 để được hỗ trợ."],
+    ["phone (after)", "Contact number 0912345678 (phone)"],
+  ];
+  for (const [label, text] of contextCases) {
+    it(`DOES redact a genuine phone number with '${label}' context`, () => {
+      const r = redactSecretsAndPII(text);
+      expect(r.text).toContain("[REDACTED_PHONE]");
+      expect(r.redactions.find((x) => x.type === "phone")?.count).toBe(1);
+    });
+  }
+
+  it("DOES redact a clearly-formatted phone number (internal separators) even with no keyword nearby", () => {
+    const r = redactSecretsAndPII("Ghi chú: 0912 345 678 trong hồ sơ.");
+    expect(r.text).toContain("[REDACTED_PHONE]");
+    expect(r.text).not.toContain("0912 345 678");
+  });
+
+  it("a lot label still suppresses redaction even when a phone keyword appears earlier in the sentence", () => {
+    const text = "Gọi kiểm tra lô hàng — Lô: 0912345678";
+    const r = redactSecretsAndPII(text);
+    expect(r.text).toBe(text);
+    expect(r.redactions.find((x) => x.type === "phone")).toBeUndefined();
+  });
+});
+
+describe("redactSecretsOnly — secret patterns only, PII untouched (used by stream redaction)", () => {
+  it("redacts an API key but leaves an email address untouched", () => {
+    const r = redactSecretsOnly("key=sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 contact quality.lead@factory.example.com");
+    expect(r.text).toContain("[REDACTED_SECRET]");
+    expect(r.text).not.toContain("sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345");
+    expect(r.text).toContain("quality.lead@factory.example.com");
+  });
+
+  it("leaves a genuine-context phone number untouched (phone is not a 'secret' type)", () => {
+    const text = "Liên hệ: 0912345678 hoặc gặp trực tiếp tại xưởng.";
+    const r = redactSecretsOnly(text);
+    expect(r.text).toBe(text);
+    expect(r.redactions).toHaveLength(0);
+  });
+
+  it("leaves legitimate manufacturing text untouched", () => {
+    const text = "OK: 12.345mm, NG: 0.891mm, dung sai ±0.02mm";
+    const r = redactSecretsOnly(text);
+    expect(r.text).toBe(text);
+    expect(r.redactions).toHaveLength(0);
   });
 });
 

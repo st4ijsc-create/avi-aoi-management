@@ -157,15 +157,78 @@ const REDACT_PATTERNS: RedactPattern[] = [
     placeholder: "[REDACTED_SECRET]",
   },
   { type: "email", re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, placeholder: "[REDACTED_EMAIL]" },
-  // Vietnamese mobile numbers (03/05/07/08/09 + 8 digits, optional +84). Requires a leading
-  // boundary that is NOT itself alphanumeric/decimal-point so serials/lot codes/measurement
-  // values embedded without a separator (e.g. "SN0912345678", "0.912345678") are left alone.
-  {
-    type: "phone",
-    re: /(?<![A-Za-z0-9.])(?:\+84|0)[35789](?:[\s.-]?\d){8}(?!\d)/g,
-    placeholder: "[REDACTED_PHONE]",
-  },
+  // NOTE: phone numbers are handled separately by `redactPhones()` below, NOT via this
+  // shape-only pattern list — see that function's doc comment for why.
 ];
+
+// Secret-only subset (excludes email/phone, which are PII rather than credentials). Used by
+// `redactSecretsOnly()` for the streaming per-chunk redaction path (doc69 review fix), where
+// we deliberately want only the highest-severity signal, not the full PII scan.
+const SECRET_ONLY_TYPES = new Set(["private_key", "connection_string", "bearer_token", "jwt", "api_key", "password"]);
+const SECRET_REDACT_PATTERNS: RedactPattern[] = REDACT_PATTERNS.filter((p) => SECRET_ONLY_TYPES.has(p.type));
+
+function applyRedactPatterns(text: string, patterns: RedactPattern[]): RedactionResult {
+  let out = text;
+  const counts = new Map<string, number>();
+  for (const p of patterns) {
+    out = out.replace(p.re, () => {
+      counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
+      return p.placeholder;
+    });
+  }
+  const redactions: RedactionCount[] = [...counts.entries()].map(([type, count]) => ({ type, count }));
+  return { text: out, redactions };
+}
+
+// ─── Phone redaction — context-aware ────────────────────────────
+//
+// A bare VN-mobile-prefixed digit run (03/05/07/08/09 + 8 digits, optional +84) is
+// shape-identical to a large share of manufacturing serial/lot/batch/barcode values, which
+// are also just digit strings, often starting with "0". Redacting on shape alone corrupts
+// production text — e.g. `redactSecretsAndPII("Số lô: 0912345678-A")` used to mangle a lot
+// number into "[REDACTED_PHONE]-A" (doc69 review finding). A phone-shaped number is now only
+// redacted when ONE of:
+//   (a) a phone/contact keyword appears within a few characters before or after it
+//       (sđt/số điện thoại/điện thoại/liên hệ/hotline/gọi/phone/tel/mobile/zalo/call), or
+//   (b) it is written with internal separators (space/dot/hyphen) — the way humans actually
+//       type phone numbers ("0912 345 678", "+84-91-234-5678") — a formatting signal strong
+//       enough on its own even without a keyword.
+// A lot/serial/batch/barcode label immediately before the digits ALWAYS suppresses redaction
+// (checked first, wins even if a phone keyword also happens to be nearby), since that
+// combination is the exact false-positive this guards against.
+const PHONE_RE = /(?<![A-Za-z0-9.])(?:\+84|0)[35789](?:[\s.-]?\d){8}(?!\d)/g;
+// NOTE: plain `\b` is ASCII-only (defined via \w = [A-Za-z0-9_]) and silently fails to match
+// at the edges of Vietnamese diacritic letters (đ, ệ, ô, …) — e.g. a trailing \b right after
+// "hệ" or "lô" never fires because neither the diacritic vowel nor the punctuation/space that
+// follows it counts as \w, so no ASCII word/non-word transition exists. Use explicit
+// Unicode-letter/number-aware boundaries (requires the `u` flag) instead.
+const WORD_BOUNDARY_BEFORE = "(?<![\\p{L}\\p{N}_])";
+const WORD_BOUNDARY_AFTER = "(?![\\p{L}\\p{N}_])";
+const PHONE_CONTEXT_RE = new RegExp(
+  `${WORD_BOUNDARY_BEFORE}(sđt|số\\s*điện\\s*thoại|điện\\s*thoại|liên\\s*hệ|hotline|gọi|phone|tel|mobile|zalo|call)${WORD_BOUNDARY_AFTER}`,
+  "iu",
+);
+const LOT_LABEL_RE = new RegExp(
+  `${WORD_BOUNDARY_BEFORE}(lô|lot|batch|serial|s/n|sn|mã|barcode)${WORD_BOUNDARY_AFTER}\\s*[:#.-]?\\s*$`,
+  "iu",
+);
+const PHONE_CONTEXT_BEFORE_CHARS = 30;
+const PHONE_CONTEXT_AFTER_CHARS = 15;
+
+function redactPhones(text: string): { text: string; count: number } {
+  let count = 0;
+  const out = text.replace(PHONE_RE, (match: string, offset: number, full: string) => {
+    const before = full.slice(Math.max(0, offset - PHONE_CONTEXT_BEFORE_CHARS), offset);
+    if (LOT_LABEL_RE.test(before)) return match; // lot/serial/batch/barcode label wins — never a phone
+    const after = full.slice(offset + match.length, offset + match.length + PHONE_CONTEXT_AFTER_CHARS);
+    const hasContext = PHONE_CONTEXT_RE.test(before) || PHONE_CONTEXT_RE.test(after);
+    const looksFormatted = /[\s.-]/.test(match); // internal separator = typed as a phone number
+    if (!hasContext && !looksFormatted) return match; // bare digit run, no signal — leave production data alone
+    count++;
+    return "[REDACTED_PHONE]";
+  });
+  return { text: out, count };
+}
 
 /**
  * Redact obvious secrets (API keys, Bearer tokens, password=/pwd: forms, private keys,
@@ -176,16 +239,21 @@ const REDACT_PATTERNS: RedactPattern[] = [
 export function redactSecretsAndPII(text: string): RedactionResult {
   if (!text || typeof text !== "string") return { text: text ?? "", redactions: [] };
 
-  let out = text;
-  const counts = new Map<string, number>();
-  for (const p of REDACT_PATTERNS) {
-    out = out.replace(p.re, () => {
-      counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
-      return p.placeholder;
-    });
-  }
-  const redactions: RedactionCount[] = [...counts.entries()].map(([type, count]) => ({ type, count }));
-  return { text: out, redactions };
+  const base = applyRedactPatterns(text, REDACT_PATTERNS);
+  const { text: withPhones, count: phoneCount } = redactPhones(base.text);
+  const redactions = phoneCount > 0 ? [...base.redactions, { type: "phone", count: phoneCount }] : base.redactions;
+  return { text: withPhones, redactions };
+}
+
+/**
+ * Redact ONLY secret/credential-shaped patterns (private keys, connection strings, Bearer
+ * tokens, JWTs, API keys, password= forms) — deliberately EXCLUDES email/phone PII. Used for
+ * the streaming per-chunk redaction path (doc69 review fix), where a lighter/cheaper check
+ * per token chunk is preferable to the full scan. PURE, never throws.
+ */
+export function redactSecretsOnly(text: string): RedactionResult {
+  if (!text || typeof text !== "string") return { text: text ?? "", redactions: [] };
+  return applyRedactPatterns(text, SECRET_REDACT_PATTERNS);
 }
 
 // ─── Output leak check ──────────────────────────────────────────
