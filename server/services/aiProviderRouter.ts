@@ -262,6 +262,9 @@ async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
       tokensOut: r.tokensGenerated,
       latencyMs: r.totalTimeMs,
       outcome: "ok",
+      // doc69 G2-5a — already-output-redacted (result.text ran through plan.sanitizeOutput
+      // above); only consulted by the gateway for HIGH-RISK tasks (report is one of them).
+      responseText: result.text,
     });
     emit({
       ts: Date.now(),
@@ -440,6 +443,9 @@ export async function describeImage(req: DescribeImageRequest): Promise<Describe
       tokensOut: r.tokensGenerated,
       latencyMs: r.totalTimeMs,
       outcome: "ok",
+      // doc69 G2-5a — already-output-redacted (result.text ran through plan.sanitizeOutput
+      // above); only consulted by the gateway for HIGH-RISK tasks (vision is one of them).
+      responseText: result.text,
     });
     emit({
       ts: Date.now(),

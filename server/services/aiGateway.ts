@@ -41,6 +41,13 @@ import type { RouteInput, RouteDecision, TaskKind } from "./aiModelRouter";
 // free once they read `plan.safeText` instead of their own raw prompt — see the doc
 // comment on GatewayPlan.safeText below for the exact contract.
 import { applySafety, applyOutputSafety, type SafetyFlagsSummary } from "./ai/aiSafety";
+// doc69 G2-5a — privacy-safe LLM-call audit trail (HIGH-RISK tasks only: rca/report/vision).
+// Statically imported (like aiSafety above) because `recordLlmAudit()` itself is pure/
+// synchronous — it only hashes + buffers; the actual DB write is deferred to its own
+// `flushLlmAudit()`'s dynamic imports (mirrors aiGatewayQuota.ts's fail-safe DB-access
+// pattern). See server/services/ai/aiLlmAudit.ts for the full design rationale.
+import { recordLlmAudit } from "./ai/aiLlmAudit";
+import { getCorrelationId } from "./observability/correlation";
 
 export type { RouteInput, RouteDecision, TaskKind } from "./aiModelRouter";
 export type { SafetyFlagsSummary } from "./ai/aiSafety";
@@ -72,6 +79,14 @@ export interface InferenceOutcome {
   tokensOut?: number;
   latencyMs?: number;
   outcome?: Outcome;
+  /**
+   * doc69 G2-5a — the ALREADY-OUTPUT-REDACTED response text (i.e. the return value of
+   * `GatewayPlan.sanitizeOutput(rawResponse)`), OPTIONAL. Only consulted for HIGH-RISK tasks
+   * (rca/report/vision — see `HIGH_RISK_TASKS`) to compute the LLM audit trail's
+   * `responseSha256`. Every other caller can omit it with zero behavior change (byte-identical
+   * to before this task) — it is never persisted raw, only hashed.
+   */
+  responseText?: string;
 }
 
 /**
@@ -262,6 +277,67 @@ function quotaEnforceEnabled(): boolean {
  */
 function aiGatewayLicenseGateEnabled(): boolean {
   return envFlag("AI_GATEWAY_LICENSE_GATE_ENABLED");
+}
+
+/**
+ * doc69 G2-5a — privacy-safe LLM-call audit trail switch (`server/services/ai/aiLlmAudit.ts`).
+ * Default ON: only LOW-VOLUME HIGH-RISK tasks are ever audited (see `HIGH_RISK_TASKS` below),
+ * and only sha256 HASHES of the already-redacted prompt/response are stored (never raw text)
+ * — safe to default on. Set to "false"/"0"/"off" to fully disable (e.g. during rollout, or for
+ * a deployment that wants zero extra writes even for high-risk tasks).
+ */
+function llmAuditEnabled(): boolean {
+  return envFlagDefaultOn("AI_LLM_AUDIT_ENABLED");
+}
+
+/**
+ * doc69 G2-5a — "high-risk" / AI-influenced QUALITY decisions: root-cause analysis, generated
+ * reports, and vision-based inspection calls — the tasks whose OUTPUT can directly steer a
+ * quality/RCA decision. Deliberately NOT chat/intent/extract/embed/code/fim: those are either
+ * high-volume (chat/embed) or not themselves the quality-affecting artifact (per the task
+ * brief: "NOT every chat/embed call"). There is no separate "quality" TaskKind in
+ * aiModelRouter.ts today — quality-affecting decisions in this codebase are routed as "rca"
+ * (see aiRcaCopilot.ts) or "report" (see aiExecutiveReport.ts / aiProviderRouter.ts), so those
+ * two plus "vision" (aiAdvancedVision.ts / describeImage) are the exact set audited.
+ */
+const HIGH_RISK_TASKS: ReadonlySet<TaskKind> = new Set<TaskKind>(["rca", "report", "vision"]);
+
+/** doc69 G2-5a — fail-safe wrapper around the correlation-id backbone (observability/correlation.ts). */
+function safeGetCorrelationId(): string | null {
+  try {
+    return getCorrelationId() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * doc69 G2-5a — audit ONE completed (or blocked) high-risk call. No-op for every other task
+ * and when `AI_LLM_AUDIT_ENABLED` is off. `recordLlmAudit` itself is synchronous/fail-safe
+ * (hash + buffer only — see aiLlmAudit.ts), so calling it here can never add I/O latency or
+ * throw into `planInference`'s hot path.
+ */
+function auditIfHighRisk(
+  req: GatewayRequest,
+  decision: RouteDecision,
+  safetyFlags: SafetyFlagsSummary,
+  promptText: string,
+  outcome: Outcome,
+  extra?: { responseText?: string; latencyMs?: number },
+): void {
+  if (!llmAuditEnabled() || !HIGH_RISK_TASKS.has(req.task)) return;
+  recordLlmAudit({
+    userId: req.userId ?? null,
+    task: req.task,
+    tier: decision.tier,
+    model: decision.modelId ?? "default",
+    outcome,
+    promptText,
+    responseText: extra?.responseText ?? null,
+    latencyMs: extra?.latencyMs,
+    safetyFlags,
+    correlationId: safeGetCorrelationId(),
+  });
 }
 
 /** A/B split: fraction of traffic [0,1] tagged variant "B". 0 = A/B off (default). */
@@ -656,6 +732,9 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
   if (safety.flags.risk === "high" && safetyBlockHighRiskEnabled()) {
     bumpInputSafetyStats(safety.flags, true); // count as blocked in addition to the scan already counted above
     enqueue(toRow(req, decision, abVariant, { outcome: "blocked" }));
+    // doc69 G2-5a — audit the blocked ATTEMPT for high-risk tasks (promptSha256 only; the
+    // call never reached a model, so there is no response to hash).
+    auditIfHighRisk(req, decision, safety.flags, safety.text, "blocked");
     throw new SafetyBlockedError(
       `AI safety: request blocked (injection risk 'high', matched: ${safety.flags.matched.join(", ")}).`,
       safety.flags.matched,
@@ -708,6 +787,13 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
     if (recorded) return;
     recorded = true;
     enqueue(toRow(req, decision, abVariant, o));
+    // doc69 G2-5a — audit the completed call (success OR error) for high-risk tasks only.
+    // `o.responseText`, when supplied, is expected to already be output-redacted (see the
+    // field's doc comment on InferenceOutcome).
+    auditIfHighRisk(req, decision, safety.flags, safety.text, o.outcome ?? "ok", {
+      responseText: o.responseText,
+      latencyMs: o.latencyMs,
+    });
   };
 
   const sanitizeOutput = (text: string): string => safeApplyOutput(text).text;

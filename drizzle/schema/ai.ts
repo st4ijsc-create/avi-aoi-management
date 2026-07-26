@@ -1731,3 +1731,59 @@ export const aiGatewayQuota = pgTable("ai_gateway_quota", {
 
 export type AiGatewayQuota = typeof aiGatewayQuota.$inferSelect;
 export type InsertAiGatewayQuota = typeof aiGatewayQuota.$inferInsert;
+
+// ============= AI LLM Audit (doc69 G2-5a, Wave 1 W1-4a) =============
+// Privacy-safe audit trail for HIGH-RISK AI-influenced decisions (rca / report / vision — see
+// server/services/aiGateway.ts's HIGH_RISK_TASKS + server/services/ai/aiLlmAudit.ts). Stores
+// sha256 HASHES of the already-REDACTED prompt/response (never raw text) so an operator can
+// PROVE "this exact (redacted) prompt produced this exact (redacted) response" for a
+// quality-affecting decision, without ever persisting anything sensitive — no secret enters a
+// hash preimage because aiSafety's redaction runs BEFORE hashing. Gated by
+// AI_LLM_AUDIT_ENABLED (default ON — see the flag's doc comment in aiGateway.ts). Migration:
+// drizzle/0299_ai_llm_audit.sql (additive, CREATE TABLE IF NOT EXISTS, DDL by owner `aoi` —
+// UNAPPLIED until an operator runs it; the audit path no-ops fail-safe until then).
+interface AiLlmAuditSafetyFlags {
+  scope: "input" | "output";
+  risk: "none" | "low" | "high";
+  matched: string[];
+  redactedCount: number;
+  redactionTypes: string[];
+}
+
+export const aiLlmAudit = pgTable("ai_llm_audit", {
+  id: serial("id").primaryKey(),
+  // Who triggered it (best-effort; null for system/cron callers).
+  userId: integer("userId"),
+  // Logical task kind — only the HIGH-RISK subset of TaskKind is ever audited (rca/report/
+  // vision), never chat/intent/extract/embed/code/fim (volume — see aiGateway.ts).
+  task: varchar("task", { length: 32 }).notNull(),
+  // Cognitive-ladder tier (0–4) the request was routed to.
+  tier: integer("tier").notNull(),
+  // Resolved GGUF model basename (or "default" when the engine default was used).
+  model: varchar("model", { length: 160 }).notNull().default("default"),
+  // ok | error | blocked. (rate_limited/quota_exceeded/license_denied never reach a model —
+  // there is nothing to audit for those, they are pure gateway-policy rejections.)
+  outcome: varchar("outcome", { length: 16 }).notNull(),
+  // sha256(hex) of the already-REDACTED prompt text (GatewayPlan.safeText).
+  promptSha256: varchar("promptSha256", { length: 64 }).notNull(),
+  // sha256(hex) of the already-OUTPUT-REDACTED response text, or null (error/blocked calls —
+  // and calls whose caller did not supply a response text — may have none).
+  responseSha256: varchar("responseSha256", { length: 64 }),
+  promptChars: integer("promptChars").default(0).notNull(),
+  responseChars: integer("responseChars").default(0).notNull(),
+  latencyMs: integer("latencyMs").default(0).notNull(),
+  // Compact G2-2 safety summary (injection risk + redaction counts) — no raw text.
+  safetyFlagsJson: json("safetyFlagsJson").$type<AiLlmAuditSafetyFlags | null>(),
+  // doc44 W6-4 correlation id (server/services/observability/correlation.ts), when available.
+  correlationId: varchar("correlationId", { length: 128 }),
+  // Left NULL by default — a future opt-in could store a redacted excerpt; not populated now.
+  redactedSnippet: text("redactedSnippet"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_llm_audit_created").on(table.createdAt),
+  index("idx_ai_llm_audit_user").on(table.userId),
+  index("idx_ai_llm_audit_task").on(table.task),
+]);
+
+export type AiLlmAuditRow = typeof aiLlmAudit.$inferSelect;
+export type InsertAiLlmAudit = typeof aiLlmAudit.$inferInsert;
