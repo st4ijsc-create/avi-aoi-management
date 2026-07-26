@@ -116,11 +116,17 @@ public partial class App : Application
         // bug this task fixes: the OLD default was Auto over an unconfigured Live, whose
         // St4iConfigException used to escape LiveTransport uncaught — see LiveTransport's own remarks).
         services.AddSingleton<DemoTransport>();
+
+        // WS-C-T2 — resolved ONCE, threaded into both the startup LiveTransport's queuePath (below) and
+        // the TransportCoordinator itself, mirroring St4i.EngineApi/Program.cs's identical composition
+        // root (see that file's own remarks). Disabled (ST4I_WAL_ENABLED=false) means queuePath stays
+        // null everywhere, i.e. byte-identical to pre-WS-C behavior (in-memory queue only).
+        var wal = WalOptions.FromEnvironment();
         services.AddSingleton(_ => LiveTransport.ForMachine(
             serverUrl: PlaceholderServerUrl,
             mkKey: string.Empty,
             machineCode: PlaceholderMachineCode,
-            queuePath: null,
+            queuePath: wal.Enabled ? wal.ResolveQueueFile(PlaceholderMachineCode) : null,
             verifyTls: true));
         services.AddSingleton(sp => new AutoTransport(sp.GetRequiredService<LiveTransport>(), sp.GetRequiredService<DemoTransport>()));
         services.AddSingleton(sp => new SwitchableTransport(sp.GetRequiredService<DemoTransport>()));
@@ -133,7 +139,8 @@ public partial class App : Application
             sp.GetRequiredService<DemoTransport>(),
             sp.GetRequiredService<LiveTransport>(),
             sp.GetRequiredService<AutoTransport>(),
-            TransportMode.Demo));
+            TransportMode.Demo,
+            wal));
 
         // Task 15 — fleet/dashboard. FleetService owns the pipeline; FleetViewModel/DashboardView are
         // singletons too so Start Fleet (top bar) and the Dashboard nav item are always looking at the
@@ -562,6 +569,10 @@ public partial class App : Application
 
         Console.WriteLine($"Server={server}  MachineCode={LiveSmokeMachineCode}  MkKey={MaskKey(mkKey)}");
 
+        // Deliberately NOT wired to WalOptions (WS-C-T2 only wires the DI composition roots above) —
+        // this is a one-shot headless smoke dialing a real server the caller names via env/args, not a
+        // long-lived connection with a backlog worth persisting across restarts; queuePath stays null
+        // (in-memory queue only), same as before WS-C.
         using var live = LiveTransport.ForMachine(
             serverUrl: server,
             mkKey: mkKey,

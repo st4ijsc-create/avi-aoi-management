@@ -56,11 +56,18 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<DemoModeGate>();
 builder.Services.AddSingleton<EventBus>();
 builder.Services.AddSingleton<DemoTransport>();
+
+// WS-C-T2 — resolves the ST4I_WAL_* env knobs ONCE, threaded into both the startup LiveTransport's
+// queuePath (below) and the TransportCoordinator itself (so every later RebuildLive — a settings-driven
+// serverUrl/machineCode/verifyTls change — keeps resolving queue files off the SAME WalOptions). Disabled
+// (ST4I_WAL_ENABLED=false) means queuePath stays null everywhere, i.e. byte-identical to pre-WS-C
+// behavior (in-memory queue only, nothing written to disk).
+var wal = WalOptions.FromEnvironment();
 builder.Services.AddSingleton(_ => LiveTransport.ForMachine(
     serverUrl: FleetHost.DefaultServerUrl,
     mkKey: string.Empty,
     machineCode: FleetHost.DefaultMachineCode,
-    queuePath: null,
+    queuePath: wal.Enabled ? wal.ResolveQueueFile(FleetHost.DefaultMachineCode) : null,
     verifyTls: true));
 builder.Services.AddSingleton(sp => new AutoTransport(sp.GetRequiredService<LiveTransport>(), sp.GetRequiredService<DemoTransport>()));
 builder.Services.AddSingleton(sp => new SwitchableTransport(sp.GetRequiredService<DemoTransport>()));
@@ -70,7 +77,8 @@ builder.Services.AddSingleton(sp => new TransportCoordinator(
     sp.GetRequiredService<DemoTransport>(),
     sp.GetRequiredService<LiveTransport>(),
     sp.GetRequiredService<AutoTransport>(),
-    sp.GetRequiredService<DemoModeGate>().Enabled ? TransportMode.Demo : TransportMode.Live));
+    sp.GetRequiredService<DemoModeGate>().Enabled ? TransportMode.Demo : TransportMode.Live,
+    wal));
 
 builder.Services.AddSingleton<FleetHost>();
 builder.Services.AddSingleton<OnboardingService>();

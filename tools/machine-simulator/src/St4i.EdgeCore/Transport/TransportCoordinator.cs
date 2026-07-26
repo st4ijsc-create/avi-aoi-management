@@ -18,22 +18,32 @@ public sealed class TransportCoordinator
     private readonly object _gate = new();
     private readonly SwitchableTransport _switchable;
     private readonly DemoTransport _demo;
+    private readonly WalOptions _walOptions;
 
     private LiveTransport _live;
     private AutoTransport _auto;
 
+    /// <param name="walOptions">WS-C-T2 — governs the disk-durable WAL queue file every
+    /// <see cref="RebuildLive"/>-built <see cref="LiveTransport"/> is pointed at (see that method's own
+    /// remarks). OPTIONAL and TRAILING deliberately: every pre-existing call site (13 test files
+    /// construct a <see cref="TransportCoordinator"/> directly, none of them exercise
+    /// <see cref="RebuildLive"/>) keeps compiling and behaving byte-for-byte unchanged when omitted —
+    /// defaults to <c>new WalOptions()</c> (WAL enabled, default root), never <c>null</c>, so
+    /// <see cref="RebuildLive"/> never needs its own null-check.</param>
     public TransportCoordinator(
         SwitchableTransport switchable,
         DemoTransport demo,
         LiveTransport initialLive,
         AutoTransport initialAuto,
-        TransportMode initialMode)
+        TransportMode initialMode,
+        WalOptions? walOptions = null)
     {
         _switchable = switchable ?? throw new ArgumentNullException(nameof(switchable));
         _demo = demo ?? throw new ArgumentNullException(nameof(demo));
         _live = initialLive ?? throw new ArgumentNullException(nameof(initialLive));
         _auto = initialAuto ?? throw new ArgumentNullException(nameof(initialAuto));
         _auto.FallbackChanged += OnFallbackChanged;
+        _walOptions = walOptions ?? new WalOptions();
 
         Mode = initialMode;
         ApplyModeInternal(initialMode);
@@ -85,7 +95,16 @@ public sealed class TransportCoordinator
     /// </summary>
     public void RebuildLive(string serverUrl, string machineCode, string? mkKey, bool verifyTls)
     {
-        var newLive = LiveTransport.ForMachine(serverUrl, mkKey ?? string.Empty, machineCode, null, verifyTls);
+        // WS-C-T2 — queuePath is a PURE function of machineCode (see WalOptions.ResolveQueueFile's own
+        // doc comment: identical (Directory, machineCode) always resolves to the identical path). That
+        // is exactly what makes a rebuild for the SAME machineCode (e.g. the operator fixes ServerUrl
+        // after an outage) resume the SAME physical queue file — the fresh LiveTransport/St4iDeviceClient
+        // this method constructs below simply re-opens it; nothing here ever deletes/migrates/truncates
+        // it. A rebuild for a DIFFERENT machineCode resolves a DIFFERENT file and never touches the old
+        // one — same multi-identity model CredentialStore already uses for mk_ keys. RebuildLive itself
+        // does no file I/O at all; it only computes the path and hands it to LiveTransport.ForMachine.
+        var queuePath = _walOptions.Enabled ? _walOptions.ResolveQueueFile(machineCode) : null;
+        var newLive = LiveTransport.ForMachine(serverUrl, mkKey ?? string.Empty, machineCode, queuePath, verifyTls);
         var newAuto = new AutoTransport(newLive, _demo);
 
         LiveTransport oldLive;
