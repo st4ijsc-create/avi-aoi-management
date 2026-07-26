@@ -910,8 +910,7 @@ trên :5199 khi service đang chạy — bind cổng sẽ lỗi cho bên chạy 
 ### 15.6 Signing gap / Thiếu chữ ký số
 
 **The MSI and every exe inside it are unsigned** — no code-signing certificate is available in this
-environment, the same gap §13.4 documents for the (unbuilt) Tauri path. Installing/running shows
-"Unknown Publisher" and may trigger SmartScreen. Authenticode-signing (`signtool.exe sign /fd sha256
+environment. Installing/running shows "Unknown Publisher" and may trigger SmartScreen. Authenticode-signing (`signtool.exe sign /fd sha256
 /tr ... /td sha256 ...`) both the `.msi` and the payload binaries is deferred to a future task once a
 certificate is available — it's a pure post-build signing step, no code/authoring changes needed to add
 it later.
@@ -927,13 +926,20 @@ installing a newer MSI over an older install **upgrades in place** — installin
 newer one is refused with a clear message instead of silently downgrading files under a running app.
 This is a **manual** upgrade path (an operator/admin runs the newer `.msi`) — there is no in-app
 update-check or auto-download yet. The running version is always visible at `GET /v1/capabilities`
-(`{demoEnabled:false, mode:"Live", version:"1.0.0"}` — `version` reads `Directory.Build.props`'s
-`<Version>`, currently `1.0.0`, off the built assembly). Full auto-update (background check, download,
-staged install) and long-term-support/channel policy are deferred beyond this workstream.
+(`{demoEnabled:false, mode:"Live", version:"1.0.0.0"}` — `CapabilitiesEndpoints` reads
+`typeof(CapabilitiesEndpoints).Assembly.GetName().Version`, i.e. the built assembly's 4-part
+**`<AssemblyVersion>`** from `Directory.Build.props`, currently `1.0.0.0`, not the 3-part `<Version>`
+directly. The MSI itself is versioned separately — `build-installer.ps1` reads `<Version>` (currently
+`1.0.0`) straight from `Directory.Build.props` and passes it as WiX's `Version` preprocessor variable
+(§15.3), so the two numbers share a source but differ in shape (`1.0.0` on the MSI vs. `1.0.0.0` from
+`/v1/capabilities`)). Full auto-update (background check, download, staged install) and
+long-term-support/channel policy are deferred beyond this workstream.
 
 *(VI: `MajorUpgrade` cho phép cài MSI mới đè lên bản cũ (nâng cấp tại chỗ); cài bản cũ đè bản mới sẽ bị
 từ chối rõ ràng. Đây là nâng cấp THỦ CÔNG — chưa có tự kiểm tra/tải bản mới trong app. Phiên bản đang
-chạy luôn xem được ở `GET /v1/capabilities`. Tự cập nhật đầy đủ + chính sách LTS để sau.)*
+chạy xem được ở `GET /v1/capabilities` là `AssemblyVersion` 4 phần (`1.0.0.0`), khác với `Version` 3 phần
+(`1.0.0`) mà file MSI dùng — cùng nguồn (`Directory.Build.props`) nhưng khác định dạng. Tự cập nhật đầy đủ
++ chính sách LTS để sau.)*
 
 ### 15.8 Two known fast-follow gaps — be honest / Hai khoảng trống đã biết, nói thật
 
