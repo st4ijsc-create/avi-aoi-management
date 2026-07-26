@@ -329,7 +329,16 @@ public sealed class MachineState
             ReadingKind.Telemetry => "Telemetry",
             _ => "Process",
         };
-        var ackLabel = !ack.Success ? "ERR" : ack.Duplicate ? "dup" : ack.Queued ? "queued" : "ok";
+        // WS-C-T4 fix — Queued must be checked FIRST: a real disk-buffered write (client-side WAL,
+        // Success:false/Queued:true — see LiveTransport.SendAsync's St4iNetworkException handling) was
+        // previously mislabeled "ERR" by the old !ack.Success-first ternary, even though it was
+        // successfully queued for later replay, not actually failed. "queued" = server-side
+        // store-forward accepted the write (Success:true/Queued:true); "buffered" = this machine's own
+        // local WAL took it because the send itself failed (Success:false/Queued:true).
+        var ackLabel = ack.Queued ? (ack.Success ? "queued" : "buffered")
+                     : !ack.Success ? "ERR"
+                     : ack.Duplicate ? "dup"
+                     : "ok";
         return $"#{reading.CycleCounter} {kindLabel} · {reading.Verdict} · ack:{ackLabel}";
     }
 

@@ -80,6 +80,23 @@ builder.Services.AddSingleton(sp => new TransportCoordinator(
     sp.GetRequiredService<DemoModeGate>().Enabled ? TransportMode.Demo : TransportMode.Live,
     wal));
 
+// WS-C-T4 — the idle-backlog drain the SDK's own opportunistic replay can't provide: an idle machine
+// after an outage never sends anything new, so LiveTransport.SendAsync's own opportunistic flush never
+// gets a chance to run. WalFlushPump re-fetches TransportCoordinator's CURRENT LiveTransport + Mode on
+// every tick (so a Settings-triggered RebuildLive or a Live/Demo/Auto switch is transparent — see the
+// pump's own remarks) and skips cleanly whenever Mode != Live (durability only applies in Live mode —
+// see the WS-C blueprint's Auto-mode caveat). IAsyncDisposable singleton, like HistorianWriter above —
+// the generic host's ServiceProvider disposes it automatically on shutdown.
+builder.Services.AddSingleton(sp =>
+{
+    var coordinator = sp.GetRequiredService<TransportCoordinator>();
+    var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("WalFlushPump");
+    return new St4i.EdgeCore.Transport.WalFlushPump(
+        getLive: () => coordinator.Mode == TransportMode.Live ? coordinator.Live : null,
+        logInfo: msg => logger.LogInformation("{WalFlushPumpMsg}", msg),
+        logError: (ex, msg) => logger.LogError(ex, "{WalFlushPumpMsg}", msg));
+});
+
 builder.Services.AddSingleton<FleetHost>();
 builder.Services.AddSingleton<OnboardingService>();
 
@@ -211,5 +228,10 @@ app.Logger.LogInformation(
     fleetHost.Fleet.Count,
     string.Join(", ", fleetHost.Fleet.Select(d => d.Code)),
     fleetHost.Mode);
+
+// WS-C-T4 — force-touch WalFlushPump now (same reasoning as FleetHost above): constructing it starts
+// its background Task.Run loop immediately, rather than leaving it dormant until something happens to
+// resolve the singleton on its own (nothing else in the DI graph depends on it).
+_ = app.Services.GetRequiredService<St4i.EdgeCore.Transport.WalFlushPump>();
 
 app.Run();

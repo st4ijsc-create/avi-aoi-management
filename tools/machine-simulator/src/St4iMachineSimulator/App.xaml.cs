@@ -82,6 +82,12 @@ public partial class App : Application
         ConfigureServices(services);
         Services = services.BuildServiceProvider();
 
+        // WS-C-T4 — force-touch WalFlushPump now (same reasoning as EngineApi's Program.cs): nothing
+        // else in this DI graph resolves it, so without this it would stay dormant forever instead of
+        // draining an idle backlog. Done unconditionally, before the --selftest/--capture/normal-run
+        // branch below, so the pump runs the same way regardless of which path this launch takes.
+        _ = Services.GetRequiredService<WalFlushPump>();
+
         if (e.Args.Contains(SelfTestArg, StringComparer.OrdinalIgnoreCase))
         {
             RunSelfTest();
@@ -98,6 +104,26 @@ public partial class App : Application
 
         var shell = Services.GetRequiredService<ShellView>();
         shell.Show();
+    }
+
+    /// <summary>WS-C-T4 — disposes <see cref="WalFlushPump"/> on app exit (covers the normal-shutdown,
+    /// --selftest, --capture, and --live-smoke-bypasses-this-entirely paths alike, since
+    /// <see cref="Application.Shutdown()"/>/window-close both route through <c>OnExit</c>). This app's
+    /// <see cref="Services"/> container is otherwise never itself disposed on shutdown — unlike
+    /// St4i.EngineApi's generic-host <c>ServiceProvider</c>, which disposes every registered
+    /// <see cref="IAsyncDisposable"/> singleton automatically — so without this explicit call the pump's
+    /// background loop (and its <see cref="System.Threading.CancellationTokenSource"/>) would simply
+    /// leak past process exit instead of shutting down cleanly. <c>Services</c> is null only on the
+    /// <c>--live-smoke</c> path (returns before <c>ConfigureServices</c> ever runs — see
+    /// <see cref="OnStartup"/>), hence the null-check rather than <see cref="GetRequiredService"/>.</summary>
+    protected override void OnExit(ExitEventArgs e)
+    {
+        if (Services?.GetService(typeof(WalFlushPump)) is WalFlushPump pump)
+        {
+            pump.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
+        base.OnExit(e);
     }
 
     private static void ConfigureServices(IServiceCollection services)
@@ -141,6 +167,18 @@ public partial class App : Application
             sp.GetRequiredService<AutoTransport>(),
             TransportMode.Demo,
             wal));
+
+        // WS-C-T4 — same idle-backlog-drain pump as St4i.EngineApi/Program.cs's identical registration:
+        // re-fetches TransportCoordinator's CURRENT LiveTransport + Mode on every tick (transparent to a
+        // Settings-triggered RebuildLive or a Live/Demo/Auto switch), skipping cleanly whenever
+        // Mode != Live. Force-touched in OnStartup below (constructing it starts its loop) and disposed
+        // in OnExit — unlike EngineApi's generic-host ServiceProvider, this app's DI container is never
+        // itself disposed on shutdown, so nothing else would ever stop the pump's background loop.
+        services.AddSingleton(sp =>
+        {
+            var coordinator = sp.GetRequiredService<TransportCoordinator>();
+            return new WalFlushPump(getLive: () => coordinator.Mode == TransportMode.Live ? coordinator.Live : null);
+        });
 
         // Task 15 — fleet/dashboard. FleetService owns the pipeline; FleetViewModel/DashboardView are
         // singletons too so Start Fleet (top bar) and the Dashboard nav item are always looking at the
