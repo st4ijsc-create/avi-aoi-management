@@ -228,23 +228,42 @@ function evaluateBranchCondition(when: AgentBranchCondition["when"], stepResults
  * greater than the branch step's own index and within the plan length) so a
  * malformed or hostile planner output can never move the cursor backward —
  * this is what makes the loop provably non-infinite even with a branch.
+ *
+ * Both fail-safe paths (a malformed/unevaluable condition, and a rejected
+ * out-of-bounds/backward target) are logged via console.warn — same style as
+ * persist()'s 42703 fallback below — so a mis-emitting planner is diagnosable
+ * in production instead of silently swallowed. Logging is observability only;
+ * the fall-through control flow is unchanged either way.
  */
 function resolveBranchTarget(
   condition: AgentBranchCondition | undefined,
   cursor: number,
   planLength: number,
   stepResults: AgentStepResult[],
+  sessionId?: string,
 ): number | undefined {
   if (!condition || !condition.when) return undefined;
   let truthy: boolean;
   try {
     truthy = evaluateBranchCondition(condition.when, stepResults);
-  } catch {
-    return undefined; // malformed/unevaluable condition → fail-safe fall-through
+  } catch (e) {
+    // malformed/unevaluable condition → fail-safe fall-through (logged)
+    console.warn(
+      `[aiAgentOrchestrator] branch condition failed to evaluate (session ${sessionId ?? "?"}, cursor ${cursor}) — falling through:`,
+      { when: condition.when, error: (e as Error)?.message ?? e },
+    );
+    return undefined;
   }
   const target = truthy ? condition.thenGoto : condition.elseGoto;
   if (target === undefined) return undefined;
-  if (!Number.isInteger(target) || target <= cursor || target > planLength) return undefined; // forward-only guard
+  if (!Number.isInteger(target) || target <= cursor || target > planLength) {
+    // out-of-bounds/backward target → fail-safe fall-through (logged)
+    console.warn(
+      `[aiAgentOrchestrator] branch target rejected (session ${sessionId ?? "?"}, cursor ${cursor}, planLength ${planLength}) — falling through:`,
+      { target, truthy },
+    );
+    return undefined; // forward-only guard
+  }
   return target;
 }
 
@@ -288,7 +307,7 @@ export async function advance(
       // resolveBranchTarget). No condition, malformed condition, or an
       // out-of-bounds/backward target → fall-through, IDENTICAL to the prior
       // unconditional-skip behavior (backward compatible with old branches).
-      const target = resolveBranchTarget(step.condition, cursor, plan.steps.length, stepResults);
+      const target = resolveBranchTarget(step.condition, cursor, plan.steps.length, stepResults, sessionId);
       if (target === undefined) {
         lastStep = { index: cursor, kind: step.kind, tool: null, status: "skipped", message: "branch" };
         stepResults.push(lastStep);

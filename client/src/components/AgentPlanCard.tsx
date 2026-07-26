@@ -171,15 +171,24 @@ export function AgentPlanCard({
 
   const steps = plan.steps ?? [];
   const total = steps.length;
-  // Completed = step results that finished (done/skipped/failed). awaiting_confirm
-  // is NOT counted as completed.
-  const completed = stepResults.filter(
+  // `index < 0` marks a SYNTHETIC audit-only entry (e.g. the observe→replan
+  // "REPLANNED" note pushed by the orchestrator, sentinel `-1 - cursor`) —
+  // never a real plan step. It MUST be excluded here: a replan can truncate
+  // the tail (shrinking `total`) while a synthetic note's status is "done",
+  // and counting it toward `completed` can make completed > total render as
+  // an impossible >100% progress bar.
+  const realStepResults = stepResults.filter((r) => r.index >= 0);
+  // Completed = REAL step results that finished (done/skipped/failed).
+  // awaiting_confirm is NOT counted as completed.
+  const completed = realStepResults.filter(
     (r) => r.status === "done" || r.status === "skipped" || r.status === "failed",
   ).length;
-  const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  // Belt-and-suspenders clamp: even if some future source ever miscounts,
+  // progress can never render past 100%.
+  const progressPct = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
 
   const resultByIndex = new Map<number, AgentStepResultView>();
-  for (const r of stepResults) resultByIndex.set(r.index, r);
+  for (const r of realStepResults) resultByIndex.set(r.index, r);
 
   const badge = statusBadgeVariant(status);
   const isTerminal = status === "done" || status === "aborted" || status === "failed";

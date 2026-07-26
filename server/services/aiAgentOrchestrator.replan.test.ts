@@ -21,7 +21,7 @@
  * mocked — no model and no real DB required (same mock style as
  * aiAgentOrchestrator.test.ts).
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Fake in-memory ai_agent_sessions store + drizzle-like builder (same shape
 //    as aiAgentOrchestrator.test.ts). ──
@@ -127,6 +127,10 @@ import { startSession, approvePlan, confirmStep } from "./aiAgentOrchestrator";
 
 const MANAGER = { id: 10, role: "manager", name: "M" } as const;
 
+// Spy on console.warn so FIX-1 (branch fail-safe must LOG) is verifiable —
+// reset fresh each test, restored after.
+let warnSpy: ReturnType<typeof vi.spyOn>;
+
 beforeEach(() => {
   store.clear();
   vi.clearAllMocks();
@@ -137,6 +141,11 @@ beforeEach(() => {
   readHandler.mockResolvedValue({ type: "today_stats", title: "t", data: { n: 1 }, textSummary: "" });
   replanFromObservations.mockResolvedValue({ changed: false, steps: [], available: true });
   tools.write_thing.execute.mockClear();
+  warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  warnSpy.mockRestore();
 });
 
 function plan(steps: any[]) {
@@ -180,6 +189,49 @@ describe("observe→replan", () => {
     expect(row.planJson.steps[1]).toMatchObject({ kind: "write", tool: "write_thing" });
     // Audit trail: a REPLANNED note is persisted (visible/traceable per the brief).
     expect(row.stepResults.some((r: any) => r.message === "REPLANNED")).toBe(true);
+  });
+});
+
+describe("replan audit note never corrupts the progress counter (FIX-2)", () => {
+  it("a replan that TRUNCATES the tail marks the synthetic note as non-step (index<0); completed over REAL steps never exceeds total", async () => {
+    plan([
+      { kind: "read", tool: "read_thing", args: {} }, // idx0
+      { kind: "guidance", rationale: "stale-tail" }, // idx1 — truncated away entirely
+    ]);
+    replanFromObservations.mockResolvedValue({
+      changed: true,
+      steps: [], // truncate: the planner decides the goal is already complete
+      available: true,
+    });
+
+    const s = await startSession("goal", { user: MANAGER as any });
+    const adv = await approvePlan(s.sessionId!, { user: MANAGER as any });
+
+    expect(adv.status).toBe("done");
+    const row = store.get(s.sessionId!)!;
+    const total: number = row.planJson.steps.length;
+    expect(total).toBe(1); // truncated: only the already-executed read remains
+
+    const replannedNote = row.stepResults.find((r: any) => r.message === "REPLANNED");
+    expect(replannedNote).toBeDefined();
+    expect(replannedNote.status).toBe("done"); // indistinguishable by status alone...
+    expect(replannedNote.index).toBeLessThan(0); // ...but marked non-step by index — MUST be excluded from progress
+
+    // Recompute "completed" the way a correct consumer (server test proxy for
+    // AgentPlanCard's client-side calc) must: only REAL (index >= 0) step
+    // results count toward progress.
+    const realCompleted = row.stepResults.filter(
+      (r: any) => r.index >= 0 && (r.status === "done" || r.status === "skipped" || r.status === "failed"),
+    ).length;
+    expect(realCompleted).toBeLessThanOrEqual(total); // never overflows past 100%
+
+    // Demonstrates the bug this fix prevents: naively counting ALL entries
+    // (including the synthetic note, indistinguishable by status) DOES
+    // overflow past `total` — proving the index<0 exclusion is load-bearing.
+    const naiveCompleted = row.stepResults.filter(
+      (r: any) => r.status === "done" || r.status === "skipped" || r.status === "failed",
+    ).length;
+    expect(naiveCompleted).toBeGreaterThan(total);
   });
 });
 
@@ -305,7 +357,7 @@ describe("branch resolution (deterministic, no model)", () => {
     expect(branchResult.message).toBe("branch→2");
   });
 
-  it("a malformed condition (unknown op) fails safe to fall-through — never crashes", async () => {
+  it("a malformed condition (unknown op) fails safe to fall-through — never crashes, and LOGS (FIX-1)", async () => {
     planWithBranch({ when: { path: "data.n", op: "bogus" }, thenGoto: 3 });
 
     const s = await startSession("goal", { user: MANAGER as any });
@@ -317,9 +369,17 @@ describe("branch resolution (deterministic, no model)", () => {
     const branchResult = row.stepResults.find((r: any) => r.kind === "branch");
     expect(branchResult.status).toBe("skipped");
     expect(branchResult.message).toBe("branch");
+
+    // FIX-1: the caught malformed-condition error must be logged (with enough
+    // context to diagnose — session id, offending op) not silently swallowed.
+    expect(warnSpy).toHaveBeenCalled();
+    const [msg, detail] = warnSpy.mock.calls[0];
+    expect(msg).toContain("branch condition failed to evaluate");
+    expect(msg).toContain(s.sessionId!);
+    expect(JSON.stringify(detail)).toContain("bogus");
   });
 
-  it("a backward target is rejected (forward-only) — falls through instead of looping", async () => {
+  it("a backward target is rejected (forward-only) — falls through instead of looping, and LOGS (FIX-1)", async () => {
     // idx0 (read) is BEFORE the branch (idx1) → illegal backward jump.
     planWithBranch({ when: { path: "data.n", op: "exists" }, thenGoto: 0 });
 
@@ -330,6 +390,28 @@ describe("branch resolution (deterministic, no model)", () => {
     const row = store.get(s.sessionId!)!;
     const branchResult = row.stepResults.find((r: any) => r.kind === "branch");
     expect(branchResult.status).toBe("skipped"); // fell through — the illegal target was rejected
+
+    // FIX-1: a rejected out-of-bounds/backward target must ALSO be logged.
+    expect(warnSpy).toHaveBeenCalled();
+    const [msg] = warnSpy.mock.calls[0];
+    expect(msg).toContain("branch target rejected");
+    expect(msg).toContain(s.sessionId!);
+  });
+
+  it("an out-of-bounds (beyond plan length) target is rejected — falls through and LOGS (FIX-1)", async () => {
+    planWithBranch({ when: { path: "data.n", op: "exists" }, thenGoto: 999 });
+
+    const s = await startSession("goal", { user: MANAGER as any });
+    const adv = await approvePlan(s.sessionId!, { user: MANAGER as any });
+
+    expect(adv.status).toBe("done");
+    const row = store.get(s.sessionId!)!;
+    const branchResult = row.stepResults.find((r: any) => r.kind === "branch");
+    expect(branchResult.status).toBe("skipped");
+
+    expect(warnSpy).toHaveBeenCalled();
+    const logged = warnSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(logged).toContain("branch target rejected");
   });
 
   it("no condition at all → behaves EXACTLY like the old unconditional skip (backward compatible)", async () => {

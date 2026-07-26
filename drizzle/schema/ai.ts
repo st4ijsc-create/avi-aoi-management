@@ -1679,6 +1679,15 @@ export interface AgentPlan {
 
 /** Outcome of a single executed/handled step (appended to stepResults in order). */
 export interface AgentStepResult {
+  /**
+   * `index >= 0` — the step's real position in `plan.steps` at the time it ran.
+   * `index < 0` — a SYNTHETIC audit-only entry (e.g. the observe→replan
+   * "REPLANNED" note, sentinel `-1 - cursor`), never a real plan step. Any
+   * consumer computing progress/step-count (server or client) MUST filter
+   * `index < 0` entries out first — otherwise a synthetic note can inflate
+   * `completed` past `plan.steps.length` (e.g. after a replan truncates the
+   * tail) and render >100% progress.
+   */
   index: number;
   kind: AgentPlanStep["kind"];
   tool?: string | null;
