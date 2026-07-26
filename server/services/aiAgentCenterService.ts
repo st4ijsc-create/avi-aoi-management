@@ -1,10 +1,14 @@
 /**
- * AI Agent Command Center — roster read-model (doc69 Giai đoạn 4 / Wave E2, task E2-1).
+ * AI Agent Command Center — roster read-model (doc69 Giai đoạn 4 / Wave E2, task E2-1)
+ * + savings/token summary (task E2-2, see `getSavingsSummary` near the bottom of this
+ * file).
  *
  * Unifies every AI "agent" already running in this codebase into ONE roster with a
  * normalized status, for a later Agent Command Center page (E2-3) + live channel
- * (E2-4) + savings meter (E2-2, which will ADD an endpoint to the SAME router this
- * service backs — see server/routers/aiAgentCenterRouter.ts).
+ * (E2-4). `getSavingsSummary` is the ROI story: it aggregates `ai_gateway_metrics`
+ * (today/month/all-time) and prices each model's tokens via server/services/
+ * aiCostModel.ts's pure cloud-equivalent estimator — both are exposed on the SAME
+ * router this service backs (see server/routers/aiAgentCenterRouter.ts).
  *
  * ── HARD RULES (per the task brief) ─────────────────────────────────────────────
  *   - This module is READ-ONLY. It creates NO new agent state, adds NO DB columns,
@@ -41,9 +45,9 @@
  * fabricated precision the brief explicitly forbids ("do NOT invent one here").
  */
 
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
-import { aiPendingActions, aiSpecialistSessions, aiSpecialistSessionSteps } from "../../drizzle/schema";
+import { aiPendingActions, aiSpecialistSessions, aiSpecialistSessionSteps, aiGatewayMetrics } from "../../drizzle/schema";
 import { listSessionsForOps, type OpsSessionSummary } from "./aiAgentOrchestrator";
 import { listSpecialistAgents } from "./aiSpecialistAgentService";
 import { isGgufAvailable } from "./aiGgufEngine";
@@ -54,6 +58,8 @@ import { getSelfLearningStatus } from "./aiSelfLearningScheduler";
 import { getThresholdTuneSchedulerStatus } from "./aiThresholdTuneScheduler";
 import { getAnomalyBankSchedulerStatus } from "./aiAnomalyBankScheduler";
 import { getAgentHousekeepingStatus } from "./aiAgentHousekeepingScheduler";
+import { getFactoryTimezone, startOfDayInZone, wallClockInZone, wallClockToUtc } from "../utils/factoryTime";
+import { estimateSavingsUsd, LOCAL_MARGINAL_USD_PER_1K } from "./aiCostModel";
 
 // ─── Status vocabulary (fixed — doc69 B4.2) ─────────────────────────────────────
 
@@ -658,4 +664,181 @@ export async function getCommandCenterReadModel(opts?: GetReadModelOptions): Pro
   }
 
   return { roster, sessions, taskFeed, generatedAt: new Date().toISOString() };
+}
+
+// ─── Savings / token summary (doc69 Wave E2, task E2-2) ─────────────────────────────
+
+/**
+ * Per-window token + cloud-equivalent-savings aggregate. `cloudEquivalentUsd` is the
+ * savings figure (see server/services/aiCostModel.ts's `estimateSavingsUsd` — cloud-
+ * equivalent minus the $0 local marginal cost).
+ */
+export interface WindowSavings {
+  tokensIn: number;
+  tokensOut: number;
+  totalTokens: number;
+  requestCount: number;
+  cloudEquivalentUsd: number;
+}
+
+export interface ModelSavingsBreakdown extends WindowSavings {
+  model: string;
+}
+
+export interface SavingsSummary {
+  /** false when `ai_gateway_metrics` has NO rows at all — every numeric field is an
+   *  honest zero, never a fabricated estimate (see module docblock's HONEST rule). */
+  dataAvailable: boolean;
+  generatedAt: string; // ISO
+  today: WindowSavings;
+  month: WindowSavings;
+  total: WindowSavings;
+  /** All-time per-model breakdown, sorted by cloudEquivalentUsd desc. */
+  byModel: ModelSavingsBreakdown[];
+  /** Share (0-100) of tokens served locally — computed from data, see comment below. */
+  onPremPercent: number;
+  /** Echoes aiCostModel's LOCAL_MARGINAL_USD_PER_1K — the $0-local-cost assumption, exposed for transparency. */
+  localMarginalUsdPer1k: number;
+}
+
+const ZERO_WINDOW: WindowSavings = { tokensIn: 0, tokensOut: 0, totalTokens: 0, requestCount: 0, cloudEquivalentUsd: 0 };
+
+function emptySavingsSummary(now: Date): SavingsSummary {
+  return {
+    dataAvailable: false,
+    generatedAt: now.toISOString(),
+    today: { ...ZERO_WINDOW },
+    month: { ...ZERO_WINDOW },
+    total: { ...ZERO_WINDOW },
+    byModel: [],
+    onPremPercent: 0,
+    localMarginalUsdPer1k: LOCAL_MARGINAL_USD_PER_1K,
+  };
+}
+
+/**
+ * UTC instant of factory-local midnight on the 1st of the month containing `date`.
+ * Mirrors factoryTime.ts's OWN `startOfDayInZone` construction exactly (wall-clock
+ * parts → wallClockToUtc), just clamped to day=1 — kept local to this module (not
+ * added to factoryTime.ts) since no other caller needs a month boundary yet.
+ */
+function startOfMonthInZone(date: Date, timeZone: string = getFactoryTimezone()): Date {
+  const wc = wallClockInZone(date, timeZone);
+  return wallClockToUtc({ year: wc.year, month: wc.month, day: 1 }, timeZone);
+}
+
+interface ModelAggRow {
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  requestCount: number;
+}
+
+/**
+ * SQL-level GROUP BY model (bounded by distinct-model count, not row count — safe as
+ * `ai_gateway_metrics` grows unbounded over time). `since: null` ⇒ all-time (no WHERE).
+ * Deliberately uses a plain `gte(createdAt, since)` comparison against a precomputed
+ * UTC instant (from factoryTime's wall-clock helpers) rather than SQL `date_bin` — a
+ * prior task in this codebase hit a `42803` GROUP BY error from a non-constant
+ * `date_bin` origin; comparing against a precomputed boundary sidesteps that class of
+ * bug entirely.
+ */
+async function queryModelAgg(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, since: Date | null): Promise<ModelAggRow[]> {
+  const cols = {
+    model: aiGatewayMetrics.model,
+    tokensIn: sql<number>`coalesce(sum(${aiGatewayMetrics.tokensIn}),0)::int`,
+    tokensOut: sql<number>`coalesce(sum(${aiGatewayMetrics.tokensOut}),0)::int`,
+    requestCount: sql<number>`count(*)::int`,
+  };
+  if (since) {
+    return await db.select(cols).from(aiGatewayMetrics).where(gte(aiGatewayMetrics.createdAt, since)).groupBy(aiGatewayMetrics.model);
+  }
+  return await db.select(cols).from(aiGatewayMetrics).groupBy(aiGatewayMetrics.model);
+}
+
+/** Sum per-model rows into one window, pricing each model's tokens at ITS OWN resolved
+ *  class (never mixes models' prices by summing tokens first). */
+function toWindow(rows: ModelAggRow[]): WindowSavings {
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let requestCount = 0;
+  let cloudEquivalentUsd = 0;
+  for (const r of rows) {
+    tokensIn += r.tokensIn;
+    tokensOut += r.tokensOut;
+    requestCount += r.requestCount;
+    cloudEquivalentUsd += estimateSavingsUsd(r.tokensIn, r.tokensOut, r.model);
+  }
+  return { tokensIn, tokensOut, totalTokens: tokensIn + tokensOut, requestCount, cloudEquivalentUsd };
+}
+
+export interface GetSavingsSummaryOptions {
+  /** Reference instant for "today"/"this month" bucketing — override for deterministic tests; defaults to now. */
+  now?: Date;
+}
+
+/**
+ * getSavingsSummary — token + cloud-equivalent-savings summary over today / this month /
+ * all-time, plus a per-model breakdown and `onPremPercent`. HONEST-EMPTY: when
+ * `ai_gateway_metrics` has no rows at all (or no DB configured), returns zeros +
+ * `dataAvailable:false` — NEVER a fabricated savings number. FAIL-SAFE: any query error
+ * degrades to the same honest-empty shape instead of throwing.
+ */
+export async function getSavingsSummary(opts?: GetSavingsSummaryOptions): Promise<SavingsSummary> {
+  const now = opts?.now ?? new Date();
+  try {
+    const db = await getDb();
+    if (!db) return emptySavingsSummary(now);
+
+    const timezone = getFactoryTimezone();
+    const dayStart = startOfDayInZone(now, timezone);
+    const monthStart = startOfMonthInZone(now, timezone);
+
+    const [todayRows, monthRows, totalRows] = await Promise.all([
+      queryModelAgg(db, dayStart),
+      queryModelAgg(db, monthStart),
+      queryModelAgg(db, null),
+    ]);
+
+    const total = toWindow(totalRows);
+    if (total.requestCount === 0) return emptySavingsSummary(now); // whole table empty ⇒ honest-empty
+
+    const today = toWindow(todayRows);
+    const month = toWindow(monthRows);
+
+    const byModel: ModelSavingsBreakdown[] = totalRows
+      .map((r) => ({
+        model: r.model,
+        tokensIn: r.tokensIn,
+        tokensOut: r.tokensOut,
+        totalTokens: r.tokensIn + r.tokensOut,
+        requestCount: r.requestCount,
+        cloudEquivalentUsd: estimateSavingsUsd(r.tokensIn, r.tokensOut, r.model),
+      }))
+      .sort((a, b) => b.cloudEquivalentUsd - a.cloudEquivalentUsd);
+
+    // onPremPercent — no cloud-inference source is wired into this codebase yet (this
+    // table's only writer, aiGateway.ts, exclusively calls the local GGUF engine), so
+    // `cloudTokens` is always 0 today. The percent is still COMPUTED as a ratio
+    // (onPrem / (onPrem+cloud)) rather than a hardcoded literal `100`, so the day a
+    // cloud fallback path starts contributing its own token count, this self-corrects
+    // instead of silently lying.
+    const onPremTokens = total.totalTokens;
+    const cloudTokens = 0;
+    const onPremPercent = onPremTokens + cloudTokens > 0 ? (onPremTokens / (onPremTokens + cloudTokens)) * 100 : 0;
+
+    return {
+      dataAvailable: true,
+      generatedAt: now.toISOString(),
+      today,
+      month,
+      total,
+      byModel,
+      onPremPercent,
+      localMarginalUsdPer1k: LOCAL_MARGINAL_USD_PER_1K,
+    };
+  } catch (err) {
+    console.error("[aiAgentCenterService] getSavingsSummary failed — honest-empty (fail-safe):", (err as Error)?.message ?? err);
+    return emptySavingsSummary(now);
+  }
 }

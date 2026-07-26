@@ -518,6 +518,24 @@ describe("aiAgentCenterRouter — ops-scoped RBAC", () => {
     await expect(op.getReadModel(undefined)).rejects.toThrow();
   });
 
+  it("admin/engineer can read the savings summary; operator/anon are rejected (same guard, doc69 E2-2)", async () => {
+    const { aiAgentCenterRouter } = await import("../routers/aiAgentCenterRouter");
+    const admin = aiAgentCenterRouter.createCaller(ctx({ id: 1, role: "admin", name: "Admin" }));
+    const eng = aiAgentCenterRouter.createCaller(ctx({ id: 2, role: "engineer", name: "Eng" }));
+    const op = aiAgentCenterRouter.createCaller(ctx({ id: 3, role: "operator", name: "Op" }));
+    const anon = aiAgentCenterRouter.createCaller({ user: null, req: {} } as any);
+
+    // getDb mocks to null (default in this file) ⇒ honest-empty shape, no real DB touched.
+    const adminRes = await admin.getSavingsSummary();
+    expect(adminRes.dataAvailable).toBe(false);
+    expect(adminRes.byModel).toEqual([]);
+    const engRes = await eng.getSavingsSummary();
+    expect(engRes.dataAvailable).toBe(false);
+
+    await expect(op.getSavingsSummary()).rejects.toThrow();
+    await expect(anon.getSavingsSummary()).rejects.toThrow();
+  });
+
   it("an unauthenticated caller is rejected", async () => {
     const { aiAgentCenterRouter } = await import("../routers/aiAgentCenterRouter");
     const anon = aiAgentCenterRouter.createCaller({ user: null, req: {} } as any);

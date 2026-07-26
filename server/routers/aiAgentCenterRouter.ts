@@ -1,15 +1,14 @@
 /**
- * AI Agent Command Center Router (doc69 Giai đoạn 4 / Wave E2, task E2-1).
+ * AI Agent Command Center Router (doc69 Giai đoạn 4 / Wave E2, tasks E2-1 + E2-2).
  *
  * Ops-scoped (admin/engineer — the roster is cross-user, same rationale as
  * aiAgentRouter's D4 `listAgentSessionsForOps`) READ endpoints over the roster
- * read-model in server/services/aiAgentCenterService.ts. NO writes, NO realtime
- * (Socket/SSE — that's E2-4), NO cost/savings model (E2-2 will ADD a `getSavings`
- * query to THIS SAME router — left room below, do not build it here).
+ * read-model + savings/token summary in server/services/aiAgentCenterService.ts.
+ * NO writes, NO realtime (Socket/SSE — that's E2-4).
  */
 import { z } from "zod";
 import { router, roleProcedure, moduleGate } from "../_core/trpc";
-import { getRoster, getCommandCenterReadModel } from "../services/aiAgentCenterService";
+import { getRoster, getCommandCenterReadModel, getSavingsSummary } from "../services/aiAgentCenterService";
 
 /**
  * Cross-user roster visibility: admin/engineer ONLY (mirrors aiAgentRouter.ts's D4
@@ -35,6 +34,13 @@ export const aiAgentCenterRouter = router({
       return getCommandCenterReadModel({ limit: input?.limit });
     }),
 
-  // E2-2 (doc69 Wave E2) will ADD a `getSavings` (token-cost / local-vs-cloud savings
-  // meter) query HERE — deliberately not built by this task.
+  /**
+   * Cloud-savings + token summary (doc69 Wave E2, task E2-2): today/month/all-time
+   * token totals + estimated cloud-equivalent savings (server/services/aiCostModel.ts),
+   * a per-model breakdown, and `onPremPercent`. Honest-empty (`dataAvailable:false`)
+   * when `ai_gateway_metrics` has no rows — never a fabricated savings figure.
+   */
+  getSavingsSummary: opsAgentCenterProcedure.query(async () => {
+    return getSavingsSummary();
+  }),
 });
