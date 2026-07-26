@@ -497,3 +497,63 @@ describe("StreamingSecretRedactor — long secrets streamed in tiny chunks (doc6
     expect(() => new StreamingSecretRedactor().flush()).not.toThrow();
   });
 });
+
+// ─── StreamingSecretRedactor — ALL common PEM header variants (doc69 review fix) ──
+//
+// Empirically-proven CRITICAL leak: `PENDING_SECRET_START_PATTERNS[0]` required the COMPLETE
+// literal `-----BEGIN[ A-Z]*PRIVATE KEY-----` marker to already be in the buffer before HOLD
+// mode engaged. While the marker was still being typed token-by-token, the "no marker" branch
+// evicted everything except the last `STREAM_NORMAL_TAIL_HOLD` (32) chars — any marker LONGER
+// than 32 chars (e.g. `-----BEGIN OPENSSH PRIVATE KEY-----` = 35, `-----BEGIN ENCRYPTED PRIVATE
+// KEY-----` = 37) had its leading chars released before it completed, permanently defeating
+// detection and leaking the entire key. Only `-----BEGIN RSA PRIVATE KEY-----` (31 chars)
+// survived, by one character — which is why a narrower test suite (testing only RSA) missed
+// this. These tests stream EVERY common PEM header variant in tiny 3/4-char chunks (smaller
+// than the earlier long-secret tests, to stress the marker-typing boundary specifically) and
+// assert full redaction: no emitted piece may ever contain the BEGIN marker or any body
+// fragment.
+describe("StreamingSecretRedactor — every common PEM header variant, streamed in 3/4-char chunks (doc69 review fix: growing PEM-start detection)", () => {
+  const HEADER_VARIANTS: Array<[string, string]> = [
+    ["RSA", "RSA PRIVATE KEY"],
+    ["OPENSSH (modern ssh-keygen default, 35-char marker)", "OPENSSH PRIVATE KEY"],
+    ["ENCRYPTED PKCS8 (37-char marker)", "ENCRYPTED PRIVATE KEY"],
+    ["EC", "EC PRIVATE KEY"],
+    ["PKCS8 (no type word)", "PRIVATE KEY"],
+    ["DSA", "DSA PRIVATE KEY"],
+  ];
+
+  for (const [label, marker] of HEADER_VARIANTS) {
+    it(`fully redacts "-----BEGIN ${marker}-----" (${label}) — no BEGIN marker or body fragment ever reaches the consumer`, () => {
+      const body = "MIIEpQIBAAKCAQEA1c7QWERTYUIOPASDFGHJKLZXCVBNM0123456789".repeat(3);
+      const PEM = `-----BEGIN ${marker}-----\n${body}\n-----END ${marker}-----`;
+      const prefix = "Here is the credential: ";
+      const suffix = " — that's everything.";
+      const text = prefix + PEM + suffix;
+
+      const redactor = new StreamingSecretRedactor();
+      const emitted: string[] = [];
+      let i = 0;
+      let size = 3;
+      while (i < text.length) {
+        const chunk = text.slice(i, i + size);
+        i += size;
+        size = size === 3 ? 4 : 3; // alternate 3/4-char chunks — smaller than the long-secret tests above
+        const out = redactor.push(chunk);
+        if (out) emitted.push(out);
+      }
+      const remaining = redactor.flush();
+      if (remaining) emitted.push(remaining);
+
+      // No single emitted piece may ever carry the BEGIN marker or a body fragment.
+      for (const piece of emitted) {
+        expect(piece).not.toContain("-----BEGIN");
+        expect(piece).not.toContain(body.slice(0, 10));
+      }
+      const joined = emitted.join("");
+      expect(joined).not.toContain(PEM);
+      expect(joined).not.toContain(body);
+      expect(joined).not.toContain("-----BEGIN");
+      expect(joined).toBe(prefix + "[REDACTED_SECRET]" + suffix);
+    });
+  }
+});

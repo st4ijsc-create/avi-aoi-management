@@ -295,19 +295,61 @@ const STREAM_NORMAL_TAIL_HOLD = 32;
 // the pending-start marker FIRST, on the raw buffer, keeps such a fragment in `HOLD` for as
 // long as its tail keeps extending, and only allows `redactSecretsOnly` to run once a genuine
 // terminating character (or true end of stream, in `flush()`) proves nothing more is coming).
-// Each pattern (other than the PEM one) is anchored with `$` so it only fires while the
-// suspicious prefix sits at the very TAIL of the CURRENT buffer — once a real non-matching
-// character (space, quote, …) arrives after it, the pattern can no longer reach all the way to
-// the true end and naturally stops matching, at which point `redactSecretsOnly` runs and
-// correctly redacts the now-complete (and only now provably complete) secret. The PEM pattern
-// uses a negative lookahead instead of `$` (a closed PEM block is followed by ordinary trailing
-// text, not necessarily the end of the buffer) — it stops matching once its own `-----END...
-// -----` has actually appeared, not merely once *something* follows it.
+// Each pattern is anchored with `$` (fires only while the suspicious prefix sits at the very
+// TAIL of the CURRENT buffer — once a real non-matching character arrives after it, the pattern
+// can no longer reach the true end and naturally stops matching, at which point
+// `redactSecretsOnly` runs and correctly redacts the now-complete secret) EXCEPT the
+// "PEM marker already complete, block still open" pattern below, which uses a negative
+// lookahead instead of `$` (a closed PEM block is followed by ordinary trailing text, not
+// necessarily the end of the buffer) — it stops matching once its own `-----END...-----` has
+// actually appeared, not merely once *something* follows it.
+//
+// doc69 review fix (all-header-variant leak): the PEM *growing-marker* pattern below is what
+// makes this safe for the FULL family of header lines, not just the one variant a shallower
+// review might spot-check. `-----BEGIN[ A-Z]*PRIVATE KEY-----` allows an UNBOUNDED-length type
+// word between "BEGIN" and "PRIVATE KEY" (`RSA`/`OPENSSH`/`ENCRYPTED`/`EC`/`DSA`/none for
+// PKCS8) — real headers like `-----BEGIN OPENSSH PRIVATE KEY-----` (35 chars) and
+// `-----BEGIN ENCRYPTED PRIVATE KEY-----` (37 chars) are LONGER than `STREAM_NORMAL_TAIL_HOLD`
+// (32). Without a pattern that can match a growing PARTIAL prefix, `findPendingSecretStart`
+// would report "no pending secret" for every intermediate state while the marker is still being
+// typed token-by-token, so the "no marker" branch below evicts the leading chars of the marker
+// (anything past the last 32) before the negative-lookahead pattern ever gets a chance to
+// engage — `-----BEGIN` scrolls out of the buffer, detection is permanently defeated, and the
+// entire key streams to the client raw. `-----BEGIN RSA PRIVATE KEY-----` (31 chars) happened
+// to survive by one character, which is why a narrow test suite could miss this. The fix holds
+// from the very FIRST dash of `-----BEGIN`, growing the hold through the (unboundedly long) type
+// word and the closing dashes, so no amount of streaming granularity can ever let any prefix of
+// the marker escape.
 const PENDING_SECRET_START_PATTERNS: RegExp[] = [
   // PEM private-key block opened, not yet followed anywhere later by its closing
   // `-----END...-----` — hold everything from the opening marker onward, however long it
-  // takes, until the block actually closes.
+  // takes, until the block actually closes. Only matches once the FULL `-----BEGIN...KEY-----`
+  // literal is present; the pattern below covers every state before that.
   /-----BEGIN[ A-Z]*PRIVATE KEY-----(?![\s\S]*-----END[ A-Z]*PRIVATE KEY-----)/,
+  // PEM marker STILL BEING TYPED — a growing prefix of `-----BEGIN[ A-Z]*PRIVATE KEY-----`,
+  // anchored at the tail of the buffer: `-`, `--`, …, `-----`, `-----B`, …, `-----BEGIN`,
+  // `-----BEGIN `, `-----BEGIN OPENSSH PRI`, …, `-----BEGIN OPENSSH PRIVATE KEY----` (one dash
+  // short of complete). The nested optional groups enforce that each letter can only match
+  // immediately after its predecessor (so e.g. a bare "-E" in ordinary text — dash then some
+  // unrelated capital E — can NOT falsely match; "E" only counts once "B" was consumed right
+  // before it). Once the marker's 5 trailing dashes are fully typed, this pattern stops matching
+  // (`-{0,4}` can hold at most 4 trailing dashes) and the pattern above takes over seamlessly.
+  //
+  // The leading `(?<![A-Za-z0-9-])` is NOT optional decoration — without it this pattern also
+  // matches the CLOSING `-----` of an already-complete `-----END...KEY-----` delimiter (found
+  // by empirical streaming test: OPENSSH variant), because a bare dash run has no way to tell
+  // "these dashes open a NEW marker" from "these dashes close the one that just finished". At
+  // the instant `-----END...KEY-----` completes, the pattern above (index 0) correctly stops
+  // matching — the secret is done and should be released via `redactSecretsOnly`, not held — but
+  // this pattern would otherwise re-engage on those same closing dashes and slice the block at
+  // exactly the point where the two-delimiter secret regex can no longer see BOTH delimiters,
+  // permanently defeating redaction on that piece. Excluding "preceded by a letter/digit/dash"
+  // blocks a match from starting anywhere inside such a run (every position after the true start
+  // is itself preceded by another dash, so it can't be used as a restart point either) while
+  // still allowing every genuine new-marker case: a real PEM block always begins at the start of
+  // a line (RFC 7468) — preceded by whitespace/newline/start-of-buffer, never by an
+  // alphanumeric character or a fused dash run.
+  /(?<![A-Za-z0-9-])-{1,5}(?:B(?:E(?:G(?:I(?:N(?:[ A-Z]*-{0,4})?)?)?)?)?)?$/,
   // JWT header/payload/signature in progress — fewer than the 3 complete dot-separated
   // segments the full `jwt` pattern requires, still growing at the tail of the buffer.
   /\beyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*){0,2}$/,
@@ -323,6 +365,23 @@ const PENDING_SECRET_START_PATTERNS: RegExp[] = [
   // `scheme://user:pass@...` connection string — scheme+`://` seen, still growing.
   /\b[a-z][a-z0-9+.-]*:\/\/[^\s@]*$/i,
 ];
+
+// doc69 review fix — audit of the OTHER 6 patterns above for this same "required literal
+// longer than STREAM_NORMAL_TAIL_HOLD (32 chars)" defect class: every one of them requires a
+// SHORT fixed literal before its growing `*$` suffix engages — `eyJ` (3), `Bearer ` (7),
+// `sk-`/`ghp_`/`AKIA` (3-4), the longest labeled-form alternative `access_token`/`client_secret`
+// (12-13) + a `[:=]` char, `password`/`passwd` (6-8) + `[:=]`. All comfortably under 32, so the
+// normal-text tail-hold can never evict any of their leading chars before the pattern engages —
+// unlike the PEM type word (`[ A-Z]*`), none of these required-literal lengths are unbounded.
+// The connection-string pattern's scheme portion (`[a-z][a-z0-9+.-]*` before `://`) is,
+// strictly, also unbounded in the regex — but deliberately NOT made growing the same way PEM
+// was: real URI schemes (postgres, mysql, mongodb+srv, redis, amqp, mqtt, https, …) are all
+// well under 32 chars, so this is not a *practically* exploitable instance of the defect, and
+// the fix would cost more than it buys — a scheme is not a distinctive marker the way `-----` +
+// `BEGIN` is, so holding on the shape "some lowercase word sits at the tail of the buffer"
+// would make ordinary lowercase words throughout normal streamed prose enter HOLD on every
+// chunk boundary, defeating incremental streaming far more broadly than the narrow, highly
+// distinctive PEM dash-prefix does.
 
 /** Index of the earliest pending-secret-start marker in `text`, or -1 if none present. */
 function findPendingSecretStart(text: string): number {
