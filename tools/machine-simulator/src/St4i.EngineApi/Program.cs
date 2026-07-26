@@ -112,7 +112,17 @@ builder.Services.AddSingleton<MachineConfigStore>();
 // ctor — the param is optional, so DI supplying it here is what actually turns the hook on; every
 // FleetHost test that constructs it directly without one keeps behaving exactly as before). Additive
 // only — nothing here changes the existing in-memory MachineState path that powers the live UI.
-builder.Services.AddSingleton<St4i.EdgeCore.Historian.IHistorianStore>(_ => new St4i.EdgeCore.Historian.SqliteHistorianStore());
+//
+// WS-A-T14 (capstone) — the historian directory is relocatable via ST4I_HISTORIAN_DIR (ops: point a
+// deployment at a different disk/volume; testability: an integration test can stand up a whole engine
+// against a throwaway temp dir instead of polluting %ProgramData%). Unset/empty falls back to
+// SqliteHistorianStore's own default (%ProgramData%\ST4I\sim\historian) — the ctor already treats
+// null/whitespace that way, so resolving here once and threading the SAME resolved value into
+// OeeSettingsStore keeps every historian-adjacent file (historian.db, oee-settings.json) in one place,
+// exactly like the comment below already promises.
+var historianDir = Environment.GetEnvironmentVariable("ST4I_HISTORIAN_DIR");
+builder.Services.AddSingleton<St4i.EdgeCore.Historian.IHistorianStore>(
+    _ => new St4i.EdgeCore.Historian.SqliteHistorianStore(string.IsNullOrWhiteSpace(historianDir) ? null : historianDir));
 builder.Services.AddSingleton(sp =>
 {
     var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Historian");
@@ -123,11 +133,12 @@ builder.Services.AddSingleton(sp =>
 });
 
 // Task 9 (WS-A) — per-machine OEE settings (ideal-cycle override + planned-production ratio), a plain
-// JSON-file-backed store (WS-A-T5) that was never wired into DI until now. Default-dir ctor (no arg) so
-// it resolves the SAME %ProgramData%\ST4I\sim\historian folder SqliteHistorianStore's own default ctor
-// above resolves historian.db from — every historian-adjacent file lives in one place. Tests construct
-// their own instance pointed at a temp directory instead of resolving this registration.
-builder.Services.AddSingleton<St4i.EdgeCore.Historian.OeeSettingsStore>();
+// JSON-file-backed store (WS-A-T5) that was never wired into DI until now. Pointed at the SAME resolved
+// ST4I_HISTORIAN_DIR (or SqliteHistorianStore's own default when unset) so every historian-adjacent file
+// lives in one place. Tests construct their own instance pointed at a temp directory instead of resolving
+// this registration.
+builder.Services.AddSingleton(
+    _ => new St4i.EdgeCore.Historian.OeeSettingsStore(string.IsNullOrWhiteSpace(historianDir) ? null : historianDir));
 
 // H4 job 1 fix — WebApplicationBuilder's default WebRootPath is `{ContentRootPath}/wwwroot`, and
 // ContentRootPath defaults to the CURRENT WORKING DIRECTORY, which under `dotnet run` is the PROJECT
