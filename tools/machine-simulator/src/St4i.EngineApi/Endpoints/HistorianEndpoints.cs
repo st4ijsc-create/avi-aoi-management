@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using St4i.EdgeCore.Historian;
 using St4i.EdgeCore.Metrics;
 using St4i.EdgeCore.Models;
@@ -12,7 +13,7 @@ namespace St4i.EngineApi.Endpoints;
 /// <c>GET /v1/historian/stats</c>, <c>POST /v1/historian/prune</c>. Thin mapping layer over the frozen
 /// <see cref="IHistorianStore"/> contract (WS-A-T1/T2, already registered as a singleton in
 /// <c>Program.cs</c> — this file re-registers nothing) — OEE endpoints (Task 9, added below), CSV export
-/// (Task 10), and PDF export (Task 11) are later tasks; the latter two are deliberately absent here.
+/// (Task 10, added below), and PDF export (Task 11) are later tasks; the last is deliberately absent here.
 ///
 /// Task 9 (WS-A) — the OEE surface: <c>GET /v1/historian/oee</c> (single machine), <c>GET
 /// /v1/historian/oee/fleet</c> (one <see cref="OeeResultDto"/> per roster machine), <c>GET</c>/<c>PUT
@@ -26,6 +27,21 @@ namespace St4i.EngineApi.Endpoints;
 /// own <c>FindMachine</c>) is that source; <see cref="MachineDescriptor.CycleSeconds"/> is the ideal-cycle
 /// fallback whenever <see cref="OeeSettingsStore"/> has no override on file for a machine.
 ///
+/// Task 10 (WS-A) — the CSV export surface: <c>GET /v1/historian/results/export.csv</c>, the SAME
+/// machine/from/to/serial/verdict/kind filters as <c>GET /v1/historian/results</c> (Task 8) but no
+/// limit/offset — it exports the FULL filtered set. <see cref="IHistorianStore.QueryResultsAsync"/> is
+/// frozen and paginated, so "the full set" is produced by paging through it internally (a fixed
+/// <see cref="ExportPageSize"/>, increasing <c>Offset</c>, until a page comes back short — see
+/// <see cref="BuildExportCsvAsync"/>) rather than by ever passing <c>int.MaxValue</c> as one <c>Limit</c>.
+/// The CSV itself is hand-rolled RFC-4180 (no CsvHelper/new dependency — see <see cref="AppendCsvRow"/>'s
+/// <see cref="EscapeCsvField"/>), and the response is written through <see cref="CsvFileResult"/>, a
+/// minimal private <see cref="IResult"/> that sets <c>Content-Type</c>/<c>Content-Disposition</c> and
+/// writes the bytes directly — deliberately NOT the built-in <c>Results.File</c> (whose
+/// <c>FileContentHttpResult.ExecuteAsync</c> unconditionally resolves an <c>ILoggerFactory</c> off
+/// <c>HttpContext.RequestServices</c>, which is null both in this project's hand-built-<c>DefaultHttpContext</c>
+/// test convention AND, unlike a full ASP.NET Core pipeline, in no test in this project needing a DI
+/// container to exist).
+///
 /// Same route/handler shape as <see cref="FleetEndpoints"/>/<see cref="MachineSettingsEndpoints"/>
 /// (<c>internal static</c> handler methods bound by method group so tests can call them directly without
 /// a TestServer) and the SAME "no St4i.EdgeCore.Config enum in these DTOs, so plain <c>Results.Ok</c> is
@@ -38,6 +54,7 @@ public static class HistorianEndpoints
     public static void MapHistorianEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/v1/historian/results", GetResultsAsync);
+        app.MapGet("/v1/historian/results/export.csv", ExportResultsCsvAsync);
         app.MapGet("/v1/historian/serial/{serial}", GetBySerialAsync);
         app.MapGet("/v1/historian/telemetry", GetTelemetryAsync);
         app.MapGet("/v1/historian/stats", GetStatsAsync);
@@ -76,6 +93,32 @@ public static class HistorianEndpoints
 
         var page = await store.QueryResultsAsync(query, ct).ConfigureAwait(false);
         return Results.Ok(ToPageDto(page));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GET /v1/historian/results/export.csv?machine=&from=&to=&serial=&verdict=&kind=
+    // ─────────────────────────────────────────────────────────────────────
+    internal static async Task<IResult> ExportResultsCsvAsync(
+        string? machine, string? from, string? to, string? serial, string? verdict, string? kind,
+        IHistorianStore store, CancellationToken ct)
+    {
+        DateTimeOffset? fromParsed = null;
+        if (from is not null)
+        {
+            if (!TryParseDate(from, out var parsed)) return BadDate("from", from);
+            fromParsed = parsed;
+        }
+
+        DateTimeOffset? toParsed = null;
+        if (to is not null)
+        {
+            if (!TryParseDate(to, out var parsed)) return BadDate("to", to);
+            toParsed = parsed;
+        }
+
+        var csvBytes = await BuildExportCsvAsync(machine, fromParsed, toParsed, serial, verdict, kind, store, ct)
+            .ConfigureAwait(false);
+        return new CsvFileResult(csvBytes, "historian-results.csv");
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -269,6 +312,135 @@ public static class HistorianEndpoints
         }
 
         return true;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // CSV export helpers (Task 10)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The brief's page size ("e.g. Limit=5000") for paging through the frozen, paginated
+    /// <see cref="IHistorianStore.QueryResultsAsync"/> while building the export — never <c>int.MaxValue</c>
+    /// as a single <c>Limit</c>.</summary>
+    private const int ExportPageSize = 5000;
+
+    private static readonly string[] CsvHeaderColumns =
+    {
+        "id", "machineCode", "deviceClass", "machineType", "readingKind", "cycleCounter", "serialNumber",
+        "verdict", "recipeCode", "recipeVersion", "keyMetricName", "keyMetricValue", "keyMetricUnit",
+        "ngCount", "pointCount", "ackSuccess", "ackDuplicate", "ackQueued", "eventTimeUtc", "ingestedAtUtc",
+    };
+
+    /// <summary>Pages through <see cref="IHistorianStore.QueryResultsAsync"/> (fixed <see cref="ExportPageSize"/>,
+    /// increasing <c>Offset</c>, stopping the first time a page comes back shorter than the page size) so
+    /// the FULL filtered set is exported without ever requesting one unbounded page. WS-A scale note: the
+    /// resulting CSV text is still accumulated in one in-memory <see cref="StringBuilder"/> across every
+    /// page before being UTF-8-encoded and returned as a single byte array — acceptable for WS-A's
+    /// historian sizes (this is what the brief calls out as an allowed tradeoff when "streaming is
+    /// awkward in this minimal-API setup"); the scale path, if export sizes ever grow enough to matter, is
+    /// writing each page's rows straight to the HTTP response stream as they arrive (e.g. via
+    /// <c>Results.Stream</c>) instead of building the whole CSV before the first byte is sent.</summary>
+    private static async Task<byte[]> BuildExportCsvAsync(
+        string? machine, DateTimeOffset? from, DateTimeOffset? to, string? serial, string? verdict, string? kind,
+        IHistorianStore store, CancellationToken ct)
+    {
+        var sb = new StringBuilder();
+        sb.Append(string.Join(',', CsvHeaderColumns)).Append("\r\n");
+
+        var offset = 0;
+        while (true)
+        {
+            var query = new HistorianResultQuery(
+                MachineCode: machine, From: from, To: to, SerialNumber: serial,
+                Verdict: verdict, ReadingKind: kind, Limit: ExportPageSize, Offset: offset);
+
+            var page = await store.QueryResultsAsync(query, ct).ConfigureAwait(false);
+            foreach (var row in page.Items)
+            {
+                AppendCsvRow(sb, row);
+            }
+
+            if (page.Items.Count < ExportPageSize) break;
+            offset += ExportPageSize;
+        }
+
+        // No BOM: RFC-4180 doesn't require one, and this keeps the bytes a plain ASCII/UTF-8 reader
+        // (or a byte-for-byte test assertion) can compare without stripping a leading marker.
+        return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(sb.ToString());
+    }
+
+    /// <summary>One RFC-4180 row: <see cref="HistorianResultDto"/>'s scalar columns, in the SAME order as
+    /// <see cref="CsvHeaderColumns"/> — nulls render empty, booleans render <c>true</c>/<c>false</c>,
+    /// numbers use invariant culture, and dates use the round-trip ("O") format, per the brief.</summary>
+    private static void AppendCsvRow(StringBuilder sb, HistorianResultRow row)
+    {
+        var r = row.Record;
+        var fields = new[]
+        {
+            row.Id.ToString(CultureInfo.InvariantCulture),
+            r.MachineCode,
+            r.DeviceClass,
+            r.MachineType,
+            r.ReadingKind,
+            r.CycleCounter.ToString(CultureInfo.InvariantCulture),
+            r.SerialNumber,
+            r.Verdict,
+            r.RecipeCode,
+            r.RecipeVersion,
+            r.KeyMetricName,
+            r.KeyMetricValue?.ToString(CultureInfo.InvariantCulture),
+            r.KeyMetricUnit,
+            r.NgCount.ToString(CultureInfo.InvariantCulture),
+            r.PointCount.ToString(CultureInfo.InvariantCulture),
+            r.AckSuccess ? "true" : "false",
+            r.AckDuplicate ? "true" : "false",
+            r.AckQueued ? "true" : "false",
+            r.EventTimeUtc.ToString("O", CultureInfo.InvariantCulture),
+            r.IngestedAtUtc.ToString("O", CultureInfo.InvariantCulture),
+        };
+
+        for (var i = 0; i < fields.Length; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append(EscapeCsvField(fields[i]));
+        }
+
+        sb.Append("\r\n");
+    }
+
+    private static readonly char[] CsvSpecialChars = { ',', '"', '\r', '\n' };
+
+    /// <summary>RFC-4180 field escaping: null → empty; a field containing a comma, double-quote, CR, or
+    /// LF is wrapped in double-quotes with every embedded double-quote doubled; anything else passes
+    /// through unquoted.</summary>
+    private static string EscapeCsvField(string? field)
+    {
+        if (field is null) return string.Empty;
+        if (field.IndexOfAny(CsvSpecialChars) < 0) return field;
+        return "\"" + field.Replace("\"", "\"\"") + "\"";
+    }
+
+    /// <summary>Minimal hand-rolled <see cref="IResult"/> for the CSV export response — see this class's
+    /// doc comment for why NOT the built-in <c>Results.File</c>. Sets <c>Content-Type</c> (with the
+    /// <c>charset=utf-8</c> the brief calls for) and <c>Content-Disposition: attachment; filename="..."</c>
+    /// itself, then writes the already-built bytes straight to <see cref="HttpResponse.Body"/>.</summary>
+    private sealed class CsvFileResult : IResult
+    {
+        private readonly byte[] _bytes;
+        private readonly string _fileName;
+
+        public CsvFileResult(byte[] bytes, string fileName)
+        {
+            _bytes = bytes;
+            _fileName = fileName;
+        }
+
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.ContentType = "text/csv; charset=utf-8";
+            httpContext.Response.Headers.ContentDisposition = $"attachment; filename=\"{_fileName}\"";
+            httpContext.Response.ContentLength = _bytes.Length;
+            return httpContext.Response.Body.WriteAsync(_bytes, httpContext.RequestAborted).AsTask();
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
