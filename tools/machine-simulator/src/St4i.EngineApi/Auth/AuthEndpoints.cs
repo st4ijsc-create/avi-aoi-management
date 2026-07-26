@@ -48,7 +48,7 @@ public static class AuthEndpoints
             return Results.Ok(new BootstrapStatusDto(count == 0));
         }).AllowAnonymous();
 
-        app.MapPost("/v1/auth/bootstrap", async (BootstrapRequestDto body, IUserStore userStore, HttpContext http, CancellationToken ct) =>
+        app.MapPost("/v1/auth/bootstrap", async (BootstrapRequestDto body, IUserStore userStore, HttpContext http, AuditRecorder recorder, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
             {
@@ -68,10 +68,20 @@ public static class AuthEndpoints
                 var user = await userStore.CreateAsync(
                     body.Username, hash, Roles.Admin, body.DisplayName, createdBy: "bootstrap", ct).ConfigureAwait(false);
 
-                // TODO(D3/D4): audit "auth.bootstrap" once the audit store exists — not blocking this task
-                // (brief: "do not block on audit not existing yet").
+                var principal = BuildPrincipal(user);
+                await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal).ConfigureAwait(false);
+                // SignInAsync only takes effect starting with the NEXT request (it just writes a
+                // Set-Cookie header) — same gotcha DemoAutoLoginMiddleware's own doc comment documents.
+                // Without also assigning http.User here, the RecordAsync call below would see the
+                // ORIGINAL (anonymous) principal this request came in with and log actor="(anonymous)"
+                // for the very account that just bootstrapped.
+                http.User = principal;
 
-                await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, BuildPrincipal(user)).ConfigureAwait(false);
+                // WS-D-D4 — recorded AFTER bootstrap + sign-in succeed. NEVER logs body.Password (only the
+                // resulting username/role — the account-lifecycle fact "this deployment was bootstrapped",
+                // never the secret itself).
+                await recorder.RecordAsync(http, "auth.bootstrap", "username", user.Username, null, new { user.Username, user.Role }, ct)
+                    .ConfigureAwait(false);
 
                 return Results.Ok(new AuthUserDto(user.Username, user.Role, user.DisplayName));
             }
@@ -81,7 +91,7 @@ public static class AuthEndpoints
             }
         }).AllowAnonymous();
 
-        app.MapPost("/v1/auth/login", async (LoginRequestDto body, IUserStore userStore, HttpContext http, CancellationToken ct) =>
+        app.MapPost("/v1/auth/login", async (LoginRequestDto body, IUserStore userStore, HttpContext http, AuditRecorder recorder, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
             {
@@ -95,12 +105,17 @@ public static class AuthEndpoints
                 // D1-carried hardening minor #1 — see DummyPasswordHash's doc comment: pay the same
                 // PBKDF2 cost the real verification below pays, even though this result is discarded.
                 _ = hasher.VerifyHashedPassword(AppUser.Instance, DummyPasswordHash, body.Password);
+                // WS-D-D4 — auth.login_failed is its own action, audited even though the mutation itself
+                // is "rejected" (401) — see AuditRecorder's own doc comment / the D4 ordering rule's
+                // explicit carve-out for this action. NEVER logs body.Password.
+                await recorder.RecordAsync(http, "auth.login_failed", "username", body.Username, null, null, ct).ConfigureAwait(false);
                 return Results.Unauthorized();
             }
 
             var verification = hasher.VerifyHashedPassword(AppUser.Instance, user.PasswordHash, body.Password);
             if (verification == PasswordVerificationResult.Failed)
             {
+                await recorder.RecordAsync(http, "auth.login_failed", "username", body.Username, null, null, ct).ConfigureAwait(false);
                 return Results.Unauthorized();
             }
 
@@ -113,14 +128,22 @@ public static class AuthEndpoints
             }
 
             await userStore.SetLastLoginAsync(user.Id, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
-            await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, BuildPrincipal(user)).ConfigureAwait(false);
+            var principal = BuildPrincipal(user);
+            await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal).ConfigureAwait(false);
+            // See the bootstrap handler's own comment above — SignInAsync alone doesn't update http.User
+            // for THIS request, so the RecordAsync call below needs it assigned explicitly first.
+            http.User = principal;
+
+            await recorder.RecordAsync(http, "auth.login_success", "username", user.Username, null, null, ct).ConfigureAwait(false);
 
             return Results.Ok(new AuthUserDto(user.Username, user.Role, user.DisplayName));
         }).AllowAnonymous();
 
-        app.MapPost("/v1/auth/logout", async (HttpContext http) =>
+        app.MapPost("/v1/auth/logout", async (HttpContext http, AuditRecorder recorder, CancellationToken ct) =>
         {
+            var username = http.User.Identity?.Name;
             await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme).ConfigureAwait(false);
+            await recorder.RecordAsync(http, "auth.logout", "username", username, null, null, ct).ConfigureAwait(false);
             return Results.Ok();
         }).RequireAuthorization(Policies.Operator);
 
@@ -140,7 +163,7 @@ public static class AuthEndpoints
             return Results.Ok(new AuthUserDto(username, role, displayName));
         }).RequireAuthorization(Policies.Operator);
 
-        app.MapPost("/v1/auth/change-password", async (ChangePasswordRequestDto body, HttpContext http, IUserStore userStore, CancellationToken ct) =>
+        app.MapPost("/v1/auth/change-password", async (ChangePasswordRequestDto body, HttpContext http, IUserStore userStore, AuditRecorder recorder, CancellationToken ct) =>
         {
             var username = http.User.Identity?.Name;
             if (string.IsNullOrEmpty(username))
@@ -177,6 +200,10 @@ public static class AuthEndpoints
             // Always bumps the stamp — a self-service password change should invalidate every OTHER
             // outstanding session (including, as a side effect, THIS one on its next cookie validation).
             await userStore.SetPasswordHashAsync(user.Id, newHash, bumpStamp: true, ct).ConfigureAwait(false);
+
+            // WS-D-D4 — NEVER logs body.CurrentPassword/body.NewPassword, only the account-lifecycle fact
+            // that this username's password changed.
+            await recorder.RecordAsync(http, "auth.change_password", "username", username, null, null, ct).ConfigureAwait(false);
 
             return Results.Ok();
         }).RequireAuthorization(Policies.Operator);

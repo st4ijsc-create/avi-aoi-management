@@ -58,9 +58,13 @@ public static class ConfigEndpoints
         app.MapMethods("/v1/products/{code}", new[] { "POST", "PUT" }, UpsertProductAsync)
             .RequireAuthorization(Policies.Engineer);
 
-        app.MapDelete("/v1/products/{code}", (string code, ProductConfigStore store) =>
-            store.DeleteProduct(code) ? Json(new { deleted = true }) : ApiNotFound($"product \"{code}\" not found"))
-            .RequireAuthorization(Policies.Engineer);
+        app.MapDelete("/v1/products/{code}", async (string code, ProductConfigStore store, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
+        {
+            var before = store.GetProduct(code);
+            if (!store.DeleteProduct(code)) return ApiNotFound($"product \"{code}\" not found");
+            await recorder.RecordAsync(context, "product.delete", "product", code, before, null, ct).ConfigureAwait(false);
+            return Json(new { deleted = true });
+        }).RequireAuthorization(Policies.Engineer);
 
         app.MapGet("/v1/products/{code}/points", (string code, bool? includeDeleted, ProductConfigStore store) =>
         {
@@ -91,13 +95,19 @@ public static class ConfigEndpoints
         app.MapMethods("/v1/products/{code}/points/{pointCode}", new[] { "POST", "PUT" }, UpsertPointAsync)
             .RequireAuthorization(Policies.Engineer);
 
-        app.MapDelete("/v1/products/{code}/points/{pointCode}", (string code, string pointCode, ProductConfigStore store) =>
+        app.MapDelete("/v1/products/{code}/points/{pointCode}", async (
+            string code, string pointCode, ProductConfigStore store, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
             try
             {
-                return store.SoftDeletePoint(code, pointCode)
-                    ? Json(new { deleted = true })
-                    : ApiNotFound($"point \"{pointCode}\" not found (or already deleted) on product \"{code}\"");
+                var before = store.GetAllPoints(code).FirstOrDefault(p => string.Equals(p.Code, pointCode, StringComparison.OrdinalIgnoreCase));
+                if (!store.SoftDeletePoint(code, pointCode))
+                {
+                    return ApiNotFound($"point \"{pointCode}\" not found (or already deleted) on product \"{code}\"");
+                }
+
+                await recorder.RecordAsync(context, "product.point.delete", "point", $"{code}/{pointCode}", before, null, ct).ConfigureAwait(false);
+                return Json(new { deleted = true });
             }
             catch (KeyNotFoundException ex)
             {
@@ -124,9 +134,13 @@ public static class ConfigEndpoints
         app.MapPut("/v1/recipes/{code}", UpsertRecipeAsync)
             .RequireAuthorization(Policies.Engineer);
 
-        app.MapDelete("/v1/recipes/{code}", (string code, ProductConfigStore store) =>
-            store.DeleteRecipe(code) ? Json(new { deleted = true }) : ApiNotFound($"recipe \"{code}\" not found"))
-            .RequireAuthorization(Policies.Engineer);
+        app.MapDelete("/v1/recipes/{code}", async (string code, ProductConfigStore store, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
+        {
+            var before = store.GetRecipe(code);
+            if (!store.DeleteRecipe(code)) return ApiNotFound($"recipe \"{code}\" not found");
+            await recorder.RecordAsync(context, "recipe.delete", "recipe", code, before, null, ct).ConfigureAwait(false);
+            return Json(new { deleted = true });
+        }).RequireAuthorization(Policies.Engineer);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -197,7 +211,8 @@ public static class ConfigEndpoints
     // is what makes that possible without widening the public API surface.
     // ─────────────────────────────────────────────────────────────────────
 
-    internal static async Task<IResult> UpsertProductAsync(HttpContext context, string code, ProductConfigStore store, CancellationToken ct)
+    internal static async Task<IResult> UpsertProductAsync(
+        HttpContext context, string code, ProductConfigStore store, CancellationToken ct, AuditRecorder? recorder = null)
     {
         var (body, error) = await ReadBodyAsync<ProductModel>(context, required: true, ct).ConfigureAwait(false);
         if (error is not null) return error;
@@ -208,10 +223,20 @@ public static class ConfigEndpoints
             return Results.BadRequest(new ApiErrorDto("body.code must match the route {code} (or be omitted)."));
         }
 
-        return Json(store.UpsertProduct(body));
+        // WS-D-D4 — "old" read BEFORE the mutation (null for a brand-new product — an upsert's create
+        // path has no "before" state, which is itself meaningful audit content, not an error).
+        var before = store.GetProduct(code);
+        var updated = store.UpsertProduct(body);
+        if (recorder is not null)
+        {
+            await recorder.RecordAsync(context, "product.upsert", "product", code, before, updated, ct).ConfigureAwait(false);
+        }
+
+        return Json(updated);
     }
 
-    internal static async Task<IResult> UpsertPointAsync(HttpContext context, string code, string pointCode, ProductConfigStore store, CancellationToken ct)
+    internal static async Task<IResult> UpsertPointAsync(
+        HttpContext context, string code, string pointCode, ProductConfigStore store, CancellationToken ct, AuditRecorder? recorder = null)
     {
         var (body, error) = await ReadBodyAsync<MeasurementPoint>(context, required: true, ct).ConfigureAwait(false);
         if (error is not null) return error;
@@ -224,7 +249,14 @@ public static class ConfigEndpoints
 
         try
         {
-            return Json(store.UpsertPoint(code, body));
+            var before = store.GetAllPoints(code).FirstOrDefault(p => string.Equals(p.Code, pointCode, StringComparison.OrdinalIgnoreCase));
+            var updated = store.UpsertPoint(code, body);
+            if (recorder is not null)
+            {
+                await recorder.RecordAsync(context, "product.point.upsert", "point", $"{code}/{pointCode}", before, updated, ct).ConfigureAwait(false);
+            }
+
+            return Json(updated);
         }
         catch (KeyNotFoundException ex)
         {
@@ -232,7 +264,8 @@ public static class ConfigEndpoints
         }
     }
 
-    internal static async Task<IResult> UpsertRecipeAsync(HttpContext context, string code, ProductConfigStore store, CancellationToken ct)
+    internal static async Task<IResult> UpsertRecipeAsync(
+        HttpContext context, string code, ProductConfigStore store, CancellationToken ct, AuditRecorder? recorder = null)
     {
         var (body, error) = await ReadBodyAsync<Recipe>(context, required: true, ct).ConfigureAwait(false);
         if (error is not null) return error;
@@ -243,10 +276,18 @@ public static class ConfigEndpoints
             return Results.BadRequest(new ApiErrorDto("body.code must match the route {code} (or be omitted)."));
         }
 
-        return Json(store.UpsertRecipe(body));
+        var before = store.GetRecipe(code);
+        var updated = store.UpsertRecipe(body);
+        if (recorder is not null)
+        {
+            await recorder.RecordAsync(context, "recipe.upsert", "recipe", code, before, updated, ct).ConfigureAwait(false);
+        }
+
+        return Json(updated);
     }
 
-    internal static async Task<IResult> PullConfigAsync(HttpContext context, string code, FleetHost fleetHost, ConfigSyncEngine engine, CancellationToken ct)
+    internal static async Task<IResult> PullConfigAsync(
+        HttpContext context, string code, FleetHost fleetHost, ConfigSyncEngine engine, CancellationToken ct, AuditRecorder? recorder = null)
     {
         var machine = FindMachine(fleetHost, code);
         if (machine is null) return ApiNotFound($"machine \"{code}\" not found");
@@ -256,7 +297,15 @@ public static class ConfigEndpoints
 
         try
         {
-            return Json(await engine.PullAsync(machine, body?.ProductCode, ct).ConfigureAwait(false));
+            var result = await engine.PullAsync(machine, body?.ProductCode, ct).ConfigureAwait(false);
+            if (recorder is not null)
+            {
+                // WS-D-D4 — "summary" per the brief: the pull RESULT itself (drift/version/applied info),
+                // not the machine's full config — old is null (a pull's own "before" isn't a single value).
+                await recorder.RecordAsync(context, "machine.config.pull", "machineCode", machine.Code, null, result, ct).ConfigureAwait(false);
+            }
+
+            return Json(result);
         }
         catch (KeyNotFoundException ex)
         {
@@ -268,7 +317,8 @@ public static class ConfigEndpoints
         }
     }
 
-    internal static async Task<IResult> PushConfigAsync(HttpContext context, string code, FleetHost fleetHost, ConfigSyncEngine engine, CancellationToken ct)
+    internal static async Task<IResult> PushConfigAsync(
+        HttpContext context, string code, FleetHost fleetHost, ConfigSyncEngine engine, CancellationToken ct, AuditRecorder? recorder = null)
     {
         var machine = FindMachine(fleetHost, code);
         if (machine is null) return ApiNotFound($"machine \"{code}\" not found");
@@ -279,7 +329,13 @@ public static class ConfigEndpoints
 
         try
         {
-            return Json(await engine.PushAsync(machine, body.ProductCode, body.Confirm, ct).ConfigureAwait(false));
+            var result = await engine.PushAsync(machine, body.ProductCode, body.Confirm, ct).ConfigureAwait(false);
+            if (recorder is not null)
+            {
+                await recorder.RecordAsync(context, "machine.config.push", "machineCode", machine.Code, null, result, ct).ConfigureAwait(false);
+            }
+
+            return Json(result);
         }
         catch (KeyNotFoundException ex)
         {

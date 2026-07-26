@@ -45,41 +45,87 @@ public static class OnboardingEndpoints
 
     public static void MapOnboardingEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/v1/onboarding/register", async (OnboardingRegisterRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate, CancellationToken ct) =>
+        app.MapPost("/v1/onboarding/register", async (
+            OnboardingRegisterRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate,
+            HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
             if (TryResolveIsDemo(request.IsDemo, fleetHost, demoGate) is not { } isDemo) return Results.BadRequest(DemoNotEnabled);
             var resolved = request with { IsDemo = isDemo };
-            return Results.Ok(await svc.RegisterAsync(resolved, ct).ConfigureAwait(false));
+            var result = await svc.RegisterAsync(resolved, ct).ConfigureAwait(false);
+            await RecordOnboardingAsync(recorder, context, "onboarding.register", result, ct).ConfigureAwait(false);
+            return Results.Ok(result);
         }).RequireAuthorization(Policies.Engineer);
 
-        app.MapPost("/v1/onboarding/poll", async (OnboardingPollRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate, CancellationToken ct) =>
+        app.MapPost("/v1/onboarding/poll", async (
+            OnboardingPollRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate,
+            HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
             if (TryResolveIsDemo(request.IsDemo, fleetHost, demoGate) is not { } isDemo) return Results.BadRequest(DemoNotEnabled);
             var resolved = request with { IsDemo = isDemo };
-            return Results.Ok(await svc.PollAsync(resolved, ct).ConfigureAwait(false));
+            var result = await svc.PollAsync(resolved, ct).ConfigureAwait(false);
+            await RecordOnboardingAsync(recorder, context, "onboarding.poll", result, ct).ConfigureAwait(false);
+            return Results.Ok(result);
         }).RequireAuthorization(Policies.Engineer);
 
-        app.MapPost("/v1/onboarding/claim", async (OnboardingClaimRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate, CancellationToken ct) =>
+        app.MapPost("/v1/onboarding/claim", async (
+            OnboardingClaimRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate,
+            HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
             if (TryResolveIsDemo(request.IsDemo, fleetHost, demoGate) is not { } isDemo) return Results.BadRequest(DemoNotEnabled);
             var resolved = request with { IsDemo = isDemo };
             var result = await svc.ClaimAsync(resolved, ct).ConfigureAwait(false);
             result = OnboardingFleetJoin.JoinFleetIfProvisioned(fleetHost, result, request.SerialNumber, request.MachineType);
+            await RecordOnboardingAsync(recorder, context, "onboarding.claim", result, ct).ConfigureAwait(false);
             return Results.Ok(result);
         }).RequireAuthorization(Policies.Engineer);
 
-        app.MapPost("/v1/onboarding/enroll", async (OnboardingEnrollRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate, CancellationToken ct) =>
+        app.MapPost("/v1/onboarding/enroll", async (
+            OnboardingEnrollRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate,
+            HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
             if (TryResolveIsDemo(request.IsDemo, fleetHost, demoGate) is not { } isDemo) return Results.BadRequest(DemoNotEnabled);
             var resolved = request with { IsDemo = isDemo };
             var result = await svc.EnrollAsync(resolved, ct).ConfigureAwait(false);
             result = OnboardingFleetJoin.JoinFleetIfProvisioned(fleetHost, result, request.SerialNumber, request.MachineType);
+            await RecordOnboardingAsync(recorder, context, "onboarding.enroll", result, ct).ConfigureAwait(false);
             return Results.Ok(result);
         }).RequireAuthorization(Policies.Engineer);
 
-        app.MapPost("/v1/onboarding/paste-key", (OnboardingPasteKeyRequest request, OnboardingService svc) =>
-            Results.Ok(svc.PasteKey(request)))
-            .RequireAuthorization(Policies.Engineer);
+        app.MapPost("/v1/onboarding/paste-key", async (
+            OnboardingPasteKeyRequest request, OnboardingService svc, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
+        {
+            var result = svc.PasteKey(request);
+            await RecordOnboardingAsync(recorder, context, "onboarding.paste_key", result, ct).ConfigureAwait(false);
+            return Results.Ok(result);
+        }).RequireAuthorization(Policies.Engineer);
+    }
+
+    /// <summary>WS-D-D4 — one audit row per onboarding step, target = the resulting <c>machineCode</c>
+    /// (null until Claim/Enroll/paste-key actually provision one). <see cref="OnboardingStepResult.MkKey"/>
+    /// is NEVER logged raw — only its <see cref="KeyFingerprint"/> (first 8 hex of its SHA-256), so an
+    /// audit row can prove "a key was minted for this machine at this time" without itself becoming a
+    /// second place a live <c>mk_</c> credential is stored in plaintext. Called unconditionally on every
+    /// 200 response (register/poll/claim/enroll/paste-key never reject with a 4xx of their own below the
+    /// isDemo-gate check above — a business-level "Idle"/failure <see cref="OnboardingStepResult.Message"/>
+    /// still comes back as an HTTP 200, so it's still an audit-worthy attempt, not a "rejected mutation" in
+    /// the WS-D-D4 ordering sense).</summary>
+    private static Task RecordOnboardingAsync(
+        AuditRecorder recorder, HttpContext context, string action, OnboardingStepResult result, CancellationToken ct) =>
+        recorder.RecordAsync(
+            context, action, "machineCode", result.MachineCode,
+            oldValue: null,
+            newValue: new { step = result.Step, machineCode = result.MachineCode, keyFingerprint = KeyFingerprint(result.MkKey), isApproved = result.IsApproved, message = result.Message },
+            ct: ct);
+
+    /// <summary>First 8 hex characters of the SHA-256 digest of <paramref name="key"/> — enough to
+    /// correlate "was this the same key" across audit rows without ever reconstructing or brute-forcing
+    /// the real <c>mk_</c> value from the logged fingerprint alone. Null in, null out (register/poll never
+    /// carry a key yet).</summary>
+    private static string? KeyFingerprint(string? key)
+    {
+        if (string.IsNullOrEmpty(key)) return null;
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key));
+        return Convert.ToHexString(hash)[..8].ToLowerInvariant();
     }
 
     /// <summary>Returns the resolved <c>isDemo</c>, or <see langword="null"/> to signal "refuse this

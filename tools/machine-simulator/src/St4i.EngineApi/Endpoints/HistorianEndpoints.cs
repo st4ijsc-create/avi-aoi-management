@@ -94,7 +94,7 @@ public static class HistorianEndpoints
         app.MapGet("/v1/historian/oee", GetOeeAsync).RequireAuthorization(Policies.Operator);
         app.MapGet("/v1/historian/oee/fleet", GetOeeFleetAsync).RequireAuthorization(Policies.Operator);
         app.MapGet("/v1/historian/oee/settings", GetOeeSettings).RequireAuthorization(Policies.Operator);
-        app.MapPut("/v1/historian/oee/settings", PutOeeSettings).RequireAuthorization(Policies.Engineer);
+        app.MapPut("/v1/historian/oee/settings", PutOeeSettingsAsync).RequireAuthorization(Policies.Engineer);
 
         app.MapGet("/v1/historian/report.pdf", GetReportPdfAsync).RequireAuthorization(Policies.Operator);
     }
@@ -202,15 +202,24 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     // POST /v1/historian/prune {olderThanDays}
     // ─────────────────────────────────────────────────────────────────────
-    internal static async Task<IResult> PruneAsync(PruneRequest request, IHistorianStore store, CancellationToken ct)
+    internal static async Task<IResult> PruneAsync(
+        PruneRequest request, IHistorianStore store, CancellationToken ct, HttpContext? context = null, AuditRecorder? recorder = null)
     {
         if (request.OlderThanDays < 0)
         {
+            // Rejected mutation (400) — per the WS-D-D4 ordering rule, no audit row is written here.
             return Results.BadRequest(new ApiErrorDto("olderThanDays must be >= 0."));
         }
 
         var cutoffUtc = DateTimeOffset.UtcNow.AddDays(-request.OlderThanDays);
         var deleted = await store.PruneOlderThanAsync(cutoffUtc, ct).ConfigureAwait(false);
+
+        if (recorder is not null && context is not null)
+        {
+            await recorder.RecordAsync(context, "historian.prune", null, null, null, new { cutoffUtc, deletedCount = deleted }, ct)
+                .ConfigureAwait(false);
+        }
+
         return Results.Ok(new PruneResultDto(deleted));
     }
 
@@ -262,19 +271,30 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     // PUT /v1/historian/oee/settings?machine= {idealCycleSecondsOverride?, plannedProductionRatio?}
     // ─────────────────────────────────────────────────────────────────────
-    internal static IResult PutOeeSettings(
-        string? machine, OeeSettingsUpdateRequest request, OeeSettingsStore settingsStore, FleetHost fleetHost)
+    internal static async Task<IResult> PutOeeSettingsAsync(
+        string? machine, OeeSettingsUpdateRequest request, OeeSettingsStore settingsStore, FleetHost fleetHost,
+        CancellationToken ct = default, HttpContext? context = null, AuditRecorder? recorder = null)
     {
         var descriptor = FindMachine(fleetHost, machine);
         if (descriptor is null) return MachineNotFound(machine);
 
         try
         {
+            // "old" read BEFORE the mutation — the currently-effective settings for this machine.
+            var before = settingsStore.Resolve(descriptor.Code, descriptor.CycleSeconds);
             var updated = settingsStore.Set(descriptor.Code, request.IdealCycleSecondsOverride, request.PlannedProductionRatio);
+
+            if (recorder is not null && context is not null)
+            {
+                await recorder.RecordAsync(context, "historian.oee_settings.update", "machineCode", descriptor.Code, before, updated, ct)
+                    .ConfigureAwait(false);
+            }
+
             return Results.Ok(ToSettingsDto(descriptor, updated));
         }
         catch (ArgumentOutOfRangeException ex)
         {
+            // Rejected mutation (400) — per the WS-D-D4 ordering rule, no audit row is written here.
             return Results.BadRequest(new ApiErrorDto(ex.Message));
         }
     }

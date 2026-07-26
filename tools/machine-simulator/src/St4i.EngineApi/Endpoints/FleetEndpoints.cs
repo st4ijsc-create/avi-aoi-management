@@ -32,15 +32,21 @@ public static class FleetEndpoints
                 : Results.Ok(detail);
         }).RequireAuthorization(Policies.Operator);
 
-        app.MapPost("/v1/fleet/start", (FleetHost host) =>
+        app.MapPost("/v1/fleet/start", async (FleetHost host, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
+            var before = new { host.IsRunning, host.EstopEngaged };
             host.Start();
+            await recorder.RecordAsync(context, "fleet.start", null, null, before, new { host.IsRunning, host.EstopEngaged }, ct)
+                .ConfigureAwait(false);
             return Results.Ok(new FleetActionResultDto(host.IsRunning, host.Mode.ToString()));
         }).RequireAuthorization(Policies.Operator);
 
-        app.MapPost("/v1/fleet/stop", (FleetHost host) =>
+        app.MapPost("/v1/fleet/stop", async (FleetHost host, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
+            var before = new { host.IsRunning, host.EstopEngaged };
             host.Stop();
+            await recorder.RecordAsync(context, "fleet.stop", null, null, before, new { host.IsRunning, host.EstopEngaged }, ct)
+                .ConfigureAwait(false);
             return Results.Ok(new FleetActionResultDto(host.IsRunning, host.Mode.ToString()));
         }).RequireAuthorization(Policies.Operator);
 
@@ -49,15 +55,24 @@ public static class FleetEndpoints
         // (not just the action-result shape /start and /stop use) so the client can update its shared
         // fleet-runtime state from ONE trustworthy, already-confirmed response — the mutation itself
         // IS the "did the machine actually stop" confirmation (C-3), not a fire-and-forget.
-        app.MapPost("/v1/fleet/estop", (FleetHost host) =>
+        //
+        // WS-D-D4 — logged even though Operator-reachable ("who pressed E-STOP" is exactly the kind of
+        // question this audit trail exists to answer, regardless of which role was allowed to press it).
+        app.MapPost("/v1/fleet/estop", async (FleetHost host, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
+            var before = new { host.IsRunning, host.EstopEngaged };
             host.Estop();
+            await recorder.RecordAsync(context, "fleet.estop", null, null, before, new { host.IsRunning, host.EstopEngaged }, ct)
+                .ConfigureAwait(false);
             return Results.Ok(host.Snapshot());
         }).RequireAuthorization(Policies.Operator);
 
-        app.MapPost("/v1/fleet/estop/reset", (FleetHost host) =>
+        app.MapPost("/v1/fleet/estop/reset", async (FleetHost host, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
+            var before = new { host.IsRunning, host.EstopEngaged };
             host.ResetEstop();
+            await recorder.RecordAsync(context, "fleet.estop_reset", null, null, before, new { host.IsRunning, host.EstopEngaged }, ct)
+                .ConfigureAwait(false);
             return Results.Ok(host.Snapshot());
         }).RequireAuthorization(Policies.Operator);
 

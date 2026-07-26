@@ -304,14 +304,15 @@ public sealed class MachineSettingsEndpointsTests
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Delete_setting_resets_to_the_layer_below()
+    public async Task Delete_setting_resets_to_the_layer_below()
     {
         var fleetHost = NewFleetHostWithRegisteredMachines(AoiMachine);
         var store = NewStore();
         store.Ensure(AoiMachine.Code, MachineParameterSchema.AoiInspection);
         store.SetAdjustment(AoiMachine.Code, "gain", 2.0, AdjustmentScope.Machine, null, "tech1", null);
 
-        var result = MachineSettingsEndpoints.DeleteSetting(AoiMachine.Code, "gain", "machine", null, fleetHost, store);
+        var result = await MachineSettingsEndpoints.DeleteSettingAsync(
+            new DefaultHttpContext(), AoiMachine.Code, "gain", "machine", null, fleetHost, store, CancellationToken.None);
 
         var dto = ExpectOk<MachineSettingsResponseDto>(result);
         var gain = dto.Effective.Single(p => p.Def.Key == "gain");
@@ -326,7 +327,7 @@ public sealed class MachineSettingsEndpointsTests
     /// and not silently keep the just-deleted product value. The store logic (<c>RemoveAdjustment</c> +
     /// re-<c>Resolve</c>) was already correct by inspection; this exercises it at the HTTP layer.</summary>
     [Fact]
-    public void Delete_product_scoped_setting_falls_back_to_the_machine_scoped_layer_with_machine_provenance()
+    public async Task Delete_product_scoped_setting_falls_back_to_the_machine_scoped_layer_with_machine_provenance()
     {
         var fleetHost = NewFleetHostWithRegisteredMachines(AoiMachine);
         var store = NewStore();
@@ -339,7 +340,8 @@ public sealed class MachineSettingsEndpointsTests
         Assert.Equal(4.0, before.Effective.Single(p => p.Def.Key == "gain").Value);
         Assert.Equal(ConfigProvenance.MachineProduct, before.Effective.Single(p => p.Def.Key == "gain").Source);
 
-        var result = MachineSettingsEndpoints.DeleteSetting(AoiMachine.Code, "gain", "product", "MODEL-B", fleetHost, store);
+        var result = await MachineSettingsEndpoints.DeleteSettingAsync(
+            new DefaultHttpContext(), AoiMachine.Code, "gain", "product", "MODEL-B", fleetHost, store, CancellationToken.None);
 
         var dto = ExpectOk<MachineSettingsResponseDto>(result);
         var gain = dto.Effective.Single(p => p.Def.Key == "gain");
@@ -351,24 +353,25 @@ public sealed class MachineSettingsEndpointsTests
     }
 
     [Fact]
-    public void Delete_setting_rejects_an_unparseable_scope_with_400()
+    public async Task Delete_setting_rejects_an_unparseable_scope_with_400()
     {
         var fleetHost = NewFleetHostWithRegisteredMachines(AoiMachine);
         var store = NewStore();
         store.Ensure(AoiMachine.Code, MachineParameterSchema.AoiInspection);
 
-        // Reproduces the live gotcha this fix addresses (see `DeleteSetting`'s own doc comment): a
+        // Reproduces the live gotcha this fix addresses (see `DeleteSettingAsync`'s own doc comment): a
         // completely garbage scope value must 400 with a real, non-empty body naming the problem —
         // never the framework-level empty-body 400 the old `AdjustmentScope`-typed parameter produced
         // for ANY casing other than the exact C# member name.
-        var result = MachineSettingsEndpoints.DeleteSetting(AoiMachine.Code, "gain", "sideways", null, fleetHost, store);
+        var result = await MachineSettingsEndpoints.DeleteSettingAsync(
+            new DefaultHttpContext(), AoiMachine.Code, "gain", "sideways", null, fleetHost, store, CancellationToken.None);
 
         var error = ExpectBadRequest(result);
         Assert.Contains("scope", error.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Delete_setting_accepts_lower_case_scope_matching_the_wire_vocabulary()
+    public async Task Delete_setting_accepts_lower_case_scope_matching_the_wire_vocabulary()
     {
         // The exact casing every other part of the contract uses (PUT's JSON body, GET/PUT response
         // `source` values) — `?scope=machine`, not `?scope=Machine`.
@@ -377,7 +380,8 @@ public sealed class MachineSettingsEndpointsTests
         store.Ensure(AoiMachine.Code, MachineParameterSchema.AoiInspection);
         store.SetAdjustment(AoiMachine.Code, "gain", 2.0, AdjustmentScope.Machine, null, "tech1", null);
 
-        var result = MachineSettingsEndpoints.DeleteSetting(AoiMachine.Code, "gain", "machine", null, fleetHost, store);
+        var result = await MachineSettingsEndpoints.DeleteSettingAsync(
+            new DefaultHttpContext(), AoiMachine.Code, "gain", "machine", null, fleetHost, store, CancellationToken.None);
 
         var dto = ExpectOk<MachineSettingsResponseDto>(result);
         Assert.Equal(ConfigProvenance.Baseline, dto.Effective.Single(p => p.Def.Key == "gain").Source);

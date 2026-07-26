@@ -21,14 +21,22 @@ public static class ModeEndpoints
         app.MapGet("/v1/mode", (FleetHost host) => Results.Ok(new ModeDto(host.Mode)))
             .RequireAuthorization(Policies.Operator);
 
-        app.MapPut("/v1/mode", (ModeDto request, FleetHost host, DemoModeGate demoGate) =>
+        app.MapPut("/v1/mode", async (
+            ModeDto request, FleetHost host, DemoModeGate demoGate, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
             if (request.Mode == TransportMode.Demo && !demoGate.Enabled)
             {
+                // Rejected mutation (400) — per the WS-D-D4 ordering rule, no audit row is written here.
                 return Results.BadRequest(new ApiErrorDto("Demo mode is not enabled on this deployment."));
             }
 
+            var oldMode = host.Mode;
             host.ApplyMode(request.Mode);
+
+            // WS-D-D4 — recorded AFTER the mutation succeeds, so `new` reflects the committed mode.
+            await recorder.RecordAsync(context, "mode.switch", "mode", null, oldMode.ToString(), host.Mode.ToString(), ct)
+                .ConfigureAwait(false);
+
             return Results.Ok(new ModeDto(host.Mode));
         }).RequireAuthorization(Policies.Engineer);
     }

@@ -220,7 +220,7 @@ public sealed class HistorianEndpointsOeeTests
         var fleetHost = NewFleetHost();
         const string machineCode = "SCRW-01";
 
-        var putResult = HistorianEndpoints.PutOeeSettings(
+        var putResult = await HistorianEndpoints.PutOeeSettingsAsync(
             machineCode, new OeeSettingsUpdateRequest(IdealCycleSecondsOverride: 0.5, PlannedProductionRatio: 0.75),
             settingsStore, fleetHost);
 
@@ -254,13 +254,13 @@ public sealed class HistorianEndpointsOeeTests
     }
 
     [Fact]
-    public void OeeSettings_Put_WithARatioAboveOne_Returns400AndLeavesTheStoreUntouched()
+    public async Task OeeSettings_Put_WithARatioAboveOne_Returns400AndLeavesTheStoreUntouched()
     {
         var settingsStore = NewSettingsStore();
         var fleetHost = NewFleetHost();
         const string machineCode = "SCRW-01";
 
-        var result = HistorianEndpoints.PutOeeSettings(
+        var result = await HistorianEndpoints.PutOeeSettingsAsync(
             machineCode, new OeeSettingsUpdateRequest(IdealCycleSecondsOverride: null, PlannedProductionRatio: 1.5),
             settingsStore, fleetHost);
 

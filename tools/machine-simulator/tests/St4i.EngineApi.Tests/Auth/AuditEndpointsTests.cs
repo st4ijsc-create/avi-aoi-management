@@ -163,10 +163,16 @@ public sealed class AuditEndpointsTests
         {
             Assert.Equal(HttpStatusCode.OK, listResp.StatusCode);
             var page = await listResp.Content.ReadFromJsonAsync<AuditPageDto>(JsonOptions);
-            Assert.Equal(2, page!.Total);
-            // Newest-first — bob's row (appended second) leads.
-            Assert.Equal("bob", page.Items[0].ActorUsername);
-            Assert.Equal("alice", page.Items[1].ActorUsername);
+
+            // WS-D-D4 — BootstrapAdminAsync/LoginAsAsync above now ALSO write their own audit rows
+            // (auth.bootstrap/auth.login_success — D4 wired those in), so the unfiltered listing carries
+            // MORE than just alice/bob's two seeded rows. Assert their PRESENCE and relative (newest-first)
+            // order instead of an exact total/array position — the filtered queries below are still exact,
+            // since alice/bob's actions don't collide with anything auth-related.
+            Assert.True(page!.Total >= 2);
+            var bobEntry = Assert.Single(page.Items, e => e.ActorUsername == "bob");
+            var aliceEntry = Assert.Single(page.Items, e => e.ActorUsername == "alice");
+            Assert.True(bobEntry.Seq > aliceEntry.Seq); // bob appended AFTER alice
         }
 
         using (var byActor = await adminClient.GetAsync("/v1/audit?actor=alice"))

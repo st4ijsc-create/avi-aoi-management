@@ -17,23 +17,34 @@ public static class ScenarioEndpoints
             presets = host.ListPresets(),
         })).RequireAuthorization(Policies.Operator);
 
-        app.MapPost("/v1/scenario", (ScenarioRequest request, FleetHost host) =>
-            Results.Ok(host.ApplyScenario(request.ToScenarioConfig())))
-            .RequireAuthorization(Policies.Engineer);
+        app.MapPost("/v1/scenario", async (ScenarioRequest request, FleetHost host, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
+        {
+            var applied = host.ApplyScenario(request.ToScenarioConfig());
+            await recorder.RecordAsync(context, "scenario.apply", null, null, null, applied, ct).ConfigureAwait(false);
+            return Results.Ok(applied);
+        }).RequireAuthorization(Policies.Engineer);
 
-        app.MapPost("/v1/scenario/preset", async (ScenarioPresetRequest request, FleetHost host, CancellationToken ct) =>
+        app.MapPost("/v1/scenario/preset", async (
+            ScenarioPresetRequest request, FleetHost host, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
             var (preset, applied, hotFolderStatus) = await host.ApplyPresetAsync(request.Name, ct).ConfigureAwait(false);
             if (preset is null)
             {
+                // Rejected mutation (404 — unknown preset) — per the WS-D-D4 ordering rule, no audit row.
                 var known = string.Join(", ", host.ListPresets().Select(p => p.Name));
                 return Results.NotFound(new ApiErrorDto($"unknown preset \"{request.Name}\" — known: {known}"));
             }
 
+            await recorder.RecordAsync(context, "scenario.preset", null, request.Name, null, new { scenario = applied, hotFolderStatus }, ct)
+                .ConfigureAwait(false);
             return Results.Ok(new { scenario = applied, hotFolderStatus });
         }).RequireAuthorization(Policies.Engineer);
 
-        app.MapPost("/v1/scenario/burst", (FleetHost host) => Results.Ok(host.Burst()))
-            .RequireAuthorization(Policies.Engineer);
+        app.MapPost("/v1/scenario/burst", async (FleetHost host, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
+        {
+            var applied = host.Burst();
+            await recorder.RecordAsync(context, "scenario.burst", null, null, null, applied, ct).ConfigureAwait(false);
+            return Results.Ok(applied);
+        }).RequireAuthorization(Policies.Engineer);
     }
 }

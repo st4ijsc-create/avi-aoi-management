@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using St4i.EngineApi;
 
 namespace St4i.EngineApi.Auth;
@@ -27,14 +28,26 @@ namespace St4i.EngineApi.Auth;
 /// mean for their own mutation and MUST pass already-redacted values — this helper does no secret
 /// scrubbing of its own (the brief: "NEVER include secrets — callers pass already-redacted values (D4's
 /// concern)").
+///
+/// WS-D-D4 (the D3-flagged failure-policy decision) — <see cref="RecordAsync"/> NEVER throws into the
+/// calling handler: <see cref="IAuditStore.AppendAsync"/> is wrapped in its own try/catch, and a failure
+/// there is logged (<see cref="ILogger{TCategoryName}"/>, category <see cref="AuditRecorder"/>) and
+/// swallowed. Principle "never stop production for a support subsystem" — an audit log is a support/
+/// compliance concern, not a safety interlock; a local SQLite hiccup writing <c>security.db</c> must never
+/// itself become the reason a real mutation (an E-STOP, a settings change, a recipe upsert) fails to
+/// commit or reports a false failure to the caller. Every mutating handler therefore just
+/// <c>await recorder.RecordAsync(ctx, ...)</c> with NO try/catch of its own — this method is the ONE place
+/// that decision is implemented, so every call site gets it for free.
 /// </summary>
 public sealed class AuditRecorder
 {
     private readonly IAuditStore _store;
+    private readonly ILogger<AuditRecorder> _logger;
 
-    public AuditRecorder(IAuditStore store)
+    public AuditRecorder(IAuditStore store, ILogger<AuditRecorder> logger)
     {
         _store = store;
+        _logger = logger;
     }
 
     public async Task RecordAsync(
@@ -53,6 +66,20 @@ public sealed class AuditRecorder
             actor, role, action, targetType, targetId, oldJson, newJson, correlationId, clientIp,
             DateTimeOffset.UtcNow);
 
-        await _store.AppendAsync(entry, ct).ConfigureAwait(false);
+        try
+        {
+            await _store.AppendAsync(entry, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Deliberately NOT rethrown — see this class's doc comment. The mutation this row was meant
+            // to record has ALREADY committed by the time a caller reaches this call (ordering: record
+            // AFTER the mutation succeeds), so the only thing at stake here is the audit row itself.
+            _logger.LogError(
+                ex,
+                "Audit append failed for action {Action} (actor={Actor}, target={TargetType}/{TargetId}) — " +
+                "the triggering mutation already committed and is NOT affected; this audit row was lost.",
+                action, actor, targetType, targetId);
+        }
     }
 }

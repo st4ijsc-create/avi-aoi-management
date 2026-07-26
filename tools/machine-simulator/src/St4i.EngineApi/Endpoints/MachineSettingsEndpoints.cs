@@ -41,7 +41,7 @@ public static class MachineSettingsEndpoints
             .RequireAuthorization(Policies.Operator);
         app.MapPut("/v1/machines/{code}/settings/{key}", UpdateSettingAsync)
             .RequireAuthorization(Policies.Engineer);
-        app.MapDelete("/v1/machines/{code}/settings/{key}", DeleteSetting)
+        app.MapDelete("/v1/machines/{code}/settings/{key}", DeleteSettingAsync)
             .RequireAuthorization(Policies.Engineer);
         app.MapPost("/v1/machines/{code}/settings/pull", PullSettingsAsync)
             .RequireAuthorization(Policies.Engineer);
@@ -77,7 +77,8 @@ public static class MachineSettingsEndpoints
     // PUT /v1/machines/{code}/settings/{key}
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> UpdateSettingAsync(
-        HttpContext context, string code, string key, FleetHost fleetHost, MachineConfigStore store, CancellationToken ct)
+        HttpContext context, string code, string key, FleetHost fleetHost, MachineConfigStore store, CancellationToken ct,
+        AuditRecorder? recorder = null)
     {
         var machine = FindMachine(fleetHost, code);
         if (machine is null) return ApiNotFound($"machine \"{code}\" not found");
@@ -91,8 +92,30 @@ public static class MachineSettingsEndpoints
         try
         {
             store.Ensure(machine.Code, configKind);
-            var updated = store.SetAdjustment(machine.Code, key, body!.Value, body.Scope, body.Product, body.By, body.Note);
+
+            // WS-D-D4 — the free-text, client-supplied body.By is NEVER trusted for WHO made this change;
+            // the AUTHENTICATED identity is (see ActorName's doc comment). body.By/PullSettingsRequestDto.By/
+            // PushSettingsRequestDto.By stay on the wire DTOs for backward compatibility with any caller
+            // still sending it (the web client's MachineSettingsPanel does — see MachineSettingsDtos.cs'
+            // doc comment) but are otherwise IGNORED server-side from this task on.
+            var actor = ActorName(context);
+
+            // "old" read BEFORE the mutation — the effective value THIS key currently resolves to at the
+            // scope being written (machine-wide, or the one product being written for a product-scoped
+            // write), so a settings.set audit row reads as a true before→after, not just "what was typed".
+            var scopedProductForRead = body!.Scope == AdjustmentScope.Product ? body.Product : null;
+            var before = SafeResolve(store, machine.Code, scopedProductForRead)?.Parameters.FirstOrDefault(p => p.Def.Key == key)?.Value;
+
+            var updated = store.SetAdjustment(machine.Code, key, body.Value, body.Scope, body.Product, actor, body.Note);
             var responseProduct = body.Scope == AdjustmentScope.Product ? body.Product : null;
+
+            if (recorder is not null)
+            {
+                await recorder.RecordAsync(
+                    context, "machine.settings.set", "machine.settings", $"{machine.Code}:{key}",
+                    oldValue: before, newValue: body.Value, ct: ct).ConfigureAwait(false);
+            }
+
             return Json(BuildResponse(machine, configKind, updated, responseProduct, store));
         }
         catch (KeyNotFoundException ex)
@@ -102,6 +125,33 @@ public static class MachineSettingsEndpoints
         catch (Exception ex) when (ex is ArgumentOutOfRangeException or InvalidOperationException or ArgumentException)
         {
             return Results.BadRequest(new ApiErrorDto(CleanMessage(ex)));
+        }
+    }
+
+    /// <summary>WS-D-D4 — the authenticated identity making this request, replacing the untrusted
+    /// client-supplied <c>body.By</c> as the value threaded into <see cref="MachineConfigStore"/>'s own
+    /// <c>by</c> parameters. Falls back to the literal <c>"(anonymous)"</c> (never null, never throws)
+    /// for the rare case of an unauthenticated <see cref="HttpContext"/> — the SAME fallback
+    /// <see cref="AuditRecorder.RecordAsync"/> already uses, so a hand-built <see cref="HttpContext"/> with
+    /// no signed-in principal (every pre-existing direct-call unit test in this project) behaves exactly
+    /// as before rather than throwing a <see cref="NullReferenceException"/> out of a null
+    /// <see cref="System.Security.Claims.ClaimsPrincipal.Identity"/>.</summary>
+    private static string ActorName(HttpContext context) => context.User.Identity?.Name ?? "(anonymous)";
+
+    /// <summary>Same "resolve, but never let an unrelated failure block reading the OLD value for an
+    /// audit row" reasoning as everywhere else audit reads happen before a mutation — <see cref="MachineConfigStore.Resolve"/>
+    /// only ever throws <see cref="KeyNotFoundException"/> for a machine with no config yet, which cannot
+    /// happen here (the caller always calls <see cref="MachineConfigStore.Ensure"/> first), but this stays
+    /// defensive rather than assuming that invariant forever holds.</summary>
+    private static EffectiveConfig? SafeResolve(MachineConfigStore store, string machineCode, string? productCode)
+    {
+        try
+        {
+            return store.Resolve(machineCode, productCode);
+        }
+        catch (KeyNotFoundException)
+        {
+            return null;
         }
     }
 
@@ -127,8 +177,9 @@ public static class MachineSettingsEndpoints
     // ─────────────────────────────────────────────────────────────────────
     // DELETE /v1/machines/{code}/settings/{key}?scope=&product=
     // ─────────────────────────────────────────────────────────────────────
-    internal static IResult DeleteSetting(
-        string code, string key, string? scope, string? product, FleetHost fleetHost, MachineConfigStore store)
+    internal static async Task<IResult> DeleteSettingAsync(
+        HttpContext context, string code, string key, string? scope, string? product, FleetHost fleetHost, MachineConfigStore store,
+        CancellationToken ct, AuditRecorder? recorder = null)
     {
         var machine = FindMachine(fleetHost, code);
         if (machine is null) return ApiNotFound($"machine \"{code}\" not found");
@@ -144,8 +195,25 @@ public static class MachineSettingsEndpoints
         try
         {
             store.Ensure(machine.Code, configKind);
-            var updated = store.RemoveAdjustment(machine.Code, key, parsedScope, product, by: null);
+
+            var scopedProductForRead = parsedScope == AdjustmentScope.Product ? product : null;
+            var before = SafeResolve(store, machine.Code, scopedProductForRead)?.Parameters.FirstOrDefault(p => p.Def.Key == key)?.Value;
+
+            // WS-D-D4 — the by-replacement applies here too: RemoveAdjustment used to always be called
+            // with `by: null` (DELETE never had a request body to read a `by` from) — the authenticated
+            // actor is now threaded through instead, so MachineConfigHistoryEntry.By is meaningful for a
+            // delete too, not just a set.
+            var updated = store.RemoveAdjustment(machine.Code, key, parsedScope, product, by: ActorName(context));
             var responseProduct = parsedScope == AdjustmentScope.Product ? product : null;
+
+            if (recorder is not null)
+            {
+                var after = SafeResolve(store, machine.Code, scopedProductForRead)?.Parameters.FirstOrDefault(p => p.Def.Key == key)?.Value;
+                await recorder.RecordAsync(
+                    context, "machine.settings.delete", "machine.settings", $"{machine.Code}:{key}",
+                    oldValue: before, newValue: after, ct: ct).ConfigureAwait(false);
+            }
+
             return Json(BuildResponse(machine, configKind, updated, responseProduct, store));
         }
         catch (KeyNotFoundException ex)
@@ -188,7 +256,8 @@ public static class MachineSettingsEndpoints
     // POST /v1/machines/{code}/settings/pull
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PullSettingsAsync(
-        HttpContext context, string code, FleetHost fleetHost, MachineConfigStore store, IConfigSyncBackend backend, CancellationToken ct)
+        HttpContext context, string code, FleetHost fleetHost, MachineConfigStore store, IConfigSyncBackend backend, CancellationToken ct,
+        AuditRecorder? recorder = null)
     {
         var machine = FindMachine(fleetHost, code);
         if (machine is null) return ApiNotFound($"machine \"{code}\" not found");
@@ -201,12 +270,25 @@ public static class MachineSettingsEndpoints
 
         try
         {
+            // "old" baseline read BEFORE the pull — null for a machine's very first pull (Ensure/pull
+            // hasn't run yet), a genuine baseline snapshot on every later pull.
+            var before = store.GetConfig(machine.Code)?.Baseline;
+
             // Task 7 — asks the CURRENTLY-ACTIVE backend (Demo's SimulatedEcosystem or Live's real
             // server, whichever ConfigSyncCoordinator/SwitchableConfigSyncBackend currently points at)
             // for a recommendation via the SAME config-sync/check+get pull already used for
             // recipe/device_settings sync — never a fabricated success, see TryFetchServerBaselineAsync.
             var (newValues, source) = await TryFetchServerBaselineAsync(backend, machine, configKind, ct).ConfigureAwait(false);
-            var updated = store.PullBaseline(machine.Code, configKind, newValues, by: body?.By);
+            // WS-D-D4 — body.By is ignored server-side; the authenticated identity is the trustworthy `by`.
+            var updated = store.PullBaseline(machine.Code, configKind, newValues, by: ActorName(context));
+
+            if (recorder is not null)
+            {
+                await recorder.RecordAsync(
+                    context, "machine.settings.pull", "machineCode", machine.Code,
+                    oldValue: before, newValue: updated.Baseline, ct: ct).ConfigureAwait(false);
+            }
+
             return Json(BuildResponse(machine, configKind, updated, body?.Product, store, baselineSource: source));
         }
         catch (InvalidOperationException ex)
@@ -294,7 +376,8 @@ public static class MachineSettingsEndpoints
     // POST /v1/machines/{code}/settings/push
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PushSettingsAsync(
-        HttpContext context, string code, FleetHost fleetHost, MachineConfigStore store, IConfigSyncBackend backend, CancellationToken ct)
+        HttpContext context, string code, FleetHost fleetHost, MachineConfigStore store, IConfigSyncBackend backend, CancellationToken ct,
+        AuditRecorder? recorder = null)
     {
         var machine = FindMachine(fleetHost, code);
         if (machine is null) return ApiNotFound($"machine \"{code}\" not found");
@@ -312,11 +395,14 @@ public static class MachineSettingsEndpoints
             var checksum = store.ComputeAdjustmentsChecksum(machine.Code);
             var message = BuildPushMessage(effective, checksum);
 
+            // WS-D-D4 — body.By is ignored server-side; the authenticated identity is the trustworthy `by`.
+            var actor = ActorName(context);
+
             // Reporting only — RecordPush never touches Baseline/MachineAdjustments/ProductAdjustments
             // (see MachineConfigStore.RecordPush's own doc comment); cfg.Baseline.Version below is read
             // BEFORE this call anyway, so a test can assert it is unchanged across the push. This LOCAL
             // mirror always happens, in every mode — Demo's ENTIRE push is this line, nothing else.
-            store.RecordPush(machine.Code, effective.ProductCode, body?.By, message);
+            store.RecordPush(machine.Code, effective.ProductCode, actor, message);
 
             // Task 7 — ALSO report to the currently-active backend (SwitchableConfigSyncBackend picks
             // Demo/SimulatedEcosystem or Live/LiveConfigSyncBackend by the app's transport mode). The
@@ -329,9 +415,17 @@ public static class MachineSettingsEndpoints
             var scopedAdjustments = ResolveScopedAdjustments(cfg, effective.ProductCode);
             var report = await backend.ReportSettingsAsync(
                 new MachineSettingsReportRequestDto(
-                    configKind, effective.ProductCode, cfg.Baseline.Version, scopedAdjustments, effective.Parameters, checksum, body?.By,
+                    configKind, effective.ProductCode, cfg.Baseline.Version, scopedAdjustments, effective.Parameters, checksum, actor,
                     CallingMachineCode: machine.Code),
                 ct).ConfigureAwait(false);
+
+            if (recorder is not null)
+            {
+                await recorder.RecordAsync(
+                    context, "machine.settings.push", "machineCode", machine.Code,
+                    oldValue: null, newValue: new { message, checksum, effective.ProductCode, cfg.Baseline.Version, report }, ct: ct)
+                    .ConfigureAwait(false);
+            }
 
             return Json(new MachineSettingsPushResultDto(
                 machine.Code, configKind, effective.ProductCode, effective.Parameters, checksum, cfg.Baseline.Version, message, report));

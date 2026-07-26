@@ -43,19 +43,34 @@ public sealed record MachineSettingsResponseDto(
 /// <summary><c>PUT /v1/machines/{code}/settings/{key}</c> request body — <c>{ value, scope, product?,
 /// note? }</c> per the plan. <see cref="Product"/> is required when <see cref="Scope"/> is
 /// <see cref="AdjustmentScope.Product"/> (enforced by <see cref="MachineConfigStore.SetAdjustment"/>),
-/// ignored otherwise.</summary>
+/// ignored otherwise.
+///
+/// WS-D-D4 — <see cref="By"/> stays on the wire for backward compatibility (the web client's
+/// <c>MachineSettingsPanel.tsx</c> still sends a free-text <c>by: attributedAs</c> string — see that
+/// component's own doc comment: "no real auth in this exhibition simulator") but is IGNORED server-side
+/// from this task on: <c>MachineSettingsEndpoints.UpdateSettingAsync</c> derives the actual <c>by</c>
+/// threaded into <see cref="MachineConfigStore.SetAdjustment"/> (and, now that a real authenticated
+/// identity exists, <see cref="MachineConfigHistoryEntry.By"/> too) from the AUTHENTICATED request
+/// principal instead — an untrusted client-supplied attribution string can no longer masquerade as who
+/// actually made a change.</summary>
 public sealed record UpdateSettingRequestDto(double Value, AdjustmentScope Scope, string? Product, string? Note, string? By);
 
 /// <summary><c>POST /v1/machines/{code}/settings/pull</c> request body — entirely optional (a bare POST
 /// with no body just refreshes the baseline). <see cref="Product"/> only affects which product's
 /// adjustments the RESPONSE echoes back (pull itself never touches any product's adjustments — see
-/// <see cref="MachineConfigStore.PullBaseline"/>).</summary>
+/// <see cref="MachineConfigStore.PullBaseline"/>).
+///
+/// WS-D-D4 — <see cref="By"/> is likewise kept for wire compatibility only and ignored server-side; see
+/// <see cref="UpdateSettingRequestDto"/>'s doc comment.</summary>
 public sealed record PullSettingsRequestDto(string? Product, string? By);
 
 /// <summary><c>POST /v1/machines/{code}/settings/push</c> request body — <see cref="Product"/> selects
 /// which (machine, product) pair's effective configuration gets reported; required for a machine whose
 /// <c>configKind</c> supports the product dimension (an AOI/AVI/automation machine always runs SOME
-/// product), optional/ignored for IoT.</summary>
+/// product), optional/ignored for IoT.
+///
+/// WS-D-D4 — <see cref="By"/> is likewise kept for wire compatibility only and ignored server-side; see
+/// <see cref="UpdateSettingRequestDto"/>'s doc comment.</summary>
 public sealed record PushSettingsRequestDto(string? Product, string? By);
 
 /// <summary>
