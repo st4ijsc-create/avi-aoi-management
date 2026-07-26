@@ -60,6 +60,10 @@ import {
   type GatewayPlan,
 } from "../services/aiGateway";
 import { redactSecretsAndPII, StreamingSecretRedactor } from "../services/ai/aiSafety";
+// doc69 G2-5b — env→basename resolution now lives in ONE place (see modelResolver.ts's header
+// for the full STEP 0 comparison / reconciliation notes, incl. the one deliberately-fixed "fim"
+// fallback-chain drift vs. aiModelRouter.ts/aiGgufEngine.ts).
+import { resolveLogicalModel } from "../services/ai/modelResolver";
 
 // ─── Config helpers (read at call-time so flags flip without a module reload) ──
 
@@ -98,47 +102,17 @@ type LogicalModel = (typeof LOGICAL_MODELS)[number];
  * throw on load, so unknown-but-empty resolutions fall back to the default.
  *
  * Per decision D2 (§VI-bis): `code`/`chat` reuse GGUF_DEFAULT_MODEL (the 30B-A3B
- * instruct) unless GGUF_CODE_MODEL is set; `fim` uses GGUF_FIM_MODEL else the
- * small fast model.
+ * instruct) unless GGUF_CODE_MODEL is set; `fim` uses GGUF_FIM_MODEL, else the
+ * small fast model, else GGUF_DEFAULT_MODEL.
+ *
+ * doc69 G2-5b — delegates to the shared modelResolver (previously an inline copy here that had
+ * drifted from aiModelRouter.ts/aiGgufEngine.ts: the "fim" fallback stopped at GGUF_FAST_MODEL
+ * instead of continuing to GGUF_DEFAULT_MODEL. Reconciled to the 3-level chain both other call
+ * sites already used — see modelResolver.ts's header for why this doesn't change what model
+ * actually loads for any request the existing tests exercise).
  */
 function resolveModelId(requested?: string): string | undefined {
-  const codeModel = envStr("GGUF_CODE_MODEL");
-  const defaultModel = envStr("GGUF_DEFAULT_MODEL");
-  const fastModel = envStr("GGUF_FAST_MODEL");
-  const fimModel = envStr("GGUF_FIM_MODEL");
-  const key = (requested || "").trim().toLowerCase();
-
-  let raw: string | undefined;
-  switch (key) {
-    case "":
-    case "chat":
-      raw = defaultModel || undefined;
-      break;
-    case "code":
-    case "coder":
-      raw = codeModel || defaultModel || undefined;
-      break;
-    case "fast":
-      raw = fastModel || undefined;
-      break;
-    case "fim":
-    case "infill":
-      raw = fimModel || fastModel || undefined;
-      break;
-    case "embed":
-    case "embedding":
-    case "embeddings":
-      raw = envStr("GGUF_EMBED_MODEL") || undefined;
-      break;
-    default:
-      // Unknown, non-empty id: honour it verbatim (client may target a real
-      // on-disk basename). The engine will surface a clear error if it is absent.
-      raw = requested && requested.trim() ? requested.trim() : undefined;
-  }
-  // The engine resolves a basename and appends ".gguf"; the GGUF_* env values already
-  // include the extension, so strip a trailing ".gguf" to avoid a "...gguf.gguf" miss
-  // (the model router strips it the same way — keep the two consistent).
-  return raw ? raw.replace(/\.gguf$/i, "") : undefined;
+  return resolveLogicalModel(requested);
 }
 
 /** Backing basename for a logical model (for the models-list `root`/transparency). */

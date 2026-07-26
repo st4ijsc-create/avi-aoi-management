@@ -21,6 +21,13 @@ import { withGgufSlot, withGgufSlotGenerator, getGgufQueueStats } from "./ggufCo
 // Read-only telemetry hook (TASK A): observeInference is a no-op when METRICS_ENABLED is off
 // and never throws. Imported only to record per-generation latency into the histogram.
 import { observeInference } from "./aiMetrics";
+// doc69 G2-5b — shared env→basename resolver (see server/services/ai/modelResolver.ts). Aliased
+// on import because this file re-exports its OWN codeModelBasename()/fimModelBasename() (kept for
+// backward compat) which now simply delegate to these.
+import {
+  codeModelBasename as resolveCodeModelBasename,
+  fimModelBasename as resolveFimModelBasename,
+} from "./ai/modelResolver";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -997,6 +1004,11 @@ export async function generateJSON<T = unknown>(
 }
 
 // ─── Doc 34 (P0) — Code / FIM model resolution + fill-in-middle ─
+// doc69 G2-5b — both resolvers below now delegate to the shared modelResolver (see
+// server/services/ai/modelResolver.ts's header for the full STEP 0 comparison of this file's
+// previous inline copy vs. aiModelRouter.ts's vs. openaiGateway.ts's). Exported names/signatures
+// are unchanged so existing callers (internal `generateFim` below, and any external importer)
+// keep working exactly as before.
 
 /**
  * Doc 34 (P0) — Resolve the CODE model basename (sans ".gguf") for the Automation Programming
@@ -1007,10 +1019,7 @@ export async function generateJSON<T = unknown>(
  * Mirrors aiModelRouter.codeModelId(); exposed here for the OpenAI gateway / codegen callers.
  */
 export function codeModelBasename(): string | undefined {
-  const v = (process.env.GGUF_CODE_MODEL || "").trim();
-  if (v) return path.basename(v).replace(/\.gguf$/i, "");
-  const d = (process.env.GGUF_DEFAULT_MODEL || "").trim();
-  return d ? path.basename(d).replace(/\.gguf$/i, "") : undefined;
+  return resolveCodeModelBasename();
 }
 
 /**
@@ -1020,12 +1029,7 @@ export function codeModelBasename(): string | undefined {
  * model. Never undefined for a configured system. Mirrors aiModelRouter.fimModelId().
  */
 export function fimModelBasename(): string | undefined {
-  const v = (process.env.GGUF_FIM_MODEL || "").trim();
-  if (v) return path.basename(v).replace(/\.gguf$/i, "");
-  const fast = (process.env.GGUF_FAST_MODEL || "").trim();
-  if (fast) return path.basename(fast).replace(/\.gguf$/i, "");
-  const d = (process.env.GGUF_DEFAULT_MODEL || "").trim();
-  return d ? path.basename(d).replace(/\.gguf$/i, "") : undefined;
+  return resolveFimModelBasename();
 }
 
 export interface GgufFimOptions {

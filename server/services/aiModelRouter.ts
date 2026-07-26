@@ -28,6 +28,10 @@
 // Lightweight, side-effect-free import: only a fs existence check is used here. The engine's
 // module top-level does NOT load any model, so importing it keeps route() pure/synchronous.
 import { ggufModelFileExists } from "./aiGgufEngine";
+// doc69 G2-5b — env→basename resolution now lives in ONE place (see modelResolver.ts's header
+// for the full STEP 0 comparison / reconciliation notes). This import is equally side-effect-free
+// (env reads only), so route() stays pure/synchronous.
+import { resolveTaskModel } from "./ai/modelResolver";
 
 export type TaskKind =
   | "chat"
@@ -88,14 +92,15 @@ export interface RouteDecision {
 // QUAN TRỌNG: aiGgufEngine.getOrLoadModel TỰ nối ".gguf" vào modelId được truyền, và
 // `undefined` = để engine dùng GGUF_DEFAULT_MODEL (xử lý đúng cả split-file). Vì vậy
 // router CHỈ trả về basename (không .gguf) cho FAST model, hoặc `undefined` cho mặc định.
-function stripGguf(s: string): string {
-  return s.replace(/\.gguf$/i, "");
-}
+//
+// doc69 G2-5b — the actual env-read + ".gguf" normalization now lives in ONE place
+// (`./ai/modelResolver.ts`; this logic used to be duplicated here, in aiGgufEngine.ts, and in
+// openaiGateway.ts — see that file's header for the full STEP 0 comparison). These stay as thin
+// delegating wrappers so route() below is otherwise unchanged.
 
 /** Basename của fast model (GGUF_FAST_MODEL) nếu được cấu hình; undefined nếu chưa set. */
 function fastModelId(): string | undefined {
-  const v = (process.env.GGUF_FAST_MODEL || "").trim();
-  return v.length ? stripGguf(v) : undefined;
+  return resolveTaskModel("fast");
 }
 
 /**
@@ -104,8 +109,7 @@ function fastModelId(): string | undefined {
  * nên muốn ép đúng 7B cho tầng sâu thì phải truyền basename 7B.
  */
 function defaultModelId(): string | undefined {
-  const v = (process.env.GGUF_DEFAULT_MODEL || "").trim();
-  return v.length ? stripGguf(v) : undefined;
+  return resolveTaskModel("default");
 }
 
 // ─── B6.2 — Thinking / reasoning tier resolution ───────────────
@@ -117,8 +121,7 @@ function thinkingTierEnabled(): boolean {
 
 /** Basename of the Thinking model (GGUF_THINKING_MODEL) if configured; undefined if unset. */
 function thinkingModelId(): string | undefined {
-  const v = (process.env.GGUF_THINKING_MODEL || "").trim();
-  return v.length ? stripGguf(v) : undefined;
+  return resolveTaskModel("thinking");
 }
 
 /**
@@ -183,9 +186,7 @@ function codeRouterEnabled(): boolean {
  * configured system) so the engine pins the intended model instead of reusing whatever is hot.
  */
 function codeModelId(): string | undefined {
-  const v = (process.env.GGUF_CODE_MODEL || "").trim();
-  if (v.length) return stripGguf(v);
-  return defaultModelId();
+  return resolveTaskModel("code");
 }
 
 /**
@@ -194,9 +195,7 @@ function codeModelId(): string | undefined {
  * defaultModelId()` chain so autocomplete degrades gracefully and NEVER routes undefined.
  */
 function fimModelId(): string | undefined {
-  const v = (process.env.GGUF_FIM_MODEL || "").trim();
-  if (v.length) return stripGguf(v);
-  return fastModelId() ?? defaultModelId();
+  return resolveTaskModel("fim");
 }
 
 /**
