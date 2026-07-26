@@ -1368,3 +1368,107 @@ export function useResetUserPassword() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY }),
   })
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Audit — WS-D-D8 (`routes/Audit.tsx`, Admin-only hash-chained audit log viewer). Wire shapes mirror
+// `St4i.EngineApi.Auth.AuditDtos` exactly (`AuditEntryDto`/`AuditPageDto`/`AuditVerifyResultDto`) —
+// same flattened-scalar discipline as `HistorianResultDto`/`UserDto` above, so plain `request<T>` (not
+// a dedicated error class the way `usersRequest`/`putOeeSettings` need) is enough: neither
+// `GET /v1/audit` nor `GET /v1/audit/verify` has a caller-facing 400/409 body whose EXACT wording this
+// screen needs to surface the way Users' duplicate-username/last-admin-guard messages do.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `AuditEntryDto` — one row of the hash-chained `audit_log` table. `oldValueJson`/`newValueJson` are
+ * raw JSON text (or `null` when a mutation had no meaningful before/after value) — this screen only
+ * ever parses them for DISPLAY, never round-trips a parsed object back onto the wire. `prevHash`/
+ * `rowHash` are lowercase 64-char hex SHA-256 digests; see `SqliteAuditStore`'s own doc comment (and
+ * `audit.limitation.body` in `i18n/vi.ts`/`en.ts`) for the HONEST threat model this chain does and does
+ * NOT cover — tamper-evident against casual/accidental/app-level modification only, not against a local
+ * actor with direct write access to the `security.db` file itself. */
+export interface AuditEntry {
+  seq: number
+  atUtc: string
+  actorUsername: string
+  actorRole: string
+  action: string
+  targetType: string | null
+  targetId: string | null
+  oldValueJson: string | null
+  newValueJson: string | null
+  correlationId: string | null
+  clientIp: string | null
+  prevHash: string
+  rowHash: string
+}
+
+/** `AuditPageDto` — same paging shape as `HistorianResultsPageDto`: `total` is the FULL filtered count,
+ * ignoring `limit`/`offset`, so a caller can page through the whole filtered set. */
+export interface AuditPage {
+  items: AuditEntry[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** `AuditVerifyResultDto` — `firstBrokenSeq` is `null` whenever `ok` is `true`. `detail` is a plain
+ * English diagnostic sentence straight off the server (`SqliteAuditStore.VerifyChainAsync`) — shown
+ * verbatim rather than re-localized, same treatment `OeeSettingsApiError`'s/`UsersApiError`'s own
+ * `serverMessage` gets elsewhere in this file. */
+export interface AuditVerifyResult {
+  ok: boolean
+  firstBrokenSeq: number | null
+  detail: string
+}
+
+/** `GET /v1/audit`'s own query-string vocabulary (`AuditEndpoints.GetAuditAsync`) — every field
+ * optional/omittable, same discipline as `HistorianResultsFilter`. Unlike historian's `serial` filter,
+ * `actor`/`action`/`target` are EXACT-match server-side (`SqliteAuditStore.QueryAsync`'s own
+ * `actor_username = @actor`/`action = @action`/`target_id = @target` WHERE clauses, not a `LIKE`) — the
+ * screen's own filter inputs don't claim otherwise (no "search" placeholder copy). */
+export interface AuditFilter {
+  from?: string
+  to?: string
+  actor?: string
+  action?: string
+  target?: string
+  limit?: number
+  offset?: number
+}
+
+function buildAuditQueryString(filter: AuditFilter): string {
+  const params = new URLSearchParams()
+  if (filter.from) params.set("from", filter.from)
+  if (filter.to) params.set("to", filter.to)
+  if (filter.actor) params.set("actor", filter.actor)
+  if (filter.action) params.set("action", filter.action)
+  if (filter.target) params.set("target", filter.target)
+  if (filter.limit !== undefined) params.set("limit", String(filter.limit))
+  if (filter.offset !== undefined) params.set("offset", String(filter.offset))
+  return params.toString()
+}
+
+const auditEndpoints = {
+  audit: (filter: AuditFilter) => request<AuditPage>(`/v1/audit?${buildAuditQueryString(filter)}`),
+  auditVerify: () => request<AuditVerifyResult>("/v1/audit/verify"),
+}
+
+/** `GET /v1/audit?…` — on-demand (no `refetchInterval`), same "browse over already-settled history"
+ * reasoning `useHistorianResults` documents: the filter object IS the query key, so any change
+ * (including a page turn) naturally refetches with no manual invalidation. */
+export function useAudit(filter: AuditFilter): UseQueryResult<AuditPage> {
+  return useQuery({
+    queryKey: ["audit", filter] as const,
+    queryFn: () => auditEndpoints.audit(filter),
+  })
+}
+
+/** `GET /v1/audit/verify` — modeled as a lazy `useMutation` rather than a `useQuery` even though the
+ * underlying call is a GET: unlike every polled query in this file, "walk the whole chain and recompute
+ * every hash" should never run automatically on mount or on an interval — it only ever fires once, the
+ * moment `Audit.tsx`'s "Verify chain integrity" button is clicked, same on-demand idiom
+ * `useProbeSettings` already established for a GET-shaped, click-triggered check. */
+export function useAuditVerify() {
+  return useMutation({
+    mutationFn: () => auditEndpoints.auditVerify(),
+  })
+}

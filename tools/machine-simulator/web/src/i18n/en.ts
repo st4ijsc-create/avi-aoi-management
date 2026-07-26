@@ -69,6 +69,7 @@ export const en: Dictionary = {
       reports: "OEE Reports",
       settings: "Settings",
       users: "Users",
+      audit: "Audit Log",
     },
     sidebar: {
       brandSubtitle: "Machine Simulator",
@@ -1627,6 +1628,66 @@ export const en: Dictionary = {
     notAuthorized: {
       title: "Not authorized",
       description: "Only Admin accounts can manage users.",
+    },
+  },
+
+  // WS-D-D8 — `/audit` (`routes/Audit.tsx`, Admin-only): paginated/filterable viewer over the
+  // hash-chained audit log (D3's `GET /v1/audit`) + a "Verify chain integrity" button (D3's
+  // `GET /v1/audit/verify`). `limitation.body` mirrors D3's own honest tamper-evidence wording
+  // (`SqliteAuditStore`'s doc comment) — deliberately not overstated as unqualified "tamper-proof".
+  audit: {
+    title: "Audit Log",
+    description:
+      "Browse and filter the hash-chained audit log — every create/update/delete a user performed, with before/after values and the request's correlation id. Only Admins see this screen.",
+    filters: {
+      from: "From date",
+      to: "To date",
+      actor: "Actor",
+      actorPlaceholder: "e.g. demo-admin",
+      action: "Action",
+      actionPlaceholder: "e.g. user.role_change",
+      target: "Target",
+      targetPlaceholder: "e.g. a machine code, username…",
+      clear: "Clear filters",
+    },
+    table: {
+      seq: "Seq",
+      time: "Time",
+      actor: "Actor",
+      action: "Action",
+      target: "Target",
+      change: "Before → After",
+      correlationId: "Correlation ID",
+      viewDetail: "View detail",
+      empty: "No audit records match the current filters.",
+      loadFailed: "Couldn't load the audit log.",
+    },
+    pagination: {
+      showing: (vars: Vars) => `Showing ${vars.from}–${vars.to} of ${vars.total} records`,
+      prev: "Prev",
+      next: "Next",
+    },
+    detailDialog: {
+      title: (vars: Vars) => `Record #${vars.seq} detail`,
+      description: "This change's before and after values, as full JSON.",
+      oldValue: "Old value",
+      newValue: "New value",
+      none: "No value recorded.",
+    },
+    verify: {
+      button: "Verify chain integrity",
+      verifying: "Verifying…",
+      intact: (vars: Vars) => `Chain intact (${vars.count} entries).`,
+      broken: (vars: Vars) => `Chain BROKEN at seq ${vars.seq} — ${vars.detail}`,
+      failed: "Couldn't verify the chain — check the engine connection.",
+    },
+    limitation: {
+      title: "About tamper detection",
+      body: "Detects in-app modification & interior deletion; not resistant to direct database-file tampering.",
+    },
+    notAuthorized: {
+      title: "Not authorized",
+      description: "Only Admin accounts can view the audit log.",
     },
   },
 

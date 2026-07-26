@@ -76,6 +76,7 @@ export const vi = {
       reports: "Báo cáo OEE",
       settings: "Cài đặt",
       users: "Người dùng",
+      audit: "Nhật ký kiểm toán",
     },
     sidebar: {
       brandSubtitle: "Máy mô phỏng",
@@ -1694,6 +1695,66 @@ export const vi = {
     notAuthorized: {
       title: "Không có quyền truy cập",
       description: "Chỉ tài khoản Admin mới có thể quản lý người dùng.",
+    },
+  },
+
+  // WS-D-D8 — `/audit` (`routes/Audit.tsx`, Admin-only): paginated/filterable viewer over the
+  // hash-chained audit log (D3's `GET /v1/audit`) + a "Verify chain integrity" button (D3's
+  // `GET /v1/audit/verify`). `limitation.body` mirrors D3's own honest tamper-evidence wording
+  // (`SqliteAuditStore`'s doc comment) — deliberately not overstated as unqualified "tamper-proof".
+  audit: {
+    title: "Nhật ký kiểm toán",
+    description:
+      "Duyệt và lọc nhật ký kiểm toán được nối chuỗi hash — mọi hành động tạo/sửa/xóa mà người dùng đã thực hiện, kèm giá trị trước/sau và mã tương quan của yêu cầu. Chỉ Admin mới thấy màn hình này.",
+    filters: {
+      from: "Từ ngày",
+      to: "Đến ngày",
+      actor: "Người thực hiện",
+      actorPlaceholder: "vd: demo-admin",
+      action: "Hành động",
+      actionPlaceholder: "vd: user.role_change",
+      target: "Đối tượng",
+      targetPlaceholder: "vd: mã máy, tên đăng nhập…",
+      clear: "Xóa bộ lọc",
+    },
+    table: {
+      seq: "STT",
+      time: "Thời gian",
+      actor: "Người thực hiện",
+      action: "Hành động",
+      target: "Đối tượng",
+      change: "Trước → Sau",
+      correlationId: "Mã tương quan",
+      viewDetail: "Xem chi tiết",
+      empty: "Không có bản ghi kiểm toán nào khớp với bộ lọc hiện tại.",
+      loadFailed: "Không thể tải nhật ký kiểm toán.",
+    },
+    pagination: {
+      showing: (vars: Vars) => `Hiển thị ${vars.from}–${vars.to} trên ${vars.total} bản ghi`,
+      prev: "Trước",
+      next: "Sau",
+    },
+    detailDialog: {
+      title: (vars: Vars) => `Chi tiết bản ghi #${vars.seq}`,
+      description: "Giá trị trước và sau của thay đổi này, ở dạng JSON đầy đủ.",
+      oldValue: "Giá trị trước",
+      newValue: "Giá trị sau",
+      none: "Không có giá trị được ghi nhận.",
+    },
+    verify: {
+      button: "Kiểm tra tính toàn vẹn chuỗi",
+      verifying: "Đang kiểm tra…",
+      intact: (vars: Vars) => `Chuỗi còn nguyên vẹn (${vars.count} bản ghi).`,
+      broken: (vars: Vars) => `Chuỗi bị đứt tại STT ${vars.seq} — ${vars.detail}`,
+      failed: "Không thể kiểm tra chuỗi — kiểm tra kết nối engine.",
+    },
+    limitation: {
+      title: "Về khả năng phát hiện giả mạo",
+      body: "Phát hiện chỉnh sửa trong ứng dụng và xóa bản ghi giữa chuỗi; không chống được việc chỉnh sửa trực tiếp tệp cơ sở dữ liệu.",
+    },
+    notAuthorized: {
+      title: "Không có quyền truy cập",
+      description: "Chỉ tài khoản Admin mới có thể xem nhật ký kiểm toán.",
     },
   },
 

@@ -6,6 +6,7 @@ import {
   Factory,
   LayoutDashboard,
   PlugZap,
+  ScrollText,
   Settings,
   SlidersHorizontal,
   Terminal,
@@ -55,6 +56,11 @@ export const NAV_ITEMS: NavItem[] = [
   // as "manage people/accounts", distinct from every icon above (all either a screen-shape or a single
   // status glyph) — the one nav entry actually about WHO can use this deployment, not what it does.
   { labelKey: "shell.nav.users", path: "/users", icon: Users, minRole: "Admin" },
+  // WS-D-D8 — Admin-only hash-chained audit log viewer (`routes/Audit.tsx`). `ScrollText` reads as
+  // "a ledger/record kept over time", distinct from `Database`'s "browsable production results"
+  // (Historian, above) and from `ShieldAlert`'s own "restricted/guard" reading elsewhere in this app —
+  // this nav entry is about WHO DID WHAT, not what the fleet produced or who's allowed to act.
+  { labelKey: "shell.nav.audit", path: "/audit", icon: ScrollText, minRole: "Admin" },
 ]
 
 /** Rank order for {@link NavItem.minRole} comparisons — Operator < Engineer < Admin, same hierarchy

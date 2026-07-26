@@ -133,6 +133,16 @@ export async function gotoUsers(page: Page): Promise<void> {
   await expect(page.getByRole("columnheader", { name: viDict.users.table.username })).toBeVisible()
 }
 
+/** WS-D-D8 — `/audit` (Admin-only hash-chained audit log viewer). Waits past the (unfiltered, on-demand
+ * — no polling) query's own loading skeleton — the table header only renders once `useAudit()` has
+ * resolved at least once. */
+export async function gotoAudit(page: Page): Promise<void> {
+  await page.goto("/audit")
+  await expect(page.getByRole("heading", { name: viDict.audit.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  await expect(page.getByRole("columnheader", { name: viDict.audit.table.seq })).toBeVisible()
+}
+
 export async function gotoScenario(page: Page): Promise<void> {
   await page.goto("/scenario")
   await expect(page.getByRole("heading", { name: viDict.scenario.title, level: 1 })).toBeVisible()
