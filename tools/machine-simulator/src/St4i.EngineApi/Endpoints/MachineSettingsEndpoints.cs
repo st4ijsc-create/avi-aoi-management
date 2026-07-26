@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
+using St4i.EngineApi.Auth;
 using St4i.EngineApi.Config;
 using St4i.EngineApi.Fleet;
 
@@ -36,12 +37,18 @@ public static class MachineSettingsEndpoints
 {
     public static void MapMachineSettingsEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/v1/machines/{code}/settings", GetSettings);
-        app.MapPut("/v1/machines/{code}/settings/{key}", UpdateSettingAsync);
-        app.MapDelete("/v1/machines/{code}/settings/{key}", DeleteSetting);
-        app.MapPost("/v1/machines/{code}/settings/pull", PullSettingsAsync);
-        app.MapPost("/v1/machines/{code}/settings/push", PushSettingsAsync);
-        app.MapGet("/v1/machines/{code}/settings/history", GetHistory);
+        app.MapGet("/v1/machines/{code}/settings", GetSettings)
+            .RequireAuthorization(Policies.Operator);
+        app.MapPut("/v1/machines/{code}/settings/{key}", UpdateSettingAsync)
+            .RequireAuthorization(Policies.Engineer);
+        app.MapDelete("/v1/machines/{code}/settings/{key}", DeleteSetting)
+            .RequireAuthorization(Policies.Engineer);
+        app.MapPost("/v1/machines/{code}/settings/pull", PullSettingsAsync)
+            .RequireAuthorization(Policies.Engineer);
+        app.MapPost("/v1/machines/{code}/settings/push", PushSettingsAsync)
+            .RequireAuthorization(Policies.Engineer);
+        app.MapGet("/v1/machines/{code}/settings/history", GetHistory)
+            .RequireAuthorization(Policies.Operator);
     }
 
     // ─────────────────────────────────────────────────────────────────────

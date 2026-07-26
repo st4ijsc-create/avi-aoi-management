@@ -28,6 +28,18 @@ public static class AuthEndpoints
     // can't both observe CountAsync()==0 and both try to insert the first admin.
     private static readonly SemaphoreSlim BootstrapLock = new(1, 1);
 
+    /// <summary>D1-carried hardening minor #1 — a precomputed <c>PasswordHasher</c> digest of a random,
+    /// never-used password, computed once at class-init. <c>login</c>'s unknown-user and disabled-user
+    /// paths run a THROWAWAY <see cref="PasswordHasher{TUser}.VerifyHashedPassword"/> against THIS hash
+    /// (result discarded — always <see cref="PasswordVerificationResult.Failed"/>, since nothing was ever
+    /// hashed FROM the caller's actual password) before returning 401, so the real login path's PBKDF2
+    /// work factor is paid on every rejected attempt alike. Without this, a caller could distinguish "no
+    /// such username"/"disabled account" from "wrong password for a real, enabled account" purely by
+    /// response latency (the real path's <c>VerifyHashedPassword</c> call is the expensive part) — a
+    /// classic username-enumeration side channel.</summary>
+    private static readonly string DummyPasswordHash =
+        new PasswordHasher<AppUser>().HashPassword(AppUser.Instance, Guid.NewGuid().ToString("N"));
+
     public static void MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/v1/auth/bootstrap-status", async (IUserStore userStore, CancellationToken ct) =>
@@ -77,12 +89,15 @@ public static class AuthEndpoints
             }
 
             var user = await userStore.GetByUsernameAsync(body.Username, ct).ConfigureAwait(false);
+            var hasher = new PasswordHasher<AppUser>();
             if (user is null || user.Disabled)
             {
+                // D1-carried hardening minor #1 — see DummyPasswordHash's doc comment: pay the same
+                // PBKDF2 cost the real verification below pays, even though this result is discarded.
+                _ = hasher.VerifyHashedPassword(AppUser.Instance, DummyPasswordHash, body.Password);
                 return Results.Unauthorized();
             }
 
-            var hasher = new PasswordHasher<AppUser>();
             var verification = hasher.VerifyHashedPassword(AppUser.Instance, user.PasswordHash, body.Password);
             if (verification == PasswordVerificationResult.Failed)
             {
@@ -107,7 +122,7 @@ public static class AuthEndpoints
         {
             await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme).ConfigureAwait(false);
             return Results.Ok();
-        });
+        }).RequireAuthorization(Policies.Operator);
 
         app.MapGet("/v1/auth/me", (HttpContext http) =>
         {
@@ -123,7 +138,7 @@ public static class AuthEndpoints
             var role = http.User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
             var displayName = http.User.FindFirst(DisplayNameClaimType)?.Value;
             return Results.Ok(new AuthUserDto(username, role, displayName));
-        });
+        }).RequireAuthorization(Policies.Operator);
 
         app.MapPost("/v1/auth/change-password", async (ChangePasswordRequestDto body, HttpContext http, IUserStore userStore, CancellationToken ct) =>
         {
@@ -131,6 +146,18 @@ public static class AuthEndpoints
             if (string.IsNullOrEmpty(username))
             {
                 return Results.Unauthorized();
+            }
+
+            // D1-carried hardening minor #2 — reject a null/empty/whitespace-only NewPassword with a
+            // real 400 BEFORE ever touching the user store or PasswordHasher: PasswordHasher.HashPassword
+            // throws ArgumentNullException on a null password (an uncaught 500, not a friendly error),
+            // and an empty/whitespace string would otherwise hash and persist "successfully" as a
+            // (functionally unusable) empty password. A minimal length floor (8, matching the bootstrap/
+            // demo-admin passwords already in use elsewhere in this file) is enough here — full password-
+            // policy strength rules are out of this task's scope.
+            if (string.IsNullOrWhiteSpace(body.NewPassword) || body.NewPassword.Length < MinNewPasswordLength)
+            {
+                return Results.BadRequest(new ApiErrorDto($"newPassword is required and must be at least {MinNewPasswordLength} characters."));
             }
 
             var user = await userStore.GetByUsernameAsync(username, ct).ConfigureAwait(false);
@@ -152,8 +179,13 @@ public static class AuthEndpoints
             await userStore.SetPasswordHashAsync(user.Id, newHash, bumpStamp: true, ct).ConfigureAwait(false);
 
             return Results.Ok();
-        });
+        }).RequireAuthorization(Policies.Operator);
     }
+
+    /// <summary>D1-carried hardening minor #2's minimal length floor for <c>NewPassword</c> — see the
+    /// <c>change-password</c> handler's own comment for why this is deliberately simple (not a full
+    /// password-strength policy).</summary>
+    private const int MinNewPasswordLength = 8;
 
     /// <summary>Builds the <see cref="ClaimsPrincipal"/> every sign-in path (bootstrap/login/demo
     /// auto-login) hands to <c>SignInAsync</c> — kept in one place so the claim SHAPE (which is also what

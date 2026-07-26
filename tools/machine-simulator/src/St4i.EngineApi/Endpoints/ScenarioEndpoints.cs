@@ -1,3 +1,4 @@
+using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
 
 namespace St4i.EngineApi.Endpoints;
@@ -14,10 +15,11 @@ public static class ScenarioEndpoints
         {
             current = host.CurrentScenarioDto(),
             presets = host.ListPresets(),
-        }));
+        })).RequireAuthorization(Policies.Operator);
 
         app.MapPost("/v1/scenario", (ScenarioRequest request, FleetHost host) =>
-            Results.Ok(host.ApplyScenario(request.ToScenarioConfig())));
+            Results.Ok(host.ApplyScenario(request.ToScenarioConfig())))
+            .RequireAuthorization(Policies.Engineer);
 
         app.MapPost("/v1/scenario/preset", async (ScenarioPresetRequest request, FleetHost host, CancellationToken ct) =>
         {
@@ -29,8 +31,9 @@ public static class ScenarioEndpoints
             }
 
             return Results.Ok(new { scenario = applied, hotFolderStatus });
-        });
+        }).RequireAuthorization(Policies.Engineer);
 
-        app.MapPost("/v1/scenario/burst", (FleetHost host) => Results.Ok(host.Burst()));
+        app.MapPost("/v1/scenario/burst", (FleetHost host) => Results.Ok(host.Burst()))
+            .RequireAuthorization(Policies.Engineer);
     }
 }

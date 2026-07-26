@@ -116,11 +116,22 @@ builder.Services.AddAuthorization(options =>
     // authenticated cookie session. Only health/capabilities/the auth endpoints themselves/the SPA
     // fallback are exempted today (see their own .AllowAnonymous() call sites) — every OTHER existing
     // route (fleet, scenario, settings, onboarding, config, historian, the inspector WS stream, …)
-    // requires auth as of this task, with no per-role distinction yet; that's D2. DemoAutoLoginMiddleware
-    // is what keeps a Demo-flagged deployment usable against this same policy with zero explicit login.
+    // requires auth. DemoAutoLoginMiddleware is what keeps a Demo-flagged deployment usable against this
+    // same policy with zero explicit login (demo-admin is minted with Roles.Admin, so it also satisfies
+    // every named policy below).
     options.FallbackPolicy = new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .Build();
+
+    // WS-D-D2 — the three named per-route policies the WS-D §2 role matrix chains onto every mapped
+    // route via .RequireAuthorization(Policies.X) (see each Endpoints file). Each is a plain role-OR: a
+    // higher-privileged role always satisfies a lower policy too (Admin passes Operator/Engineer/Admin;
+    // Engineer passes Operator/Engineer but not Admin; Operator passes only Operator) — never the
+    // opposite. The FallbackPolicy above still backstops anything that somehow ends up with neither an
+    // explicit policy nor AllowAnonymous.
+    options.AddPolicy(Policies.Operator, policy => policy.RequireRole(Roles.Operator, Roles.Engineer, Roles.Admin));
+    options.AddPolicy(Policies.Engineer, policy => policy.RequireRole(Roles.Engineer, Roles.Admin));
+    options.AddPolicy(Policies.Admin, policy => policy.RequireRole(Roles.Admin));
 });
 
 // ── EdgeCore composition root — mirrors the WPF app's App.xaml.cs ConfigureServices Live/Demo/Auto

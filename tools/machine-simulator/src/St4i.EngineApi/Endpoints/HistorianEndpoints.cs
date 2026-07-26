@@ -5,6 +5,7 @@ using MigraDoc.Rendering;
 using St4i.EdgeCore.Historian;
 using St4i.EdgeCore.Metrics;
 using St4i.EdgeCore.Models;
+using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
 
 namespace St4i.EngineApi.Endpoints;
@@ -75,25 +76,27 @@ namespace St4i.EngineApi.Endpoints;
 /// and a fixed <c>Content-Disposition</c> filename (per the brief, no dynamic timestamp in the filename
 /// itself — only the in-body "generated at" line, which tests deliberately never assert on).
 ///
-/// Intentionally UNAUTHENTICATED — auth is WS-D, a later workstream.
+/// WS-D-D2 — every GET here (read-only reporting) is Operator; <c>PUT /v1/historian/oee/settings</c>
+/// (changes the ideal-cycle override/planned-production ratio the OEE math itself uses) is Engineer;
+/// <c>POST /v1/historian/prune</c> (irreversibly deletes historian rows) is Admin.
 /// </summary>
 public static class HistorianEndpoints
 {
     public static void MapHistorianEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/v1/historian/results", GetResultsAsync);
-        app.MapGet("/v1/historian/results/export.csv", ExportResultsCsvAsync);
-        app.MapGet("/v1/historian/serial/{serial}", GetBySerialAsync);
-        app.MapGet("/v1/historian/telemetry", GetTelemetryAsync);
-        app.MapGet("/v1/historian/stats", GetStatsAsync);
-        app.MapPost("/v1/historian/prune", PruneAsync);
+        app.MapGet("/v1/historian/results", GetResultsAsync).RequireAuthorization(Policies.Operator);
+        app.MapGet("/v1/historian/results/export.csv", ExportResultsCsvAsync).RequireAuthorization(Policies.Operator);
+        app.MapGet("/v1/historian/serial/{serial}", GetBySerialAsync).RequireAuthorization(Policies.Operator);
+        app.MapGet("/v1/historian/telemetry", GetTelemetryAsync).RequireAuthorization(Policies.Operator);
+        app.MapGet("/v1/historian/stats", GetStatsAsync).RequireAuthorization(Policies.Operator);
+        app.MapPost("/v1/historian/prune", PruneAsync).RequireAuthorization(Policies.Admin);
 
-        app.MapGet("/v1/historian/oee", GetOeeAsync);
-        app.MapGet("/v1/historian/oee/fleet", GetOeeFleetAsync);
-        app.MapGet("/v1/historian/oee/settings", GetOeeSettings);
-        app.MapPut("/v1/historian/oee/settings", PutOeeSettings);
+        app.MapGet("/v1/historian/oee", GetOeeAsync).RequireAuthorization(Policies.Operator);
+        app.MapGet("/v1/historian/oee/fleet", GetOeeFleetAsync).RequireAuthorization(Policies.Operator);
+        app.MapGet("/v1/historian/oee/settings", GetOeeSettings).RequireAuthorization(Policies.Operator);
+        app.MapPut("/v1/historian/oee/settings", PutOeeSettings).RequireAuthorization(Policies.Engineer);
 
-        app.MapGet("/v1/historian/report.pdf", GetReportPdfAsync);
+        app.MapGet("/v1/historian/report.pdf", GetReportPdfAsync).RequireAuthorization(Policies.Operator);
     }
 
     // ─────────────────────────────────────────────────────────────────────

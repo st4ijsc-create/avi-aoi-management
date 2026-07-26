@@ -1,3 +1,4 @@
+using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
 
 namespace St4i.EngineApi.Endpoints;
@@ -20,7 +21,8 @@ public static class FleetEndpoints
         app.MapGet("/v1/health", (FleetHost host) => Results.Ok(new HealthDto(host.LastError is null, host.Mode)))
             .AllowAnonymous();
 
-        app.MapGet("/v1/fleet", (FleetHost host) => Results.Ok(host.Snapshot()));
+        app.MapGet("/v1/fleet", (FleetHost host) => Results.Ok(host.Snapshot()))
+            .RequireAuthorization(Policies.Operator);
 
         app.MapGet("/v1/machines/{code}", (string code, FleetHost host) =>
         {
@@ -28,19 +30,19 @@ public static class FleetEndpoints
             return detail is null
                 ? Results.NotFound(new ApiErrorDto($"machine \"{code}\" not found"))
                 : Results.Ok(detail);
-        });
+        }).RequireAuthorization(Policies.Operator);
 
         app.MapPost("/v1/fleet/start", (FleetHost host) =>
         {
             host.Start();
             return Results.Ok(new FleetActionResultDto(host.IsRunning, host.Mode.ToString()));
-        });
+        }).RequireAuthorization(Policies.Operator);
 
         app.MapPost("/v1/fleet/stop", (FleetHost host) =>
         {
             host.Stop();
             return Results.Ok(new FleetActionResultDto(host.IsRunning, host.Mode.ToString()));
-        });
+        }).RequireAuthorization(Policies.Operator);
 
         // Branch-review C-2/C-3 — the E-STOP latch (FleetHost.EstopEngaged), engine-owned so it's
         // shared across every panel/tab and survives a reload. Both return the FULL fleet snapshot
@@ -51,13 +53,13 @@ public static class FleetEndpoints
         {
             host.Estop();
             return Results.Ok(host.Snapshot());
-        });
+        }).RequireAuthorization(Policies.Operator);
 
         app.MapPost("/v1/fleet/estop/reset", (FleetHost host) =>
         {
             host.ResetEstop();
             return Results.Ok(host.Snapshot());
-        });
+        }).RequireAuthorization(Policies.Operator);
 
         app.MapPost("/v1/machines/{code}/sync-config", async (string code, FleetHost host, CancellationToken ct) =>
         {
@@ -65,6 +67,6 @@ public static class FleetEndpoints
             return result is null
                 ? Results.NotFound(new ApiErrorDto($"machine \"{code}\" not found"))
                 : Results.Ok(result);
-        });
+        }).RequireAuthorization(Policies.Engineer);
     }
 }

@@ -1,4 +1,5 @@
 using St4i.EdgeCore.Models;
+using St4i.EngineApi.Auth;
 using St4i.EngineApi.Config;
 using St4i.EngineApi.Fleet;
 
@@ -17,7 +18,8 @@ public static class ModeEndpoints
 {
     public static void MapModeEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/v1/mode", (FleetHost host) => Results.Ok(new ModeDto(host.Mode)));
+        app.MapGet("/v1/mode", (FleetHost host) => Results.Ok(new ModeDto(host.Mode)))
+            .RequireAuthorization(Policies.Operator);
 
         app.MapPut("/v1/mode", (ModeDto request, FleetHost host, DemoModeGate demoGate) =>
         {
@@ -28,6 +30,6 @@ public static class ModeEndpoints
 
             host.ApplyMode(request.Mode);
             return Results.Ok(new ModeDto(host.Mode));
-        });
+        }).RequireAuthorization(Policies.Engineer);
     }
 }

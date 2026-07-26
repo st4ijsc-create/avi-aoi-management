@@ -1,6 +1,7 @@
 using System.Text.Json;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
+using St4i.EngineApi.Auth;
 using St4i.EngineApi.Config;
 using St4i.EngineApi.Fleet;
 
@@ -45,18 +46,21 @@ public static class ConfigEndpoints
     private static void MapProductEndpoints(IEndpointRouteBuilder app)
     {
         app.MapGet("/v1/products", (ProductConfigStore store) =>
-            Json(store.ListProducts().Select(ProductSummaryDto.From).ToList()));
+            Json(store.ListProducts().Select(ProductSummaryDto.From).ToList()))
+            .RequireAuthorization(Policies.Operator);
 
         app.MapGet("/v1/products/{code}", (string code, ProductConfigStore store) =>
         {
             var product = store.GetProduct(code);
             return product is null ? ApiNotFound($"product \"{code}\" not found") : Json(product);
-        });
+        }).RequireAuthorization(Policies.Operator);
 
-        app.MapMethods("/v1/products/{code}", new[] { "POST", "PUT" }, UpsertProductAsync);
+        app.MapMethods("/v1/products/{code}", new[] { "POST", "PUT" }, UpsertProductAsync)
+            .RequireAuthorization(Policies.Engineer);
 
         app.MapDelete("/v1/products/{code}", (string code, ProductConfigStore store) =>
-            store.DeleteProduct(code) ? Json(new { deleted = true }) : ApiNotFound($"product \"{code}\" not found"));
+            store.DeleteProduct(code) ? Json(new { deleted = true }) : ApiNotFound($"product \"{code}\" not found"))
+            .RequireAuthorization(Policies.Engineer);
 
         app.MapGet("/v1/products/{code}/points", (string code, bool? includeDeleted, ProductConfigStore store) =>
         {
@@ -69,7 +73,7 @@ public static class ConfigEndpoints
             {
                 return ApiNotFound(ex.Message);
             }
-        });
+        }).RequireAuthorization(Policies.Operator);
 
         app.MapGet("/v1/products/{code}/points/{pointCode}", (string code, string pointCode, ProductConfigStore store) =>
         {
@@ -82,9 +86,10 @@ public static class ConfigEndpoints
             {
                 return ApiNotFound(ex.Message);
             }
-        });
+        }).RequireAuthorization(Policies.Operator);
 
-        app.MapMethods("/v1/products/{code}/points/{pointCode}", new[] { "POST", "PUT" }, UpsertPointAsync);
+        app.MapMethods("/v1/products/{code}/points/{pointCode}", new[] { "POST", "PUT" }, UpsertPointAsync)
+            .RequireAuthorization(Policies.Engineer);
 
         app.MapDelete("/v1/products/{code}/points/{pointCode}", (string code, string pointCode, ProductConfigStore store) =>
         {
@@ -98,7 +103,7 @@ public static class ConfigEndpoints
             {
                 return ApiNotFound(ex.Message);
             }
-        });
+        }).RequireAuthorization(Policies.Engineer);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -107,18 +112,21 @@ public static class ConfigEndpoints
     private static void MapRecipeEndpoints(IEndpointRouteBuilder app)
     {
         app.MapGet("/v1/recipes", (ProductConfigStore store) =>
-            Json(store.ListRecipes().Select(RecipeSummaryDto.From).ToList()));
+            Json(store.ListRecipes().Select(RecipeSummaryDto.From).ToList()))
+            .RequireAuthorization(Policies.Operator);
 
         app.MapGet("/v1/recipes/{code}", (string code, ProductConfigStore store) =>
         {
             var recipe = store.GetRecipe(code);
             return recipe is null ? ApiNotFound($"recipe \"{code}\" not found") : Json(recipe);
-        });
+        }).RequireAuthorization(Policies.Operator);
 
-        app.MapPut("/v1/recipes/{code}", UpsertRecipeAsync);
+        app.MapPut("/v1/recipes/{code}", UpsertRecipeAsync)
+            .RequireAuthorization(Policies.Engineer);
 
         app.MapDelete("/v1/recipes/{code}", (string code, ProductConfigStore store) =>
-            store.DeleteRecipe(code) ? Json(new { deleted = true }) : ApiNotFound($"recipe \"{code}\" not found"));
+            store.DeleteRecipe(code) ? Json(new { deleted = true }) : ApiNotFound($"recipe \"{code}\" not found"))
+            .RequireAuthorization(Policies.Engineer);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -140,11 +148,13 @@ public static class ConfigEndpoints
             {
                 return ApiNotFound(ex.Message);
             }
-        });
+        }).RequireAuthorization(Policies.Operator);
 
-        app.MapPost("/v1/machines/{code}/config/pull", PullConfigAsync);
+        app.MapPost("/v1/machines/{code}/config/pull", PullConfigAsync)
+            .RequireAuthorization(Policies.Engineer);
 
-        app.MapPost("/v1/machines/{code}/config/push", PushConfigAsync);
+        app.MapPost("/v1/machines/{code}/config/push", PushConfigAsync)
+            .RequireAuthorization(Policies.Engineer);
 
         app.MapGet("/v1/machines/{code}/config/diff",
             async (string code, string? productCode, FleetHost fleetHost, ConfigSyncEngine engine, CancellationToken ct) =>
@@ -165,13 +175,13 @@ public static class ConfigEndpoints
             {
                 return Results.BadRequest(new ApiErrorDto(ex.Message));
             }
-        });
+        }).RequireAuthorization(Policies.Operator);
 
         app.MapGet("/v1/machines/{code}/config/history", (string code, FleetHost fleetHost, ConfigSyncEngine engine) =>
         {
             var machine = FindMachine(fleetHost, code);
             return machine is null ? ApiNotFound($"machine \"{code}\" not found") : Json(engine.History(machine.Code));
-        });
+        }).RequireAuthorization(Policies.Operator);
     }
 
     private static MachineDescriptor? FindMachine(FleetHost fleetHost, string code) =>

@@ -1,4 +1,5 @@
 using St4i.EdgeCore.Models;
+using St4i.EngineApi.Auth;
 using St4i.EngineApi.Config;
 using St4i.EngineApi.Fleet;
 
@@ -49,14 +50,14 @@ public static class OnboardingEndpoints
             if (TryResolveIsDemo(request.IsDemo, fleetHost, demoGate) is not { } isDemo) return Results.BadRequest(DemoNotEnabled);
             var resolved = request with { IsDemo = isDemo };
             return Results.Ok(await svc.RegisterAsync(resolved, ct).ConfigureAwait(false));
-        });
+        }).RequireAuthorization(Policies.Engineer);
 
         app.MapPost("/v1/onboarding/poll", async (OnboardingPollRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate, CancellationToken ct) =>
         {
             if (TryResolveIsDemo(request.IsDemo, fleetHost, demoGate) is not { } isDemo) return Results.BadRequest(DemoNotEnabled);
             var resolved = request with { IsDemo = isDemo };
             return Results.Ok(await svc.PollAsync(resolved, ct).ConfigureAwait(false));
-        });
+        }).RequireAuthorization(Policies.Engineer);
 
         app.MapPost("/v1/onboarding/claim", async (OnboardingClaimRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate, CancellationToken ct) =>
         {
@@ -65,7 +66,7 @@ public static class OnboardingEndpoints
             var result = await svc.ClaimAsync(resolved, ct).ConfigureAwait(false);
             result = OnboardingFleetJoin.JoinFleetIfProvisioned(fleetHost, result, request.SerialNumber, request.MachineType);
             return Results.Ok(result);
-        });
+        }).RequireAuthorization(Policies.Engineer);
 
         app.MapPost("/v1/onboarding/enroll", async (OnboardingEnrollRequest request, OnboardingService svc, FleetHost fleetHost, DemoModeGate demoGate, CancellationToken ct) =>
         {
@@ -74,10 +75,11 @@ public static class OnboardingEndpoints
             var result = await svc.EnrollAsync(resolved, ct).ConfigureAwait(false);
             result = OnboardingFleetJoin.JoinFleetIfProvisioned(fleetHost, result, request.SerialNumber, request.MachineType);
             return Results.Ok(result);
-        });
+        }).RequireAuthorization(Policies.Engineer);
 
         app.MapPost("/v1/onboarding/paste-key", (OnboardingPasteKeyRequest request, OnboardingService svc) =>
-            Results.Ok(svc.PasteKey(request)));
+            Results.Ok(svc.PasteKey(request)))
+            .RequireAuthorization(Policies.Engineer);
     }
 
     /// <summary>Returns the resolved <c>isDemo</c>, or <see langword="null"/> to signal "refuse this

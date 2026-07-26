@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EngineApi;
+using St4i.EngineApi.Auth;
 
 namespace St4i.EngineApi.Hubs;
 
@@ -38,7 +39,7 @@ public static class InspectorStreamEndpoint
                 (flag == "1" || string.Equals(flag, "true", StringComparison.OrdinalIgnoreCase));
             using var socket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
             await RunAsync(socket, eventBus, skipBackfill, context.RequestAborted).ConfigureAwait(false);
-        });
+        }).RequireAuthorization(Policies.Engineer);
     }
 
     private static async Task RunAsync(WebSocket socket, EventBus eventBus, bool skipBackfill, CancellationToken requestAborted)
