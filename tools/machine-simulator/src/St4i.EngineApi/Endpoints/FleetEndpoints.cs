@@ -14,7 +14,11 @@ public static class FleetEndpoints
         // FleetHost.StartLocked's catch) from a healthy one. LastError is null both before the fleet has
         // ever been started and after a clean Stop(), so this stays true in both of those ordinary
         // states too — it only goes false once something has actually gone wrong.
-        app.MapGet("/v1/health", (FleetHost host) => Results.Ok(new HealthDto(host.LastError is null, host.Mode)));
+        // WS-D-D1 — anonymous: St4i.DesktopShell's readiness probe (and any external health check) must
+        // work before/without ever logging in, now that the default-deny fallback policy requires auth on
+        // everything else.
+        app.MapGet("/v1/health", (FleetHost host) => Results.Ok(new HealthDto(host.LastError is null, host.Mode)))
+            .AllowAnonymous();
 
         app.MapGet("/v1/fleet", (FleetHost host) => Results.Ok(host.Snapshot()));
 

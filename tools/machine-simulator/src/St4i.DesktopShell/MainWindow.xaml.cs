@@ -133,7 +133,12 @@ public partial class MainWindow : Window
     {
         try
         {
-            using var response = await _probeClient.GetAsync($"{_engineBaseUrl}/v1/fleet");
+            // WS-D-D1 — /v1/fleet now requires an authenticated cookie session (default-deny fallback
+            // policy) and this probe never logs in, so it would otherwise get a permanent 401 and this
+            // shell would wait out the whole ReadyTimeout on every launch. /v1/health stays AllowAnonymous
+            // (see FleetEndpoints) specifically so this kind of unauthenticated readiness probe keeps
+            // working — it answers the same "is the process up" question this probe actually needs.
+            using var response = await _probeClient.GetAsync($"{_engineBaseUrl}/v1/health");
             return response.IsSuccessStatusCode;
         }
         catch

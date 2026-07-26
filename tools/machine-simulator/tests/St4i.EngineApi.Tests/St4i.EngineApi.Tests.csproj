@@ -9,6 +9,11 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- WS-D-D1 — TEST-ONLY (per the task's global constraint: no new PRODUCT NuGet). Lets
+         AuthPipelineTests boot the REAL St4i.EngineApi composition root in-memory
+         (WebApplicationFactory<Program>) instead of hand-duplicating Program.cs's DI/pipeline wiring —
+         the only way to actually exercise the default-deny fallback policy end to end. -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\St4i.EngineApi\St4i.EngineApi.csproj" />

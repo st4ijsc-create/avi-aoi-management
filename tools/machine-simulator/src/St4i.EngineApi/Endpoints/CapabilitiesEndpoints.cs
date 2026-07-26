@@ -12,7 +12,11 @@ public static class CapabilitiesEndpoints
 {
     public static void MapCapabilitiesEndpoints(this IEndpointRouteBuilder app)
     {
+        // WS-D-D1 — anonymous: the web shell needs to know whether Demo is even offered (and, per D1, will
+        // also need to know whether it's looking at a logged-out shell) BEFORE any login has happened —
+        // same reasoning as /v1/health.
         app.MapGet("/v1/capabilities", (FleetHost host, DemoModeGate demoGate) =>
-            Results.Ok(new CapabilitiesDto(demoGate.Enabled, host.Mode)));
+            Results.Ok(new CapabilitiesDto(demoGate.Enabled, host.Mode)))
+            .AllowAnonymous();
     }
 }

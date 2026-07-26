@@ -1,10 +1,15 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.FileProviders;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi;
+using St4i.EngineApi.Auth;
 using St4i.EngineApi.Config;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
@@ -39,6 +44,83 @@ builder.Services.AddCors(options =>
         .WithOrigins("http://localhost:5173", "tauri://localhost")
         .AllowAnyHeader()
         .AllowAnyMethod());
+});
+
+// ── WS-D-D1 — local cookie-session auth core: SQLite user store, PBKDF2 password hashing (in-box
+// PasswordHasher<AppUser>, no new product NuGet), first-run bootstrap, cookie auth, and a DEFAULT-DENY
+// fallback authorization policy. security.db (the user store) and the DataProtection key ring that
+// encrypts the auth cookie both live under the SAME ST4I_SECURITY_DIR-overridable root — mirrors the
+// "resolve once, thread everywhere, overridable for tests" idiom ST4I_HISTORIAN_DIR/ST4I_WAL_DIR already
+// use above/below — so every security-related file sits together under %ProgramData%\ST4I\sim\security
+// by default. Per-route ROLE policies (who besides "any authenticated user" is allowed where) are D2;
+// this task only lands the foundation + the DemoModeGate auto-login that keeps a Demo-flagged deployment
+// (exhibition build, Playwright test engine) working once default-deny is on everywhere else.
+var securityDir = SecurityDb.ResolveRoot();
+Directory.CreateDirectory(securityDir); // WS-C's Critical lesson: file I/O doesn't create parents.
+var securityKeysDir = Path.Combine(securityDir, "keys");
+Directory.CreateDirectory(securityKeysDir);
+
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(securityKeysDir))
+    .SetApplicationName("St4i.EngineApi");
+
+builder.Services.AddSingleton<IUserStore>(_ => new SqliteUserStore(securityDir));
+
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+
+        // Re-reads the user row on every cookie validation: a password/role/disable change bumps
+        // security_stamp (see IUserStore's doc comments), which invalidates every cookie minted before
+        // that change — including one already sitting in a browser — the moment it's next presented.
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            var username = context.Principal?.Identity?.Name;
+            var stamp = context.Principal?.FindFirst(AuthEndpoints.SecurityStampClaimType)?.Value;
+
+            var userStore = context.HttpContext.RequestServices.GetRequiredService<IUserStore>();
+            var user = string.IsNullOrEmpty(username)
+                ? null
+                : await userStore.GetByUsernameAsync(username).ConfigureAwait(false);
+
+            if (user is null || user.Disabled || !string.Equals(user.SecurityStamp, stamp, StringComparison.Ordinal))
+            {
+                context.RejectPrincipal();
+                await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme).ConfigureAwait(false);
+            }
+        };
+
+        // This is an API + SPA, not a page-based login flow — a 302 to a login PAGE would break every
+        // JSON caller (fetch/XHR) and the SPA's own client-side router. Return the plain status code
+        // instead and let the web shell react to it.
+        options.Events.OnRedirectToLogin = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        };
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    // DEFAULT-DENY: every route that doesn't explicitly opt out via .AllowAnonymous() now requires an
+    // authenticated cookie session. Only health/capabilities/the auth endpoints themselves/the SPA
+    // fallback are exempted today (see their own .AllowAnonymous() call sites) — every OTHER existing
+    // route (fleet, scenario, settings, onboarding, config, historian, the inspector WS stream, …)
+    // requires auth as of this task, with no per-role distinction yet; that's D2. DemoAutoLoginMiddleware
+    // is what keeps a Demo-flagged deployment usable against this same policy with zero explicit login.
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
 });
 
 // ── EdgeCore composition root — mirrors the WPF app's App.xaml.cs ConfigureServices Live/Demo/Auto
@@ -219,8 +301,19 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.UseCors(CorsPolicy);
+
+// WS-D-D1 — UseAuthentication (reads/validates the cookie into HttpContext.User) then the demo
+// auto-login middleware (signs in a real demo-admin for THIS request when DemoModeGate is enabled and
+// nothing is authenticated yet — a no-op otherwise) then UseAuthorization (enforces the default-deny
+// FallbackPolicy above). Must run after routing is available and BEFORE UseWebSockets/the endpoint maps
+// below, so both the WS upgrade and every mapped route are actually covered by it.
+app.UseAuthentication();
+app.UseDemoAutoLogin();
+app.UseAuthorization();
+
 app.UseWebSockets();
 
+app.MapAuthEndpoints();
 app.MapFleetEndpoints();
 app.MapModeEndpoints();
 app.MapCapabilitiesEndpoints();
@@ -232,7 +325,12 @@ app.MapMachineSettingsEndpoints();
 app.MapHistorianEndpoints();
 app.MapInspectorStream();
 
-app.MapFallbackToFile("index.html");
+// WS-D-D1 — ENDPOINT, so it inherits the FallbackPolicy above like every other mapped route; without
+// AllowAnonymous the SPA shell (index.html) itself would 401 while logged out, and a logged-out user
+// could never even reach a login screen. AllowAnonymous is safe here specifically because this only ever
+// serves the static shell, not any API data — the SPA's own API calls still hit the auth-gated /v1/*
+// routes above.
+app.MapFallbackToFile("index.html").AllowAnonymous();
 
 // Force-touch FleetHost now (rather than lazily on the first request) so its fleet.json/default-roster
 // resolution — and any FleetConfigException it might swallow — happens at startup, where a log line is
@@ -250,3 +348,9 @@ app.Logger.LogInformation(
 _ = app.Services.GetRequiredService<St4i.EdgeCore.Transport.WalFlushPump>();
 
 app.Run();
+
+// WS-D-D1 — top-level statements generate an IMPLICIT `Program` class; declaring it explicitly here
+// (merged via `partial`, zero behavior change) is what lets AuthPipelineTests use
+// Microsoft.AspNetCore.Mvc.Testing's WebApplicationFactory&lt;Program&gt; to boot this exact composition
+// root in-memory instead of hand-duplicating it.
+public partial class Program;
