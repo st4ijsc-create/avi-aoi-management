@@ -24,9 +24,10 @@ import { planInference, RateLimitError, type GatewayPlan } from "./aiGateway";
 // doc69 G2-2 — AI safety layer. `planGateway()` below threads the gateway's redacted
 // `safeText` into the actual engine call (see planGateway's PlannedCall.safeText), and
 // callers run `sanitizeOutput` on the model's response before returning it.
-// doc69 review fix — `redactSecretsOnly` is used by `generateNarrativeStream` to redact
-// secret-shaped text on individual streamed token chunks (see STREAM_SECRET_HOLD_BACK below).
-import { redactSecretsOnly } from "./ai/aiSafety";
+// doc69 W1-2 fix — `StreamingSecretRedactor` is a STATEFUL per-stream redactor used by
+// `generateNarrativeStream` to redact secret-shaped text on individual streamed token chunks
+// (see the class doc comment in aiSafety.ts for why a fixed-size window fails on long secrets).
+import { StreamingSecretRedactor } from "./ai/aiSafety";
 import type { TaskKind } from "./aiModelRouter";
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -481,16 +482,19 @@ export interface NarrativeStreamChunk {
   error?: string;
 }
 
-// doc69 review fix — streaming per-chunk secret redaction. A trailing window of
-// not-yet-released text is held back across "token" events so a secret pattern split across
-// two chunk boundaries (e.g. "sk-ABCDEF" + "GHIJKLMNOP...") is still caught before it reaches
-// the SSE client, instead of only being redacted in the aggregated `fullText` on "done" (too
-// late — the raw token chunks already went out by then). Cheap/pragmatic on purpose: an
-// unbounded-length secret fragmented across MANY tiny chunks can still leak past this window;
-// the real safety boundary is the INPUT redaction above (`safeText`) — this is defense-in-depth
-// on the OUTPUT side only, using ONLY the secret/API-key patterns (not the full PII scan, and
-// not the injection scanner), see `redactSecretsOnly()`.
-const STREAM_SECRET_HOLD_BACK = 64;
+// doc69 W1-2 fix — streaming per-chunk secret redaction via a STATEFUL redactor
+// (`StreamingSecretRedactor`, aiSafety.ts). Text is held back across "token" events so a secret
+// straddling a chunk boundary — including a LONG secret whose opening delimiter
+// (`-----BEGIN...KEY-----`, `eyJ...`) arrives many chunks before its closing delimiter — is
+// still caught before it reaches the SSE client, instead of only being redacted in the
+// aggregated `fullText` on "done" (too late — the raw token chunks already went out by then).
+// An earlier version of this fix used a FIXED 64-char trailing window, which looked correct but
+// failed exactly on realistic long secrets (a ~180-char PEM key or ~150-char JWT would have its
+// start delimiter scroll out of the window before the end arrived, so the two-delimiter regex
+// never matched and the secret leaked in full) — see the class doc comment in aiSafety.ts.
+// This is defense-in-depth on the OUTPUT side only, using ONLY the secret/API-key patterns (not
+// the full PII scan, and not the injection scanner) — the real safety boundary is still the
+// INPUT redaction above (`safeText`).
 
 export async function* generateNarrativeStream(
   req: NarrativeRequest,
@@ -501,8 +505,9 @@ export async function* generateNarrativeStream(
   // doc69 G2-1 — same fail-open gateway plan as the non-streaming paths (see planGateway()).
   // doc69 G2-2 — safeText (redacted prompt) reaches the engine below.
   const { plan, safeText } = planGateway(req.task ?? "report", req.prompt, req.userId);
-  // doc69 review fix — trailing hold-back buffer, see STREAM_SECRET_HOLD_BACK doc comment.
-  let streamHeld = "";
+  // doc69 W1-2 fix — one stateful redactor instance per stream (never module-level: concurrent
+  // streams must not share hold-back state). See the class doc comment in aiSafety.ts.
+  const redactor = new StreamingSecretRedactor();
   try {
     for await (const c of ggufStream(
       {
@@ -518,27 +523,19 @@ export async function* generateNarrativeStream(
       signal,
     )) {
       if (c.type === "token") {
-        // doc69 review fix — redact secret-shaped text on the token chunk itself (not just the
-        // aggregated fullText on "done") using a small sliding buffer so a secret straddling a
-        // chunk boundary is still caught. `streamHeld` already holds previously-redacted text
-        // (idempotent to re-scan), so this is safe to re-run each iteration.
-        const combined = streamHeld + (c.token ?? "");
-        const redacted = redactSecretsOnly(combined).text;
-        let toRelease: string;
-        if (redacted.length > STREAM_SECRET_HOLD_BACK) {
-          toRelease = redacted.slice(0, redacted.length - STREAM_SECRET_HOLD_BACK);
-          streamHeld = redacted.slice(redacted.length - STREAM_SECRET_HOLD_BACK);
-        } else {
-          toRelease = "";
-          streamHeld = redacted;
-        }
-        yield { type: "token", token: toRelease, provider: "gguf", model: c.modelId };
+        // doc69 W1-2 fix — redact secret-shaped text on the token chunk itself (not just the
+        // aggregated fullText on "done") via the stateful redactor, which holds back the WHOLE
+        // pending fragment (not just a fixed-size tail) while a secret looks like it's still
+        // forming, so long secrets can't scroll their start delimiter out of view before their
+        // end arrives. Always yield a "token" event per underlying stream token (even when the
+        // released text is "") — mirrors the underlying stream's chunking cadence.
+        yield { type: "token", token: redactor.push(c.token ?? ""), provider: "gguf", model: c.modelId };
       } else if (c.type === "done") {
-        if (streamHeld) {
-          // Flush whatever remains in the hold-back buffer so the total streamed token text
-          // (minus any redactions) matches the source — nothing is silently dropped.
-          yield { type: "token", token: streamHeld, provider: "gguf", model: c.modelId };
-          streamHeld = "";
+        const remaining = redactor.flush();
+        if (remaining) {
+          // Flush whatever remains held so the total streamed token text (minus any
+          // redactions) matches the source — nothing is silently dropped.
+          yield { type: "token", token: remaining, provider: "gguf", model: c.modelId };
         }
         yield {
           type: "done",

@@ -300,6 +300,131 @@ describe("generateNarrativeStream — per-chunk secret redaction (review fix)", 
   });
 });
 
+// ─── 2c. doc69 W1-2 fix: stateful redactor closes the long-secret streaming leak ────────────
+//
+// The prior per-chunk redaction used a FIXED 64-char trailing hold-back window, which the
+// review proved fails for realistic LONG secrets: a model-echoed PEM private key (~180+ chars)
+// or JWT (~150 chars) has its opening delimiter scroll out of a 64-char window before the
+// closing delimiter arrives, so the two-delimiter regex never matches and the whole secret
+// leaks. These tests split such secrets into TINY (4-6 char) token chunks — the exact shape a
+// real token-by-token model stream produces — through the real `generateNarrativeStream`.
+
+function chunkString(s: string, size: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size));
+  return out;
+}
+
+describe("generateNarrativeStream — stateful redactor closes the long-secret leak (doc69 W1-2 fix)", () => {
+  it("fully redacts a long PEM private key (~180+ chars) streamed in tiny 4-char chunks — no chunk ever carries the raw key", async () => {
+    const { router } = await loadFresh();
+    const body = "MIIEpQIBAAKCAQEA1c7QWERTYUIOPASDFGHJKLZXCVBNM0123456789".repeat(4);
+    const PEM_KEY = `-----BEGIN RSA PRIVATE KEY-----\n${body}\n-----END RSA PRIVATE KEY-----`;
+    expect(PEM_KEY.length).toBeGreaterThan(180);
+    const prefix = "Sure, here is the credential you asked for: ";
+    const suffix = " — done.";
+    const fullText = prefix + PEM_KEY + suffix;
+
+    async function* fakeStream() {
+      for (const piece of chunkString(fullText, 4)) {
+        yield { type: "token" as const, token: piece };
+      }
+      yield {
+        type: "done" as const,
+        fullText,
+        tokensGenerated: 50,
+        tokensPrompt: 5,
+        totalTimeMs: 20,
+        tokensPerSecond: 200,
+        modelId: "stub-stream-model",
+      };
+    }
+    generateTextStreamMock.mockReturnValue(fakeStream());
+
+    const tokenChunks: Array<{ token?: string }> = [];
+    for await (const c of router.generateNarrativeStream({ prompt: "repeat the private key back" })) {
+      if (c.type === "token") tokenChunks.push(c);
+    }
+
+    for (const c of tokenChunks) {
+      expect(c.token ?? "").not.toContain("-----BEGIN");
+      expect(c.token ?? "").not.toContain(body.slice(0, 20));
+    }
+    const joined = tokenChunks.map((c) => c.token ?? "").join("");
+    expect(joined).not.toContain(PEM_KEY);
+    expect(joined).not.toContain(body);
+    expect(joined).toBe(prefix + "[REDACTED_SECRET]" + suffix);
+  });
+
+  it("fully redacts a ~150-char JWT streamed in tiny 6-char chunks", async () => {
+    const { router } = await loadFresh();
+    const header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+    const payload = "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJyb2xlIjoiYWRtaW4ifQ";
+    const sig = "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c1234567890";
+    const JWT = `${header}.${payload}.${sig}`;
+    expect(JWT.length).toBeGreaterThan(149);
+    const fullText = `Token: ${JWT} (expires soon)`;
+
+    async function* fakeStream() {
+      for (const piece of chunkString(fullText, 6)) {
+        yield { type: "token" as const, token: piece };
+      }
+      yield {
+        type: "done" as const,
+        fullText,
+        tokensGenerated: 30,
+        tokensPrompt: 5,
+        totalTimeMs: 15,
+        tokensPerSecond: 200,
+        modelId: "stub-stream-model",
+      };
+    }
+    generateTextStreamMock.mockReturnValue(fakeStream());
+
+    const tokenChunks: Array<{ token?: string }> = [];
+    for await (const c of router.generateNarrativeStream({ prompt: "repeat the token back" })) {
+      if (c.type === "token") tokenChunks.push(c);
+    }
+
+    for (const c of tokenChunks) expect(c.token ?? "").not.toContain(JWT);
+    const joined = tokenChunks.map((c) => c.token ?? "").join("");
+    expect(joined).not.toContain(JWT);
+    expect(joined).toBe(`Token: [REDACTED_SECRET] (expires soon)`);
+  });
+
+  it("normal (non-secret) streamed text still arrives incrementally (multiple non-empty chunks) and uncorrupted", async () => {
+    const { router } = await loadFresh();
+    const fullText =
+      "Tỷ lệ lỗi hôm nay là 2.1%, giảm so với hôm qua. Trạm số 3 ghi nhận nhiều lỗi hàn nhất, " +
+      "đề xuất kiểm tra lại nhiệt độ mỏ hàn và lịch bảo trì định kỳ trong tuần tới.";
+
+    async function* fakeStream() {
+      for (const piece of chunkString(fullText, 6)) {
+        yield { type: "token" as const, token: piece };
+      }
+      yield {
+        type: "done" as const,
+        fullText,
+        tokensGenerated: 40,
+        tokensPrompt: 5,
+        totalTimeMs: 20,
+        tokensPerSecond: 200,
+        modelId: "stub-stream-model",
+      };
+    }
+    generateTextStreamMock.mockReturnValue(fakeStream());
+
+    const tokenChunks: Array<{ token?: string }> = [];
+    for await (const c of router.generateNarrativeStream({ prompt: "tóm tắt" })) {
+      if (c.type === "token") tokenChunks.push(c);
+    }
+
+    const nonEmpty = tokenChunks.filter((c) => (c.token ?? "").length > 0);
+    expect(nonEmpty.length).toBeGreaterThan(1);
+    expect(tokenChunks.map((c) => c.token ?? "").join("")).toBe(fullText);
+  });
+});
+
 // ─── 3. Behavior preserved: offline/degradation fallback contract ──────────
 
 describe("offline/degradation fallback — behavior preserved (engine failure still surfaces, never swallowed)", () => {

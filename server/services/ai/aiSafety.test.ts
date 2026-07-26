@@ -13,6 +13,8 @@ import {
   checkOutput,
   applySafety,
   applyOutputSafety,
+  StreamingSecretRedactor,
+  STREAM_HOLD_CAP,
 } from "./aiSafety";
 
 // ─── scanForInjection ───────────────────────────────────────────
@@ -357,5 +359,141 @@ describe("applyOutputSafety — output orchestrator", () => {
     const result = applyOutputSafety("Tỷ lệ lỗi hôm nay là 2.1%, giảm so với hôm qua.");
     expect(result.flags.risk).toBe("none");
     expect(result.text).toBe("Tỷ lệ lỗi hôm nay là 2.1%, giảm so với hôm qua.");
+  });
+});
+
+// ─── StreamingSecretRedactor — stateful long-secret streaming fix (doc69 W1-2) ──
+//
+// The earlier per-chunk redaction (a FIXED 64-char trailing hold-back window) was empirically
+// proven to fail on realistic long secrets: a model-echoed PEM private key (~180+ chars) or
+// JWT (~150 chars), streamed in small chunks, has its opening delimiter scroll out of the fixed
+// window before the closing delimiter arrives, so the two-delimiter regex never matches and the
+// secret leaks in full. These tests stream secrets in TINY (4-6 char) chunks — the exact
+// scenario the fixed window missed — through the new stateful redactor.
+
+function chunkString(s: string, size: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size));
+  return out;
+}
+
+/** Streams `text` through a fresh redactor in fixed-size chunks and returns every non-empty
+ * emitted piece plus the joined reconstruction (push emissions + final flush). */
+function streamThrough(text: string, chunkSize: number): { emitted: string[]; joined: string } {
+  const redactor = new StreamingSecretRedactor();
+  const emitted: string[] = [];
+  for (const chunk of chunkString(text, chunkSize)) {
+    const out = redactor.push(chunk);
+    if (out) emitted.push(out);
+  }
+  const remaining = redactor.flush();
+  if (remaining) emitted.push(remaining);
+  return { emitted, joined: emitted.join("") };
+}
+
+describe("StreamingSecretRedactor — long secrets streamed in tiny chunks (doc69 W1-2 fix)", () => {
+  it("fully redacts a long PEM private key (~180+ chars) streamed in alternating 4/6-char chunks — no chunk ever carries the raw key", () => {
+    const body = "MIIEpQIBAAKCAQEA1c7QWERTYUIOPASDFGHJKLZXCVBNM0123456789".repeat(4);
+    const PEM_KEY = `-----BEGIN RSA PRIVATE KEY-----\n${body}\n-----END RSA PRIVATE KEY-----`;
+    expect(PEM_KEY.length).toBeGreaterThan(180); // realistic long-secret length per the review finding
+
+    const prefix = "Sure, here is the credential you asked for: ";
+    const suffix = " — let me know if you need anything else.";
+    const text = prefix + PEM_KEY + suffix;
+
+    const redactor = new StreamingSecretRedactor();
+    const emitted: string[] = [];
+    let i = 0;
+    let size = 4;
+    while (i < text.length) {
+      const chunk = text.slice(i, i + size);
+      i += size;
+      size = size === 4 ? 6 : 4; // alternate 4/6-char chunks
+      const out = redactor.push(chunk);
+      if (out) emitted.push(out);
+    }
+    const remaining = redactor.flush();
+    if (remaining) emitted.push(remaining);
+
+    // No single emitted piece may ever contain the raw key body or its delimiters.
+    for (const piece of emitted) {
+      expect(piece).not.toContain("-----BEGIN");
+      expect(piece).not.toContain(body.slice(0, 20));
+    }
+    const joined = emitted.join("");
+    expect(joined).not.toContain(PEM_KEY);
+    expect(joined).not.toContain(body);
+    expect(joined).toBe(prefix + "[REDACTED_SECRET]" + suffix);
+  });
+
+  it("fully redacts a ~150-char JWT streamed in 6-char chunks", () => {
+    const header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+    const payload = "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJyb2xlIjoiYWRtaW4ifQ";
+    const sig = "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c1234567890";
+    const JWT = `${header}.${payload}.${sig}`;
+    expect(JWT.length).toBeGreaterThan(149); // realistic long-secret length per the review finding
+
+    const text = `Token: ${JWT} (expires soon)`;
+    const { emitted, joined } = streamThrough(text, 6);
+
+    for (const piece of emitted) expect(piece).not.toContain(JWT);
+    expect(joined).not.toContain(JWT);
+    expect(joined).toBe(`Token: [REDACTED_SECRET] (expires soon)`);
+  });
+
+  it("still redacts a short sk-... API key streamed in small chunks", () => {
+    const KEY = "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const text = `here: ${KEY} done`;
+    const { emitted, joined } = streamThrough(text, 5);
+
+    for (const piece of emitted) expect(piece).not.toContain(KEY);
+    expect(joined).toBe("here: [REDACTED_SECRET] done");
+  });
+
+  it("streams normal non-secret manufacturing text incrementally (multiple non-empty chunks before flush) and reconstructs it byte-identical", () => {
+    const text =
+      "Tỷ lệ lỗi hôm nay là 2.1%, giảm so với hôm qua. Trạm số 3 ghi nhận nhiều lỗi hàn nhất, " +
+      "đề xuất kiểm tra lại nhiệt độ mỏ hàn và lịch bảo trì định kỳ trong tuần tới.";
+    const redactor = new StreamingSecretRedactor();
+    const emitted: string[] = [];
+    for (const chunk of chunkString(text, 6)) {
+      const out = redactor.push(chunk);
+      if (out) emitted.push(out);
+    }
+    // Streamed incrementally — not silently held back in full until flush.
+    expect(emitted.length).toBeGreaterThan(1);
+    const remaining = redactor.flush();
+    if (remaining) emitted.push(remaining);
+    expect(emitted.join("")).toBe(text);
+  });
+
+  it("hard cap: a never-closing PEM block does not hang and eventually force-flushes instead of growing unbounded", () => {
+    const openPem = "-----BEGIN RSA PRIVATE KEY-----\n";
+    const filler = "A".repeat(200);
+    const chunkCount = Math.ceil((STREAM_HOLD_CAP + 500) / filler.length) + 1;
+    const fullInput = openPem + filler.repeat(chunkCount); // never closes with -----END-----
+
+    const redactor = new StreamingSecretRedactor();
+    const emitted: string[] = [];
+    for (const chunk of chunkString(fullInput, filler.length)) {
+      const out = redactor.push(chunk);
+      if (out) emitted.push(out);
+    }
+    const remaining = redactor.flush();
+    if (remaining) emitted.push(remaining);
+
+    // Forced at least one flush before the natural end (cap reached), and never dropped or
+    // duplicated any content along the way (nothing to redact since the block never closed).
+    expect(emitted.length).toBeGreaterThan(1);
+    expect(emitted.join("")).toBe(fullInput);
+  });
+
+  it("fail-safe: push/flush never throw on empty or unusual input", () => {
+    const redactor = new StreamingSecretRedactor();
+    expect(() => redactor.push("")).not.toThrow();
+    // @ts-expect-error deliberate bad input for the fail-safe contract
+    expect(() => redactor.push(null)).not.toThrow();
+    expect(() => redactor.flush()).not.toThrow();
+    expect(() => new StreamingSecretRedactor().flush()).not.toThrow();
   });
 });

@@ -256,6 +256,150 @@ export function redactSecretsOnly(text: string): RedactionResult {
   return applyRedactPatterns(text, SECRET_REDACT_PATTERNS);
 }
 
+// ─── Streaming secret redaction (STATEFUL) ───────────────────────
+//
+// doc69 W1-2 fix — replaces an earlier FIXED-size (64-char) trailing hold-back window that
+// looked correct but failed on realistic LONG secrets: a model-echoed PEM private key
+// (~180+ chars) or JWT (~150 chars), streamed token-by-token in small chunks, has its opening
+// delimiter (`-----BEGIN...KEY-----`, `eyJ...`) scroll past the fixed window and get released
+// as plain text BEFORE the closing delimiter ever arrives — the two-delimiter regex
+// (`redactSecretsOnly`) can only match a COMPLETE secret, so an incomplete one already released
+// never gets caught, and the whole secret leaks in full once the rest streams in. A fixed
+// window can never be large enough in general: any secret longer than the window defeats it.
+//
+// Fix: track whether the tail of the buffer looks like the START of an in-progress secret
+// (an open PEM block, a partial JWT/Bearer/api-key/connection-string prefix). If so, hold back
+// the WHOLE pending fragment — however long — until the secret completes (then
+// `redactSecretsOnly` replaces it with the placeholder) or a hard cap is hit. Normal text still
+// streams incrementally, holding back only a small tail to catch a short secret straddling a
+// chunk boundary.
+
+/** Hard cap on the pending (held-back) fragment. If a "secret" never completes (e.g. a
+ * pathological/never-closing PEM block), the fragment is force-flushed (best-effort
+ * redacted — any complete sub-secrets inside it are already masked) once it reaches this many
+ * characters, and the redactor resets. Guarantees `StreamingSecretRedactor` can never hold
+ * forever or grow its buffer unbounded. */
+export const STREAM_HOLD_CAP = 8192;
+
+// Held back when NO secret-start signal is present — just enough to catch a short secret
+// (e.g. a bare `sk-...` key) split across a chunk boundary, without meaningfully delaying
+// normal incremental rendering.
+const STREAM_NORMAL_TAIL_HOLD = 32;
+
+// IMPORTANT: these run against the RAW (not-yet-redacted) buffer — see the class doc comment
+// below for why (running them AFTER redaction would let an open-ended pattern like `Bearer
+// <token>`/`sk-...`/a JWT's final segment match PREMATURELY: those patterns have no upper
+// bound, only a minimum length, so a partial token that merely reaches the minimum — with more
+// characters still to come in a later chunk — would already satisfy the "complete" regex purely
+// because JS's `\b` treats "end of the string given to it so far" as a valid boundary. Checking
+// the pending-start marker FIRST, on the raw buffer, keeps such a fragment in `HOLD` for as
+// long as its tail keeps extending, and only allows `redactSecretsOnly` to run once a genuine
+// terminating character (or true end of stream, in `flush()`) proves nothing more is coming).
+// Each pattern (other than the PEM one) is anchored with `$` so it only fires while the
+// suspicious prefix sits at the very TAIL of the CURRENT buffer — once a real non-matching
+// character (space, quote, …) arrives after it, the pattern can no longer reach all the way to
+// the true end and naturally stops matching, at which point `redactSecretsOnly` runs and
+// correctly redacts the now-complete (and only now provably complete) secret. The PEM pattern
+// uses a negative lookahead instead of `$` (a closed PEM block is followed by ordinary trailing
+// text, not necessarily the end of the buffer) — it stops matching once its own `-----END...
+// -----` has actually appeared, not merely once *something* follows it.
+const PENDING_SECRET_START_PATTERNS: RegExp[] = [
+  // PEM private-key block opened, not yet followed anywhere later by its closing
+  // `-----END...-----` — hold everything from the opening marker onward, however long it
+  // takes, until the block actually closes.
+  /-----BEGIN[ A-Z]*PRIVATE KEY-----(?![\s\S]*-----END[ A-Z]*PRIVATE KEY-----)/,
+  // JWT header/payload/signature in progress — fewer than the 3 complete dot-separated
+  // segments the full `jwt` pattern requires, still growing at the tail of the buffer.
+  /\beyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*){0,2}$/,
+  // "Bearer <token>" — the token run is still growing at the tail of the buffer (not yet
+  // confirmed complete by a terminating character).
+  /\bBearer\s+[A-Za-z0-9\-_.]*$/i,
+  // Recognizable API-key prefix (`sk-`, `ghp_`, `AKIA`) started, still growing at the tail.
+  /\b(?:sk-|ghp_|AKIA)[A-Za-z0-9]*$/,
+  // Labeled `api_key=`/`access_token:`/`client_secret=`… form started, still growing.
+  /\b(?:api[_-]?key|apikey|access[_-]?token|secret[_-]?key|client[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9\-_.]*$/i,
+  // `password=`/`pwd:`/`passwd=` form started, still growing.
+  /\b(?:password|pwd|passwd)\s*[:=]\s*["']?[^\s"']*$/i,
+  // `scheme://user:pass@...` connection string — scheme+`://` seen, still growing.
+  /\b[a-z][a-z0-9+.-]*:\/\/[^\s@]*$/i,
+];
+
+/** Index of the earliest pending-secret-start marker in `text`, or -1 if none present. */
+function findPendingSecretStart(text: string): number {
+  let holdFrom = -1;
+  for (const re of PENDING_SECRET_START_PATTERNS) {
+    const idx = text.search(re);
+    if (idx >= 0 && (holdFrom === -1 || idx < holdFrom)) holdFrom = idx;
+  }
+  return holdFrom;
+}
+
+/**
+ * Stateful per-stream secret redactor for token-by-token streaming output. One instance per
+ * stream (NOT shared across concurrent streams — state is per-conversation by design).
+ *
+ * `push(chunk)` returns the text now safe to emit; `flush()` returns whatever remains held once
+ * the underlying stream ends. Both are fail-safe: any internal error falls back to emitting the
+ * raw buffered text unredacted rather than breaking the stream (never throws), matching this
+ * module's fail-safe posture. Cheap by design — patterns re-scan only the small pending buffer
+ * during normal text, growing only while an actual secret-start marker is open.
+ *
+ * Deliberately checks `findPendingSecretStart` on the RAW buffer BEFORE calling
+ * `redactSecretsOnly` (rather than after, which was this fix's first draft) — see the
+ * `PENDING_SECRET_START_PATTERNS` comment above for why that ordering matters: it prevents an
+ * open-ended pattern (Bearer/api-key/JWT-final-segment) from being finalized the instant it
+ * merely reaches its minimum length, while more of the same token is still about to arrive in a
+ * later chunk.
+ */
+export class StreamingSecretRedactor {
+  private buffer = "";
+
+  push(chunk: string): string {
+    try {
+      this.buffer += chunk ?? "";
+      const pendingIdx = findPendingSecretStart(this.buffer);
+
+      if (pendingIdx >= 0) {
+        const pendingRaw = this.buffer.slice(pendingIdx);
+        if (pendingRaw.length >= STREAM_HOLD_CAP) {
+          // Hard cap — never hold forever / never grow unbounded. Force-emit everything
+          // accumulated so far (best-effort redacted) and reset.
+          const forced = redactSecretsOnly(this.buffer).text;
+          this.buffer = "";
+          return forced;
+        }
+        const settled = this.buffer.slice(0, pendingIdx);
+        this.buffer = pendingRaw; // kept RAW — re-evaluated fresh against the next chunk
+        return redactSecretsOnly(settled).text;
+      }
+
+      // No secret-in-progress signal — safe to redact the whole buffer (any complete secret
+      // gets replaced) and release everything except a small trailing tail, so a short secret
+      // straddling a chunk boundary is still caught once its start marker becomes visible.
+      const redacted = redactSecretsOnly(this.buffer).text;
+      const releaseUpTo = Math.max(0, redacted.length - STREAM_NORMAL_TAIL_HOLD);
+      this.buffer = redacted.slice(releaseUpTo);
+      return redacted.slice(0, releaseUpTo);
+    } catch {
+      const raw = this.buffer;
+      this.buffer = "";
+      return raw;
+    }
+  }
+
+  flush(): string {
+    try {
+      const redacted = redactSecretsOnly(this.buffer).text;
+      this.buffer = "";
+      return redacted;
+    } catch {
+      const raw = this.buffer;
+      this.buffer = "";
+      return raw;
+    }
+  }
+}
+
 // ─── Output leak check ──────────────────────────────────────────
 
 const OUTPUT_LEAK_PATTERNS: LabeledPattern[] = [
