@@ -6106,6 +6106,8 @@
     "causalGraphDesc": "Edit the machine ↔ defect ↔ cause ↔ action graph used for root-cause analysis",
     "aiBrainDashboard": "AI Brain",
     "aiBrainDashboardDesc": "Local AI brain status and configuration",
+    "aiCommandCenter": "Agent Command Center",
+    "aiCommandCenterDesc": "System-wide AI agent roster, token savings, live activity feed and HITL steer controls",
     "qualityGroup": "Quality",
     "qualityGroupDesc": "Quality inspection workspace and analysis tools",
     "qualityHome": "Quality Home",
@@ -13555,6 +13557,99 @@
       "tripError": "Failed to trip the kill-switch.",
       "untripError": "Failed to untrip the kill-switch.",
       "adminOnlyNote": "Only an admin with 2FA enabled can change this switch."
+    }
+  },
+  "agentCenter": {
+    "title": "Agent Command Center",
+    "subtitle": "System-wide AI agent roster — status, token savings, recent activity and HITL steer controls",
+    "permissionDenied": {
+      "title": "Insufficient permission",
+      "desc": "Admin or engineer role required to view the Agent Command Center."
+    },
+    "loadError": "Could not load Agent Command Center data right now.",
+    "standby": "Standby — no active task",
+    "status": {
+      "working": "Working",
+      "idle": "Idle",
+      "blocked": "Blocked",
+      "awaiting_approval": "Awaiting approval",
+      "disabled": "Disabled",
+      "error": "Error"
+    },
+    "kind": {
+      "orchestrator": "Orchestrator",
+      "specialist": "Specialist",
+      "watcher": "Watcher",
+      "proactive": "Proactive",
+      "advisor": "Advisor",
+      "copilot": "Copilot",
+      "scheduled": "Scheduled"
+    },
+    "persona": {
+      "operations-agent": "Operations Agent",
+      "specialist-data-analyst": "Data Insight Agent",
+      "specialist-backend-engineer": "Backend Refactor Agent",
+      "specialist-frontend-engineer": "Frontend UX Agent",
+      "specialist-qa-optimizer": "QA Test Strategist Agent",
+      "rca-watcher": "RCA Watcher",
+      "proactive-agent": "Proactive Agent",
+      "orchestration-advisor": "Orchestration Advisor",
+      "copilot-chat": "Copilot Chat",
+      "scheduled-batch-rca": "Batch RCA Scheduler",
+      "scheduled-self-learning": "Self-Learning Scheduler",
+      "scheduled-anomaly-bank": "Anomaly Bank Scheduler",
+      "scheduled-threshold-tune": "Threshold Auto-Tune Scheduler",
+      "scheduled-agent-housekeeping": "Agent Housekeeping Scheduler"
+    },
+    "card": {
+      "openAria": "Open {{persona}} detail",
+      "progress": "Progress",
+      "progressAria": "Progress {{done}} of {{total}} steps",
+      "tokensToday": "Tokens today"
+    },
+    "floor": {
+      "title": "Agent Floor",
+      "empty": "No agents in the roster yet."
+    },
+    "savings": {
+      "title": "Savings & tokens",
+      "estimateNote": "Estimated cloud-equivalent cost — illustrative, configurable pricing.",
+      "empty": "Not enough data yet to estimate savings.",
+      "today": "Today",
+      "month": "This month",
+      "tokensSuffix": "tokens",
+      "onPrem": "On-prem share",
+      "byModel": "By model (all-time)"
+    },
+    "feed": {
+      "title": "Activity feed",
+      "empty": "No activity is currently running.",
+      "state": {
+        "completed": "Completed",
+        "proposed": "Proposed",
+        "confirmed": "Confirmed",
+        "executed": "Executed",
+        "denied": "Denied",
+        "expired": "Expired",
+        "cancelled": "Cancelled"
+      }
+    },
+    "drawer": {
+      "sessionsTitle": "Recent sessions",
+      "noSessions": "No recent sessions.",
+      "ownSession": "Your session",
+      "ownerOnlyNote": "Full detail (plan, steps) is only visible to the session owner. This is a summary.",
+      "currentTask": "Current task",
+      "tokensToday": "Tokens today",
+      "recentActivity": "Recent activity",
+      "noActivity": "No activity yet.",
+      "readOnlyNote": "Quick view — no actions available here.",
+      "approveError": "Could not approve the plan.",
+      "pendingWrite": {
+        "title": "A write action is awaiting your confirmation",
+        "confirmButton": "Confirm execute",
+        "confirmError": "Could not confirm the action."
+      }
     }
   },
   "batch": {

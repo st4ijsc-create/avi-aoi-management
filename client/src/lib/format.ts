@@ -89,6 +89,23 @@ export function fmtInt(v: number | null | undefined): string {
 }
 
 /**
+ * doc69 GĐ4/E2-3 — USD (ước tính cloud-equivalent AI, ví dụ Token Savings Rail của
+ * Agent Command Center). 2 chữ số thập phân; null/undefined/NaN → '—' (KHÔNG bịa $0).
+ */
+export function fmtUsd(v: number | null | undefined): string {
+  if (isBlank(v)) return "—";
+  try {
+    return new Intl.NumberFormat(getActiveLocale(), {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    }).format(v);
+  } catch {
+    return `$${v.toFixed(2)}`;
+  }
+}
+
+/**
  * Số nguyên NÉN cho KPI lớn (chuẩn hóa từ bản ExecutiveMobile — doc 67 W4.3):
  * |v| ≥ 1.000.000 → Intl compact ("1,23 Tr" vi · "1.23M" en · "123万" zh);
  * dưới ngưỡng giữ nguyên tách nghìn đầy đủ (số chính xác không bị nén).

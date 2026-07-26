@@ -1376,6 +1376,16 @@ export const navGroups: NavGroup[] = [
         section: "agentOps",
       },
       {
+        // doc69 GĐ4/E2-3 — Agent Command Center (roster + savings + task feed + drill-in).
+        href: "/ai-command-center",
+        label: "nav.aiCommandCenter",
+        icon: <Bot className="h-4 w-4" />,
+        description: "nav.aiCommandCenterDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      {
         href: "/ai-monitoring",
         label: "nav.aiMonitoring",
         icon: <MonitorCheck className="h-4 w-4" />,

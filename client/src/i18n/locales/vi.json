@@ -6086,6 +6086,8 @@
     "causalGraphDesc": "Chỉnh sửa đồ thị máy ↔ lỗi ↔ nguyên nhân ↔ hành động cho phân tích nguyên nhân gốc",
     "aiBrainDashboard": "AI Brain",
     "aiBrainDashboardDesc": "Trạng thái và cấu hình bộ não AI nội bộ",
+    "aiCommandCenter": "Agent Command Center",
+    "aiCommandCenterDesc": "Đội hình AI agent toàn hệ thống, tiết kiệm token, luồng hoạt động và can thiệp HITL",
     "qualityGroup": "Chất lượng",
     "qualityGroupDesc": "Không gian làm việc kiểm tra chất lượng và công cụ phân tích",
     "qualityHome": "Trang chất lượng",
@@ -13538,6 +13540,99 @@
       "tripError": "Không thể trip công tắc.",
       "untripError": "Không thể untrip công tắc.",
       "adminOnlyNote": "Chỉ admin đã bật 2FA mới có thể đổi trạng thái công tắc này."
+    }
+  },
+  "agentCenter": {
+    "title": "Agent Command Center",
+    "subtitle": "Đội hình AI agent toàn hệ thống — trạng thái, tiết kiệm token, hoạt động gần đây và can thiệp HITL",
+    "permissionDenied": {
+      "title": "Không đủ quyền",
+      "desc": "Cần quyền admin hoặc kỹ thuật để xem Agent Command Center."
+    },
+    "loadError": "Không thể tải dữ liệu Agent Command Center lúc này.",
+    "standby": "Đang chờ — không có việc",
+    "status": {
+      "working": "Đang làm việc",
+      "idle": "Rảnh",
+      "blocked": "Bị chặn",
+      "awaiting_approval": "Chờ duyệt",
+      "disabled": "Đã tắt",
+      "error": "Lỗi"
+    },
+    "kind": {
+      "orchestrator": "Điều phối",
+      "specialist": "Chuyên gia",
+      "watcher": "Giám sát",
+      "proactive": "Chủ động",
+      "advisor": "Cố vấn",
+      "copilot": "Trợ lý",
+      "scheduled": "Lịch trình"
+    },
+    "persona": {
+      "operations-agent": "Agent Vận hành",
+      "specialist-data-analyst": "Agent Phân tích dữ liệu",
+      "specialist-backend-engineer": "Agent Tái cấu trúc Backend",
+      "specialist-frontend-engineer": "Agent Frontend UX",
+      "specialist-qa-optimizer": "Agent Chiến lược QA",
+      "rca-watcher": "Giám sát RCA",
+      "proactive-agent": "Agent Chủ động",
+      "orchestration-advisor": "Cố vấn Điều phối",
+      "copilot-chat": "Copilot Trò chuyện",
+      "scheduled-batch-rca": "Lịch RCA hàng loạt",
+      "scheduled-self-learning": "Lịch Tự học",
+      "scheduled-anomaly-bank": "Lịch Ngân hàng bất thường",
+      "scheduled-threshold-tune": "Lịch Tự chỉnh ngưỡng",
+      "scheduled-agent-housekeeping": "Lịch Dọn dẹp Agent"
+    },
+    "card": {
+      "openAria": "Mở chi tiết {{persona}}",
+      "progress": "Tiến độ",
+      "progressAria": "Tiến độ {{done}} trên {{total}} bước",
+      "tokensToday": "Token hôm nay"
+    },
+    "floor": {
+      "title": "Đội hình Agent",
+      "empty": "Chưa có agent nào trong đội hình."
+    },
+    "savings": {
+      "title": "Tiết kiệm & token",
+      "estimateNote": "Ước tính chi phí tương đương nếu chạy trên cloud — giá minh họa, có thể cấu hình.",
+      "empty": "Chưa đủ dữ liệu để ước tính tiết kiệm.",
+      "today": "Hôm nay",
+      "month": "Tháng này",
+      "tokensSuffix": "token",
+      "onPrem": "Tải giữ on-prem",
+      "byModel": "Theo model (toàn thời gian)"
+    },
+    "feed": {
+      "title": "Luồng hoạt động",
+      "empty": "Không có hoạt động nào đang chạy.",
+      "state": {
+        "completed": "Hoàn tất",
+        "proposed": "Đề xuất",
+        "confirmed": "Đã xác nhận",
+        "executed": "Đã thực thi",
+        "denied": "Bị từ chối",
+        "expired": "Hết hạn",
+        "cancelled": "Đã hủy"
+      }
+    },
+    "drawer": {
+      "sessionsTitle": "Phiên gần đây",
+      "noSessions": "Không có phiên nào gần đây.",
+      "ownSession": "Phiên của bạn",
+      "ownerOnlyNote": "Chi tiết đầy đủ (kế hoạch, các bước) chỉ hiển thị cho người tạo phiên. Đây là bản tóm tắt.",
+      "currentTask": "Công việc hiện tại",
+      "tokensToday": "Token hôm nay",
+      "recentActivity": "Hoạt động gần đây",
+      "noActivity": "Chưa có hoạt động nào.",
+      "readOnlyNote": "Xem nhanh — chưa có hành động khả dụng ở đây.",
+      "approveError": "Không thể duyệt kế hoạch.",
+      "pendingWrite": {
+        "title": "Thao tác ghi đang chờ bạn xác nhận",
+        "confirmButton": "Xác nhận thực hiện",
+        "confirmError": "Không thể xác nhận thao tác."
+      }
     }
   },
   "batch": {
