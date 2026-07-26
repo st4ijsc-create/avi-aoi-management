@@ -139,6 +139,54 @@ export function normalizeAgentStatus(raw: RawAgentState | null | undefined): Age
   return "idle";
 }
 
+// ─── Attention priority (multi-row aggregation) ──────────────────────────────────
+
+/**
+ * ATTENTION_PRIORITY — when ONE persona is derived from MULTIPLE source rows that
+ * could each imply a DIFFERENT status (e.g. several concurrent orchestrator
+ * sessions from different users), the persona's headline status must be the one
+ * that needs the MOST human attention, never merely the "most active" one — a
+ * `working` row must never mask a DIFFERENT row that is `awaiting_approval` or
+ * `blocked`. Order (highest attention first): error > awaiting_approval >
+ * blocked > working > idle > disabled.
+ *
+ * This is intentionally NOT the same ordering as `normalizeAgentStatus`'s own
+ * internal priority (which puts `disabled` right after `error`, since a
+ * globally-off persona should never claim to be doing anything regardless of any
+ * row). This table instead ranks candidate ROWS of an already-known-enabled
+ * persona — `disabled` is included only for a total order over `AgentStatus` and
+ * never actually wins here (no single row is "disabled").
+ */
+const ATTENTION_PRIORITY: Record<AgentStatus, number> = {
+  error: 0,
+  awaiting_approval: 1,
+  blocked: 2,
+  working: 3,
+  idle: 4,
+  disabled: 5,
+};
+
+/**
+ * pickByAttention — PURE helper: given candidate rows each tagged (via
+ * `statusOf`) with the AgentStatus they would imply on their own, returns the
+ * one with the highest attention priority (lowest rank). On a tie, the first
+ * candidate in iteration order wins (callers pass rows in their natural/recency
+ * order). Returns null for an empty list — callers then fall back to an honest
+ * idle/no-task entry.
+ */
+function pickByAttention<T>(candidates: readonly T[], statusOf: (item: T) => AgentStatus): T | null {
+  let best: T | null = null;
+  let bestRank = Infinity;
+  for (const item of candidates) {
+    const rank = ATTENTION_PRIORITY[statusOf(item)];
+    if (rank < bestRank) {
+      best = item;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
 // ─── Small shared helpers ────────────────────────────────────────────────────────
 
 /** Rolling 24h window — mirrors aiGatewayQuota.ts's own "daily = rolling 24h" convention. */
@@ -169,8 +217,22 @@ async function safeEntry(
 
 // ─── 1. Operations Agent (orchestrator) ─────────────────────────────────────────
 
-const ACTIVE_SESSION_STATUSES = new Set<OpsSessionSummary["status"]>(["planning", "running"]);
-const AWAITING_SESSION_STATUSES = new Set<OpsSessionSummary["status"]>(["awaiting_approval", "awaiting_confirm"]);
+/**
+ * Maps an `ai_agent_sessions.status` (drizzle/schema/enums.ts ~:181
+ * `agentSessionStatusEnum`) to the attention it implies for the Operations Agent
+ * persona. `paused` is the enum's OWN documented meaning of "blocked" (schema
+ * comment ~:180: "paused when a write is blocked (limit/denied/error)") — it is
+ * the ONLY source status this persona treats as `blocked`. Terminal states
+ * (done/aborted/failed) map to nothing: a FINISHED session is not "current work"
+ * needing surfacing here (the task feed still lists it).
+ */
+const SESSION_ATTENTION_STATUS: Partial<Record<OpsSessionSummary["status"], AgentStatus>> = {
+  planning: "working",
+  running: "working",
+  awaiting_approval: "awaiting_approval",
+  awaiting_confirm: "awaiting_approval",
+  paused: "blocked",
+};
 
 /**
  * Mirrors aiAgentOrchestrator.ts's own (unexported) `agenticEnabled()` predicate —
@@ -187,15 +249,24 @@ async function buildOperationsAgentEntry(): Promise<AgentRosterEntry> {
     // still call it inside this try/catch so a TEST that mocks it to throw
     // exercises this persona's degrade path without affecting the rest of getRoster().
     const sessions = await listSessionsForOps({ limit: 20 });
-    const active = sessions.find((s) => ACTIVE_SESSION_STATUSES.has(s.status));
-    const awaiting = sessions.find((s) => AWAITING_SESSION_STATUSES.has(s.status));
-    const chosen = active ?? awaiting ?? null;
+
+    // This persona is derived from MULTIPLE ops-wide sessions (different users'
+    // sessions all land in the same `sessions` list) — rank every session that
+    // implies live attention (working/awaiting_approval/blocked) and take the one
+    // needing the MOST attention. A merely-`working` session must never mask a
+    // DIFFERENT session that is `awaiting_approval` or `blocked`. currentTask/
+    // progress/updatedAt below all come from THIS SAME chosen session, so the
+    // surfaced task always matches the surfaced status.
+    const attentionCandidates = sessions.filter((s) => SESSION_ATTENTION_STATUS[s.status] != null);
+    const chosen = pickByAttention(attentionCandidates, (s) => SESSION_ATTENTION_STATUS[s.status]!);
+    const chosenStatus = chosen ? SESSION_ATTENTION_STATUS[chosen.status]! : null;
 
     return {
       status: normalizeAgentStatus({
         enabled,
-        hasActiveWork: !!active,
-        awaitingApproval: !active && !!awaiting,
+        hasActiveWork: chosenStatus === "working",
+        awaitingApproval: chosenStatus === "awaiting_approval",
+        blocked: chosenStatus === "blocked",
       }),
       currentTask: chosen ? chosen.goal : null,
       progress: chosen ? { done: chosen.stepIndex, total: chosen.stepTotal } : null,

@@ -234,6 +234,116 @@ describe("getRoster", () => {
     });
   });
 
+  it("an orchestrator session with status 'paused' ⇒ Operations Agent is blocked (not idle), with currentTask populated", async () => {
+    process.env.AI_AGENTIC_ENABLED = "1";
+    listSessionsForOps.mockResolvedValue([
+      {
+        id: "s-paused",
+        userId: 1,
+        username: "eng1",
+        userRole: "engineer",
+        goal: "Cập nhật ngưỡng NG máy #7",
+        status: "paused", // drizzle/schema/enums.ts ~:181 documents this as "blocked by a failed/denied write"
+        stepIndex: 2,
+        stepTotal: 4,
+        writeCount: 1,
+        updatedAt: new Date("2026-07-25T10:00:00Z"),
+        expiresAt: new Date("2026-07-25T11:00:00Z"),
+      },
+    ]);
+
+    const roster = await getRoster();
+    const opsAgent = roster.find((r) => r.id === "operations-agent");
+
+    expect(opsAgent).toMatchObject({
+      status: "blocked",
+      currentTask: "Cập nhật ngưỡng NG máy #7",
+      progress: { done: 2, total: 4 },
+    });
+  });
+
+  it("two concurrent ops sessions (working + awaiting_approval) ⇒ Operations Agent reports awaiting_approval, not working — with THAT session's task", async () => {
+    process.env.AI_AGENTIC_ENABLED = "1";
+    listSessionsForOps.mockResolvedValue([
+      {
+        id: "s-working",
+        userId: 1,
+        username: "eng1",
+        userRole: "engineer",
+        goal: "Đang chạy: quét lỗi hàng loạt",
+        status: "running",
+        stepIndex: 1,
+        stepTotal: 5,
+        writeCount: 0,
+        updatedAt: new Date("2026-07-25T09:00:00Z"),
+        expiresAt: new Date("2026-07-25T11:00:00Z"),
+      },
+      {
+        id: "s-awaiting",
+        userId: 2,
+        username: "eng2",
+        userRole: "engineer",
+        goal: "Chờ duyệt: đổi công thức máy #3",
+        status: "awaiting_approval",
+        stepIndex: 1,
+        stepTotal: 2,
+        writeCount: 0,
+        updatedAt: new Date("2026-07-25T09:30:00Z"),
+        expiresAt: new Date("2026-07-25T11:00:00Z"),
+      },
+    ]);
+
+    const roster = await getRoster();
+    const opsAgent = roster.find((r) => r.id === "operations-agent");
+
+    expect(opsAgent).toMatchObject({
+      status: "awaiting_approval",
+      currentTask: "Chờ duyệt: đổi công thức máy #3",
+      progress: { done: 1, total: 2 },
+    });
+  });
+
+  it("two concurrent ops sessions (blocked + working) ⇒ Operations Agent reports blocked, not working — with THAT session's task", async () => {
+    process.env.AI_AGENTIC_ENABLED = "1";
+    listSessionsForOps.mockResolvedValue([
+      {
+        id: "s-working-2",
+        userId: 1,
+        username: "eng1",
+        userRole: "engineer",
+        goal: "Đang chạy: kiểm tra tồn kho",
+        status: "running",
+        stepIndex: 2,
+        stepTotal: 6,
+        writeCount: 0,
+        updatedAt: new Date("2026-07-25T09:00:00Z"),
+        expiresAt: new Date("2026-07-25T11:00:00Z"),
+      },
+      {
+        id: "s-blocked",
+        userId: 3,
+        username: "eng3",
+        userRole: "engineer",
+        goal: "Bị chặn: ghi vượt giới hạn máy #9",
+        status: "paused",
+        stepIndex: 3,
+        stepTotal: 5,
+        writeCount: 3,
+        updatedAt: new Date("2026-07-25T09:15:00Z"),
+        expiresAt: new Date("2026-07-25T11:00:00Z"),
+      },
+    ]);
+
+    const roster = await getRoster();
+    const opsAgent = roster.find((r) => r.id === "operations-agent");
+
+    expect(opsAgent).toMatchObject({
+      status: "blocked",
+      currentTask: "Bị chặn: ghi vượt giới hạn máy #9",
+      progress: { done: 3, total: 5 },
+    });
+  });
+
   it("a flag-off scheduled agent ⇒ disabled; flag-on ⇒ idle (not fabricated 'working')", async () => {
     getBatchRcaStatus.mockReturnValue({ enabled: false, lastRunAt: null });
     getSelfLearningStatus.mockReturnValue({ enabled: true, lastRunAt: new Date("2026-07-25T02:00:00Z") });
