@@ -358,6 +358,7 @@ app.MapConfigEndpoints();
 app.MapMachineSettingsEndpoints();
 app.MapHistorianEndpoints();
 app.MapAuditEndpoints();
+app.MapUserEndpoints();
 app.MapInspectorStream();
 
 // WS-D-D1 — ENDPOINT, so it inherits the FallbackPolicy above like every other mapped route; without
