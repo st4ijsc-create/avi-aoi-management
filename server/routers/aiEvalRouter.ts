@@ -190,12 +190,14 @@ export const aiEvalRouter = router({
       });
     }),
 
-  // ─── doc 69 Wave 6 (F1) — bootstrap the FIRST defect classifier ─────
+  // ─── doc 69 Wave 6 (F1), servability fixed in the F1 review — bootstrap the
+  // FIRST defect classifier ─────
   // Admin-gated, end-to-end: honesty check (>= minSamplesPerClass REAL labeled
-  // samples) → few-shot train → eval on the locked TEST split → quality gate →
-  // register a model_versions row → activate ONLY on a gate PASS, via the
-  // W0-2 gated activateModelVersionManual. Never fabricates a model — see
-  // services/aiBootstrapClassifier.ts.
+  // embedding samples) → train a DINOv2 embedding-head (the ONE classifier
+  // shape aiInferenceEngine.runInference actually dispatches) → eval on the
+  // locked TEST split → quality gate → register a model_versions row →
+  // activate ONLY on a gate PASS, via the W0-2 gated activateModelVersionManual.
+  // Never fabricates a model — see services/aiBootstrapClassifier.ts.
   bootstrapFirstClassifier: adminProcedure
     .input(z.object({
       baseModelId: z.number(),

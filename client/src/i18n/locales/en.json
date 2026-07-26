@@ -11836,7 +11836,7 @@
       "cta": "Bootstrap first classifier",
       "ctaLink": "Go to Model Management",
       "dialogTitle": "Bootstrap the first classifier",
-      "dialogDesc": "Trains a few-shot classifier on the base model's embeddings, evaluates it on the locked test split, and activates it only if it passes the quality gate. If there aren't enough labeled samples yet, this reports a clear error — it never fabricates a model.",
+      "dialogDesc": "Trains a DINOv2 embedding-head classifier — the one classifier shape the inference engine can actually serve today — on the base model's embeddings, evaluates it on the locked test split, and activates it only if it passes the quality gate. If there aren't enough labeled samples yet, this reports a clear error — it never fabricates a model.",
       "submit": "Run Bootstrap",
       "successActivated": "Classifier registered AND activated (passed the quality gate).",
       "successNotActivated": "Classifier registered as READY but NOT activated — it did not pass the quality gate.",

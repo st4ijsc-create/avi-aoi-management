@@ -17,12 +17,17 @@ import { Loader2, Sparkles } from "lucide-react";
 import { ModelSelect } from "./ModelSelect";
 
 /**
- * doc 69 Wave 6 (F1) — admin action wired to `aiEval.bootstrapFirstClassifier`.
+ * doc 69 Wave 6 (F1), servability fixed in the F1 review — admin action wired
+ * to `aiEval.bootstrapFirstClassifier`.
  *
- * Wires the EXISTING few-shot trainer → eval harness → quality gate → registry
- * → gated activation pipeline (server/services/aiBootstrapClassifier.ts) behind
- * one form. Honest: an "insufficient labeled samples" or gate-FAIL response is
- * surfaced verbatim (server message), never silently swallowed or faked as success.
+ * Wires the EXISTING DINOv2 embedding-head trainer → eval harness → quality
+ * gate → registry → gated activation pipeline
+ * (server/services/aiBootstrapClassifier.ts) behind one form. This is the ONE
+ * classifier shape `aiInferenceEngine.runInference` actually dispatches at
+ * serve time (isEmbeddingHeadModel) — a successful bootstrap is genuinely
+ * servable, not just registered. Honest: an "insufficient labeled samples" or
+ * gate-FAIL response is surfaced verbatim (server message), never silently
+ * swallowed or faked as success.
  */
 export function BootstrapClassifierDialog({
   open,

@@ -1,5 +1,5 @@
 /**
- * AI Classifier Health — doc 69 Wave 6 (F1)
+ * AI Classifier Health — doc 69 Wave 6 (F1), servability fixed in the F1 review.
  *
  * The quality-gate / A-B testing / active-learning superstructure is built, but
  * there is NO trained defect classifier on disk by default — only the DINOv2
@@ -8,14 +8,23 @@
  * `modelType = 'classification'`). Operators had no way to see this.
  *
  * This service answers ONE question honestly: "is there an ACTIVE defect
- * classifier right now?" Fail-safe: any lookup error reports
+ * classifier that aiInferenceEngine.runInference can ACTUALLY dispatch right
+ * now?" — registered-and-ACTIVE alone is NOT enough (see the F1-review fix):
+ * an ACTIVE `format:"CUSTOM"` artifact with no `metadata.headKind` (e.g. a
+ * plain aiLocalTraining few-shot/transfer/incremental classifier) or an ACTIVE
+ * DINOv2 embedding-head with `AOI_DL_HEAD_ENABLED` off both register fine but
+ * make `runInference` THROW — this check must report `false` for both, not
+ * just the flag-off case. Servability is decided by
+ * `embeddingHead.isServableByInferenceEngine` — the SAME predicate documented
+ * to mirror `runInference`'s real dispatch order (single source of truth; not
+ * re-derived here). Fail-safe: any lookup error reports
  * `hasActiveClassifier: false` with the error in `reason` — it NEVER fabricates
  * a healthy state.
  */
 import fs from "fs";
 import path from "path";
 import { getAiModels } from "../db/ai";
-import { isEmbeddingHeadEnabled, isEmbeddingHeadModel } from "./ai/embeddingHead";
+import { isEmbeddingHeadEnabled, isEmbeddingHeadModel, isServableByInferenceEngine } from "./ai/embeddingHead";
 import type { AiModel } from "../../drizzle/schema";
 
 export interface ClassifierHealthResult {
@@ -41,17 +50,29 @@ export interface ClassifierHealthDeps {
 }
 
 /**
- * Whether an ACTIVE defect-classifier model exists in the registry today.
+ * Whether an ACTIVE defect-classifier model exists in the registry today AND is
+ * in a shape `aiInferenceEngine.runInference` can actually dispatch.
  *
  * Scope: `modelType = "classification"` rows (the codebase's convention for
  * defect classifiers — see `ensureHeadModelRow` in embeddingHead.ts and
  * AIModelManagementPage's default modelType), `status = "ACTIVE"`.
  *
- * A registered+ACTIVE embedding-head model additionally requires
- * `AOI_DL_HEAD_ENABLED=true` to actually be served by `aiInferenceEngine.
- * runInference` — when the flag is off, the row is ACTIVE in the registry but
- * inference never reaches it, so this reports `false` with an explicit reason
- * rather than a misleadingly "healthy" `true`.
+ * F1-review FIX 3 — a DB can hold MULTIPLE classifier `code`s, each with its own
+ * ACTIVE version (e.g. a stale experiment left ACTIVE alongside a genuinely
+ * servable one). Inspecting only the first row risked reporting the wrong
+ * verdict either way — a false "unhealthy" when a later row IS servable, or a
+ * false "healthy" when the first row happens to be servable but others aren't.
+ * This evaluates EVERY ACTIVE row and reports `true` if ANY of them is
+ * servable (that's the one `runInference` will actually serve predictions
+ * from); `false`, with an honest aggregate reason, only when NONE are.
+ *
+ * F1-review FIX 2 — "servable" is decided by `isServableByInferenceEngine`
+ * (embeddingHead.ts), the single predicate that mirrors `runInference`'s real
+ * dispatch order: a registered+ACTIVE embedding-head additionally requires
+ * `AOI_DL_HEAD_ENABLED=true`; a registered+ACTIVE `format:"CUSTOM"` artifact
+ * that ISN'T an embedding-head (e.g. a plain few-shot/transfer/incremental
+ * classifier) is never dispatched at all — both report `false` here instead of
+ * a misleadingly "healthy" `true`.
  */
 export async function checkActiveClassifierHealth(
   deps: ClassifierHealthDeps = {},
@@ -66,26 +87,47 @@ export async function checkActiveClassifierHealth(
     const active = await listActiveClassifierModels("classification");
 
     if (active.length > 0) {
-      const m = active[0]!;
-      if (isEmbeddingHeadModel(m) && !isEmbeddingHeadEnabled()) {
+      const evaluated = active.map((m) => ({ model: m, servable: isServableByInferenceEngine(m) }));
+      const servable = evaluated.find((e) => e.servable);
+
+      if (servable) {
+        const m = servable.model;
+        const othersCount = evaluated.length - 1;
         return {
-          hasActiveClassifier: false,
-          reason:
-            `Head classifier "${m.code}" is registered ACTIVE, but AOI_DL_HEAD_ENABLED is off — ` +
-            `inference still serves the plain ONNX path, so predictions never reach it. ` +
-            `Enable AOI_DL_HEAD_ENABLED to make it live.`,
+          hasActiveClassifier: true,
+          reason: othersCount > 0
+            ? `Active classifier "${m.code}" v${m.currentVersion ?? "?"}. (${othersCount} other ACTIVE ` +
+              `classifier row(s) also exist; only this one is actually servable.)`
+            : `Active classifier "${m.code}" v${m.currentVersion ?? "?"}.`,
           activeModelId: m.id,
           activeModelCode: m.code,
           activeVersion: m.currentVersion,
           checkedAt,
         };
       }
+
+      // NONE of the ACTIVE rows are servable — never report "healthy" just
+      // because something is registered ACTIVE. Give an honest, specific
+      // reason for the common cases (all flag-off heads vs. never-dispatched
+      // artifacts), and fall back to a generic one for a mix of both.
+      const first = evaluated[0]!.model;
+      const codes = Array.from(new Set(evaluated.map((e) => e.model.code))).join(", ");
+      const allFlagOffHeads = evaluated.every((e) => isEmbeddingHeadModel(e.model)) && !isEmbeddingHeadEnabled();
+      const reason = allFlagOffHeads
+        ? `${evaluated.length} ACTIVE defect-classifier(s) registered (${codes}) ${evaluated.length > 1 ? "are" : "is"} ` +
+          `DINOv2 embedding-head model(s), but AOI_DL_HEAD_ENABLED is off — inference still serves the plain ` +
+          `ONNX path, so predictions never reach ${evaluated.length > 1 ? "them" : "it"}. Enable AOI_DL_HEAD_ENABLED ` +
+          `to make ${evaluated.length > 1 ? "them" : "it"} live.`
+        : `${evaluated.length} ACTIVE defect-classifier(s) registered (${codes}), but none are in a shape ` +
+          `aiInferenceEngine.runInference can dispatch — calling it would throw, not predict. Bootstrap or ` +
+          `activate a servable classifier instead (a DINOv2 embedding-head with AOI_DL_HEAD_ENABLED on, or an ` +
+          `ONNX model).`;
       return {
-        hasActiveClassifier: true,
-        reason: `Active classifier "${m.code}" v${m.currentVersion ?? "?"}.`,
-        activeModelId: m.id,
-        activeModelCode: m.code,
-        activeVersion: m.currentVersion,
+        hasActiveClassifier: false,
+        reason,
+        activeModelId: first.id,
+        activeModelCode: first.code,
+        activeVersion: first.currentVersion,
         checkedAt,
       };
     }

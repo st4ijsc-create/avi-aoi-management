@@ -11819,7 +11819,7 @@
       "cta": "Bootstrap model đầu tiên",
       "ctaLink": "Đi tới Quản lý Model",
       "dialogTitle": "Bootstrap model phân loại đầu tiên",
-      "dialogDesc": "Huấn luyện few-shot trên embedding của model gốc, đánh giá trên tập test khóa, và chỉ kích hoạt nếu vượt qua quality-gate. Nếu chưa đủ mẫu đã gán nhãn, thao tác sẽ báo lỗi rõ ràng — không tạo model giả.",
+      "dialogDesc": "Huấn luyện classifier dạng DINOv2 embedding-head — dạng DUY NHẤT mà hệ thống suy luận có thể phục vụ ngay hôm nay — trên embedding của model gốc, đánh giá trên tập test khóa, và chỉ kích hoạt nếu vượt qua quality-gate. Nếu chưa đủ mẫu đã gán nhãn, thao tác sẽ báo lỗi rõ ràng — không tạo model giả.",
       "submit": "Chạy Bootstrap",
       "successActivated": "Classifier đã được đăng ký VÀ kích hoạt (vượt qua quality-gate).",
       "successNotActivated": "Classifier đã được đăng ký (READY) nhưng CHƯA kích hoạt — không vượt qua quality-gate.",

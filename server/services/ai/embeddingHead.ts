@@ -136,6 +136,33 @@ export function isEmbeddingHeadModel(model: Pick<AiModel, "format" | "metadata">
   return meta?.headKind === HEAD_KIND;
 }
 
+/**
+ * doc69 F1-review FIX 2 — single source of truth for "can aiInferenceEngine.
+ * runInference ACTUALLY dispatch this ACTIVE model today (not just 'registered')".
+ * Mirrors runInference's real dispatch order byte-for-byte:
+ *
+ *   1. isEmbeddingHeadModel(model) → served via runEmbeddingHeadInference ONLY
+ *      when AOI_DL_HEAD_ENABLED is on (the same flag runInference reads).
+ *   2. anything else falls through to the raw ONNX session path
+ *      (aiInferenceEngine.getSession → ort.InferenceSession.create). That call
+ *      does NOT branch on model.format — it always tries to parse model.filePath
+ *      as an ONNX graph. A `format: "CUSTOM"` artifact (e.g. an
+ *      aiLocalTraining-produced few-shot/transfer/incremental JSON classifier)
+ *      is NOT ONNX-parseable and WILL throw. Every other declared format
+ *      (ONNX/TENSORRT/OPENVINO/GGUF) is assumed loadable — this task only
+ *      verified the CUSTOM-non-head failure mode, so it does not second-guess
+ *      those.
+ *
+ * Reused by aiClassifierHealth so the "no active classifier" banner can never
+ * report healthy for a shape that would throw at inference time — see
+ * aiClassifierHealth.ts.
+ */
+export function isServableByInferenceEngine(model: Pick<AiModel, "format" | "metadata"> | null | undefined): boolean {
+  if (!model) return false;
+  if (isEmbeddingHeadModel(model)) return isEmbeddingHeadEnabled();
+  return model.format !== HEAD_MODEL_FORMAT; // HEAD_MODEL_FORMAT === "CUSTOM"
+}
+
 // ─── Artifact storage (fs) ──────────────────────────────────────────────────────
 
 function headsDir(): string {
