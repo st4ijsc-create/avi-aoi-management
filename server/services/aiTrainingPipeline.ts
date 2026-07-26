@@ -458,6 +458,11 @@ export async function checkAutoRetrainTrigger(modelId: number): Promise<{
 // (AIModelManagementPage → trpc.aiLocalTraining.listJobs, already polled) for
 // an operator to review and explicitly start via the existing "Start Training"
 // flow — no new UI, no new execute path.
+//
+// Review remediation — de-dup: proposeRetrainJob() also checks for an existing
+// QUEUED row already carrying this proposal marker for the same model before
+// inserting, so a model that keeps satisfying drift+trigger across scans gets
+// exactly ONE open proposal, not a new [PROPOSED] row every scan.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface ProposeRetrainJobOptions {
@@ -471,9 +476,33 @@ export interface ProposeRetrainJobOptions {
   labeledCount?: number;
 }
 
+/**
+ * De-dup marker (matches trainingConfig.proposalKind below). Exported so callers
+ * (and tests) can recognize a drift-retrain proposal row without re-typing the
+ * string literal.
+ */
+export const DRIFT_RETRAIN_PROPOSAL_KIND = "drift_retrain";
+
 export async function proposeRetrainJob(options: ProposeRetrainJobOptions) {
   const model = await getAiModelById(options.modelId);
   if (!model) throw new Error(`Model ${options.modelId} not found`);
+
+  // Review remediation (F2) — de-dup: skip creating a new proposal when an
+  // un-actioned one already exists for this model (mirrors
+  // aiThresholdTuneScheduler's throttle pattern — never spam the same open
+  // proposal every scan). "Un-actioned" = a training_jobs row still sitting in
+  // QUEUED (the pipeline's natural not-started state; proposeRetrainJob never
+  // advances it) whose trainingConfig marks it as a drift-retrain proposal. Once
+  // an operator starts training from it (which creates a DIFFERENT, non-QUEUED
+  // job — see the module doc above) or the row is cancelled/deleted, it no
+  // longer shows up here and a fresh proposal can be created. Returns null
+  // (no insert) instead of throwing — the caller (aiSelfLearningScheduler) treats
+  // that as "zero new proposals this scan", not a failure.
+  const openJobs = await db.getTrainingJobs({ modelId: options.modelId, status: "QUEUED" });
+  const alreadyProposed = openJobs.some(
+    (j: any) => (j.trainingConfig as Record<string, unknown> | null | undefined)?.proposalKind === DRIFT_RETRAIN_PROPOSAL_KIND,
+  );
+  if (alreadyProposed) return null;
 
   const targetVersion =
     options.targetVersion ??
@@ -490,7 +519,7 @@ export async function proposeRetrainJob(options: ProposeRetrainJobOptions) {
     datasetConfig: {},
     trainingConfig: {
       proposedBy: "aiSelfLearningScheduler",
-      proposalKind: "drift_retrain",
+      proposalKind: DRIFT_RETRAIN_PROPOSAL_KIND,
       requiresHumanApproval: true,
       driftSeverity: options.driftSeverity,
       driftSource: options.driftSource,

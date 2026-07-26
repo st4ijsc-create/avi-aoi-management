@@ -1,6 +1,6 @@
 /**
- * B5.2 (doc 69 Wave 6 F2) — drift → retrain HITL escalation + performance-snapshot
- * scheduler tests (server/services/aiSelfLearningScheduler.ts).
+ * B5.2 (doc 69 Wave 6 F2) — drift → retrain HITL escalation scheduler tests
+ * (server/services/aiSelfLearningScheduler.ts).
  *
  * Covers:
  *   • runSelfLearningScanOnce: HIGH/CRITICAL drift (confidence-PSI OR concept-drift
@@ -10,19 +10,24 @@
  *   • A per-model failure never aborts the scan (other models still processed).
  *   • AI_SELF_LEARNING_ENABLED=false → the escalation is a no-op (isolated module
  *     instance, since the flag is a module-load-time const).
- *   • runPerformanceSnapshotSweepOnce: invokes aiMonitoring.collectPerformanceSnapshot
- *     per ACTIVE model (with a currentVersion) when AI_PERF_SNAPSHOT_SWEEP_ENABLED
- *     is on; no-op when off; a per-model failure doesn't abort the sweep.
+ *
+ * Review remediation (F2): the parallel performance-snapshot sweep this file used
+ * to also cover (runPerformanceSnapshotSweepOnce / AI_PERF_SNAPSHOT_SWEEP_ENABLED)
+ * was REMOVED — see the header comment in aiSelfLearningScheduler.ts. It was the
+ * first-ever writer of driftScore, which silently armed
+ * modelAutoRollback.ts's no-HITL `auto_drift` auto-activate branch, and it
+ * duplicated the pre-existing modelPerfSnapshotProducer.ts as a second writer of
+ * model_performance_snapshots. Snapshots are covered by that pre-existing,
+ * already-scheduled producer; this file only tests the drift→retrain escalation.
  *
  * All collaborators mocked — no DB, no cron timer actually firing.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Both flags must be ON at module-load (the SUT captures consts at import time).
+// Flag must be ON at module-load (the SUT captures the const at import time).
 // vi.hoisted runs BEFORE the hoisted static import below, so this lands in time.
 vi.hoisted(() => {
   process.env.AI_SELF_LEARNING_ENABLED = "true";
-  process.env.AI_PERF_SNAPSHOT_SWEEP_ENABLED = "true";
 });
 
 // ── DB (aiModels list) ──────────────────────────────────────────────────────
@@ -69,13 +74,7 @@ vi.mock("./aiTrainingPipeline", () => ({
   proposeRetrainJob: (...a: any[]) => proposeRetrainJobMock(...a),
 }));
 
-// ── aiMonitoring (performance-snapshot sweep) ────────────────────────────────
-const collectPerformanceSnapshotMock = vi.fn(async () => ({ id: 1 }));
-vi.mock("./aiMonitoring", () => ({
-  collectPerformanceSnapshot: (...a: any[]) => collectPerformanceSnapshotMock(...a),
-}));
-
-import { runSelfLearningScanOnce, runPerformanceSnapshotSweepOnce } from "./aiSelfLearningScheduler";
+import { runSelfLearningScanOnce } from "./aiSelfLearningScheduler";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -91,7 +90,6 @@ beforeEach(() => {
   });
   checkAutoRetrainTriggerMock.mockResolvedValue({ shouldRetrain: false, feedbackCount: 0, labeledCount: 0 });
   proposeRetrainJobMock.mockImplementation(async (opts: any) => ({ id: 999, modelId: opts.modelId, status: "QUEUED" }));
-  collectPerformanceSnapshotMock.mockResolvedValue({ id: 1 });
 });
 
 describe("runSelfLearningScanOnce — drift → retrain HITL escalation", () => {
@@ -218,15 +216,34 @@ describe("runSelfLearningScanOnce — drift → retrain HITL escalation", () => 
     expect(proposeRetrainJobMock).not.toHaveBeenCalled();
     expect(stats.retrainProposed).toBe(0);
   });
+
+  it("de-dup: when proposeRetrainJob reports a duplicate (returns null/falsy), the scan does NOT count it as a new proposal", async () => {
+    // proposeRetrainJob owns the de-dup check (queries training_jobs itself — see
+    // aiTrainingPipeline.proposeRetrain.test.ts); it signals "skipped, already
+    // proposed" by resolving falsy instead of a created row. The scheduler must
+    // treat that as zero NEW proposals, not increment retrainProposed, and not
+    // crash reading `.id` off a null result.
+    checkConfidenceDriftMock.mockResolvedValue({
+      enabled: true, modelId: 1, evaluated: true, drift: true, severity: "HIGH" as const,
+      psi: 0.3, meanShift: 0.2, stdShift: 0.1, baseline: {} as any, recent: {} as any, reasons: ["drift"],
+    });
+    checkAutoRetrainTriggerMock.mockResolvedValue({
+      shouldRetrain: true, reason: "still qualifies", feedbackCount: 50, labeledCount: 120,
+    });
+    proposeRetrainJobMock.mockResolvedValue(null);
+
+    const stats = await runSelfLearningScanOnce();
+
+    expect(proposeRetrainJobMock).toHaveBeenCalledTimes(1);
+    expect(stats.retrainProposed).toBe(0);
+  });
 });
 
 describe("runSelfLearningScanOnce — AI_SELF_LEARNING_ENABLED=false (isolated module instance)", () => {
   it("HIGH drift + satisfied trigger → escalation is a no-op when the flag is off", async () => {
     vi.resetModules();
     const prevSelfLearning = process.env.AI_SELF_LEARNING_ENABLED;
-    const prevSnapshot = process.env.AI_PERF_SNAPSHOT_SWEEP_ENABLED;
     process.env.AI_SELF_LEARNING_ENABLED = "false";
-    process.env.AI_PERF_SNAPSHOT_SWEEP_ENABLED = "false";
 
     vi.doMock("../db/connection", () => ({ getDb: vi.fn(async () => fakeDb) }));
     vi.doMock("../../drizzle/schema", () => ({
@@ -250,7 +267,6 @@ describe("runSelfLearningScanOnce — AI_SELF_LEARNING_ENABLED=false (isolated m
       checkAutoRetrainTrigger: vi.fn(async () => ({ shouldRetrain: true, reason: "ok", feedbackCount: 0, labeledCount: 999 })),
       proposeRetrainJob: (...a: any[]) => proposeRetrainJobFreshMock(...a),
     }));
-    vi.doMock("./aiMonitoring", () => ({ collectPerformanceSnapshot: vi.fn(async () => ({ id: 1 })) }));
     whereMock.mockResolvedValue([{ id: 1, currentVersion: "1.0.0" }]);
 
     const mod = await import("./aiSelfLearningScheduler");
@@ -260,77 +276,5 @@ describe("runSelfLearningScanOnce — AI_SELF_LEARNING_ENABLED=false (isolated m
     expect(stats.retrainProposed).toBe(0);
 
     process.env.AI_SELF_LEARNING_ENABLED = prevSelfLearning;
-    process.env.AI_PERF_SNAPSHOT_SWEEP_ENABLED = prevSnapshot;
-  });
-});
-
-describe("runPerformanceSnapshotSweepOnce — scheduled caller of collectPerformanceSnapshot", () => {
-  it("invokes collectPerformanceSnapshot for every ACTIVE model with a currentVersion", async () => {
-    whereMock.mockResolvedValue([
-      { id: 1, currentVersion: "1.0.0" },
-      { id: 2, currentVersion: "2.1.0" },
-      { id: 3, currentVersion: null }, // no version to key the snapshot on → skipped
-    ]);
-
-    const stats = await runPerformanceSnapshotSweepOnce();
-
-    expect(collectPerformanceSnapshotMock).toHaveBeenCalledTimes(2);
-    expect(collectPerformanceSnapshotMock.mock.calls[0]![0]).toMatchObject({ modelId: 1, modelVersion: "1.0.0" });
-    expect(collectPerformanceSnapshotMock.mock.calls[1]![0]).toMatchObject({ modelId: 2, modelVersion: "2.1.0" });
-    expect(stats.snapshots).toBe(2);
-    expect(stats.failures).toBe(0);
-  });
-
-  it("a per-model failure does not abort the sweep", async () => {
-    whereMock.mockResolvedValue([{ id: 1, currentVersion: "1.0.0" }, { id: 2, currentVersion: "2.0.0" }]);
-    collectPerformanceSnapshotMock.mockImplementation(async (opts: any) => {
-      if (opts.modelId === 1) throw new Error("boom — snapshot failed for model 1");
-      return { id: 2 };
-    });
-
-    const stats = await runPerformanceSnapshotSweepOnce();
-
-    expect(stats.snapshots).toBe(1);
-    expect(stats.failures).toBe(1);
-  });
-});
-
-describe("runPerformanceSnapshotSweepOnce — AI_PERF_SNAPSHOT_SWEEP_ENABLED=false (isolated module instance)", () => {
-  it("is a safe no-op when disabled", async () => {
-    vi.resetModules();
-    const prevSelfLearning = process.env.AI_SELF_LEARNING_ENABLED;
-    const prevSnapshot = process.env.AI_PERF_SNAPSHOT_SWEEP_ENABLED;
-    process.env.AI_SELF_LEARNING_ENABLED = "false";
-    process.env.AI_PERF_SNAPSHOT_SWEEP_ENABLED = "false";
-
-    vi.doMock("../db/connection", () => ({ getDb: vi.fn(async () => fakeDb) }));
-    vi.doMock("../../drizzle/schema", () => ({
-      aiModels: { id: "id", status: "status", currentVersion: "currentVersion" },
-    }));
-    vi.doMock("./aiActiveLearningAuto", () => ({
-      scanInferenceForUncertainty: vi.fn(async () => ({ scanned: 0, enqueued: 0, skippedExisting: 0, belowThreshold: 0 })),
-    }));
-    vi.doMock("./aiDriftMonitor", () => ({
-      isDriftMonitorEnabled: () => false,
-      checkConfidenceDrift: vi.fn(),
-      checkConceptDriftKS: vi.fn(),
-    }));
-    vi.doMock("./aiTrainingPipeline", () => ({
-      checkAutoRetrainTrigger: vi.fn(),
-      proposeRetrainJob: vi.fn(),
-    }));
-    const collectPerformanceSnapshotFreshMock = vi.fn(async () => ({ id: 1 }));
-    vi.doMock("./aiMonitoring", () => ({ collectPerformanceSnapshot: (...a: any[]) => collectPerformanceSnapshotFreshMock(...a) }));
-    whereMock.mockResolvedValue([{ id: 1, currentVersion: "1.0.0" }]);
-
-    const mod = await import("./aiSelfLearningScheduler");
-    const stats = await mod.runPerformanceSnapshotSweepOnce();
-
-    expect(collectPerformanceSnapshotFreshMock).not.toHaveBeenCalled();
-    expect(stats.snapshots).toBe(0);
-    expect(stats.models).toBe(0);
-
-    process.env.AI_SELF_LEARNING_ENABLED = prevSelfLearning;
-    process.env.AI_PERF_SNAPSHOT_SWEEP_ENABLED = prevSnapshot;
   });
 });

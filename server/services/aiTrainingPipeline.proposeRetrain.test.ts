@@ -13,10 +13,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ── DB (aiAdvanced) — only createTrainingJob is exercised by proposeRetrainJob.
+// ── DB (aiAdvanced) — createTrainingJob + the getTrainingJobs de-dup lookup are
+// exercised by proposeRetrainJob.
 const createTrainingJobMock = vi.fn(async (data: any) => ({ id: 501, ...data }));
+const getTrainingJobsMock = vi.fn(async (_opts: any) => [] as any[]);
 vi.mock("../db/aiAdvanced", () => ({
   createTrainingJob: (d: unknown) => createTrainingJobMock(d),
+  getTrainingJobs: (o: unknown) => getTrainingJobsMock(o),
   getTrainingJob: vi.fn(),
   updateTrainingJob: vi.fn(),
   createTrainingDataset: vi.fn(),
@@ -67,6 +70,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   getAiModelByIdMock.mockResolvedValue({ id: 7, code: "M7", currentVersion: "1.4.0" });
   createTrainingJobMock.mockImplementation(async (data: any) => ({ id: 501, ...data }));
+  getTrainingJobsMock.mockResolvedValue([]); // default: no open proposal → dedup never blocks
 });
 
 describe("proposeRetrainJob", () => {
@@ -93,6 +97,9 @@ describe("proposeRetrainJob", () => {
       reason: "120 labeled samples available for retraining",
     });
     expect(job).toMatchObject({ id: 501, modelId: 7, status: "QUEUED" });
+
+    // Checked the de-dup lookup (scoped to this model + QUEUED) before inserting.
+    expect(getTrainingJobsMock).toHaveBeenCalledWith({ modelId: 7, status: "QUEUED" });
 
     // NEVER starts training or touches any activation/eval path.
     expect(runTransferLearningMock).not.toHaveBeenCalled();
@@ -123,5 +130,85 @@ describe("proposeRetrainJob", () => {
       proposeRetrainJob({ modelId: 999, reason: "r", driftSeverity: "HIGH", driftSource: "confidence-psi" }),
     ).rejects.toThrow(/not found/i);
     expect(createTrainingJobMock).not.toHaveBeenCalled();
+  });
+});
+
+// Review remediation (F2) — de-dup: at most one open (QUEUED) drift-retrain
+// proposal per model. Mirrors aiThresholdTuneScheduler's throttle intent, but
+// implemented as a DB lookup (training_jobs has no in-memory scheduler state).
+describe("proposeRetrainJob — de-dup (at most one open proposal per model)", () => {
+  it("skips (returns null, no insert) when a QUEUED drift_retrain proposal already exists for the model", async () => {
+    getTrainingJobsMock.mockResolvedValue([
+      { id: 501, modelId: 7, status: "QUEUED", trainingConfig: { proposalKind: "drift_retrain" } },
+    ]);
+
+    const result = await proposeRetrainJob({
+      modelId: 7, reason: "still qualifies", driftSeverity: "HIGH", driftSource: "confidence-psi",
+    });
+
+    expect(result).toBeFalsy();
+    expect(createTrainingJobMock).not.toHaveBeenCalled();
+  });
+
+  it("does NOT dedup against QUEUED jobs that aren't drift-retrain proposals (different proposalKind, or a human-created job with no marker)", async () => {
+    getTrainingJobsMock.mockResolvedValue([
+      { id: 10, modelId: 7, status: "QUEUED", trainingConfig: { proposalKind: "threshold_tune" } },
+      { id: 11, modelId: 7, status: "QUEUED", trainingConfig: null },
+      { id: 12, modelId: 7, status: "QUEUED", trainingConfig: {} },
+    ]);
+
+    const result = await proposeRetrainJob({
+      modelId: 7, reason: "r", driftSeverity: "HIGH", driftSource: "confidence-psi",
+    });
+
+    expect(result).toBeTruthy();
+    expect(createTrainingJobMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a second scan while an un-actioned proposal exists creates NO duplicate; once consumed/cancelled, a new one can be created", async () => {
+    // Scan 1: no open proposal yet → creates.
+    getTrainingJobsMock.mockResolvedValueOnce([]);
+    const first = await proposeRetrainJob({
+      modelId: 7, reason: "r1", driftSeverity: "HIGH", driftSource: "confidence-psi",
+    });
+    expect(first).toBeTruthy();
+    expect(createTrainingJobMock).toHaveBeenCalledTimes(1);
+
+    // Scan 2: the proposal from scan 1 is still QUEUED and un-actioned → skip.
+    getTrainingJobsMock.mockResolvedValueOnce([
+      { id: 501, modelId: 7, status: "QUEUED", trainingConfig: { proposalKind: "drift_retrain" } },
+    ]);
+    const second = await proposeRetrainJob({
+      modelId: 7, reason: "r2", driftSeverity: "HIGH", driftSource: "confidence-psi",
+    });
+    expect(second).toBeFalsy();
+    expect(createTrainingJobMock).toHaveBeenCalledTimes(1); // still just the one from scan 1
+
+    // The proposal is consumed/cancelled (no longer a QUEUED drift_retrain row —
+    // e.g. an operator started training from it, or cancelled/deleted it).
+    getTrainingJobsMock.mockResolvedValueOnce([]);
+    const third = await proposeRetrainJob({
+      modelId: 7, reason: "r3", driftSeverity: "HIGH", driftSource: "confidence-psi",
+    });
+    expect(third).toBeTruthy();
+    expect(createTrainingJobMock).toHaveBeenCalledTimes(2); // a fresh proposal was allowed
+  });
+
+  it("de-dup is scoped per model — a different model's open proposal never blocks this one (queried with this model's id)", async () => {
+    getTrainingJobsMock.mockImplementation(async (opts: any) => {
+      // Simulate a real per-model filter: only model 42 has an open proposal.
+      if (opts.modelId === 42) {
+        return [{ id: 900, modelId: 42, status: "QUEUED", trainingConfig: { proposalKind: "drift_retrain" } }];
+      }
+      return [];
+    });
+
+    const result = await proposeRetrainJob({
+      modelId: 7, reason: "r", driftSeverity: "HIGH", driftSource: "confidence-psi",
+    });
+
+    expect(result).toBeTruthy();
+    expect(createTrainingJobMock).toHaveBeenCalledTimes(1);
+    expect(getTrainingJobsMock).toHaveBeenCalledWith({ modelId: 7, status: "QUEUED" });
   });
 });

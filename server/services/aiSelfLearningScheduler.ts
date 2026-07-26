@@ -7,10 +7,25 @@
  * into a PROPOSED (HITL) retrain job — never auto-started, never auto-activated.
  * All passes are IDEMPOTENT-ish and offline. Disabled by default; opt in via env.
  *
- * This file also owns a SEPARATE performance-snapshot sweep (own flag/cron) that
- * periodically calls aiMonitoring.collectPerformanceSnapshot so the label-PSI /
- * accuracy-drop drift signals aiMonitoring.detectDrift computes actually get
- * materialized (previously nothing called it).
+ * DELIBERATELY NOT DONE (review remediation, doc 69 F2): an earlier revision of
+ * this file also registered a scheduled sweep that called
+ * aiMonitoring.collectPerformanceSnapshot (which internally runs
+ * aiMonitoring.detectDrift and persists a driftScore onto
+ * model_performance_snapshots). That was removed because it would have been the
+ * FIRST-EVER writer of driftScore — which makes
+ * `server/services/ai/modelAutoRollback.ts`'s `auto_drift` branch reachable: that
+ * branch calls activateModelVersion AUTOMATICALLY, with NO human step, whenever
+ * driftScore >= AI_MODEL_AUTOROLLBACK_DRIFT (default 0.25). Silently arming a
+ * no-HITL auto-rollback path is directly against this task's HITL intent, and is
+ * a decision that must be made deliberately (with rollback-safety review), not as
+ * a side effect of adding a snapshot sweep. It would also have DUPLICATED the
+ * pre-existing, already-scheduled `server/services/ai/modelPerfSnapshotProducer.ts`
+ * (own flag AI_MODEL_PERF_SNAPSHOTS_ENABLED), which already writes
+ * model_performance_snapshots with REAL accuracy from ai_feedback — two
+ * independent writers of the same table would race for "latest row".
+ * Performance snapshots are satisfied by that pre-existing producer; the
+ * drift→retrain escalation below reads drift DIRECTLY from aiDriftMonitor
+ * (checkConfidenceDrift / checkConceptDriftKS), never from driftScore.
  *
  * Env flags:
  *   AI_SELF_LEARNING_ENABLED       (default "false")
@@ -20,11 +35,6 @@
  *   AI_SELF_LEARNING_SINCE_HOURS   (default "24")
  *   AI_SELF_LEARNING_MAX_ITEMS     (default "200")
  *   AI_SELF_LEARNING_AUTORETRAIN   (default "false" — legacy: only flags/logs, never proposes/trains)
- *
- *   AI_PERF_SNAPSHOT_SWEEP_ENABLED   (default "false")
- *   AI_PERF_SNAPSHOT_SWEEP_CRON      (default "0 * * * *" — hourly)
- *   AI_PERF_SNAPSHOT_SWEEP_TZ        (default "Asia/Ho_Chi_Minh")
- *   AI_PERF_SNAPSHOT_WINDOW_HOURS    (default "24" — snapshot period length)
  */
 
 import * as cron from "node-cron";
@@ -34,7 +44,6 @@ import { eq } from "drizzle-orm";
 import { scanInferenceForUncertainty } from "./aiActiveLearningAuto";
 import { checkAutoRetrainTrigger, proposeRetrainJob } from "./aiTrainingPipeline";
 import { checkConfidenceDrift, checkConceptDriftKS, isDriftMonitorEnabled } from "./aiDriftMonitor";
-import { collectPerformanceSnapshot } from "./aiMonitoring";
 
 const ENABLED = String(process.env.AI_SELF_LEARNING_ENABLED ?? "false").toLowerCase() === "true";
 const CRON = process.env.AI_SELF_LEARNING_CRON || "0 3 * * *";
@@ -125,6 +134,9 @@ export async function runSelfLearningScanOnce() {
       if (ENABLED && escalate) {
         const trigger = await getTrigger();
         if (trigger.shouldRetrain) {
+          // proposeRetrainJob itself de-dups: returns null (no insert) when an
+          // un-actioned drift-retrain proposal already exists for this model, so
+          // a still-qualifying model doesn't spam a new [PROPOSED] job every scan.
           const proposed = await proposeRetrainJob({
             modelId: m.id,
             reason: trigger.reason ?? "auto-retrain trigger satisfied",
@@ -133,11 +145,18 @@ export async function runSelfLearningScanOnce() {
             feedbackCount: trigger.feedbackCount,
             labeledCount: trigger.labeledCount,
           });
-          retrainProposed++;
-          console.log(
-            `[aiSelfLearningScheduler] model ${m.id} → PROPOSED retrain job #${(proposed as any)?.id} ` +
-              `(drift ${escalateSeverity}/${escalateSource}; ${trigger.reason}) — awaiting human approval`,
-          );
+          if (proposed) {
+            retrainProposed++;
+            console.log(
+              `[aiSelfLearningScheduler] model ${m.id} → PROPOSED retrain job #${(proposed as any)?.id} ` +
+                `(drift ${escalateSeverity}/${escalateSource}; ${trigger.reason}) — awaiting human approval`,
+            );
+          } else {
+            console.log(
+              `[aiSelfLearningScheduler] model ${m.id} drift-retrain trigger satisfied but an un-actioned ` +
+                `proposal already exists — skipping duplicate`,
+            );
+          }
         }
       }
 
@@ -182,105 +201,4 @@ export function stopSelfLearningScheduler() {
 
 export function getSelfLearningStatus() {
   return { enabled: ENABLED, cron: CRON, timezone: TZ, running: !!job, lastRunAt, lastRunStats };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// B5.2 (Wave 6 / doc 69 F2) — performance-snapshot sweep.
-//
-// aiMonitoring.collectPerformanceSnapshot materializes a model_performance_snapshots
-// row AND runs aiMonitoring.detectDrift against the previous baseline (accuracy
-// drop / latency spike / error-rate / label-PSI alerts) — but nothing called it,
-// so those signals never populated. This sweep is the missing caller: hourly (by
-// default), for every ACTIVE model with a currentVersion, over a trailing window.
-//
-// A SEPARATE flag/cron from the self-learning scan above (this can run even when
-// AI_SELF_LEARNING_ENABLED is off, and vice versa) — self-gated, fail-safe per
-// model, SERVER_ROLE=api skip inherited from backgroundJobs.ts (same as every
-// other scheduler registered there).
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const SNAPSHOT_ENABLED = String(process.env.AI_PERF_SNAPSHOT_SWEEP_ENABLED ?? "false").toLowerCase() === "true";
-const SNAPSHOT_CRON = process.env.AI_PERF_SNAPSHOT_SWEEP_CRON || "0 * * * *";
-const SNAPSHOT_TZ = process.env.AI_PERF_SNAPSHOT_SWEEP_TZ || TZ;
-const SNAPSHOT_WINDOW_HOURS = Number(process.env.AI_PERF_SNAPSHOT_WINDOW_HOURS || "24");
-
-let snapshotJob: cron.ScheduledTask | null = null;
-let lastSnapshotRunAt: Date | null = null;
-let lastSnapshotStats: { models: number; snapshots: number; failures: number; durationMs: number } | null = null;
-
-/** One pass: collectPerformanceSnapshot for every ACTIVE model with a currentVersion. Safe no-op when disabled. */
-export async function runPerformanceSnapshotSweepOnce() {
-  const start = Date.now();
-  if (!SNAPSHOT_ENABLED) {
-    return { models: 0, snapshots: 0, failures: 0, durationMs: Date.now() - start };
-  }
-
-  const db = await getDb();
-  if (!db) {
-    console.warn("[aiSelfLearningScheduler] perf-snapshot sweep: db unavailable, skipping");
-    return { models: 0, snapshots: 0, failures: 0, durationMs: Date.now() - start };
-  }
-
-  const models = await db
-    .select({ id: aiModels.id, currentVersion: aiModels.currentVersion })
-    .from(aiModels)
-    .where(eq(aiModels.status, "ACTIVE"));
-
-  const periodEnd = new Date();
-  const periodStart = new Date(periodEnd.getTime() - SNAPSHOT_WINDOW_HOURS * 3600_000);
-
-  let snapshots = 0;
-  let failures = 0;
-
-  for (const m of models) {
-    if (!m.currentVersion) continue; // nothing to key the snapshot on
-    try {
-      await collectPerformanceSnapshot({
-        modelId: m.id,
-        modelVersion: m.currentVersion,
-        periodStart,
-        periodEnd,
-      });
-      snapshots++;
-    } catch (err) {
-      failures++;
-      console.error(`[aiSelfLearningScheduler] perf-snapshot failed for model ${m.id}:`, (err as any)?.message || err);
-    }
-  }
-
-  const durationMs = Date.now() - start;
-  lastSnapshotRunAt = new Date();
-  lastSnapshotStats = { models: models.length, snapshots, failures, durationMs };
-  console.log(`[aiSelfLearningScheduler] perf-snapshot sweep done in ${durationMs}ms — ${snapshots}/${models.length} snapshot(s), ${failures} failure(s)`);
-  return lastSnapshotStats;
-}
-
-export function initPerfSnapshotScheduler() {
-  if (!SNAPSHOT_ENABLED) {
-    console.log("[aiSelfLearningScheduler] perf-snapshot sweep disabled (set AI_PERF_SNAPSHOT_SWEEP_ENABLED=true to enable)");
-    return;
-  }
-  if (snapshotJob) return;
-  snapshotJob = cron.schedule(
-    SNAPSHOT_CRON,
-    () => { runPerformanceSnapshotSweepOnce().catch(err => console.error("[aiSelfLearningScheduler] perf-snapshot cron error:", err)); },
-    { timezone: SNAPSHOT_TZ },
-  );
-  console.log(`[aiSelfLearningScheduler] perf-snapshot sweep scheduled '${SNAPSHOT_CRON}' (${SNAPSHOT_TZ})`);
-}
-
-export function stopPerfSnapshotScheduler() {
-  if (snapshotJob) { snapshotJob.stop(); snapshotJob = null; }
-}
-
-export function getPerfSnapshotSchedulerStatus() {
-  return {
-    enabled: SNAPSHOT_ENABLED,
-    cron: SNAPSHOT_CRON,
-    timezone: SNAPSHOT_TZ,
-    windowHours: SNAPSHOT_WINDOW_HOURS,
-    running: !!snapshotJob,
-    lastRunAt: lastSnapshotRunAt,
-    lastRunStats: lastSnapshotStats,
-  };
 }
