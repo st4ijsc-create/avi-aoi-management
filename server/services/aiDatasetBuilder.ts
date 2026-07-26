@@ -12,10 +12,11 @@
 
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { getDb } from "../db/connection";
 import { getAiModelById } from "../db/ai";
 import * as dbAdvanced from "../db/aiAdvanced";
-import { eq, and, inArray, gte, desc } from "drizzle-orm";
+import { eq, and, inArray, gte, desc, sql } from "drizzle-orm";
 import {
   aiLabelQueue,
   aiFeedback,
@@ -47,6 +48,8 @@ export interface BuildDatasetResult {
   storageKey: string;
   manifestPaths: { train: string; val: string; test: string };
   labels: string[];
+  /** F3/D3 — sha256 lineage hash over sorted (imageUrl,label) sample ids (see computeContentHash). */
+  contentHash: string;
 }
 
 /** Default seed — keep stable across machines for reproducible splits. */
@@ -186,6 +189,78 @@ export function readJsonl(filePath: string): DatasetSample[] {
   return content.split("\n").map(line => JSON.parse(line) as DatasetSample);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// F3/D3 — Dataset lineage content-hash (doc69 G10)
+//
+// Deterministic sha256 over the SORTED sample ids of a materialized dataset,
+// so the exact data a model version was trained/evaluated on can be pinned
+// (into `training_datasets.contentHash` — additive, migration 0301, NOT run —
+// AND into `model_versions.evalReport.datasetContentHash`, an EXISTING JSON
+// column, see aiEvalHarness.compareBeforeAfter). Sorted → order-independent
+// (collection order / DB query order never changes the hash). Deterministic:
+// same set of (imageUrl,label) pairs → identical hash; any addition, removal,
+// or label edit → a different hash.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Deterministic sha256 (hex) over a SORTED list of sample ids. Pure, no I/O. */
+export function computeContentHash(sampleIds: string[]): string {
+  const sorted = sampleIds.slice().sort();
+  const h = crypto.createHash("sha256");
+  for (const id of sorted) h.update(id).update("\n");
+  return h.digest("hex");
+}
+
+/** Content-hash of a classification dataset (imageUrl + label — editing a label changes the hash). */
+export function hashDatasetSamples(samples: DatasetSample[]): string {
+  return computeContentHash(samples.map((s) => `${s.imageUrl}::${s.label}`));
+}
+
+/** Content-hash of a segmentation dataset (imageUrl + sorted mask labels of that image). */
+export function hashSegDatasetSamples(samples: SegSample[]): string {
+  return computeContentHash(
+    samples.map((s) => `${s.imageUrl}::${s.masks.map((m) => m.label).sort().join(",")}`),
+  );
+}
+
+/**
+ * Recompute a dataset's content-hash directly from its MATERIALIZED manifest
+ * files on disk (train+val+test jsonl) — the source of truth. Used by the eval
+ * harness to pin the exact dataset a model version was evaluated against
+ * WITHOUT depending on a DB column (works whether or not migration 0301 has
+ * run). Missing/empty manifests degrade to `readJsonl`'s `[]` → deterministic
+ * hash of the empty set, never throws.
+ */
+export function computeDatasetManifestHash(datasetId: number): string {
+  const dir = datasetDir(datasetId);
+  const train = readJsonl(path.join(dir, "train.jsonl"));
+  const val = readJsonl(path.join(dir, "val.jsonl"));
+  const test = readJsonl(path.join(dir, "test.jsonl"));
+  return hashDatasetSamples([...train, ...val, ...test]);
+}
+
+/**
+ * Best-effort pin of a content-hash into `training_datasets.contentHash`
+ * (additive column, migration 0301, NOT applied by this task — see brief).
+ * Uses a raw, narrow UPDATE (not the typed pgTable) so it never touches the
+ * columns `getTrainingDataset`/`getTrainingDatasets` already select — those
+ * keep working byte-for-byte whether or not the column exists yet. Failure
+ * (e.g. undefined_column before the migration runs) is caught + logged, NEVER
+ * thrown — pinning is an audit nicety, not required for the dataset build to
+ * succeed (the hash is always returned in the build result regardless).
+ */
+async function pinDatasetContentHash(datasetId: number, contentHash: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.execute(sql`UPDATE training_datasets SET "contentHash" = ${contentHash} WHERE id = ${datasetId}`);
+  } catch (e) {
+    console.warn(
+      `[aiDatasetBuilder] contentHash column unavailable (migration 0301 pending?) — dataset ${datasetId} not pinned:`,
+      (e as Error)?.message ?? e,
+    );
+  }
+}
+
 /**
  * Build (materialize) a dataset that was previously created in
  * `training_datasets`. Idempotent: re-running overwrites the manifests with the
@@ -241,6 +316,11 @@ export async function buildDataset(
       updatedAt: new Date(),
     }).where(eq(trainingDatasets.id, datasetId));
 
+    // F3/D3 — lineage hash over ALL samples (pre-split, matches the manifests
+    // just written). Best-effort DB pin; the hash itself is always returned.
+    const contentHash = hashDatasetSamples(samples);
+    await pinDatasetContentHash(datasetId, contentHash);
+
     return {
       datasetId,
       totalSamples,
@@ -249,6 +329,7 @@ export async function buildDataset(
       storageKey,
       manifestPaths,
       labels,
+      contentHash,
     };
   } catch (err) {
     await db.update(trainingDatasets).set({ status: "FAILED", updatedAt: new Date() }).where(eq(trainingDatasets.id, datasetId));
@@ -305,6 +386,8 @@ export interface BuildSegmentationResult {
   manifestPaths: { train: string; val: string; test: string };
   /** Masks skipped for missing width/height or <3 points (degrade audit). */
   skipped: { noDimensions: number; tooFewPoints: number; emptyImages: number };
+  /** F3/D3 — sha256 lineage hash over sorted (imageUrl,sorted-mask-labels) sample ids. */
+  contentHash: string;
 }
 
 const SEG_SOURCE_TAG = "qc_segmentation" as const;
@@ -494,6 +577,11 @@ export async function buildSegmentationDataset(
       updatedAt: new Date(),
     }).where(eq(trainingDatasets.id, datasetId));
 
+    // F3/D3 — lineage hash over ALL images (pre-split, matches the manifests
+    // just written). Best-effort DB pin; the hash itself is always returned.
+    const contentHash = hashSegDatasetSamples(samples);
+    await pinDatasetContentHash(datasetId, contentHash);
+
     return {
       datasetId,
       totalSamples,
@@ -503,6 +591,7 @@ export async function buildSegmentationDataset(
       storageKey,
       manifestPaths,
       skipped,
+      contentHash,
     };
   } catch (err) {
     await db.update(trainingDatasets).set({ status: "FAILED", updatedAt: new Date() }).where(eq(trainingDatasets.id, datasetId));

@@ -1501,6 +1501,24 @@ export const aiAnomalyProfiles = pgTable("ai_anomaly_profiles", {
   // ── U6-a (0156, additive, nullable) — tenant scope + inert RLS (G-9). ──
   corporateCode: varchar("corporateCode", { length: 50 }),
   factoryId: integer("factoryId"),
+  // ── F3/D2 (doc69 G9, migration 0300, additive, nullable, NOT YET APPLIED) ──
+  // ROC-calibrated threshold (ai/aiAnomalyCalibration.calibrateThreshold), swept
+  // to hit a target recall/FPR over labelled NG/OK scores. When set, the scorer
+  // (aiAnomalyDetection.scoreFromVector) uses THIS instead of `threshold` (the
+  // fixed p99 self-distance). null = uncalibrated → unchanged p99 behaviour.
+  // NOTE: server/db/aiAnomaly.ts getProfile()/getBankStats() guard their
+  // full-row SELECT against this column being absent pre-migration (42703
+  // undefined_column → fall back to a legacy column list) — do NOT add a
+  // .select() of this table elsewhere without the same guard.
+  calibratedThreshold: decimal("calibratedThreshold", { precision: 12, scale: 8 }),
+  calibrationTarget: json("calibrationTarget").$type<{
+    targetRecall?: number;
+    targetFpr?: number;
+    achievedRecall: number;
+    achievedFpr: number;
+    sampleCount: { ng: number; ok: number };
+    calibratedAt: string;
+  }>(),
   builtAt: timestamp("builtAt").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uq_anomaly_profile_scope").on(table.productModelId, table.machineId, table.modelCode),
