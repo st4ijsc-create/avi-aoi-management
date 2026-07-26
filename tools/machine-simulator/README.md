@@ -695,3 +695,268 @@ this proxy, a direct cross-port fetch from `:5173` straight to `:5199` would nev
 back on the next request, and login would appear to silently fail. `web/src/lib/api.ts`'s `BASE_URL`
 doc comment documents the client-side half of this same contract (and why the packaged build in §13.2
 needs no such proxy at all — one process, one origin, no cross-port split to bridge).
+
+---
+
+## 15. Windows Service & Installer / Dịch vụ Windows & Trình cài đặt
+
+**EN** — WS-F1 adds three things on top of everything §13 already documents: (1) `St4i.EngineApi.exe`
+can register **itself** as a Windows Service, so it runs headlessly and starts at boot with no
+`St4i.DesktopShell`/desktop session involved at all; (2) a WiX v4 MSI that installs the same
+`publish-desktop/` payload with a Start-Menu shortcut and three off-by-default optional features; (3)
+the operational knobs (service config, uninstall/data retention, signing, auto-update) an IT/ops team
+needs to actually run this in the field. None of this changes how §13's Live/Demo/Exhibition packaging
+works — it only adds a service-hosting option and an installer around the existing publish output.
+
+*(VI: WS-F1 thêm 3 thứ lên trên những gì §13 đã tài liệu hoá: (1) `St4i.EngineApi.exe` tự đăng ký làm
+Windows Service, chạy nền không cần phiên desktop; (2) trình cài đặt MSI (WiX v4) đóng gói cùng cây
+`publish-desktop/` với shortcut Start Menu + 3 tính năng tùy chọn mặc định TẮT; (3) các nút vận hành
+(cấu hình dịch vụ, gỡ cài đặt/giữ dữ liệu, thiếu chữ ký số, nền tảng tự cập nhật) đội IT/vận hành cần để
+chạy thật ngoài hiện trường.)*
+
+### 15.1 The Windows Service — `St4iEngineApi` / Dịch vụ Windows
+
+`St4i.EngineApi.exe` (Task 3's ASP.NET host, §13.2 — the same one that serves the web UI + API on
+`:5199`) self-registers with the Service Control Manager; no separate service executable exists.
+
+```powershell
+# From an ELEVATED ("Run as administrator") prompt/shell:
+.\St4i.EngineApi.exe --install      # registers the service, sets start type to auto, sets its description
+.\St4i.EngineApi.exe --status       # queries the SCM: "St4iEngineApi: Running" / "Stopped" / "not installed"
+.\St4i.EngineApi.exe --uninstall    # unregisters it (sc.exe refuses if it's currently running — stop it first)
+
+sc start St4iEngineApi              # or services.msc, or a reboot (start type is auto)
+sc stop St4iEngineApi
+```
+
+- Internal SCM name: **`St4iEngineApi`** (`ServiceHostConstants.ServiceName`) — the one identifier both
+  the *running* process (`AddWindowsService(o => o.ServiceName = ...)` in `Program.cs`, a complete
+  no-op unless the process was actually launched BY the SCM) and the *install/uninstall* verbs share,
+  so they can never disagree. Display name in `services.msc`: "ST4I Machine Simulator Engine".
+- `--install`/`--uninstall`/`--status` are handled as the very first thing `Program.cs` does, before
+  `WebApplication.CreateBuilder` runs — a pure verb invocation never spins up Kestrel or touches the
+  historian/WAL/security directories or DPAPI.
+- Runs as **`LocalSystem`** by default (`ServiceInstallVerbs.DefaultAccount` — also what the MSI's
+  optional service feature registers, §15.3). **Why:** the security-hardening pass (§14) locks the
+  `%ProgramData%\ST4I\sim\security` directory's ACL down to exactly three principals —
+  `NT AUTHORITY\SYSTEM`, `BUILTIN\Administrators`, and whichever account happened to create/own the
+  directory first (`SecurityDirAcl.Apply`) — nobody else, including a dedicated low-priv service
+  account added later, gets any access at all. LocalSystem is always one of those three, so it always
+  works with zero extra provisioning.
+- **Optional hardened-account alternative (manual today):** a dedicated low-privilege account (instead
+  of LocalSystem) is possible, but only if it is provisioned *before* the security directories are
+  first created — i.e. the FIRST process to ever run under that account becomes the ACL'd "owner" — or
+  if its access is granted by hand afterward (`icacls "%ProgramData%\ST4I\sim\security" /grant
+  "DOMAIN\svc-account:(OI)(CI)F"`). Neither `--install` nor the MSI's `ServiceFeature` exposes a flag to
+  pick a different account today — both hardcode `LocalSystem` — so switching accounts is a manual
+  post-install step (`sc config St4iEngineApi obj= "DOMAIN\svc-account" password=...`) followed by the
+  `icacls` grant above, not a supported one-command path yet.
+- `sc.exe create`'s `binPath` carries **only the exe path, no extra CLI arguments** — a service-hosted
+  instance can't be given `--urls`/`--fleet`/etc. on its command line the way an interactive `dotnet
+  run`/double-click launch can. Environment variables (§15.2) are the only configuration channel
+  available to a running service.
+- A non-elevated `--install`/`--uninstall` fails clearly: `sc.exe` returns exit code 5 ("Access is
+  denied"), which the verb detects and reports as "this requires administrator privileges."
+
+*(VI: `St4i.EngineApi.exe` tự đăng ký với SCM — không có exe dịch vụ riêng. Tên nội bộ `St4iEngineApi`
+dùng chung giữa lúc chạy và lúc cài/gỡ nên không bao giờ lệch nhau. Chạy mặc định dưới `LocalSystem` vì
+ACL bảo mật (§14) chỉ cấp quyền cho SYSTEM/Administrators/chủ thư mục đầu tiên — tài khoản ít quyền
+riêng chỉ hoạt động nếu được cấp trước khi thư mục security được tạo, hoặc cấp tay bằng `icacls` sau đó;
+hiện chưa có cờ dòng lệnh để chọn tài khoản khác, phải làm tay qua `sc config` + `icacls`. `binPath` của
+sc.exe chỉ có đường dẫn exe, không tham số — nên biến môi trường (§15.2) là kênh cấu hình DUY NHẤT cho
+một service đang chạy.)*
+
+### 15.2 Service config — per-service registry `Environment` / Cấu hình dịch vụ qua registry
+
+A Windows Service does not inherit the environment of whichever user is (or isn't) logged on — there's
+no user profile for it to read. The standard Windows mechanism is a **`REG_MULTI_SZ`** value named
+`Environment` under the service's own registry key,
+`HKLM\SYSTEM\CurrentControlSet\Services\St4iEngineApi\Environment` — the SCM reads it and injects every
+line into the service process's environment block right before launching it (not read/reread live —
+restart the service after changing it).
+
+```powershell
+# From an ELEVATED PowerShell:
+New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\St4iEngineApi' -Name Environment `
+  -PropertyType MultiString -Force -Value @(
+    'ASPNETCORE_URLS=http://localhost:5199'
+    'ST4I_HISTORIAN_DIR=D:\St4iData\historian'
+    'ST4I_WAL_DIR=D:\St4iData\wal'
+    'ST4I_SECURITY_DIR=D:\St4iData\security'
+    'ST4I_DEMO_ENABLED=false'
+  )
+
+sc stop St4iEngineApi; sc start St4iEngineApi   # Environment is only re-read at process start
+```
+
+The env vars that actually matter to this engine:
+
+| Variable | Controls | Default when unset |
+|---|---|---|
+| `ASPNETCORE_URLS` | Kestrel bind address(es) — `Program.cs` only applies its own hardcoded `http://localhost:5199` default when NEITHER `--urls` nor this is set | `http://localhost:5199` |
+| `ST4I_HISTORIAN_DIR` | Historian SQLite DB (`historian.db`) + `oee-settings.json` root | `%ProgramData%\ST4I\sim\historian` |
+| `ST4I_WAL_DIR` | Store-and-forward WAL queue-file root (`WalOptions`) | `%ProgramData%\ST4I\sim\wal` |
+| `ST4I_SECURITY_DIR` | `security.db` (users/sessions/audit log) + the DataProtection key ring root | `%ProgramData%\ST4I\sim\security` |
+| `ST4I_DEMO_ENABLED` | `true` boots into the offline Demo fleet (exhibition, §13.5); unset/`false` boots Live (product default) | unset → Live |
+
+*(Also relevant if the WAL needs tuning: `ST4I_WAL_ENABLED`/`ST4I_WAL_MAX_BYTES` — same idiom, see
+`WalOptions`. Not a service-only mechanism — these same env vars work identically for an interactive
+`dotnet run`/double-click launch; the registry `Environment` value is specifically how to set them when
+there's no shell/user session to export them from.)*
+
+*(VI: Dịch vụ Windows KHÔNG kế thừa biến môi trường của người dùng đăng nhập — cơ chế chuẩn là giá trị
+`REG_MULTI_SZ` tên `Environment` dưới khóa registry của service,
+`HKLM\SYSTEM\CurrentControlSet\Services\St4iEngineApi\Environment`; SCM chỉ đọc lúc khởi động tiến
+trình, đổi giá trị xong phải `sc stop`/`sc start` lại. 5 biến quan trọng: `ASPNETCORE_URLS` (địa chỉ
+bind), `ST4I_HISTORIAN_DIR`, `ST4I_WAL_DIR`, `ST4I_SECURITY_DIR` (thư mục dữ liệu), `ST4I_DEMO_ENABLED`
+(bật Demo ngoại tuyến).)*
+
+### 15.3 Installer — WiX v4 MSI / Trình cài đặt MSI
+
+A per-machine MSI that installs the same `publish-desktop/` deliverable §13.2 already produces
+(`St4i.DesktopShell.exe` + the spawned engine + web UI + default fleet/mapping data) with a Start Menu
+shortcut, plus three optional features, all **OFF by default**. Full detail, rationale, and the exact
+verification performed: **`packaging/installer/README.md`** — this section is a summary, not a
+duplicate.
+
+```powershell
+cd tools/machine-simulator
+dotnet tool install --global wix --version 4.0.5   # optional — only needed for `wix msi decompile`/`validate` diagnostics; the build itself doesn't need this CLI on PATH
+.\packaging\installer\build-installer.ps1
+```
+
+produces `packaging/installer/bin/x64/Release/St4iMachineSimulator.msi` — runs `npm run build` (web
+UI), publishes `St4i.EngineApi` + `St4i.DesktopShell` (self-contained, single-file, win-x64) into a
+fresh `publish-desktop/`, then builds the WiX v4 MSBuild project (`St4i.Installer.wixproj`, pinned to
+`WixToolset.Sdk`/`WixToolset.Heat` **4.0.5** — v6/v7 gate their CLI behind an "Open Source Maintenance
+Fee" EULA, so this repo deliberately stays on the last pre-OSMF release).
+
+- **Scope:** `perMachine` — install/uninstall/repair all need elevation (a UAC prompt on double-click).
+- **Start Menu:** `ST4I Machine Simulator\ST4I Machine Simulator.lnk`, installed unconditionally
+  (`MainFeature`, always on, `Level="1"`).
+- **No feature-picker UI is authored** (`WixToolset.UI.wixext` deliberately not referenced, to avoid
+  another toolchain dependency) — install/uninstall shows only Windows Installer's own built-in
+  progress UI. Optional features are opted into purely via `ADDLOCAL` on the `msiexec` command line:
+
+  | Feature Id | What it does |
+  |---|---|
+  | `ServiceFeature` | Registers `St4i.EngineApi.exe` as the `St4iEngineApi` Windows Service (LocalSystem, auto-start) via native WiX `<ServiceInstall>`/`<ServiceControl>` — equivalent to §15.1's `--install` verb, same service name/account/start-type. **Pick one mechanism, never both** — using both double-registers the same service name. |
+  | `StartupFeature` | Adds a shortcut to the installing user's own Startup folder (`St4i.DesktopShell.exe` launches at sign-in). |
+  | `ExhibitionFeature` | Installs `run-exhibition.bat` (§13.5's `ST4I_DEMO_ENABLED=true` launcher) next to the exe. |
+
+  ```powershell
+  msiexec /i St4iMachineSimulator.msi /passive                                    # product default: MainFeature only
+  msiexec /i St4iMachineSimulator.msi ADDLOCAL=ALL /passive                        # every optional feature
+  msiexec /i St4iMachineSimulator.msi ADDLOCAL=MainFeature,ServiceFeature /passive # just the service
+  msiexec /x St4iMachineSimulator.msi /passive                                     # uninstall
+  ```
+
+*(VI: MSI theo máy (perMachine), cần quyền elevate. Shortcut Start Menu luôn cài, không có UI chọn tính
+năng — 3 tính năng tùy chọn, mặc định TẮT, bật qua `ADDLOCAL` trên dòng lệnh `msiexec`: `ServiceFeature`
+(đăng ký Windows Service — chọn MỘT cơ chế, không dùng cùng lúc với `--install` của exe),
+`StartupFeature` (chạy cùng lúc đăng nhập), `ExhibitionFeature` (cài `run-exhibition.bat`). Chi tiết đầy
+đủ: `packaging/installer/README.md`.)*
+
+### 15.4 Uninstall & data retention / Gỡ cài đặt & giữ dữ liệu
+
+Uninstalling (Add/Remove Programs, `msiexec /x`, or a `MajorUpgrade`'s automatic remove-old-version
+pass) removes only what the MSI itself installed — everything under `%ProgramFiles%\ST4I\Machine
+Simulator\`, the Start Menu/Startup shortcuts, and — if `ServiceFeature` was enabled — stops and
+deletes the `St4iEngineApi` service.
+
+**Customer data under `%ProgramData%\ST4I\sim\{historian,wal,security,creds}\` is kept by default** —
+the MSI has no `<Component>` referencing anything there (it's all runtime-created by the engine, not
+installed), so Windows Installer's uninstall/remove sequence never touches it. This is deliberate: an
+uninstall or upgrade must never silently destroy production history, the audit trail, or a machine's
+credential.
+
+To actually purge it (decommissioning a machine, resetting a demo box), run the separate, explicit,
+destructive script — **never** invoked by the MSI itself:
+
+```powershell
+.\packaging\remove-data.ps1 -WhatIf   # preview only, nothing touched
+.\packaging\remove-data.ps1           # interactive — prompts before each stop/delete
+.\packaging\remove-data.ps1 -Force    # non-interactive, for scripted wipes
+```
+
+It stops+deletes the `St4iEngineApi` service if present, then deletes all 4 `%ProgramData%\ST4I\sim\*`
+subdirectories — printing an explicit "this destroys the audit chain + historian + credentials"
+warning up front, gated through PowerShell's `ShouldProcess`/`-WhatIf`/`-Confirm`.
+
+*(VI: Gỡ cài đặt chỉ xoá những gì MSI đã cài (Program Files, shortcut, service nếu có bật) — dữ liệu
+`%ProgramData%\ST4I\sim\*` được GIỮ LẠI mặc định vì MSI không hề biết tới các thư mục này (do engine tự
+tạo lúc chạy). Muốn xoá thật, chạy `packaging\remove-data.ps1` (có `-WhatIf`/`-Force`) — script riêng,
+thủ công, có cảnh báo phá hủy rõ ràng, KHÔNG bao giờ được MSI tự gọi.)*
+
+### 15.5 `St4i.DesktopShell` coexistence / Cùng tồn tại với DesktopShell
+
+If the service (§15.1) is installed and already holds port `:5199`, launching `St4i.DesktopShell.exe`
+(§13.2) **attaches** to it instead of spawning a second engine — its own startup probe (`GET
+/v1/fleet`) sees something already answering and skips the spawn step entirely, and closing the shell
+window does **not** kill a process it didn't start. This is the same attach-vs-spawn logic §13.2
+already documents for "re-launching the shell without closing a previous one" — a running service is
+just another case of "something's already on :5199."
+
+**Don't also run a manual `St4i.EngineApi.exe` (or `dotnet run --project src/St4i.EngineApi`) on
+`:5199`** while the service is running — Kestrel's port bind simply fails for whichever one starts
+second. Check what's already using the port first (`sc query St4iEngineApi` / `St4i.EngineApi.exe
+--status` / `services.msc`) before starting anything else by hand.
+
+*(VI: Nếu service đã giữ cổng :5199, mở `St4i.DesktopShell.exe` sẽ GẮN VÀO tiến trình đó thay vì mở
+engine thứ hai, và đóng cửa sổ shell KHÔNG giết service. Đừng chạy thêm `St4i.EngineApi.exe` thủ công
+trên :5199 khi service đang chạy — bind cổng sẽ lỗi cho bên chạy sau; kiểm tra bằng `sc query`/
+`--status`/`services.msc` trước.)*
+
+### 15.6 Signing gap / Thiếu chữ ký số
+
+**The MSI and every exe inside it are unsigned** — no code-signing certificate is available in this
+environment, the same gap §13.4 documents for the (unbuilt) Tauri path. Installing/running shows
+"Unknown Publisher" and may trigger SmartScreen. Authenticode-signing (`signtool.exe sign /fd sha256
+/tr ... /td sha256 ...`) both the `.msi` and the payload binaries is deferred to a future task once a
+certificate is available — it's a pure post-build signing step, no code/authoring changes needed to add
+it later.
+
+*(VI: MSI và các exe bên trong CHƯA ký số — chưa có chứng chỉ code-signing. Cài/chạy sẽ hiện "Unknown
+Publisher" và có thể bị SmartScreen chặn. Ký Authenticode để sau, khi có chứng chỉ — chỉ là bước ký
+thêm sau build, không cần đổi code.)*
+
+### 15.7 Auto-update foundation / Nền tảng tự cập nhật
+
+`<MajorUpgrade>` (fixed `UpgradeCode`, strictly-increasing `Version` from `Directory.Build.props`) means
+installing a newer MSI over an older install **upgrades in place** — installing an older MSI over a
+newer one is refused with a clear message instead of silently downgrading files under a running app.
+This is a **manual** upgrade path (an operator/admin runs the newer `.msi`) — there is no in-app
+update-check or auto-download yet. The running version is always visible at `GET /v1/capabilities`
+(`{demoEnabled:false, mode:"Live", version:"1.0.0"}` — `version` reads `Directory.Build.props`'s
+`<Version>`, currently `1.0.0`, off the built assembly). Full auto-update (background check, download,
+staged install) and long-term-support/channel policy are deferred beyond this workstream.
+
+*(VI: `MajorUpgrade` cho phép cài MSI mới đè lên bản cũ (nâng cấp tại chỗ); cài bản cũ đè bản mới sẽ bị
+từ chối rõ ràng. Đây là nâng cấp THỦ CÔNG — chưa có tự kiểm tra/tải bản mới trong app. Phiên bản đang
+chạy luôn xem được ở `GET /v1/capabilities`. Tự cập nhật đầy đủ + chính sách LTS để sau.)*
+
+### 15.8 Two known fast-follow gaps — be honest / Hai khoảng trống đã biết, nói thật
+
+**(a) `St4i.EngineApi` settings (`serverUrl`/`machineCode`/`verifyTls`) are in-memory only.**
+`FleetHost`'s `_serverUrl`/`_verifyTls`/`_machineCode` are plain private fields, reset to their
+built-in defaults every process start — `PUT /v1/settings` mutates them for the lifetime of the
+running process, but nothing persists them to disk/registry, so a service restart (or a reboot) throws
+away anything an operator configured through the UI/API. **Until a settings-persistence fast-follow
+lands, configure a headless service via the registry `Environment` env vars in §15.2 instead** (which
+ARE read fresh on every process start) rather than relying on `PUT /v1/settings` surviving a restart.
+
+**(b) `CredentialStore` uses per-user DPAPI (`DataProtectionScope.CurrentUser`).** A machine's `mk_`
+credential (§5) is encrypted to whichever specific Windows account was running the process when
+`Save()` was called — decryptable only by that same account on that same machine. An `mk_` onboarded
+interactively (as the logged-in operator) will **not** be readable once the engine is converted to run
+as a service under a different account (e.g. `LocalSystem`, or a dedicated service account) — it will
+need to be re-claimed/re-pasted through Onboarding under the new identity. A `LocalMachine`-scoped DPAPI
+fast-follow (matching what the DataProtection key ring already does — §14, `protectToLocalMachine:
+true`) is planned to remove this friction, but is not built in this workstream.
+
+*(VI: (a) Cấu hình `serverUrl`/`machineCode`/`verifyTls` của `St4i.EngineApi` hiện CHỈ ở bộ nhớ, mất khi
+service khởi động lại — dùng biến môi trường registry ở §15.2 thay vì trông chờ `PUT /v1/settings` tồn
+tại qua restart. (b) `CredentialStore` mã hoá DPAPI theo TỪNG NGƯỜI DÙNG — khoá `mk_` claim lúc tương
+tác dưới tài khoản người dùng sẽ KHÔNG đọc được khi chuyển sang chạy dưới tài khoản service khác, phải
+claim lại qua Onboarding. Kế hoạch chuyển sang DPAPI theo LocalMachine để hết vướng này, chưa làm ở
+workstream này.)*
