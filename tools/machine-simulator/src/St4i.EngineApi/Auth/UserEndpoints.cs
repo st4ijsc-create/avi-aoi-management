@@ -32,6 +32,19 @@ namespace St4i.EngineApi.Auth;
 /// <c>AuthEndpoints.change-password</c>'s identical choice). Actor is always the AUTHENTICATED admin
 /// (<see cref="AuditRecorder.RecordAsync"/> reads it off <see cref="HttpContext"/> itself), never a
 /// client-supplied value.
+///
+/// WS-D-D7 review fix — <see cref="MutationLock"/> serializes every check-then-act critical section
+/// below (create's duplicate-username check, both lock-out guards) across concurrent requests. Without
+/// it, two concurrent handler invocations each open their OWN <c>SqliteConnection</c>
+/// (<see cref="SqliteUserStore"/> — no transaction spans "read the roster, decide, write" across
+/// separate calls), so two racing requests can each read the SAME pre-mutation roster, each see the
+/// OTHER as "the remaining enabled Admin" (or each see the username as not-yet-taken), and both commit
+/// — e.g. disabling Admin A while demoting Admin B, concurrently, could leave ZERO enabled Admins even
+/// though each request's OWN guard check passed. Same "serialize the check-then-act instead of trusting
+/// a single connection's transaction" fix <c>AuthEndpoints.BootstrapLock</c> already established for
+/// bootstrap's own check-then-create race (see that field's doc comment) — this is single-process-host
+/// software, so an in-process <see cref="SemaphoreSlim"/> is sufficient; a multi-instance deployment
+/// would need a real database-level lock/transaction instead.
 /// </summary>
 public static class UserEndpoints
 {
@@ -39,6 +52,13 @@ public static class UserEndpoints
     /// kept as its own constant here (not shared) since the two files have no other coupling and
     /// duplicating one literal is cheaper than introducing a cross-file dependency for it.</summary>
     private const int MinPasswordLength = 8;
+
+    /// <summary>Serializes create/role-change/disable-enable against each other — see this class's own
+    /// doc comment for the race it closes. Deliberately does NOT also cover <see cref="ResetPasswordAsync"/>
+    /// or <see cref="GetUsersAsync"/>: neither has a check-then-act invariant that depends on any OTHER
+    /// row (a password reset only ever touches its own target row; the list read has nothing to
+    /// serialize against), so locking them too would only add contention with no correctness benefit.</summary>
+    private static readonly SemaphoreSlim MutationLock = new(1, 1);
 
     public static void MapUserEndpoints(this IEndpointRouteBuilder app)
     {
@@ -80,25 +100,39 @@ public static class UserEndpoints
             return Results.BadRequest(new ApiErrorDto($"password is required and must be at least {MinPasswordLength} characters."));
         }
 
-        // Checked BEFORE the insert (not relying on the store's UNIQUE-constraint exception) — same
-        // case-insensitive semantics the `users.username` column's own COLLATE NOCASE enforces, but a
-        // clean 409 instead of an unhandled SqliteException surfacing as a 500.
-        var existing = await userStore.GetByUsernameAsync(body.Username, ct).ConfigureAwait(false);
-        if (existing is not null)
+        // WS-D-D7 review fix — the check-then-create below is now serialized under MutationLock: two
+        // concurrent creates for the SAME username used to each read "not found" off their own
+        // connection, then both call CreateAsync, and the SECOND one's INSERT would throw the store's
+        // raw UNIQUE-constraint SqliteException (an unhandled 500), not a clean 409. Holding the lock
+        // across the whole check-then-act makes the second caller's GetByUsernameAsync see the FIRST
+        // caller's already-committed row.
+        await MutationLock.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            return Results.Conflict(new ApiErrorDto($"username \"{body.Username}\" already exists."));
+            // Same case-insensitive semantics the `users.username` column's own COLLATE NOCASE
+            // enforces, checked BEFORE the insert so the common case gets a clean 409, not a raw
+            // constraint-violation exception.
+            var existing = await userStore.GetByUsernameAsync(body.Username, ct).ConfigureAwait(false);
+            if (existing is not null)
+            {
+                return Results.Conflict(new ApiErrorDto($"username \"{body.Username}\" already exists."));
+            }
+
+            var hasher = new PasswordHasher<AppUser>();
+            var hash = hasher.HashPassword(AppUser.Instance, body.Password);
+            var createdBy = http.User.Identity?.Name;
+            var user = await userStore.CreateAsync(body.Username, hash, body.Role, body.DisplayName, createdBy, ct).ConfigureAwait(false);
+
+            // WS-D-D7 — new = {username, role} ONLY. NEVER body.Password, never the hash.
+            await recorder.RecordAsync(
+                http, "user.create", "user", IdOf(user.Id), null, new { user.Username, user.Role }, ct).ConfigureAwait(false);
+
+            return Results.Ok(ToDto(user));
         }
-
-        var hasher = new PasswordHasher<AppUser>();
-        var hash = hasher.HashPassword(AppUser.Instance, body.Password);
-        var createdBy = http.User.Identity?.Name;
-        var user = await userStore.CreateAsync(body.Username, hash, body.Role, body.DisplayName, createdBy, ct).ConfigureAwait(false);
-
-        // WS-D-D7 — new = {username, role} ONLY. NEVER body.Password, never the hash.
-        await recorder.RecordAsync(
-            http, "user.create", "user", IdOf(user.Id), null, new { user.Username, user.Role }, ct).ConfigureAwait(false);
-
-        return Results.Ok(ToDto(user));
+        finally
+        {
+            MutationLock.Release();
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -112,28 +146,40 @@ public static class UserEndpoints
             return Results.BadRequest(new ApiErrorDto($"role must be one of: {Roles.Operator}, {Roles.Engineer}, {Roles.Admin}"));
         }
 
-        var all = await userStore.ListAsync(ct).ConfigureAwait(false);
-        var user = all.FirstOrDefault(u => u.Id == id);
-        if (user is null)
+        // WS-D-D7 review fix — the guard's read (ListAsync) → decide → write (SetRoleAsync) is now
+        // atomic under MutationLock. See this class's own doc comment for the exact race this closes:
+        // without the lock, a concurrent disable-of-A + demote-of-B (the only 2 enabled Admins) could
+        // each read the SAME pre-mutation roster, each see the OTHER as the safety net, and both commit.
+        await MutationLock.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            return Results.NotFound(new ApiErrorDto($"no such user id {id}"));
-        }
+            var all = await userStore.ListAsync(ct).ConfigureAwait(false);
+            var user = all.FirstOrDefault(u => u.Id == id);
+            if (user is null)
+            {
+                return Results.NotFound(new ApiErrorDto($"no such user id {id}"));
+            }
 
-        if (!user.Disabled
-            && string.Equals(user.Role, Roles.Admin, StringComparison.Ordinal)
-            && !string.Equals(body.Role, Roles.Admin, StringComparison.Ordinal)
-            && IsLastEnabledAdmin(all, user.Id))
+            if (!user.Disabled
+                && string.Equals(user.Role, Roles.Admin, StringComparison.Ordinal)
+                && !string.Equals(body.Role, Roles.Admin, StringComparison.Ordinal)
+                && IsLastEnabledAdmin(all, user.Id))
+            {
+                return Results.BadRequest(new ApiErrorDto(
+                    "cannot change the role of the last enabled Admin away from Admin — this would lock out all administration."));
+            }
+
+            var oldRole = user.Role;
+            await userStore.SetRoleAsync(id, body.Role, ct).ConfigureAwait(false);
+
+            await recorder.RecordAsync(http, "user.role_change", "user", IdOf(id), oldRole, body.Role, ct).ConfigureAwait(false);
+
+            return Results.Ok(ToDto(user with { Role = body.Role }));
+        }
+        finally
         {
-            return Results.BadRequest(new ApiErrorDto(
-                "cannot change the role of the last enabled Admin away from Admin — this would lock out all administration."));
+            MutationLock.Release();
         }
-
-        var oldRole = user.Role;
-        await userStore.SetRoleAsync(id, body.Role, ct).ConfigureAwait(false);
-
-        await recorder.RecordAsync(http, "user.role_change", "user", IdOf(id), oldRole, body.Role, ct).ConfigureAwait(false);
-
-        return Results.Ok(ToDto(user with { Role = body.Role }));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -148,27 +194,38 @@ public static class UserEndpoints
     private static async Task<IResult> SetDisabledAsync(
         int id, bool disabled, IUserStore userStore, HttpContext http, AuditRecorder recorder, CancellationToken ct)
     {
-        var all = await userStore.ListAsync(ct).ConfigureAwait(false);
-        var user = all.FirstOrDefault(u => u.Id == id);
-        if (user is null)
+        // WS-D-D7 review fix — same atomic read-decide-write as SetRoleAsync above, same lock (they
+        // guard the SAME invariant — "at least one enabled Admin remains" — so they must serialize
+        // against EACH OTHER too, not just against themselves).
+        await MutationLock.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            return Results.NotFound(new ApiErrorDto($"no such user id {id}"));
-        }
+            var all = await userStore.ListAsync(ct).ConfigureAwait(false);
+            var user = all.FirstOrDefault(u => u.Id == id);
+            if (user is null)
+            {
+                return Results.NotFound(new ApiErrorDto($"no such user id {id}"));
+            }
 
-        if (disabled && !user.Disabled
-            && string.Equals(user.Role, Roles.Admin, StringComparison.Ordinal)
-            && IsLastEnabledAdmin(all, user.Id))
+            if (disabled && !user.Disabled
+                && string.Equals(user.Role, Roles.Admin, StringComparison.Ordinal)
+                && IsLastEnabledAdmin(all, user.Id))
+            {
+                return Results.BadRequest(new ApiErrorDto(
+                    "cannot disable the last enabled Admin — this would lock out all administration."));
+            }
+
+            await userStore.SetDisabledAsync(id, disabled, ct).ConfigureAwait(false);
+
+            var action = disabled ? "user.disable" : "user.enable";
+            await recorder.RecordAsync(http, action, "user", IdOf(id), user.Disabled, disabled, ct).ConfigureAwait(false);
+
+            return Results.Ok(ToDto(user with { Disabled = disabled }));
+        }
+        finally
         {
-            return Results.BadRequest(new ApiErrorDto(
-                "cannot disable the last enabled Admin — this would lock out all administration."));
+            MutationLock.Release();
         }
-
-        await userStore.SetDisabledAsync(id, disabled, ct).ConfigureAwait(false);
-
-        var action = disabled ? "user.disable" : "user.enable";
-        await recorder.RecordAsync(http, action, "user", IdOf(id), user.Disabled, disabled, ct).ConfigureAwait(false);
-
-        return Results.Ok(ToDto(user with { Disabled = disabled }));
     }
 
     // ─────────────────────────────────────────────────────────────────────

@@ -1,10 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using St4i.EngineApi.Auth;
+using St4i.EngineApi.Fleet;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Auth;
@@ -505,5 +509,156 @@ public sealed class UserEndpointsTests
 
         using var meAfter = await targetClient.GetAsync("/v1/auth/me");
         Assert.Equal(HttpStatusCode.Unauthorized, meAfter.StatusCode);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // WS-D-D7 review fix — concurrency: the last-enabled-Admin guard's read-decide-write, and
+    // create's duplicate-username check-then-insert, must each be atomic across CONCURRENT requests,
+    // not just correct within a single one (see UserEndpoints' own doc comment for the exact race:
+    // two requests each reading the same pre-mutation roster/username-lookup off their own SQLite
+    // connection, each deciding independently, then both committing).
+    //
+    // These call the `internal` handler methods DIRECTLY against a real SqliteUserStore/
+    // SqliteAuditStore sharing one temp security.db (same construction SqliteUserStoreTests/
+    // SqliteAuditStoreTests already use) and hand-built DefaultHttpContexts — no
+    // WebApplicationFactory/cookie pipeline involved, so there is no auth-session-invalidation timing
+    // to fight; this is purely a test of UserEndpoints' own in-process serialization
+    // (`UserEndpoints`'s private `MutationLock`).
+    // ─────────────────────────────────────────────────────────────────────
+
+    private static AuditRecorder NewRecorder(string securityDir) =>
+        new(new SqliteAuditStore(securityDir), NullLogger<AuditRecorder>.Instance);
+
+    /// <summary>A fresh <see cref="DefaultHttpContext"/> authenticated as <paramref name="actor"/> —
+    /// a NEW instance per call (never shared across the two concurrent calls in a test below), since
+    /// two genuinely concurrent requests would never share one real <see cref="HttpContext"/> either.</summary>
+    private static DefaultHttpContext ContextFor(UserRecord actor) => new() { User = AuthEndpoints.BuildPrincipal(actor) };
+
+    /// <summary>Test-only <see cref="IUserStore"/> decorator that inserts a small, FIXED delay before
+    /// each WRITE (<see cref="CreateAsync"/>/<see cref="SetRoleAsync"/>/<see cref="SetDisabledAsync"/>)
+    /// actually commits — never a rendezvous/barrier (which could deadlock once the real fix
+    /// serializes these calls), just a constant pause. This is what actually widens the TOCTOU window:
+    /// an earlier version of this decorator delayed the READS instead (<c>ListAsync</c>/
+    /// <c>GetByUsernameAsync</c>) on the theory that both concurrent calls needed to be forced to read
+    /// the SAME stale snapshot — but empirically (traced with <c>Stopwatch</c> timestamps) the reads
+    /// already returned nearly simultaneously on their own, with no delay needed; the actual gap was
+    /// between one request's decision and its commit, which a fast, un-delayed local SQLite write
+    /// closed too quickly for the SECOND request's own read to reliably land in that narrow window.
+    /// Delaying the WRITE instead guarantees both requests have already read + decided BEFORE either
+    /// one commits — reproducing the real race deterministically. Verified empirically both ways: with
+    /// <c>UserEndpoints.MutationLock</c> temporarily neutered, both tests below fail exactly as the
+    /// review described (two successes / an unhandled <c>SqliteException</c>); with the lock restored,
+    /// both pass.</summary>
+    private sealed class RaceWideningUserStore : IUserStore
+    {
+        private const int WriteDelayMs = 50;
+        private readonly IUserStore _inner;
+        public RaceWideningUserStore(IUserStore inner) => _inner = inner;
+
+        public Task<int> CountAsync(CancellationToken ct = default) => _inner.CountAsync(ct);
+
+        public Task<UserRecord?> GetByUsernameAsync(string username, CancellationToken ct = default) =>
+            _inner.GetByUsernameAsync(username, ct);
+
+        public async Task<UserRecord> CreateAsync(string username, string passwordHash, string role, string? displayName, string? createdBy, CancellationToken ct = default)
+        {
+            await Task.Delay(WriteDelayMs, ct).ConfigureAwait(false);
+            return await _inner.CreateAsync(username, passwordHash, role, displayName, createdBy, ct).ConfigureAwait(false);
+        }
+
+        public Task SetPasswordHashAsync(int id, string passwordHash, bool bumpStamp, CancellationToken ct = default) =>
+            _inner.SetPasswordHashAsync(id, passwordHash, bumpStamp, ct);
+
+        public async Task SetRoleAsync(int id, string role, CancellationToken ct = default)
+        {
+            await Task.Delay(WriteDelayMs, ct).ConfigureAwait(false);
+            await _inner.SetRoleAsync(id, role, ct).ConfigureAwait(false);
+        }
+
+        public async Task SetDisabledAsync(int id, bool disabled, CancellationToken ct = default)
+        {
+            await Task.Delay(WriteDelayMs, ct).ConfigureAwait(false);
+            await _inner.SetDisabledAsync(id, disabled, ct).ConfigureAwait(false);
+        }
+
+        public Task SetLastLoginAsync(int id, DateTimeOffset atUtc, CancellationToken ct = default) => _inner.SetLastLoginAsync(id, atUtc, ct);
+
+        public Task<IReadOnlyList<UserRecord>> ListAsync(CancellationToken ct = default) => _inner.ListAsync(ct);
+
+        public Task<bool> VerifySecurityStampAsync(string username, string stamp, CancellationToken ct = default) =>
+            _inner.VerifySecurityStampAsync(username, stamp, ct);
+    }
+
+    [Fact]
+    public async Task Concurrent_DisableAndDemote_OfTheOnlyTwoEnabledAdmins_RejectsExactlyOne()
+    {
+        var securityDir = Directory.CreateTempSubdirectory("st4i-users-race-lastadmin-").FullName;
+        var userStore = new SqliteUserStore(securityDir);
+        var raceStore = new RaceWideningUserStore(userStore);
+        var recorder = NewRecorder(securityDir);
+        var hasher = new PasswordHasher<AppUser>();
+
+        var adminA = await userStore.CreateAsync(
+            "race-admin-a", hasher.HashPassword(AppUser.Instance, "PassA123!"), Roles.Admin, null, "test", CancellationToken.None);
+        var adminB = await userStore.CreateAsync(
+            "race-admin-b", hasher.HashPassword(AppUser.Instance, "PassB123!"), Roles.Admin, null, "test", CancellationToken.None);
+
+        // Fired together via Task.WhenAll: disable A while demoting B, the exact scenario the review
+        // flagged — each one's OWN pre-mutation-roster guard check would (without the fix) see the
+        // OTHER as "the remaining enabled Admin" and let both through.
+        var disableTask = UserEndpoints.DisableUserAsync(adminA.Id, raceStore, ContextFor(adminA), recorder, CancellationToken.None);
+        var demoteTask = UserEndpoints.SetRoleAsync(
+            adminB.Id, new SetUserRoleRequestDto(Roles.Operator), raceStore, ContextFor(adminB), recorder, CancellationToken.None);
+
+        var results = await Task.WhenAll(disableTask, demoteTask);
+
+        var succeededCount = results.Count(r => r is Ok<UserDto>);
+        var rejectedCount = results.Count(r => r is BadRequest<ApiErrorDto>);
+
+        // Order isn't determined (either request could win the lock first — the guard is symmetric
+        // either way), but the OUTCOME is: exactly one wins, exactly one is rejected. Never "both
+        // succeed" (the lock-out this guard exists to prevent) and never "both rejected" (the guard
+        // being needlessly over-conservative would ALSO be a bug).
+        Assert.Equal(1, succeededCount);
+        Assert.Equal(1, rejectedCount);
+
+        // The actual invariant, checked directly against the store rather than inferred from status
+        // codes — at least one enabled Admin must remain no matter which request won.
+        var all = await userStore.ListAsync(CancellationToken.None);
+        var enabledAdminCount = all.Count(u => !u.Disabled && u.Role == Roles.Admin);
+        Assert.True(enabledAdminCount >= 1, $"expected at least 1 enabled Admin to remain, found {enabledAdminCount}");
+    }
+
+    [Fact]
+    public async Task Concurrent_CreateSameUsername_ExactlyOneSucceeds_TheOtherIsConflict_NeverAnUnhandledException()
+    {
+        var securityDir = Directory.CreateTempSubdirectory("st4i-users-race-create-").FullName;
+        var userStore = new SqliteUserStore(securityDir);
+        var raceStore = new RaceWideningUserStore(userStore);
+        var recorder = NewRecorder(securityDir);
+        var hasher = new PasswordHasher<AppUser>();
+
+        var actorAdmin = await userStore.CreateAsync(
+            "race-create-admin", hasher.HashPassword(AppUser.Instance, "AdminPass123!"), Roles.Admin, null, "test", CancellationToken.None);
+
+        var body = new CreateUserRequestDto("race-dup-user", "SomePassword123!", Roles.Operator);
+
+        // `await Task.WhenAll(...)` below would itself rethrow if either call let an unhandled
+        // exception escape — the pre-fix bug was exactly that: the SECOND concurrent create to reach
+        // the store's INSERT hit the raw UNIQUE-constraint SqliteException (an unhandled 500) instead
+        // of the clean 409 CreateUserAsync's own (unsynchronized) pre-check was supposed to produce.
+        // Reaching the assertions below already proves neither call threw.
+        var task1 = UserEndpoints.CreateUserAsync(body, raceStore, ContextFor(actorAdmin), recorder, CancellationToken.None);
+        var task2 = UserEndpoints.CreateUserAsync(body, raceStore, ContextFor(actorAdmin), recorder, CancellationToken.None);
+
+        var results = await Task.WhenAll(task1, task2);
+
+        var okCount = results.Count(r => r is Ok<UserDto>);
+        var conflictCount = results.Count(r => r is Conflict<ApiErrorDto>);
+        Assert.Equal(1, okCount);
+        Assert.Equal(1, conflictCount);
+
+        var all = await userStore.ListAsync(CancellationToken.None);
+        Assert.Single(all, u => u.Username == "race-dup-user");
     }
 }
