@@ -21,12 +21,23 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 
+// Disable the global audit-mutation middleware for the router-level (Part E/F) tests
+// below — they now succeed past the role+2FA gates and reach real `roleProcedure`
+// middleware chain, which would otherwise fire an async fire-and-forget audit write
+// against the real test DB. Must be set before `_core/trpc.ts` is imported (hoisted) —
+// mirrors parameterGuardrailRouter.test.ts's identical need.
+vi.hoisted(() => {
+  process.env.AUDIT_ALL_MUTATIONS = "false";
+});
+
 const getModelCardByModelIdMock = vi.fn();
+const createModelCardMock = vi.fn();
 vi.mock("../db/ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db/ai")>();
   return {
     ...actual,
     getModelCardByModelId: (...args: unknown[]) => getModelCardByModelIdMock(...args),
+    createModelCard: (...args: unknown[]) => createModelCardMock(...args),
   };
 });
 
@@ -384,5 +395,154 @@ describe("aiModelRouter card CRUD — admin/engineer RBAC", () => {
     await expect(
       callerFor("quality_inspector").updateCard({ modelId: 1, owner: "someone" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
+
+// ─── Part F — card CRUD 2FA (D3 reviewer FIX 1) ─────────────────────────────────────
+// create/update/approve are governance TRUST decisions (approve authorizes
+// activation) — admin/engineer are PRIVILEGED_ROLES in _core/trpc.ts, so writes must
+// require 2FA the same way supervisorProcedure/qualityProcedure/actuationProcedure do.
+// getCard (read) must stay reachable WITHOUT 2FA so the editor can load an existing
+// card before step-up.
+describe("aiModelRouter card CRUD — 2FA required for admin/engineer WRITES only", () => {
+  function callerForUser(user: Record<string, unknown>) {
+    return aiModelRouter.createCaller({ user } as any);
+  }
+
+  const cardInput = (modelId: number) => ({
+    modelId,
+    intendedUse: "x",
+    trainingDataDesc: "x",
+    evalSummary: "x",
+    limitations: "x",
+    riskClass: "low" as const,
+  });
+
+  beforeEach(() => {
+    getModelCardByModelIdMock.mockReset();
+  });
+
+  it("admin WITHOUT 2FA is FORBIDDEN on createCard, and the DB is never touched", async () => {
+    await expect(
+      callerForUser({ id: 1, role: "admin", name: "Admin", twoFactorEnabled: false }).createCard(cardInput(1)),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(getModelCardByModelIdMock).not.toHaveBeenCalled();
+  });
+
+  it("engineer WITHOUT 2FA is FORBIDDEN on approveCard", async () => {
+    await expect(
+      callerForUser({ id: 2, role: "engineer", name: "Eng", twoFactorEnabled: false }).approveCard({ modelId: 1 }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("admin WITHOUT 2FA is FORBIDDEN on updateCard", async () => {
+    await expect(
+      callerForUser({ id: 1, role: "admin", name: "Admin", twoFactorEnabled: false }).updateCard({ modelId: 1, owner: "x" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("admin WITH 2FA clears the auth gate on createCard (fails downstream on a real NOT_FOUND model, not FORBIDDEN)", async () => {
+    // modelId does not exist in the test DB — proves the request reached business
+    // logic (db.getAiModelById), i.e. BOTH the role check and the 2FA check passed.
+    await expect(
+      callerForUser({ id: 1, role: "admin", name: "Admin", twoFactorEnabled: true }).createCard(cardInput(999_999_999)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("engineer WITH 2FA clears the auth gate on approveCard (fails downstream on NOT_FOUND card, not FORBIDDEN)", async () => {
+    getModelCardByModelIdMock.mockResolvedValueOnce(null);
+    await expect(
+      callerForUser({ id: 2, role: "engineer", name: "Eng", twoFactorEnabled: true }).approveCard({ modelId: 1 }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("engineer WITH 2FA clears the auth gate on updateCard (fails downstream on NOT_FOUND card, not FORBIDDEN)", async () => {
+    getModelCardByModelIdMock.mockResolvedValueOnce(null);
+    await expect(
+      callerForUser({ id: 2, role: "engineer", name: "Eng", twoFactorEnabled: true }).updateCard({ modelId: 1, owner: "x" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("getCard (read) does NOT require 2FA — even a privileged user without 2FA can still load the card", async () => {
+    getModelCardByModelIdMock.mockResolvedValueOnce(null);
+    const result = await callerForUser({ id: 1, role: "admin", name: "Admin", twoFactorEnabled: false }).getCard({ modelId: 1 });
+    expect(result.card).toBeNull();
+  });
+});
+
+// ─── Part G — createCard concurrent double-create race (D3 reviewer FIX 2) ─────────
+// The check-then-insert in createCard is not transactional; a concurrent second
+// create can race past the `existing` check and hit the DB's own unique constraint
+// on INSERT. That must surface as the SAME tRPC CONFLICT the check-then-insert path
+// returns, not a raw 500.
+describe("aiModelRouter.createCard — concurrent double-create race maps 23505 → CONFLICT", () => {
+  let raceModelId: number;
+  const CONFLICT_MESSAGE = "A model card already exists for this model — use update instead.";
+
+  beforeAll(async () => {
+    const db = await getDb();
+    if (!db) throw new Error("This test requires a live test DB — see vitest.setup.ts (DATABASE_URL → *_test clone).");
+    const model = await createAiModel({
+      code: `t3-card-race-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+      name: "D3 card-race test model",
+      modelType: "classification",
+    } as any);
+    raceModelId = model.id;
+  });
+
+  afterAll(async () => {
+    const db = await getDb();
+    if (!db || !raceModelId) return;
+    await db.delete(aiModels).where(eq(aiModels.id, raceModelId));
+  });
+
+  beforeEach(() => {
+    getModelCardByModelIdMock.mockReset();
+    createModelCardMock.mockReset();
+  });
+
+  function adminCaller() {
+    return aiModelRouter.createCaller({ user: { id: 1, role: "admin", name: "Admin", twoFactorEnabled: true } } as any);
+  }
+
+  const cardInput = (modelId: number) => ({
+    modelId,
+    intendedUse: "x",
+    trainingDataDesc: "x",
+    evalSummary: "x",
+    limitations: "x",
+    riskClass: "low" as const,
+  });
+
+  it("maps a raced raw-driver 23505 on INSERT to the SAME CONFLICT the check-then-insert path returns", async () => {
+    getModelCardByModelIdMock.mockResolvedValueOnce(null); // the check saw no existing row
+    createModelCardMock.mockRejectedValueOnce(
+      Object.assign(
+        new Error('duplicate key value violates unique constraint "ai_model_cards_model_id_unique"'),
+        { code: "23505" },
+      ),
+    );
+    await expect(adminCaller().createCard(cardInput(raceModelId))).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: CONFLICT_MESSAGE,
+    });
+  });
+
+  it("also maps a drizzle-wrapped 23505 (driver error nested in err.cause) to CONFLICT", async () => {
+    getModelCardByModelIdMock.mockResolvedValueOnce(null);
+    const driverErr = Object.assign(new Error("duplicate key value violates unique constraint"), { code: "23505" });
+    createModelCardMock.mockRejectedValueOnce(
+      Object.assign(new Error("Failed query: INSERT INTO ai_model_cards ..."), { cause: driverErr }),
+    );
+    await expect(adminCaller().createCard(cardInput(raceModelId))).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: CONFLICT_MESSAGE,
+    });
+  });
+
+  it("does NOT swallow an unrelated INSERT error as a false CONFLICT (only 23505/42P01 are mapped)", async () => {
+    getModelCardByModelIdMock.mockResolvedValueOnce(null);
+    createModelCardMock.mockRejectedValueOnce(new Error("connection reset"));
+    await expect(adminCaller().createCard(cardInput(raceModelId))).rejects.toThrow(/connection reset/);
   });
 });

@@ -1,8 +1,9 @@
-import { protectedProcedure, router, roleProcedure } from "../_core/trpc";
+import { protectedProcedure, router, roleProcedure, require2FA } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
+import { isUniqueViolation } from "../_core/dbErrors";
 import {
   uploadModelFile,
   uploadModelVersion,
@@ -34,18 +35,45 @@ import {
 // (mirrors ecnRouter's ecnDecisionProcedure pattern: `roleProcedure("admin", ...,
 // "engineer")`), broader than the admin-only `adminProcedure` this router uses
 // elsewhere for model/version CRUD — governance authoring is an engineering task too.
-const modelCardProcedure = roleProcedure("admin", "engineer");
+//
+// FIX (reviewer, security): create/update/approve are governance TRUST decisions
+// (approve authorizes activation) — admin/engineer are both in `_core/trpc.ts`'s
+// PRIVILEGED_ROLES, so this codebase's policy is these actions require step-up-free
+// but ENABLED 2FA (IEC 62443-2-1 CL2), same as supervisorProcedure/qualityProcedure/
+// actuationProcedure. `require2FA` is the SAME guard those use (now exported from
+// _core/trpc.ts) — chained in the same order (role check, then audit/tenant via
+// roleProcedure, then 2FA) as those pre-built procedures, not a new implementation.
+// The read path (getCard, below) intentionally stays on plain `protectedProcedure`
+// — the editor must be able to LOAD a card before 2FA has been stepped up.
+const modelCardProcedure = roleProcedure("admin", "engineer").use(require2FA);
+
+/** Card create/update/approve share this exact message so a raced double-create
+ *  (see FIX below) surfaces identically whether caught by the check-then-insert
+ *  read or by the DB's own unique constraint. */
+const CARD_ALREADY_EXISTS_MESSAGE = "A model card already exists for this model — use update instead.";
 
 /** Clean PRECONDITION_FAILED instead of a raw 42P01 "relation does not exist" 500 —
  *  mirrors productVariantRouter's assertVariantTableAvailable / qualityGateTemplateRouter's
  *  inline `err.code === '42P01'` guard. Only WRITE paths need this: the read path
- *  (getCard) already degrades via getModelCardStatus. */
+ *  (getCard) already degrades via getModelCardStatus.
+ *
+ *  FIX (reviewer, minor): createCard's check-then-insert (below) is not
+ *  transactional — a concurrent double-create can race past the `existing` check
+ *  and hit the `ai_model_cards.modelId` unique constraint on INSERT, surfacing a
+ *  raw Postgres 23505 instead of the intended CONFLICT. `isUniqueViolation` (from
+ *  `_core/dbErrors.ts`, the shared helper already used by productVariantRouter/
+ *  productCloneRouter/etc.) walks err.cause too (drizzle-orm wraps the driver error
+ *  in DrizzleQueryError), so this catches the race under either error shape without
+ *  swallowing unrelated errors. */
 function rethrowCardTableError(err: unknown): never {
   if ((err as { code?: string } | null | undefined)?.code === "42P01") {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message: "Model card governance requires migration 0303 (ai_model_cards) to be applied first.",
     });
+  }
+  if (isUniqueViolation(err)) {
+    throw new TRPCError({ code: "CONFLICT", message: CARD_ALREADY_EXISTS_MESSAGE });
   }
   throw err;
 }
@@ -365,7 +393,7 @@ export const aiModelRouter = router({
         if (existing) {
           throw new TRPCError({
             code: "CONFLICT",
-            message: "A model card already exists for this model — use update instead.",
+            message: CARD_ALREADY_EXISTS_MESSAGE,
           });
         }
 

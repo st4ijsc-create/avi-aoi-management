@@ -184,7 +184,11 @@ type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'mai
 // engineer holds machine_control (OT command authority) → 2FA required (doc 34 P3b decision).
 const PRIVILEGED_ROLES: UserRole[] = ['admin', 'supervisor', 'quality_inspector', 'engineer'];
 
-const require2FA = t.middleware(async opts => {
+// Exported so routers whose privileged-role set doesn't match one of the
+// pre-built supervisorProcedure/qualityProcedure/actuationProcedure combos can
+// still chain the SAME 2FA guard (e.g. `roleProcedure("admin","engineer").use(require2FA)`)
+// instead of re-implementing the twoFactorEnabled check inline.
+export const require2FA = t.middleware(async opts => {
   const { ctx, next } = opts;
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
