@@ -50,7 +50,15 @@ import {
 // `body.model` (resolved by `resolveModelId` below) — this surface's contract is "you get
 // the model you asked for", unlike the KB assistant's router-picked model. Reuses the G2-2
 // primitives verbatim; no redaction logic is reimplemented here.
-import { planInference, RateLimitError, SafetyBlockedError, type TaskKind, type GatewayPlan } from "../services/aiGateway";
+import {
+  planInference,
+  RateLimitError,
+  SafetyBlockedError,
+  QuotaExceededError,
+  LicenseGateError,
+  type TaskKind,
+  type GatewayPlan,
+} from "../services/aiGateway";
 import { redactSecretsAndPII, StreamingSecretRedactor } from "../services/ai/aiSafety";
 
 // ─── Config helpers (read at call-time so flags flip without a module reload) ──
@@ -241,6 +249,41 @@ function jsonError(
   code?: string,
 ): void {
   res.status(status).json({ error: { message, type, ...(code ? { code } : {}) } });
+}
+
+// Review fix (doc69 G2-4 W1-4) — `QuotaExceededError`/`LicenseGateError` (both opt-in,
+// default OFF) used to fall into the generic catch-all → HTTP 500 "server_error", identical to
+// a real engine crash and giving the caller nothing to act on. Both are mapped to a proper,
+// client-actionable OpenAI-compat status/body here, mirroring the existing `SafetyBlockedError`
+// → 400 branch. `false` is returned when the error wasn't one of these two, so callers can fall
+// through to their own generic-error handling unchanged.
+function handleEnforcementError(res: Response, err: unknown): boolean {
+  if (err instanceof QuotaExceededError) {
+    // planInference already recorded 'quota_exceeded' telemetry internally before throwing
+    // (see aiGateway.ts) — nothing more to record here.
+    if (!res.headersSent) {
+      res.status(429).json({
+        error: {
+          message: err.message,
+          type: "insufficient_quota",
+          code: "quota_exceeded",
+          used_tokens: err.usedTokens,
+          budget_tokens: err.budgetTokens,
+        },
+      });
+    } else {
+      res.end();
+    }
+    return true;
+  }
+  if (err instanceof LicenseGateError) {
+    // planInference already recorded 'license_denied' telemetry internally before throwing
+    // (see aiGateway.ts) — nothing more to record here.
+    if (!res.headersSent) jsonError(res, 403, err.message, "permission_error", "ai_module_not_licensed");
+    else res.end();
+    return true;
+  }
+  return false;
 }
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
@@ -509,6 +552,9 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         else res.end();
         return;
       }
+      // Review fix (W1-4) — QuotaExceededError → 429, LicenseGateError → 403 (both already
+      // metered internally by planInference before throwing — see aiGateway.ts).
+      if (handleEnforcementError(res, err)) return;
       // Review fix — record an 'error' metric on EVERY other failure path (previously only
       // FIM-streaming did this; chat non-stream + chat stream generator-throw were invisible
       // to ai_gateway_metrics). Idempotent (aiGateway.ts's record() only counts the first
@@ -634,6 +680,9 @@ export function createOpenAiGatewayRouter(config: OpenAiGatewayConfig): Router {
         else res.end();
         return;
       }
+      // Review fix (W1-4) — QuotaExceededError → 429, LicenseGateError → 403 (both already
+      // metered internally by planInference before throwing — see aiGateway.ts).
+      if (handleEnforcementError(res, err)) return;
       // Review fix — record an 'error' metric on the non-stream failure path too (previously
       // only FIM-streaming's inner try/catch did this). Idempotent + safe no-op when `plan`
       // is null (fail-open path, or failure before the plan was created).

@@ -16,11 +16,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const getDbMock = vi.fn();
 vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => getDbMock(...a) }));
 
-/** Minimal thenable query-builder stub mirroring drizzle's `.select().from().where().limit()`. */
+/** Minimal thenable query-builder stub mirroring drizzle's `.select().from().where().orderBy().limit()`. */
 function makeResult(rows: unknown[]) {
   const builder: PromiseLike<unknown[]> & Record<string, unknown> = {
     from: () => builder,
     where: () => builder,
+    orderBy: () => builder,
     limit: () => builder,
     then: (resolve: (v: unknown[]) => void) => resolve(rows),
   } as any;
@@ -77,6 +78,34 @@ describe("aiGatewayQuota.resolveQuotaBudget", () => {
 
     const budget = await quota.resolveQuotaBudget(42, "operator");
     expect(budget).toEqual({ budgetTokens: 9000, source: "default-row", quotaRowId: 3 });
+  });
+
+  it("deployment-wide default row: query is explicitly ORDERED (ORDER BY id) so multiple enabled default rows resolve deterministically (review fix W1-2)", async () => {
+    // The default row has no uniqueness constraint (see drizzle/0298_ai_gateway_quota.sql),
+    // so more than one enabled row can legitimately exist. `.orderBy` on the stub simulates
+    // the DB applying `ORDER BY id ASC` before `.limit(1)` truncates to a single, STABLE row
+    // (the real ordering is applied by Postgres, not this stub — this asserts the query chain
+    // requests it rather than relying on `.limit(1)` alone with no order).
+    const orderByMock = vi.fn();
+    const orderedBuilder: any = {
+      from: () => orderedBuilder,
+      where: () => orderedBuilder,
+      orderBy: (...a: unknown[]) => {
+        orderByMock(...a);
+        return orderedBuilder;
+      },
+      limit: () => ({ then: (resolve: (v: unknown[]) => void) => resolve([{ id: 5, dailyTokenBudget: 4000 }]) }),
+    };
+    const selectMock = vi
+      .fn()
+      .mockReturnValueOnce(makeResult([])) // user
+      .mockReturnValueOnce(orderedBuilder); // default row (no role passed → role lookup skipped)
+    getDbMock.mockResolvedValue({ select: selectMock });
+    const quota = await loadFresh();
+
+    const budget = await quota.resolveQuotaBudget(42);
+    expect(budget).toEqual({ budgetTokens: 4000, source: "default-row", quotaRowId: 5 });
+    expect(orderByMock).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to AI_QUOTA_DEFAULT_DAILY_TOKENS (env) when nothing is configured in the table", async () => {

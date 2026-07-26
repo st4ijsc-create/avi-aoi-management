@@ -20,6 +20,14 @@ vi.mock("../_core/moduleGate", () => ({
   isModuleLicensed: (...a: unknown[]) => isModuleLicensedMock(...a),
 }));
 
+// Review fix (W1-3) — DB mock so the "distinct outcome" test below can flush the metrics
+// buffer and inspect the persisted row's `outcome` column, mirroring the getDb mocking
+// pattern used in openaiGatewaySafety.test.ts / aiGatewayQuota.test.ts.
+const getDbMock = vi.fn();
+const insertValuesMock = vi.fn(async () => undefined);
+const insertMock = vi.fn(() => ({ values: insertValuesMock }));
+vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => getDbMock(...a) }));
+
 async function loadFresh() {
   vi.resetModules();
   return import("./aiGateway");
@@ -72,5 +80,19 @@ describe("aiGateway.planInference — edition/license gate wiring (doc69 G2-4)",
 
     const plan = await gateway.planInference({ task: "chat", text: "hi" });
     expect(plan.decision).toBeTruthy();
+  });
+
+  it("a license denial records a DISTINCT metering outcome ('license_denied'), not the generic 'blocked' used for safety hard-blocks (review fix W1-3)", async () => {
+    process.env.AI_GATEWAY_LICENSE_GATE_ENABLED = "true";
+    isModuleLicensedMock.mockResolvedValue(false);
+    getDbMock.mockResolvedValue({ insert: insertMock });
+    const gateway = await loadFresh();
+
+    await expect(gateway.planInference({ task: "chat", text: "hi" })).rejects.toThrow(gateway.LicenseGateError);
+    await gateway.flush();
+
+    const rows = insertValuesMock.mock.calls.flatMap((c) => c[0] as Array<Record<string, unknown>>);
+    expect(rows.some((r) => r.outcome === "license_denied")).toBe(true);
+    expect(rows.some((r) => r.outcome === "blocked")).toBe(false);
   });
 });

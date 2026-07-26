@@ -59,7 +59,12 @@ export interface GatewayRequest extends RouteInput {
   role?: string;
 }
 
-export type Outcome = "ok" | "error" | "rate_limited" | "blocked" | "quota_exceeded";
+// Review fix (doc69 G2-4 W1-3) — "license_denied" is a DISTINCT value from "blocked" (the
+// safety hard-block outcome) so dashboards/metrics can tell "AI safety refused this prompt"
+// apart from "this deployment's edition doesn't include MOD_AI" — both used to record
+// "blocked", making them indistinguishable in `ai_gateway_metrics`. 14 chars, fits the
+// `outcome varchar(16)` column with room to spare.
+export type Outcome = "ok" | "error" | "rate_limited" | "blocked" | "quota_exceeded" | "license_denied";
 
 /** Token accounting + outcome a caller reports back after running the inference. */
 export interface InferenceOutcome {
@@ -663,7 +668,8 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
   if (aiGatewayLicenseGateEnabled()) {
     const licensed = await checkAiModuleLicensed();
     if (!licensed) {
-      enqueue(toRow(req, decision, abVariant, { outcome: "blocked" }));
+      // Review fix (W1-3) — distinct outcome from the safety hard-block's "blocked".
+      enqueue(toRow(req, decision, abVariant, { outcome: "license_denied" }));
       throw new LicenseGateError(
         "AI feature not licensed for this deployment/edition (module MOD_AI). Upgrade your license/edition to enable AI.",
       );

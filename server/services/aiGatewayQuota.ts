@@ -51,7 +51,7 @@ export async function resolveQuotaBudget(userId: number, role?: string | null): 
     if (!db) return { budgetTokens: defaultDailyTokenBudget(), source: "env-default", quotaRowId: null };
 
     const { aiGatewayQuota } = await import("../../drizzle/schema");
-    const { and, eq, isNull } = await import("drizzle-orm");
+    const { and, eq, isNull, asc } = await import("drizzle-orm");
 
     const userRows = await db
       .select()
@@ -73,10 +73,18 @@ export async function resolveQuotaBudget(userId: number, role?: string | null): 
       }
     }
 
+    // Review fix (doc69 G2-4 W1-2) — unlike the user/role rows (each guarded by a partial
+    // unique index — see drizzle/0298_ai_gateway_quota.sql), the deployment-wide DEFAULT row
+    // (userId AND role both null) has NO uniqueness constraint, so more than one enabled
+    // default row can legitimately exist. `.limit(1)` with no ordering would then resolve to
+    // whichever row the query planner happened to return first — non-deterministic across
+    // calls/deployments. `ORDER BY id ASC` makes "the oldest configured default wins" explicit
+    // and stable.
     const defaultRows = await db
       .select()
       .from(aiGatewayQuota)
       .where(and(isNull(aiGatewayQuota.userId), isNull(aiGatewayQuota.role), eq(aiGatewayQuota.enabled, true)))
+      .orderBy(asc(aiGatewayQuota.id))
       .limit(1);
     if (defaultRows[0]) {
       return { budgetTokens: defaultRows[0].dailyTokenBudget, source: "default-row", quotaRowId: defaultRows[0].id };
