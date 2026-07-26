@@ -62,7 +62,17 @@ builder.Services.AddSingleton<DemoTransport>();
 // serverUrl/machineCode/verifyTls change — keeps resolving queue files off the SAME WalOptions). Disabled
 // (ST4I_WAL_ENABLED=false) means queuePath stays null everywhere, i.e. byte-identical to pre-WS-C
 // behavior (in-memory queue only, nothing written to disk).
+//
+// C-1 (Critical, WS-C final-review fix wave) — on a fresh install nothing has ever created
+// %ProgramData%\ST4I\sim\wal; the SDK's own St4iDeviceClient.Enqueue writes with File.AppendAllText
+// directly, which does NOT create missing parent directories, so without this the FIRST offline write
+// after a fresh install throws DirectoryNotFoundException, which escapes LiveTransport.SendAsync
+// uncaught and gets swallowed into a lost, unqueued ack (see WalOptions.EnsureDir's own remarks). Must
+// run BEFORE the queuePath below is computed/handed to LiveTransport.ForMachine. Deliberately not
+// try/caught: a WAL root that can't be created is a fatal misconfiguration that should stop startup, not
+// silently downgrade to an in-memory-only queue.
 var wal = WalOptions.FromEnvironment();
+if (wal.Enabled) wal.EnsureDir();
 builder.Services.AddSingleton(_ => LiveTransport.ForMachine(
     serverUrl: FleetHost.DefaultServerUrl,
     mkKey: string.Empty,

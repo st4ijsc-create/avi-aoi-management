@@ -116,9 +116,20 @@ public sealed class TransportCoordinator
         // after an outage) resume the SAME physical queue file — the fresh LiveTransport/St4iDeviceClient
         // this method constructs below simply re-opens it; nothing here ever deletes/migrates/truncates
         // it. A rebuild for a DIFFERENT machineCode resolves a DIFFERENT file and never touches the old
-        // one — same multi-identity model CredentialStore already uses for mk_ keys. RebuildLive itself
-        // does no file I/O at all; it only computes the path and hands it to LiveTransport.ForMachine.
-        var queuePath = _walOptions.Enabled ? _walOptions.ResolveQueueFile(machineCode) : null;
+        // one — same multi-identity model CredentialStore already uses for mk_ keys.
+        //
+        // C-1 (Critical, WS-C final-review fix wave) — RebuildLive is the runtime path where a real mk_
+        // first appears after a Settings edit, so it is the one place a WAL directory that was never
+        // created on a fresh install would otherwise surface as a lost record (see WalOptions.EnsureDir's
+        // own remarks). EnsureDir() runs BEFORE the queuePath is handed to LiveTransport.ForMachine so
+        // the SDK's own St4iDeviceClient.Enqueue never race that directory into existence — it's already
+        // there by the time the first offline write happens.
+        string? queuePath = null;
+        if (_walOptions.Enabled)
+        {
+            _walOptions.EnsureDir();
+            queuePath = _walOptions.ResolveQueueFile(machineCode);
+        }
         var newLive = LiveTransport.ForMachine(serverUrl, mkKey ?? string.Empty, machineCode, queuePath, verifyTls, _handler);
         var newAuto = new AutoTransport(newLive, _demo);
 

@@ -82,19 +82,27 @@ public static class WalMaintenance
         var totalBytes = lines.Sum(LineBytes);
         if (totalBytes <= maxBytes) return 0;
 
-        // Walk from the newest (last) line backward, keeping as many trailing lines as fit the budget.
-        // The `kept.Count > 0` guard is what guarantees at least the single newest line always survives,
+        // Walk from the newest (last) line backward, counting how many trailing lines fit the budget.
+        // The `keepCount > 0` guard is what guarantees at least the single newest line always survives,
         // even alone over budget (see doc comment) — only ever applied once at least one line is kept.
-        var kept = new List<string>();
+        //
+        // M-2 (perf, WS-C final-review fix wave) — this used to build `kept` via `List.Insert(0, ...)`
+        // once per retained line: O(n) per insert (every existing element shifts up one slot) times up to
+        // n retained lines is O(n²) overall, which gets real at the 64 MiB MaxBytes cap (tens of
+        // thousands of lines). Counting backward first and then taking ONE forward slice of the already-
+        // FIFO-ordered `lines` list is O(n) total: the backward scan is O(n), and List.GetRange's copy is
+        // O(keepCount) — no per-element shifting.
+        var keepCount = 0;
         var keptBytes = 0L;
         for (var i = lines.Count - 1; i >= 0; i--)
         {
             var lineBytes = LineBytes(lines[i]);
-            if (kept.Count > 0 && keptBytes + lineBytes > maxBytes) break;
-            kept.Insert(0, lines[i]);
+            if (keepCount > 0 && keptBytes + lineBytes > maxBytes) break;
+            keepCount++;
             keptBytes += lineBytes;
         }
 
+        var kept = lines.GetRange(lines.Count - keepCount, keepCount);
         var dropped = lines.Count - kept.Count;
         if (dropped <= 0) return 0; // defensive — totalBytes > maxBytes above should always drop >= 1
 

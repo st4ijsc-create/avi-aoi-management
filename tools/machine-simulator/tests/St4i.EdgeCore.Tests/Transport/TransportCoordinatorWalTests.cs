@@ -138,4 +138,41 @@ public sealed class TransportCoordinatorWalTests
         Assert.True(ack.Queued); // still buffered — just in the SDK's in-memory queue, not on disk
         Assert.False(File.Exists(wal.ResolveQueueFile("M1")));
     }
+
+    // C-1 (Critical, WS-C final-review fix wave) — on a FRESH INSTALL nothing has ever created
+    // %ProgramData%\ST4I\sim\wal: WalOptions.ResolveDir/ResolveQueueFile are pure path arithmetic (see
+    // their own doc comments) and never touch disk. Without an explicit directory-creation step, the
+    // SDK's own St4iDeviceClient.Enqueue calls File.AppendAllText(queuePath, ...) directly — which does
+    // NOT create missing parent directories — so the FIRST offline write throws
+    // DirectoryNotFoundException. That exception is not one of the three St4i*Exception types
+    // LiveTransport.SendAsync's catch clauses handle, so it escapes SendAsync entirely; EdgePipeline's
+    // own catch (Exception) then turns it into TransportAck(Success:false, Queued:false) — the record is
+    // LOST and the fleet tile shows "ERR" instead of "ack:buffered". This test proves the queue
+    // directory actually gets created before the SDK ever tries to write to it, using the SAME
+    // RebuildLive-wired path (NewCoordinator/NetworkDownHandler) TransportCoordinatorWalTests already
+    // uses above — RebuildLive is the runtime path where a real mk_ first appears after a Settings edit.
+    [Fact]
+    public async Task RebuildLive_WhenWalDirectoryDoesNotExistYet_CreatesItSoTheFirstOfflineSendIsBufferedNotLost()
+    {
+        var walRoot = TempDir();
+        var freshWalDir = Path.Combine(walRoot, "fresh-install-wal"); // deliberately NEVER created
+        Assert.False(Directory.Exists(freshWalDir));
+
+        var wal = new WalOptions { Directory = freshWalDir };
+        var coordinator = NewCoordinator(wal, NetworkDownHandler());
+
+        coordinator.RebuildLive("http://x", "M1", "mk_test", true);
+
+        var ack = await coordinator.Live.SendAsync(ProcessResultEnvelope("M1", "M1:RC1:000001"), default);
+
+        // Buffered, not lost: pre-fix, the DirectoryNotFoundException above would escape SendAsync
+        // uncaught (it fails this awaited call directly, before any ack is ever produced).
+        Assert.True(ack.Queued);
+
+        var m1File = wal.ResolveQueueFile("M1");
+        Assert.True(File.Exists(m1File), $"expected the WAL directory + queue file to have been created at {m1File}");
+        var lines = File.ReadAllLines(m1File).Where(l => l.Trim().Length > 0).ToArray();
+        Assert.Single(lines);
+        Assert.Contains("M1:RC1:000001", lines[0]);
+    }
 }

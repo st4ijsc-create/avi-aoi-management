@@ -147,7 +147,14 @@ public partial class App : Application
         // the TransportCoordinator itself, mirroring St4i.EngineApi/Program.cs's identical composition
         // root (see that file's own remarks). Disabled (ST4I_WAL_ENABLED=false) means queuePath stays
         // null everywhere, i.e. byte-identical to pre-WS-C behavior (in-memory queue only).
+        //
+        // C-1 (Critical, WS-C final-review fix wave) — same fresh-install fix as St4i.EngineApi/Program.cs
+        // (see that file's own remarks): must run BEFORE the queuePath below is computed/handed to
+        // LiveTransport.ForMachine, or the SDK's first offline write throws DirectoryNotFoundException
+        // and the record is lost instead of buffered. Deliberately not try/caught — see
+        // WalOptions.EnsureDir's own remarks on why a WAL root that can't be created should stop startup.
         var wal = WalOptions.FromEnvironment();
+        if (wal.Enabled) wal.EnsureDir();
         services.AddSingleton(_ => LiveTransport.ForMachine(
             serverUrl: PlaceholderServerUrl,
             mkKey: string.Empty,

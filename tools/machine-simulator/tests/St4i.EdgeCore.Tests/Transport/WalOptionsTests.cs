@@ -179,6 +179,38 @@ public sealed class WalOptionsTests
         }
     }
 
+    // C-1 (Critical, WS-C final-review fix wave) — WalOptions.ResolveDir/ResolveQueueFile are pure path
+    // arithmetic (see their own doc comments) and never touch disk; EnsureDir() is the one method that
+    // actually creates the directory, mirroring CredentialStore.Save/SqliteHistorianStore's own
+    // Directory.CreateDirectory idiom. Without it, a fresh install's first offline write throws
+    // DirectoryNotFoundException (see TransportCoordinatorWalTests' end-to-end regression test for the
+    // full failure chain) — this test covers EnsureDir() itself, directly and cheaply.
+    [Fact]
+    public void EnsureDir_DirectoryDoesNotExist_CreatesItAndReturnsResolvedPath()
+    {
+        var root = Directory.CreateTempSubdirectory("st4i-wal-ensuredir-tests-").FullName;
+        var freshDir = Path.Combine(root, "not-created-yet");
+        var options = new WalOptions { Directory = freshDir };
+        Assert.False(Directory.Exists(freshDir));
+
+        var result = options.EnsureDir();
+
+        Assert.Equal(options.ResolveDir(), result);
+        Assert.True(Directory.Exists(freshDir));
+    }
+
+    [Fact]
+    public void EnsureDir_DirectoryAlreadyExists_IsANoOpAndDoesNotThrow()
+    {
+        var root = Directory.CreateTempSubdirectory("st4i-wal-ensuredir-tests-").FullName;
+        var options = new WalOptions { Directory = root };
+
+        var result = options.EnsureDir();
+
+        Assert.Equal(root, result);
+        Assert.True(Directory.Exists(root));
+    }
+
     [Fact]
     public void DefaultRoot_IsSiblingOfHistorianDefaultDir_NotTheSameDirectory()
     {

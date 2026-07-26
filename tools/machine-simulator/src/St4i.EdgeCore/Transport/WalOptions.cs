@@ -44,12 +44,22 @@ public sealed class WalOptions
     /// <summary>Per-queue-file size cap in bytes. Must be &gt; 0 (enforced by <see cref="Validate"/>).</summary>
     public long MaxBytes { get; init; } = DefaultMaxBytes;
 
-    /// <summary>Minimum hours a queued entry is retained before it's eligible for age-based trimming.
-    /// Must be &gt;= 0 (enforced by <see cref="Validate"/>).</summary>
+    /// <summary>RESERVED — NOT YET ENFORCED (M-1, WS-C final-review fix wave). Intended meaning: minimum
+    /// hours a queued entry is retained before it's eligible for age-based trimming. The value is
+    /// validated (must be &gt;= 0, enforced by <see cref="Validate"/>) and settable, but nothing in
+    /// <see cref="WalMaintenance"/> currently reads it — the ONLY guardrail enforced today is
+    /// <see cref="MaxBytes"/>'s size-based drop-oldest trim (see <see cref="WalMaintenance.TrimFileToMaxBytes"/>).
+    /// Age-based retention/trimming is a future task; do not assume queued entries are ever aged out
+    /// purely by hour count today — only a full/over-budget file gets trimmed, regardless of how old its
+    /// oldest line is.</summary>
     public int MinRetentionHours { get; init; } = 24;
 
-    /// <summary>Optional hard cap on entry age in hours; <c>null</c> means "no age cap". When set, must
-    /// be &gt; 0 (enforced by <see cref="Validate"/>).</summary>
+    /// <summary>RESERVED — NOT YET ENFORCED (M-1, WS-C final-review fix wave). Intended meaning: an
+    /// optional hard cap on entry age in hours; <c>null</c> means "no age cap". The value is validated
+    /// (when set, must be &gt; 0, enforced by <see cref="Validate"/>) and settable, but — like
+    /// <see cref="MinRetentionHours"/> — nothing in <see cref="WalMaintenance"/> currently reads it; only
+    /// <see cref="MaxBytes"/>'s size-based drop-oldest trim is enforced today. Age-based retention is a
+    /// future task: setting this today changes nothing about what gets trimmed or when.</summary>
     public int? MaxAgeHours { get; init; } = null;
 
     /// <summary>The default WAL root: <c>%ProgramData%\ST4I\sim\wal</c> — a SIBLING of the historian
@@ -60,6 +70,33 @@ public sealed class WalOptions
     /// <summary>Resolves the effective WAL directory: <see cref="Directory"/> if set, else
     /// <see cref="DefaultRoot"/>. Does not create the directory — pure path arithmetic only.</summary>
     public string ResolveDir() => Directory ?? DefaultRoot();
+
+    /// <summary>C-1 (Critical, WS-C final-review fix wave) — creates <see cref="ResolveDir"/> on disk
+    /// (the full directory tree, if needed) and returns that path. MUST be called before anything writes
+    /// to a queue file resolved via <see cref="ResolveQueueFile"/>: the vendored SDK's own
+    /// <c>St4iDeviceClient.Enqueue</c> writes with <see cref="File.AppendAllText(string,string)"/>
+    /// directly, which does NOT create missing parent directories, so on a fresh install (nothing has
+    /// ever created <c>%ProgramData%\ST4I\sim\wal</c>) the very first offline write throws
+    /// <see cref="DirectoryNotFoundException"/> — which escapes <see cref="LiveTransport.SendAsync"/>'s
+    /// catch clauses (it only catches the three <c>St4i*Exception</c> types) and is swallowed by
+    /// <c>EdgePipeline</c>'s generic catch into an unqueued failed ack: the record is LOST, not buffered.
+    ///
+    /// Same idiom as <see cref="CredentialStore.Save"/> (<c>Directory.CreateDirectory(...)</c> right
+    /// before the first write) and <see cref="St4i.EdgeCore.Historian.SqliteHistorianStore"/>'s own ctor
+    /// (<c>Directory.CreateDirectory(root)</c> unconditionally, before ever opening the DB file) —
+    /// idempotent (a no-op when the directory already exists) and, DELIBERATELY, not wrapped in a
+    /// try/catch here either: a WAL root that genuinely cannot be created (e.g. a ProgramData ACL/disk
+    /// issue) is a fatal misconfiguration that should surface immediately (at startup, or at the next
+    /// Settings-triggered <see cref="TransportCoordinator.RebuildLive"/>) and stop whatever composition
+    /// root called this — silently downgrading to a null queuePath instead would make durable
+    /// store-and-forward look like it's working when it silently isn't, which is the exact failure mode
+    /// this fix exists to close.</summary>
+    public string EnsureDir()
+    {
+        var dir = ResolveDir();
+        System.IO.Directory.CreateDirectory(dir);
+        return dir;
+    }
 
     /// <summary>Resolves the on-disk queue FILE for <paramref name="machineCode"/>:
     /// <c>&lt;ResolveDir()&gt;\&lt;sanitized machineCode&gt;.jsonl</c>. Reuses
