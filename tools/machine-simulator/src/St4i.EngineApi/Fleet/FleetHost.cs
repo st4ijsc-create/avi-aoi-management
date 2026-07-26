@@ -104,9 +104,16 @@ public sealed class FleetHost
     /// <see cref="FleetHost"/> directly without one, e.g. <c>FleetHostHealthAndRegistrationTests</c>,
     /// keeps compiling/behaving byte-for-byte unchanged) durable-historian sink. Fed ALONGSIDE the
     /// existing in-memory <see cref="MachineState"/> path in <see cref="OnPipelineCommitted"/> (never
-    /// instead of it) and the Start/Stop/Estop/ResetEstop run-state transitions below — this class owns
-    /// no historian logic itself, just forwards to <see cref="HistorianWriter"/>'s own non-blocking,
-    /// non-throwing <c>Enqueue</c>/<c>RecordRunEventFireAndForget</c>.</summary>
+    /// instead of it) and the genuine OPERATOR run-state transitions — <see cref="Start"/>/
+    /// <see cref="Stop"/> (guarded to a real not-running↔running transition), <see cref="Estop"/>,
+    /// <see cref="ResetEstop"/> — this class owns no historian logic itself, just forwards to
+    /// <see cref="HistorianWriter"/>'s own non-blocking, non-throwing
+    /// <c>Enqueue</c>/<c>RecordRunEventFireAndForget</c>. Fix round 1 (WS-A-T7 review): deliberately NOT
+    /// emitted from the shared <c>StartLocked</c>/<c>StopLocked</c> helpers — those are also the internal
+    /// restart chokepoint <see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>/<see cref="Burst"/>
+    /// use, and emitting there would pollute the historian's run-event timeline (OEE Availability =
+    /// Start→next Stop/Estop) with a spurious Stop/Start pair on every internal restart, and make
+    /// <see cref="Estop"/> double-emit "Stop" + "Estop" for the same teardown.</summary>
     private readonly HistorianWriter? _historianWriter;
 
     /// <summary>Task 3 — "what product is machine X running right now", keyed case-insensitively by
@@ -249,18 +256,58 @@ public sealed class FleetHost
     /// happen off-lock).</summary>
     private readonly record struct PipelineHandle(Task? RunTask, CancellationTokenSource? Cts);
 
+    /// <summary>Fix round 1 (WS-A-T7 review, Important) — the historian's "Start" run event belongs HERE,
+    /// not inside <see cref="StartLocked"/>: that helper is also the shared restart chokepoint
+    /// <see cref="RegisterMachine"/>/<see cref="ApplyScenario"/> call directly (bypassing this public
+    /// method entirely) to rebuild the pipeline after a live roster/scenario change, which is never a
+    /// genuine operator "start" and must stay invisible to the historian's run-event timeline (OEE
+    /// Availability = Start→next Stop/Estop; a spurious pair per internal restart would corrupt it). The
+    /// <c>wasRunning</c>/<c>IsRunning</c> comparison (read under <see cref="_gate"/>, same as every other
+    /// <c>IsRunning</c> read in this class) guards against emitting again when <see cref="Start"/> is
+    /// called on an already-running (or still-<see cref="EstopEngaged"/>) fleet, where
+    /// <see cref="StartLocked"/> itself no-ops.</summary>
     public void Start()
     {
-        lock (_gate) StartLocked();
+        bool started;
+        lock (_gate)
+        {
+            var wasRunning = IsRunning;
+            StartLocked();
+            started = !wasRunning && IsRunning;
+        }
+
+        if (started)
+        {
+            _ = _historianWriter?.RecordRunEventFireAndForget("Start");
+        }
     }
 
+    /// <summary>Fix round 1 (WS-A-T7 review, Important) — mirror of <see cref="Start"/>'s reasoning: the
+    /// historian's "Stop" run event belongs at THIS public operator boundary, not inside
+    /// <see cref="StopLocked"/> — that helper is also the shared teardown step
+    /// <see cref="RegisterMachine"/>/<see cref="ApplyScenario"/>'s internal restarts AND
+    /// <see cref="Estop"/> call directly (bypassing this method), none of which are a genuine operator
+    /// stop. Only a real running→not-running transition through THIS method emits "Stop" — an
+    /// already-stopped fleet (where <see cref="StopLocked"/> no-ops) emits nothing.</summary>
     public void Stop()
     {
         // Wait/dispose must happen OUTSIDE _gate — see WaitAndDisposeOldPipeline's remarks. Stop()
         // itself stays synchronous (bounded by RestartTeardownTimeout) so a caller observing it return
         // can trust the old pipeline is actually torn down, not just "cancel requested".
         PipelineHandle handle;
-        lock (_gate) handle = StopLocked();
+        bool stopped;
+        lock (_gate)
+        {
+            var wasRunning = IsRunning;
+            handle = StopLocked();
+            stopped = wasRunning && !IsRunning;
+        }
+
+        if (stopped)
+        {
+            _ = _historianWriter?.RecordRunEventFireAndForget("Stop");
+        }
+
         WaitAndDisposeOldPipeline(handle);
     }
 
@@ -342,7 +389,6 @@ public sealed class FleetHost
         var cts = new CancellationTokenSource();
         _cts = cts;
         IsRunning = true;
-        _ = _historianWriter?.RecordRunEventFireAndForget("Start");
 
         _runTask = Task.Run(async () =>
         {
@@ -395,7 +441,6 @@ public sealed class FleetHost
         _cts = null;
         _runTask = null;
         IsRunning = false;
-        _ = _historianWriter?.RecordRunEventFireAndForget("Stop");
 
         if (_currentPipeline is not null)
         {

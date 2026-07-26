@@ -1,3 +1,4 @@
+using St4i.EdgeCore.Engine;
 using St4i.EdgeCore.Historian;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
@@ -9,12 +10,20 @@ namespace St4i.EngineApi.Tests;
 
 /// <summary>
 /// Task 7 (WS-A) — proves the historian hook wired into <see cref="FleetHost"/> is genuinely ADDITIVE:
-/// committed readings and Start/Stop run-state transitions reach a real <see cref="HistorianWriter"/> over
-/// a fake <see cref="IHistorianStore"/> ALONGSIDE (not instead of) the existing in-memory
+/// committed readings and genuine OPERATOR run-state transitions reach a real <see cref="HistorianWriter"/>
+/// over a fake <see cref="IHistorianStore"/> ALONGSIDE (not instead of) the existing in-memory
 /// <see cref="MachineState"/> path every other <c>FleetHost*Tests</c> file already exercises. This file
 /// never touches an existing FleetHost test — every pre-existing ctor call (no <c>historianWriter</c> arg)
 /// must keep compiling/behaving unchanged, which <see cref="FleetHostHealthAndRegistrationTests.CreateHost"/>
 /// (constructing <see cref="FleetHost"/> with no <c>historianWriter</c> at all) already guards.
+///
+/// Fix round 1 (WS-A-T7 review, Important) — <see cref="FleetHost.Start"/>/<see cref="FleetHost.Stop"/> now
+/// emit "Start"/"Stop" run events ONLY on a genuine not-running↔running OPERATOR transition (moved out of
+/// the shared <c>StartLocked</c>/<c>StopLocked</c> helpers those two methods share with the internal restart
+/// chokepoints <see cref="FleetHost.RegisterMachine"/>/<see cref="FleetHost.ApplyScenario"/>). The
+/// TIMELINE-CORRECTNESS tests below are the ones that would have failed under the old (wrong) placement:
+/// they drain the fake store's run-event list after an internal restart and assert no extra Stop/Start pair
+/// appeared, and assert <see cref="FleetHost.Estop"/> emits "Estop" alone (no accompanying "Stop").
 /// </summary>
 public sealed class FleetHostHistorianWiringTests
 {
@@ -52,9 +61,8 @@ public sealed class FleetHostHistorianWiringTests
         return (host, store, writer);
     }
 
-    private static MachineDescriptor NewFastMachine(string code) => new(
-        code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
-        DriverKind.Simulated, "RC-TEST-A", null, CycleSeconds: 0.1);
+    private static int CountOf(FakeHistorianStore store, string eventType) =>
+        store.AppendedRunEventsSnapshot().Count(e => e.EventType == eventType);
 
     [Fact]
     public async Task StartRunStop_RecordsResultsAndRunEvents_AlongsideTheRamCycleLog()
@@ -76,20 +84,163 @@ public sealed class FleetHostHistorianWiringTests
                 () => store.AppendedResultsSnapshot().Any(r => r.MachineCode == "SCRW-01"),
                 "the historian to receive at least one result record for SCRW-01");
 
-            // And a "Start" run event.
-            await WaitUntilAsync(
-                () => store.AppendedRunEventsSnapshot().Any(e => e.EventType == "Start"),
-                "the historian to receive a 'Start' run event");
+            // Exactly one "Start" run event on operator start — not zero, not duplicated.
+            await WaitUntilAsync(() => CountOf(store, "Start") == 1, "the historian to receive exactly one 'Start' run event");
 
             host.Stop();
 
-            await WaitUntilAsync(
-                () => store.AppendedRunEventsSnapshot().Any(e => e.EventType == "Stop"),
-                "the historian to receive a 'Stop' run event after Stop()");
+            // Exactly one "Stop" run event on operator stop.
+            await WaitUntilAsync(() => CountOf(store, "Stop") == 1, "the historian to receive exactly one 'Stop' run event after Stop()");
         }
         finally
         {
             host.Stop();
+            await writer.DisposeAsync();
+        }
+    }
+
+    /// <summary>TIMELINE-CORRECTNESS (fix round 1) — an internal restart triggered by
+    /// <see cref="FleetHost.ApplyScenario"/> (a changed <see cref="ScenarioConfig.CycleRateMultiplier"/>
+    /// while running forces <c>StopLocked</c>+<c>StartLocked</c> under the hood) must be INVISIBLE to the
+    /// historian's run-event timeline — no extra "Stop"/"Start" beyond the single operator "Start" that
+    /// began the run. Before the fix (emits living inside <c>StartLocked</c>/<c>StopLocked</c>), this test
+    /// would have failed: the restart would have appended a spurious Stop+Start pair.</summary>
+    [Fact]
+    public async Task ApplyScenarioRestart_WhileRunning_DoesNotEmitExtraStopOrStartEvents()
+    {
+        var (host, store, writer) = CreateHostWithHistorian();
+        try
+        {
+            host.Start();
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online after Start");
+            await WaitUntilAsync(() => CountOf(store, "Start") == 1, "exactly one 'Start' event recorded before the restart");
+
+            // A changed CycleRateMultiplier while running forces FleetHost's internal StopLocked+StartLocked
+            // restart (see ApplyScenario's multiplierChanged check) — this is an INTERNAL restart, never an
+            // operator Stop/Start.
+            host.ApplyScenario(new ScenarioConfig(CycleRateMultiplier: 3.0));
+
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet back online after the scenario-triggered restart");
+
+            // Give any (incorrectly-placed) spurious emit a moment to land before asserting its absence.
+            await Task.Delay(200);
+
+            Assert.Equal(1, CountOf(store, "Start"));
+            Assert.Equal(0, CountOf(store, "Stop"));
+        }
+        finally
+        {
+            host.Stop();
+            await writer.DisposeAsync();
+        }
+    }
+
+    /// <summary>TIMELINE-CORRECTNESS (fix round 1) — <see cref="FleetHost.RegisterMachine"/> restarting an
+    /// already-running fleet (to fold the new machine into the pipeline) must likewise be invisible to the
+    /// run-event timeline.</summary>
+    [Fact]
+    public async Task RegisterMachine_WhileRunning_DoesNotEmitExtraStopOrStartEvents()
+    {
+        var (host, store, writer) = CreateHostWithHistorian();
+        try
+        {
+            host.Start();
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online after Start");
+            await WaitUntilAsync(() => CountOf(store, "Start") == 1, "exactly one 'Start' event recorded before registering");
+
+            const string code = "T7-FIX-01";
+            var descriptor = new MachineDescriptor(
+                code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
+                DriverKind.Simulated, "RC-TEST-A", null, CycleSeconds: 0.1);
+
+            var added = host.RegisterMachine(descriptor);
+            Assert.True(added);
+
+            await WaitUntilAsync(() => (host.MachineDetail(code)?.Cycles ?? 0) > 0, $"{code} to cycle after being registered while running");
+
+            await Task.Delay(200);
+
+            Assert.Equal(1, CountOf(store, "Start"));
+            Assert.Equal(0, CountOf(store, "Stop"));
+        }
+        finally
+        {
+            host.Stop();
+            await writer.DisposeAsync();
+        }
+    }
+
+    /// <summary>TIMELINE-CORRECTNESS (fix round 1) — <see cref="FleetHost.Estop"/> must emit "Estop" ALONE:
+    /// before the fix, <c>Estop</c>'s call into <c>StopLocked</c> also emitted "Stop" from inside that
+    /// helper, double-recording the same teardown as two distinct events.</summary>
+    [Fact]
+    public async Task Estop_WhileRunning_EmitsExactlyOneEstopAndZeroStopEvents()
+    {
+        var (host, store, writer) = CreateHostWithHistorian();
+        try
+        {
+            host.Start();
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online after Start");
+            await WaitUntilAsync(() => CountOf(store, "Start") == 1, "exactly one 'Start' event recorded before Estop");
+
+            host.Estop();
+
+            await WaitUntilAsync(() => CountOf(store, "Estop") == 1, "exactly one 'Estop' run event recorded");
+
+            await Task.Delay(200);
+
+            Assert.Equal(0, CountOf(store, "Stop"));
+            Assert.True(host.EstopEngaged);
+        }
+        finally
+        {
+            host.ResetEstop();
+            host.Stop();
+            await writer.DisposeAsync();
+        }
+    }
+
+    /// <summary>Calling <see cref="FleetHost.Start"/> again on an already-running fleet is a no-op in
+    /// <c>StartLocked</c> — must not emit a second "Start".</summary>
+    [Fact]
+    public async Task Start_WhenAlreadyRunning_DoesNotEmitDuplicateStartEvent()
+    {
+        var (host, store, writer) = CreateHostWithHistorian();
+        try
+        {
+            host.Start();
+            await WaitUntilAsync(() => CountOf(store, "Start") == 1, "exactly one 'Start' event recorded");
+
+            host.Start(); // already running — no-op
+            await Task.Delay(200);
+
+            Assert.Equal(1, CountOf(store, "Start"));
+        }
+        finally
+        {
+            host.Stop();
+            await writer.DisposeAsync();
+        }
+    }
+
+    /// <summary>Calling <see cref="FleetHost.Stop"/> on an already-stopped fleet is a no-op in
+    /// <c>StopLocked</c> — must not emit a "Stop" event at all.</summary>
+    [Fact]
+    public async Task Stop_WhenAlreadyStopped_DoesNotEmitStopEvent()
+    {
+        var (host, store, writer) = CreateHostWithHistorian();
+        try
+        {
+            Assert.False(host.IsRunning);
+
+            host.Stop(); // never started — no-op
+
+            await Task.Delay(200);
+
+            Assert.Equal(0, CountOf(store, "Stop"));
+        }
+        finally
+        {
             await writer.DisposeAsync();
         }
     }
