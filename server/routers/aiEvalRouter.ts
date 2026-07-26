@@ -21,6 +21,7 @@ import { scanInferenceForUncertainty, scanCommitteeDisagreement } from "../servi
 import { createTrainingJob, checkAutoRetrainTrigger } from "../services/aiTrainingPipeline";
 import { listModelCards, generateModelCard, seedPortfolioCards } from "../services/aiModelCard";
 import { checkConfidenceDrift, getDriftMetrics } from "../services/aiDriftMonitor";
+import { bootstrapFirstClassifier, InsufficientLabeledSamplesError } from "../services/aiBootstrapClassifier";
 
 export const aiEvalRouter = router({
   // ─── Dataset materialization ────────────────────────────────
@@ -187,5 +188,38 @@ export const aiEvalRouter = router({
         gateEpsilon: input.gateEpsilon ?? 0,
         createdBy: (ctx as any).user?.id,
       });
+    }),
+
+  // ─── doc 69 Wave 6 (F1) — bootstrap the FIRST defect classifier ─────
+  // Admin-gated, end-to-end: honesty check (>= minSamplesPerClass REAL labeled
+  // samples) → few-shot train → eval on the locked TEST split → quality gate →
+  // register a model_versions row → activate ONLY on a gate PASS, via the
+  // W0-2 gated activateModelVersionManual. Never fabricates a model — see
+  // services/aiBootstrapClassifier.ts.
+  bootstrapFirstClassifier: adminProcedure
+    .input(z.object({
+      baseModelId: z.number(),
+      classifierCode: z.string().min(1).max(100),
+      classifierName: z.string().min(1).max(255).optional(),
+      classLabels: z.array(z.string().min(1)).min(2).max(100),
+      productModelId: z.number().optional(),
+      targetVersion: z.string().min(1).optional(),
+      minSamplesPerClass: z.number().min(1).max(1000).optional(),
+      datasetId: z.number().optional(),
+      gateEpsilon: z.number().min(0).max(1).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        return await bootstrapFirstClassifier({
+          ...input,
+          actorUserId: ctx.user.id,
+          createdBy: ctx.user.id,
+        });
+      } catch (err) {
+        if (err instanceof InsufficientLabeledSamplesError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message, cause: err });
+        }
+        throw err;
+      }
     }),
 });

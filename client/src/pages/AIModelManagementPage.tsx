@@ -47,6 +47,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { DatasetSelect } from "@/components/ai/ModelSelect";
+import { ClassifierHealthBanner } from "@/components/ai/ClassifierHealthBanner";
 import { toast } from "sonner";
 import {
   Plus,
@@ -1333,6 +1334,9 @@ export default function AIModelManagementPage() {
             </Button>
           }
         />
+
+        {/* doc 69 Wave 6 (F1) — "no active classifier" health banner (additive) */}
+        <ClassifierHealthBanner withAction />
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

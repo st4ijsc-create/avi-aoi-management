@@ -11612,7 +11612,26 @@
       "custom": "自定义"
     },
     "emptyDesc": "注册模型以上传文件并管理版本",
-    "noResultsDesc": "请尝试调整搜索或筛选条件"
+    "noResultsDesc": "请尝试调整搜索或筛选条件",
+    "classifierHealth": {
+      "bannerTitle": "尚无处于 ACTIVE 状态的缺陷分类模型",
+      "bannerBody": "质量门禁 / A-B 测试流程处于闲置状态（没有可验证的对象），直到引导（bootstrap）并激活一个分类模型为止。",
+      "cta": "引导第一个分类模型",
+      "ctaLink": "前往模型管理",
+      "dialogTitle": "引导第一个分类模型",
+      "dialogDesc": "基于基础模型的特征嵌入进行少样本（few-shot）训练，在锁定的测试集上评估，仅当通过质量门禁时才会激活。若已标注样本不足，将返回明确的错误信息——绝不会伪造模型。",
+      "submit": "运行引导",
+      "successActivated": "分类模型已注册并已激活（通过质量门禁）。",
+      "successNotActivated": "分类模型已注册为 READY，但尚未激活——未通过质量门禁。",
+      "fields": {
+        "baseModel": "基础模型（特征提取器，例如 DINOv2）",
+        "classifierCode": "分类模型代码",
+        "classifierName": "分类模型名称",
+        "classifierNamePlaceholder": "（默认使用代码）",
+        "classLabels": "缺陷标签（≥2 个，用逗号分隔）",
+        "minSamplesPerClass": "每类最少已标注样本数"
+      }
+    }
   },
   "aiDataProcessing": {
     "title": "数据处理",

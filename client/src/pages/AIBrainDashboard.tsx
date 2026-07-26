@@ -12,6 +12,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { PageHeader, PageContainer } from "@/components/patterns";
+import { ClassifierHealthBanner } from "@/components/ai/ClassifierHealthBanner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -91,6 +92,9 @@ export default function AIBrainDashboard() {
             </Button>
           }
         />
+
+        {/* doc 69 Wave 6 (F1) — "no active classifier" health banner (additive) */}
+        <ClassifierHealthBanner />
 
         {/* Engine health summary */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -16,8 +16,14 @@ import {
   getLoadedModels,
 } from "../services/aiInferenceEngine";
 import { promoteStage, listStages } from "../services/ai/modelStagePipeline";
+import { checkActiveClassifierHealth } from "../services/aiClassifierHealth";
 
 export const aiModelRouter = router({
+  // ─── doc 69 Wave 6 (F1) — "no active classifier" health signal ─────
+  // Surfaces whether an ACTIVE defect-classifier exists so the FE can warn
+  // operators when the quality-gate / A-B pipeline is inert. Fail-safe.
+  classifierHealth: protectedProcedure.query(() => checkActiveClassifierHealth()),
+
   // ─── Model CRUD ──────────────────────────────────────────
   list: protectedProcedure
     .input(z.object({

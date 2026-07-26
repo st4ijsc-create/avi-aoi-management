@@ -11829,7 +11829,26 @@
       "custom": "Custom"
     },
     "emptyDesc": "Register a model to upload files and manage versions",
-    "noResultsDesc": "Try adjusting your search or filters"
+    "noResultsDesc": "Try adjusting your search or filters",
+    "classifierHealth": {
+      "bannerTitle": "No ACTIVE defect classifier",
+      "bannerBody": "The quality-gate / A-B testing pipeline is inert (nothing to validate) until a classifier is bootstrapped and activated.",
+      "cta": "Bootstrap first classifier",
+      "ctaLink": "Go to Model Management",
+      "dialogTitle": "Bootstrap the first classifier",
+      "dialogDesc": "Trains a few-shot classifier on the base model's embeddings, evaluates it on the locked test split, and activates it only if it passes the quality gate. If there aren't enough labeled samples yet, this reports a clear error — it never fabricates a model.",
+      "submit": "Run Bootstrap",
+      "successActivated": "Classifier registered AND activated (passed the quality gate).",
+      "successNotActivated": "Classifier registered as READY but NOT activated — it did not pass the quality gate.",
+      "fields": {
+        "baseModel": "Base model (feature extractor, e.g. DINOv2)",
+        "classifierCode": "Classifier code",
+        "classifierName": "Classifier name",
+        "classifierNamePlaceholder": "(defaults to the code)",
+        "classLabels": "Defect labels (>=2, comma-separated)",
+        "minSamplesPerClass": "Minimum labeled samples / class"
+      }
+    }
   },
   "aiDataProcessing": {
     "title": "Data Processing",
