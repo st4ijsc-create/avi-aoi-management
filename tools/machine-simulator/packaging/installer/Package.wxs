@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WS-F1-T3 — WiX v4 MSI source for the ST4I Machine Simulator product install. Packages the whole
+  `publish-desktop\` deliverable (St4i.DesktopShell.exe + the spawned engine + wwwroot + fleet/mapping
+  — README.md §13.2) as a per-machine MSI with a Start Menu shortcut (always installed) plus three
+  OFF-by-default optional features: background service, launch-at-sign-in, and the exhibition
+  launcher. See packaging/installer/README.md for the full design writeup, build instructions, and
+  the WiX-version/UI-choice rationale.
+
+  Built via St4i.Installer.wixproj (NOT part of St4iMachineSimulator.sln) — see
+  packaging/installer/build-installer.ps1.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!-- UpgradeCode below was MINTED ONCE for this product, 2026-07-27 — NEVER regenerate it. It's what
+       ties every future version's MSI to this one for MajorUpgrade detection; changing it would make
+       the next release install side-by-side instead of upgrading in place. -->
+  <Package Name="ST4I Machine Simulator"
+           Manufacturer="ST4I"
+           Version="$(var.Version)"
+           UpgradeCode="6B54CD27-1D8F-4325-8E62-ECC84F1E7097"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <!-- Same UpgradeCode across versions + a strictly-increasing Version (from
+         tools/machine-simulator/Directory.Build.props, passed in as the `Version` preprocessor
+         variable by build-installer.ps1) is everything MajorUpgrade needs: installing a newer MSI
+         over an older install upgrades in place; installing an older MSI over a newer install is
+         refused with this message instead of silently downgrading files underneath a running app. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ST4I Machine Simulator is already installed." />
+
+    <!-- Single embedded cabinet — the whole payload ships as ONE .msi file, no companion .cab to lose
+         track of. (See README.md's "Toolchain" section for why this is materially large — the payload
+         is two self-contained, single-file .NET publishes.) -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ProgramFiles6432Folder (not ProgramFiles64Folder) — resolves to the true 64-bit Program Files
+         on 64-bit Windows regardless of the *package's* own declared bitness, which is the
+         conventional choice for a product install (as opposed to a shared 32-bit component that
+         deliberately wants ProgramFiles64Folder's stricter "must be a 64-bit component" ICE
+         enforcement). Our components are still authored as 64-bit (Bitness="always64" on each
+         explicit <Component>, and heat harvests the rest as 64-bit too since Platform=x64 in the
+         .wixproj) — this is simply the standard target folder id for a 64-bit product. -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="St4iCompanyFolder" Name="ST4I">
+        <Directory Id="INSTALLFOLDER" Name="Machine Simulator" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Start Menu — its own "ST4I Machine Simulator" subfolder (rather than dropping the .lnk
+         straight into Programs\) so any future additional shortcut (docs, an uninstall shortcut, etc.)
+         has somewhere tidy to live without cluttering the Programs root. -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppProgramMenuFolder" Name="ST4I Machine Simulator" />
+    </StandardDirectory>
+
+    <!-- Per-user "run at sign-in" folder for the optional Startup feature below. Declared here with no
+         children — StartupShortcutComponent's <Shortcut> references this Id directly; there's only
+         ever the one shortcut in it, so no subfolder. -->
+    <StandardDirectory Id="StartupFolder" />
+
+    <!-- ================================================================================
+         Always-installed payload: MainFeature
+         ================================================================================ -->
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <!-- The shell exe gets its own explicit (non-harvested) component so the Start Menu shortcut can
+           nest inside its <File> (WiX v4: a <Shortcut> nested in <File> needs no separate Component of
+           its own, and its Target is auto-resolved to "[#ShellExeFile]" — see
+           exclude-shell-and-engine-exe.xslt for why this file is excluded from the bulk harvest
+           below). -->
+      <Component Id="ShellExeComponent" Guid="*" Bitness="always64">
+        <File Id="ShellExeFile" Name="St4i.DesktopShell.exe" Source="..\..\publish-desktop\St4i.DesktopShell.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="AppProgramMenuFolder"
+                    Name="ST4I Machine Simulator"
+                    Description="Launch the ST4I Machine Simulator"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Icon="ProductIcon.exe" />
+        </File>
+      </Component>
+
+      <!-- The bulk of the payload: everything else under publish-desktop\ (engine\, wwwroot\,
+           fleet.json, mapping\*.json, WebView2 deps, …), harvested by St4i.Installer.wixproj's
+           HarvestDirectory. Excludes St4i.DesktopShell.exe and engine\St4i.EngineApi.exe (installed
+           explicitly above/below instead) via exclude-shell-and-engine-exe.xslt. -->
+      <!-- (ComponentGroup "HarvestedFiles" itself is generated at build time — see
+           St4i.Installer.wixproj — referenced by Id below in MainFeature.) -->
+    </DirectoryRef>
+
+    <!-- ================================================================================
+         Optional Feature: "Install background service" (OFF by default)
+         ================================================================================
+         Native WiX/MSI service registration — deliberately NOT the exe's own command-line install
+         verb (St4i.EngineApi.exe's ServiceInstallVerbs, WS-F1-T1): using both at once would
+         double-register the same service name. An operator who wants the engine to run as a Windows
+         service should pick ONE mechanism — enable this feature at install time (`ADDLOCAL` — see
+         README.md), or run the exe's own install verb by hand post-install — never both. -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Directory Id="EngineDir" Name="engine">
+        <Component Id="EngineServiceComponent" Guid="*" Bitness="always64">
+          <File Id="EngineExeFile" Name="St4i.EngineApi.exe" Source="..\..\publish-desktop\engine\St4i.EngineApi.exe" KeyPath="yes" />
+          <!-- Name/DisplayName/Account/Start match St4i.EngineApi.ServiceHost.ServiceHostConstants and
+               ServiceInstallVerbs.DefaultAccount/DefaultStartType exactly (WS-F1-T1) — an install via
+               this MSI feature and one via the exe's own install verb register an indistinguishable
+               service. -->
+          <ServiceInstall Id="EngineServiceInstall"
+                          Name="St4iEngineApi"
+                          DisplayName="ST4I Machine Simulator Engine"
+                          Description="Hosts the ST4I Machine Simulator engine (fleet simulation, historian, HTTP/WebSocket API for the web UI). Runs continuously in the background; safe to stop/start via services.msc or `sc stop`/`sc start`."
+                          Type="ownProcess"
+                          Start="auto"
+                          Account="LocalSystem"
+                          ErrorControl="normal" />
+          <!-- Start on install, stop+remove on uninstall (including on a MajorUpgrade's
+               remove-old-version pass) — Wait="yes" so the uninstall sequence blocks until the SCM
+               confirms the stop before trying to delete the service registration. -->
+          <ServiceControl Id="EngineServiceControl"
+                          Name="St4iEngineApi"
+                          Start="install"
+                          Stop="both"
+                          Remove="uninstall"
+                          Wait="yes" />
+        </Component>
+      </Directory>
+    </DirectoryRef>
+
+    <!-- ================================================================================
+         Optional Feature: "Launch at sign-in" (OFF by default)
+         ================================================================================
+         A genuinely per-user resource (StartupFolder is CSIDL_STARTUP, the CURRENT user's own Startup
+         folder) even though the rest of this package is per-machine — so, correctly per ICE43's own
+         guidance, its component's KeyPath is an HKCU registry value, not the shortcut/file. Target is
+         the formatted "[Directory]literal-filename" form (not a "[#FileId]" binder reference) so this
+         component has no dependency on ShellExeComponent's File Id. -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="StartupShortcutComponent" Guid="*">
+        <RegistryValue Root="HKCU"
+                        Key="Software\ST4I\Machine Simulator"
+                        Name="LaunchAtSignInInstalled"
+                        Type="integer"
+                        Value="1"
+                        KeyPath="yes" />
+        <Shortcut Id="StartupShortcut"
+                  Directory="StartupFolder"
+                  Name="ST4I Machine Simulator"
+                  Description="Launch the ST4I Machine Simulator at sign-in"
+                  Target="[INSTALLFOLDER]St4i.DesktopShell.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- ================================================================================
+         Optional Feature: "Exhibition launcher" (OFF by default)
+         ================================================================================
+         packaging/run-exhibition.bat (README.md §13.5) — sets ST4I_DEMO_ENABLED=true then launches
+         the shell, for the offline/fabricated-fleet demo-booth experience. Plain file install, no
+         shortcut of its own; the operator double-clicks it from Program Files (or copies/pins it) same
+         as the manual "copy run-exhibition.bat next to the exe" step README §13.5 already documents. -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="ExhibitionLauncherComponent" Guid="*" Bitness="always64">
+        <File Id="ExhibitionBatFile" Name="run-exhibition.bat" Source="..\run-exhibition.bat" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Add/Remove Programs icon + the same icon on the Start Menu shortcut above. Reuses the
+         existing exhibition-branding .ico rather than duplicating it (St4i.DesktopShell.csproj
+         already references this exact path as its own <ApplicationIcon> — see README.md). -->
+    <Icon Id="ProductIcon.exe" SourceFile="..\..\src\St4iMachineSimulator\Assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon.exe" />
+
+    <!-- ================================================================================
+         Features
+         ================================================================================
+         No custom UI is authored (see README.md's "WiX UI choice" section for why) — feature
+         selection is entirely via Level: Level="1" features install by default at MSI's own default
+         InstallLevel (1); Level="1000" features are authored but excluded unless explicitly requested
+         via ADDLOCAL on the command line (README.md documents the exact invocations). -->
+    <Feature Id="MainFeature" Title="ST4I Machine Simulator" Level="1"
+             Description="The application itself: the desktop shell, engine, web UI, and default fleet/mapping data. Always installed.">
+      <ComponentGroupRef Id="HarvestedFiles" />
+      <ComponentRef Id="ShellExeComponent" />
+    </Feature>
+    <Feature Id="ServiceFeature" Title="Install background service" Level="1000"
+             Description="Registers the engine (St4i.EngineApi.exe) as a Windows service (St4iEngineApi, LocalSystem, auto-start) so it runs continuously without the desktop shell. OFF by default.">
+      <ComponentRef Id="EngineServiceComponent" />
+    </Feature>
+    <Feature Id="StartupFeature" Title="Launch at sign-in" Level="1000"
+             Description="Adds a shortcut to the installing user's Startup folder so the desktop shell launches automatically at sign-in. OFF by default.">
+      <ComponentRef Id="StartupShortcutComponent" />
+    </Feature>
+    <Feature Id="ExhibitionFeature" Title="Exhibition launcher" Level="1000"
+             Description="Installs run-exhibition.bat, which launches the shell with ST4I_DEMO_ENABLED=true for the offline demo-booth experience (README.md §13.5). OFF by default.">
+      <ComponentRef Id="ExhibitionLauncherComponent" />
+    </Feature>
+  </Package>
+</Wix>

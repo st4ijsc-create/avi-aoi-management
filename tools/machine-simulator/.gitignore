@@ -4,3 +4,9 @@ publish/
 publish-desktop/
 screenshots/
 .vs/
+
+# WS-F1-T3 — WiX installer build output (packaging/installer/bin|obj already match the patterns
+# above; these are added for defense-in-depth/self-documentation of exactly what the installer
+# project produces).
+*.msi
+*.wixpdb
