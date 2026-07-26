@@ -37,6 +37,27 @@ namespace St4i.EdgeService;
 /// </summary>
 public sealed class EdgeWorker : BackgroundService
 {
+    /// <summary>Task F1-2 — Live-path connection settings, read directly from the process environment
+    /// (no <see cref="EdgeServiceOptions"/> field: those are CLI-arg-driven, these are launch-env-driven,
+    /// same split as <see cref="TransportModeGate"/>/<see cref="St4i.EdgeCore.Transport.WalOptions"/>'s
+    /// own <c>FromEnvironment</c> idiom).</summary>
+    internal const string ServerUrlEnvVar = "ST4I_SERVER_URL";
+    internal const string MachineCodeEnvVar = "ST4I_MACHINE_CODE";
+    internal const string VerifyTlsEnvVar = "ST4I_VERIFY_TLS";
+
+    /// <summary>Same placeholder server URL as St4iMachineSimulator's <c>App.xaml.cs</c> and
+    /// St4i.EngineApi's <c>FleetHost.DefaultServerUrl</c> — a local engine listening on its default port,
+    /// overridable via <see cref="ServerUrlEnvVar"/> once a real deployment target is known.</summary>
+    internal const string DefaultServerUrl = "http://localhost:5000";
+
+    /// <summary>EdgeService did not previously have a default machine identity (it always ran the
+    /// whole in-code fleet through a single shared <see cref="DemoTransport"/> that never cared about
+    /// machine identity). Live mode's <see cref="LiveTransport"/> binds to exactly ONE machine/mk_ key
+    /// (see LiveTransport's own doc comment), so this task introduces one small placeholder default —
+    /// same idea as App.xaml.cs's <c>PlaceholderMachineCode</c>/FleetHost's <c>DefaultMachineCode</c> —
+    /// overridable via <see cref="MachineCodeEnvVar"/>.</summary>
+    internal const string DefaultMachineCode = "EDGE-SVC-01";
+
     private readonly ILogger<EdgeWorker> _logger;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly EdgeServiceOptions _options;
@@ -67,7 +88,7 @@ public sealed class EdgeWorker : BackgroundService
         IDeviceDriver driver = new SimulatedDriver(sims);
         var profile = new MappingProfile { Name = "edge-service-fleet", DeviceClass = "Mixed" };
         var eventBus = new EventBus();
-        var transport = new DemoTransport();
+        var transport = BuildLiveOrDemoTransport();
         var pipeline = new EdgePipeline(driver, profile, transport, eventBus);
 
         // Linked (not just stoppingToken) so a reached --smoke count can unwind RunAsync immediately
@@ -105,7 +126,107 @@ public sealed class EdgeWorker : BackgroundService
             pipeline.Committed -= OnCommitted;
         }
 
+        // WS-C precedent (LiveTransport.Dispose's own remarks: it owns an HttpClient) — a Live-mode
+        // transport built by BuildTransport needs disposing once the pipeline is done with it; a
+        // DemoTransport has nothing to release, hence the type check rather than an unconditional cast.
+        if (transport is IDisposable disposableTransport)
+        {
+            disposableTransport.Dispose();
+        }
+
         _logger.LogInformation("EdgeWorker stopped after {Count} commit(s)", commitCount);
+    }
+
+    /// <summary>Resolves this run's Live-path connection settings from the process environment and
+    /// delegates to the fully-explicit, unit-testable <see cref="BuildTransport"/>. Kept as a thin
+    /// instance-method seam so <see cref="ExecuteAsync"/> stays a one-line call, while every actual
+    /// decision (gate/queuePath/logging) lives in the static method the test project exercises directly.</summary>
+    private ITransport BuildLiveOrDemoTransport()
+    {
+        var gate = ResolveGate(_options.SmokeCount, Environment.GetEnvironmentVariable(TransportModeGate.EnvVarName));
+
+        var serverUrlRaw = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
+        var serverUrl = string.IsNullOrWhiteSpace(serverUrlRaw) ? DefaultServerUrl : serverUrlRaw;
+
+        var machineCodeRaw = Environment.GetEnvironmentVariable(MachineCodeEnvVar);
+        var machineCode = string.IsNullOrWhiteSpace(machineCodeRaw) ? DefaultMachineCode : machineCodeRaw;
+
+        var verifyTls = ParseVerifyTls(Environment.GetEnvironmentVariable(VerifyTlsEnvVar));
+
+        // C-1 (WS-C final-review fix wave, same lesson St4i.EngineApi/Program.cs and App.xaml.cs already
+        // apply) — WalOptions.FromEnvironment() only resolves knobs; BuildTransport itself is what calls
+        // EnsureDir() before ever handing a queuePath to LiveTransport.ForMachine.
+        var wal = WalOptions.FromEnvironment();
+
+        // Skip the real %ProgramData%\ST4I\sim\creds disk read entirely when we're about to hand back a
+        // DemoTransport anyway — it would just be discarded, and a not-yet-onboarded/Demo-only box may
+        // never have a creds directory at all.
+        var mkKey = gate.Enabled ? null : CredentialStore.Load(machineCode);
+
+        return BuildTransport(gate, serverUrl, machineCode, verifyTls, wal, mkKey, _logger);
+    }
+
+    /// <summary>Task F1-2 — the effective <see cref="TransportModeGate"/> for one run. An explicit
+    /// <see cref="TransportModeGate.EnvVarName"/> (any non-blank value, including an explicit "false")
+    /// always wins. Only when the operator has NOT set it at all does a <c>--smoke</c> run (README §9's
+    /// CI path) fall back to Demo — keeps `St4i.EdgeService --fleet fleet.json --smoke N` exactly as
+    /// fast/deterministic as it always was (no real network dial-out, no CI script changes required)
+    /// while a bare (no <c>--smoke</c>) launch gets this task's new product default of Live.</summary>
+    internal static TransportModeGate ResolveGate(int? smokeCount, string? demoEnabledRaw) =>
+        smokeCount is not null && string.IsNullOrWhiteSpace(demoEnabledRaw)
+            ? new TransportModeGate("true")
+            : new TransportModeGate(demoEnabledRaw);
+
+    /// <summary>Task F1-2 — gate-driven Live/Demo selection, fully explicit-parameter (no
+    /// <see cref="Environment"/> reads, no real credential-store I/O) so <c>St4i.EdgeService.Tests</c>
+    /// can exercise every branch directly. <paramref name="gate"/><c>.Enabled</c> → unchanged
+    /// <see cref="DemoTransport"/> behavior. Otherwise (the product default) → <see cref="LiveTransport"/>:
+    /// creates the WAL directory (WS-C's Critical lesson — <see cref="WalOptions.EnsureDir"/> — a fresh
+    /// install has never created it, and the SDK's own Enqueue does not create missing parents) before
+    /// ever resolving a queue file, exactly like <c>TransportCoordinator.RebuildLive</c>'s own precedent.
+    /// <paramref name="mkKey"/> may be <see langword="null"/> (no credential saved yet) — the resulting
+    /// <see cref="LiveTransport"/> just fails sends gracefully until one exists (see LiveTransport's own
+    /// St4iConfigException handling), which is fine for a not-yet-onboarded box. Logs the resolved mode +
+    /// machineCode + WAL on/off — deliberately never logs <paramref name="mkKey"/> itself.</summary>
+    internal static ITransport BuildTransport(
+        TransportModeGate gate,
+        string serverUrl,
+        string machineCode,
+        bool verifyTls,
+        WalOptions wal,
+        string? mkKey,
+        ILogger logger)
+    {
+        if (gate.Enabled)
+        {
+            logger.LogInformation(
+                "Transport mode: DEMO ({EnvVar} set) — machine={MachineCode}",
+                TransportModeGate.EnvVarName, machineCode);
+            return new DemoTransport();
+        }
+
+        string? queuePath = null;
+        if (wal.Enabled)
+        {
+            wal.EnsureDir();
+            queuePath = wal.ResolveQueueFile(machineCode);
+        }
+
+        logger.LogInformation(
+            "Transport mode: LIVE — machine={MachineCode} server={ServerUrl} verifyTls={VerifyTls} wal={WalEnabled} credential={CredentialState}",
+            machineCode, serverUrl, verifyTls, wal.Enabled, mkKey is null ? "missing" : "present");
+
+        return LiveTransport.ForMachine(serverUrl, mkKey ?? string.Empty, machineCode, queuePath, verifyTls);
+    }
+
+    /// <summary>"false"/"0" (case-insensitive) disables TLS verification; unset/blank/anything else
+    /// leaves it enabled — same default-enabled, explicit-opt-out idiom as
+    /// <see cref="WalOptions.EnvVarEnabled"/>'s own parsing in <see cref="WalOptions.FromEnvironment"/>.</summary>
+    private static bool ParseVerifyTls(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return true;
+        var trimmed = raw.Trim();
+        return !(trimmed == "0" || string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase));
     }
 
     private IReadOnlyList<MachineDescriptor> LoadFleet()
