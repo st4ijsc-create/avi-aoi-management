@@ -53,6 +53,11 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
+    <!-- WS-F1-T1 — Windows Service essentials: AddWindowsService's self-gating lifetime (Program.cs) and
+         ServiceInstallVerbs' status verb (ServiceController), both pinned to the same 10.0.x line as
+         this project's other Microsoft.* references (e.g. Microsoft.Data.Sqlite 10.0.10 in St4i.EdgeCore). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.10" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.10" />
   </ItemGroup>
 
   <!-- Final-review I-2 guard: the Content ItemGroup above quietly contributes zero items (and thus an

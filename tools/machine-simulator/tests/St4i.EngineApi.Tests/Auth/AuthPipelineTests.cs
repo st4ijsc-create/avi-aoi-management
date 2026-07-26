@@ -123,6 +123,17 @@ public sealed class AuthPipelineTests
 
         using var caps = await client.GetAsync("/v1/capabilities");
         Assert.Equal(HttpStatusCode.OK, caps.StatusCode);
+
+        // WS-F1-T1 — the product version (tools/machine-simulator/Directory.Build.props' single
+        // <Version>, read back off St4i.EngineApi's own assembly) must always be present and non-empty;
+        // the installer's future upgrade-vs-fresh-install check depends on this field actually being
+        // populated, not just the field existing on the wire. Parsed as a raw JsonDocument (not the typed
+        // CapabilitiesDto) because this class's own JsonOptions (JsonSerializerDefaults.Web) has no
+        // JsonStringEnumConverter registered — deserializing the DTO's Mode enum field would throw, which
+        // is not what this assertion is even about.
+        using var doc = JsonDocument.Parse(await caps.Content.ReadAsStringAsync());
+        var version = doc.RootElement.GetProperty("version").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(version));
     }
 
     [Fact]

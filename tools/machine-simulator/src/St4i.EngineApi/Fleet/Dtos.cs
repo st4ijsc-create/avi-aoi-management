@@ -68,8 +68,13 @@ public sealed record ModeDto(TransportMode Mode);
 // render the DEMO option (topbar segmented control, Settings mode selector) instead of discovering it
 // only after a rejected PUT /v1/mode. `Mode` is included too so a single fetch can seed both the
 // capability AND the current mode on first paint without a second round trip.
+//
+// WS-F1-T1 — `Version` added: the product version (tools/machine-simulator/Directory.Build.props'
+// single <Version>/<AssemblyVersion>, the same value the installer will read for upgrade-vs-fresh-install
+// decisions), read back off this running assembly at request time. Web can surface it (e.g. an "About"
+// panel, a support-ticket footer) later; no web change required by this task.
 // ─────────────────────────────────────────────────────────────────────────
-public sealed record CapabilitiesDto(bool DemoEnabled, TransportMode Mode);
+public sealed record CapabilitiesDto(bool DemoEnabled, TransportMode Mode, string Version);
 
 // ─────────────────────────────────────────────────────────────────────────
 // POST /v1/scenario, /v1/scenario/preset, /v1/scenario/burst

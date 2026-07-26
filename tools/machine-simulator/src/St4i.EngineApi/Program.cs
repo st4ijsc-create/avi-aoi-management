@@ -16,6 +16,18 @@ using St4i.EngineApi.Config;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.Hubs;
+using St4i.EngineApi.ServiceHost;
+
+// WS-F1-T1 — install/uninstall/status verbs are handled as the VERY FIRST thing this process does,
+// before WebApplication.CreateBuilder runs — a pure `St4i.EngineApi.exe --install` (say, from the
+// installer's post-install step) must never spin up Kestrel, create the security/historian/WAL
+// directories, or touch DPAPI, all of which CreateBuilder's downstream wiring below does. TryHandle
+// returns false (with zero I/O) for every other argument shape, including plain "no args" normal
+// startup, so this is a no-op for every existing caller/test.
+if (ServiceInstallVerbs.TryHandle(args, out var serviceVerbExitCode))
+{
+    return serviceVerbExitCode;
+}
 
 // Task 3 — St4i.EngineApi: a thin ASP.NET host wrapping the SAME EdgeCore engine the WPF exhibition
 // app drives (SimulatedDriver/ScenarioAwareDriver/EdgePipeline/SwitchableTransport/TransportCoordinator
@@ -23,6 +35,17 @@ using St4i.EngineApi.Hubs;
 // byte-for-byte), exposed over HTTP + WebSocket so the new web UI (Tasks 4-7) can drive the fleet. No
 // Go/Rust rewrite — see task-3-report.md for the full write-up.
 var builder = WebApplication.CreateBuilder(args);
+
+// WS-F1-T1 — self-gating Windows Service registration. AddWindowsService swaps in a ServiceBase-driven
+// IHostLifetime, but ONLY actually activates once Microsoft.Extensions.Hosting.WindowsServices'
+// WindowsServiceHelpers.IsWindowsService() detects this process was launched BY the Service Control
+// Manager (parent process svchost/services.exe) — for every other launch shape this exe already
+// supports (interactively via `dotnet run`/double-click, spawned as St4i.DesktopShell's child process,
+// or booted in-memory under WebApplicationFactory<Program> in tests) it's a complete no-op, so this line
+// is safe to add with zero behavior change for every existing caller. It only takes effect once this
+// exe is actually registered as a service (ServiceInstallVerbs' `--install` verb above) and started via
+// `sc start`/services.msc/a reboot.
+builder.Services.AddWindowsService(o => o.ServiceName = ServiceHostConstants.ServiceName);
 
 // Fixed default port 5199 (brief: "Serve on a fixed port... override via --urls/env") — only applied
 // when the caller didn't already pin one via --urls or ASPNETCORE_URLS, so both override mechanisms
@@ -444,7 +467,14 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 
 app.Run();
+return 0;
 
+// WS-F1-T1 — the early `return serviceVerbExitCode;` above (an install/uninstall/status verb) is what
+// makes the compiler infer an `int`-returning top-level-statements Main in the first place; that means
+// EVERY path through this file must now return an int, including normal startup falling out the bottom
+// of app.Run() (which blocks until shutdown, but the compiler can't know that statically) — hence this
+// explicit `return 0;`, which didn't need to exist before this task.
+//
 // WS-D-D1 — top-level statements generate an IMPLICIT `Program` class; declaring it explicitly here
 // (merged via `partial`, zero behavior change) is what lets AuthPipelineTests use
 // Microsoft.AspNetCore.Mvc.Testing's WebApplicationFactory&lt;Program&gt; to boot this exact composition
