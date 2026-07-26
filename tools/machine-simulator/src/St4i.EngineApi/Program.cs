@@ -42,10 +42,21 @@ const string CorsPolicy = "EngineApiCors";
 builder.Services.AddCors(options =>
 {
     // Vite dev origin + the Tauri webview origin the desktop-wrapped build runs under (Task 3 brief).
+    // WS-D-D6 — `.AllowCredentials()` added: `/v1/auth/*` (D1) now sets a cookie-based session, and a
+    // cross-origin caller (the Tauri webview's `tauri://localhost` talking to the packaged engine on
+    // its own `http://…:5199`, since `VITE_ENGINE_URL` there is NOT proxied same-origin the way Vite
+    // dev's own `/v1` proxy makes plain `npm run dev` requests) needs the browser to actually attach/
+    // accept that cookie on a cross-origin `fetch`. That requires BOTH the request's own
+    // `credentials: "include"` (`lib/api.ts`'s shared `request<T>`) AND the response carrying this
+    // exact opt-in — the two are a pair; neither alone is enough. Safe to combine with the explicit
+    // `WithOrigins(...)` allow-list above (never `AllowAnyOrigin()`, which the CORS spec forbids
+    // pairing with `AllowCredentials()` — reflecting credentials back to literally any origin would
+    // let any page on the internet ride a visitor's session).
     options.AddPolicy(CorsPolicy, policy => policy
         .WithOrigins("http://localhost:5173", "tauri://localhost")
         .AllowAnyHeader()
-        .AllowAnyMethod());
+        .AllowAnyMethod()
+        .AllowCredentials());
 });
 
 // ── WS-D-D1 — local cookie-session auth core: SQLite user store, PBKDF2 password hashing (in-box

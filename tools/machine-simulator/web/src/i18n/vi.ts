@@ -15,6 +15,45 @@ export const vi = {
       "Không thể kết nối tới engine ở địa chỉ đã cấu hình — hãy kiểm tra St4i.EngineApi đã chạy chưa.",
   },
 
+  // WS-D-D6 — cổng đăng nhập/auth context (`lib/auth.ts`, gate ở cấp cao nhất trong `App.tsx`).
+  // `login`/`bootstrap` hiển thị BÊN NGOÀI khung Shell, giống `/tokens`/`/hmi/:code` — một trang
+  // riêng có theme, không phải route bên trong `<Shell>`. `userMenu` là từ vựng tối thiểu cho menu
+  // người dùng thật của D7 trên TopBar; task này chỉ cần các khóa tồn tại (xem `AuthContextValue.logout`
+  // trong `lib/auth.ts`).
+  auth: {
+    splash: "Đang tải…",
+    login: {
+      title: "Đăng nhập",
+      subtitle: "Đăng nhập để tiếp tục vào Máy mô phỏng ST4I.",
+      usernameLabel: "Tên đăng nhập",
+      usernamePlaceholder: "vd: admin",
+      passwordLabel: "Mật khẩu",
+      passwordPlaceholder: "••••••••",
+      submit: "Đăng nhập",
+      submitting: "Đang đăng nhập…",
+      invalidCredentials: "Sai tên đăng nhập hoặc mật khẩu.",
+    },
+    bootstrap: {
+      title: "Tạo tài khoản Admin đầu tiên",
+      description: "Hệ thống này chưa có tài khoản nào — tạo tài khoản Admin đầu tiên để bắt đầu.",
+      usernameLabel: "Tên đăng nhập",
+      displayNameLabel: "Tên hiển thị (tùy chọn)",
+      passwordLabel: "Mật khẩu",
+      confirmPasswordLabel: "Xác nhận mật khẩu",
+      submit: "Tạo tài khoản Admin",
+      submitting: "Đang tạo…",
+      requiredError: "Cần nhập cả tên đăng nhập và mật khẩu.",
+      passwordMismatch: "Mật khẩu xác nhận không khớp.",
+      genericError: "Không thể tạo tài khoản — hệ thống này có thể đã được khởi tạo rồi.",
+    },
+    userMenu: {
+      signedInAs: (vars: Vars) => `Đã đăng nhập với ${vars.username}`,
+      role: (vars: Vars) => `Vai trò: ${vars.role}`,
+      logout: "Đăng xuất",
+      loggingOut: "Đang đăng xuất…",
+    },
+  },
+
   // WS1 — 3-theme system (docs/PRODUCTION_UI_DESIGN.md). `name` is a proper noun, kept identical
   // in both dictionaries (like "ST4I" itself) — only `description` and the picker's own chrome
   // translate. Shared by `theme/ThemePicker.tsx`'s topbar quick-switch AND Settings' radiogroup.

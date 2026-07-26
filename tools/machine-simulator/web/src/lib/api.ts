@@ -3,15 +3,17 @@
  *
  * Base URL: `VITE_ENGINE_URL` env var if set, overriding everything below.
  *
- * Without that override, the default depends on how this bundle is being served (Task 9):
- *  - Vite dev server (`import.meta.env.DEV`, port 5173) — the engine is a separate process on its own
- *    fixed port, so this defaults to `http://localhost:5199` (Task 3's fixed dev port), same as before.
+ * Without that override, `BASE_URL` is `""` (a relative path) in BOTH dev and production — every
+ * `fetch()` call below resolves against whatever origin the page itself was loaded from:
+ *  - Vite dev server (`npm run dev`, port 5173) — WS-D-D6's `vite.config.ts` `server.proxy` forwards
+ *    `/v1/*` to the engine's own fixed port (Task 3's `http://localhost:5199`) server-side, so the
+ *    browser never sees a cross-origin request at all. See `BASE_URL`'s own doc comment below for why
+ *    that (not the old direct cross-port fetch) is required once `/v1/auth/*` cookies are in play.
  *  - A production build (`npm run build` → `dist/`) — Task 9 has `St4i.EngineApi` serve that same
  *    `dist/` bundle itself (static files + SPA fallback) on whatever port it's listening on, so the API
- *    lives at the SAME origin the page was loaded from. Defaulting to `""` here makes every `fetch()`
- *    call below a relative path (`/v1/...`), which resolves against that origin automatically — no
- *    hardcoded port, works whether the desktop shell's engine child process ends up on 5199 or (rare,
- *    e.g. port already taken) whatever it fell back to.
+ *    lives at the SAME origin the page was loaded from already, with no proxy needed — no hardcoded
+ *    port, works whether the desktop shell's engine child process ends up on 5199 or (rare, e.g. port
+ *    already taken) whatever it fell back to.
  *
  * Wire shapes mirror `St4i.EngineApi.Fleet.Dtos` exactly (`Fleet/Dtos.cs`) — ASP.NET's minimal-API
  * default JSON options camelCase property names (`ConfigureHttpJsonOptions` uses
@@ -30,9 +32,20 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query"
 
-const BASE_URL =
-  (import.meta.env.VITE_ENGINE_URL as string | undefined) ??
-  (import.meta.env.DEV ? "http://localhost:5199" : "")
+/**
+ * WS-D-D6 — dev no longer hardcodes `http://localhost:5199`: `vite.config.ts`'s own dev-server
+ * `server.proxy` now forwards `/v1/*` (and its WS upgrades) to that same fixed port, so a relative
+ * `""` base here makes every dev-mode request go out on Vite's OWN origin (`http://localhost:5173`)
+ * and get proxied server-side — i.e. SAME-ORIGIN from the browser's point of view. That matters now
+ * that `/v1/auth/*` sets a `SameSite=Lax` session cookie (D1): a cookie minted by a cross-origin
+ * response (the old direct `:5199` fetch, a different origin than the `:5173` page) would never be
+ * sent back on the next same-page fetch, breaking login before it could ever work. `VITE_ENGINE_URL`
+ * is still checked FIRST and unconditionally wins when set — the Tauri desktop-shell recipe points
+ * this at the packaged engine's own (genuinely cross-origin, `tauri://localhost` vs `http://…:5199`)
+ * URL and depends on `credentials: "include"` below + `Program.cs`'s CORS `.AllowCredentials()` to
+ * carry the cookie across THAT boundary instead.
+ */
+export const BASE_URL = (import.meta.env.VITE_ENGINE_URL as string | undefined) ?? ""
 
 // ─────────────────────────────────────────────────────────────────────────
 // Wire types — 1:1 with Fleet/Dtos.cs
@@ -479,12 +492,32 @@ export class EngineApiError extends Error {
   }
 }
 
+// WS-D-D6 — module-level unauthorized-handler registry: `auth.ts`'s `AuthProvider` registers ONE
+// handler (invalidating its `["auth","me"]` query) so ANY 401 from ANY endpoint below — a session that
+// expired, was revoked by a password/role change, or simply never existed — bounces the whole app back
+// to the Login screen, not just whichever single query happened to notice. A plain module-level
+// variable (not a list) is deliberate: there's exactly one app-wide "you're logged out now" reaction,
+// same single-registration shape `onUnauthorized` itself documents at its call site.
+let unauthorizedHandler: (() => void) | null = null
+
+/** Registers the app-wide reaction to a 401 from `request<T>` below. Last call wins — `AuthProvider`
+ * is mounted exactly once for the life of the app, so there is only ever one real caller. */
+export function onUnauthorized(handler: (() => void) | null): void {
+  unauthorizedHandler = handler
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET"
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
+    // WS-D-D6 — every mutating/polling call in this file now carries the auth cookie (harmless
+    // no-op pre-D1, load-bearing now that `/v1/*` sits behind the default-deny fallback policy).
+    // `"include"` (not the `"same-origin"` default) is what also carries it across the Tauri desktop
+    // shell's genuinely cross-origin `VITE_ENGINE_URL` case — see `BASE_URL`'s own doc comment.
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...init?.headers },
   })
+  if (res.status === 401) unauthorizedHandler?.()
   if (!res.ok) throw new EngineApiError(method, path, res.status)
   return (await res.json()) as T
 }
@@ -1120,9 +1153,14 @@ export class OeeSettingsApiError extends Error {
 async function putOeeSettings(machine: string, input: OeeSettingsUpdateInput): Promise<OeeSettings> {
   const res = await fetch(`${BASE_URL}/v1/historian/oee/settings?machine=${encodeURIComponent(machine)}`, {
     method: "PUT",
+    // WS-D-D6 — this bypasses the shared `request<T>` above (it needs the server's own error BODY,
+    // not just a status code), so it carries the same `credentials`/401-handler wiring by hand instead
+    // of inheriting it for free.
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
+  if (res.status === 401) unauthorizedHandler?.()
   if (!res.ok) {
     let serverMessage: string | undefined
     try {

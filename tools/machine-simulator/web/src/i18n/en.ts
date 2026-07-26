@@ -12,6 +12,44 @@ export const en: Dictionary = {
     connectivityError: "Could not reach the engine at the configured URL — check that St4i.EngineApi is running.",
   },
 
+  // WS-D-D6 — login gate/auth context (`lib/auth.ts`, `App.tsx`'s top-level gate). `login`/`bootstrap`
+  // render OUTSIDE the Shell chrome, same as `/tokens`/`/hmi/:code` — a themed standalone page, not a
+  // route inside `<Shell>`. `userMenu` is the minimal vocabulary D7's real TopBar user menu will use;
+  // this task only needs the keys to exist (see `lib/auth.ts`'s `AuthContextValue.logout`).
+  auth: {
+    splash: "Loading…",
+    login: {
+      title: "Sign in",
+      subtitle: "Sign in to continue to the ST4I Machine Simulator.",
+      usernameLabel: "Username",
+      usernamePlaceholder: "e.g. admin",
+      passwordLabel: "Password",
+      passwordPlaceholder: "••••••••",
+      submit: "Sign in",
+      submitting: "Signing in…",
+      invalidCredentials: "Invalid username or password.",
+    },
+    bootstrap: {
+      title: "Create the first Admin account",
+      description: "This deployment doesn't have any accounts yet — create the first Admin account to get started.",
+      usernameLabel: "Username",
+      displayNameLabel: "Display name (optional)",
+      passwordLabel: "Password",
+      confirmPasswordLabel: "Confirm password",
+      submit: "Create Admin account",
+      submitting: "Creating…",
+      requiredError: "Username and password are required.",
+      passwordMismatch: "Passwords don't match.",
+      genericError: "Couldn't create the account — this deployment may already be bootstrapped.",
+    },
+    userMenu: {
+      signedInAs: (vars: Vars) => `Signed in as ${vars.username}`,
+      role: (vars: Vars) => `Role: ${vars.role}`,
+      logout: "Log out",
+      loggingOut: "Logging out…",
+    },
+  },
+
   theme: {
     pickerAriaLabel: (vars: Vars) => `Choose theme — currently ${vars.current}`,
     glass: { name: "Glass", description: "Light, premium" },
