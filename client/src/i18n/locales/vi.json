@@ -11054,6 +11054,8 @@
   },
   "aiGuided": {
     "sectionTitle": "Tác vụ kỹ thuật có hướng dẫn",
+    "suggestedTitle": "Đề xuất hành động (1 chạm)",
+    "proposeFailed": "Không thể đề xuất thao tác này.",
     "hitlNote": "Lưu ý: thao tác sẽ được gửi tới trợ lý AI và bạn vẫn cần XÁC NHẬN ở thẻ xác nhận trước khi áp dụng.",
     "cancel": "Hủy",
     "send": "Gửi tới trợ lý",

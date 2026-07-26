@@ -55,10 +55,27 @@ export const aiReportRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       await applyReportScope(ctx, input);
-      return generateRCAReport({
+      const report = await generateRCAReport({
         ...input,
         reportType: "rca",
       });
+
+      // doc69 Wave2 A3 — close the loop on the report's actionItems the SAME way as
+      // rootCauseRouter (server/services/ai/rcaActionSuggester.ts): only when scoped
+      // to a real machineId (the report is otherwise factory/period-wide — no single
+      // entity to safely bind write-tool args to). Additive; [] when nothing maps or
+      // the viewer isn't permitted.
+      const { suggestActionsForRecommendations } = await import("../services/ai/rcaActionSuggester");
+      const suggestedActions = await suggestActionsForRecommendations(
+        { recommendations: report.actionItems },
+        {
+          machineId: input.machineId ?? null,
+          user: { id: ctx.user.id, role: String(ctx.user.role), name: ctx.user.name ?? null },
+          lang: input.language === "vi" ? "vi" : "en",
+        },
+      );
+
+      return { ...report, suggestedActions };
     }),
 
   /**

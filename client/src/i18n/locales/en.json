@@ -11071,6 +11071,8 @@
   },
   "aiGuided": {
     "sectionTitle": "Guided engineering tasks",
+    "suggestedTitle": "Suggested action (1-tap)",
+    "proposeFailed": "Could not propose this action.",
     "hitlNote": "Note: this action is sent to the AI assistant and you still need to CONFIRM it in the confirmation card before it applies.",
     "cancel": "Cancel",
     "send": "Send to assistant",

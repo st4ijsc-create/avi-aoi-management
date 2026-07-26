@@ -10854,6 +10854,8 @@
   },
   "aiGuided": {
     "sectionTitle": "引导式工程任务",
+    "suggestedTitle": "建议操作（一键）",
+    "proposeFailed": "无法提出该操作建议。",
     "hitlNote": "注意：该操作将发送给 AI 助手，您仍需在确认卡中确认后才会生效。",
     "cancel": "取消",
     "send": "发送给助手",

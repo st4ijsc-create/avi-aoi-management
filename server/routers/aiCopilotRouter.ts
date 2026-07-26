@@ -15,9 +15,12 @@ import {
   confirmAction,
   cancelAction,
   getAction,
+  proposeAction,
   type CopilotUser,
 } from "../services/aiCopilotActions";
 import type { ToolLang } from "../services/aiLocalTools";
+import { getTool, isWriteTool } from "../services/aiLocalTools/toolRegistry";
+import { RCA_SUGGESTED_ACTION_TOOLS, ensureRcaToolsRegistered } from "../services/ai/rcaActionSuggester";
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
 
@@ -65,5 +68,42 @@ export const aiCopilotRouter = router({
         executedAt: row.executedAt ? row.executedAt.toISOString() : null,
         result: row.resultJson ?? null,
       };
+    }),
+
+  // doc69 Wave2 A3 — propose a SUGGESTED action surfaced on an RCA insight / report
+  // response (server/services/ai/rcaActionSuggester.ts). The client only ever sends
+  // {tool, args} that came from OUR OWN suggestedActions payload, but this endpoint
+  // NEVER trusts that blindly: `tool` is restricted to the small allow-list the
+  // mapper is permitted to suggest, and `args` is RE-VALIDATED against the tool's
+  // OWN zod schema (safeParse) before proposeAction ever sees it — defense in depth,
+  // mirrors aiThresholdAdvisorRouter.applyNgThreshold. Routes 100% through the
+  // EXISTING proposeAction (dry-run preview, RBAC gate #1); the client then confirms
+  // via the EXISTING confirmAction above (RBAC gate #2). NOT a new write/execute path.
+  proposeSuggestedAction: protectedProcedure
+    .input(z.object({
+      tool: z.enum(RCA_SUGGESTED_ACTION_TOOLS),
+      args: z.record(z.string(), z.unknown()),
+      lang: langSchema.optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const user = toCopilotUser(ctx.user as any);
+      const lang: ToolLang = input.lang ?? "vi";
+
+      await ensureRcaToolsRegistered();
+      const tool = getTool(input.tool);
+      if (!tool || !isWriteTool(tool)) {
+        return { ok: false as const, reason: "TOOL_UNAVAILABLE", message: "Công cụ không khả dụng." };
+      }
+
+      const parsed = (tool.parameters as z.ZodType<any>).safeParse(input.args);
+      if (!parsed.success) {
+        return { ok: false as const, reason: "ARGS_OUT_OF_BOUNDS", message: "Tham số không hợp lệ." };
+      }
+
+      const res = await proposeAction(tool, parsed.data as Record<string, unknown>, { user, lang });
+      if (!res.ok || !res.pendingAction) {
+        return { ok: false as const, reason: res.reason ?? "PROPOSE_FAILED", message: res.message };
+      }
+      return { ok: true as const, pendingAction: res.pendingAction };
     }),
 });

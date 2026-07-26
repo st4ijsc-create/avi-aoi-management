@@ -182,7 +182,19 @@ export const rootCauseRouter = router({
         machineCode,
         productModelCode,
       });
-      
+
+      // doc69 Wave2 A3 — close the loop: map any recommendation that maps to a KNOWN
+      // registered write-tool + valid args + an existing machine into a 1-tap
+      // proposable action. RBAC-gated to the CALLING user (recomputed live, never
+      // persisted) — a non-permitted user gets NO entries (advisory text only).
+      // Additive: never throws, never changes aiInsights itself.
+      const { suggestActionsForRecommendations } = await import("../services/ai/rcaActionSuggester");
+      const suggestedActions = await suggestActionsForRecommendations(aiInsights, {
+        machineId: input.machineId ?? null,
+        user: { id: ctx.user.id, role: String(ctx.user.role), name: ctx.user.name ?? null },
+        lang: "vi",
+      });
+
       // Save analysis result — W0-1 fix (doc 69): was a raw INSERT with unquoted
       // camelCase column names (Postgres folds to lowercase → column does not
       // exist), so this write silently failed to persist. The drizzle builder
@@ -216,6 +228,8 @@ export const rootCauseRouter = router({
         aiInsights,
         paretoData,
         processingTime: Date.now() - startTime,
+        // doc69 Wave2 A3 — additive; [] when nothing maps (advisory text only).
+        suggestedActions,
       };
     }),
 
@@ -266,7 +280,7 @@ export const rootCauseRouter = router({
   // Get single analysis
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
       
@@ -282,6 +296,17 @@ export const rootCauseRouter = router({
       }
 
       const row = resultRows[0];
+      const aiInsightsParsed = typeof row.aiInsights === 'string' ? JSON.parse(row.aiInsights) : row.aiInsights;
+
+      // doc69 Wave2 A3 — recomputed LIVE for the CURRENT viewer (never persisted,
+      // never stale RBAC): [] when nothing maps or the viewer isn't permitted.
+      const { suggestActionsForRecommendations } = await import("../services/ai/rcaActionSuggester");
+      const suggestedActions = await suggestActionsForRecommendations(aiInsightsParsed ?? { recommendations: [] }, {
+        machineId: row.machineId ?? null,
+        user: { id: ctx.user.id, role: String(ctx.user.role), name: ctx.user.name ?? null },
+        lang: "vi",
+      });
+
       return {
         id: row.id,
         analysisType: row.analysisType,
@@ -295,13 +320,14 @@ export const rootCauseRouter = router({
         dataPointsAnalyzed: row.dataPointsAnalyzed,
         correlationMatrix: typeof row.correlationMatrix === 'string' ? JSON.parse(row.correlationMatrix) : row.correlationMatrix,
         topFactors: typeof row.topFactors === 'string' ? JSON.parse(row.topFactors) : row.topFactors,
-        aiInsights: typeof row.aiInsights === 'string' ? JSON.parse(row.aiInsights) : row.aiInsights,
+        aiInsights: aiInsightsParsed,
         paretoData: typeof row.paretoData === 'string' ? JSON.parse(row.paretoData) : row.paretoData,
         status: row.status,
         requestedBy: row.requestedBy,
         requestedByName: row.requestedByName,
         processingTime: row.processingTime,
         createdAt: row.createdAt,
+        suggestedActions,
       };
     }),
 

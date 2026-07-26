@@ -4,6 +4,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { ContextDrawer } from "@/components/workspace";
 import { CausalGraphEditorPageContent } from "./CausalGraphEditorPage";
+import AIGuidedActionCards from "@/components/AIGuidedActionCards";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -520,6 +521,19 @@ export function RootCauseAnalysisPageContent() {
                           ))}
                         </div>
                       </div>
+
+                      {/* doc69 Wave2 A3 — close the loop: 1-tap propose buttons for any
+                          recommendation above that maps to a KNOWN write-tool (RBAC-gated
+                          server-side; [] when nothing maps or the viewer isn't permitted —
+                          the list above stays advisory text only in that case). */}
+                      {Array.isArray((analysisDetail as any)?.suggestedActions) &&
+                        (analysisDetail as any).suggestedActions.length > 0 && (
+                          <AIGuidedActionCards
+                            onSend={() => {}}
+                            hideStaticActions
+                            suggestedActions={(analysisDetail as any).suggestedActions}
+                          />
+                        )}
 
                       {/* Preventive Measures */}
                       <div>

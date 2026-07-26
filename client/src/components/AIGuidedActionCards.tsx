@@ -22,9 +22,10 @@
  * settings_alerts / settings_products). Other roles see nothing.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmActionCard, type ActionState, type PendingAction } from "@/components/ConfirmActionCard";
 import { Sparkles, SlidersHorizontal, Gauge, PlusCircle, Target, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -187,16 +189,48 @@ const REQUIRE_ONE_OF: Partial<Record<ActionId, string[]>> = {
   update_product_quality_target: ["targetYieldRate", "minYieldRate"],
 };
 
+// ── doc69 Wave2 A3 — pre-computed suggested actions (server/services/ai/
+// rcaActionSuggester.ts) surfaced on an RCA insight / report response ─────────
+export interface RcaSuggestedActionCard {
+  tool: string;
+  args: Record<string, unknown>;
+  summary: string;
+  requiredPermission: { module: string; action: string };
+}
+
 export interface AIGuidedActionCardsProps {
   /** Sends the composed NL request through the chat (→ HITL propose/confirm). */
   onSend: (request: string) => void;
   disabled?: boolean;
   className?: string;
+  /**
+   * doc69 Wave2 A3 — ready-made, ALREADY-VALIDATED suggested actions (tool + args +
+   * requiredPermission) mapped from an RCA/report recommendation. Rendered as extra
+   * 1-tap cards that propose DIRECTLY via aiCopilot.proposeSuggestedAction →
+   * aiCopilot.confirmAction — the SAME HITL write path every other write-tool uses
+   * (no NL round-trip through chat, no fabricated args). Individually RBAC-gated by
+   * `requiredPermission`, independent of the WRITE_ROLES gate below — a card only
+   * renders for a user who actually holds that tool's permission.
+   */
+  suggestedActions?: RcaSuggestedActionCard[];
+  /**
+   * Hide the 4 generic guided-form cards below (used when this component is
+   * embedded purely to render `suggestedActions` outside the AI chat page, e.g.
+   * on the Root Cause Analysis / AI Reports pages).
+   */
+  hideStaticActions?: boolean;
 }
 
-export default function AIGuidedActionCards({ onSend, disabled, className }: AIGuidedActionCardsProps) {
+export default function AIGuidedActionCards({
+  onSend,
+  disabled,
+  className,
+  suggestedActions,
+  hideStaticActions,
+}: AIGuidedActionCardsProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { hasPermission, isAdmin } = usePermissions();
 
   const canWrite = useMemo(() => {
     const role = (user?.role ?? "").toString().toLowerCase().trim();
@@ -205,41 +239,60 @@ export default function AIGuidedActionCards({ onSend, disabled, className }: AIG
 
   const [active, setActive] = useState<ActionDef | null>(null);
 
-  // Role-gated: hide the whole section for roles without engineering write access.
-  if (!canWrite) return null;
+  // RBAC gate #1 (advisory-only for a non-permitted viewer — no button renders).
+  const permittedSuggested = useMemo(
+    () =>
+      (suggestedActions ?? []).filter(
+        (a) => isAdmin === true || hasPermission(a.requiredPermission.module, a.requiredPermission.action as any),
+      ),
+    [suggestedActions, isAdmin, hasPermission],
+  );
+
+  const showStatic = !hideStaticActions && canWrite;
+
+  // Nothing to show at all → render nothing (unchanged from before this prop existed).
+  if (!showStatic && permittedSuggested.length === 0) return null;
 
   return (
-    <div className={cn("space-y-2", className)}>
-      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-        <Sparkles className="h-3.5 w-3.5 text-primary" />
-        {t("aiGuided.sectionTitle", "Tác vụ kỹ thuật có hướng dẫn")}
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {ACTIONS.map((a) => {
-          const Icon = a.icon;
-          return (
-            <button
-              key={a.id}
-              type="button"
-              disabled={disabled}
-              onClick={() => setActive(a)}
-              className="text-left rounded-lg border bg-card hover:bg-muted/60 transition-colors p-3 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <div className="flex items-start gap-2.5">
-                <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                  <Icon className="h-4 w-4 text-primary" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium leading-snug">{t(a.titleKey, a.titleFallback)}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                    {t(a.descKey, a.descFallback)}
-                  </p>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+    <div className={cn("space-y-3", className)}>
+      {permittedSuggested.length > 0 && (
+        <SuggestedActionCards actions={permittedSuggested} disabled={disabled} />
+      )}
+
+      {showStatic && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            {t("aiGuided.sectionTitle", "Tác vụ kỹ thuật có hướng dẫn")}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {ACTIONS.map((a) => {
+              const Icon = a.icon;
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setActive(a)}
+                  className="text-left rounded-lg border bg-card hover:bg-muted/60 transition-colors p-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                      <Icon className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium leading-snug">{t(a.titleKey, a.titleFallback)}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                        {t(a.descKey, a.descFallback)}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {active && (
         <GuidedActionDialog
@@ -252,6 +305,152 @@ export default function AIGuidedActionCards({ onSend, disabled, className }: AIG
         />
       )}
     </div>
+  );
+}
+
+// ─── doc69 Wave2 A3 — 1-tap suggested-action cards (propose → confirm, no form) ───
+
+function SuggestedActionCards({
+  actions,
+  disabled,
+}: {
+  actions: RcaSuggestedActionCard[];
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+        <Sparkles className="h-3.5 w-3.5 text-primary" />
+        {t("aiGuided.suggestedTitle", "Đề xuất hành động (1 chạm)")}
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {actions.map((a, i) => (
+          <button
+            key={`${a.tool}-${i}`}
+            type="button"
+            disabled={disabled}
+            onClick={() => setOpenIndex(i)}
+            className="text-left rounded-lg border bg-card hover:bg-muted/60 transition-colors p-3 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <div className="flex items-start gap-2.5">
+              <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                <Sparkles className="h-4 w-4 text-primary" />
+              </div>
+              <p className="text-sm font-medium leading-snug line-clamp-3">{a.summary}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {openIndex != null && (
+        <SuggestedActionDialog action={actions[openIndex]} onClose={() => setOpenIndex(null)} />
+      )}
+    </div>
+  );
+}
+
+function SuggestedActionDialog({
+  action,
+  onClose,
+}: {
+  action: RcaSuggestedActionCard;
+  onClose: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const lang = (i18n.language?.startsWith("vi") ? "vi" : i18n.language?.startsWith("zh") ? "zh" : "en") as
+    | "vi"
+    | "en"
+    | "zh";
+
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [state, setState] = useState<ActionState | undefined>(undefined);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const proposeM = trpc.aiCopilot.proposeSuggestedAction.useMutation();
+  const confirmM = trpc.aiCopilot.confirmAction.useMutation();
+  const cancelM = trpc.aiCopilot.cancelAction.useMutation();
+
+  // Propose IMMEDIATELY on open — this is the dry-run preview (NO mutation yet);
+  // the user still explicitly confirms below (HITL invariant preserved).
+  useEffect(() => {
+    let cancelled = false;
+    proposeM
+      .mutateAsync({ tool: action.tool as any, args: action.args, lang })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok && res.pendingAction) {
+          setPending(res.pendingAction as unknown as PendingAction);
+          setState("pending");
+        } else {
+          setMessage((res as any).message ?? t("aiGuided.proposeFailed", "Không thể đề xuất thao tác này."));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMessage(t("aiGuided.proposeFailed", "Không thể đề xuất thao tác này."));
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Propose exactly once per dialog open — action identity is stable per card.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [action.tool]);
+
+  const busy = proposeM.isPending || confirmM.isPending || cancelM.isPending;
+
+  const onConfirm = async () => {
+    if (!pending) return;
+    const res = await confirmM.mutateAsync({ actionId: pending.actionId, token: pending.token, lang });
+    setState((res.status as ActionState) ?? (res.ok ? "executed" : undefined));
+    setMessage(res.message ?? null);
+  };
+
+  const onCancel = async () => {
+    if (pending && state === "pending") {
+      await cancelM.mutateAsync({ actionId: pending.actionId }).catch(() => undefined);
+    }
+    onClose();
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("aiGuided.suggestedTitle", "Đề xuất hành động (1 chạm)")}</DialogTitle>
+          <DialogDescription>{action.summary}</DialogDescription>
+        </DialogHeader>
+
+        {!pending && !message && (
+          <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            {t("aiGuided.loading", "Đang tải...")}
+          </div>
+        )}
+
+        {message && !pending && (
+          <p className="text-sm text-red-600 dark:text-red-400">{message}</p>
+        )}
+
+        {pending && (
+          <ConfirmActionCard
+            action={pending}
+            state={state}
+            message={message}
+            busy={busy}
+            onConfirm={onConfirm}
+            onCancel={onCancel}
+            t={t}
+          />
+        )}
+
+        {state && state !== "pending" && (
+          <DialogFooter>
+            <Button onClick={onClose}>{t("common.close", "Đóng")}</Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

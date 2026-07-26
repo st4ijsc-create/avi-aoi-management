@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import ReportExportButton from "@/components/ReportExportButton";
+import AIGuidedActionCards from "@/components/AIGuidedActionCards";
 import { buildAiExportConfig } from "@/lib/aiReportExport";
 import { trpc } from "@/lib/trpc";
 import { PageHeader, PageContainer } from "@/components/patterns";
@@ -262,6 +263,19 @@ export default function AIReportsPage() {
                         </ul>
                       </div>
                     )}
+
+                    {/* doc69 Wave2 A3 — close the loop: 1-tap propose buttons for any
+                        action item above that maps to a KNOWN write-tool (server-side
+                        RBAC-gated; hidden entirely when nothing maps or the machine
+                        wasn't scoped, or the viewer isn't permitted). */}
+                    {Array.isArray((rcaReport.data as any)?.suggestedActions) &&
+                      (rcaReport.data as any).suggestedActions.length > 0 && (
+                        <AIGuidedActionCards
+                          onSend={() => {}}
+                          hideStaticActions
+                          suggestedActions={(rcaReport.data as any).suggestedActions}
+                        />
+                      )}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-8">
