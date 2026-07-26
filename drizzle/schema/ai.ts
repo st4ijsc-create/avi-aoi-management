@@ -686,6 +686,52 @@ export interface ModelStageHistoryEntry {
 export type ModelVersion = typeof modelVersions.$inferSelect;
 export type InsertModelVersion = typeof modelVersions.$inferInsert;
 
+// ============= AI Model Cards — governance (doc69 D3, Giai đoạn 4/Wave 3) =============
+// The full ModelCard §12.2 governance record — ONE per model (keyed by modelId), the
+// SOURCE OF TRUTH for governance metadata. Subsumes (does not contradict) the existing
+// inline `modelVersions.owner`/`trainedOn` fields above: those stay populated for
+// back-compat / legacy versions, and aiModelRouter.createCard falls back to the latest
+// version's inline `owner` when the card doesn't specify one explicitly.
+//
+// ── Distinct from server/services/aiModelCard.ts (B5.4, doc 04 AI Brain NextGen) ──
+// That EARLIER module (singular `ModelCard` type, `ai_models.metadata.modelCard` JSON,
+// no migration) is an AUTO-GENERATED, ungated documentation card for the LLM/vision
+// BRAIN portfolio (Qwen3 etc. — most of which have no ai_models row at all): role/
+// source/quant/contextSize, no approval, never blocks anything. THIS table is the
+// OPPOSITE shape: a HUMAN-AUTHORED, APPROVED governance record for a defect-classifier
+// model that — once AI_MODEL_CARD_REQUIRED is on — actively GATES version activation
+// (see aiModelCardGate.ts). The two do not read or write each other; keep them separate.
+//
+// Additive migration: drizzle/0303_ai_model_cards.sql (CREATE TABLE IF NOT EXISTS, owner
+// `aoi`) — NOT applied by this task, ships unapplied until an operator runs it. Every
+// read/write path MUST treat a missing table (pg error 42P01) as "no card" / a clean
+// PRECONDITION_FAILED — see server/services/aiModelCardGate.ts's getModelCardStatus() and
+// aiModelRouter.ts's card CRUD handlers. Never referenced unconditionally on a hot path
+// that must survive an unmigrated DB.
+export type ModelCardRiskClass = "low" | "medium" | "high";
+
+export const aiModelCards = pgTable("ai_model_cards", {
+  id: serial("id").primaryKey(),
+  modelId: integer("modelId").notNull().unique(), // one governance card per ai_models row
+  intendedUse: text("intendedUse"),
+  trainingDataDesc: text("trainingDataDesc"),
+  evalSummary: text("evalSummary"),
+  limitations: text("limitations"),
+  riskClass: varchar("riskClass", { length: 20 }).$type<ModelCardRiskClass>(),
+  owner: varchar("owner", { length: 255 }),
+  approvedBy: integer("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_model_cards_model").on(table.modelId),
+]);
+
+export type AiModelCard = typeof aiModelCards.$inferSelect;
+export type InsertAiModelCard = typeof aiModelCards.$inferInsert;
+
 /**
  * Inference Results - Kết quả inference từ ML models
  */

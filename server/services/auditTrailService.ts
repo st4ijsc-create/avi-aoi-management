@@ -186,6 +186,13 @@ export const AUDIT_ACTIONS = {
   // rule auto-fired a block/stop/reduce command down to the machine. NOT an AI
   // action: the AI has no code path here (it can only propose inert rules).
   INTERLOCK_AUTO_BLOCK: "interlock_auto_block",
+
+  // D3 (doc69 Giai đoạn 4/Wave 3) — MODEL-LIFECYCLE governance trail: every
+  // activate / rollback / force-override of a model_versions row writes ONE of these,
+  // recording modelId/versionId/actor/evalGate result/card-gate result/forced/reason.
+  // Distinct from ai_llm_audit (LLM-decision audit, G2-5) and from stageHistory (the
+  // per-version transition ledger this does NOT duplicate — see aiModelService.ts).
+  AI_MODEL_GOVERNANCE: "ai_model_governance",
 } as const;
 
 export const ENTITY_TYPES = {
@@ -212,6 +219,9 @@ export const ENTITY_TYPES = {
   SPC_CONFIG: "spc_config",
   QUALITY_GATE: "quality_gate",
   AI_ACTION: "ai_action",
+  // D3 (doc69 Giai đoạn 4/Wave 3) — model registry governance.
+  MODEL_VERSION: "model_version",
+  AI_MODEL_CARD: "ai_model_card",
 } as const;
 
 // ─── Utility Functions ──────────────────────────────────────────────────────

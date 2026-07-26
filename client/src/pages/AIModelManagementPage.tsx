@@ -48,6 +48,7 @@ import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { DatasetSelect } from "@/components/ai/ModelSelect";
 import { ClassifierHealthBanner } from "@/components/ai/ClassifierHealthBanner";
+import { ModelCardManageButton } from "@/components/ai/ModelCardManageButton";
 import { toast } from "sonner";
 import {
   Plus,
@@ -1032,7 +1033,7 @@ function ModelDetailPanel({
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={() => setShowUpload(true)}>
           <FileUp className="h-4 w-4 mr-1" />
           {t("aiModels.uploadFile", "Upload File")}
@@ -1046,6 +1047,9 @@ function ModelDetailPanel({
           {t("aiEval.trainModel", "Train Model")}
         </Button>
       </div>
+
+      {/* D3 (doc69 Giai đoạn 4/Wave 3) — model-card governance affordance */}
+      <ModelCardManageButton modelId={modelId} onChanged={() => refetchVersions()} />
 
       {/* Training Jobs (WS-1) */}
       <div>

@@ -28,6 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ModelCardManageButton } from '@/components/ai/ModelCardManageButton';
 import { GitBranch, CheckCircle2, Clock, Archive, RefreshCw, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -157,7 +158,11 @@ export default function ModelVersionsPage() {
                 {t('mv.activateHint', 'Click "Activate" to make a version the live inference model. This will evict the session cache.')}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              {/* D3 (doc69 Giai đoạn 4/Wave 3) — model-card governance affordance: warns
+                  when activation is currently blocked without an approved card, and is
+                  always the entry point to view/create/approve one. */}
+              <ModelCardManageButton modelId={selectedModelId} onChanged={() => refetchVersions()} />
               {versionsLoading ? (
                 <div className="space-y-2">
                   {Array.from({ length: 4 }).map((_, i) => (

@@ -1,4 +1,4 @@
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router, roleProcedure } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -17,6 +17,38 @@ import {
 } from "../services/aiInferenceEngine";
 import { promoteStage, listStages } from "../services/ai/modelStagePipeline";
 import { checkActiveClassifierHealth } from "../services/aiClassifierHealth";
+import {
+  getModelCardStatus,
+  isModelCardRequired,
+  isCardComplete,
+  isCardApproved,
+} from "../services/aiModelCardGate";
+import {
+  ENTITY_TYPES,
+  createAuditContext,
+  logCreate,
+  logUpdate,
+} from "../services/auditTrailService";
+
+// D3 (doc69 Giai đoạn 4/Wave 3) — model-card governance CRUD is admin/engineer gated
+// (mirrors ecnRouter's ecnDecisionProcedure pattern: `roleProcedure("admin", ...,
+// "engineer")`), broader than the admin-only `adminProcedure` this router uses
+// elsewhere for model/version CRUD — governance authoring is an engineering task too.
+const modelCardProcedure = roleProcedure("admin", "engineer");
+
+/** Clean PRECONDITION_FAILED instead of a raw 42P01 "relation does not exist" 500 —
+ *  mirrors productVariantRouter's assertVariantTableAvailable / qualityGateTemplateRouter's
+ *  inline `err.code === '42P01'` guard. Only WRITE paths need this: the read path
+ *  (getCard) already degrades via getModelCardStatus. */
+function rethrowCardTableError(err: unknown): never {
+  if ((err as { code?: string } | null | undefined)?.code === "42P01") {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Model card governance requires migration 0303 (ai_model_cards) to be applied first.",
+    });
+  }
+  throw err;
+}
 
 export const aiModelRouter = router({
   // ─── doc 69 Wave 6 (F1) — "no active classifier" health signal ─────
@@ -269,6 +301,179 @@ export const aiModelRouter = router({
         if (v) evictSessionCache(v.modelId);
       }
       return result;
+    }),
+
+  // ─── Model Card Governance (D3, doc69 Giai đoạn 4/Wave 3) ────
+  // ONE governance card per model. `getCard` is read-only for any authenticated user
+  // (matches the rest of this router's read paths) and is fail-safe against an
+  // unmigrated ai_model_cards table (getModelCardStatus catches 42P01). Deliberately
+  // NOT built on evaluateCardGate — that short-circuits WITHOUT a DB read when
+  // AI_MODEL_CARD_REQUIRED is off (the default), which would make an already-authored
+  // card invisible to the FE viewer/editor whenever the flag is off. `getCard` always
+  // attempts the read; `required`/`blocking` are computed separately from the flag so
+  // the FE can distinguish "no card yet" from "card exists but isn't enforced yet".
+  // Writes (create/update/approve) are admin/engineer gated and audited via the
+  // generic CRUD audit (logCreate/logUpdate) — a SEPARATE concern from the
+  // AI_MODEL_GOVERNANCE lifecycle-audit row aiModelService writes on activate/
+  // rollback/override.
+  getCard: protectedProcedure
+    .input(z.object({ modelId: z.number() }))
+    .query(async ({ input }) => {
+      const status = await getModelCardStatus(input.modelId);
+      const complete = isCardComplete(status.card);
+      const approved = isCardApproved(status.card);
+      const required = isModelCardRequired();
+      const blocking = required && status.tableAvailable && !(complete && approved);
+      let reason: string | undefined;
+      if (blocking) {
+        reason = !status.card
+          ? "No model card exists for this model — create and approve one before activating."
+          : !complete
+            ? "Model card is incomplete (missing required governance fields)."
+            : "Model card has not been approved yet.";
+      }
+      return {
+        card: status.card,
+        tableAvailable: status.tableAvailable,
+        required,
+        complete,
+        approved,
+        satisfied: !required || (status.tableAvailable && complete && approved),
+        // Would activation ACTUALLY be refused right now without a force override?
+        blocking,
+        reason,
+      };
+    }),
+
+  createCard: modelCardProcedure
+    .input(z.object({
+      modelId: z.number(),
+      intendedUse: z.string().min(1).max(4000),
+      trainingDataDesc: z.string().min(1).max(4000),
+      evalSummary: z.string().min(1).max(4000),
+      limitations: z.string().min(1).max(4000),
+      riskClass: z.enum(["low", "medium", "high"]),
+      owner: z.string().min(1).max(255).optional(),
+      notes: z.string().max(4000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const model = await db.getAiModelById(input.modelId);
+      if (!model) throw new TRPCError({ code: "NOT_FOUND", message: "AI model not found" });
+
+      try {
+        const existing = await db.getModelCardByModelId(input.modelId);
+        if (existing) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "A model card already exists for this model — use update instead.",
+          });
+        }
+
+        // ModelCard §12.2 back-compat: fall back to the LATEST version's inline
+        // `owner` when the card doesn't specify one explicitly — the card, once
+        // created, becomes the source of truth (see drizzle/schema/ai.ts's doc
+        // comment on aiModelCards).
+        let owner = input.owner;
+        if (!owner) {
+          const versions = await db.getModelVersions(input.modelId);
+          owner = versions.find((v) => v.owner)?.owner ?? undefined;
+        }
+
+        const card = await db.createModelCard({
+          modelId: input.modelId,
+          intendedUse: input.intendedUse,
+          trainingDataDesc: input.trainingDataDesc,
+          evalSummary: input.evalSummary,
+          limitations: input.limitations,
+          riskClass: input.riskClass,
+          owner,
+          notes: input.notes,
+          createdBy: ctx.user.id,
+        });
+
+        try {
+          await logCreate(createAuditContext(ctx), ENTITY_TYPES.AI_MODEL_CARD, card.id, model.name, card as any);
+        } catch { /* best-effort — never let audit logging fail the create */ }
+
+        return card;
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        rethrowCardTableError(err);
+      }
+    }),
+
+  updateCard: modelCardProcedure
+    .input(z.object({
+      modelId: z.number(),
+      intendedUse: z.string().min(1).max(4000).optional(),
+      trainingDataDesc: z.string().min(1).max(4000).optional(),
+      evalSummary: z.string().min(1).max(4000).optional(),
+      limitations: z.string().min(1).max(4000).optional(),
+      riskClass: z.enum(["low", "medium", "high"]).optional(),
+      owner: z.string().min(1).max(255).optional(),
+      notes: z.string().max(4000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { modelId, ...patch } = input;
+      try {
+        const existing = await db.getModelCardByModelId(modelId);
+        if (!existing) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "No model card exists for this model yet — create one first.",
+          });
+        }
+        const updated = await db.updateModelCardByModelId(modelId, patch);
+        try {
+          await logUpdate(
+            createAuditContext(ctx),
+            ENTITY_TYPES.AI_MODEL_CARD,
+            existing.id,
+            `model ${modelId}`,
+            existing as any,
+            (updated ?? existing) as any,
+          );
+        } catch { /* best-effort */ }
+        return updated;
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        rethrowCardTableError(err);
+      }
+    }),
+
+  approveCard: modelCardProcedure
+    .input(z.object({ modelId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const existing = await db.getModelCardByModelId(input.modelId);
+        if (!existing) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "No model card exists for this model yet — create one first.",
+          });
+        }
+        if (!isCardComplete(existing)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Cannot approve an incomplete model card — fill in all required governance fields first.",
+          });
+        }
+        const approved = await db.approveModelCardByModelId(input.modelId, ctx.user.id);
+        try {
+          await logUpdate(
+            createAuditContext(ctx),
+            ENTITY_TYPES.AI_MODEL_CARD,
+            existing.id,
+            `model ${input.modelId}`,
+            existing as any,
+            (approved ?? existing) as any,
+          );
+        } catch { /* best-effort */ }
+        return approved;
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        rethrowCardTableError(err);
+      }
     }),
 
   // ─── Health Check ───────────────────────────────────────

@@ -4,6 +4,8 @@ import {
   createModelVersion, getModelVersions, getModelVersionById, updateModelVersion,
 } from "../db/ai";
 import { createAuditLog } from "../db/system";
+import { AUDIT_ACTIONS, ENTITY_TYPES, logCrudOperation } from "./auditTrailService";
+import { evaluateCardGate, type CardGateResult } from "./aiModelCardGate";
 import type {
   InsertAiModel, InsertModelVersion, ModelStage, ModelStageHistoryEntry, ModelVersion,
 } from "../../drizzle/schema";
@@ -197,12 +199,19 @@ export async function activateModelVersion(
 // already-correct, already-audited paths.
 
 export interface ManualActivateOptions {
-  /** Explicit override — bypasses the eval quality gate. Requires `reason`. */
+  /** Explicit override — bypasses the eval quality gate AND the D3 card gate. Requires `reason`. */
   force?: boolean;
   /** Required when force === true; also recorded on the audit log entry. */
   reason?: string;
   /** Acting admin's user id — recorded as the audit log's actor. */
   actorUserId?: number | null;
+  /**
+   * D3 — label for the governance audit row's `action` field. Callers going through
+   * modelAutoRollback.manualRollback() pass "rollback"; the default "activate" covers
+   * both the router's activateVersion mutation and an ordinary version switch. Purely
+   * cosmetic (audit trail readability) — never affects gating.
+   */
+  governanceAction?: "activate" | "rollback";
 }
 
 /** True only when evalReport.gate.pass === true (mirrors modelStagePipeline.evalGatePassedOf). */
@@ -212,10 +221,73 @@ function evalGatePassed(evalReport: unknown): boolean {
 }
 
 /**
+ * D3 (doc69 Giai đoạn 4/Wave 3) — best-effort MODEL-LIFECYCLE governance audit row.
+ * Distinct from the LLM-decision audit (ai_llm_audit) and from the per-version
+ * `stageHistory` ledger (which stays the transition ledger — this is the queryable
+ * governance log). NEVER throws: an audit-write failure must never turn a successful
+ * activation into an error.
+ */
+async function writeModelGovernanceAudit(params: {
+  modelId: number;
+  versionId: number;
+  version: string;
+  actorUserId?: number | null;
+  action: "activate" | "rollback";
+  evalGatePass: boolean;
+  cardGate: CardGateResult;
+  forced: boolean;
+  reason?: string;
+}): Promise<void> {
+  try {
+    await logCrudOperation(
+      { userId: params.actorUserId ?? null, source: "trpc" },
+      {
+        action: AUDIT_ACTIONS.AI_MODEL_GOVERNANCE,
+        entityType: ENTITY_TYPES.MODEL_VERSION,
+        entityId: params.versionId,
+        entityName: params.version,
+        details: {
+          operation: "AI_MODEL_GOVERNANCE",
+          metadata: {
+            modelId: params.modelId,
+            versionId: params.versionId,
+            action: params.action,
+            evalGatePass: params.evalGatePass,
+            cardGate: {
+              enforced: params.cardGate.enforced,
+              satisfied: params.cardGate.satisfied,
+              reason: params.cardGate.reason,
+              cardId: params.cardGate.card?.id ?? null,
+            },
+            forced: params.forced,
+            reason: params.reason,
+          },
+        },
+        status: "success",
+      },
+    );
+  } catch (err) {
+    console.warn(
+      "[aiModelService] governance audit write failed (activation already applied):",
+      (err as Error)?.message ?? err,
+    );
+  }
+}
+
+/**
  * MANUAL activation entry point — the gated call the admin-facing `activateVersion`
  * tRPC mutation uses instead of the raw activateModelVersion() (see design note
- * above). Throws (no activation, no audit write) when the gate fails and no override
+ * above). Throws (no activation, no audit write) when a gate fails and no override
  * is given, or when force:true is given without a reason.
+ *
+ * D3 adds a SECOND, independent gate on top of the pre-existing eval quality gate: a
+ * complete + approved governance card (see aiModelCardGate.evaluateCardGate). Both
+ * gates are ANDed together and share the SAME `{force, reason}` override — mirroring
+ * the eval-gate override precisely (same shape, same audited entry). The card gate is
+ * flag-gated (AI_MODEL_CARD_REQUIRED, default OFF) and degrades safely when the
+ * ai_model_cards table isn't migrated yet — see evaluateCardGate's doc comment — so
+ * with the flag off (default) this function's behaviour, error text, and DB access
+ * pattern are BYTE-IDENTICAL to pre-D3.
  */
 export async function activateModelVersionManual(
   modelId: number,
@@ -228,23 +300,45 @@ export async function activateModelVersionManual(
   }
 
   const gatePassed = evalGatePassed(target.evalReport);
+  const cardGate = await evaluateCardGate(modelId);
   const forced = opts.force === true;
 
   if (forced) {
     if (!opts.reason || !opts.reason.trim()) {
       throw new Error("Overriding the eval quality gate (force:true) requires a non-empty reason.");
     }
-  } else if (!gatePassed) {
-    throw new Error(
-      `Cannot activate model ${modelId} version ${versionId} (${target.version}): the eval quality gate ` +
-      `has not passed (evalReport.gate.pass !== true). Pass { force: true, reason } to explicitly override (audited).`,
-    );
+  } else {
+    if (!gatePassed) {
+      throw new Error(
+        `Cannot activate model ${modelId} version ${versionId} (${target.version}): the eval quality gate ` +
+        `has not passed (evalReport.gate.pass !== true). Pass { force: true, reason } to explicitly override (audited).`,
+      );
+    }
+    if (cardGate.enforced && !cardGate.satisfied) {
+      throw new Error(
+        `Cannot activate model ${modelId} version ${versionId} (${target.version}): ${cardGate.reason} ` +
+        `Pass { force: true, reason } to explicitly override (audited).`,
+      );
+    }
   }
 
   await activateModelVersion(modelId, versionId, {
     actor: opts.actorUserId ?? null,
     via: "manual",
     reason: forced ? opts.reason : undefined,
+  });
+
+  // D3 — governance audit trail (best-effort, ALWAYS written, forced or not).
+  await writeModelGovernanceAudit({
+    modelId,
+    versionId,
+    version: target.version,
+    actorUserId: opts.actorUserId,
+    action: opts.governanceAction ?? "activate",
+    evalGatePass: gatePassed,
+    cardGate,
+    forced,
+    reason: opts.reason,
   });
 
   if (forced) {
@@ -262,6 +356,12 @@ export async function activateModelVersionManual(
           reason: opts.reason,
           gateOverridden: !gatePassed,
           gateHadPassed: gatePassed,
+          // D3 — SAME override, extended with the card gate's outcome (not a second
+          // override audit entry — see writeModelGovernanceAudit for the dedicated
+          // governance-trail row).
+          cardGateEnforced: cardGate.enforced,
+          cardGateOverridden: cardGate.enforced && !cardGate.satisfied,
+          cardGateHadSatisfied: cardGate.satisfied,
         },
         status: "success",
       });

@@ -310,6 +310,8 @@ export async function manualRollback(
       force: opts.force === true,
       reason,
       actorUserId: triggeredBy,
+      // D3 — label the governance audit row as a "rollback", not a plain "activate".
+      governanceAction: "rollback",
     });
   } catch (err) {
     return {
