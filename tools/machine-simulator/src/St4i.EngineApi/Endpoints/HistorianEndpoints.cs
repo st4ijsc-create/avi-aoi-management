@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Text;
+using MigraDoc.DocumentObjectModel;
+using MigraDoc.Rendering;
 using St4i.EdgeCore.Historian;
 using St4i.EdgeCore.Metrics;
 using St4i.EdgeCore.Models;
@@ -12,8 +14,8 @@ namespace St4i.EngineApi.Endpoints;
 /// <c>GET /v1/historian/serial/{serial}</c>, <c>GET /v1/historian/telemetry</c>,
 /// <c>GET /v1/historian/stats</c>, <c>POST /v1/historian/prune</c>. Thin mapping layer over the frozen
 /// <see cref="IHistorianStore"/> contract (WS-A-T1/T2, already registered as a singleton in
-/// <c>Program.cs</c> — this file re-registers nothing) — OEE endpoints (Task 9, added below), CSV export
-/// (Task 10, added below), and PDF export (Task 11) are later tasks; the last is deliberately absent here.
+/// <c>Program.cs</c> — this file re-registers nothing) — OEE endpoints (Task 9), CSV export (Task 10),
+/// and PDF export (Task 11) are added below.
 ///
 /// Task 9 (WS-A) — the OEE surface: <c>GET /v1/historian/oee</c> (single machine), <c>GET
 /// /v1/historian/oee/fleet</c> (one <see cref="OeeResultDto"/> per roster machine), <c>GET</c>/<c>PUT
@@ -47,6 +49,32 @@ namespace St4i.EngineApi.Endpoints;
 /// a TestServer) and the SAME "no St4i.EdgeCore.Config enum in these DTOs, so plain <c>Results.Ok</c> is
 /// enough" reasoning <see cref="HistorianDtos"/> documents — no <c>ConfigJson.Options</c> detour needed.
 ///
+/// Task 11 (WS-A) — the PDF report surface: <c>GET /v1/historian/report.pdf</c>, a server-side, offline
+/// shift/period summary PDF (OEE block + verdict breakdown) for one machine and time range, built with
+/// <b>PDFsharp + MigraDoc</b> (package <c>PDFsharp-MigraDoc</c> 6.2.4 — MIT-style license, no revenue
+/// threshold, unlike QuestPDF's Community license; pre-approved per the Task 11 brief). Pure glue, same
+/// discipline as Task 9/10: <see cref="ComputeOeeAsync"/> (the SAME helper <c>/oee</c> uses — never a
+/// second OEE formula) supplies the OEE block, and <see cref="ComputeVerdictBreakdownAsync"/> pages
+/// through the frozen <see cref="IHistorianStore.QueryResultsAsync"/> (same <see cref="ExportPageSize"/>
+/// paging convention as Task 10's CSV export) to tally raw verdict counts — deliberately NOT restricted
+/// to <c>ReadingKind == "ProcessResult"</c> the way <see cref="IHistorianStore.AggregateForOeeAsync"/>'s
+/// OEE counts are, so the breakdown table reflects everything the historian saw in the window (including
+/// any <c>Skip</c> rows the OEE's <c>TotalCount</c> itself excludes — the two numbers are allowed, even
+/// expected, to differ). <see cref="BuildReportPdf"/> renders the document via MigraDoc's object model
+/// (<see cref="Document"/>/<see cref="Section"/>/<c>Table</c>) through a <see cref="PdfDocumentRenderer"/>
+/// straight into a <see cref="MemoryStream"/> — never a temp file on disk. Empty-period robustness (the
+/// brief's explicit "zero results must still yield a valid PDF, not a 500" requirement): a zero-count
+/// verdict breakdown renders a plain "No data in this period." paragraph instead of an empty table, and
+/// the OEE block itself renders fine at all-zero (the same OEE calculator/aggregate already tolerate an
+/// empty window for <c>/oee</c> and <c>/oee/fleet</c> — the fleet route's own zero-seed test already
+/// exercises this).
+/// The response is written through <see cref="PdfFileResult"/>, a minimal private <c>IResult</c> — same
+/// "never <c>Results.File</c>, whose <c>FileContentHttpResult.ExecuteAsync</c> needs a DI
+/// <c>ILoggerFactory</c> this project's hand-built <see cref="DefaultHttpContext"/> test convention never
+/// has" reasoning as Task 10's <see cref="CsvFileResult"/>, just with <c>Content-Type: application/pdf</c>
+/// and a fixed <c>Content-Disposition</c> filename (per the brief, no dynamic timestamp in the filename
+/// itself — only the in-body "generated at" line, which tests deliberately never assert on).
+///
 /// Intentionally UNAUTHENTICATED — auth is WS-D, a later workstream.
 /// </summary>
 public static class HistorianEndpoints
@@ -64,6 +92,8 @@ public static class HistorianEndpoints
         app.MapGet("/v1/historian/oee/fleet", GetOeeFleetAsync);
         app.MapGet("/v1/historian/oee/settings", GetOeeSettings);
         app.MapPut("/v1/historian/oee/settings", PutOeeSettings);
+
+        app.MapGet("/v1/historian/report.pdf", GetReportPdfAsync);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -437,6 +467,184 @@ public static class HistorianEndpoints
         public Task ExecuteAsync(HttpContext httpContext)
         {
             httpContext.Response.ContentType = "text/csv; charset=utf-8";
+            httpContext.Response.Headers.ContentDisposition = $"attachment; filename=\"{_fileName}\"";
+            httpContext.Response.ContentLength = _bytes.Length;
+            return httpContext.Response.Body.WriteAsync(_bytes, httpContext.RequestAborted).AsTask();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // PDF report export (Task 11)
+    // ─────────────────────────────────────────────────────────────────────
+
+    // GET /v1/historian/report.pdf?machine=&from=&to=
+    internal static async Task<IResult> GetReportPdfAsync(
+        string? machine, string? from, string? to,
+        IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct)
+    {
+        var descriptor = FindMachine(fleetHost, machine);
+        if (descriptor is null) return MachineNotFound(machine);
+
+        if (!TryResolveRange(from, to, out var fromParsed, out var toParsed, out var rangeError)) return rangeError!;
+
+        var oee = await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct).ConfigureAwait(false);
+        var verdictCounts = await ComputeVerdictBreakdownAsync(descriptor.Code, fromParsed, toParsed, store, ct).ConfigureAwait(false);
+
+        var pdfBytes = BuildReportPdf(descriptor, fromParsed, toParsed, oee, verdictCounts);
+        return new PdfFileResult(pdfBytes, "historian-report.pdf");
+    }
+
+    /// <summary>Pages through <see cref="IHistorianStore.QueryResultsAsync"/> (same fixed
+    /// <see cref="ExportPageSize"/>/increasing-<c>Offset</c>/"stop on a short page" convention Task 10's
+    /// <see cref="BuildExportCsvAsync"/> already established) for <paramref name="machineCode"/>'s full
+    /// <paramref name="from"/>/<paramref name="to"/> window, tallying a raw count per
+    /// <see cref="HistorianResultRecord.Verdict"/> string — deliberately no <c>ReadingKind</c> filter (see
+    /// this class's doc comment for why that's a real, intended difference from the OEE aggregate's own
+    /// <c>ProcessResult</c>-only counts). A machine/range with zero rows simply returns an empty
+    /// dictionary — never a throw — which <see cref="BuildReportPdf"/> renders as an explicit
+    /// "no data in this period" empty state.</summary>
+    private static async Task<IReadOnlyDictionary<string, long>> ComputeVerdictBreakdownAsync(
+        string machineCode, DateTimeOffset from, DateTimeOffset to, IHistorianStore store, CancellationToken ct)
+    {
+        var counts = new Dictionary<string, long>(StringComparer.Ordinal);
+
+        var offset = 0;
+        while (true)
+        {
+            var query = new HistorianResultQuery(
+                MachineCode: machineCode, From: from, To: to, Limit: ExportPageSize, Offset: offset);
+
+            var page = await store.QueryResultsAsync(query, ct).ConfigureAwait(false);
+            foreach (var row in page.Items)
+            {
+                var verdict = row.Record.Verdict;
+                counts[verdict] = counts.GetValueOrDefault(verdict) + 1;
+            }
+
+            if (page.Items.Count < ExportPageSize) break;
+            offset += ExportPageSize;
+        }
+
+        return counts;
+    }
+
+    /// <summary>Builds the whole report as a MigraDoc <see cref="Document"/> (title/machine/period, the
+    /// OEE block reusing the exact <see cref="OeeResultDto"/> the frozen <see cref="ComputeOeeAsync"/>
+    /// glue produced, then the verdict-breakdown table) and renders it through a
+    /// <see cref="PdfDocumentRenderer"/> straight into a <see cref="MemoryStream"/> (never a temp file).
+    /// A zero-count breakdown (the brief's "zero results in the period" robustness case) renders a plain
+    /// "No data in this period." paragraph instead of an empty table — the OEE block itself always renders
+    /// (its numbers are simply all-zero in that case, exactly like <c>/oee</c>'s own empty-window
+    /// behavior), so the returned PDF is never a bare/empty document even at zero rows.</summary>
+    private static byte[] BuildReportPdf(
+        MachineDescriptor descriptor, DateTimeOffset from, DateTimeOffset to,
+        OeeResultDto oee, IReadOnlyDictionary<string, long> verdictCounts)
+    {
+        var document = new Document();
+        document.Styles[StyleNames.Normal]!.Font.Name = "Arial";
+
+        var section = document.AddSection();
+
+        var title = section.AddParagraph("St4i Historian Report");
+        title.Format.Font.Size = 18;
+        title.Format.Font.Bold = true;
+
+        var subtitle = section.AddParagraph($"Machine: {descriptor.Code}");
+        subtitle.Format.Font.Size = 12;
+        subtitle.Format.SpaceBefore = Unit.FromPoint(4);
+
+        var period = section.AddParagraph(
+            $"Period: {from.ToString("O", CultureInfo.InvariantCulture)} -> {to.ToString("O", CultureInfo.InvariantCulture)}");
+        period.Format.SpaceAfter = Unit.FromPoint(12);
+
+        var oeeHeading = section.AddParagraph("OEE Summary");
+        oeeHeading.Format.Font.Bold = true;
+        oeeHeading.Format.Font.Size = 14;
+        oeeHeading.Format.SpaceBefore = Unit.FromPoint(8);
+
+        var oeeTable = section.AddTable();
+        oeeTable.Borders.Visible = true;
+        oeeTable.AddColumn(Unit.FromCentimeter(6));
+        oeeTable.AddColumn(Unit.FromCentimeter(6));
+
+        AddLabelValueRow(oeeTable, "Availability", oee.Availability.ToString("P1", CultureInfo.InvariantCulture));
+        AddLabelValueRow(oeeTable, "Performance", oee.Performance.ToString("P1", CultureInfo.InvariantCulture));
+        AddLabelValueRow(oeeTable, "Quality", oee.Quality.ToString("P1", CultureInfo.InvariantCulture));
+        AddLabelValueRow(oeeTable, "OEE", oee.Oee.ToString("P1", CultureInfo.InvariantCulture));
+        AddLabelValueRow(oeeTable, "Total Count", oee.TotalCount.ToString(CultureInfo.InvariantCulture));
+        AddLabelValueRow(oeeTable, "Good Count", oee.GoodCount.ToString(CultureInfo.InvariantCulture));
+        AddLabelValueRow(oeeTable, "Ideal Cycle (s)", oee.IdealCycleSeconds.ToString("0.###", CultureInfo.InvariantCulture));
+
+        var verdictHeading = section.AddParagraph("Verdict Breakdown");
+        verdictHeading.Format.Font.Bold = true;
+        verdictHeading.Format.Font.Size = 14;
+        verdictHeading.Format.SpaceBefore = Unit.FromPoint(12);
+
+        if (verdictCounts.Count == 0)
+        {
+            section.AddParagraph("No data in this period.");
+        }
+        else
+        {
+            var verdictTable = section.AddTable();
+            verdictTable.Borders.Visible = true;
+            verdictTable.AddColumn(Unit.FromCentimeter(6));
+            verdictTable.AddColumn(Unit.FromCentimeter(6));
+
+            var headerRow = verdictTable.AddRow();
+            headerRow.HeadingFormat = true;
+            headerRow.Cells[0].AddParagraph("Verdict");
+            headerRow.Cells[1].AddParagraph("Count");
+
+            foreach (var (verdict, count) in verdictCounts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                var row = verdictTable.AddRow();
+                row.Cells[0].AddParagraph(verdict);
+                row.Cells[1].AddParagraph(count.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        // Content only, deliberately never asserted on by any test (the brief: "if you print a
+        // 'generated at' timestamp, that's fine for content but don't assert on it in tests").
+        var generatedAt = section.AddParagraph($"Generated at {DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)}");
+        generatedAt.Format.Font.Size = 8;
+        generatedAt.Format.SpaceBefore = Unit.FromPoint(16);
+
+        var renderer = new PdfDocumentRenderer { Document = document };
+        renderer.RenderDocument();
+
+        using var ms = new MemoryStream();
+        renderer.PdfDocument.Save(ms, closeStream: false);
+        return ms.ToArray();
+    }
+
+    private static void AddLabelValueRow(MigraDoc.DocumentObjectModel.Tables.Table table, string label, string value)
+    {
+        var row = table.AddRow();
+        row.Cells[0].AddParagraph(label);
+        row.Cells[1].AddParagraph(value);
+    }
+
+    /// <summary>Minimal hand-rolled <see cref="IResult"/> for the PDF report response — same "never
+    /// <c>Results.File</c>" reasoning as Task 10's <see cref="CsvFileResult"/> (this class's doc comment
+    /// explains why). Sets <c>Content-Type: application/pdf</c> and a fixed
+    /// <c>Content-Disposition: attachment; filename="historian-report.pdf"</c> (per the brief — no
+    /// dynamic timestamp in the filename itself), then writes the already-rendered bytes straight to
+    /// <see cref="HttpResponse.Body"/>.</summary>
+    private sealed class PdfFileResult : IResult
+    {
+        private readonly byte[] _bytes;
+        private readonly string _fileName;
+
+        public PdfFileResult(byte[] bytes, string fileName)
+        {
+            _bytes = bytes;
+            _fileName = fileName;
+        }
+
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.ContentType = "application/pdf";
             httpContext.Response.Headers.ContentDisposition = $"attachment; filename=\"{_fileName}\"";
             httpContext.Response.ContentLength = _bytes.Length;
             return httpContext.Response.Body.WriteAsync(_bytes, httpContext.RequestAborted).AsTask();

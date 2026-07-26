@@ -51,6 +51,9 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
+  </ItemGroup>
 
   <!-- Final-review I-2 guard: the Content ItemGroup above quietly contributes zero items (and thus an
        empty wwwroot/) when `web/dist` doesn't exist yet — the right behavior for a bare `dotnet build`
