@@ -21,16 +21,19 @@
  *   GGUF_DEFAULT_MODEL   no fallback → undefined                     "default"/"chat" tier
  *   GGUF_THINKING_MODEL  no fallback → undefined (optional tier)     "thinking" tier (B6.2, caller flag-gates it)
  *   GGUF_CODE_MODEL      → GGUF_DEFAULT_MODEL                        "code" tier / "code"|"coder" logical model
- *   GGUF_FIM_MODEL       → GGUF_FAST_MODEL → GGUF_DEFAULT_MODEL      "fim" tier / "fim"|"infill" logical model
+ *   GGUF_FIM_MODEL       → GGUF_FAST_MODEL → GGUF_DEFAULT_MODEL      "fim" tier — resolveTaskModel("fim")/
+ *                                                                     fimModelBasename() (aiModelRouter.route(),
+ *                                                                     aiGgufEngine.generateFim's own backstop)
+ *   GGUF_FIM_MODEL       → GGUF_FAST_MODEL → undefined (NO default)  "fim"|"infill" LOGICAL model —
+ *                                                                     resolveLogicalModel() only, see finding
+ *                                                                     (b) below for why this one differs
  *   GGUF_EMBED_MODEL     no fallback → undefined                     "embed"|"embedding"|"embeddings" logical model
  * Every resolved value is a bare BASENAME: no directory component, no trailing ".gguf" — callers
  * pass this straight to the engine, which appends ".gguf" itself (see `ensureGgufSuffix` below
  * for why normalizing BEFORE that append is what makes the ".gguf.gguf" bug impossible).
  *
  * ─── STEP 0 findings — the three pre-refactor implementations were NOT byte-identical ────────
- * Full comparison + rationale: `.superpowers/sdd/ai-g2-5b-report.md`. Summary of the two
- * reconciled differences (both deliberate, both documented, neither changes what model actually
- * ends up loaded for any request observed in the existing test suites):
+ * Full comparison + rationale: `.superpowers/sdd/ai-g2-5b-report.md`. Summary:
  *
  *  (a) ".gguf"/path stripping. aiGgufEngine used `path.basename(v).replace(/\.gguf$/i,"")`
  *      (also strips a directory component); aiModelRouter/openaiGateway used a bare
@@ -44,16 +47,27 @@
  *      basename)" and the engine's `resolveModelPath` supports nested-path lookups under
  *      GGUF_MODELS_DIR — stripping the directory there would silently break that.
  *
- *  (b) openaiGateway's FIM fallback was only 2 levels (GGUF_FIM_MODEL → GGUF_FAST_MODEL, then
- *      undefined) while aiModelRouter/aiGgufEngine both already chained 3 levels
- *      (…→ GGUF_DEFAULT_MODEL). Reconciled to the 3-level chain everywhere. Why this is safe: in
- *      every call site that could hit the missing 3rd level, the caller already had a SECOND,
- *      independent fallback to the default model when handed `undefined`
- *      (`aiGgufEngine.generateFim`'s own `fimModelBasename()` default, and
- *      `getOrLoadModel(undefined)`'s auto-load of GGUF_DEFAULT_MODEL) — so the model that actually
- *      loaded was already identical. The only observable change is cosmetic: the `GET /v1/models`
- *      `root` transparency field for "fim" now shows the stripped basename instead of the raw
- *      (possibly ".gguf"-suffixed) env value in that one edge config.
+ *  (b) [CORRECTED — doc69 W1-4 review round] openaiGateway's FIM fallback was only 2 levels
+ *      (GGUF_FIM_MODEL → GGUF_FAST_MODEL, then undefined) while aiModelRouter/aiGgufEngine's
+ *      ROUTING-task fim resolver already chained 3 levels (…→ GGUF_DEFAULT_MODEL). The initial
+ *      G2-5b pass reconciled `resolveLogicalModel("fim"/"infill")` to the 3-level chain too — but
+ *      that was a genuine, UNTESTED behavior change for `POST /v1/chat/completions` with
+ *      `body.model: "fim"|"infill"`: unlike `/v1/completions` (→ `aiGgufEngine.generateFim`, which
+ *      has ITS OWN internal `fimModelBasename()` 3-level backstop when handed `undefined` —
+ *      unchanged, still 3-level), `chatCompletion`/`chatCompletionStream` have NO such backstop —
+ *      they pass whatever `resolveLogicalModel` returns straight into `getOrLoadModel(modelId)`.
+ *      An explicit modelId there FORCE-PINS that exact model (loading it even if a DIFFERENT model
+ *      is already resident); `undefined` lets `getOrLoadModel` reuse whatever is already hot, or
+ *      auto-load the default ONLY if nothing is loaded yet. So with FIM+FAST unset, DEFAULT set,
+ *      and some OTHER model already resident, OLD `/v1/chat/completions` reused the hot model —
+ *      the reconciled-to-3-levels NEW code would have force-loaded the default instead: a real,
+ *      untested generation change on a task that must be behavior-preserving.
+ *      FIXED: `resolveLogicalModel("fim"/"infill")` now resolves EXACTLY as the pre-refactor
+ *      `openaiGateway.resolveModelId` did — GGUF_FIM_MODEL → GGUF_FAST_MODEL → undefined — via the
+ *      module-private `fimModelForLogicalName()` below. `fimModelBasename()`/
+ *      `resolveTaskModel("fim")` (the ROUTING-task shape consumed by `aiModelRouter.route()` and
+ *      `aiGgufEngine.generateFim`'s own internal backstop) KEEP their original 3-level chain,
+ *      unchanged — the two call shapes now deliberately resolve DIFFERENTLY for "fim" by design.
  */
 
 import path from "path";
@@ -137,6 +151,23 @@ export function fimModelBasename(): string | undefined {
   return fastModelBasename() ?? defaultModelBasename();
 }
 
+/**
+ * FIX (doc69 W1-4 review round) — `resolveLogicalModel`'s "fim"/"infill" case must resolve
+ * EXACTLY as the pre-refactor `openaiGateway.resolveModelId` did: GGUF_FIM_MODEL →
+ * GGUF_FAST_MODEL → `undefined` — deliberately WITHOUT the 3rd-level GGUF_DEFAULT_MODEL fallback
+ * that `fimModelBasename()`/`resolveTaskModel("fim")` have. See the module header, STEP 0 finding
+ * (b), for why the two call shapes must differ: `POST /v1/chat/completions` is the only caller
+ * that feeds this branch's result straight into `getOrLoadModel` with no internal backstop, so an
+ * explicit "default" return here would force-pin the default model instead of reusing whichever
+ * model is already resident — an untested, un-preserved behavior change. NOT exported: used only
+ * by `resolveLogicalModel` below.
+ */
+function fimModelForLogicalName(): string | undefined {
+  const v = envStr("GGUF_FIM_MODEL");
+  if (v) return toBasename(v);
+  return fastModelBasename();
+}
+
 /** GGUF_EMBED_MODEL → basename; undefined if unset. No fallback (embeddings need a real embed model). */
 export function embedModelBasename(): string | undefined {
   const v = envStr("GGUF_EMBED_MODEL");
@@ -180,6 +211,11 @@ export function resolveTaskModel(task: ResolvableTask): string | undefined {
  * embeddings) plus an unknown-id passthrough for a caller targeting a real on-disk basename
  * directly. Returns `undefined` when the caller should let the engine pick its own default
  * (`GGUF_DEFAULT_MODEL`) — passing a non-existent basename would make the engine throw on load.
+ *
+ * NOTE — "fim"/"infill" deliberately resolves via `fimModelForLogicalName()` (2-level: FIM_MODEL
+ * → FAST_MODEL → undefined), NOT the exported `fimModelBasename()`/`resolveTaskModel("fim")`
+ * (3-level, → DEFAULT_MODEL). See the module header, STEP 0 finding (b), for why this call shape
+ * must preserve the original 2-level behavior.
  */
 export function resolveLogicalModel(requested?: string): string | undefined {
   const key = (requested || "").trim().toLowerCase();
@@ -195,7 +231,7 @@ export function resolveLogicalModel(requested?: string): string | undefined {
       return fastModelBasename();
     case "fim":
     case "infill":
-      return fimModelBasename();
+      return fimModelForLogicalName();
     case "embed":
     case "embedding":
     case "embeddings":

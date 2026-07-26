@@ -24,9 +24,13 @@ import { observeInference } from "./aiMetrics";
 // doc69 G2-5b — shared env→basename resolver (see server/services/ai/modelResolver.ts). Aliased
 // on import because this file re-exports its OWN codeModelBasename()/fimModelBasename() (kept for
 // backward compat) which now simply delegate to these.
+// doc69 W1-4 review fix — also import embedModelBasename(): the shared, suffix-safe resolver for
+// GGUF_EMBED_MODEL (see the FIX comment at generateEmbedding/generateEmbeddings below for the
+// live ".gguf.gguf" bug this closes).
 import {
   codeModelBasename as resolveCodeModelBasename,
   fimModelBasename as resolveFimModelBasename,
+  embedModelBasename as resolveEmbedModelBasename,
 } from "./ai/modelResolver";
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -152,9 +156,15 @@ const GGUF_MODELS_DIR = process.env.GGUF_MODELS_DIR
 
 // ─── Config from env ───────────────────────────────────────────
 
-/** Dedicated embedding model id (e.g. mxbai). When generateEmbedding is called without a modelId,
- * this is used so we never fall back to the text model (Qwen), which would return wrong dimensions. */
-const GGUF_EMBED_MODEL = process.env.GGUF_EMBED_MODEL || "";
+// Dedicated embedding model id (e.g. mxbai) — resolved on-demand via modelResolver's
+// `embedModelBasename()` at each call site (see generateEmbedding/generateEmbeddings below), NOT
+// a raw module-level constant. FIX (doc69 W1-4 review) — this USED to be
+// `const GGUF_EMBED_MODEL = process.env.GGUF_EMBED_MODEL || "";`, read RAW with no ".gguf" strip:
+// a live `.env` value of `GGUF_EMBED_MODEL=Qwen3-Embedding-0.6B-f16.gguf` (suffix already present)
+// fell straight through to `getOrLoadModel()`, which appends ".gguf" itself →
+// "...f16.gguf.gguf" → throws. `embedModelBasename()` normalizes through the SAME
+// `toBasename()`/`ensureGgufSuffix()` suffix-safe path every other resolver in this file uses, so
+// a value with OR without ".gguf" always resolves to the correct single-".gguf" basename.
 /** Expected embedding dimensions. Default 1024 (mxbai-embed-large). Mismatch => explicit error. */
 const GGUF_EMBED_DIM = (() => {
   const n = parseInt(process.env.GGUF_EMBED_DIM || "1024", 10);
@@ -1748,7 +1758,9 @@ export async function generateEmbedding(
 ): Promise<{ embedding: number[]; dimensions: number; modelId: string }> {
   // When no modelId is given, prefer the dedicated embedding model (mxbai) so we never
   // fall back to the text model (Qwen), which would yield wrong-dimension vectors.
-  const effectiveId = modelId ?? (GGUF_EMBED_MODEL || undefined);
+  // FIX (doc69 W1-4 review) — resolved via the shared, suffix-safe embedModelBasename(), not a
+  // raw env read (see the module-level comment above for the ".gguf.gguf" bug this closes).
+  const effectiveId = modelId ?? resolveEmbedModelBasename();
   const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId);
 
   // Mục 4: embeddings are light but still share the single GGUF slot to keep the
@@ -1777,7 +1789,9 @@ export async function generateEmbeddings(
   texts: string[],
   modelId?: string,
 ): Promise<{ embeddings: number[][]; dimensions: number; modelId: string }> {
-  const effectiveId = modelId ?? (GGUF_EMBED_MODEL || undefined);
+  // FIX (doc69 W1-4 review) — see generateEmbedding() above: resolved via the shared,
+  // suffix-safe embedModelBasename(), not a raw env read.
+  const effectiveId = modelId ?? resolveEmbedModelBasename();
   const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId);
 
   // Mục 4: batch embeddings hold the single GGUF slot for the whole loop.

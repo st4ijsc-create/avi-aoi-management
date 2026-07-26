@@ -179,6 +179,25 @@ describe("embedModelBasename — GGUF_EMBED_MODEL, no fallback", () => {
     process.env.GGUF_EMBED_MODEL = "mxbai-embed-large.gguf";
     expect(embedModelBasename()).toBe("mxbai-embed-large");
   });
+
+  // Regression (doc69 W1-4 review) — the confirmed live ".gguf.gguf" bug in
+  // aiGgufEngine.generateEmbedding/generateEmbeddings (see aiGgufEngine.test.ts for the
+  // full engine-level regression): both a WITH-suffix and a WITHOUT-suffix
+  // GGUF_EMBED_MODEL must converge on the exact SAME single-".gguf" filename once run
+  // through ensureGgufSuffix() — the actual value handed to the engine's `${id}.gguf` append.
+  it("WITH .gguf suffix and WITHOUT it converge to the SAME ensureGgufSuffix() filename (never doubled)", () => {
+    process.env.GGUF_EMBED_MODEL = "Qwen3-Embedding-0.6B-f16.gguf";
+    const withSuffix = ensureGgufSuffix(embedModelBasename());
+    expect(withSuffix).toBe("Qwen3-Embedding-0.6B-f16.gguf");
+
+    delete process.env.GGUF_EMBED_MODEL;
+    process.env.GGUF_EMBED_MODEL = "Qwen3-Embedding-0.6B-f16";
+    const withoutSuffix = ensureGgufSuffix(embedModelBasename());
+    expect(withoutSuffix).toBe("Qwen3-Embedding-0.6B-f16.gguf");
+
+    expect(withSuffix).toBe(withoutSuffix);
+    expect(withSuffix.endsWith(".gguf.gguf")).toBe(false);
+  });
 });
 
 // ─── resolveTaskModel — aiModelRouter.ts call shape ─────────────────────────────────────────
@@ -217,8 +236,15 @@ describe("resolveLogicalModel — openaiGateway.ts call shape (OpenAI-style logi
     ["fast", { GGUF_FAST_MODEL: "Qwen3-4B.gguf" }, "Qwen3-4B"],
     ["fim", { GGUF_FIM_MODEL: "Fim.gguf" }, "Fim"],
     ["infill", { GGUF_FIM_MODEL: "Fim.gguf" }, "Fim"], // alias
-    // reconciled 3-level fallback (see modelResolver.ts header, STEP 0 finding (b)):
-    ["fim", { GGUF_DEFAULT_MODEL: "Qwen3-30B.gguf" }, "Qwen3-30B"],
+    // FIX (doc69 W1-4 review, STEP 0 finding (b)): resolveLogicalModel's "fim"/"infill" is
+    // DELIBERATELY only a 2-level fallback (FIM_MODEL -> FAST_MODEL -> undefined) — it must NOT
+    // fall through to GGUF_DEFAULT_MODEL like resolveTaskModel("fim")/fimModelBasename() do (see
+    // that describe block above), because this is the shape `POST /v1/chat/completions` feeds
+    // straight into getOrLoadModel with no internal backstop — an explicit default here would
+    // force-pin that model instead of preserving the original "reuse whatever's hot" behavior.
+    ["fim", { GGUF_DEFAULT_MODEL: "Qwen3-30B.gguf" }, undefined],
+    ["infill", { GGUF_DEFAULT_MODEL: "Qwen3-30B.gguf" }, undefined],
+    ["fim", { GGUF_FAST_MODEL: "Qwen3-4B.gguf", GGUF_DEFAULT_MODEL: "Qwen3-30B.gguf" }, "Qwen3-4B"],
     ["embed", { GGUF_EMBED_MODEL: "Embed.gguf" }, "Embed"],
     ["embedding", { GGUF_EMBED_MODEL: "Embed.gguf" }, "Embed"], // alias
     ["embeddings", { GGUF_EMBED_MODEL: "Embed.gguf" }, "Embed"], // alias

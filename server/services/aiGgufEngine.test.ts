@@ -12,7 +12,7 @@
  *
  * node-llama-cpp + fs are fully mocked so no native binary / model file is required.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Spies shared across the mock factory ───────────────────────────────────
 const createEmbeddingContextSpy = vi.fn();
@@ -137,6 +137,51 @@ describe("generateEmbedding", () => {
     await eng.generateEmbedding("b", "embed-model");
     await eng.generateEmbeddings(["c", "d"], "embed-model");
     expect(createEmbeddingContextSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("generateEmbedding/generateEmbeddings — GGUF_EMBED_MODEL suffix normalization (doc69 W1-4 regression)", () => {
+  // FIX regression: generateEmbedding/generateEmbeddings used to read the module-level
+  // `GGUF_EMBED_MODEL` RAW (no ".gguf" strip) when called with no explicit modelId — exactly how
+  // kbVectorStore.ingestKbChunks/searchKb call them. A live `.env` value that ALREADY carries the
+  // ".gguf" suffix (e.g. `GGUF_EMBED_MODEL=Qwen3-Embedding-0.6B-f16.gguf`, as configured in this
+  // repo's `.env`) fell straight through to getOrLoadModel(), which appends ".gguf" itself →
+  // "...f16.gguf.gguf" → `GGUF model file not found`. Now resolved via modelResolver's
+  // embedModelBasename() (toBasename/ensureGgufSuffix), so a value with OR without the suffix
+  // always resolves to the SAME correct single-".gguf" basename.
+  const savedEmbedModel = process.env.GGUF_EMBED_MODEL;
+  afterEach(() => {
+    if (savedEmbedModel === undefined) delete process.env.GGUF_EMBED_MODEL;
+    else process.env.GGUF_EMBED_MODEL = savedEmbedModel;
+  });
+
+  it("GGUF_EMBED_MODEL WITH .gguf suffix (live .env shape) resolves to the correct basename, never '.gguf.gguf'", async () => {
+    process.env.GGUF_EMBED_MODEL = "Qwen3-Embedding-0.6B-f16.gguf";
+    const eng = await freshEngine();
+    // No explicit modelId — exercises the exact live call shape (kbVectorStore's
+    // ingestKbChunks/searchKb call generateEmbedding/generateEmbeddings this way).
+    const res = await eng.generateEmbedding("hello world");
+    expect(res.modelId).toBe("Qwen3-Embedding-0.6B-f16");
+    const calledPaths = fakeLlama.loadModel.mock.calls.map((c: any[]) => String(c[0]?.modelPath ?? ""));
+    expect(calledPaths.some((p) => /\.gguf\.gguf$/i.test(p))).toBe(false);
+  });
+
+  it("GGUF_EMBED_MODEL WITHOUT .gguf suffix resolves to the SAME basename (idempotent either way)", async () => {
+    process.env.GGUF_EMBED_MODEL = "Qwen3-Embedding-0.6B-f16";
+    const eng = await freshEngine();
+    const res = await eng.generateEmbedding("hello world");
+    expect(res.modelId).toBe("Qwen3-Embedding-0.6B-f16");
+    const calledPaths = fakeLlama.loadModel.mock.calls.map((c: any[]) => String(c[0]?.modelPath ?? ""));
+    expect(calledPaths.some((p) => /\.gguf\.gguf$/i.test(p))).toBe(false);
+  });
+
+  it("generateEmbeddings (batch) exhibits the same fix — no explicit modelId, suffix already present", async () => {
+    process.env.GGUF_EMBED_MODEL = "Qwen3-Embedding-0.6B-f16.gguf";
+    const eng = await freshEngine();
+    const res = await eng.generateEmbeddings(["a", "b"]);
+    expect(res.modelId).toBe("Qwen3-Embedding-0.6B-f16");
+    const calledPaths = fakeLlama.loadModel.mock.calls.map((c: any[]) => String(c[0]?.modelPath ?? ""));
+    expect(calledPaths.some((p) => /\.gguf\.gguf$/i.test(p))).toBe(false);
   });
 });
 

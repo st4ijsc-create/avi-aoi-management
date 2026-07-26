@@ -5,12 +5,15 @@
  * itself is not exported, so this is a deliberate black-box/HTTP-level equivalence check (the
  * most faithful "same observable behavior at the call site" proof available).
  *
- * ONE deliberate reconciliation is called out explicitly below: the pre-refactor "fim" resolution
- * only fell back 2 levels (GGUF_FIM_MODEL -> GGUF_FAST_MODEL); the new shared resolver falls back
- * 3 levels (…-> GGUF_DEFAULT_MODEL), matching aiModelRouter.ts/aiGgufEngine.ts. See
- * server/services/ai/modelResolver.ts's header and .superpowers/sdd/ai-g2-5b-report.md for why
- * this doesn't change what model actually loads for any request (generateFim's own internal
- * fimModelBasename() fallback already covered the gap).
+ * doc69 W1-4 review fix — an EARLIER version of this refactor reconciled the "fim" resolution to
+ * a 3-level fallback (…-> GGUF_DEFAULT_MODEL), matching aiModelRouter.ts/aiGgufEngine.ts. That was
+ * a genuine, untested BEHAVIOR CHANGE for `POST /v1/chat/completions` (unlike `/v1/completions` →
+ * generateFim, `chatCompletion`/`chatCompletionStream` have no internal fallback of their own — an
+ * explicit "default" modelId here force-pins that model instead of reusing whatever's already
+ * resident). FIXED: `resolveLogicalModel("fim"/"infill")` now resolves EXACTLY as the pre-refactor
+ * `openaiGateway.resolveModelId` did (2-level: FIM_MODEL -> FAST_MODEL -> undefined). See
+ * server/services/ai/modelResolver.ts's header (STEP 0 finding (b)) and
+ * .superpowers/sdd/ai-g2-5b-report.md for the full history.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest";
 import express from "express";
@@ -137,6 +140,14 @@ describe("openaiGateway /v1/chat/completions — model resolution equivalence", 
       model: "fim",
     },
     { label: "fim, only fast set (fim unset)", env: { GGUF_FAST_MODEL: "Qwen3-4B.gguf" }, model: "fim" },
+    // doc69 W1-4 review fix — THE case: FIM+FAST unset, DEFAULT set. This is the exact scenario
+    // the review flagged: chatCompletion/chatCompletionStream have no internal fallback, so
+    // resolveModelId must return `undefined` here (matching the pre-refactor reference) so
+    // getOrLoadModel(undefined) reuses whatever model is already resident instead of a NEW code
+    // path force-pinning GGUF_DEFAULT_MODEL. `preRefactorResolveModelId("fim")` is `undefined` in
+    // this config — asserting equality proves the fix, not just documents intent.
+    { label: "fim, only default set (fim+fast unset) — MUST NOT force-pin default", env: { GGUF_DEFAULT_MODEL: "Qwen3-30B.gguf" }, model: "fim" },
+    { label: "infill, only default set (fim+fast unset) — MUST NOT force-pin default", env: { GGUF_DEFAULT_MODEL: "Qwen3-30B.gguf" }, model: "infill" },
   ];
 
   for (const { label, env, model } of matrix) {
@@ -153,8 +164,8 @@ describe("openaiGateway /v1/chat/completions — model resolution equivalence", 
   }
 });
 
-describe("openaiGateway /v1/completions (native FIM) — RECONCILED fim->default fallback", () => {
-  it("fim with FAST+FIM unset, DEFAULT set: NEW resolves to default; pre-refactor reference would have been undefined", async () => {
+describe("openaiGateway /v1/completions (native FIM) — PRESERVED fim resolution (doc69 W1-4 fix)", () => {
+  it("fim with FAST+FIM unset, DEFAULT set: resolveModelId passes undefined (matches pre-refactor) — generateFim's OWN internal fimModelBasename() backstop (unchanged, still 3-level) is what actually resolves the default at runtime, NOT this gateway", async () => {
     process.env.GGUF_DEFAULT_MODEL = "Qwen3-30B.gguf";
     const res = await fetch(`${ctx.url}/v1/completions`, {
       method: "POST",
@@ -163,14 +174,13 @@ describe("openaiGateway /v1/completions (native FIM) — RECONCILED fim->default
     });
     expect(res.status).toBe(200);
     expect(h.last?.fn).toBe("generateFim");
-    // NEW behavior: explicit default basename (matches aiModelRouter.fimModelId()/aiGgufEngine.fimModelBasename()).
-    expect(h.last?.modelId).toBe("Qwen3-30B");
-    // Documents exactly what changed vs. the pre-refactor reference (and why it's safe — see
-    // module doc comment above): the OLD code would have passed `undefined` here, which
-    // aiGgufEngine.generateFim's OWN internal fimModelBasename() fallback would then have
-    // resolved to this SAME "Qwen3-30B" default anyway — so the actually-generated model was
-    // already identical; only the raw resolveModelId() return value differed.
-    expect(preRefactorResolveModelId("fim")).toBeUndefined();
+    // FIXED (doc69 W1-4): the gateway's resolveModelId() passes `undefined` here — same as the
+    // pre-refactor reference — because generateFim (aiGgufEngine.ts, mocked away in THIS test) is
+    // the one with the 3-level fallback backstop (`modelId ?? fimModelBasename()`), verified
+    // separately/end-to-end in aiGgufEngine.modelResolver.equivalence.test.ts and
+    // aiGgufEngine.test.ts. This gateway must not pre-empt that by resolving the default itself.
+    expect(h.last?.modelId).toBeUndefined();
+    expect(h.last?.modelId).toBe(preRefactorResolveModelId("fim"));
   });
 
   it("fim with FAST set (FIM unset): unchanged — resolves to fast, same as pre-refactor", async () => {
