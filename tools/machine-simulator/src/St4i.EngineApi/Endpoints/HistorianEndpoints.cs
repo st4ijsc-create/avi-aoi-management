@@ -51,7 +51,7 @@ namespace St4i.EngineApi.Endpoints;
 ///
 /// Task 11 (WS-A) — the PDF report surface: <c>GET /v1/historian/report.pdf</c>, a server-side, offline
 /// shift/period summary PDF (OEE block + verdict breakdown) for one machine and time range, built with
-/// <b>PDFsharp + MigraDoc</b> (package <c>PDFsharp-MigraDoc</c> 6.2.4 — MIT-style license, no revenue
+/// <b>PDFsharp + MigraDoc</b> (package <c>PDFsharp-MigraDoc-GDI</c> 6.2.4 — MIT-style license, no revenue
 /// threshold, unlike QuestPDF's Community license; pre-approved per the Task 11 brief). Pure glue, same
 /// discipline as Task 9/10: <see cref="ComputeOeeAsync"/> (the SAME helper <c>/oee</c> uses — never a
 /// second OEE formula) supplies the OEE block, and <see cref="ComputeVerdictBreakdownAsync"/> pages
@@ -117,9 +117,17 @@ public static class HistorianEndpoints
             toParsed = parsed;
         }
 
+        // Clamp BEFORE handing to the store: Limit/Offset are passed straight into a parameterized
+        // `LIMIT @limit OFFSET @offset` by SqliteHistorianStore.QueryResultsAsync, and SQLite treats a
+        // negative LIMIT as "no limit" (the entire table, unauthenticated) rather than an error — an
+        // unclamped negative or absurdly large caller-supplied limit is a minor DoS. The response's
+        // Limit/Offset (via ToPageDto) reflect these CLAMPED values, never the raw query-string ones.
+        var clampedLimit = Math.Clamp(limit ?? 200, 1, 1000);
+        var clampedOffset = Math.Max(offset ?? 0, 0);
+
         var query = new HistorianResultQuery(
             MachineCode: machine, From: fromParsed, To: toParsed, SerialNumber: serial,
-            Verdict: verdict, ReadingKind: kind, Limit: limit ?? 200, Offset: offset ?? 0);
+            Verdict: verdict, ReadingKind: kind, Limit: clampedLimit, Offset: clampedOffset);
 
         var page = await store.QueryResultsAsync(query, ct).ConfigureAwait(false);
         return Results.Ok(ToPageDto(page));

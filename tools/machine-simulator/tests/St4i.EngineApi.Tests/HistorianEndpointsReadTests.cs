@@ -123,6 +123,62 @@ public sealed class HistorianEndpointsReadTests
         Assert.Single(page.Items);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // limit/offset clamping (WS-A final review, minor DoS fix) — a raw, unclamped `limit` is handed
+    // straight to SQLite's `LIMIT` clause by SqliteHistorianStore.QueryResultsAsync; a negative limit
+    // means "no limit" to SQLite (the ENTIRE table, unauthenticated), and an absurdly large limit loads
+    // everything into memory. GetResultsAsync must clamp both `limit` (to [1, 1000]) and `offset`
+    // (to >= 0) BEFORE building the HistorianResultQuery, and the response's Limit/Offset must reflect
+    // the CLAMPED values (never the raw caller-supplied ones).
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Results_with_a_negative_limit_is_clamped_to_1_not_treated_as_unlimited()
+    {
+        var (store, now, _, _, _, _) = await SeedAsync();
+
+        var result = await HistorianEndpoints.GetResultsAsync(
+            machine: "AOI-01", from: now.AddDays(-6).ToString("O"), to: now.AddDays(-1).ToString("O"),
+            serial: null, verdict: null, kind: null, limit: -1, offset: null, store, CancellationToken.None);
+
+        var page = ExpectOk<HistorianResultsPageDto>(result);
+
+        // Two AOI-01 rows exist in the window (r1/r2) — SQLite would return BOTH for a raw negative
+        // LIMIT (its "no limit" sentinel). The clamp must cap the returned page at 1 row.
+        Assert.Equal(1, page.Limit);
+        Assert.Single(page.Items);
+        Assert.Equal(2, page.Total); // full match count is unaffected by the limit clamp
+    }
+
+    [Fact]
+    public async Task Results_with_a_huge_limit_is_clamped_to_1000()
+    {
+        var (store, now, _, _, _, _) = await SeedAsync();
+
+        var result = await HistorianEndpoints.GetResultsAsync(
+            machine: "AOI-01", from: now.AddDays(-6).ToString("O"), to: now.AddDays(-1).ToString("O"),
+            serial: null, verdict: null, kind: null, limit: 100_000, offset: null, store, CancellationToken.None);
+
+        var page = ExpectOk<HistorianResultsPageDto>(result);
+
+        Assert.Equal(1000, page.Limit);
+    }
+
+    [Fact]
+    public async Task Results_with_a_negative_offset_is_clamped_to_0()
+    {
+        var (store, now, _, _, _, _) = await SeedAsync();
+
+        var result = await HistorianEndpoints.GetResultsAsync(
+            machine: "AOI-01", from: now.AddDays(-6).ToString("O"), to: now.AddDays(-1).ToString("O"),
+            serial: null, verdict: null, kind: null, limit: null, offset: -5, store, CancellationToken.None);
+
+        var page = ExpectOk<HistorianResultsPageDto>(result);
+
+        Assert.Equal(0, page.Offset);
+        Assert.Equal(2, page.Items.Count);
+    }
+
     [Fact]
     public async Task Results_with_an_unparseable_from_date_returns_400()
     {
