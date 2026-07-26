@@ -502,8 +502,18 @@ async function synthesize(input: RunRcaInput, lang: ToolLang, ev: EvidenceBundle
       `create_maintenance_workorder.\n` +
       `Return up to ${MAX_HYPOTHESES} hypotheses ranked by confidence (0..1, descending).`;
 
+    // Review fix (doc69 G2-5a, Wave 1 W1-4a) — pass the REAL assembled prompt (sys+userPrompt,
+    // the exact text actually sent to generateJSON below) as `text` instead of just the
+    // defect-type placeholder, so the AI safety layer redacts (and the LLM audit trail
+    // hashes) what was ACTUALLY sent to the model. routeInference's `safeText` still isn't
+    // consumed by generateJSON's `systemPrompt`/`prompt` args below (unchanged from before
+    // this fix — the callback keeps using `sys`/`userPrompt` directly, matching how this
+    // call already worked pre-fix), so decision.modelId/maxTokens/temperature/contextSize
+    // remain byte-identical (classifyDifficulty ignores `text` entirely for task "rca" — see
+    // aiModelRouter.ts) — only the SAFETY/AUDIT layer's view of the prompt changes.
+    const fullPrompt = `${sys}\n\n${userPrompt}`;
     const { result } = await routeInference<{ hypotheses?: RawHypothesis[] }>(
-      { task: "rca", text: input.defectType ?? "rca" },
+      { task: "rca", text: fullPrompt },
       async (decision) => {
         const out = await generateJSON<{ hypotheses?: RawHypothesis[] }>(
           RCA_JSON_SCHEMA,
@@ -518,6 +528,12 @@ async function synthesize(input: RunRcaInput, lang: ToolLang, ev: EvidenceBundle
         );
         return { result: out.data, tokensIn: out.tokensPrompt, tokensOut: out.tokensGenerated };
       },
+      // Review fix — capture the RESPONSE for the audit trail's responseSha256 (previously
+      // always null for RCA). routeInference redacts (sanitizeOutput) whatever this returns
+      // before hashing, so a secret the model might echo back never enters the stored hash
+      // preimage unredacted. Fail-safe: if this throws, routeInference catches it and just
+      // leaves responseSha256 null — never breaks the real hypotheses returned below.
+      { getResponseText: (r) => JSON.stringify(r?.hypotheses ?? r ?? null) },
     );
     return Array.isArray(result?.hypotheses) ? result.hypotheses : [];
   } catch (err) {

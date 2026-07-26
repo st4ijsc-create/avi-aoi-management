@@ -811,16 +811,42 @@ export async function planInference(req: GatewayRequest): Promise<GatewayPlan> {
  * model prompt so the AI Safety layer's redaction reaches the model (may throw
  * {@link SafetyBlockedError} instead of {@link RateLimitError} when AI_SAFETY_BLOCK_HIGH_RISK
  * is explicitly enabled and the request scores injection risk 'high' — default OFF).
+ *
+ * doc69 G2-5a review fix (Wave 1 W1-4a) — OPTIONAL third arg `opts.getResponseText`: an
+ * extractor that turns the generic `T` result into a string for the LLM audit trail's
+ * `responseSha256` (consulted ONLY for HIGH-RISK tasks — see `HIGH_RISK_TASKS` — the same
+ * way `o.responseText` already worked for direct `planInference().record()` callers). The
+ * extracted string is passed through `plan.sanitizeOutput()` — the SAME output-redaction
+ * every other gateway response goes through — before being handed to `record()`, so it is
+ * NEVER hashed/stored raw. Omitting `opts`/`getResponseText` is BYTE-IDENTICAL to before
+ * this option existed: `responseText` stays `undefined` and `responseSha256` stays `null`
+ * for that call's audit row (if any) — existing callers (aiIssueClassifier.ts,
+ * intentClassifier.ts, aiWatcher.ts, aiOrchestrationAdvisor.ts) are unaffected. Fail-safe:
+ * if the extractor throws, the error is caught + logged — it can NEVER break the real
+ * inference result returned to the caller, it only leaves `responseSha256` null for that call.
  */
 export async function routeInference<T>(
   req: GatewayRequest,
   exec: (decision: RouteDecision, abVariant: "A" | "B" | null, safeText: string) => Promise<{ result: T; tokensIn?: number; tokensOut?: number }>,
+  opts?: { getResponseText?: (result: T) => string | null | undefined },
 ): Promise<{ result: T; decision: RouteDecision; abVariant: "A" | "B" | null }> {
   const plan = await planInference(req); // may throw RateLimitError | SafetyBlockedError | QuotaExceededError | LicenseGateError
   const start = Date.now();
   try {
     const { result, tokensIn, tokensOut } = await exec(plan.decision, plan.abVariant, plan.safeText);
-    plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - start, outcome: "ok" });
+    let responseText: string | undefined;
+    if (opts?.getResponseText) {
+      try {
+        const raw = opts.getResponseText(result);
+        if (raw != null) responseText = plan.sanitizeOutput(raw);
+      } catch (err) {
+        console.warn(
+          "[aiGateway] routeInference getResponseText extractor failed (responseSha256 stays null, real result unaffected):",
+          (err as Error)?.message,
+        );
+      }
+    }
+    plan.record({ tokensIn, tokensOut, latencyMs: Date.now() - start, outcome: "ok", responseText });
     return { result, decision: plan.decision, abVariant: plan.abVariant };
   } catch (err) {
     plan.record({ latencyMs: Date.now() - start, outcome: "error" });

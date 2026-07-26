@@ -5763,6 +5763,14 @@ async function startServer() {
     import("../services/aiAutoProposer")
       .then((m) => m.stopAutoProposer())
       .catch(() => {});
+    // doc69 G2-5a review fix (Wave 1 W1-4b) — drain the LLM audit buffer (up to
+    // AI_LLM_AUDIT_FLUSH_MS/~5s of high-risk rca/report/vision audit rows) before the
+    // process exits below; its own module-local `beforeExit` hook never fires on this path
+    // since we explicitly process.exit() (see aiLlmAudit.ts's SHUTDOWN doc comment).
+    // Best-effort/fire-and-forget like every other stop-call above; flushLlmAudit() never throws.
+    import("../services/ai/aiLlmAudit")
+      .then((m) => m.flushLlmAudit())
+      .catch(() => {});
     server.close(() => {
       logger.info("Server closed");
       process.exit(0);

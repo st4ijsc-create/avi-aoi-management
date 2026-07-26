@@ -29,6 +29,24 @@
  * until an operator with the `aoi` role runs it — until then this module silently no-ops).
  * An audit failure must NEVER affect the AI answer.
  *
+ * SHUTDOWN (review fix, doc69 G2-5a Wave 1 W1-4b): the timer above is unref'd, so up to
+ * `AI_LLM_AUDIT_FLUSH_MS` (~5s) of buffered rows are lost if the process exits before the
+ * next tick. `ensureLlmAuditShutdownFlush()` registers a `beforeExit` hook (lazily, on the
+ * first `recordLlmAudit` call — same trigger point as `ensureFlushTimer`) that drains the
+ * buffer one more time. Mirrors the SAME idiom already used by `sensorIngestService.ts`
+ * (`ensureSensorShutdownFlush`), `telemetryBus.ts` (`ensureShutdownFlush`) and
+ * `robot/robotIngest.ts` (`ensureRobotShutdownFlush`) for their own buffered inserts:
+ * `beforeExit` ONLY — deliberately NOT a `process.on("SIGTERM"/"SIGINT")` listener here,
+ * since a signal listener overrides Node's default terminate behaviour and could hang the
+ * process on Ctrl-C/kill (see telemetryBus.ts's doc comment). Per that same comment's
+ * guidance ("operators wanting a guaranteed SIGTERM flush should call
+ * flushTelemetryBuffer() from their existing shutdown hook"), `server/_core/index.ts`'s
+ * `gracefulShutdown()` ALSO calls `flushLlmAudit()` directly (best-effort, fire-and-forget,
+ * alongside its many other `stopXyz()` calls) — that is the path that actually matters in
+ * production, since it explicitly `process.exit()`s and would otherwise never emit
+ * `beforeExit` at all. Idempotent + fail-safe: registered at most once; `flushLlmAudit()`
+ * already never throws, so a shutdown-triggered flush error can never crash the process.
+ *
  * The ENABLED/DISABLED flag (`AI_LLM_AUDIT_ENABLED`) and the "which tasks count as
  * high-risk" decision are both the CALLER's responsibility (`aiGateway.ts`) — same division
  * of responsibility as `aiGatewayQuota.checkQuota`. This module always does the work when
@@ -100,6 +118,34 @@ function ensureFlushTimer(): void {
   if (typeof flushTimer.unref === "function") flushTimer.unref();
 }
 
+// ─── Crash-safe shutdown flush (review fix, doc69 G2-5a Wave 1 W1-4b) ──────────────────────
+// See the module doc comment's "SHUTDOWN" paragraph for the full rationale/idiom reference.
+//
+// The "wired" flag lives on `process` itself (via a well-known Symbol.for key), NOT as a
+// plain module-local variable: `recordLlmAudit` — unlike the sibling flag-gated services
+// (sensor/robot/telemetry batching, all opt-in/OFF by default) — runs on EVERY high-risk
+// (rca/report/vision) call, unconditionally. A module-local flag would re-arm on every
+// `vi.resetModules()` in tests (a new module instance ⇒ a fresh `false`), piling up one
+// stray `beforeExit` listener on the ONE real shared `process` object per test file/module
+// reload and tripping Node's MaxListenersExceededWarning across the wider test suite. Keying
+// off `process` instead means at most ONE listener is ever registered per OS process — exactly
+// once in production (modules load once) and, in tests, reset explicitly between cases (see
+// aiLlmAudit.test.ts's `afterEach`) so each test can still exercise the wiring deterministically.
+const SHUTDOWN_FLUSH_MARKER = Symbol.for("st4i.aiLlmAudit.beforeExitFlushWired");
+
+function ensureLlmAuditShutdownFlush(): void {
+  try {
+    const proc = process as unknown as Record<symbol, boolean>;
+    if (proc[SHUTDOWN_FLUSH_MARKER]) return;
+    proc[SHUTDOWN_FLUSH_MARKER] = true;
+    process.on("beforeExit", () => {
+      void flushLlmAudit();
+    });
+  } catch {
+    // no process (unlikely) → best-effort only
+  }
+}
+
 /**
  * Hash + enqueue one audit row. SYNCHRONOUS and cheap (no I/O) — safe to call unconditionally
  * from the hot path (`aiGateway.planInference`'s `record()`/blocked-throw sites). Fail-safe:
@@ -126,8 +172,18 @@ export function recordLlmAudit(entry: LlmAuditEntry): void {
       createdAt: new Date(),
     };
     buffer.push(row);
-    if (buffer.length > BUFFER_MAX) buffer.splice(0, buffer.length - BUFFER_MAX);
+    if (buffer.length > BUFFER_MAX) {
+      const dropped = buffer.length - BUFFER_MAX;
+      buffer.splice(0, dropped);
+      // Minor review fix — operator visibility: this only happens if flushes have been
+      // stalling for a while (DB down + high-risk traffic keeps flowing); the rows are
+      // oldest-first dropped, same trim strategy as before, just now logged.
+      console.warn(
+        `[aiLlmAudit] buffer overflow — dropped ${dropped} oldest audit row(s) (BUFFER_MAX=${BUFFER_MAX}). Flushes may be failing/stalled; check DB connectivity.`,
+      );
+    }
     ensureFlushTimer();
+    ensureLlmAuditShutdownFlush();
   } catch (err) {
     console.warn("[aiLlmAudit] recordLlmAudit failed (dropped, fail-safe):", (err as Error)?.message);
   }
