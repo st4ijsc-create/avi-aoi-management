@@ -11013,6 +11013,7 @@
     }
   },
   "aiChat": {
+    "openScreen": "Mở màn hình",
     "welcomeTitle": "Trợ Lý AI",
     "welcomeDesc": "Đặt câu hỏi về dữ liệu kiểm tra, xu hướng chất lượng và phân tích lỗi.",
     "newChat": "Chat Mới",

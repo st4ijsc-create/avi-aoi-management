@@ -10813,6 +10813,7 @@
     }
   },
   "aiChat": {
+    "openScreen": "打开页面",
     "welcomeTitle": "AI助手",
     "welcomeDesc": "询问有关检测数据、质量趋势和缺陷分析的问题。",
     "newChat": "新聊天",

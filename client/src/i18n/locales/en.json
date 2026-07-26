@@ -11030,6 +11030,7 @@
     }
   },
   "aiChat": {
+    "openScreen": "Open screen",
     "welcomeTitle": "AI Assistant",
     "welcomeDesc": "Ask questions about inspection data, quality trends, and defect analysis.",
     "newChat": "New Chat",
