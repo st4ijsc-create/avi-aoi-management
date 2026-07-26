@@ -209,14 +209,25 @@ describe("evaluateAutonomy — AND-chain (table-driven)", () => {
       expect.objectContaining({ tool: "eligible_tool", actionId: "a1", args: { x: 5 }, lang: "vi" }),
     );
   });
+
+  // ── D2 review Fix 2 — fail CLOSED, not fail-throw ────────────────────────────
+  it("a throw from the contract check (evaluateContractForAutonomy) degrades to allowed:false/AUTONOMY_CHECK_ERROR — does NOT reject", async () => {
+    evaluateContractForAutonomy.mockRejectedValue(new Error("boom — unexpected contract-check crash"));
+    await expect(evaluateAutonomy(greenAction(), ctx())).resolves.toEqual({
+      allowed: false,
+      reason: AUTONOMY_REASONS.AUTONOMY_CHECK_ERROR,
+    });
+  });
 });
 
 describe("AUTONOMY_INELIGIBLE — hard-coded denylist coverage", () => {
-  it("covers every machine-actuation / program-file / interlock / setpoint write-tool type", () => {
+  it("covers every machine-actuation / vision-disposition / program-file / interlock / setpoint write-tool type", () => {
     const mustBeIneligible = [
       "machine_start", "machine_stop", "machine_pause", "machine_reset",
       "select_recipe", "download_job", "set_machine_param", "acknowledge_machine_alarm",
       "reject_divert", "spi_printer_offset",
+      // D2 review Fix 1 — found by a FULL server-tree scan (outside aiLocalTools/writeHandlers*).
+      "propose_defect_from_vision",
       "write_project_file",
       "propose_interlock_rule",
       "adjust_ng_threshold", "create_ng_threshold", "configure_inspection_param",
@@ -231,6 +242,19 @@ describe("AUTONOMY_INELIGIBLE — hard-coded denylist coverage", () => {
   it("does NOT blanket-ban every write tool (low-risk record/ack/analysis tools stay eligible-by-config)", () => {
     for (const t of ["acknowledge_alert", "acknowledge_predictive_alert", "resolve_predictive_alert", "create_maintenance_workorder", "run_rca_analysis", "request_threshold_review"]) {
       expect(AUTONOMY_INELIGIBLE.has(t), `expected "${t}" to remain eligible-by-config`).toBe(false);
+    }
+  });
+
+  // ── D2 review Fix 1 — denylist beats allowlist, specifically for the vision
+  // disposition tool the original directory-scoped enumeration missed ────────────
+  it("propose_defect_from_vision (+ other hard-denylisted tools) return allowed:false EVEN IF an operator misconfigures them into the allowlist", async () => {
+    for (const t of ["propose_defect_from_vision", "write_project_file", "propose_interlock_rule"]) {
+      process.env.AI_AUTONOMY_ALLOWLIST = t;
+      const res = await evaluateAutonomy(greenAction({ type: t }), ctx({ tool: t }));
+      expect(res, `expected "${t}" to stay ineligible despite being allowlisted`).toEqual({
+        allowed: false,
+        reason: AUTONOMY_REASONS.TYPE_INELIGIBLE,
+      });
     }
   });
 });

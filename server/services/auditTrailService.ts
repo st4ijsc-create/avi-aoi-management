@@ -176,6 +176,11 @@ export const AUDIT_ACTIONS = {
   AI_ACTION_EXECUTED: "ai_action_executed",
   AI_ACTION_DENIED: "ai_action_denied",
   AI_ACTION_CANCELLED: "ai_action_cancelled",
+  // D2 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy DECISION, audited as a separate
+  // lightweight follow-up entry AFTER the PROPOSED row (and after any CONFIRMED/
+  // EXECUTED/DENIED rows an auto-confirm attempt wrote), so it never distorts the
+  // causal PROPOSED → CONFIRMED → EXECUTED ordering. See aiCopilotActions.ts:proposeAction.
+  AI_AUTONOMY_DECISION: "ai_autonomy_decision",
 
   // Interlock auto-block (GĐ F5b) — a DETERMINISTIC, human-approved interlock
   // rule auto-fired a block/stop/reduce command down to the machine. NOT an AI

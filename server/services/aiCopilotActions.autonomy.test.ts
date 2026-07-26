@@ -114,6 +114,7 @@ vi.mock("./auditTrailService", () => ({
     AI_ACTION_EXECUTED: "ai_action_executed",
     AI_ACTION_DENIED: "ai_action_denied",
     AI_ACTION_CANCELLED: "ai_action_cancelled",
+    AI_AUTONOMY_DECISION: "ai_autonomy_decision",
   },
   ENTITY_TYPES: { AI_ACTION: "ai_action" },
   createAuditContext: () => ({ userId: 1, source: "web" }),
@@ -227,12 +228,39 @@ describe("D2 wire — master ON + allowlisted + guardrail PASS ⇒ auto-executed
       expect.objectContaining({ autoConfirmed: true, autonomyAttempt: true, autonomyReason: "OK", confirmedBy: "autonomy" }),
     );
 
-    // The "proposed" audit row also carries the autonomy decision (traceable even
-    // when it succeeds) since the master flag is ON.
+    // D2 review Fix 3 — the autonomy DECISION is now audited as a SEPARATE lightweight
+    // follow-up entry (AI_AUTONOMY_DECISION), not folded into the PROPOSED row's
+    // metadata (that would have entangled the PROPOSED row with the confirm outcome).
+    // Traceable even when it succeeds, since the master flag is ON.
+    const decisionCall = logCrudOperation.mock.calls.find(
+      ([, entry]: [unknown, any]) => entry.action === "ai_autonomy_decision",
+    );
+    expect(decisionCall).toBeTruthy();
+    expect(decisionCall![1].details.metadata.autonomy).toEqual({ allowed: true, reason: "OK", executed: true });
+
+    // The PROPOSED row itself carries NO autonomy metadata (it was written BEFORE the
+    // decision was made — see the order test below).
     const proposedCall = logCrudOperation.mock.calls.find(
       ([, entry]: [unknown, any]) => entry.action === "ai_action_proposed",
     );
-    expect(proposedCall![1].details.metadata.autonomy).toEqual({ allowed: true, reason: "OK", executed: true });
+    expect(proposedCall![1].details.metadata.autonomy).toBeUndefined();
+  });
+
+  it("audit ORDER: PROPOSED is emitted before CONFIRMED/EXECUTED for an auto-confirmed action (D2 review Fix 3)", async () => {
+    await proposeAction(tool(), { widgetId: 5 }, proposeCtx(), inBandContract);
+
+    const order = logCrudOperation.mock.calls.map(([, entry]: [unknown, any]) => entry.action);
+    const proposedIdx = order.indexOf("ai_action_proposed");
+    const confirmedIdx = order.indexOf("ai_action_confirmed");
+    const executedIdx = order.indexOf("ai_action_executed");
+    const decisionIdx = order.indexOf("ai_autonomy_decision");
+
+    expect(proposedIdx).toBeGreaterThanOrEqual(0);
+    expect(confirmedIdx).toBeGreaterThan(proposedIdx);
+    expect(executedIdx).toBeGreaterThan(confirmedIdx);
+    // The lightweight decision follow-up comes last (after the real confirm/execute
+    // audit trail it's summarizing), never before or between PROPOSED/CONFIRMED/EXECUTED.
+    expect(decisionIdx).toBeGreaterThan(executedIdx);
   });
 
   it("RBAC re-check failure at confirm-time is STILL enforced — NOT auto-executed", async () => {
@@ -246,6 +274,27 @@ describe("D2 wire — master ON + allowlisted + guardrail PASS ⇒ auto-executed
     expect(res.executionResult?.status).toBe("denied");
     expect(executeSpy).not.toHaveBeenCalled();
     expect(pendingStore.get(res.pendingAction!.actionId)!.status).toBe("denied");
+  });
+
+  it("D2 review Fix 2 — an unexpected THROW during the auto-confirm attempt (not just a denial) never turns proposeAction into an error; the normal `proposed` result is still returned", async () => {
+    // propose-time RBAC gate passes; the confirm-time RBAC re-check (inside
+    // confirmAction, invoked by the auto-confirm attempt) THROWS instead of resolving
+    // false — an unexpected crash, not a normal deny.
+    checkPermission.mockResolvedValueOnce(true).mockImplementationOnce(() => {
+      throw new Error("boom — unexpected RBAC re-check crash");
+    });
+
+    const res = await proposeAction(tool(), { widgetId: 5 }, proposeCtx(), inBandContract);
+
+    // proposeAction() resolved normally (did not reject) with the standard success
+    // shape — the row inserted before the autonomy attempt (Fix 3's reordering) is
+    // still what's returned.
+    expect(res.ok).toBe(true);
+    expect(res.pendingAction).toBeTruthy();
+    expect(res.pendingAction!.tool).toBe(TOOL_NAME);
+    // The autonomy attempt blew up mid-flight — no successful auto-confirm to report.
+    expect(res.autoConfirmed).toBeFalsy();
+    expect(executeSpy).not.toHaveBeenCalled();
   });
 
   it("guardrail FAIL (value outside band) ⇒ NOT auto-confirmed, action left `proposed` (HITL fallback)", async () => {

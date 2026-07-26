@@ -35,7 +35,13 @@ import {
 } from "./auditTrailService";
 // doc 69 Giai đoạn 4/Wave 3 D2 — bounded-autonomy policy (master flag OFF default;
 // see server/services/ai/autonomyPolicy.ts for the full predicate + kill-switch).
-import { evaluateAutonomy, isAutonomyEnabled, recordAutonomousExecution } from "./ai/autonomyPolicy";
+import {
+  evaluateAutonomy,
+  isAutonomyEnabled,
+  recordAutonomousExecution,
+  AUTONOMY_REASONS,
+  type AutonomyDecision,
+} from "./ai/autonomyPolicy";
 
 // TTL for a proposed action before it expires (5 minutes — Mục 2).
 const PENDING_TTL_MS = 5 * 60 * 1000;
@@ -266,31 +272,13 @@ export async function proposeAction(
     expiresAt,
   });
 
-  // ── D2 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy: may this proposal skip ONLY
-  // the human wait? Master flag OFF (default) ⇒ evaluateAutonomy short-circuits
-  // immediately (no DB/contract work at all) and everything below is BYTE-IDENTICAL
-  // to the pre-D2 flow. When allowed, the confirmation is driven through the SAME
-  // confirmAction() used by a human click — RBAC re-check, guardrail enforcement,
-  // idempotency and args-from-DB all still run; autonomy supplies only the token
-  // (== the row id it just created) instead of a human doing so.
-  const autonomyDecision = await evaluateAutonomy(
-    { type: tool.name, idempotencyKey, contract: contract ?? null, args },
-    { user: ctx.user, tool: tool.name, actionId, lang: ctx.lang, req: ctx.req },
-  );
-  let autoConfirmResult: ConfirmResult | undefined;
-  if (autonomyDecision.allowed) {
-    autoConfirmResult = await confirmAction(actionId, actionId, ctx.user, ctx.lang, ctx.req, {}, {
-      reason: autonomyDecision.reason,
-    });
-    if (autoConfirmResult.status === "executed") {
-      recordAutonomousExecution(ctx.user.id);
-    }
-  }
-
-  // Audit: proposed (+ the autonomy decision — only recorded when the master flag is
-  // ON, so an auditor can see WHY an eligible-looking action did/did not auto-run,
-  // without adding noise to the overwhelming majority of deployments where autonomy
-  // is globally off).
+  // ── FIX 3 (D2 review) — Audit: the PROPOSED row is written FIRST, before the D2
+  // bounded-autonomy attempt below, so the audit trail's causal order is always
+  // PROPOSED → CONFIRMED → EXECUTED even for an auto-confirmed action — confirmAction(),
+  // called below when autonomy allows it, writes its own CONFIRMED/EXECUTED/DENIED rows,
+  // which must never precede this one. The autonomy DECISION itself (allowed/reason/
+  // executed) is audited SEPARATELY as a lightweight follow-up entry AFTER the decision
+  // is made (see below) — it must never block on, or be entangled with, this row.
   await logCrudOperation(buildAuditCtx(ctx.user, ctx.req), {
     action: AUDIT_ACTIONS.AI_ACTION_PROPOSED,
     entityType: ENTITY_TYPES.AI_ACTION,
@@ -304,19 +292,77 @@ export async function proposeAction(
         requiredPermission: perm,
         args: sanitizeArgs(args),
         preview: { entityType: preview.entityType, entityId: preview.entityId, warnings: preview.warnings },
-        ...(isAutonomyEnabled()
-          ? {
-              autonomy: {
-                allowed: autonomyDecision.allowed,
-                reason: autonomyDecision.reason,
-                executed: autoConfirmResult?.status === "executed",
-              },
-            }
-          : {}),
       },
     },
     status: "success",
   });
+
+  // ── D2 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy: may this proposal skip ONLY
+  // the human wait? Master flag OFF (default) ⇒ evaluateAutonomy short-circuits
+  // immediately (no DB/contract work at all) and everything below is BYTE-IDENTICAL
+  // to the pre-D2 flow. When allowed, the confirmation is driven through the SAME
+  // confirmAction() used by a human click — RBAC re-check, guardrail enforcement,
+  // idempotency and args-from-DB all still run; autonomy supplies only the token
+  // (== the row id it just created) instead of a human doing so.
+  //
+  // FIX 2 (D2 review) — belt-and-suspenders: evaluateAutonomy() itself fails closed and
+  // never throws (see autonomyPolicy.ts), but this WHOLE attempt is additionally wrapped
+  // here so that if confirmAction() (or anything else in this block) throws unexpectedly,
+  // the exception can never escape proposeAction() — a successful propose must never turn
+  // into a 500 just because the autonomy attempt blew up. The `proposed` row above already
+  // exists either way; on any error here the action is simply left `proposed`, exactly as
+  // if autonomy had declined normally.
+  let autonomyDecision: AutonomyDecision = { allowed: false, reason: AUTONOMY_REASONS.AUTONOMY_CHECK_ERROR };
+  let autoConfirmResult: ConfirmResult | undefined;
+  try {
+    autonomyDecision = await evaluateAutonomy(
+      { type: tool.name, idempotencyKey, contract: contract ?? null, args },
+      { user: ctx.user, tool: tool.name, actionId, lang: ctx.lang, req: ctx.req },
+    );
+    if (autonomyDecision.allowed) {
+      autoConfirmResult = await confirmAction(actionId, actionId, ctx.user, ctx.lang, ctx.req, {}, {
+        reason: autonomyDecision.reason,
+      });
+      if (autoConfirmResult.status === "executed") {
+        recordAutonomousExecution(ctx.user.id);
+      }
+    }
+  } catch {
+    autonomyDecision = { allowed: false, reason: AUTONOMY_REASONS.AUTONOMY_CHECK_ERROR };
+    autoConfirmResult = undefined;
+  }
+
+  // Audit: the autonomy DECISION as a separate, lightweight follow-up entry — only
+  // recorded when the master flag is ON, so an auditor can see WHY an eligible-looking
+  // action did/did not auto-run, without adding noise to the overwhelming majority of
+  // deployments where autonomy is globally off. Deliberately AFTER the PROPOSED row (and
+  // after any CONFIRMED/EXECUTED/DENIED rows confirmAction() wrote above) — never
+  // renumbers or blocks the PROPOSED row's causal position — and best-effort (a logging
+  // failure here must not turn a successful propose into an error).
+  if (isAutonomyEnabled()) {
+    try {
+      await logCrudOperation(buildAuditCtx(ctx.user, ctx.req), {
+        action: AUDIT_ACTIONS.AI_AUTONOMY_DECISION,
+        entityType: ENTITY_TYPES.AI_ACTION,
+        entityName: tool.name,
+        details: {
+          operation: "AI_AUTONOMY_DECISION",
+          metadata: {
+            actionId,
+            tool: tool.name,
+            autonomy: {
+              allowed: autonomyDecision.allowed,
+              reason: autonomyDecision.reason,
+              executed: autoConfirmResult?.status === "executed",
+            },
+          },
+        },
+        status: "success",
+      });
+    } catch {
+      /* best-effort — never let a follow-up audit failure break propose's success return */
+    }
+  }
 
   return {
     ok: true,

@@ -34,6 +34,14 @@
  * as NOT tripped (steady-state default). A genuine read failure (DB unreachable) fails CLOSED
  * (treated as tripped) — the conservative choice for an unexpected error, distinct from the
  * expected "never configured" empty state.
+ *
+ * FAIL-CLOSED, NOT FAIL-THROW (D2 review Fix 2): `evaluateAutonomy()` is a hard promise —
+ * it NEVER rejects. The whole AND-chain is wrapped in try/catch; any unexpected throw
+ * anywhere in it (steps 1-7, including the dynamic import in step 7) degrades the decision
+ * to `{allowed:false, reason:"AUTONOMY_CHECK_ERROR"}` instead of propagating. The caller
+ * (aiCopilotActions.ts:proposeAction) additionally wraps its own autonomy-attempt block so
+ * that even a throw from the auto-confirm call itself can never turn a successful propose
+ * into an error — the `proposed` row it already inserted is always returned.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { eq } from "drizzle-orm";
@@ -67,11 +75,32 @@ export function autonomyMaxPerHour(): number {
 }
 
 /**
- * Hard-coded, config-proof denylist (Mục "ineligible" — brief D2). These action `type`s
- * (== Tool.name, see aiLocalTools/toolRegistry.ts) mutate machine actuation, program/recipe
- * selection, or safety-critical setpoints/specs/limits/interlocks. They can NEVER be
- * auto-confirmed — not even if an operator mistakenly lists them in AI_AUTONOMY_ALLOWLIST.
- * Checked BEFORE the allowlist in evaluateAutonomy so it always wins.
+ * Hard-coded, config-proof denylist (Mục "ineligible" — brief D2).
+ *
+ * ENUMERATION BASIS (D2 review Fix 1): built from a FULL `server`-tree scan for every
+ * production `Tool` registration with `kind: "write"` — `grep -rn 'kind:\s*"write"'
+ * server/`, test files excluded — NOT just the `aiLocalTools/writeHandlers*`
+ * directories. The original pass scoped only to those directories and missed
+ * `propose_defect_from_vision` (registered in server/services/visionDefectProposal.ts,
+ * OUTSIDE aiLocalTools/writeHandlers*, wired from server/routers/aiVisionRouter.ts) —
+ * a real quality-disposition write tool that would otherwise have been allowlist-able.
+ * Re-run that grep and re-triage every new hit whenever a write tool is added anywhere
+ * in `server/`; this set is the safety BACKSTOP, so it must stay provably exhaustive,
+ * not just exhaustive over one directory.
+ *
+ * These action `type`s (== Tool.name, see aiLocalTools/toolRegistry.ts) mutate machine
+ * actuation, program/recipe selection, quality/defect DISPOSITIONS, or safety-critical
+ * setpoints/specs/limits/interlocks. They can NEVER be auto-confirmed — not even if an
+ * operator mistakenly lists them in AI_AUTONOMY_ALLOWLIST. Checked BEFORE the allowlist
+ * in evaluateAutonomy so it always wins. When in doubt about a new tool, DENY: the
+ * denylist is a backstop, so over-inclusion is safe and under-inclusion is the bug.
+ *
+ * The small set of write tools DELIBERATELY left eligible-by-config (not blanket-
+ * banned) — `acknowledge_alert`, `acknowledge_predictive_alert`,
+ * `resolve_predictive_alert`, `create_maintenance_workorder`, `run_rca_analysis`,
+ * `request_threshold_review` — change no machine parameter, no quality disposition,
+ * and no spec/limit; see server/services/aiLocalTools/writeHandlers/{alerts,
+ * maintenance,qualityAdvisory}.ts.
  */
 export const AUTONOMY_INELIGIBLE: ReadonlySet<string> = new Set<string>([
   // Direct machine actuation (physical motion/state change) — server/services/aiLocalTools/writeHandlers/machineControl.ts
@@ -86,6 +115,12 @@ export const AUTONOMY_INELIGIBLE: ReadonlySet<string> = new Set<string>([
   // Vision/SPI actuation — server/services/aiLocalTools/writeHandlers/visionControl.ts
   "reject_divert",
   "spi_printer_offset",
+  // Vision defect DISPOSITION — server/services/visionDefectProposal.ts (NOT under
+  // aiLocalTools/writeHandlers*; found by the full-tree scan, D2 review Fix 1). Attaches
+  // a defectCatalogId to an existing measurement result OR creates a brand-new NG
+  // result — i.e. it DECIDES what counts as NG/OK. Quality-consequential, not
+  // meaningfully reversible ⇒ must never auto-execute.
+  "propose_defect_from_vision",
   // PLC/robot program files — control logic, not data — server/services/aiLocalTools/writeHandlers/programmingFile.ts
   "write_project_file",
   // Safety interlock rules — server/services/aiLocalTools/writeHandlers/interlock.ts
@@ -114,6 +149,13 @@ export const AUTONOMY_REASONS = {
   RATE_CAP_EXCEEDED: "RATE_CAP_EXCEEDED",
   NO_ADVICE_CONTRACT: "NO_ADVICE_CONTRACT",
   HUMAN_APPROVAL_REQUIRED: "HUMAN_APPROVAL_REQUIRED",
+  /**
+   * D2 review Fix 2 — an unexpected throw anywhere in the AND-chain (a sub-check that
+   * was supposed to be fail-safe but wasn't, a dynamic import failing, etc.) degrades
+   * to this reason instead of rejecting evaluateAutonomy()'s Promise. Fails CLOSED:
+   * the caller falls back to HITL exactly as it would for any other declined reason.
+   */
+  AUTONOMY_CHECK_ERROR: "AUTONOMY_CHECK_ERROR",
 } as const;
 
 // ── Kill-switch (durable — DB row, read fresh every call) ────────────────────
@@ -230,9 +272,26 @@ export interface AutonomyDecision {
 
 /**
  * The bounded-autonomy predicate. See the module doc comment for the full AND-chain.
- * NEVER throws — every sub-check is fail-safe (falls back to `allowed:false`).
+ *
+ * NEVER throws — every sub-check is fail-safe (falls back to `allowed:false`), AND this
+ * public entry point wraps the whole chain in try/catch as a hard backstop (D2 review
+ * Fix 2): if anything downstream throws for an unforeseen reason (the dynamic import of
+ * aiCopilotActions failing, a sub-check that turns out not to be as fail-safe as
+ * documented, etc.), the decision degrades to `{allowed:false,
+ * reason:"AUTONOMY_CHECK_ERROR"}` — fail CLOSED, the caller falls back to HITL — instead
+ * of rejecting the returned Promise. This function must be safe to `await` unconditionally
+ * from proposeAction() without a try/catch of its own.
  */
 export async function evaluateAutonomy(action: AutonomyAction, ctx: AutonomyContext): Promise<AutonomyDecision> {
+  try {
+    return await evaluateAutonomyChain(action, ctx);
+  } catch {
+    return { allowed: false, reason: AUTONOMY_REASONS.AUTONOMY_CHECK_ERROR };
+  }
+}
+
+/** The actual AND-chain (see evaluateAutonomy's docstring for the fail-closed wrapper). */
+async function evaluateAutonomyChain(action: AutonomyAction, ctx: AutonomyContext): Promise<AutonomyDecision> {
   // 1. Master flag — cheapest, no I/O. OFF ⇒ zero behavior change vs. pre-D2.
   if (!isAutonomyEnabled()) {
     return { allowed: false, reason: AUTONOMY_REASONS.MASTER_DISABLED };
