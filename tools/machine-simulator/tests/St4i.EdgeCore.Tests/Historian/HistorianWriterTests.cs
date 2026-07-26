@@ -157,10 +157,10 @@ public sealed class HistorianWriterTests
         writer.Enqueue(NewRecord("D1"));
         writer.Enqueue(NewRecord("D2"));
 
-        // Let the (ungated) flush loop actually drain these before we tear down, so the dispose-time
-        // assertion below isn't racing the loop's very first channel read against cts.Cancel() — a race
-        // the brief explicitly calls out as acceptable to sidestep ("if timing makes strict drain-guarantee
-        // flaky, assert DisposeAsync completes without hanging and does not throw").
+        // Let the (ungated) flush loop actually drain these before we tear down. This is the simple/basic
+        // case; DisposeAsync_WithGatedStore_DrainsRecordsStillBufferedAtDisposeTime below is the one that
+        // actually forces the harder interleaving (records still sitting in the channel WHEN DisposeAsync is
+        // called), which is what previously regressed (fix round 1 — see task-6-report.md).
         await WaitUntilAsync(
             () => store.AppendedResultsSnapshot().Count(r => r.MachineCode is "D1" or "D2") == 2,
             "both records flushed before shutdown");
@@ -173,6 +173,106 @@ public sealed class HistorianWriterTests
         var recorded = store.AppendedResultsSnapshot();
         Assert.Contains(recorded, r => r.MachineCode == "D1");
         Assert.Contains(recorded, r => r.MachineCode == "D2");
+    }
+
+    /// <summary>
+    /// Fix round 1 (CRITICAL): the previous <c>TryComplete(); Cancel(); await flushLoop;</c> ordering could
+    /// silently abandon records that were still sitting in the channel (or mid-append) at the moment
+    /// <c>DisposeAsync</c> was called, because <c>WaitToReadAsync(ct)</c> prioritizes an already-cancelled
+    /// token over any buffered items. This test forces exactly that interleaving: the store's append is
+    /// gated (blocked) so records are still queued/in-flight WHEN <c>DisposeAsync</c> runs, then the gate is
+    /// released only AFTER dispose has started — proving the drain happens as part of shutdown, not before
+    /// it started or by accident.
+    /// </summary>
+    [Fact]
+    public async Task DisposeAsync_WithGatedStore_DrainsRecordsStillBufferedAtDisposeTime()
+    {
+        var store = new FakeHistorianStore();
+        store.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writer = new HistorianWriter(store);
+
+        for (var i = 1; i <= 5; i++)
+        {
+            writer.Enqueue(NewRecord("DRAIN", cycleCounter: i));
+        }
+
+        // Confirm the flush loop has already picked up the gated batch (and is blocked inside the store
+        // call) before we tear down — otherwise DisposeAsync could race an idle loop that hasn't read
+        // anything yet, which wouldn't prove anything about draining buffered/in-flight records.
+        await WaitUntilAsync(() => store.AppendAttempts >= 1, "the flush loop to be blocked on the gated append");
+
+        var disposeTask = writer.DisposeAsync().AsTask();
+
+        // Release only now — DisposeAsync is already in flight, so whatever it drains from here on is
+        // genuinely happening DURING shutdown, not before.
+        store.Gate.SetResult();
+
+        var winner = await Task.WhenAny(disposeTask, Task.Delay(PollTimeout));
+        Assert.Same(disposeTask, winner);
+        await disposeTask; // must not throw
+
+        Assert.Equal(5, store.AppendedResultsSnapshot().Count(r => r.MachineCode == "DRAIN"));
+    }
+
+    /// <summary>
+    /// Fix round 1 (Important): proves the bounded (5s) hard-stop fallback actually returns instead of
+    /// hanging forever when the store never releases the flush loop (simulating a genuinely hung store, not
+    /// merely a slow one). The fake's gate-wait forwards the flush loop's <c>CancellationToken</c>
+    /// (<c>gate.Task.WaitAsync(ct)</c>), mirroring how a real store would forward the token to its
+    /// underlying I/O — so once <c>DisposeAsync</c>'s 5s wait times out and it cancels, the loop's pending
+    /// append genuinely unblocks (via <see cref="OperationCanceledException"/>) instead of blocking forever
+    /// regardless of cancellation.
+    /// </summary>
+    [Fact]
+    public async Task DisposeAsync_WhenStoreIsPermanentlyHung_HardStopTripsAndReturnsWithinBoundedTime()
+    {
+        var store = new FakeHistorianStore();
+        store.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); // never released
+        var writer = new HistorianWriter(store);
+
+        writer.Enqueue(NewRecord("HUNG"));
+        await WaitUntilAsync(() => store.AppendAttempts >= 1, "the flush loop to be blocked inside the hung store call");
+
+        var sw = Stopwatch.StartNew();
+        var disposeTask = writer.DisposeAsync().AsTask();
+        var winner = await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(20)));
+        sw.Stop();
+
+        Assert.Same(disposeTask, winner); // returned well before our 20s outer safety bound — did not hang forever
+        await disposeTask; // must not throw despite the underlying hang + cancellation
+
+        // The internal drain-first wait is 5s before the hard-stop fallback kicks in, so this should land
+        // close to (a little over) 5s — comfortably inside a generous [4s, 15s) window that tolerates slow
+        // CI without silently passing for an unrelated reason (e.g. a 0ms return would indicate the gate
+        // somehow never blocked anything).
+        Assert.InRange(sw.Elapsed, TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(15));
+    }
+
+    /// <summary>Fix round 1 (MINOR, addressed): a call arriving after disposal must not touch the completed
+    /// channel or the disposed <see cref="CancellationTokenSource"/> — verified directly rather than relying
+    /// on incidental behavior (a disposed CTS's <c>.Token</c> getter throws <see cref="ObjectDisposedException"/>).</summary>
+    [Fact]
+    public async Task Enqueue_AfterDisposeAsync_IsDroppedWithoutThrowing()
+    {
+        var store = new FakeHistorianStore();
+        var writer = new HistorianWriter(store);
+        await writer.DisposeAsync();
+
+        var exception = Record.Exception(() => writer.Enqueue(NewRecord("POST-DISPOSE")));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task RecordRunEventFireAndForget_AfterDisposeAsync_ReturnsCompletedTaskWithoutThrowing()
+    {
+        var store = new FakeHistorianStore();
+        var writer = new HistorianWriter(store);
+        await writer.DisposeAsync();
+
+        var task = writer.RecordRunEventFireAndForget("Start");
+
+        Assert.True(task.IsCompletedSuccessfully);
     }
 
     /// <summary>
@@ -217,7 +317,11 @@ public sealed class HistorianWriterTests
 
             if (Gate is { } gate)
             {
-                await gate.Task;
+                // WaitAsync(ct), not a bare await: a real store forwards the token to its underlying I/O, so
+                // a "the store hung" test can prove HistorianWriter's cancellation hard-stop actually
+                // unblocks a well-behaved-but-stuck store instead of hanging forever on a store that ignores
+                // cancellation entirely (which no real IHistorianStore implementation should do).
+                await gate.Task.WaitAsync(ct);
             }
 
             var shouldThrow = false;

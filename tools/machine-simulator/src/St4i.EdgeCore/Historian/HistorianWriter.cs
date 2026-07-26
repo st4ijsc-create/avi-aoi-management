@@ -25,6 +25,7 @@ public sealed class HistorianWriter : IAsyncDisposable
     private readonly Channel<HistorianResultRecord> _channel;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _flushLoop;
+    private volatile bool _disposed;
 
     public HistorianWriter(
         IHistorianStore store,
@@ -47,9 +48,17 @@ public sealed class HistorianWriter : IAsyncDisposable
 
     /// <summary>Non-blocking, safe on the EdgePipeline commit thread: TryWrite only, never an await, never a
     /// throw. If the bounded channel is full/completed the record is dropped (oldest queued record, per the
-    /// channel's <see cref="BoundedChannelFullMode.DropOldest"/> policy) and <c>logWarning</c> is called.</summary>
+    /// channel's <see cref="BoundedChannelFullMode.DropOldest"/> policy) and <c>logWarning</c> is called. A
+    /// call arriving after <see cref="DisposeAsync"/> is likewise dropped (with its own message) rather than
+    /// touching the completed channel/disposed token.</summary>
     public void Enqueue(HistorianResultRecord record)
     {
+        if (_disposed)
+        {
+            _logWarning?.Invoke($"Historian writer already disposed — dropped record for {record.MachineCode}");
+            return;
+        }
+
         if (!_channel.Writer.TryWrite(record))
         {
             _logWarning?.Invoke($"Historian queue saturated — dropped oldest for {record.MachineCode}");
@@ -59,9 +68,17 @@ public sealed class HistorianWriter : IAsyncDisposable
     /// <summary>Rare human-triggered run events (Start/Stop/Estop/EstopReset). Fire-and-forget: wraps
     /// <see cref="IHistorianStore.AppendRunEventAsync"/> in an exception-swallowing <see cref="Task"/>.
     /// Returns the <see cref="Task"/> so callers may <c>_ = writer.RecordRunEventFireAndForget("Start");</c>
-    /// without awaiting, while still allowing a test (or a caller that cares) to observe completion.</summary>
+    /// without awaiting, while still allowing a test (or a caller that cares) to observe completion. A call
+    /// arriving after <see cref="DisposeAsync"/> is dropped up front instead of touching the disposed
+    /// <see cref="CancellationTokenSource"/>.</summary>
     public Task RecordRunEventFireAndForget(string eventType, string? note = null)
     {
+        if (_disposed)
+        {
+            _logWarning?.Invoke($"Historian writer already disposed — dropped run-event '{eventType}'");
+            return Task.CompletedTask;
+        }
+
         return Task.Run(async () =>
         {
             try
@@ -113,21 +130,36 @@ public sealed class HistorianWriter : IAsyncDisposable
         }
     }
 
-    /// <summary>Completes the channel writer (no more enqueues accepted), cancels the flush loop's token,
-    /// then awaits the loop so it can drain whatever it can before returning. Never hangs indefinitely and
-    /// never throws, even if the flush loop's last iteration faulted.</summary>
+    /// <summary>Completes the channel writer (no more enqueues accepted) and awaits the flush loop
+    /// DRAINING — deliberately does NOT cancel first: <c>WaitToReadAsync(ct)</c> prioritizes an
+    /// already-cancelled token over any buffered items, so cancelling before the loop finishes would abandon
+    /// still-queued records with no log, silently violating the "drains what it can" requirement. Because the
+    /// token stays live during a clean shutdown, a completed-but-still-populated channel yields every
+    /// remaining item to the loop (then <c>WaitToReadAsync</c> returns false and the loop exits normally),
+    /// and the final <c>AppendResultsAsync</c> batch is written in full. Cancellation is only used as a
+    /// bounded (5s) hard-stop if the store itself hangs — never throws, never hangs past that bound.</summary>
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
         _channel.Writer.TryComplete();
-        _cts.Cancel();
 
         try
         {
-            await _flushLoop;
+            await _flushLoop.WaitAsync(TimeSpan.FromSeconds(5));
         }
-        catch
+        catch (TimeoutException)
         {
-            // Best-effort shutdown — the flush loop already reports its own failures via logError.
+            // The store is hung (or otherwise never returning) — fall back to cancelling so the loop's
+            // in-flight AppendResultsAsync/WaitToReadAsync call can unwind instead of blocking forever.
+            _cts.Cancel();
+            try
+            {
+                await _flushLoop;
+            }
+            catch
+            {
+                // Best-effort shutdown — the flush loop already reports its own failures via logError.
+            }
         }
 
         _cts.Dispose();
