@@ -31,20 +31,30 @@ public sealed class WalFlushPump : IAsyncDisposable
 
     private readonly Func<LiveTransport?> _getLive;
     private readonly TimeSpan _interval;
+    private readonly WalOptions? _walOptions;
     private readonly Action<string>? _logInfo;
     private readonly Action<Exception, string>? _logError;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _loop;
     private volatile bool _disposed;
 
+    /// <param name="walOptions">WS-C-T5 — optional (defaults to <see langword="null"/> so every
+    /// pre-existing call site/test that constructs a <see cref="WalFlushPump"/> without one keeps
+    /// compiling and behaving byte-for-byte unchanged) size guardrail: when provided AND
+    /// <see cref="WalOptions.Enabled"/>, every tick also runs <see cref="WalMaintenance.TrimDirectory"/>
+    /// against it — see <see cref="RunLoopAsync"/>'s remarks for why this runs regardless of whether
+    /// <paramref name="getLive"/> returned a live transport this tick (the size cap applies to whatever
+    /// is sitting on disk, independent of the CURRENT transport mode).</param>
     public WalFlushPump(
         Func<LiveTransport?> getLive,
         TimeSpan? interval = null,
+        WalOptions? walOptions = null,
         Action<string>? logInfo = null,
         Action<Exception, string>? logError = null)
     {
         _getLive = getLive ?? throw new ArgumentNullException(nameof(getLive));
         _interval = interval ?? DefaultInterval;
+        _walOptions = walOptions;
         _logInfo = logInfo;
         _logError = logError;
 
@@ -75,13 +85,32 @@ public sealed class WalFlushPump : IAsyncDisposable
             try
             {
                 var live = _getLive();
-                if (live is null) continue; // Mode != Live this tick (or no LiveTransport yet) — skip cleanly.
-
-                var (sent, kept) = await live.FlushBacklogAsync(ct).ConfigureAwait(false);
-                if (sent > 0)
+                if (live is not null)
                 {
-                    _logInfo?.Invoke($"WAL drained {sent} buffered record(s), {kept} remaining");
-                    BacklogDrained?.Invoke(sent);
+                    var (sent, kept) = await live.FlushBacklogAsync(ct).ConfigureAwait(false);
+                    if (sent > 0)
+                    {
+                        _logInfo?.Invoke($"WAL drained {sent} buffered record(s), {kept} remaining");
+                        BacklogDrained?.Invoke(sent);
+                    }
+                }
+                // else: Mode != Live this tick (or no LiveTransport yet) — nothing to drain, but the
+                // size guardrail below still runs regardless (see its own remarks just below).
+
+                // WS-C-T5 — the size guardrail, invoked AFTER the drain attempt above (never before):
+                // draining first shrinks the file on its own, minimizing how much (if anything) is left
+                // for the trim to drop, and narrows WalMaintenance's own documented best-effort
+                // concurrent-access window (see its class doc) to the smallest slice of this tick.
+                // Deliberately NOT gated on `live is not null` — the on-disk size cap must hold regardless
+                // of THIS tick's transport mode (e.g. a backlog left over from a Live outage before a
+                // switch to Demo must still get trimmed, not grow forever just because Mode moved on).
+                if (_walOptions is { Enabled: true })
+                {
+                    var dropped = WalMaintenance.TrimDirectory(_walOptions);
+                    if (dropped > 0)
+                    {
+                        _logInfo?.Invoke($"WAL trimmed {dropped} oldest record(s) over MaxBytes");
+                    }
                 }
             }
             catch (OperationCanceledException)

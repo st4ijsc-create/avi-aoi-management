@@ -93,6 +93,11 @@ builder.Services.AddSingleton(sp =>
     var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("WalFlushPump");
     return new St4i.EdgeCore.Transport.WalFlushPump(
         getLive: () => coordinator.Mode == TransportMode.Live ? coordinator.Live : null,
+        // WS-C-T5 — same `wal` WalOptions instance the TransportCoordinator registration above already
+        // captures, so the pump's per-tick size-guardrail trim (WalMaintenance.TrimDirectory) enforces
+        // the SAME MaxBytes/Directory/Enabled knobs every RebuildLive-built LiveTransport resolves its
+        // queue file against.
+        walOptions: wal,
         logInfo: msg => logger.LogInformation("{WalFlushPumpMsg}", msg),
         logError: (ex, msg) => logger.LogError(ex, "{WalFlushPumpMsg}", msg));
 });

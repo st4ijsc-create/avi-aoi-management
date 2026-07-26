@@ -177,7 +177,11 @@ public partial class App : Application
         services.AddSingleton(sp =>
         {
             var coordinator = sp.GetRequiredService<TransportCoordinator>();
-            return new WalFlushPump(getLive: () => coordinator.Mode == TransportMode.Live ? coordinator.Live : null);
+            // WS-C-T5 — same `wal` WalOptions instance the TransportCoordinator registration above
+            // already captures, so the pump's per-tick size-guardrail trim (WalMaintenance.TrimDirectory)
+            // enforces the SAME MaxBytes/Directory/Enabled knobs every RebuildLive-built LiveTransport
+            // resolves its queue file against.
+            return new WalFlushPump(getLive: () => coordinator.Mode == TransportMode.Live ? coordinator.Live : null, walOptions: wal);
         });
 
         // Task 15 — fleet/dashboard. FleetService owns the pipeline; FleetViewModel/DashboardView are
