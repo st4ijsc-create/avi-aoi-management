@@ -72,8 +72,11 @@ public static class CredentialStore
     }
 
     /// <summary>Strips characters that aren't valid in a Windows filename so an arbitrary
-    /// <c>machineCode</c> can't escape the creds directory or collide with reserved names.</summary>
-    private static string SanitizeFileName(string machineCode)
+    /// <c>machineCode</c> can't escape the creds directory or collide with reserved names.
+    /// <c>internal</c> (not <c>private</c>) so other St4i.EdgeCore path-resolution code — e.g.
+    /// WS-C's <see cref="St4i.EdgeCore.Transport.WalOptions.ResolveQueueFile"/> — can reuse the exact
+    /// same sanitization instead of re-implementing it; behavior is unchanged.</summary>
+    internal static string SanitizeFileName(string machineCode)
     {
         var invalid = Path.GetInvalidFileNameChars();
         var sb = new StringBuilder(machineCode.Length);
