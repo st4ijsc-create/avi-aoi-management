@@ -70,12 +70,42 @@ builder.Services.AddCors(options =>
 // (exhibition build, Playwright test engine) working once default-deny is on everywhere else.
 var securityDir = SecurityDb.ResolveRoot();
 Directory.CreateDirectory(securityDir); // WS-C's Critical lesson: file I/O doesn't create parents.
+
+// WS-D final-security-review I-1(a) — lock down the security ROOT directory's ACL BEFORE anything (the
+// keys\ subdirectory below, security.db) is created inside it. %ProgramData%'s default ACL grants
+// Authenticated Users read (+ inheritance), which — combined with the DataProtection key ring living here
+// being plaintext XML by default — is exactly what let a local non-admin forge a role=Admin cookie (the
+// original I-1 finding). Restricting the PARENT to owner+SYSTEM+Administrators-only means every child
+// created after this call (keys\, security.db) inherits that restricted ACL instead. Best-effort by
+// design — see SecurityDirAcl.Apply's own doc comment for exactly what this does/why it can never crash
+// startup, and for the (documented, accepted) limitation that pre-existing children from an install that
+// predates this fix aren't retroactively re-ACL'd by this call alone. Also covers M-2: security.db's
+// PBKDF2 password hashes + hash-chained audit log live under this SAME root.
+SecurityDirAcl.Apply(securityDir, msg => Console.Error.WriteLine($"[startup] {msg}"));
+// No app.Logger yet this early (builder.Build() hasn't run) — Console.Error is the best available sink for
+// a warning that, by definition, must be visible even if this whole hardening step silently no-ops.
+
 var securityKeysDir = Path.Combine(securityDir, "keys");
 Directory.CreateDirectory(securityKeysDir);
 
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(securityKeysDir))
-    .SetApplicationName("St4i.EngineApi");
+    .SetApplicationName("St4i.EngineApi")
+    // WS-D final-security-review I-1(b) — DEFENSE-IN-DEPTH: encrypt the key ring at rest instead of
+    // leaving it plaintext XML on disk (CredentialStore already uses the same in-box DPAPI API for the
+    // mk_ device key, see its own doc comment). protectToLocalMachine: true (LocalMachine scope, not the
+    // CurrentUser scope CredentialStore uses) deliberately — CurrentUser DPAPI ties the encrypted keys to
+    // whichever single Windows account is running THIS process at the moment they're written; this host is
+    // meant to eventually run as a Windows Service (WS-F1), and a service's logon account can differ across
+    // machines/reinstalls (or get reconfigured) in a way an interactively-run desktop app's account
+    // normally doesn't — CurrentUser scope would silently invalidate every outstanding cookie (and force a
+    // fresh key-ring generation) the moment that happens. LocalMachine scope avoids that fragility (any
+    // process on THIS machine can decrypt, not just one specific account), which is an acceptable trade
+    // specifically BECAUSE SecurityDirAcl.Apply above already restricts local non-admin filesystem READ
+    // access to the key files in the first place — DPAPI here is a second, independent layer (protects the
+    // key material even if the ACL is ever misconfigured, bypassed, or the file is copied off by an admin
+    // process), not the only thing standing between a local non-admin and the key ring.
+    .ProtectKeysWithDpapi(protectToLocalMachine: true);
 
 builder.Services.AddSingleton<IUserStore>(_ => new SqliteUserStore(securityDir));
 

@@ -172,6 +172,39 @@ public sealed class AuthPipelineTests
     }
 
     [Fact]
+    public async Task Bootstrap_WithPasswordUnderMinLength_Gets400_AndDeploymentStaysUnbootstrapped()
+    {
+        // WS-D final-security-review M-1 — bootstrap used to only reject a null/blank password, unlike
+        // change-password/user.create which both already enforce an 8-char floor. This exercises the SAME
+        // floor now applied to the very first (most privileged) account a fresh deployment ever creates.
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+        using var client = factory.CreateClient();
+
+        using (var rejected = await client.PostAsJsonAsync(
+                   "/v1/auth/bootstrap",
+                   new { username = "short-pw-admin", password = "short1", displayName = (string?)null },
+                   JsonOptions))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        }
+
+        // The rejected attempt must not have consumed the one-shot bootstrap: bootstrap-status still
+        // reports needsBootstrap: true, and a SUBSEQUENT call with a compliant password succeeds (200, not
+        // 409 "already bootstrapped").
+        using (var status = await client.GetAsync("/v1/auth/bootstrap-status"))
+        {
+            var body = await status.Content.ReadFromJsonAsync<BootstrapStatusDto>(JsonOptions);
+            Assert.True(body!.NeedsBootstrap);
+        }
+
+        using var retry = await client.PostAsJsonAsync(
+            "/v1/auth/bootstrap",
+            new { username = "short-pw-admin", password = "LongEnough123!", displayName = (string?)null },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+    }
+
+    [Fact]
     public async Task Login_WithWrongPassword_Gets401_WithRightPassword_SignsIn_AndMeWorks()
     {
         await using var factory = await CreateFactoryAsync(demoEnabled: false);

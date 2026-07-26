@@ -50,9 +50,19 @@ public static class AuthEndpoints
 
         app.MapPost("/v1/auth/bootstrap", async (BootstrapRequestDto body, IUserStore userStore, HttpContext http, AuditRecorder recorder, CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password))
+            if (string.IsNullOrWhiteSpace(body.Username))
             {
                 return Results.BadRequest(new ApiErrorDto("username and password are required"));
+            }
+
+            // WS-D final-security-review M-1 — the FIRST Admin account minted on a fresh deployment used to
+            // only reject a null/blank password, unlike change-password/user.create which both already
+            // enforce MinPasswordLength (below) — meaning a one-character bootstrap password was previously
+            // accepted for the single most privileged account on the box. Reuses the SAME floor/constant the
+            // other two paths already established (see MinPasswordLength's own doc comment).
+            if (string.IsNullOrWhiteSpace(body.Password) || body.Password.Length < MinPasswordLength)
+            {
+                return Results.BadRequest(new ApiErrorDto($"password is required and must be at least {MinPasswordLength} characters."));
             }
 
             await BootstrapLock.WaitAsync(ct).ConfigureAwait(false);
@@ -178,9 +188,9 @@ public static class AuthEndpoints
             // (functionally unusable) empty password. A minimal length floor (8, matching the bootstrap/
             // demo-admin passwords already in use elsewhere in this file) is enough here — full password-
             // policy strength rules are out of this task's scope.
-            if (string.IsNullOrWhiteSpace(body.NewPassword) || body.NewPassword.Length < MinNewPasswordLength)
+            if (string.IsNullOrWhiteSpace(body.NewPassword) || body.NewPassword.Length < MinPasswordLength)
             {
-                return Results.BadRequest(new ApiErrorDto($"newPassword is required and must be at least {MinNewPasswordLength} characters."));
+                return Results.BadRequest(new ApiErrorDto($"newPassword is required and must be at least {MinPasswordLength} characters."));
             }
 
             var user = await userStore.GetByUsernameAsync(username, ct).ConfigureAwait(false);
@@ -209,10 +219,14 @@ public static class AuthEndpoints
         }).RequireAuthorization(Policies.Operator);
     }
 
-    /// <summary>D1-carried hardening minor #2's minimal length floor for <c>NewPassword</c> — see the
-    /// <c>change-password</c> handler's own comment for why this is deliberately simple (not a full
-    /// password-strength policy).</summary>
-    private const int MinNewPasswordLength = 8;
+    /// <summary>D1-carried hardening minor #2's minimal length floor — originally just <c>NewPassword</c>
+    /// (see the <c>change-password</c> handler's own comment for why this is deliberately simple, not a
+    /// full password-strength policy); WS-D final-security-review M-1 reuses the SAME constant for the
+    /// bootstrap handler's initial <c>Password</c>, so the very first (most privileged) account on a
+    /// deployment is held to the identical floor as every later password set/change. Matches
+    /// <c>UserEndpoints.MinPasswordLength</c>'s value (kept as a separate constant there — see that file's
+    /// own doc comment on why the two aren't shared across files).</summary>
+    private const int MinPasswordLength = 8;
 
     /// <summary>Builds the <see cref="ClaimsPrincipal"/> every sign-in path (bootstrap/login/demo
     /// auto-login) hands to <c>SignInAsync</c> — kept in one place so the claim SHAPE (which is also what
