@@ -1,3 +1,4 @@
+using System.Net.Http;
 using St4i.EdgeCore.Models;
 
 namespace St4i.EdgeCore.Transport;
@@ -19,6 +20,7 @@ public sealed class TransportCoordinator
     private readonly SwitchableTransport _switchable;
     private readonly DemoTransport _demo;
     private readonly WalOptions _walOptions;
+    private readonly HttpMessageHandler? _handler;
 
     private LiveTransport _live;
     private AutoTransport _auto;
@@ -30,13 +32,25 @@ public sealed class TransportCoordinator
     /// <see cref="RebuildLive"/>) keeps compiling and behaving byte-for-byte unchanged when omitted —
     /// defaults to <c>new WalOptions()</c> (WAL enabled, default root), never <c>null</c>, so
     /// <see cref="RebuildLive"/> never needs its own null-check.</param>
+    /// <param name="handler">WS-C-T2 fix round 1 — test-only seam: <see cref="LiveTransport.ForMachine"/>
+    /// already accepts an <see cref="HttpMessageHandler"/> so tests can fake the wire, but
+    /// <see cref="RebuildLive"/> had no way to forward one, forcing WAL tests to force a REAL retry-
+    /// exhaustion against an unreachable loopback port (slow — up to several seconds per send — and
+    /// OS/firewall-timing-dependent). Also OPTIONAL/TRAILING/defaults <c>null</c> so every pre-existing
+    /// call site is unaffected: <c>null</c> here means <see cref="RebuildLive"/> forwards <c>null</c> to
+    /// <see cref="LiveTransport.ForMachine"/> exactly like before this param existed, which itself falls
+    /// back to a real <see cref="System.Net.Http.HttpClientHandler"/> — production behavior is
+    /// byte-identical. When set, every <see cref="RebuildLive"/> call (for whatever machineCode/serverUrl)
+    /// reuses this SAME handler, which is exactly what a test wants: one fake wire for the whole
+    /// coordinator's lifetime.</param>
     public TransportCoordinator(
         SwitchableTransport switchable,
         DemoTransport demo,
         LiveTransport initialLive,
         AutoTransport initialAuto,
         TransportMode initialMode,
-        WalOptions? walOptions = null)
+        WalOptions? walOptions = null,
+        HttpMessageHandler? handler = null)
     {
         _switchable = switchable ?? throw new ArgumentNullException(nameof(switchable));
         _demo = demo ?? throw new ArgumentNullException(nameof(demo));
@@ -44,6 +58,7 @@ public sealed class TransportCoordinator
         _auto = initialAuto ?? throw new ArgumentNullException(nameof(initialAuto));
         _auto.FallbackChanged += OnFallbackChanged;
         _walOptions = walOptions ?? new WalOptions();
+        _handler = handler;
 
         Mode = initialMode;
         ApplyModeInternal(initialMode);
@@ -104,7 +119,7 @@ public sealed class TransportCoordinator
         // one — same multi-identity model CredentialStore already uses for mk_ keys. RebuildLive itself
         // does no file I/O at all; it only computes the path and hands it to LiveTransport.ForMachine.
         var queuePath = _walOptions.Enabled ? _walOptions.ResolveQueueFile(machineCode) : null;
-        var newLive = LiveTransport.ForMachine(serverUrl, mkKey ?? string.Empty, machineCode, queuePath, verifyTls);
+        var newLive = LiveTransport.ForMachine(serverUrl, mkKey ?? string.Empty, machineCode, queuePath, verifyTls, _handler);
         var newAuto = new AutoTransport(newLive, _demo);
 
         LiveTransport oldLive;
