@@ -1,4 +1,7 @@
 import { generateText, isGgufAvailable, type GgufGenerateResult } from "./aiGgufEngine";
+// doc69 Giai đoạn 4/Wave 3 D4 — specialist→action HITL bridge allow-list (see the
+// block near the end of this file for the full rationale).
+import { RCA_SUGGESTED_ACTION_TOOLS, ensureRcaToolsRegistered } from "./ai/rcaActionSuggester";
 
 export type SpecialistAgentId =
   | "data-analyst"
@@ -473,3 +476,41 @@ export function listModuleAuditPresets(): ModuleAuditPreset[] {
 export function getModuleAuditPreset(id: string): ModuleAuditPreset | undefined {
   return MODULE_AUDIT_PRESETS[id];
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Specialist → Action HITL Bridge (doc69 Giai đoạn 4 / Wave 3, D4)
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * `SpecialistAgentRunResult.output.actionPlan` is advisory TEXT with NO trusted
+ * entity context to safely auto-build tool args from (unlike
+ * server/services/ai/rcaActionSuggester.ts, which is always scoped to one already-
+ * verified machine via `SuggestActionsContext.machineId`). A data-analyst/backend/
+ * frontend/qa-optimizer run only carries `moduleName`/`files`/`techStack` — nothing
+ * this module can trust as a real machineId, so it deliberately does NOT attempt to
+ * parse/guess a {tool,args} mapping out of the recommendation text — doing so would
+ * mean FABRICATING an entity reference, which the brief explicitly forbids.
+ *
+ * Instead, the router endpoint (aiSpecialistAgentRouter.proposeRecommendationAsAction)
+ * requires the CALLER (a human reviewing the actionPlan item) to supply the concrete
+ * `{tool, args}` it maps to. This module's job is only to restrict `tool` to a small,
+ * explicit allow-list of SAFE, non-actuation write-tools an engineering recommendation
+ * could honestly justify (analysis/request writes — never machine actuation, quality
+ * disposition, or a spec/limit change). That allow-list is intentionally the exact
+ * same 3 tools rcaActionSuggester.ts is permitted to suggest — both bridges are
+ * constrained to "advisory-write" tools for the identical reason — so it is reused
+ * directly rather than duplicated (a single place to extend/audit the allow-list).
+ * The router re-validates `args` against the tool's OWN zod schema (mirrors
+ * aiCopilotRouter.proposeSuggestedAction) before ever calling
+ * aiCopilotActions.proposeAction — never fabricated, never auto-executed (propose-
+ * only; a human must still confirm via the EXISTING confirmAction flow). A
+ * recommendation whose tool/args don't validate is REJECTED and stays advisory-only
+ * text — never silently coerced.
+ */
+export const SPECIALIST_BRIDGE_TOOLS = RCA_SUGGESTED_ACTION_TOOLS;
+export type SpecialistBridgeTool = (typeof SPECIALIST_BRIDGE_TOOLS)[number];
+
+/** Idempotent (delegates to rcaActionSuggester's own registration guard) — ensures
+ *  the allow-listed write-tools are registered before the router validates a
+ *  candidate mapping. Re-exported so the router only needs to import from this
+ *  service module, not reach into server/services/ai/rcaActionSuggester.ts directly. */
+export const ensureSpecialistBridgeToolsRegistered: () => Promise<void> = ensureRcaToolsRegistered;

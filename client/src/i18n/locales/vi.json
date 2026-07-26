@@ -13496,7 +13496,49 @@
     "subtitle": "Giám sát bộ não AI cục bộ — phân tầng độ khó & sức khỏe engine",
     "throttled": "Bị giới hạn / lỗi",
     "tokens": "Token (vào/ra)",
-    "tokensIn": "Token vào"
+    "tokensIn": "Token vào",
+    "agentOps": {
+      "title": "Agent Ops",
+      "desc": "Phiên agent gần đây trên toàn hệ thống (admin/kỹ thuật) — theo dõi và can thiệp khi cần",
+      "restrictedNote": "Cần quyền admin hoặc kỹ thuật để xem danh sách phiên agent toàn hệ thống.",
+      "empty": "Không có phiên agent gần đây.",
+      "colUser": "Người dùng",
+      "colGoal": "Mục tiêu",
+      "colStatus": "Trạng thái",
+      "colProgress": "Tiến độ",
+      "colUpdated": "Cập nhật",
+      "colActions": "Hành động",
+      "cancel": "Hủy",
+      "cancelling": "Đang hủy…",
+      "cancelSuccess": "Đã hủy phiên agent.",
+      "cancelError": "Không thể hủy phiên agent.",
+      "ownSessionOnly": "Chỉ có thể hủy phiên của chính bạn",
+      "status": {
+        "planning": "Đang lập kế hoạch",
+        "awaiting_approval": "Chờ duyệt kế hoạch",
+        "running": "Đang chạy",
+        "awaiting_confirm": "Chờ xác nhận",
+        "paused": "Tạm dừng",
+        "done": "Hoàn tất",
+        "aborted": "Đã hủy",
+        "failed": "Thất bại"
+      }
+    },
+    "killSwitch": {
+      "title": "Công tắc dừng khẩn cấp tự vận (autonomy)",
+      "desc": "Khóa cứng mọi tự-xác-nhận hành động AI trên toàn hệ thống — chuẩn bị trước khi autonomy được bật",
+      "tripped": "ĐÃ TRIP — autonomy bị khóa",
+      "notTripped": "Chưa trip — autonomy có thể chạy nếu được bật",
+      "reasonPlaceholder": "Lý do dừng (bắt buộc)…",
+      "tripButton": "Trip — dừng khẩn cấp",
+      "untripButton": "Untrip — mở lại",
+      "untripConfirm": "Bạn có chắc muốn MỞ LẠI (untrip) công tắc tự vận? Autonomy có thể tự xác nhận hành động nếu được bật ở nơi khác.",
+      "tripSuccess": "Đã TRIP công tắc — mọi tự-xác-nhận autonomy bị khóa ngay.",
+      "untripSuccess": "Đã UNTRIP công tắc.",
+      "tripError": "Không thể trip công tắc.",
+      "untripError": "Không thể untrip công tắc.",
+      "adminOnlyNote": "Chỉ admin đã bật 2FA mới có thể đổi trạng thái công tắc này."
+    }
   },
   "batch": {
     "created": "Đã tạo tác vụ theo lô",

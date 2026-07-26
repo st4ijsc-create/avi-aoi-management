@@ -14070,7 +14070,49 @@
     "subtitle": "监控本地 AI 大脑 — 难度分层与引擎健康",
     "throttled": "受限 / 出错",
     "tokens": "Token（输入/输出）",
-    "tokensIn": "输入 Token"
+    "tokensIn": "输入 Token",
+    "agentOps": {
+      "title": "Agent 运维",
+      "desc": "全系统最近的 Agent 会话（管理员/工程师）— 监控并在需要时干预",
+      "restrictedNote": "需要管理员或工程师权限才能查看全系统 Agent 会话列表。",
+      "empty": "暂无最近的 Agent 会话。",
+      "colUser": "用户",
+      "colGoal": "目标",
+      "colStatus": "状态",
+      "colProgress": "进度",
+      "colUpdated": "更新时间",
+      "colActions": "操作",
+      "cancel": "取消",
+      "cancelling": "正在取消…",
+      "cancelSuccess": "已取消该 Agent 会话。",
+      "cancelError": "无法取消该 Agent 会话。",
+      "ownSessionOnly": "此处只能取消您自己的会话",
+      "status": {
+        "planning": "规划中",
+        "awaiting_approval": "待批准",
+        "running": "运行中",
+        "awaiting_confirm": "待确认",
+        "paused": "已暂停",
+        "done": "已完成",
+        "aborted": "已中止",
+        "failed": "失败"
+      }
+    },
+    "killSwitch": {
+      "title": "自主执行紧急停止开关",
+      "desc": "全系统硬性锁定所有 AI 自动确认操作 — 在启用自主执行前先配置",
+      "tripped": "已触发 — 自主执行已被锁定",
+      "notTripped": "未触发 — 若已启用，自主执行可正常运行",
+      "reasonPlaceholder": "停止原因（必填）…",
+      "tripButton": "触发 — 紧急停止",
+      "untripButton": "解除 — 重新启用",
+      "untripConfirm": "确定要解除（untrip）自主执行紧急停止开关吗？如果其他地方已启用自主执行，它可能会再次自动确认操作。",
+      "tripSuccess": "开关已触发 — 所有自主自动确认现已被锁定。",
+      "untripSuccess": "开关已解除。",
+      "tripError": "触发开关失败。",
+      "untripError": "解除开关失败。",
+      "adminOnlyNote": "只有已启用双重验证（2FA）的管理员才能更改此开关。"
+    }
   },
   "batch": {
     "created": "批处理作业已创建",

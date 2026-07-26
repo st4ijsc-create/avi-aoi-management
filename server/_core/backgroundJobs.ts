@@ -133,6 +133,17 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[aiSelfLearningScheduler] init failed:", (err as any)?.message || err);
   }
 
+  // doc69 Giai đoạn 4/Wave 3 D4 — AI agent housekeeping cron: runs the EXISTING
+  // expireStaleSessions()/expireStaleActions() lazy-cleanup functions on an interval
+  // instead of leaving them purely reactive. Default ON (only expires ALREADY-stale
+  // rows — safe + desirable); opt out via AI_AGENT_HOUSEKEEPING_ENABLED=false.
+  try {
+    const { initAgentHousekeepingScheduler } = await import("../services/aiAgentHousekeepingScheduler");
+    initAgentHousekeepingScheduler();
+  } catch (err) {
+    console.error("[aiAgentHousekeepingScheduler] init failed:", (err as any)?.message || err);
+  }
+
   // WS-4 — Predictive maintenance cycle. Opt in via PREDICTIVE_MAINTENANCE_ENABLED=true.
   try {
     const { startPredictiveMaintenanceJob } = await import("../services/predictiveMaintenanceService");
@@ -612,6 +623,10 @@ export function stopBackgroundSchedulers(): void {
     .catch(() => {});
   import("../services/aiSelfLearningScheduler")
     .then((m) => m.stopSelfLearningScheduler())
+    .catch(() => {});
+  // doc69 Giai đoạn 4/Wave 3 D4 — idempotent no-op when never started.
+  import("../services/aiAgentHousekeepingScheduler")
+    .then((m) => m.stopAgentHousekeepingScheduler())
     .catch(() => {});
   import("../services/predictiveMaintenanceService")
     .then((m) => m.stopPredictiveMaintenanceJob())

@@ -7,16 +7,20 @@
  * Note: routerStats is an in-memory counter — it reflects activity since the server last started.
  */
 
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { ClassifierHealthBanner } from "@/components/ai/ClassifierHealthBanner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Brain,
   Cpu,
@@ -35,7 +39,35 @@ import {
   Timer,
   ShieldAlert,
   GitCompare,
+  Bot,
+  Ban,
+  ShieldOff,
+  ShieldCheck,
 } from "lucide-react";
+
+// doc69 Giai đoạn 4/Wave 3 (D4) — Agent Ops session status → badge style.
+const AGENT_SESSION_STATUS_STYLE: Record<string, string> = {
+  planning: "bg-slate-500/10 text-slate-500",
+  awaiting_approval: "bg-amber-500/10 text-amber-500",
+  running: "bg-blue-500/10 text-blue-500",
+  awaiting_confirm: "bg-amber-500/10 text-amber-500",
+  paused: "bg-orange-500/10 text-orange-500",
+  done: "bg-emerald-500/10 text-emerald-500",
+  aborted: "bg-slate-500/10 text-slate-500",
+  failed: "bg-red-500/10 text-red-500",
+};
+
+const CANCELABLE_SESSION_STATUSES = new Set(["planning", "awaiting_approval", "running", "awaiting_confirm", "paused"]);
+
+function fmtAgo(d?: Date | string | null): string {
+  if (!d) return "—";
+  const date = d instanceof Date ? d : new Date(d);
+  const diffSec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (diffSec < 60) return `${diffSec}s`;
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h`;
+  return `${Math.floor(diffSec / 86400)}d`;
+}
 
 // Cognitive Escalation Ladder — tier metadata (mirrors aiModelRouter.ts Tier 0–4).
 const TIERS = [
@@ -60,6 +92,7 @@ function fmtNum(n?: number): string {
 
 export default function AIBrainDashboard() {
   const { t } = useTranslation();
+  const { user } = useAuth();
   // Poll hygiene (doc 27 B12): pause the 3×5s pollers when the tab is hidden,
   // refetch immediately on return — see usePollingInterval.
   const polling = usePollingInterval(5000);
@@ -67,6 +100,42 @@ export default function AIBrainDashboard() {
   const health = trpc.aiGguf.health.useQuery(undefined, { ...polling });
   // AI Gateway stats — DB-backed tokens / latency / rate-limit / A/B over the last 24h.
   const gateway = trpc.aiGguf.gatewayStats.useQuery({ sinceHours: 24 }, { ...polling });
+
+  // doc69 Giai đoạn 4/Wave 3 (D4) — Agent Ops: ops-scoped (cross-user) session list
+  // (admin/engineer only — RBAC-gated server-side too) + the D2 autonomy kill-switch.
+  const isOpsRole = user?.role === "admin" || user?.role === "engineer";
+  const isAdmin = user?.role === "admin";
+  const opsSessions = trpc.aiAgent.listAgentSessionsForOps.useQuery(
+    { limit: 20 },
+    { ...polling, enabled: isOpsRole },
+  );
+  const killSwitch = trpc.aiAgent.getKillSwitchStatus.useQuery(undefined, { ...polling });
+  const utils = trpc.useUtils();
+  const [tripReason, setTripReason] = useState("");
+  const cancelSessionMut = trpc.aiAgent.cancelSession.useMutation({
+    onSuccess: () => {
+      toast.success(t("aiBrain.agentOps.cancelSuccess", "Đã hủy phiên agent."));
+      opsSessions.refetch();
+    },
+    onError: (err: any) => toast.error(err?.message ?? t("aiBrain.agentOps.cancelError", "Không thể hủy phiên agent.")),
+  });
+  const tripMut = trpc.aiAgent.tripKillSwitch.useMutation({
+    onSuccess: () => {
+      toast.success(t("aiBrain.killSwitch.tripSuccess", "Đã TRIP công tắc — mọi tự-xác-nhận autonomy bị khóa ngay."));
+      setTripReason("");
+      killSwitch.refetch();
+      utils.aiAgent.getKillSwitchStatus.invalidate();
+    },
+    onError: (err: any) => toast.error(err?.message ?? t("aiBrain.killSwitch.tripError", "Không thể trip công tắc.")),
+  });
+  const untripMut = trpc.aiAgent.untripKillSwitch.useMutation({
+    onSuccess: () => {
+      toast.success(t("aiBrain.killSwitch.untripSuccess", "Đã UNTRIP công tắc."));
+      killSwitch.refetch();
+      utils.aiAgent.getKillSwitchStatus.invalidate();
+    },
+    onError: (err: any) => toast.error(err?.message ?? t("aiBrain.killSwitch.untripError", "Không thể untrip công tắc.")),
+  });
 
   const stats = router.data;
   const total = stats?.total ?? 0;
@@ -76,7 +145,23 @@ export default function AIBrainDashboard() {
   const vramPct = vram && vram.total > 0 ? Math.min(100, (vram.used / vram.total) * 100) : 0;
 
   const gw = gateway.data;
-  const refreshAll = () => { router.refetch(); health.refetch(); gateway.refetch(); };
+  const refreshAll = () => { router.refetch(); health.refetch(); gateway.refetch(); if (isOpsRole) opsSessions.refetch(); killSwitch.refetch(); };
+
+  const handleTrip = () => {
+    const reason = tripReason.trim();
+    if (reason.length < 3) {
+      toast.error(t("aiBrain.killSwitch.reasonPlaceholder", "Lý do dừng (bắt buộc)…"));
+      return;
+    }
+    tripMut.mutate({ reason });
+  };
+
+  const handleUntrip = () => {
+    if (!window.confirm(t("aiBrain.killSwitch.untripConfirm", "Bạn có chắc muốn MỞ LẠI (untrip) công tắc tự vận? Autonomy có thể tự xác nhận hành động nếu được bật ở nơi khác."))) {
+      return;
+    }
+    untripMut.mutate();
+  };
 
   return (
     <DashboardLayout>
@@ -299,6 +384,117 @@ export default function AIBrainDashboard() {
                     ))}
                   </div>
                 ) : null}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* doc69 Giai đoạn 4/Wave 3 (D4) — Agent Ops: ops-scoped session list +
+            autonomy kill-switch. Additive — does not touch the cards above. */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-primary" />
+                  {t("aiBrain.agentOps.title", "Agent Ops")}
+                </CardTitle>
+                <CardDescription>{t("aiBrain.agentOps.desc", "Phiên agent gần đây trên toàn hệ thống (admin/kỹ thuật) — theo dõi và can thiệp khi cần")}</CardDescription>
+              </div>
+              <Badge variant={killSwitch.data?.tripped ? "destructive" : "outline"}>
+                {killSwitch.data?.tripped ? <ShieldOff className="h-3 w-3 mr-1" /> : <ShieldCheck className="h-3 w-3 mr-1" />}
+                {killSwitch.data?.tripped
+                  ? t("aiBrain.killSwitch.tripped", "ĐÃ TRIP — autonomy bị khóa")
+                  : t("aiBrain.killSwitch.notTripped", "Chưa trip — autonomy có thể chạy nếu được bật")}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {/* Kill-switch control — visible to everyone (read), trip/untrip action admin-only */}
+            <div className="rounded-lg border p-3 flex flex-col gap-2">
+              <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <ShieldAlert className="h-3.5 w-3.5" />
+                {t("aiBrain.killSwitch.title", "Công tắc dừng khẩn cấp tự vận (autonomy)")}
+              </div>
+              {isAdmin ? (
+                killSwitch.data?.tripped ? (
+                  <Button variant="outline" size="sm" className="self-start" disabled={untripMut.isPending} onClick={handleUntrip}>
+                    <ShieldCheck className="h-4 w-4 mr-1.5" />
+                    {t("aiBrain.killSwitch.untripButton", "Untrip — mở lại")}
+                  </Button>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      value={tripReason}
+                      onChange={(e) => setTripReason(e.target.value)}
+                      placeholder={t("aiBrain.killSwitch.reasonPlaceholder", "Lý do dừng (bắt buộc)…")}
+                      className="max-w-xs h-8 text-sm"
+                      maxLength={500}
+                    />
+                    <Button variant="destructive" size="sm" disabled={tripMut.isPending || tripReason.trim().length < 3} onClick={handleTrip}>
+                      <ShieldOff className="h-4 w-4 mr-1.5" />
+                      {t("aiBrain.killSwitch.tripButton", "Trip — dừng khẩn cấp")}
+                    </Button>
+                  </div>
+                )
+              ) : (
+                <div className="text-xs text-muted-foreground">{t("aiBrain.killSwitch.adminOnlyNote", "Chỉ admin đã bật 2FA mới có thể đổi trạng thái công tắc này.")}</div>
+              )}
+            </div>
+
+            {/* Ops-scoped session list */}
+            {!isOpsRole ? (
+              <div className="text-sm text-muted-foreground py-4 text-center">
+                {t("aiBrain.agentOps.restrictedNote", "Cần quyền admin hoặc kỹ thuật để xem danh sách phiên agent toàn hệ thống.")}
+              </div>
+            ) : opsSessions.isLoading ? (
+              <Skeleton className="h-24 w-full" />
+            ) : !opsSessions.data?.sessions?.length ? (
+              <div className="text-sm text-muted-foreground py-4 text-center">
+                {t("aiBrain.agentOps.empty", "Không có phiên agent gần đây.")}
+              </div>
+            ) : (
+              <div className="rounded-lg border overflow-hidden overflow-x-auto">
+                <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-muted-foreground bg-muted/40 min-w-[640px]">
+                  <div className="col-span-2">{t("aiBrain.agentOps.colUser", "Người dùng")}</div>
+                  <div className="col-span-4">{t("aiBrain.agentOps.colGoal", "Mục tiêu")}</div>
+                  <div className="col-span-2">{t("aiBrain.agentOps.colStatus", "Trạng thái")}</div>
+                  <div className="col-span-1 text-right">{t("aiBrain.agentOps.colProgress", "Tiến độ")}</div>
+                  <div className="col-span-1 text-right">{t("aiBrain.agentOps.colUpdated", "Cập nhật")}</div>
+                  <div className="col-span-2 text-right">{t("aiBrain.agentOps.colActions", "Hành động")}</div>
+                </div>
+                {opsSessions.data.sessions.map((s) => {
+                  const isOwn = s.userId === user?.id;
+                  const canCancel = isOwn && CANCELABLE_SESSION_STATUSES.has(s.status);
+                  return (
+                    <div key={s.id} className="grid grid-cols-12 gap-2 px-3 py-2 text-sm border-t min-w-[640px] items-center">
+                      <div className="col-span-2 truncate text-xs" title={s.username ?? String(s.userId)}>{s.username ?? `#${s.userId}`}</div>
+                      <div className="col-span-4 truncate" title={s.goal}>{s.goal}</div>
+                      <div className="col-span-2">
+                        <Badge variant="outline" className={AGENT_SESSION_STATUS_STYLE[s.status] ?? ""}>
+                          {t(`aiBrain.agentOps.status.${s.status}`, s.status)}
+                        </Badge>
+                      </div>
+                      <div className="col-span-1 text-right tabular-nums text-muted-foreground">{s.stepIndex}/{s.stepTotal}</div>
+                      <div className="col-span-1 text-right tabular-nums text-muted-foreground">{fmtAgo(s.updatedAt)}</div>
+                      <div className="col-span-2 text-right">
+                        {canCancel ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={cancelSessionMut.isPending}
+                            onClick={() => cancelSessionMut.mutate({ sessionId: s.id })}
+                          >
+                            <Ban className="h-3.5 w-3.5 mr-1" />
+                            {t("aiBrain.agentOps.cancel", "Hủy")}
+                          </Button>
+                        ) : !isOwn && CANCELABLE_SESSION_STATUSES.has(s.status) ? (
+                          <span className="text-xs text-muted-foreground" title={t("aiBrain.agentOps.ownSessionOnly", "Chỉ có thể hủy phiên của chính bạn")}>—</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>

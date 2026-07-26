@@ -622,6 +622,94 @@ export async function expireStaleSessions(): Promise<number> {
   return (res as any)?.rowCount ?? 0;
 }
 
+/** Minimal, forward-compatible row shape for the ops-scoped session list (Wave 3/D4). */
+export interface OpsSessionSummary {
+  id: string;
+  userId: number;
+  /** Best-available display name (users.name, else users.username, else null — e.g. deleted user). */
+  username: string | null;
+  userRole: string;
+  goal: string;
+  status: AiAgentSession["status"];
+  /** Current cursor (steps completed so far). */
+  stepIndex: number;
+  /** plan.steps.length, or 0 when the plan isn't loaded yet (still planning). */
+  stepTotal: number;
+  writeCount: number;
+  updatedAt: Date;
+  expiresAt: Date;
+}
+
+/**
+ * Wave 3 / D4 — ops-scoped (cross-user) RECENT-session read for the Agent Ops UI.
+ * Unlike getSession/cancelSession (owner-only), this deliberately has NO userId
+ * filter — RBAC (admin/engineer) is enforced by the router (roleProcedure), the
+ * same placement convention every other admin/engineer-gated list in this codebase
+ * uses (e.g. aiModelRouter's model-card CRUD). Deliberately MINIMAL: id, user,
+ * goal, status, step progress, updatedAt/expiresAt — E2-1 (doc69 Giai đoạn 4) will
+ * extend this into a richer read-model; this shape is additive-safe for that (new
+ * optional fields can be appended without breaking existing callers). Fail-safe:
+ * never throws — a DB/read error degrades to an empty list.
+ */
+export async function listSessionsForOps(opts?: {
+  limit?: number;
+  status?: AiAgentSession["status"];
+}): Promise<OpsSessionSummary[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const limit = Math.min(Math.max(1, opts?.limit ?? 30), 100);
+  try {
+    // Dynamic imports (mirrors autonomyPolicy.ts's own pattern for an infrequently-
+    // touched table) — keeps this file's static import surface unchanged for every
+    // other caller/test that doesn't exercise this ops-list path.
+    const [{ desc }, { users }] = await Promise.all([
+      import("drizzle-orm"),
+      import("../../drizzle/schema"),
+    ]);
+    const conditions = opts?.status ? [eq(aiAgentSessions.status, opts.status)] : [];
+    const rows = await db
+      .select({
+        id: aiAgentSessions.id,
+        userId: aiAgentSessions.userId,
+        userRole: aiAgentSessions.userRole,
+        goal: aiAgentSessions.goal,
+        planJson: aiAgentSessions.planJson,
+        cursor: aiAgentSessions.cursor,
+        status: aiAgentSessions.status,
+        writeCount: aiAgentSessions.writeCount,
+        updatedAt: aiAgentSessions.updatedAt,
+        expiresAt: aiAgentSessions.expiresAt,
+        userName: users.name,
+        username: users.username,
+      })
+      .from(aiAgentSessions)
+      .leftJoin(users, eq(users.id, aiAgentSessions.userId))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(aiAgentSessions.updatedAt))
+      .limit(limit);
+
+    return rows.map((r: any) => {
+      const steps = (r.planJson as AgentPlan | null)?.steps;
+      return {
+        id: r.id,
+        userId: r.userId,
+        username: r.userName ?? r.username ?? null,
+        userRole: r.userRole,
+        goal: r.goal,
+        status: r.status,
+        stepIndex: r.cursor,
+        stepTotal: Array.isArray(steps) ? steps.length : 0,
+        writeCount: r.writeCount,
+        updatedAt: r.updatedAt,
+        expiresAt: r.expiresAt,
+      };
+    });
+  } catch (e) {
+    console.error("[aiAgentOrchestrator] listSessionsForOps failed:", (e as Error)?.message ?? e);
+    return [];
+  }
+}
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 type DbHandle = NonNullable<Awaited<ReturnType<typeof getDb>>>;

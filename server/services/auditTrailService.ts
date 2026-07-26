@@ -181,6 +181,10 @@ export const AUDIT_ACTIONS = {
   // EXECUTED/DENIED rows an auto-confirm attempt wrote), so it never distorts the
   // causal PROPOSED → CONFIRMED → EXECUTED ordering. See aiCopilotActions.ts:proposeAction.
   AI_AUTONOMY_DECISION: "ai_autonomy_decision",
+  // D4 (doc69 Giai đoạn 4/Wave 3) — operator trip/untrip of the D2 bounded-autonomy
+  // kill-switch (admin + 2FA). Distinct from AI_AUTONOMY_DECISION (a per-proposal
+  // decision trace): this is the durable master-switch flip itself.
+  AI_AUTONOMY_KILL_SWITCH: "ai_autonomy_kill_switch",
 
   // Interlock auto-block (GĐ F5b) — a DETERMINISTIC, human-approved interlock
   // rule auto-fired a block/stop/reduce command down to the machine. NOT an AI
@@ -222,6 +226,8 @@ export const ENTITY_TYPES = {
   // D3 (doc69 Giai đoạn 4/Wave 3) — model registry governance.
   MODEL_VERSION: "model_version",
   AI_MODEL_CARD: "ai_model_card",
+  // D4 (doc69 Giai đoạn 4/Wave 3) — bounded-autonomy kill-switch entity.
+  AI_AUTONOMY: "ai_autonomy",
 } as const;
 
 // ─── Utility Functions ──────────────────────────────────────────────────────

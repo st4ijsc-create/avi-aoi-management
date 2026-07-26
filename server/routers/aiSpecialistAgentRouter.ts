@@ -8,6 +8,8 @@ import {
   buildWorkflowAgentOrder,
   listModuleAuditPresets,
   getModuleAuditPreset,
+  SPECIALIST_BRIDGE_TOOLS,
+  ensureSpecialistBridgeToolsRegistered,
 } from "../services/aiSpecialistAgentService";
 import {
   appendAiSpecialistSessionStep,
@@ -18,6 +20,8 @@ import {
   listAiSpecialistSessions,
   getModuleImprovementStats,
 } from "../db/aiSpecialist";
+import { getTool, isWriteTool } from "../services/aiLocalTools/toolRegistry";
+import { proposeAction } from "../services/aiCopilotActions";
 
 const runInputSchema = z.object({
   agentId: z.enum(["data-analyst", "backend-engineer", "frontend-engineer", "qa-optimizer"]),
@@ -357,6 +361,67 @@ export const aiSpecialistAgentRouter = router({
           message: `Module audit failed: ${error?.message ?? "Unknown error"}`,
         });
       }
+    }),
+
+  // ─── Specialist → Action HITL Bridge (doc69 Giai đoạn 4/Wave 3, D4) ─────────
+  //
+  // Turns ONE concrete actionPlan[] recommendation into a PROPOSED (HITL) action.
+  // `recommendation` is the exact advisory text this proposal is FOR (kept only for
+  // traceability/audit — it is NOT parsed to derive the tool/args, see the doc
+  // comment on SPECIALIST_BRIDGE_TOOLS in aiSpecialistAgentService.ts for why). The
+  // caller supplies the concrete {tool,args} mapping; this endpoint restricts `tool`
+  // to the small explicit allow-list and RE-VALIDATES `args` against that tool's OWN
+  // zod schema (mirrors aiCopilotRouter.proposeSuggestedAction) before ever calling
+  // proposeAction — never fabricated, never auto-executed. proposeAction still runs
+  // its own RBAC gate + (if D2 autonomy is ever enabled) the SAME denylist/guardrail
+  // checks every other proposal goes through — this bridge adds NO bypass.
+  proposeRecommendationAsAction: protectedProcedure
+    .input(
+      z.object({
+        recommendation: z.string().min(1).max(2000),
+        tool: z.enum(SPECIALIST_BRIDGE_TOOLS),
+        args: z.record(z.string(), z.unknown()),
+        lang: z.enum(["vi", "en", "zh"]).default("vi"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ensureSpecialistBridgeToolsRegistered();
+      const tool = getTool(input.tool);
+      if (!tool || !isWriteTool(tool)) {
+        return {
+          ok: false as const,
+          advisory: true as const,
+          reason: "TOOL_UNAVAILABLE",
+          message: "Công cụ không khả dụng — khuyến nghị vẫn ở dạng văn bản tư vấn.",
+        };
+      }
+
+      const parsed = (tool.parameters as z.ZodType<any>).safeParse(input.args);
+      if (!parsed.success) {
+        return {
+          ok: false as const,
+          advisory: true as const,
+          reason: "ARGS_OUT_OF_BOUNDS",
+          message: "Tham số không hợp lệ — khuyến nghị vẫn ở dạng văn bản tư vấn.",
+        };
+      }
+
+      const user = { id: ctx.user.id, role: String(ctx.user.role), name: ctx.user.name ?? null };
+      const res = await proposeAction(tool, parsed.data as Record<string, unknown>, { user, lang: input.lang });
+      if (!res.ok || !res.pendingAction) {
+        return {
+          ok: false as const,
+          advisory: false as const,
+          reason: res.reason ?? "PROPOSE_FAILED",
+          message: res.message,
+        };
+      }
+      return {
+        ok: true as const,
+        advisory: false as const,
+        pendingAction: res.pendingAction,
+        sourceRecommendation: input.recommendation,
+      };
     }),
 
   // ─── Improvement Score ──────────────────────────────────────────────────────

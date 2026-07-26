@@ -9,7 +9,7 @@
  */
 
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, roleProcedure, require2FA } from "../_core/trpc";
 import {
   startSession,
   approvePlan,
@@ -17,12 +17,35 @@ import {
   cancelSession,
   getSession,
   canUseAgentic,
+  listSessionsForOps,
   type AgentUser,
 } from "../services/aiAgentOrchestrator";
 import { startPlaybook, listPlaybooks } from "../services/aiPlaybookEngine";
 import type { ToolLang } from "../services/aiLocalTools";
+// D4 (doc69 Giai đoạn 4/Wave 3) — the D2 autonomy kill-switch, made OPERABLE.
+import { tripKillSwitch, untripKillSwitch, isKillSwitchTripped } from "../services/ai/autonomyPolicy";
+import { AUDIT_ACTIONS, ENTITY_TYPES, createAuditContext, logCrudOperation } from "../services/auditTrailService";
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
+
+/** D4 — ops-scoped (cross-user) agent session visibility: admin/engineer only,
+ *  mirrors aiModelRouter's modelCardProcedure convention (roleProcedure combo). */
+const opsAgentProcedure = roleProcedure("admin", "engineer");
+
+/** D4 — kill-switch trip/untrip: admin + 2FA, the SAME guard D3 chained for
+ *  model-card writes (`roleProcedure(...).use(require2FA)`). */
+const killSwitchProcedure = roleProcedure("admin").use(require2FA);
+
+const AGENT_SESSION_STATUSES = [
+  "planning",
+  "awaiting_approval",
+  "running",
+  "awaiting_confirm",
+  "paused",
+  "done",
+  "aborted",
+  "failed",
+] as const;
 
 function toAgentUser(user: { id: number; role: string; name?: string | null }): AgentUser {
   return { id: user.id, role: String(user.role), name: user.name ?? null };
@@ -124,4 +147,68 @@ export const aiAgentRouter = router({
         expiresAt: row.expiresAt.toISOString(),
       };
     }),
+
+  // ─── Agent Ops (doc69 Giai đoạn 4/Wave 3, D4) — minimal ops-scoped session
+  // visibility. admin/engineer only; E2-1 will extend this into a richer
+  // read-model. Steer control (cancel) reuses the EXISTING owner-scoped
+  // cancelSession above unchanged — the FE only offers it on the viewer's OWN
+  // rows (cancelSession would honestly reject a cross-user attempt anyway).
+  listAgentSessionsForOps: opsAgentProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().int().min(1).max(100).optional(),
+          status: z.enum(AGENT_SESSION_STATUSES).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      const sessions = await listSessionsForOps({ limit: input?.limit, status: input?.status });
+      return { sessions };
+    }),
+
+  // ─── Autonomy kill-switch (doc69 Giai đoạn 4/Wave 3, D4 — D2 rollout prereq) ──
+  //
+  // Read: any authenticated user (situational awareness — no 2FA needed to VIEW).
+  getKillSwitchStatus: protectedProcedure.query(async () => {
+    const tripped = await isKillSwitchTripped();
+    return { tripped };
+  }),
+
+  /** Operator EMERGENCY STOP for bounded autonomy — admin + 2FA (mirrors D3's
+   *  modelCardProcedure chaining). Durable (ai_system_config), read FRESH by
+   *  evaluateAutonomy on every proposal — takes effect immediately for every
+   *  process, no restart required. Audited. */
+  tripKillSwitch: killSwitchProcedure
+    .input(z.object({ reason: z.string().min(3).max(500) }))
+    .mutation(async ({ input, ctx }) => {
+      await tripKillSwitch(input.reason, ctx.user.id);
+      await logCrudOperation(createAuditContext({ user: ctx.user as any, req: reqMeta(ctx) }), {
+        action: AUDIT_ACTIONS.AI_AUTONOMY_KILL_SWITCH,
+        entityType: ENTITY_TYPES.AI_AUTONOMY,
+        entityName: "autonomy_kill_switch",
+        details: {
+          operation: "AI_AUTONOMY_KILL_SWITCH_TRIPPED",
+          metadata: { reason: input.reason },
+        },
+        status: "success",
+      });
+      return { ok: true, tripped: true };
+    }),
+
+  /** Reset the kill-switch — admin + 2FA. Audited. */
+  untripKillSwitch: killSwitchProcedure.mutation(async ({ ctx }) => {
+    await untripKillSwitch(ctx.user.id);
+    await logCrudOperation(createAuditContext({ user: ctx.user as any, req: reqMeta(ctx) }), {
+      action: AUDIT_ACTIONS.AI_AUTONOMY_KILL_SWITCH,
+      entityType: ENTITY_TYPES.AI_AUTONOMY,
+      entityName: "autonomy_kill_switch",
+      details: {
+        operation: "AI_AUTONOMY_KILL_SWITCH_UNTRIPPED",
+        metadata: {},
+      },
+      status: "success",
+    });
+    return { ok: true, tripped: false };
+  }),
 });

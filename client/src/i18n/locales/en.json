@@ -13513,7 +13513,49 @@
     "subtitle": "Monitor the local AI brain — difficulty tiering & engine health",
     "throttled": "Throttled / errored",
     "tokens": "Tokens (in/out)",
-    "tokensIn": "Tokens in"
+    "tokensIn": "Tokens in",
+    "agentOps": {
+      "title": "Agent Ops",
+      "desc": "Recent agent sessions system-wide (admin/engineer) — monitor and steer as needed",
+      "restrictedNote": "Admin or engineer role required to view the system-wide agent session list.",
+      "empty": "No recent agent sessions.",
+      "colUser": "User",
+      "colGoal": "Goal",
+      "colStatus": "Status",
+      "colProgress": "Progress",
+      "colUpdated": "Updated",
+      "colActions": "Actions",
+      "cancel": "Cancel",
+      "cancelling": "Cancelling…",
+      "cancelSuccess": "Agent session cancelled.",
+      "cancelError": "Failed to cancel the agent session.",
+      "ownSessionOnly": "Only your own sessions can be cancelled here",
+      "status": {
+        "planning": "Planning",
+        "awaiting_approval": "Awaiting approval",
+        "running": "Running",
+        "awaiting_confirm": "Awaiting confirm",
+        "paused": "Paused",
+        "done": "Done",
+        "aborted": "Aborted",
+        "failed": "Failed"
+      }
+    },
+    "killSwitch": {
+      "title": "Autonomy kill-switch",
+      "desc": "Hard-blocks every AI auto-confirmed action system-wide — set up before autonomy is ever enabled",
+      "tripped": "TRIPPED — autonomy is locked out",
+      "notTripped": "Not tripped — autonomy may run if enabled",
+      "reasonPlaceholder": "Reason for stopping (required)…",
+      "tripButton": "Trip — emergency stop",
+      "untripButton": "Untrip — re-enable",
+      "untripConfirm": "Are you sure you want to UNTRIP the autonomy kill-switch? Autonomy may auto-confirm actions again if it is enabled elsewhere.",
+      "tripSuccess": "Kill-switch TRIPPED — every autonomous auto-confirm is now locked out.",
+      "untripSuccess": "Kill-switch UNTRIPPED.",
+      "tripError": "Failed to trip the kill-switch.",
+      "untripError": "Failed to untrip the kill-switch.",
+      "adminOnlyNote": "Only an admin with 2FA enabled can change this switch."
+    }
   },
   "batch": {
     "created": "Batch job created",
