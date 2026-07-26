@@ -1,7 +1,9 @@
 namespace St4i.EngineApi.Auth;
 
-/// <summary>WS-D-D3 — one row of the tamper-evident, hash-chained <c>audit_log</c> table (see
-/// <see cref="SecurityDb"/>'s migration ladder for the exact DDL). <see cref="Seq"/> IS the table's
+/// <summary>WS-D-D3 — one row of the hash-chained <c>audit_log</c> table — tamper-EVIDENT against
+/// casual/accidental/app-level modification only (see <see cref="SqliteAuditStore"/>'s doc comment for
+/// the full, honest threat model — it is NOT resistant to a local actor with direct write access to
+/// <c>security.db</c>). See <see cref="SecurityDb"/>'s migration ladder for the exact DDL. <see cref="Seq"/> IS the table's
 /// <c>id</c> column — the hash chain's canonical order — never a separately-maintained counter (see
 /// <see cref="SqliteAuditStore"/>'s doc comment for why the stored <c>id</c> and the hash-chain
 /// <c>seq</c> baked into <see cref="RowHash"/> are guaranteed to be the SAME number). <see cref="PrevHash"/>
@@ -57,8 +59,10 @@ public sealed record AuditVerifyResult(bool Ok, long? FirstBrokenSeq, string Det
 /// <summary>WS-D-D3 — append-only, hash-chained audit log over <c>security.db</c>'s <c>audit_log</c>
 /// table (added to <see cref="SecurityDb"/>'s migration ladder). Deliberately exposes NO update/delete
 /// method — <see cref="AppendAsync"/> is the only write path this interface offers, by design (an
-/// append-only log that can still be mutated through its own store interface isn't tamper-evident at
-/// all). <see cref="SqliteAuditStore"/> is the sole implementation.</summary>
+/// append-only log that can still be mutated through its own store interface would defeat even the
+/// modest, casual/accidental/app-level tamper-evidence this store aims for — see
+/// <see cref="SqliteAuditStore"/>'s doc comment for what that tamper-evidence does and does NOT cover).
+/// <see cref="SqliteAuditStore"/> is the sole implementation.</summary>
 public interface IAuditStore
 {
     /// <summary>Appends one row under an in-process lock covering the WHOLE read-last-row →

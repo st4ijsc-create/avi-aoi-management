@@ -66,8 +66,9 @@ builder.Services.AddDataProtection()
 
 builder.Services.AddSingleton<IUserStore>(_ => new SqliteUserStore(securityDir));
 
-// WS-D-D3 — the tamper-evident, hash-chained audit log (SAME security.db/directory as the user store
-// above — SecurityDb's migration ladder now carries both the `users` and `audit_log` tables). Singleton
+// WS-D-D3 — the hash-chained audit log (tamper-EVIDENT against casual/accidental/app-level modification
+// only — see SqliteAuditStore's doc comment for the full threat model; SAME security.db/directory as the
+// user store above — SecurityDb's migration ladder now carries both the `users` and `audit_log` tables). Singleton
 // so its in-process AppendAsync lock (see SqliteAuditStore's doc comment) actually serializes every
 // append across the whole app, not just within one request. AuditRecorder is the thin per-request helper
 // handlers will call (wiring it into each mutating handler is D4 — this task only registers it so it's

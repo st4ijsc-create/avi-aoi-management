@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -11,9 +12,29 @@ namespace St4i.EngineApi.Auth;
 /// the file, not a second database). Same raw-<c>Microsoft.Data.Sqlite</c>, parameterized-SQL-only,
 /// short-lived-connection-per-call shape as <see cref="SqliteUserStore"/>, PLUS one thing neither
 /// <see cref="SqliteUserStore"/> nor <c>SqliteHistorianStore</c> need: a hash CHAIN, where each row's
-/// <c>row_hash</c> commits to the previous row's <c>row_hash</c> (<c>prev_hash</c>) — so any later
-/// tampering with an already-written row (editing a field, or deleting/reordering a row) is detectable
-/// by <see cref="VerifyChainAsync"/> without needing a separate, out-of-band copy of the "real" history.
+/// <c>row_hash</c> commits to the previous row's <c>row_hash</c> (<c>prev_hash</c>).
+///
+/// <b>HONEST THREAT MODEL (WS-D D3 review — read this before calling anything here "tamper-evident"
+/// unqualified anywhere else in this codebase):</b> this chain is tamper-EVIDENT against
+/// CASUAL/ACCIDENTAL/APP-LEVEL modification only. <see cref="VerifyChainAsync"/> DETECTS in-place field
+/// mutation (an edited column no longer recomputes to its own stored <c>row_hash</c>) and interior row
+/// deletion (the next surviving row's stored <c>prev_hash</c> no longer matches anything), PROVIDED the
+/// actor making the change does not also recompute the chain from that point forward. It is KEYLESS and
+/// fully SELF-CONTAINED — no HMAC key, no external/off-box anchor, nothing outside this same
+/// <c>security.db</c> file to check against. Being keyless and local, it does NOT resist a local actor
+/// with direct WRITE access to <c>security.db</c> (e.g. a SQLite client against the file while the process
+/// is stopped, or sufficient OS-level file permissions): such an actor can TAIL-TRUNCATE the chain (delete
+/// the newest N rows — nothing downstream ever refers back to them, so nothing detects their absence),
+/// APPEND-FORGE new rows (compute a valid next <c>row_hash</c>/<c>prev_hash</c> pair using this exact same
+/// public algorithm), or fully RE-FORGE the entire chain from row 1 onward — ALL UNDETECTED by
+/// <see cref="VerifyChainAsync"/>, which only ever checks the INTERNAL CONSISTENCY of whatever rows
+/// currently sit in the table, never against any independent, tamper-resistant record of what SHOULD be
+/// there. <see cref="SqliteAuditStoreTests.VerifyChain_DoesNotDetect_TailTruncation_KnownLimitation"/>
+/// documents exactly this gap in the test suite (rather than leaving it as an unverified claim in a
+/// comment). Stronger tamper-evidence against exactly this class of attacker — a keyed HMAC using an
+/// off-box/not-in-this-database key, and/or an external append-only/WORM anchor (e.g. periodically
+/// publishing the latest <c>row_hash</c> somewhere this local actor can't also rewrite) — is explicitly
+/// OUT of this task's scope and deferred to ecosystem/Site scope (tracked as XC-R39).
 ///
 /// <b>Why <see cref="AppendAsync"/> needs an in-process lock that <see cref="SqliteUserStore"/>'s plain
 /// per-call connections never needed:</b> computing a row's hash requires knowing BOTH its own seq AND
@@ -44,7 +65,7 @@ namespace St4i.EngineApi.Auth;
 ///
 /// <b>client_ip-in-hash decision:</b> <see cref="AuditEntry.ClientIp"/> is stored but deliberately NOT
 /// part of the hash preimage (see <see cref="ComputeRowHash"/>) — it's advisory/diagnostic metadata
-/// (useful for "which network did this request come from" triage) rather than part of the tamper-evident
+/// (useful for "which network did this request come from" triage) rather than part of the hash-chained
 /// record of WHAT changed and WHO/WHAT ROLE did it; a NAT/proxy rewriting an IP in flight (or this store
 /// simply not being told one — see <c>AuditRecorder</c>) shouldn't be able to break chain verification on
 /// its own. <see cref="VerifyChainAsync"/> recomputes the SAME preimage shape (never includes
@@ -261,36 +282,62 @@ public sealed class SqliteAuditStore : IAuditStore
         return new AuditVerifyResult(true, null, "Chain verified OK.");
     }
 
-    /// <summary>The exact hash preimage the task brief specifies: SHA-256 over the row's fields joined
-    /// with <c>\x01</c> (a byte that can't appear in any of these UTF-8 string fields under normal use,
-    /// so no field-boundary ambiguity), in this fixed order: seq, at_utc ("O"), actor_username,
-    /// actor_role, action, target_type, target_id, old_value, new_value, correlation_id, prev_hash.
-    /// <c>client_ip</c> is deliberately excluded — see this class's doc comment. Null string fields
-    /// contribute an EMPTY string to the join (never the literal text "null"), so a null-vs-empty-string
-    /// distinction on those columns is NOT part of what this hash protects (an accepted, documented
-    /// simplification — the brief's own preimage spec does the same via <c>??""</c>). Returns lowercase
-    /// hex, 64 characters (SHA-256's 32 bytes × 2).</summary>
+    /// <summary>
+    /// The hash preimage, in this fixed field order: seq, at_utc ("O"), actor_username, actor_role,
+    /// action, target_type, target_id, old_value, new_value, correlation_id, prev_hash. <c>client_ip</c>
+    /// is deliberately excluded — see this class's doc comment.
+    ///
+    /// WS-D D3 review (separator-hardening fix) — the original preimage joined these fields with a
+    /// <c>\x01</c> delimiter, which is injection-proof only as long as no hashed field ever contains that
+    /// exact byte; a field that DID contain it (a JSON blob is free-form caller-supplied text, so this was
+    /// never actually guaranteed) could shift a field boundary and let two DIFFERENT sets of field values
+    /// hash identically, or vice versa. Replaced with LENGTH-PREFIXED framing instead
+    /// (<see cref="AppendField"/>): each field is written as a fixed 4-byte big-endian length prefix (its
+    /// UTF-8 byte count) followed by its UTF-8 bytes, with NO delimiter character at all — a field
+    /// boundary is determined purely by byte COUNT, so no byte value any field could ever contain is able
+    /// to be misinterpreted as a separator. Null string fields still contribute an EMPTY string (length
+    /// prefix 0), never the literal text "null" — same accepted, documented simplification as before (a
+    /// null-vs-empty-string distinction on those columns is not part of what this hash protects). Returns
+    /// lowercase hex, 64 characters (SHA-256's 32 bytes × 2). This preimage format is NOT compatible with
+    /// the original `\x01`-join format — safe to change with no migration because this store has never
+    /// shipped with persisted production rows (WS-D D3 is still in review).
+    /// </summary>
     internal static string ComputeRowHash(
         long seq, string atUtcIso, string actorUsername, string actorRole, string action,
         string? targetType, string? targetId, string? oldValueJson, string? newValueJson,
         string? correlationId, string prevHash)
     {
-        var preimage = string.Join(
-            '\x01',
-            seq.ToString(CultureInfo.InvariantCulture),
-            atUtcIso,
-            actorUsername,
-            actorRole,
-            action,
-            targetType ?? string.Empty,
-            targetId ?? string.Empty,
-            oldValueJson ?? string.Empty,
-            newValueJson ?? string.Empty,
-            correlationId ?? string.Empty,
-            prevHash);
+        using var buffer = new MemoryStream();
+        AppendField(buffer, seq.ToString(CultureInfo.InvariantCulture));
+        AppendField(buffer, atUtcIso);
+        AppendField(buffer, actorUsername);
+        AppendField(buffer, actorRole);
+        AppendField(buffer, action);
+        AppendField(buffer, targetType ?? string.Empty);
+        AppendField(buffer, targetId ?? string.Empty);
+        AppendField(buffer, oldValueJson ?? string.Empty);
+        AppendField(buffer, newValueJson ?? string.Empty);
+        AppendField(buffer, correlationId ?? string.Empty);
+        AppendField(buffer, prevHash);
 
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(preimage));
+        var hashBytes = SHA256.HashData(buffer.ToArray());
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    /// <summary>Writes one length-prefixed field into the hash preimage buffer — a fixed 4-byte
+    /// big-endian length prefix (the field's UTF-8 byte count) followed by the field's own UTF-8 bytes.
+    /// Big-endian is an arbitrary but FIXED choice (this is a preimage format, not wire protocol that
+    /// needs to interoperate with anything else) — the only requirement is that <see cref="ComputeRowHash"/>
+    /// always encodes/decodes... well, there's no decode side at all, which is exactly the point: there is
+    /// no delimiter byte to collide with, so field boundaries can never be ambiguous regardless of what
+    /// bytes <paramref name="value"/> itself contains.</summary>
+    private static void AppendField(MemoryStream buffer, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        Span<byte> lengthPrefix = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(lengthPrefix, bytes.Length);
+        buffer.Write(lengthPrefix);
+        buffer.Write(bytes);
     }
 
     private static AuditEntry ReadRow(SqliteDataReader reader) => new(

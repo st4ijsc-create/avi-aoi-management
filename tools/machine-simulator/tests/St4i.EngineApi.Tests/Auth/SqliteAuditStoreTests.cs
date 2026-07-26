@@ -97,6 +97,46 @@ public sealed class SqliteAuditStoreTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // DOCUMENTED LIMITATION (WS-D D3 review) — this chain is keyless and self-contained, so it can only
+    // ever detect tampering that leaves an INTERNAL inconsistency behind (an edited field that no longer
+    // matches its own row_hash, or a surviving row whose prev_hash points at a now-missing predecessor).
+    // Truncating the TAIL of the chain (deleting the newest row(s), with nothing after them left to
+    // notice) leaves every remaining row's own hash AND every remaining link fully self-consistent — there
+    // is nothing left in the table to contradict the deletion. This test exists so the suite honestly
+    // documents what VerifyChainAsync does NOT catch, rather than letting an untested claim of
+    // "tamper-evident" go further than the implementation actually reaches. See SqliteAuditStore's class
+    // doc comment for the full threat model (a local actor with security.db write access can also
+    // append-forge or fully re-forge the chain, for the same fundamental reason: nothing here is checked
+    // against any record outside this same file). Stronger protection against exactly this — a keyed HMAC
+    // with an off-box key and/or an external append-only/WORM anchor — is deferred to ecosystem/Site scope
+    // (XC-R39), not this task.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task VerifyChain_DoesNotDetect_TailTruncation_KnownLimitation()
+    {
+        var store = new SqliteAuditStore(NewTempDir());
+
+        await store.AppendAsync(Entry("action.one"), CancellationToken.None);
+        await store.AppendAsync(Entry("action.two"), CancellationToken.None);
+        var last = await store.AppendAsync(Entry("action.three"), CancellationToken.None);
+
+        var beforeTruncation = await store.VerifyChainAsync(CancellationToken.None);
+        Assert.True(beforeTruncation.Ok);
+
+        // Raw delete of the LAST (newest) row — unlike the middle-row-deletion test above, nothing
+        // downstream ever referenced this row's hash, so there is no surviving link left to break.
+        await RawUpdateAsync(store.DbPath, "DELETE FROM audit_log WHERE id = @id;", ("@id", last.Seq));
+
+        var afterTruncation = await store.VerifyChainAsync(CancellationToken.None);
+
+        // This assertion is the point of the test: the truncated chain still verifies Ok=true. Not a
+        // desired security property — a documented gap (see this test's comment block above).
+        Assert.True(afterTruncation.Ok);
+        Assert.Null(afterTruncation.FirstBrokenSeq);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Happy path — append + verify + query/filter.
     // ─────────────────────────────────────────────────────────────────────
 

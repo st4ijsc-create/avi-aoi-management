@@ -56,9 +56,11 @@ public sealed class SecurityDb
             """,
         }),
 
-        // WS-D-D3 — the tamper-evident, append-only, hash-chained audit log (see SqliteAuditStore for
-        // the hash-chain mechanics). `id` doubles as the chain's seq order; `prev_hash`/`row_hash` are
-        // 64-hex SHA-256 digests. No FK to `users.id` (actor_role is denormalized — the role the actor
+        // WS-D-D3 — the append-only, hash-chained audit log — tamper-EVIDENT against
+        // casual/accidental/app-level modification only (see SqliteAuditStore's doc comment for the full
+        // threat model, the hash-chain mechanics, and what a local actor with direct security.db write
+        // access can still do undetected). `id` doubles as the chain's seq order; `prev_hash`/`row_hash`
+        // are 64-hex SHA-256 digests. No FK to `users.id` (actor_role is denormalized — the role the actor
         // held AT THE TIME of the action, which must never change retroactively if the user's role
         // changes later).
         (2, new[]
