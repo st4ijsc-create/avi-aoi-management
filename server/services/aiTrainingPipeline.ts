@@ -438,3 +438,66 @@ export async function checkAutoRetrainTrigger(modelId: number): Promise<{
 
   return { shouldRetrain: false, feedbackCount: reviewed, labeledCount };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// B5.2 (Wave 6 / doc 69 F2) — drift → retrain HITL proposal.
+//
+// aiSelfLearningScheduler calls this when a HIGH/CRITICAL drift signal
+// (aiDriftMonitor.checkConfidenceDrift / checkConceptDriftKS) coincides with a
+// satisfied checkAutoRetrainTrigger, to close the drift→retrain loop WITHOUT
+// ever training or activating anything automatically.
+//
+// createTrainingJob() (above) is NOT reused here on purpose: on every existing
+// path "create" IS "start" — it fire-and-forgets runTrainingPipeline right
+// after the DB insert. proposeRetrainJob() instead calls the raw db layer
+// (db.createTrainingJob) directly and NEVER calls runTrainingPipeline, so the
+// row lands in the pipeline's natural "not started" state (QUEUED) — nothing
+// trains, nothing activates. The proposal's provenance (drift severity/source,
+// trigger reason) is embedded in trainingConfig so it reads as a proposal, not
+// a stuck job, and it is IMMEDIATELY visible in the EXISTING Training Jobs list
+// (AIModelManagementPage → trpc.aiLocalTraining.listJobs, already polled) for
+// an operator to review and explicitly start via the existing "Start Training"
+// flow — no new UI, no new execute path.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ProposeRetrainJobOptions {
+  modelId: number;
+  /** Human-readable reason from checkAutoRetrainTrigger. */
+  reason: string;
+  driftSeverity: string;
+  driftSource: "confidence-psi" | "concept-drift-ks";
+  targetVersion?: string;
+  feedbackCount?: number;
+  labeledCount?: number;
+}
+
+export async function proposeRetrainJob(options: ProposeRetrainJobOptions) {
+  const model = await getAiModelById(options.modelId);
+  if (!model) throw new Error(`Model ${options.modelId} not found`);
+
+  const targetVersion =
+    options.targetVersion ??
+    (model.currentVersion ? `${model.currentVersion}-proposed-retrain` : `proposed-retrain-${Date.now()}`);
+
+  return db.createTrainingJob({
+    name: `[PROPOSED] Retrain — model ${options.modelId} (drift ${options.driftSeverity}, needs approval)`,
+    modelId: options.modelId,
+    targetVersion,
+    // Explicit — the pipeline's natural "not started" state. Nothing polls a
+    // QUEUED row to auto-start it; only runTrainingPipeline (never called here)
+    // advances a job past QUEUED.
+    status: "QUEUED",
+    datasetConfig: {},
+    trainingConfig: {
+      proposedBy: "aiSelfLearningScheduler",
+      proposalKind: "drift_retrain",
+      requiresHumanApproval: true,
+      driftSeverity: options.driftSeverity,
+      driftSource: options.driftSource,
+      reason: options.reason,
+      feedbackCount: options.feedbackCount,
+      labeledCount: options.labeledCount,
+      proposedAt: new Date().toISOString(),
+    },
+  } as any);
+}

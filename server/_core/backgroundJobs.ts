@@ -133,6 +133,17 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[aiSelfLearningScheduler] init failed:", (err as any)?.message || err);
   }
 
+  // B5.2 (doc 69 Wave 6 F2) — AI performance-snapshot sweep: the missing caller
+  // of aiMonitoring.collectPerformanceSnapshot (materializes model_performance_snapshots
+  // + drift alerts). Own flag, independent of AI_SELF_LEARNING_ENABLED above. Opt
+  // in via AI_PERF_SNAPSHOT_SWEEP_ENABLED=true.
+  try {
+    const { initPerfSnapshotScheduler } = await import("../services/aiSelfLearningScheduler");
+    initPerfSnapshotScheduler();
+  } catch (err) {
+    console.error("[aiPerfSnapshotScheduler] init failed:", (err as any)?.message || err);
+  }
+
   // WS-4 — Predictive maintenance cycle. Opt in via PREDICTIVE_MAINTENANCE_ENABLED=true.
   try {
     const { startPredictiveMaintenanceJob } = await import("../services/predictiveMaintenanceService");
@@ -611,7 +622,12 @@ export function stopBackgroundSchedulers(): void {
     .then((m) => m.stopBatchRcaScheduler())
     .catch(() => {});
   import("../services/aiSelfLearningScheduler")
-    .then((m) => m.stopSelfLearningScheduler())
+    .then((m) => {
+      m.stopSelfLearningScheduler();
+      // B5.2 (doc 69 Wave 6 F2) — idempotent no-op when the perf-snapshot sweep
+      // was never started.
+      m.stopPerfSnapshotScheduler();
+    })
     .catch(() => {});
   import("../services/predictiveMaintenanceService")
     .then((m) => m.stopPredictiveMaintenanceJob())
