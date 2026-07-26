@@ -10,7 +10,7 @@
  * Proves: input redaction reaches the engine, a gateway metric is recorded, and the
  * OpenAI-compatible response shape is unchanged.
  */
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import express from "express";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
@@ -20,23 +20,34 @@ const h = vi.hoisted(() => ({
   lastFimArgs: null as any,
 }));
 
+// Review fix (doc69 W1-1b follow-up) — `chatCompletion`/`generateFim`/`chatCompletionStream`
+// are plain `const`s (not declared via `vi.hoisted`) referenced from the `vi.mock` factory
+// below, mirroring the `getDbMock`/`insertValuesMock` pattern already used in this file: the
+// factory function body only runs at import-resolution time, by which point these consts have
+// already been initialized. Wrapping `chatCompletionStream` in `vi.fn()` (it used to be a bare
+// generator function) lets tests override it per-call via `mockImplementationOnce` to simulate
+// a mid-stream engine failure (review fix — error metering test).
+const chatCompletionMock = vi.fn(async (opts: any, modelId?: string) => {
+  h.lastChatArgs = { opts, modelId };
+  return { text: "hello from chat", tokensPrompt: 7, tokensGenerated: 3, modelId: modelId || "default", totalTimeMs: 1, tokensPerSecond: 1 };
+});
+const generateFimMock = vi.fn(async (opts: any, modelId?: string) => {
+  h.lastFimArgs = { opts, modelId };
+  return { text: "completed text", tokensPrompt: 5, tokensGenerated: 2, modelId: modelId || "default", totalTimeMs: 1, tokensPerSecond: 1 };
+});
+const chatCompletionStreamMock = vi.fn(async function* defaultChatStream() {
+  yield { type: "token", token: "hi" };
+  yield { type: "done", fullText: "hi", tokensPrompt: 1, tokensGenerated: 1 };
+});
+
 vi.mock("../services/aiGgufEngine", () => ({
   isGgufAvailable: vi.fn(async () => true),
-  chatCompletion: vi.fn(async (opts: any, modelId?: string) => {
-    h.lastChatArgs = { opts, modelId };
-    return { text: "hello from chat", tokensPrompt: 7, tokensGenerated: 3, modelId: modelId || "default", totalTimeMs: 1, tokensPerSecond: 1 };
-  }),
+  chatCompletion: (...a: unknown[]) => chatCompletionMock(...a),
   generateText: vi.fn(),
-  generateFim: vi.fn(async (opts: any, modelId?: string) => {
-    h.lastFimArgs = { opts, modelId };
-    return { text: "completed text", tokensPrompt: 5, tokensGenerated: 2, modelId: modelId || "default", totalTimeMs: 1, tokensPerSecond: 1 };
-  }),
+  generateFim: (...a: unknown[]) => generateFimMock(...a),
   generateEmbedding: vi.fn(async () => ({ embedding: [0.1], dimensions: 1, modelId: "embed" })),
   generateEmbeddings: vi.fn(async () => ({ embeddings: [[0.1]], dimensions: 1, modelId: "embed" })),
-  chatCompletionStream: async function* () {
-    yield { type: "token", token: "hi" };
-    yield { type: "done", fullText: "hi", tokensPrompt: 1, tokensGenerated: 1 };
-  },
+  chatCompletionStream: (...a: unknown[]) => chatCompletionStreamMock(...a),
   generateTextStream: async function* () {},
 }));
 
@@ -196,5 +207,170 @@ describe("POST /v1/completions (FIM) — AI safety + metering", () => {
 
     const rows = insertValuesMock.mock.calls.flatMap((c) => c[0] as Array<Record<string, unknown>>);
     expect(rows.some((r) => r.task === "fim" && r.outcome === "ok")).toBe(true);
+  });
+});
+
+// ─── Review fix (doc69 W1-1b follow-up) — Important #2: gateway metering missed 3 of 4 ──
+// failure sub-paths (only FIM-streaming recorded outcome:"error" on an engine throw). These
+// tests force each of the 4 request shapes' underlying engine call to fail and assert a
+// gateway metric with outcome:"error" is still recorded — mirroring aiLocalKnowledgeService's
+// record-on-both-success-and-error contract.
+describe("gateway metering — 'error' outcome recorded on EVERY failure path (review fix, all 4 request shapes)", () => {
+  it("chat non-stream: an engine failure still records an 'error' gateway metric", async () => {
+    chatCompletionMock.mockRejectedValueOnce(new Error("chat engine boom"));
+    const res = await fetch(`${enabled.url}/v1/chat/completions`, {
+      method: "POST",
+      headers: { ...AUTH, "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "trigger a chat failure" }] }),
+    });
+    expect(res.status).toBe(500);
+
+    await flushGatewayMetrics();
+    const rows = insertValuesMock.mock.calls.flatMap((c) => c[0] as Array<Record<string, unknown>>);
+    expect(rows.some((r) => r.task === "chat" && r.outcome === "error")).toBe(true);
+  });
+
+  it("chat stream: a MID-STREAM engine failure (generator throws after SSE headers are already sent) still records an 'error' gateway metric", async () => {
+    chatCompletionStreamMock.mockImplementationOnce(async function* () {
+      yield { type: "token", token: "partial" };
+      throw new Error("stream engine boom");
+    });
+    const res = await fetch(`${enabled.url}/v1/chat/completions`, {
+      method: "POST",
+      headers: { ...AUTH, "Content-Type": "application/json" },
+      body: JSON.stringify({ stream: true, messages: [{ role: "user", content: "trigger a stream failure" }] }),
+    });
+    // Headers were already flushed as 200 (SSE) before the generator threw — the outer catch
+    // can only fall back to writing an error event + ending the stream, not change the status.
+    expect(res.status).toBe(200);
+    await res.text(); // drain the SSE body so the request completes
+
+    await flushGatewayMetrics();
+    const rows = insertValuesMock.mock.calls.flatMap((c) => c[0] as Array<Record<string, unknown>>);
+    expect(rows.some((r) => r.task === "chat" && r.outcome === "error")).toBe(true);
+  });
+
+  it("FIM non-stream: an engine failure still records an 'error' gateway metric", async () => {
+    generateFimMock.mockRejectedValueOnce(new Error("fim engine boom"));
+    const res = await fetch(`${enabled.url}/v1/completions`, {
+      method: "POST",
+      headers: { ...AUTH, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "def foo():\n  ", suffix: "\n  return x" }),
+    });
+    expect(res.status).toBe(500);
+
+    await flushGatewayMetrics();
+    const rows = insertValuesMock.mock.calls.flatMap((c) => c[0] as Array<Record<string, unknown>>);
+    expect(rows.some((r) => r.task === "fim" && r.outcome === "error")).toBe(true);
+  });
+
+  it("FIM stream: an engine failure still records an 'error' gateway metric (this path already worked before the fix — regression guard)", async () => {
+    generateFimMock.mockRejectedValueOnce(new Error("fim stream engine boom"));
+    const res = await fetch(`${enabled.url}/v1/completions`, {
+      method: "POST",
+      headers: { ...AUTH, "Content-Type": "application/json" },
+      body: JSON.stringify({ stream: true, prompt: "def foo():\n  ", suffix: "\n  return x" }),
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+
+    await flushGatewayMetrics();
+    const rows = insertValuesMock.mock.calls.flatMap((c) => c[0] as Array<Record<string, unknown>>);
+    expect(rows.some((r) => r.task === "fim" && r.outcome === "error")).toBe(true);
+  });
+});
+
+// ─── Review fix (doc69 W1-1b follow-up) — Important #1: /v1 rate-limit must FAIL OPEN ───
+// `/v1` has no per-user identity (shared static Bearer token) — every engineer's IDE
+// FIM-autocomplete + coding-chat traffic pools into ONE anon gateway bucket. These tests use a
+// FRESH module graph per test (`vi.resetModules()` + dynamic import, same pattern as
+// `aiProviderGatewayRouting.test.ts`'s `loadFresh()`) so `AI_GATEWAY_LIMIT_CHEAP_PER_MIN` can be
+// tuned to "1" and exhausted deterministically with a single prior request, isolated from the
+// shared `enabled` server's default (120/min) budget used by every other test in this file.
+describe("rate-limit fail-open (review fix — mirrors aiProviderRouter.planGateway's precedent)", () => {
+  afterEach(() => {
+    delete process.env.AI_GATEWAY_LIMIT_CHEAP_PER_MIN;
+  });
+
+  it("chat: once the shared anon 'cheap' budget is exhausted, the call still PROCEEDS (200, not 429) and a rate_limited metric is recorded", async () => {
+    process.env.AI_GATEWAY_LIMIT_CHEAP_PER_MIN = "1"; // exhausted after 1 request
+    vi.resetModules();
+    const mod = await import("./openaiGateway");
+    const freshGateway = await import("../services/aiGateway");
+    getDbMock.mockResolvedValue({ insert: insertMock });
+
+    const app = express();
+    expect(mod.registerOpenAiGateway(app)).toBe(true);
+    const srv = await serve(app);
+    try {
+      // First call consumes the 1-per-min "cheap" budget (task "chat" on a short message → Tier 1).
+      const first = await fetch(`${srv.url}/v1/chat/completions`, {
+        method: "POST",
+        headers: { ...AUTH, "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
+      });
+      expect(first.status).toBe(200);
+
+      // Second call: budget now exhausted → planInference throws RateLimitError internally.
+      // Must fail OPEN (200, generation proceeds), never a hard 429.
+      const second = await fetch(`${srv.url}/v1/chat/completions`, {
+        method: "POST",
+        headers: { ...AUTH, "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "still works after the budget is gone" }] }),
+      });
+      expect(second.status).toBe(200);
+      const body = await second.json();
+      // OpenAI-compat response shape unchanged even on the fail-open path.
+      expect(body.object).toBe("chat.completion");
+      expect(body.choices[0].message).toEqual({ role: "assistant", content: "hello from chat" });
+      expect(body.choices[0].finish_reason).toBe("stop");
+      expect(body.usage).toEqual({ prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 });
+
+      await freshGateway.flush();
+      const rows = insertValuesMock.mock.calls.flatMap((c) => c[0] as Array<Record<string, unknown>>);
+      expect(rows.some((r) => r.outcome === "rate_limited")).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => srv.server.close(() => resolve()));
+    }
+  });
+
+  it("FIM: once the shared anon 'cheap' budget is exhausted, the call still PROCEEDS (200, not 429) and a rate_limited metric is recorded", async () => {
+    process.env.AI_GATEWAY_LIMIT_CHEAP_PER_MIN = "1";
+    vi.resetModules();
+    const mod = await import("./openaiGateway");
+    const freshGateway = await import("../services/aiGateway");
+    getDbMock.mockResolvedValue({ insert: insertMock });
+
+    const app = express();
+    expect(mod.registerOpenAiGateway(app)).toBe(true);
+    const srv = await serve(app);
+    try {
+      // FIM always routes to Tier 1 ("cheap") regardless of AI_CODE_ROUTER_ENABLED — see
+      // aiModelRouter.route()'s `task === "fim"` branch — so it shares the exact same anon
+      // bucket as chat, which is the review-flagged scenario (both traffic types collide).
+      const first = await fetch(`${srv.url}/v1/completions`, {
+        method: "POST",
+        headers: { ...AUTH, "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "def foo():\n  ", suffix: "\n  return x" }),
+      });
+      expect(first.status).toBe(200);
+
+      const second = await fetch(`${srv.url}/v1/completions`, {
+        method: "POST",
+        headers: { ...AUTH, "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "def bar():\n  ", suffix: "\n  return y" }),
+      });
+      expect(second.status).toBe(200);
+      const body = await second.json();
+      expect(body.object).toBe("text_completion");
+      expect(body.choices[0].text).toBe("completed text");
+      expect(body.choices[0].finish_reason).toBe("stop");
+
+      await freshGateway.flush();
+      const rows = insertValuesMock.mock.calls.flatMap((c) => c[0] as Array<Record<string, unknown>>);
+      expect(rows.some((r) => r.outcome === "rate_limited")).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => srv.server.close(() => resolve()));
+    }
   });
 });
