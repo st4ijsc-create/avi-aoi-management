@@ -4,6 +4,7 @@ using St4i.EdgeCore.Drivers;
 using St4i.EdgeCore.Drivers.HotFolder;
 using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Engine;
+using St4i.EdgeCore.Historian;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Mapping;
 using St4i.EdgeCore.Models;
@@ -99,6 +100,15 @@ public sealed class FleetHost
     /// <see cref="SimulatorFactory.Create"/> exactly like <see cref="_configStore"/> already is.</summary>
     private readonly St4i.EdgeCore.Config.ProductConfigStore? _productConfigStore;
 
+    /// <summary>WS-A-T7 — optional (defaults null so every pre-existing test/call site that constructs
+    /// <see cref="FleetHost"/> directly without one, e.g. <c>FleetHostHealthAndRegistrationTests</c>,
+    /// keeps compiling/behaving byte-for-byte unchanged) durable-historian sink. Fed ALONGSIDE the
+    /// existing in-memory <see cref="MachineState"/> path in <see cref="OnPipelineCommitted"/> (never
+    /// instead of it) and the Start/Stop/Estop/ResetEstop run-state transitions below — this class owns
+    /// no historian logic itself, just forwards to <see cref="HistorianWriter"/>'s own non-blocking,
+    /// non-throwing <c>Enqueue</c>/<c>RecordRunEventFireAndForget</c>.</summary>
+    private readonly HistorianWriter? _historianWriter;
+
     /// <summary>Task 3 — "what product is machine X running right now", keyed case-insensitively by
     /// <see cref="MachineDescriptor.Code"/>. A machine absent from this map (the common case — nothing
     /// sets it yet outside tests) resolves machine-scoped config only, exactly like a machine whose
@@ -134,7 +144,8 @@ public sealed class FleetHost
         ILogger<FleetHost>? logger = null,
         St4i.EngineApi.Config.ConfigSyncCoordinator? configSyncCoordinator = null,
         MachineConfigStore? configStore = null,
-        St4i.EdgeCore.Config.ProductConfigStore? productConfigStore = null)
+        St4i.EdgeCore.Config.ProductConfigStore? productConfigStore = null,
+        HistorianWriter? historianWriter = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -143,6 +154,7 @@ public sealed class FleetHost
         _configSyncCoordinator = configSyncCoordinator;
         _configStore = configStore;
         _productConfigStore = productConfigStore;
+        _historianWriter = historianWriter;
 
         _fleet = LoadFleet().ToList();
         _states = new ConcurrentDictionary<string, MachineState>(StringComparer.OrdinalIgnoreCase);
@@ -267,6 +279,7 @@ public sealed class FleetHost
             _estopEngaged = true;
         }
 
+        _ = _historianWriter?.RecordRunEventFireAndForget("Estop");
         WaitAndDisposeOldPipeline(handle);
     }
 
@@ -279,6 +292,8 @@ public sealed class FleetHost
         {
             _estopEngaged = false;
         }
+
+        _ = _historianWriter?.RecordRunEventFireAndForget("EstopReset");
     }
 
     private void StartLocked()
@@ -327,6 +342,7 @@ public sealed class FleetHost
         var cts = new CancellationTokenSource();
         _cts = cts;
         IsRunning = true;
+        _ = _historianWriter?.RecordRunEventFireAndForget("Start");
 
         _runTask = Task.Run(async () =>
         {
@@ -379,6 +395,7 @@ public sealed class FleetHost
         _cts = null;
         _runTask = null;
         IsRunning = false;
+        _ = _historianWriter?.RecordRunEventFireAndForget("Stop");
 
         if (_currentPipeline is not null)
         {
@@ -425,6 +442,7 @@ public sealed class FleetHost
         if (_states.TryGetValue(reading.MachineCode, out var state))
         {
             state.ApplyReading(reading, ack);
+            _historianWriter?.Enqueue(HistorianResultRecord.From(state.Descriptor, reading, ack, DateTimeOffset.UtcNow));
         }
 
         Interlocked.Increment(ref _totalCycles);

@@ -107,6 +107,21 @@ builder.Services.AddSingleton<ConfigSyncEngine>();
 // spec/points or the automation recipe payload those stores already own.
 builder.Services.AddSingleton<MachineConfigStore>();
 
+// WS-A-T7 — the durable historian: SqliteHistorianStore is the on-disk backend, HistorianWriter is the
+// bounded-channel write-behind FleetHost forwards committed readings/run events into (see FleetHost's
+// ctor — the param is optional, so DI supplying it here is what actually turns the hook on; every
+// FleetHost test that constructs it directly without one keeps behaving exactly as before). Additive
+// only — nothing here changes the existing in-memory MachineState path that powers the live UI.
+builder.Services.AddSingleton<St4i.EdgeCore.Historian.IHistorianStore>(_ => new St4i.EdgeCore.Historian.SqliteHistorianStore());
+builder.Services.AddSingleton(sp =>
+{
+    var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Historian");
+    return new St4i.EdgeCore.Historian.HistorianWriter(
+        sp.GetRequiredService<St4i.EdgeCore.Historian.IHistorianStore>(),
+        logWarning: msg => logger.LogWarning("{HistorianMsg}", msg),
+        logError: (ex, msg) => logger.LogError(ex, "{HistorianMsg}", msg));
+});
+
 // H4 job 1 fix — WebApplicationBuilder's default WebRootPath is `{ContentRootPath}/wwwroot`, and
 // ContentRootPath defaults to the CURRENT WORKING DIRECTORY, which under `dotnet run` is the PROJECT
 // SOURCE directory (confirmed via the "Content root path:" startup log line) — NOT the build output
