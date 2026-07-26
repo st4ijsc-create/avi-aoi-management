@@ -784,6 +784,9 @@ New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\St4iEngineApi' -
     'ST4I_WAL_DIR=D:\St4iData\wal'
     'ST4I_SECURITY_DIR=D:\St4iData\security'
     'ST4I_DEMO_ENABLED=false'
+    'ST4I_SERVER_URL=https://central.example.com'
+    'ST4I_MACHINE_CODE=LINE3-AOI-01'
+    'ST4I_VERIFY_TLS=true'
   )
 
 sc stop St4iEngineApi; sc start St4iEngineApi   # Environment is only re-read at process start
@@ -798,18 +801,36 @@ The env vars that actually matter to this engine:
 | `ST4I_WAL_DIR` | Store-and-forward WAL queue-file root (`WalOptions`) | `%ProgramData%\ST4I\sim\wal` |
 | `ST4I_SECURITY_DIR` | `security.db` (users/sessions/audit log) + the DataProtection key ring root | `%ProgramData%\ST4I\sim\security` |
 | `ST4I_DEMO_ENABLED` | `true` boots into the offline Demo fleet (exhibition, §13.5); unset/`false` boots Live (product default) | unset → Live |
+| `ST4I_SERVER_URL` | The Live-mode ST4I server URL — `FleetHost`'s **initial** `serverUrl` at process start (WS-F1 final review fix F1) | `FleetHost.DefaultServerUrl` (`http://localhost:5000`) |
+| `ST4I_MACHINE_CODE` | This engine's Live-mode machine identity — `FleetHost`'s **initial** `machineCode` at process start | `FleetHost.DefaultMachineCode` (`ENGINE-API-01`) |
+| `ST4I_VERIFY_TLS` | `false`/`0` (case-insensitive) disables TLS certificate verification for the Live transport; unset/anything else leaves it on | unset → `true` |
 
 *(Also relevant if the WAL needs tuning: `ST4I_WAL_ENABLED`/`ST4I_WAL_MAX_BYTES` — same idiom, see
 `WalOptions`. Not a service-only mechanism — these same env vars work identically for an interactive
 `dotnet run`/double-click launch; the registry `Environment` value is specifically how to set them when
 there's no shell/user session to export them from.)*
 
+*(WS-F1 final-review fix F1 — `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/`ST4I_VERIFY_TLS` are read ONCE at
+process start and applied via `FleetHost.UpdateSettings` — the exact same code path a runtime
+`PUT /v1/settings` call already uses (so the rebuild of the Live transport/config-sync backends behaves
+identically either way). This is what makes a headless service's Live config actually survive a
+restart: before this fix `St4i.EngineApi` read none of these three (only `St4i.EdgeService`'s
+`EdgeWorker` did), so a service always came back up pointed at the placeholder
+`http://localhost:5000`/`ENGINE-API-01` defaults no matter what had been configured through the UI/API.
+An env var left unset/blank leaves that field at `FleetHost`'s own built-in default — it does not force
+Demo mode or otherwise validate connectivity. This ONLY covers the process's INITIAL settings at
+startup — see §15.8(a) for what still does *not* persist across a restart.)*
+
 *(VI: Dịch vụ Windows KHÔNG kế thừa biến môi trường của người dùng đăng nhập — cơ chế chuẩn là giá trị
 `REG_MULTI_SZ` tên `Environment` dưới khóa registry của service,
 `HKLM\SYSTEM\CurrentControlSet\Services\St4iEngineApi\Environment`; SCM chỉ đọc lúc khởi động tiến
-trình, đổi giá trị xong phải `sc stop`/`sc start` lại. 5 biến quan trọng: `ASPNETCORE_URLS` (địa chỉ
+trình, đổi giá trị xong phải `sc stop`/`sc start` lại. 8 biến quan trọng: `ASPNETCORE_URLS` (địa chỉ
 bind), `ST4I_HISTORIAN_DIR`, `ST4I_WAL_DIR`, `ST4I_SECURITY_DIR` (thư mục dữ liệu), `ST4I_DEMO_ENABLED`
-(bật Demo ngoại tuyến).)*
+(bật Demo ngoại tuyến), và (từ bản vá WS-F1 final-review F1) `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/
+`ST4I_VERIFY_TLS` — 3 biến này được đọc MỘT LẦN lúc khởi động và áp dụng làm cấu hình Live BAN ĐẦU của
+`FleetHost` qua đúng cơ chế `PUT /v1/settings` runtime dùng, nên service khởi động lại vẫn giữ đúng cấu
+hình Live đã đặt qua registry — biến nào không đặt thì giữ nguyên giá trị mặc định sẵn có của
+`FleetHost`.)*
 
 ### 15.3 Installer — WiX v4 MSI / Trình cài đặt MSI
 
@@ -877,16 +898,36 @@ destructive script — **never** invoked by the MSI itself:
 .\packaging\remove-data.ps1 -WhatIf   # preview only, nothing touched
 .\packaging\remove-data.ps1           # interactive — prompts before each stop/delete
 .\packaging\remove-data.ps1 -Force    # non-interactive, for scripted wipes
+
+# Relocated a data dir via ST4I_HISTORIAN_DIR/ST4I_WAL_DIR/ST4I_SECURITY_DIR (§15.2)? Say so explicitly:
+.\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security
 ```
 
-It stops+deletes the `St4iEngineApi` service if present, then deletes all 4 `%ProgramData%\ST4I\sim\*`
-subdirectories — printing an explicit "this destroys the audit chain + historian + credentials"
+It stops+deletes the `St4iEngineApi` service if present, then deletes the historian/wal/security/creds
+data directories — printing an explicit "this destroys the audit chain + historian + credentials"
 warning up front, gated through PowerShell's `ShouldProcess`/`-WhatIf`/`-Confirm`.
+
+**Relocated directories (WS-F1 final-review fix F3):** §15.2's `ST4I_HISTORIAN_DIR`/`ST4I_WAL_DIR`/
+`ST4I_SECURITY_DIR` mean a deployment's real data doesn't have to live under
+`%ProgramData%\ST4I\sim\*` at all — the script used to assume it always did, silently deleting an
+empty default directory while the real data sat untouched elsewhere. It now resolves each of those
+three per `-HistorianDir`/`-WalDir`/`-SecurityDir`, else the matching `ST4I_*_DIR` environment variable
+in **this same PowerShell process**, else the `%ProgramData%` default — printing the resolved path for
+each before doing anything. **It does NOT read the service's own registry `Environment` value** (only
+this shell's own env) — if a relocated directory was only ever configured there, pass the matching
+`-XxxDir` parameter explicitly (check the registry first: `Get-ItemProperty
+'HKLM:\SYSTEM\CurrentControlSet\Services\St4iEngineApi' -Name Environment`), or that directory is
+missed by this script and must be removed by hand. `creds` has no relocation env var (`CredentialStore`
+is not relocatable) — always `%ProgramData%\ST4I\sim\creds`.
 
 *(VI: Gỡ cài đặt chỉ xoá những gì MSI đã cài (Program Files, shortcut, service nếu có bật) — dữ liệu
 `%ProgramData%\ST4I\sim\*` được GIỮ LẠI mặc định vì MSI không hề biết tới các thư mục này (do engine tự
 tạo lúc chạy). Muốn xoá thật, chạy `packaging\remove-data.ps1` (có `-WhatIf`/`-Force`) — script riêng,
-thủ công, có cảnh báo phá hủy rõ ràng, KHÔNG bao giờ được MSI tự gọi.)*
+thủ công, có cảnh báo phá hủy rõ ràng, KHÔNG bao giờ được MSI tự gọi. Nếu historian/wal/security đã
+được chuyển chỗ qua `ST4I_HISTORIAN_DIR`/`ST4I_WAL_DIR`/`ST4I_SECURITY_DIR`, truyền tham số
+`-HistorianDir`/`-WalDir`/`-SecurityDir` tương ứng — script KHÔNG tự đọc giá trị registry `Environment`
+của service, chỉ đọc biến môi trường của CHÍNH shell đang chạy nó; nếu không khớp, phải xoá thư mục
+thật bằng tay.)*
 
 ### 15.5 `St4i.DesktopShell` coexistence / Cùng tồn tại với DesktopShell
 
@@ -906,6 +947,29 @@ second. Check what's already using the port first (`sc query St4iEngineApi` / `S
 engine thứ hai, và đóng cửa sổ shell KHÔNG giết service. Đừng chạy thêm `St4i.EngineApi.exe` thủ công
 trên :5199 khi service đang chạy — bind cổng sẽ lỗi cho bên chạy sau; kiểm tra bằng `sc query`/
 `--status`/`services.msc` trước.)*
+
+**Caveat — service-first install, then a non-elevated interactive launch (WS-F1 final-review fix
+F2):** §14's `SecurityDirAcl.Apply` locks `%ProgramData%\ST4I\sim\security` down to exactly
+`NT AUTHORITY\SYSTEM`, `BUILTIN\Administrators`, and whichever account happened to create it *first*
+— nobody else gets any access. If the service (§15.1, `LocalSystem` by default) is what creates that
+directory first, and someone LATER runs `St4i.DesktopShell.exe`/`St4i.EngineApi.exe` interactively as
+a plain, **non-elevated, non-admin** logged-in user (with the service stopped, so the shell spawns its
+own engine instead of attaching), that engine cannot read `security.db` or the DataProtection key ring
+— every login attempt fails with a 500, not a clean "access denied" message. **Avoid this** by either
+(a) running the interactive app **elevated** ("Run as administrator") the first time after a
+service-first install, or (b) explicitly granting the interactive user access up front: `icacls
+"%ProgramData%\ST4I\sim\security" /grant "DOMAIN\username:(OI)(CI)F"`. Don't run the interactive app as
+a plain non-admin user against a security directory a service already created — this is the same
+first-writer-owns-the-ACL behavior §15.1 already documents for a dedicated low-privilege service
+account, just triggered the other direction (service first, interactive user second).
+
+*(VI: Nếu service (chạy dưới LocalSystem) là bên tạo `%ProgramData%\ST4I\sim\security` TRƯỚC, sau đó ai
+đó mở `St4i.DesktopShell.exe`/`St4i.EngineApi.exe` tương tác dưới tài khoản người dùng thường KHÔNG
+elevate (service đã dừng nên shell tự spawn engine riêng) — engine đó sẽ KHÔNG đọc được `security.db`
+hay key ring, mọi lần đăng nhập sẽ lỗi 500. Tránh bằng cách (a) chạy app tương tác dưới quyền
+Administrator lần đầu sau khi cài service, hoặc (b) cấp quyền tay bằng `icacls
+"%ProgramData%\ST4I\sim\security" /grant "DOMAIN\username:(OI)(CI)F"`. Đừng chạy app tương tác dưới tài
+khoản thường khi thư mục security đã do service tạo trước.)*
 
 ### 15.6 Signing gap / Thiếu chữ ký số
 
@@ -943,13 +1007,23 @@ chạy xem được ở `GET /v1/capabilities` là `AssemblyVersion` 4 phần (`
 
 ### 15.8 Two known fast-follow gaps — be honest / Hai khoảng trống đã biết, nói thật
 
-**(a) `St4i.EngineApi` settings (`serverUrl`/`machineCode`/`verifyTls`) are in-memory only.**
-`FleetHost`'s `_serverUrl`/`_verifyTls`/`_machineCode` are plain private fields, reset to their
-built-in defaults every process start — `PUT /v1/settings` mutates them for the lifetime of the
-running process, but nothing persists them to disk/registry, so a service restart (or a reboot) throws
-away anything an operator configured through the UI/API. **Until a settings-persistence fast-follow
-lands, configure a headless service via the registry `Environment` env vars in §15.2 instead** (which
-ARE read fresh on every process start) rather than relying on `PUT /v1/settings` surviving a restart.
+**(a) A runtime `PUT /v1/settings` edit is still in-memory only — persist config by env var instead
+(WS-F1 final-review fix F1 narrowed this gap; it did not remove it).** `FleetHost`'s
+`_serverUrl`/`_verifyTls`/`_machineCode` are plain private fields — `PUT /v1/settings` mutates them for
+the lifetime of the running process only, with nothing written back to disk/registry, so a service
+restart (or a reboot) throws away anything an operator changed *only* through the UI/API at runtime.
+What changed: `St4i.EngineApi` now reads `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/`ST4I_VERIFY_TLS` (§15.2)
+fresh at every process start and applies them as `FleetHost`'s INITIAL settings — before this fix it
+read none of these three at all (only `St4i.EdgeService`'s `EdgeWorker` did), so a headless service had
+**no** way to be pointed at a real server across a restart; it silently fell back to the
+`http://localhost:5000`/`ENGINE-API-01` placeholder defaults every time. A deployment configured once
+via the registry `Environment` value now keeps that Live config across every subsequent restart. **What
+is still NOT covered:** if an operator changes `serverUrl`/`machineCode`/`verifyTls` through
+`PUT /v1/settings` (the web UI) at runtime, that change is NOT written back to the registry — the next
+restart reverts to whatever the env vars (or built-in defaults, if none are set) say. To make a runtime
+settings change durable, also update the registry `Environment` value (§15.2) to match, then restart the
+service — a deeper settings-persistence fast-follow (writing `PUT /v1/settings` through to disk/registry
+automatically) is not built in this workstream.
 
 **(b) `CredentialStore` uses per-user DPAPI (`DataProtectionScope.CurrentUser`).** A machine's `mk_`
 credential (§5) is encrypted to whichever specific Windows account was running the process when
@@ -960,9 +1034,14 @@ need to be re-claimed/re-pasted through Onboarding under the new identity. A `Lo
 fast-follow (matching what the DataProtection key ring already does — §14, `protectToLocalMachine:
 true`) is planned to remove this friction, but is not built in this workstream.
 
-*(VI: (a) Cấu hình `serverUrl`/`machineCode`/`verifyTls` của `St4i.EngineApi` hiện CHỈ ở bộ nhớ, mất khi
-service khởi động lại — dùng biến môi trường registry ở §15.2 thay vì trông chờ `PUT /v1/settings` tồn
-tại qua restart. (b) `CredentialStore` mã hoá DPAPI theo TỪNG NGƯỜI DÙNG — khoá `mk_` claim lúc tương
+*(VI: (a) Sửa WS-F1 final-review F1 THU HẸP khoảng trống này, KHÔNG xoá hẳn: đổi `serverUrl`/
+`machineCode`/`verifyTls` qua `PUT /v1/settings` lúc đang chạy vẫn CHỈ ở bộ nhớ, mất khi service khởi
+động lại. Cái đã sửa: `St4i.EngineApi` giờ đọc `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/`ST4I_VERIFY_TLS`
+(§15.2) MỖI LẦN khởi động và áp dụng làm cấu hình BAN ĐẦU của `FleetHost` — trước đây không đọc biến nào
+trong 3 biến này cả (chỉ `EdgeWorker` của `St4i.EdgeService` đọc), nên service không có cách nào trỏ
+đúng server thật qua các lần restart. Cái CHƯA sửa: đổi qua `PUT /v1/settings` lúc runtime KHÔNG ghi
+ngược lại registry — muốn bền phải cập nhật registry `Environment` (§15.2) cho khớp rồi restart service.
+(b) `CredentialStore` mã hoá DPAPI theo TỪNG NGƯỜI DÙNG — khoá `mk_` claim lúc tương
 tác dưới tài khoản người dùng sẽ KHÔNG đọc được khi chuyển sang chạy dưới tài khoản service khác, phải
 claim lại qua Onboarding. Kế hoạch chuyển sang DPAPI theo LocalMachine để hết vướng này, chưa làm ở
 workstream này.)*

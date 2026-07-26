@@ -349,6 +349,23 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton(
     _ => new St4i.EdgeCore.Historian.OeeSettingsStore(string.IsNullOrWhiteSpace(historianDir) ? null : historianDir));
 
+// WS-F1 final-review fix F1 — a headless Windows Service install has no interactive Settings UI to
+// type a real serverUrl/machineCode into, and FleetHost's `_serverUrl`/`_machineCode`/`_verifyTls`
+// fields (see FleetHost.cs:142-145's DefaultServerUrl/DefaultMachineCode/`true`) are plain in-memory
+// fields that reset to those placeholder defaults on EVERY process start — so before this fix, a
+// headless Live deployment silently fell back to http://localhost:5000/ENGINE-API-01 on every restart
+// no matter what an operator PUT into `/v1/settings` at runtime (README §15.2/§15.8(a) claimed these
+// three env vars already covered this, but St4i.EngineApi read none of them — only St4i.EdgeService's
+// EdgeWorker did). Resolved here the SAME way ST4I_HISTORIAN_DIR is above (a plain
+// `Environment.GetEnvironmentVariable` read, no `IConfiguration` seam) and applied further down, once
+// FleetHost itself exists, via `FleetHost.UpdateSettings` — the exact same mechanism a runtime
+// `PUT /v1/settings` already uses, so the values chosen here take effect (rebuilding the Live
+// transport/config-sync backends) exactly like an operator's own settings edit would. Never logged —
+// none of these three are secrets, but there's no reason to echo config back into a log sink either.
+var initialLiveServerUrl = Environment.GetEnvironmentVariable("ST4I_SERVER_URL");
+var initialLiveMachineCode = Environment.GetEnvironmentVariable("ST4I_MACHINE_CODE");
+var initialLiveVerifyTlsRaw = Environment.GetEnvironmentVariable("ST4I_VERIFY_TLS");
+
 // H4 job 1 fix — WebApplicationBuilder's default WebRootPath is `{ContentRootPath}/wwwroot`, and
 // ContentRootPath defaults to the CURRENT WORKING DIRECTORY, which under `dotnet run` is the PROJECT
 // SOURCE directory (confirmed via the "Content root path:" startup log line) — NOT the build output
@@ -425,6 +442,29 @@ app.MapFallbackToFile("index.html").AllowAnonymous();
 // resolution — and any FleetConfigException it might swallow — happens at startup, where a log line is
 // actually useful, not silently on whichever request happens to hit it first.
 var fleetHost = app.Services.GetRequiredService<FleetHost>();
+
+// WS-F1 final-review fix F1 — apply the env-resolved (see the ST4I_SERVER_URL/ST4I_MACHINE_CODE/
+// ST4I_VERIFY_TLS reads above) settings as this instance's INITIAL Live config, now that FleetHost
+// exists to apply them to. `SettingsUpdateRequest`'s nullable fields mean an absent/blank env var
+// leaves the corresponding field at FleetHost's own built-in default (DefaultServerUrl/
+// DefaultMachineCode/verifyTls=true) — ST4I_VERIFY_TLS parses the same "false"/"0" (case-insensitive)
+// opt-out idiom EdgeWorker's own ParseVerifyTls already uses, `null` (unset) meaning "don't touch it".
+// `UpdateSettings` itself is a no-op (no transport rebuild, no CredentialStore disk read) whenever
+// every field ends up null — i.e. byte-identical startup behavior for the common case where none of
+// these three env vars are set at all (the desktop/exhibition launch path).
+bool? initialLiveVerifyTls = null;
+if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
+{
+    var trimmed = initialLiveVerifyTlsRaw.Trim();
+    initialLiveVerifyTls = !(trimmed == "0" || string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase));
+}
+
+fleetHost.UpdateSettings(new SettingsUpdateRequest(
+    ServerUrl: string.IsNullOrWhiteSpace(initialLiveServerUrl) ? null : initialLiveServerUrl,
+    VerifyTls: initialLiveVerifyTls,
+    Language: null,
+    MachineCode: string.IsNullOrWhiteSpace(initialLiveMachineCode) ? null : initialLiveMachineCode));
+
 app.Logger.LogInformation(
     "St4i.EngineApi ready — {Count} machine(s) in the fleet roster: {Codes} (mode={Mode})",
     fleetHost.Fleet.Count,
