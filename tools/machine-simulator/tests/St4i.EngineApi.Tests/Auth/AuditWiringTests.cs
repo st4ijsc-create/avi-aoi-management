@@ -428,6 +428,56 @@ public sealed class AuditWiringTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // machine.config.sync — the D4-review-flagged gap this task (D5) closes.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task MachineConfigSync_AsEngineer_RecordsAuthenticatedActorAndResultSummary()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var adminClient = await BootstrapAdminAsync(factory, "aw-sync-admin", "AdminPass123!");
+        await CreateUserAsync(factory, "aw-sync-engineer", "EngineerPass123!", Roles.Engineer);
+        using var engineerClient = await LoginAsAsync(factory, "aw-sync-engineer", "EngineerPass123!");
+
+        using var post = await engineerClient.PostAsync("/v1/machines/AOI-01/sync-config", null);
+        Assert.Equal(HttpStatusCode.OK, post.StatusCode);
+
+        var entries = await GetAuditEntriesAsync(adminClient, "machine.config.sync");
+        var entry = Assert.Single(entries);
+        Assert.Equal("aw-sync-engineer", entry.ActorUsername);
+        Assert.Equal("AOI-01", entry.TargetId);
+        Assert.Null(entry.OldValueJson); // a version CHECK, not an old->new field edit — nothing "before" to record.
+        Assert.Contains("driftState", entry.NewValueJson);
+        Assert.Contains("changed", entry.NewValueJson);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // system.startup — WS-D-D5's loopback-exposure startup check writes this row regardless of risk;
+    // BindingRiskTests covers the risk-detection LOGIC itself (pure, fully unit-tested in isolation) — this
+    // just proves the row actually gets written when a real host starts. `_ = factory.Server` inside
+    // CreateFactoryAsync already forced the host to build+start (and ApplicationStarted to fire) before
+    // this test ever runs a request, so the row is guaranteed to exist by the time it queries for it.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SystemStartup_RecordedWhenHostStarts()
+    {
+        await using var factory = await CreateFactoryAsync();
+        using var adminClient = await BootstrapAdminAsync(factory, "aw-startup-admin", "AdminPass123!");
+
+        var entries = await GetAuditEntriesAsync(adminClient, "system.startup");
+        var entry = Assert.Single(entries);
+        Assert.Equal("(system)", entry.ActorUsername);
+        Assert.Equal("(system)", entry.ActorRole);
+        Assert.Contains("boundUrls", entry.NewValueJson);
+
+        // The Mvc.Testing host binds an ephemeral loopback TestServer address — risk should be null here,
+        // but per the brief this test's real job is just proving the row is written; the risk-detection
+        // logic itself is BindingRiskTests' job.
+        Assert.Contains("risk", entry.NewValueJson);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // WS-D-D4 failure policy — an audit-store failure must NEVER fail the triggering mutation.
     // ─────────────────────────────────────────────────────────────────────
 

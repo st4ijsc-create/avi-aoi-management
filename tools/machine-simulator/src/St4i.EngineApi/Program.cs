@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.FileProviders;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Infrastructure;
@@ -368,6 +370,36 @@ app.Logger.LogInformation(
 // its background Task.Run loop immediately, rather than leaving it dormant until something happens to
 // resolve the singleton on its own (nothing else in the DI graph depends on it).
 _ = app.Services.GetRequiredService<St4i.EdgeCore.Transport.WalFlushPump>();
+
+// WS-D-D5 — loopback-exposure startup check. IServerAddressesFeature is only populated once the server
+// has actually begun listening (empty/absent beforehand), so this runs on the ApplicationStarted lifetime
+// event rather than right here — registering the callback now, before app.Run() starts the host, is what
+// guarantees it actually fires (ApplicationStarted has usually already been raised by the time
+// app.Services is even reachable under Mvc.Testing's WebApplicationFactory, which builds+starts the host
+// eagerly — see BindingRiskTests'/AuditWiringTests' system.startup coverage). BindingRisk.Describe itself
+// is a pure function (fully unit-tested in isolation) — this registration is just the I/O wiring around
+// it: read the addresses, log a warning if risky, and ALWAYS write a system.startup audit row (risk: null
+// on a safe binding is itself a useful "the host came up, and here's what it was actually bound to"
+// marker in the trail — not just a marker for the risky case).
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var addressesFeature = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>();
+    var boundUrls = addressesFeature?.Addresses.ToArray() ?? Array.Empty<string>();
+    var risk = BindingRisk.Describe(boundUrls);
+
+    if (risk is not null)
+    {
+        app.Logger.LogWarning("{BindingRisk}", risk);
+    }
+
+    // WS-D-D4's audit failure policy applies here too — RecordSystemAsync never throws (see
+    // AuditRecorder), so a local security.db hiccup at the exact moment of startup still can't fail
+    // startup itself. Blocked (not fire-and-forget) so the row is guaranteed written before this
+    // ApplicationStarted callback returns — the same "eager, deterministic, no race with the first test/
+    // request that goes looking for it" reasoning as the FleetHost/WalFlushPump force-touches above.
+    var recorder = app.Services.GetRequiredService<AuditRecorder>();
+    recorder.RecordSystemAsync("system.startup", newValue: new { boundUrls, risk }).GetAwaiter().GetResult();
+});
 
 app.Run();
 

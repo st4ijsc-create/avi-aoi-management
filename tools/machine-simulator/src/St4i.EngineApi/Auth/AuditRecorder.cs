@@ -50,7 +50,7 @@ public sealed class AuditRecorder
         _logger = logger;
     }
 
-    public async Task RecordAsync(
+    public Task RecordAsync(
         HttpContext ctx, string action, string? targetType = null, string? targetId = null,
         object? oldValue = null, object? newValue = null, CancellationToken ct = default)
     {
@@ -59,6 +59,28 @@ public sealed class AuditRecorder
         var correlationId = ctx.TraceIdentifier;
         var clientIp = ctx.Connection.RemoteIpAddress?.ToString();
 
+        return AppendAsync(actor, role, action, targetType, targetId, oldValue, newValue, correlationId, clientIp, ct);
+    }
+
+    /// <summary>
+    /// WS-D-D5 — the system-actor analogue of <see cref="RecordAsync"/> for events that happen OUTSIDE any
+    /// HTTP request (there is no <see cref="HttpContext"/> to pull actor/role/correlationId/clientIp off
+    /// of) — today, only the startup <c>system.startup</c> row (see <c>Program.cs</c>'s
+    /// <c>ApplicationStarted</c> registration). Actor/role are the fixed literal <c>"(system)"</c> per the
+    /// brief; correlationId/clientIp are naturally absent (no request exists yet). Same NEVER-throws
+    /// failure policy as <see cref="RecordAsync"/> — a lost startup row must not crash startup.
+    /// </summary>
+    public Task RecordSystemAsync(
+        string action, string? targetType = null, string? targetId = null,
+        object? oldValue = null, object? newValue = null, CancellationToken ct = default) =>
+        AppendAsync(SystemActor, SystemActor, action, targetType, targetId, oldValue, newValue, correlationId: null, clientIp: null, ct);
+
+    private const string SystemActor = "(system)";
+
+    private async Task AppendAsync(
+        string actor, string role, string action, string? targetType, string? targetId,
+        object? oldValue, object? newValue, string? correlationId, string? clientIp, CancellationToken ct)
+    {
         var oldJson = oldValue is null ? null : JsonSerializer.Serialize(oldValue, ApiJson.Options);
         var newJson = newValue is null ? null : JsonSerializer.Serialize(newValue, ApiJson.Options);
 
@@ -72,13 +94,13 @@ public sealed class AuditRecorder
         }
         catch (Exception ex)
         {
-            // Deliberately NOT rethrown — see this class's doc comment. The mutation this row was meant
-            // to record has ALREADY committed by the time a caller reaches this call (ordering: record
-            // AFTER the mutation succeeds), so the only thing at stake here is the audit row itself.
+            // Deliberately NOT rethrown — see this class's doc comment. The mutation/event this row was
+            // meant to record has ALREADY happened by the time a caller reaches this call (ordering: record
+            // AFTER the fact), so the only thing at stake here is the audit row itself.
             _logger.LogError(
                 ex,
                 "Audit append failed for action {Action} (actor={Actor}, target={TargetType}/{TargetId}) — " +
-                "the triggering mutation already committed and is NOT affected; this audit row was lost.",
+                "the triggering event already happened and is NOT affected; this audit row was lost.",
                 action, actor, targetType, targetId);
         }
     }

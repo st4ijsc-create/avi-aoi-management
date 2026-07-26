@@ -76,12 +76,26 @@ public static class FleetEndpoints
             return Results.Ok(host.Snapshot());
         }).RequireAuthorization(Policies.Operator);
 
-        app.MapPost("/v1/machines/{code}/sync-config", async (string code, FleetHost host, CancellationToken ct) =>
+        // WS-D-D5 — the sync-config audit gap D4's review flagged: every other config-family mutation
+        // (product.upsert, settings.update, machine.settings.set, historian.oee_settings.update, …) already
+        // gets an audit row, but this one — an Engineer explicitly pulling config onto a machine — didn't.
+        // No "before" value to record (this is a version CHECK against whatever the machine already cached,
+        // not an old→new field edit); `newValue` is the full result summary (changed/version/driftState/
+        // applied — see SyncConfigResponse), which already carries the "did it actually pull anything"
+        // outcome, success or transport failure alike (FleetHost.SyncConfigAsync never throws — see its own
+        // catch — so the audit row is written the same way whether the sync succeeded or errored).
+        app.MapPost("/v1/machines/{code}/sync-config", async (
+            string code, FleetHost host, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
         {
             var result = await host.SyncConfigAsync(code, ct).ConfigureAwait(false);
-            return result is null
-                ? Results.NotFound(new ApiErrorDto($"machine \"{code}\" not found"))
-                : Results.Ok(result);
+            if (result is null)
+            {
+                return Results.NotFound(new ApiErrorDto($"machine \"{code}\" not found"));
+            }
+
+            await recorder.RecordAsync(context, "machine.config.sync", "machine", code, null, result, ct)
+                .ConfigureAwait(false);
+            return Results.Ok(result);
         }).RequireAuthorization(Policies.Engineer);
     }
 }
