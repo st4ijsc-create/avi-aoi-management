@@ -6,6 +6,7 @@ using St4i.EdgeCore.Drivers;
 using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Engine;
 using St4i.EdgeCore.Infrastructure;
+using St4i.EdgeCore.Uns;
 using Xunit;
 
 public class EdgePipelineTests
@@ -186,4 +187,62 @@ public class EdgePipelineTests
         Assert.NotEmpty(recorder.Sent);
         Assert.All(recorder.Sent, env => Assert.Equal("C", TemperatureUnit(env)));
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // G2-2 — UNS spine (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 2): EdgePipeline's
+    // new trailing `uns` param must be purely additive — a null (the default, and every pre-existing test
+    // above never passes one) behaves byte-identical to today; a fake IUnsPublisher records one publish
+    // per reading while the existing transport/Committed path keeps firing completely unaffected.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private sealed class FakeUnsPublisher : IUnsPublisher
+    {
+        public ConcurrentBag<(DeviceReading Reading, CanonicalEnvelope Envelope)> Published { get; } = new();
+
+        public void PublishReading(DeviceReading reading, CanonicalEnvelope envelope) => Published.Add((reading, envelope));
+
+        public void PublishBirth(string equipmentCode)
+        {
+        }
+
+        public void PublishDeath(string equipmentCode)
+        {
+        }
+    }
+
+    [Fact]
+    public async Task Pipeline_WithNullUnsPublisher_BehavesByteIdenticalToNoUnsParameterAtAll()
+    {
+        var d = new MachineDescriptor("UNS-NULL", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var drv = new SimulatedDriver(new[] { (IMachineSimulator)new DispensingSim(d, 11) });
+        var recorder = new RecordingTransport();
+        var pipe = new EdgePipeline(drv, MappingProfile.ForClass(DeviceClass.Automation), recorder, new EventBus(), profileResolver: null, uns: null);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try { await pipe.RunAsync(cts.Token); } catch (OperationCanceledException) { }
+
+        Assert.NotEmpty(recorder.Sent);
+    }
+
+    [Fact]
+    public async Task Pipeline_WithFakeUnsPublisher_RecordsOnePublishPerReading_AndTransportCommittedStillFire()
+    {
+        var d = new MachineDescriptor("UNS-FAKE", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var drv = new SimulatedDriver(new[] { (IMachineSimulator)new DispensingSim(d, 12) });
+        var recorder = new RecordingTransport();
+        var uns = new FakeUnsPublisher();
+        int committed = 0;
+
+        var pipe = new EdgePipeline(drv, MappingProfile.ForClass(DeviceClass.Automation), recorder, new EventBus(), profileResolver: null, uns: uns);
+        pipe.Committed += (_, __) => Interlocked.Increment(ref committed);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try { await pipe.RunAsync(cts.Token); } catch (OperationCanceledException) { }
+
+        Assert.NotEmpty(recorder.Sent);
+        Assert.True(committed >= 1);
+        // One UNS publish per committed reading — never more, never fewer.
+        Assert.Equal(recorder.Sent.Count, uns.Published.Count);
+        Assert.All(uns.Published, p => Assert.Equal("UNS-FAKE", p.Reading.MachineCode));
+        Assert.All(uns.Published, p => Assert.Equal("UNS-FAKE", p.Envelope.MachineCode));
+    }
+
 }

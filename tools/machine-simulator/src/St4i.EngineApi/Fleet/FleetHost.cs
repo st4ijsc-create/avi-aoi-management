@@ -9,6 +9,7 @@ using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Mapping;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
+using St4i.EdgeCore.Uns;
 using Microsoft.Extensions.Logging;
 
 namespace St4i.EngineApi.Fleet;
@@ -116,6 +117,15 @@ public sealed class FleetHost
     /// <see cref="Estop"/> double-emit "Stop" + "Estop" for the same teardown.</summary>
     private readonly HistorianWriter? _historianWriter;
 
+    /// <summary>G2-2 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 2) — optional
+    /// (defaults null, same "every pre-existing test that constructs <see cref="FleetHost"/> directly
+    /// without one keeps compiling/behaving byte-for-byte unchanged" contract as every other optional
+    /// store/writer above) local Unified Namespace publisher. Threaded straight into every
+    /// <see cref="EdgePipeline"/> this host builds (see <see cref="StartLocked"/>) so every committed
+    /// reading is additively mirrored onto the Sparkplug + <c>syn/...</c> topics — never instead of, and
+    /// never able to slow down, the existing ST4I HTTP path this same pipeline already drives.</summary>
+    private readonly UnsPublisher? _unsPublisher;
+
     /// <summary>FF-1 (docs/plans/2026-07-27-ws-ff-fast-follows.md) — optional (defaults null, same
     /// "every pre-existing test that constructs <see cref="FleetHost"/> directly without one keeps
     /// compiling/behaving byte-for-byte unchanged" contract as every other optional store above)
@@ -176,7 +186,8 @@ public sealed class FleetHost
         MachineConfigStore? configStore = null,
         St4i.EdgeCore.Config.ProductConfigStore? productConfigStore = null,
         HistorianWriter? historianWriter = null,
-        FleetSettingsStore? settingsStore = null)
+        FleetSettingsStore? settingsStore = null,
+        UnsPublisher? unsPublisher = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -187,6 +198,7 @@ public sealed class FleetHost
         _productConfigStore = productConfigStore;
         _historianWriter = historianWriter;
         _settingsStore = settingsStore;
+        _unsPublisher = unsPublisher;
 
         // FF-1 — eager load, no lock needed: runs once, before this instance is published to any other
         // thread (same reasoning SeedAoiProductLinks below documents for itself). See _settingsStore's own
@@ -435,7 +447,7 @@ public sealed class FleetHost
             logError: (ex, msg) => _logger?.LogWarning(ex, "{MappingProfileMsg}", msg));
 
         var profile = new MappingProfile { Name = "fleet-mixed", DeviceClass = "Mixed" };
-        var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus, mappingResolver.Resolve);
+        var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus, mappingResolver.Resolve, _unsPublisher);
         pipeline.Committed += OnPipelineCommitted;
         _currentPipeline = pipeline;
 
@@ -827,7 +839,7 @@ public sealed class FleetHost
 
             await using var driver = new HotFolderAoiDriver(watchDir, archiveDir, errorDir);
             var profile = new MappingProfile { Name = "hotfolder-demo", DeviceClass = nameof(DeviceClass.AoiAvi) };
-            var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus);
+            var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus, uns: _unsPublisher);
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             DeviceReading? ingested = null;

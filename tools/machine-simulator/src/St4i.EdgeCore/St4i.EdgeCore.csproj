@@ -11,6 +11,11 @@
   <ItemGroup>
     <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
     <PackageReference Include="MQTTnet.Server" Version="5.2.0.1603" />
+    <!-- G2-2 (UNS spine) — the ONE new NuGet this task adds: runtime-only, used by
+         Uns/Sparkplug/SparkplugPayload.cs's hand-rolled Sparkplug B encoder/decoder (CodedOutputStream/
+         CodedInputStream low-level tag/value primitives), deliberately WITHOUT protoc/Grpc.Tools — no
+         .proto files, no generated code, just the wire-format primitives this runtime package ships. -->
+    <PackageReference Include="Google.Protobuf" Version="3.35.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
     <!-- FF-2 / NU1903: Microsoft.Data.Sqlite 10.0.10 pins the transitive SQLitePCLRaw.bundle_e_sqlite3
          (and, through it, SQLitePCLRaw.lib.e_sqlite3) at 2.1.11, which the NuGet audit flags via

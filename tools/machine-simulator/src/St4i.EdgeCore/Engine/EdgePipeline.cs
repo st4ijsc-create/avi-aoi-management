@@ -3,6 +3,7 @@ using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Mapping;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
+using St4i.EdgeCore.Uns;
 
 namespace St4i.EdgeCore.Engine;
 
@@ -21,6 +22,7 @@ public sealed class EdgePipeline
     private readonly ITransport _transport;
     private readonly EventBus _bus;
     private readonly Func<string, MappingProfile?>? _profileResolver;
+    private readonly IUnsPublisher? _uns;
 
     /// <param name="profileResolver">G2-1 — optional (defaults to <see langword="null"/>, so every
     /// pre-existing call site/test that constructs an <see cref="EdgePipeline"/> without one keeps
@@ -33,15 +35,24 @@ public sealed class EdgePipeline
     /// PER-READING lookup, not a per-pipeline one: there is still only ONE shared <see cref="EdgePipeline"/>
     /// for the whole fleet (per-machine pipelines are a later task) — this is what lets that one pipeline
     /// normalize each machine's readings against its own profile without a bigger refactor.</param>
+    /// <param name="uns">G2-2 (UNS spine) — optional (defaults to <see langword="null"/>, so every
+    /// pre-existing call site/test keeps compiling and behaving byte-for-byte unchanged: the ST4I HTTP
+    /// path via <paramref name="transport"/> and the <see cref="Committed"/> event are NEVER affected by
+    /// whether this is set). When provided, every normalized reading is ADDITIONALLY published (via
+    /// <see cref="IUnsPublisher.PublishReading"/> — non-blocking, never throws) onto the local Unified
+    /// Namespace's Sparkplug + retained semantic-mirror topics, alongside (never instead of) the existing
+    /// transport send.</param>
     public EdgePipeline(
         IDeviceDriver driver, MappingProfile profile, ITransport transport, EventBus bus,
-        Func<string, MappingProfile?>? profileResolver = null)
+        Func<string, MappingProfile?>? profileResolver = null,
+        IUnsPublisher? uns = null)
     {
         _driver = driver ?? throw new ArgumentNullException(nameof(driver));
         _profile = profile ?? throw new ArgumentNullException(nameof(profile));
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         _profileResolver = profileResolver;
+        _uns = uns;
     }
 
     /// <summary>Fired once per reading, immediately after its trace event is published — carries the
@@ -65,6 +76,13 @@ public sealed class EdgePipeline
         {
             var profile = _profileResolver?.Invoke(reading.MachineCode) ?? _profile;
             var env = Normalizer.Normalize(reading, profile);
+
+            // G2-2 (UNS spine) — additive, non-blocking enqueue onto the local Unified Namespace; a
+            // no-op when _uns is null (the common case until FleetHost/Program.cs wires one up). Placed
+            // right after Normalize/before the transport send so it observes the exact same env every
+            // HTTP call gets, and deliberately never awaited/guarded — IUnsPublisher's contract is that
+            // it never throws and never blocks, so this can't affect _transport.SendAsync/Committed below.
+            _uns?.PublishReading(reading, env);
 
             TransportAck ack;
             var started = DateTimeOffset.UtcNow;

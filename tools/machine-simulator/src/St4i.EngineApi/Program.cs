@@ -344,6 +344,56 @@ builder.Services.AddSingleton(sp =>
         logError: (ex, msg) => logger.LogError(ex, "{HistorianMsg}", msg));
 });
 
+// G2-2 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 2) — the local UNS spine: an
+// always-on loopback MQTTnet broker (UnsBroker) plus the dual-topic (Sparkplug + retained semantic-mirror)
+// publisher (UnsPublisher) FleetHost threads into every EdgePipeline it builds (see FleetHost.StartLocked).
+// Both are registered ONLY when UnsOptions.Enabled (default true, gated off via ST4I_UNS_ENABLED=false) —
+// when disabled, neither type is registered at all, so FleetHost's optional `unsPublisher` ctor param
+// resolves to its own `null` default exactly like HistorianWriter/MachineConfigStore/... already do for
+// every pre-existing test that constructs FleetHost directly — i.e. byte-identical to pre-G2-2 behavior.
+//
+// The broker is started EAGERLY, right here (synchronously, before builder.Build()), wrapped in its own
+// try/catch — deliberately NOT inside a DI factory lambda: a factory that throws fails the WHOLE
+// GetRequiredService<FleetHost>() resolution graph (unlike a service that's simply never registered,
+// which optional ctor params fall back to null for), which would take down the entire product over
+// something as recoverable as "port already in use" (e.g. a stale previous instance still releasing the
+// socket, or — in a test/CI environment — another process/test host bound to the same loopback port).
+// Same "additive, never allowed to fail the host it's bolted onto" philosophy as every other UNS
+// guarantee in this task (see UnsPublisher's own doc comment) applied one level up, to startup itself:
+// if the broker can't bind, this run simply proceeds with unsPublisher staying null (byte-identical to
+// UnsOptions.Enabled being false) rather than crashing.
+var unsOptions = St4i.EdgeCore.Uns.UnsOptions.FromEnvironment();
+if (unsOptions.Enabled)
+{
+    St4i.EdgeCore.Uns.UnsBroker? unsBroker = null;
+    try
+    {
+        unsBroker = new St4i.EdgeCore.Uns.UnsBroker(unsOptions.BrokerPort);
+        unsBroker.StartAsync().GetAwaiter().GetResult();
+    }
+    catch (Exception ex)
+    {
+        // No app.Logger yet this early (same reasoning as SecurityDirAcl.Apply's own Console.Error use
+        // above) — this is a warning that must be visible even though the UNS spine silently no-ops.
+        Console.Error.WriteLine(
+            $"[startup] UNS broker failed to start on 127.0.0.1:{unsOptions.BrokerPort} — UNS spine disabled for this run: {ex.Message}");
+        unsBroker = null;
+    }
+
+    if (unsBroker is not null)
+    {
+        builder.Services.AddSingleton(unsBroker);
+        builder.Services.AddSingleton(sp =>
+        {
+            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Uns");
+            return new St4i.EdgeCore.Uns.UnsPublisher(
+                unsOptions,
+                logWarning: msg => logger.LogWarning("{UnsMsg}", msg),
+                logError: (ex, msg) => logger.LogError(ex, "{UnsMsg}", msg));
+        });
+    }
+}
+
 // Task 9 (WS-A) — per-machine OEE settings (ideal-cycle override + planned-production ratio), a plain
 // JSON-file-backed store (WS-A-T5) that was never wired into DI until now. Pointed at the SAME resolved
 // ST4I_HISTORIAN_DIR (or SqliteHistorianStore's own default when unset) so every historian-adjacent file
