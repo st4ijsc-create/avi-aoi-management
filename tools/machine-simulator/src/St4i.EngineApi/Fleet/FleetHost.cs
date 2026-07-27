@@ -420,8 +420,22 @@ public sealed class FleetHost
             driver = decorator(driver);
         }
 
+        // G2-1 — per-machine mapping/*.json profiles (docs/plans/2026-07-27-giaidoan2-synapse-connect-
+        // blueprint.md task 1): built fresh off `effectiveFleet` on every StartLocked call (including a
+        // RegisterMachine/ApplyScenario-triggered restart), so a newly-registered machine's own
+        // MappingProfile name is always resolved against the CURRENT roster, never a stale one. The
+        // shared `profile` below is now only the fallback for a machine code this resolver doesn't
+        // recognize (should not happen in practice — every reading's driver was built from this SAME
+        // effectiveFleet, see `sims` above) — never a per-machine override target itself anymore.
+        var mappingDir = Path.Combine(AppContext.BaseDirectory, "mapping");
+        var mappingResolver = MappingProfileResolver.Build(
+            effectiveFleet,
+            mappingDir,
+            logWarning: msg => _logger?.LogWarning("{MappingProfileMsg}", msg),
+            logError: (ex, msg) => _logger?.LogWarning(ex, "{MappingProfileMsg}", msg));
+
         var profile = new MappingProfile { Name = "fleet-mixed", DeviceClass = "Mixed" };
-        var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus);
+        var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus, mappingResolver.Resolve);
         pipeline.Committed += OnPipelineCommitted;
         _currentPipeline = pipeline;
 

@@ -20,13 +20,28 @@ public sealed class EdgePipeline
     private readonly MappingProfile _profile;
     private readonly ITransport _transport;
     private readonly EventBus _bus;
+    private readonly Func<string, MappingProfile?>? _profileResolver;
 
-    public EdgePipeline(IDeviceDriver driver, MappingProfile profile, ITransport transport, EventBus bus)
+    /// <param name="profileResolver">G2-1 — optional (defaults to <see langword="null"/>, so every
+    /// pre-existing call site/test that constructs an <see cref="EdgePipeline"/> without one keeps
+    /// compiling and behaving byte-for-byte unchanged — every reading normalizes through the single
+    /// shared <paramref name="profile"/>, exactly as before this task). When provided, invoked with each
+    /// reading's <see cref="DeviceReading.MachineCode"/> to pick that machine's OWN
+    /// <see cref="MappingProfile"/> (see <see cref="MappingProfileResolver"/>) instead of the shared one —
+    /// a <see langword="null"/> result (machine code the resolver doesn't recognize) falls back to
+    /// <paramref name="profile"/>, same as leaving this parameter unset entirely. This is deliberately a
+    /// PER-READING lookup, not a per-pipeline one: there is still only ONE shared <see cref="EdgePipeline"/>
+    /// for the whole fleet (per-machine pipelines are a later task) — this is what lets that one pipeline
+    /// normalize each machine's readings against its own profile without a bigger refactor.</param>
+    public EdgePipeline(
+        IDeviceDriver driver, MappingProfile profile, ITransport transport, EventBus bus,
+        Func<string, MappingProfile?>? profileResolver = null)
     {
         _driver = driver ?? throw new ArgumentNullException(nameof(driver));
         _profile = profile ?? throw new ArgumentNullException(nameof(profile));
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
+        _profileResolver = profileResolver;
     }
 
     /// <summary>Fired once per reading, immediately after its trace event is published — carries the
@@ -48,7 +63,8 @@ public sealed class EdgePipeline
     {
         await foreach (var reading in _driver.ReadAsync(ct).WithCancellation(ct).ConfigureAwait(false))
         {
-            var env = Normalizer.Normalize(reading, _profile);
+            var profile = _profileResolver?.Invoke(reading.MachineCode) ?? _profile;
+            var env = Normalizer.Normalize(reading, profile);
 
             TransportAck ack;
             var started = DateTimeOffset.UtcNow;

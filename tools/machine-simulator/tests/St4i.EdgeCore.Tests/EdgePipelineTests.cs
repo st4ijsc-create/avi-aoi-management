@@ -86,4 +86,104 @@ public class EdgePipelineTests
         Assert.Equal("POST", last.Method);
         Assert.Equal(TransportMode.Demo, last.Mode);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // G2-1 — per-reading MappingProfile resolver (docs/plans/2026-07-27-giaidoan2-synapse-connect-
+    // blueprint.md task 1). EdgePipeline still ties the WHOLE fleet to one shared IDeviceDriver/pipeline
+    // (per-machine pipelines are a later task) — the resolver lets THAT one pipeline normalize each
+    // reading against ITS OWN machine's mapping profile instead of one profile shared by every machine.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private sealed class RecordingTransport : ITransport
+    {
+        public ConcurrentBag<CanonicalEnvelope> Sent { get; } = new();
+
+        public TransportMode Mode => TransportMode.Demo;
+
+        public Task<TransportAck> SendAsync(CanonicalEnvelope env, CancellationToken ct)
+        {
+            Sent.Add(env);
+            return Task.FromResult(new TransportAck(Success: true, Id: 1));
+        }
+
+        public Task<HeartbeatResult> HeartbeatAsync(string machineCode, CancellationToken ct) =>
+            Task.FromResult(new HeartbeatResult(true, 1, "active", 365));
+
+        public Task<ConfigSyncResult> SyncConfigAsync(string machineCode, string configKind, string? cachedVersion, CancellationToken ct) =>
+            Task.FromResult(new ConfigSyncResult(false, null, null));
+    }
+
+    private static string? TemperatureUnit(CanonicalEnvelope env)
+    {
+        foreach (var item in (System.Collections.IEnumerable)env.Payload["metrics"])
+        {
+            var m = (Dictionary<string, object?>)item;
+            if (m["name"] as string == "temperature") return m["unit"] as string;
+        }
+
+        return null;
+    }
+
+    [Fact]
+    public async Task Resolver_null_behaves_byte_identical_to_no_resolver_at_all()
+    {
+        // DispensingSim emits a "temperature" metric with raw unit "C" — ForClass(Automation)'s UnitMap
+        // is empty, so it stays unmapped either way. This locks in that passing profileResolver: null
+        // explicitly (rather than omitting the parameter) changes nothing.
+        var d = new MachineDescriptor("DISP-BASE", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var drv = new SimulatedDriver(new[] { (IMachineSimulator)new DispensingSim(d, 55) });
+        var recorder = new RecordingTransport();
+        var pipe = new EdgePipeline(drv, MappingProfile.ForClass(DeviceClass.Automation), recorder, new EventBus(), profileResolver: null);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try { await pipe.RunAsync(cts.Token); } catch (OperationCanceledException) { }
+
+        Assert.NotEmpty(recorder.Sent);
+        Assert.All(recorder.Sent, env => Assert.Equal("C", TemperatureUnit(env)));
+    }
+
+    [Fact]
+    public async Task Resolver_routes_each_machine_to_its_own_profile_by_machineCode()
+    {
+        var mapped = new MachineDescriptor("DISP-MAPPED", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", "custom", 0.02);
+        var unmapped = new MachineDescriptor("DISP-PLAIN", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var drv = new SimulatedDriver(new IMachineSimulator[] { new DispensingSim(mapped, 1), new DispensingSim(unmapped, 2) });
+
+        var customProfile = new MappingProfile
+        {
+            Name = "custom",
+            DeviceClass = "Automation",
+            UnitMap = new Dictionary<string, string> { ["C"] = "°C" },
+        };
+        MappingProfile? Resolve(string code) => code == "DISP-MAPPED" ? customProfile : null;
+
+        var recorder = new RecordingTransport();
+        var fallbackProfile = MappingProfile.ForClass(DeviceClass.Automation); // empty UnitMap
+        var pipe = new EdgePipeline(drv, fallbackProfile, recorder, new EventBus(), profileResolver: Resolve);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try { await pipe.RunAsync(cts.Token); } catch (OperationCanceledException) { }
+
+        var mappedEnvs = recorder.Sent.Where(e => e.MachineCode == "DISP-MAPPED").ToList();
+        var unmappedEnvs = recorder.Sent.Where(e => e.MachineCode == "DISP-PLAIN").ToList();
+        Assert.NotEmpty(mappedEnvs);
+        Assert.NotEmpty(unmappedEnvs);
+
+        Assert.All(mappedEnvs, env => Assert.Equal("°C", TemperatureUnit(env)));
+        Assert.All(unmappedEnvs, env => Assert.Equal("C", TemperatureUnit(env)));
+    }
+
+    [Fact]
+    public async Task Resolver_returning_null_for_an_unrecognized_machineCode_falls_back_to_the_shared_profile()
+    {
+        var d = new MachineDescriptor("DISP-UNKNOWN", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var drv = new SimulatedDriver(new[] { (IMachineSimulator)new DispensingSim(d, 3) });
+
+        var recorder = new RecordingTransport();
+        var fallbackProfile = MappingProfile.ForClass(DeviceClass.Automation); // empty UnitMap -> "C" stays "C"
+        var pipe = new EdgePipeline(drv, fallbackProfile, recorder, new EventBus(), profileResolver: _ => null);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try { await pipe.RunAsync(cts.Token); } catch (OperationCanceledException) { }
+
+        Assert.NotEmpty(recorder.Sent);
+        Assert.All(recorder.Sent, env => Assert.Equal("C", TemperatureUnit(env)));
+    }
 }
