@@ -12,6 +12,17 @@
  * audio/video bytes, a sidecar process, or the filesystem, it just bounds+trims text like url/
  * md/txt).
  *
+ * E3-5 — scanned/image-only PDF OCR: `parsePdf` extracts text via pdf-parse as before, then
+ * computes a text-density heuristic (chars ÷ pageCount). A NORMAL text PDF is always far above
+ * the threshold, so it returns exactly as before (byte-identical behavior, unchanged code path).
+ * Only when density is low (a scanned/image-only PDF — no text layer) does it call
+ * `kbPdfOcr.ocrScannedPdf`, which renders pages via an injection-safe pdftoppm sidecar (mirrors
+ * E3-4's `runSidecar`) and OCRs each page image through the EXISTING `server/services/ai/
+ * ocrService.ts` engine (not reimplemented here). Gated behind BOTH `OCR_ENGINE_ENABLED`
+ * (ocrService's own master flag) AND `KB_OCR_ENABLED` (this ingest path's own flag, default
+ * OFF) — see kbPdfOcr.ts. When OCR is off/unavailable/fails, the ORIGINAL (possibly empty)
+ * pdf-parse text is returned with `meta.scannedNoOcr:true` — never fabricated, never a crash.
+ *
  * Fail-safe discipline:
  *  - An unrecognised mime/extension throws {@link KbUnsupportedTypeError} BEFORE any parsing
  *    is attempted (never silently mis-parses).
@@ -45,6 +56,17 @@ export interface ParsedDocumentMeta {
   charCount: number;
   truncated: boolean;
   pageCount?: number;
+  /** E3-5: true only when the returned `text` came from OCR (kbPdfOcr.ocrScannedPdf), i.e. a
+   * scanned/image-only PDF was successfully OCR'd. Absent/false for every other document. */
+  ocrUsed?: boolean;
+  /** E3-5: true when a PDF was detected as scanned/low-text (density below
+   * `KB_OCR_SCANNED_DENSITY_THRESHOLD`) but OCR did NOT supply text — either OCR is
+   * disabled/unavailable/unconfigured, or every page failed. `text` is the original (possibly
+   * empty) pdf-parse result, never fabricated — the caller/UI can honestly surface "scanned PDF
+   * — OCR not available". */
+  scannedNoOcr?: boolean;
+  /** E3-5: number of pages actually OCR'd successfully when `ocrUsed:true`. */
+  ocrPagesProcessed?: number;
 }
 
 export interface ParsedDocument {
@@ -62,6 +84,14 @@ const MAX_EXTRACTED_CHARS = (() => {
 const PARSE_TIMEOUT_MS = (() => {
   const n = Number(process.env.KB_PARSE_TIMEOUT_MS ?? 30_000);
   return Number.isFinite(n) && n > 0 ? n : 30_000;
+})();
+
+/** E3-5: below this chars-per-page density, a PDF's pdf-parse extraction is presumed to be a
+ * scanned/image-only page (no meaningful text layer) — a normal text page is typically 1000+
+ * chars, so the default of ~20 is a wide margin that never mis-fires on a real text PDF. */
+const SCANNED_DENSITY_THRESHOLD = (() => {
+  const n = Number(process.env.KB_OCR_SCANNED_DENSITY_THRESHOLD ?? 20);
+  return Number.isFinite(n) && n >= 0 ? n : 20;
 })();
 
 function boundText(raw: string): { text: string; truncated: boolean } {
@@ -125,10 +155,42 @@ async function parsePdf(buf: Buffer): Promise<ParsedDocument> {
     );
     const raw = res.text ?? (res.pages ?? []).map((p) => p.text ?? "").join("\n\n");
     const { text, truncated } = boundText(raw);
-    return {
-      text,
-      meta: { sourceType: "pdf", charCount: text.length, truncated, pageCount: res.total ?? res.pages?.length },
-    };
+    const pageCount = res.total ?? res.pages?.length;
+
+    // E3-5: scanned/image-only PDF detection. A normal text PDF's density is always far above
+    // SCANNED_DENSITY_THRESHOLD, so this branch — and every OCR-related import/call it leads
+    // to — is never reached for it: the pre-E3-5 behavior below is byte-for-byte unchanged.
+    const density = text.length / Math.max(1, pageCount ?? 1);
+    if (density < SCANNED_DENSITY_THRESHOLD) {
+      try {
+        const { ocrScannedPdf } = await import("./kbPdfOcr");
+        const ocr = await ocrScannedPdf(buf, pageCount ?? 1);
+        if (ocr.ocrUsed) {
+          const bounded = boundText(ocr.text);
+          return {
+            text: bounded.text,
+            meta: {
+              sourceType: "pdf",
+              charCount: bounded.text.length,
+              truncated: bounded.truncated,
+              pageCount,
+              ocrUsed: true,
+              ocrPagesProcessed: ocr.pagesProcessed,
+            },
+          };
+        }
+      } catch {
+        // kbPdfOcr.ocrScannedPdf is documented to never throw, but this is defense-in-depth:
+        // ANY unexpected failure here must fall back to the honest pdf-parse result below, not
+        // crash parsePdf or fabricate text.
+      }
+      return {
+        text,
+        meta: { sourceType: "pdf", charCount: text.length, truncated, pageCount, ocrUsed: false, scannedNoOcr: true },
+      };
+    }
+
+    return { text, meta: { sourceType: "pdf", charCount: text.length, truncated, pageCount } };
   } finally {
     await parser.destroy().catch(() => {});
   }
