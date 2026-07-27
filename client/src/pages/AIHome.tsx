@@ -17,8 +17,11 @@
  * the rail's own per-item RBAC 1:1, so nothing is exposed here that the sidebar
  * wouldn't also show that role.
  *
- * "Agent activity" is a clearly-marked placeholder — the live agent-activity
- * board + token/savings rail is doc 69 Wave E2 (later task), NOT built here.
+ * "Agent activity" (doc69 Wave 0-C) is now a LIVE compact summary — roster/working
+ * agent counts + this-month token savings — sourced from the SAME
+ * trpc.aiAgentCenter.getReadModel/getSavingsSummary the Command Center page (Wave
+ * E2) already renders, behind the SAME admin/engineer ops-role gate, with a link
+ * into /ai-command-center for the full board.
  */
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
@@ -26,9 +29,12 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { HubLauncher, type HubCategory } from "@/components/workspace";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { fmtUsd } from "@/lib/format";
 import {
   Sparkles,
   MessageSquare,
@@ -58,12 +64,26 @@ import {
   AlertCircle,
   Zap,
   ArrowRight,
+  Bot,
+  Users,
+  PiggyBank,
 } from "lucide-react";
 
 export default function AIHome() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const providerStatus = trpc.aiGguf.providerStatus.useQuery(undefined, { refetchInterval: 30_000 });
+
+  // doc69 Wave 0-C — agent-activity card goes live. SAME ops-role gate as
+  // AIAgentCommandCenter.tsx (the backend's opsAgentCenterProcedure restricts both
+  // queries to admin/engineer) — a non-ops viewer must never see a spinner/crash
+  // here, mirroring that page's own guard.
+  const isOpsRole = user?.role === "admin" || user?.role === "engineer";
+  const agentReadModel = trpc.aiAgentCenter.getReadModel.useQuery({ limit: 50 }, { enabled: isOpsRole });
+  const agentSavings = trpc.aiAgentCenter.getSavingsSummary.useQuery(undefined, { enabled: isOpsRole });
+  const agentRoster = agentReadModel.data?.roster;
+  const workingAgentCount = agentRoster?.filter((r) => r.status === "working").length ?? 0;
 
   const ps = providerStatus.data;
   // X2 cleanup precedent (carried from AIHub): system is 100% local — provider is GGUF or Offline.
@@ -326,27 +346,75 @@ export default function AIHome() {
           </CardContent>
         </Card>
 
-        {/* Agent activity — CLEARLY-MARKED PLACEHOLDER. The live agent roster/status
-            board + token-savings rail is doc 69 Wave E2 (a LATER task) — not built here. */}
+        {/* Agent activity — LIVE (doc69 Wave 0-C). Reuses the SAME
+            trpc.aiAgentCenter.getReadModel + getSavingsSummary the Command Center
+            page (Wave E2) already renders, gated by the SAME admin/engineer
+            isOpsRole check. Honest degradation, never a fake "coming soon": loading
+            → skeleton; role-ineligible or query error → a neutral, truthful line;
+            data present → real roster/working counts + real savings, never
+            fabricated numbers. */}
         <Card>
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
               <CardTitle className="flex items-center gap-2 text-base">
+                <Bot className="h-4 w-4 text-primary" />
                 {t("aiHome.agentActivity.title", "Hoạt động Agent")}
-                <Badge variant="secondary">{t("aiHome.agentActivity.badge", "Sắp ra mắt")}</Badge>
               </CardTitle>
               <CardDescription>
-                {t(
-                  "aiHome.agentActivity.desc",
-                  "Bảng theo dõi agent trực tiếp (trạng thái, việc đang làm, token tiết kiệm) sẽ hiển thị ở đây.",
-                )}
+                {t("aiHome.agentActivity.desc", "Đội hình AI agent trực tiếp — trạng thái và token tiết kiệm.")}
               </CardDescription>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setLocation("/ai-brain")}>
-              {t("aiHome.agentActivity.cta", "Xem AI Brain")}
-              <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
-            </Button>
+            {isOpsRole && (
+              <Button variant="outline" size="sm" onClick={() => setLocation("/ai-command-center")}>
+                {t("aiHome.agentActivity.cta", "Mở Trung tâm điều hành AI")}
+                <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+              </Button>
+            )}
           </CardHeader>
+          <CardContent>
+            {!isOpsRole ? (
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  "aiHome.agentActivity.opsOnly",
+                  "Bảng hoạt động agent dành cho vai trò kỹ thuật hoặc quản trị.",
+                )}
+              </p>
+            ) : agentReadModel.isLoading || agentSavings.isLoading ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Skeleton className="h-9 w-24" />
+                <Skeleton className="h-9 w-32" />
+                <Skeleton className="h-9 w-36" />
+              </div>
+            ) : agentReadModel.isError || agentSavings.isError ? (
+              <p className="text-sm text-muted-foreground">
+                {t("aiHome.agentActivity.loadError", "Không thể tải dữ liệu hoạt động agent lúc này.")}
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-5 text-sm">
+                <div className="flex items-center gap-1.5">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-semibold tabular-nums">{agentRoster?.length ?? 0}</span>
+                  <span className="text-muted-foreground">{t("aiHome.agentActivity.rosterLabel", "agent")}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Activity className="h-4 w-4 text-success" />
+                  <span className="font-semibold tabular-nums">{workingAgentCount}</span>
+                  <span className="text-muted-foreground">{t("aiHome.agentActivity.workingLabel", "đang hoạt động")}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <PiggyBank className="h-4 w-4 text-primary" />
+                  {agentSavings.data?.dataAvailable ? (
+                    <>
+                      <span className="font-semibold tabular-nums">{fmtUsd(agentSavings.data.month.cloudEquivalentUsd)}</span>
+                      <span className="text-muted-foreground">{t("aiHome.agentActivity.savingsMonthLabel", "tiết kiệm tháng này")}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">{t("aiHome.agentActivity.savingsEmpty", "Chưa đủ dữ liệu tiết kiệm")}</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
         </Card>
 
         {/* Taxonomy launcher — same single taxonomy as the left nav "ai" group. */}

@@ -12,6 +12,14 @@ export default defineConfig({
       "@assets": path.resolve(templateRoot, "attached_assets"),
     },
   },
+  // doc69 Wave 0-C — mirrors vite.config.ts's @vitejs/plugin-react automatic JSX
+  // runtime (no explicit `React` import needed in .tsx source) so *.unit.test.ts
+  // files can import pure-logic .tsx modules (e.g. client/src/lib/navigation.tsx)
+  // without every file needing an explicit `import React from "react"`. Test-only;
+  // does not add the plugin itself (no fast-refresh/babel needed for node-env tests).
+  esbuild: {
+    jsx: "automatic",
+  },
   test: {
     environment: "node",
     // server tests + node-env client logic tests (named *.unit.test.ts so jsdom-only client

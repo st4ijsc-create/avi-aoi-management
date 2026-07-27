@@ -10966,9 +10966,14 @@
     "categoriesLabel": "Nhóm AI",
     "agentActivity": {
       "title": "Hoạt động Agent",
-      "badge": "Sắp ra mắt",
-      "desc": "Bảng theo dõi agent trực tiếp (trạng thái, việc đang làm, token tiết kiệm) sẽ hiển thị ở đây.",
-      "cta": "Xem AI Brain"
+      "desc": "Đội hình AI agent trực tiếp — trạng thái và token tiết kiệm.",
+      "cta": "Mở Trung tâm điều hành AI",
+      "opsOnly": "Bảng hoạt động agent dành cho vai trò kỹ thuật hoặc quản trị.",
+      "loadError": "Không thể tải dữ liệu hoạt động agent lúc này.",
+      "rosterLabel": "agent",
+      "workingLabel": "đang hoạt động",
+      "savingsMonthLabel": "tiết kiệm tháng này",
+      "savingsEmpty": "Chưa đủ dữ liệu tiết kiệm"
     }
   },
   "mgmtInsight": {

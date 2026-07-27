@@ -107,7 +107,12 @@ export interface NavItem {
   icon: ReactNode;
   badge?: string | number;
   description?: string;
-  requiredRole?: 'admin' | 'user';
+  /**
+   * Role gate. A single role (legacy, e.g. `'admin'`) or a role-set (doc69 Wave 0-C —
+   * e.g. `['admin', 'engineer']`) — any role in the set is admitted. `isItemAccessible`
+   * normalizes both shapes; admin always bypasses regardless of this field.
+   */
+  requiredRole?: string | string[];
   /** Module permission name required to view this item (checked via canView) */
   requiredPermission?: string;
   /** Permission category this item belongs to */
@@ -1371,21 +1376,25 @@ export const navGroups: NavGroup[] = [
         label: "nav.aiBrainDashboard",
         icon: <Brain className="h-4 w-4" />,
         description: "nav.aiBrainDashboardDesc",
-        requiredRole: 'admin',
+        // doc69 Wave 0-C — engineer (kỹ thuật) does agent-ops daily work; backend
+        // (opsAgentCenterProcedure / equivalent role gates) already allows engineer.
+        requiredRole: ['admin', 'engineer'],
         permissionCategory: "admin",
         section: "agentOps",
       },
       {
         // doc69 GĐ4/E2-3 — Agent Command Center (roster + savings + task feed + drill-in).
+        // Wave 0-C: backend opsAgentCenterProcedure = roleProcedure("admin","engineer").
         href: "/ai-command-center",
         label: "nav.aiCommandCenter",
         icon: <Bot className="h-4 w-4" />,
         description: "nav.aiCommandCenterDesc",
-        requiredRole: 'admin',
+        requiredRole: ['admin', 'engineer'],
         permissionCategory: "admin",
         section: "agentOps",
       },
       {
+        // Wave 0-C: left admin-only — system health/config, not engineer daily work.
         href: "/ai-monitoring",
         label: "nav.aiMonitoring",
         icon: <MonitorCheck className="h-4 w-4" />,
@@ -1395,11 +1404,12 @@ export const navGroups: NavGroup[] = [
         section: "agentOps",
       },
       {
+        // doc69 Wave 0-C — engineer curates active-learning queues as daily work.
         href: "/ai-active-learning",
         label: "nav.aiActiveLearning",
         icon: <GraduationCap className="h-4 w-4" />,
         description: "nav.aiActiveLearningDesc",
-        requiredRole: 'admin',
+        requiredRole: ['admin', 'engineer'],
         permissionCategory: "admin",
         section: "agentOps",
       },
@@ -1501,20 +1511,22 @@ export const navGroups: NavGroup[] = [
         section: "visionLab",
       },
       {
+        // doc69 Wave 0-C — engineers curate anomaly banks as daily vision-lab work.
         href: "/anomaly-banks",
         label: "nav.anomalyBanks",
         icon: <Database className="h-4 w-4" />,
         description: "nav.anomalyBanksDesc",
-        requiredRole: 'admin',
+        requiredRole: ['admin', 'engineer'],
         permissionCategory: "admin",
         section: "visionLab",
       },
       {
+        // doc69 Wave 0-C — engineers annotate defect masks as daily vision-lab work.
         href: "/mask-annotation",
         label: "nav.maskAnnotation",
         icon: <Brush className="h-4 w-4" />,
         description: "nav.maskAnnotationDesc",
-        requiredRole: 'admin',
+        requiredRole: ['admin', 'engineer'],
         permissionCategory: "admin",
         section: "visionLab",
       },
@@ -1533,25 +1545,26 @@ export const navGroups: NavGroup[] = [
         // durable training asset, not an ephemeral pipeline step. Same RBAC
         // gate as /ai-data-processing. Knowledge Base (RAG docs, /ai-knowledge)
         // is a later E3 task — NOT added here.
+        // doc69 Wave 0-C — engineers own dataset splits as training-asset daily work.
         href: "/ai-datasets",
         label: "nav.aiDatasets",
         icon: <Boxes className="h-4 w-4" />,
         description: "nav.aiDatasetsDesc",
-        requiredRole: 'admin',
+        requiredRole: ['admin', 'engineer'],
         permissionCategory: "admin",
         section: "knowledgeTraining",
       },
       {
         // doc69 GĐ5/Wave E3 (E3-2) — Training Studio: corpus registry + job-tracked
-        // doc/URL ingest (Source/Jobs/Corpus/Eval/Model Builder tabs). Mirrors the
-        // SAME nav gate shape as /ai-datasets/aiCommandCenter (requiredRole:'admin'
-        // in the nav — the backend kbStudioRouter.ts itself is broader, admin+
-        // engineer, +2FA; deleteCorpus narrower still, admin-only).
+        // doc/URL ingest (Source/Jobs/Corpus/Eval/Model Builder tabs). doc69 Wave 0-C:
+        // nav gate widened to match the backend kbStudioRouter.ts, which is already
+        // admin+engineer (+2FA); deleteCorpus stays narrower, admin-only, unaffected
+        // by this nav-level widening.
         href: "/ai-training-studio",
         label: "nav.aiTrainingStudio",
         icon: <GraduationCap className="h-4 w-4" />,
         description: "nav.aiTrainingStudioDesc",
-        requiredRole: 'admin',
+        requiredRole: ['admin', 'engineer'],
         permissionCategory: "admin",
         section: "knowledgeTraining",
       },
@@ -2300,9 +2313,12 @@ function isItemAccessible(
   // Admin bypasses all checks
   if (userRole === 'admin') return true;
 
-  // Legacy role-based gate (still enforced even with permissions)
-  if (item.requiredRole === 'admin' && userRole !== 'admin') {
-    return false;
+  // Role-based gate (still enforced even with permissions). Normalizes the legacy
+  // single-role shape (`'admin'`) and the doc69 Wave 0-C role-set shape
+  // (`['admin', 'engineer']`) into one allow-list check.
+  if (item.requiredRole) {
+    const allowedRoles = Array.isArray(item.requiredRole) ? item.requiredRole : [item.requiredRole];
+    if (!userRole || !allowedRoles.includes(userRole)) return false;
   }
 
   // Permission-based gate (if permission checker is provided and item has a mapping)

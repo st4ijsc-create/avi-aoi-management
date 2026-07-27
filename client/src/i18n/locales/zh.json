@@ -10766,9 +10766,14 @@
     "categoriesLabel": "AI 分组",
     "agentActivity": {
       "title": "Agent 活动",
-      "badge": "即将推出",
-      "desc": "实时 Agent 状态/任务/节省看板将在此显示。",
-      "cta": "查看 AI Brain"
+      "desc": "实时 AI Agent 面板 — 状态与 token 节省。",
+      "cta": "打开 AI 指挥中心",
+      "opsOnly": "Agent 活动看板仅对工程师或管理员角色开放。",
+      "loadError": "暂时无法加载 Agent 活动数据。",
+      "rosterLabel": "个 agent",
+      "workingLabel": "正在工作",
+      "savingsMonthLabel": "本月节省",
+      "savingsEmpty": "数据不足，暂无法估算节省"
     }
   },
   "mgmtInsight": {

@@ -10983,9 +10983,14 @@
     "categoriesLabel": "AI Groups",
     "agentActivity": {
       "title": "Agent Activity",
-      "badge": "Coming soon",
-      "desc": "A live agent status/task/savings board will show up here.",
-      "cta": "View AI Brain"
+      "desc": "Live AI agent floor — status and token savings.",
+      "cta": "Open AI Command Center",
+      "opsOnly": "The agent activity board is available to engineering or admin roles.",
+      "loadError": "Could not load agent activity data right now.",
+      "rosterLabel": "agents",
+      "workingLabel": "working now",
+      "savingsMonthLabel": "saved this month",
+      "savingsEmpty": "Not enough data to estimate savings yet"
     }
   },
   "mgmtInsight": {
