@@ -503,6 +503,33 @@ builder.Services.AddSingleton<St4i.EngineApi.Site.ISiteDiscovery>(sp =>
     new St4i.EngineApi.Site.SiteDiscovery(
         logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("SiteDiscovery").LogError(ex, "{Msg}", msg)));
 
+// GĐ3 closeout WI-1 Part B (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md) —
+// the advertise direction: the machine announces itself over mDNS (_st4i-machine._tcp) so a SYNAPSE Site's
+// own join flow can find IT without an operator typing anything — the mirror image of the SiteDiscovery
+// registration just above (a Site advertises _synapse-site._tcp; this device advertises a DIFFERENT
+// service type, never the same one — see SiteAdvertiser's own doc comment). Deliberately
+// default-ON-when-UNS-is-enabled — a signed-off, deliberate exception to this codebase's usual "off by
+// default" additive idiom (see this task's own report) — independently disable-able via
+// ST4I_MDNS_ADVERTISE=0. Registered as a plain singleton, exposed under BOTH St4i.EngineApi.Site.SiteAdvertiser
+// and St4i.EngineApi.Site.ISiteAdvertiser, AND as the SECOND IHostedService in this project
+// (AlarmEvaluatorService above is the first) — all three registrations resolve the SAME instance (same
+// "factory-returned singleton IS disposed by the container on shutdown" rationale as the SiteBridgeManager
+// registration below), so there is only ever one live MulticastService for this concern. The port is read
+// off IServerAddressesFeature (never hard-coded 5199) — only populated once Kestrel has actually begun
+// listening, which is why SiteAdvertiser.StartAsync defers its real Start() attempt to
+// IHostApplicationLifetime.ApplicationStarted (same ordering constraint the WS-D-D5 binding-risk check
+// further below already relies on for this exact feature) — Start() itself never throws either way (see
+// that class' own doc comment), so a machine with no usable multicast-capable NIC still starts normally.
+builder.Services.AddSingleton<St4i.EngineApi.Site.SiteAdvertiser>(sp =>
+    new St4i.EngineApi.Site.SiteAdvertiser(
+        unsOptions,
+        deviceIdentity,
+        () => sp.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses as IReadOnlyCollection<string>,
+        sp.GetRequiredService<IHostApplicationLifetime>(),
+        logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("SiteAdvertiser").LogError(ex, "{Msg}", msg)));
+builder.Services.AddSingleton<St4i.EngineApi.Site.ISiteAdvertiser>(sp => sp.GetRequiredService<St4i.EngineApi.Site.SiteAdvertiser>());
+builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<St4i.EngineApi.Site.SiteAdvertiser>());
+
 // The Site bridge manager only makes sense when there's an actual local UNS spine to bridge (a bridge with
 // nothing to subscribe to is meaningless) — gated on the SAME unsOptions.Enabled this task's own UNS broker
 // block above already gates on. When UNS is disabled, only the identity singleton above is registered (so
