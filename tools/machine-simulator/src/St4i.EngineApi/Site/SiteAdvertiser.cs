@@ -215,13 +215,20 @@ public sealed class SiteAdvertiser : ISiteAdvertiser, IHostedService
                 return;
             }
 
+            // Declared OUTSIDE the try so the catch below can clean up whatever partially got built —
+            // fix round 1 review finding: a failure AFTER construction (e.g. sd.Advertise succeeds but
+            // mdns.Start() itself throws) must not leak the already-constructed MulticastService/
+            // ServiceDiscovery (an undisposed one holds a real OS multicast-group-membership/socket
+            // resource, not just managed memory the GC would eventually reclaim).
+            MulticastService? mdns = null;
+            ServiceDiscovery? sd = null;
             try
             {
                 var port = ResolvePort(_resolveBoundAddresses());
                 var instanceName = SanitizeInstanceName(_identity.NodeId);
 
-                var mdns = new MulticastService();
-                var sd = new ServiceDiscovery(mdns);
+                mdns = new MulticastService();
+                sd = new ServiceDiscovery(mdns);
                 var profile = new ServiceProfile(instanceName, _serviceType, (ushort)port);
                 foreach (var kv in BuildTxtRecords(_unsOptions, _identity))
                 {
@@ -242,6 +249,16 @@ public sealed class SiteAdvertiser : ISiteAdvertiser, IHostedService
             catch (Exception ex)
             {
                 _logError?.Invoke(ex, $"mDNS Site advertise failed for service type '{_serviceType}'.");
+
+                // Best-effort, individually guarded cleanup of whatever got constructed before the
+                // failure — same discipline as StopAsync's own cleanup below. The FIELDS (_mdns/_sd/
+                // _profile) are only ever assigned on full success above, so they're untouched here
+                // (still whatever they were before this Start() call, i.e. null for a fresh instance or
+                // a prior retry) — a later Start() call is therefore unaffected and can still retry
+                // cleanly.
+                try { sd?.Dispose(); } catch { /* best-effort cleanup */ }
+                try { mdns?.Stop(); } catch { /* best-effort cleanup */ }
+                try { mdns?.Dispose(); } catch { /* best-effort cleanup */ }
             }
         }
     }
