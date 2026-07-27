@@ -234,7 +234,19 @@ describe("listAlerts — real anomaly source (readMachineStatuses from aiAnomaly
   });
 
   it("an empty anomaly source (no data for the machine) → no anomaly alerts, no crash", async () => {
-    readMachineStatuses.mockResolvedValue({}); // machine 5 absent from the map entirely.
+    // Realistic shape: readMachineStatuses ALWAYS pre-populates every requested id with
+    // emptyStatus() (aiAnomalyRouter.ts) — it never omits a key. hasData:false / isAnomaly:false
+    // is the "no data yet" case, not an absent map entry.
+    readMachineStatuses.mockResolvedValue({
+      5: {
+        hasData: false,
+        latestScore: null,
+        latestThreshold: null,
+        isAnomaly: false,
+        latestAt: null,
+        recent: { windowCount: 0, anomalyCount: 0, anomalyRate: 0 },
+      },
+    });
     const items = await listAlerts([{ id: 5, code: "M5" }], 20);
     expect(items).toEqual([]);
   });
@@ -264,6 +276,32 @@ describe("dismissInboxItem — never executes", () => {
     expect(res.ok).toBe(true);
     expect(res.status).toBe("acknowledged");
     expect(data.updated?.[0]).toMatchObject({ status: "acknowledged", acknowledgedBy: 1 });
+    expect(confirmAction).not.toHaveBeenCalled();
+  });
+
+  it("insight (non-admin) → scope INCLUDES the insight's machineCode → dismiss succeeds (row updated)", async () => {
+    getUserFactoryAssignments.mockResolvedValue([{ factoryCode: "F1" }]);
+    data.machines = [{ id: 5, code: "M5" }]; // non-admin's scope: only M5.
+    data.insights = [{ id: 11, machineCode: "M5" }]; // insight IS on M5 → in scope.
+
+    const res = await dismissInboxItem({ id: 2, role: "maintenance" }, "insight", "11");
+
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe("acknowledged");
+    expect(data.updated?.[0]).toMatchObject({ status: "acknowledged", acknowledgedBy: 2 });
+    expect(confirmAction).not.toHaveBeenCalled();
+  });
+
+  it("insight (non-admin) → scope EXCLUDES the insight's machineCode → rejected 'forbidden', no update fired", async () => {
+    getUserFactoryAssignments.mockResolvedValue([{ factoryCode: "F1" }]);
+    data.machines = [{ id: 5, code: "M5" }]; // non-admin's scope: only M5.
+    data.insights = [{ id: 11, machineCode: "M6" }]; // insight is on M6 → NOT in scope.
+
+    const res = await dismissInboxItem({ id: 2, role: "maintenance" }, "insight", "11");
+
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe("forbidden");
+    expect(data.updated).toBeUndefined(); // guard must block the write entirely.
     expect(confirmAction).not.toHaveBeenCalled();
   });
 
