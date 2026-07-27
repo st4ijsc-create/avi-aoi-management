@@ -77,6 +77,15 @@ vi.mock("./aiCopilotActions", () => ({
   cancelAction: (...a: unknown[]) => cancelAction(...a),
 }));
 
+// ── E2-4 — spy on the realtime nudge choke points call as their LAST step.
+// Mocked (not the real eventBus) so these existing behavioral tests stay
+// decoupled from the realtime channel; aiAgentRealtime.test.ts covers the
+// publish/bridge mechanics themselves.
+const publishAiAgentEvent = vi.fn();
+vi.mock("./aiAgentRealtime", () => ({
+  publishAiAgentEvent: (...a: unknown[]) => publishAiAgentEvent(...a),
+}));
+
 // ── Mock the planner (deterministic plans). replanFromObservations defaults to
 //    "no change" so pre-existing tests (which don't care about replanning) see
 //    IDENTICAL behavior to before D1 — see aiAgentOrchestrator.replan.test.ts
@@ -327,5 +336,68 @@ describe("cancelSession", () => {
     expect(res.status).toBe("aborted");
     expect(cancelAction).toHaveBeenCalledWith("ACT1", expect.objectContaining({ id: MANAGER.id }), undefined);
     expect(store.get(s.sessionId!)!.status).toBe("aborted");
+  });
+});
+
+describe("E2-4 — realtime nudge at each choke point", () => {
+  it("startSession publishes session_started with the new sessionId, AFTER the row is persisted", async () => {
+    plan([{ kind: "read", tool: "read_thing", args: {} }]);
+    const s = await startSession("g", { user: MANAGER as any });
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("session_started", s.sessionId);
+    // the row must already be awaiting_approval by the time we publish
+    expect(store.get(s.sessionId!)!.status).toBe("awaiting_approval");
+  });
+
+  it("startSession for a disallowed role does NOT publish (no state change)", async () => {
+    plan([{ kind: "read", tool: "read_thing", args: {} }]);
+    await startSession("g", { user: WORKER as any });
+    expect(publishAiAgentEvent).not.toHaveBeenCalled();
+  });
+
+  it("advance (via approvePlan) publishes 'advanced' with the sessionId", async () => {
+    plan([{ kind: "write", tool: "write_thing", args: { id: 1 } }]);
+    proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+    const s = await startSession("g", { user: MANAGER as any });
+    publishAiAgentEvent.mockClear();
+    await approvePlan(s.sessionId!, { user: MANAGER as any });
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("advanced", s.sessionId);
+  });
+
+  it("confirmStep publishes 'confirmed' (plus the inner advance's 'advanced')", async () => {
+    plan([
+      { kind: "write", tool: "write_thing", args: { id: 1 } },
+      { kind: "read", tool: "read_thing", args: {} },
+    ]);
+    proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+    confirmAction.mockResolvedValue({ ok: true, status: "executed", result: {} });
+    const s = await startSession("g", { user: MANAGER as any });
+    await approvePlan(s.sessionId!, { user: MANAGER as any });
+    publishAiAgentEvent.mockClear();
+    await confirmStep(s.sessionId!, "ACT1", "ACT1", { user: MANAGER as any });
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("confirmed", s.sessionId);
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("advanced", s.sessionId);
+  });
+
+  it("cancelSession publishes 'cancelled'", async () => {
+    plan([{ kind: "write", tool: "write_thing", args: { id: 1 } }]);
+    proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+    const s = await startSession("g", { user: MANAGER as any });
+    await approvePlan(s.sessionId!, { user: MANAGER as any });
+    publishAiAgentEvent.mockClear();
+    await cancelSession(s.sessionId!, { user: MANAGER as any });
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("cancelled", s.sessionId);
+  });
+
+  it("a THROWING publishAiAgentEvent never breaks the choke point (advance still returns normally)", async () => {
+    plan([{ kind: "read", tool: "read_thing", args: {} }]);
+    publishAiAgentEvent.mockImplementation(() => {
+      throw new Error("nudge boom");
+    });
+    const s = await startSession("g", { user: MANAGER as any });
+    expect(s.enabled).toBe(true);
+    expect(s.status).toBe("awaiting_approval");
+    const res = await approvePlan(s.sessionId!, { user: MANAGER as any });
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe("done");
   });
 });

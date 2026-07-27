@@ -42,6 +42,21 @@ import {
   AUTONOMY_REASONS,
   type AutonomyDecision,
 } from "./ai/autonomyPolicy";
+// E2-4 (doc69 Giai đoạn 4/Wave E2) — realtime refresh nudge for the Agent Command
+// Center. ADDITIVE: fire-and-forget/non-throwing, minimal non-sensitive payload
+// only (no args/preview/result on the wire) — see aiAgentRealtime.ts.
+import { publishAiAgentEvent } from "./aiAgentRealtime";
+
+/** E2-4 — defensive call site: a realtime-nudge failure must never break the
+ *  choke point that triggered it. Belt-and-suspenders (publishAiAgentEvent
+ *  itself already never throws — see aiAgentRealtime.ts). */
+function nudge(event: Parameters<typeof publishAiAgentEvent>[0]): void {
+  try {
+    publishAiAgentEvent(event);
+  } catch (err) {
+    console.error("[aiCopilotActions] realtime nudge failed:", (err as Error)?.message ?? err);
+  }
+}
 
 // TTL for a proposed action before it expires (5 minutes — Mục 2).
 const PENDING_TTL_MS = 5 * 60 * 1000;
@@ -271,6 +286,12 @@ export async function proposeAction(
     idempotencyKey,
     expiresAt,
   });
+
+  // E2-4 — nudge AFTER the row is persisted. Fire-and-forget, minimal payload
+  // (event + timestamp only — no tool/args/preview on the wire). No sessionId:
+  // proposeAction is used both standalone and by the agent orchestrator's write
+  // steps, which have already/will separately nudge their OWN session lifecycle.
+  nudge("action_proposed");
 
   // ── FIX 3 (D2 review) — Audit: the PROPOSED row is written FIRST, before the D2
   // bounded-autonomy attempt below, so the audit trail's causal order is always
@@ -539,6 +560,10 @@ export async function confirmAction(
     .update(aiPendingActions)
     .set({ status: "executed", executedAt: new Date(), resultJson: result as unknown as Record<string, unknown> })
     .where(eq(aiPendingActions.id, actionId));
+
+  // E2-4 — nudge AFTER the row is persisted as executed. Fire-and-forget,
+  // minimal payload (event + timestamp only — no result/args on the wire).
+  nudge("action_confirmed");
 
   // Audit: executed (lifecycle) + target-entity update (before/after) when the
   // preview captured a concrete entity + changes.

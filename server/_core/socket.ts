@@ -204,6 +204,17 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join("telemetry:all");
         console.log(`[Socket.io] ${socket.id} joined telemetry:all`);
       }
+      // E2-4 (doc69 Giai đoạn 4/Wave E2) — OPT-IN AI Agent Command Center refresh
+      // room. A single flat room (like telemetry:all/sites:global — not scoped
+      // per-factory/machine): the Command Center joins it to receive the minimal,
+      // non-sensitive `ai:agents` nudge (aiAgentRealtime.ts's bridge, gated by
+      // AI_AGENTS_LIVE_ENABLED) that tells it to refetch getReadModel sooner than
+      // its 5s poll. Room membership is NOT RBAC-scoped — safe only because the
+      // event itself carries no session/plan/args data (see aiAgentRealtime.ts).
+      if ((data as any).aiAgents) {
+        socket.join("ai:agents");
+        console.log(`[Socket.io] ${socket.id} joined ai:agents`);
+      }
       // Everyone joins the global room for all alerts
       socket.join("global");
     });
@@ -222,6 +233,8 @@ export function initializeSocket(server: HttpServer): Server {
       if ((data as any).sitesGlobal) socket.leave("sites:global");
       // MON-F6 — leave the opt-in telemetry firehose room.
       if ((data as any).telemetryAll) socket.leave("telemetry:all");
+      // E2-4 — leave the AI Agent Command Center refresh room.
+      if ((data as any).aiAgents) socket.leave("ai:agents");
     });
 
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins

@@ -1,25 +1,35 @@
 /**
- * AI Agent Command Center (doc69 Giai đoạn 4 / Wave E2, task E2-3).
+ * AI Agent Command Center (doc69 Giai đoạn 4 / Wave E2, tasks E2-3 + E2-4).
  *
  * The visual payoff of Wave E2: renders the E2-1 roster read-model
  * (`trpc.aiAgentCenter.getReadModel`) + the E2-2 savings summary
  * (`trpc.aiAgentCenter.getSavingsSummary`) as an Agent Floor grid + a token
  * savings rail + a live task feed + a drill-in drawer. Consumes ONLY existing
  * endpoints — no new backend. Polls every 5s (mirrors AIBrainDashboard.tsx's own
- * `usePollingInterval(5000)` + ops-role gating pattern); realtime (`ai:agents`
- * socket) is a later task (E2-4).
+ * `usePollingInterval(5000)` + ops-role gating pattern) — this stays as the
+ * FALLBACK; E2-4 adds a realtime nudge on top of it.
+ *
+ * E2-4: joins the shared socket's `ai:agents` room (server/services/
+ * aiAgentRealtime.ts — a NO-OP unless AI_AGENTS_LIVE_ENABLED, mirroring the
+ * Twin live gateway) and, on any nudge, DEBOUNCED-invalidates getReadModel +
+ * getSavingsSummary via useDebouncedInvalidate (coalesces bursts from several
+ * agent choke points firing close together). The 5s poll above is left
+ * completely untouched, so the page stays live even when the flag/socket is
+ * off/disconnected — the nudge only makes it feel faster when it's on.
  *
  * HITL is preserved end-to-end: this page never auto-executes anything — see
  * AgentDrillInDrawer.tsx's docblock for exactly which existing mutations the
  * drill-in steer controls call and how visibility is gated to what the backend
  * would actually allow the current user to do.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Bot, RefreshCw, ShieldAlert } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { useDebouncedInvalidate } from "@/hooks/useDebouncedInvalidate";
+import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,6 +53,32 @@ export default function AIAgentCommandCenter() {
   const readModel = trpc.aiAgentCenter.getReadModel.useQuery({ limit: 50 }, { ...polling, enabled: isOpsRole });
   const savings = trpc.aiAgentCenter.getSavingsSummary.useQuery(undefined, { ...polling, enabled: isOpsRole });
   const utils = trpc.useUtils();
+
+  // E2-4 — realtime nudge on top of the 5s poll above (poll stays untouched as
+  // the fallback). A nudge carries no data (see aiAgentRealtime.ts on the
+  // server) — it just tells us to refetch sooner via the SAME RBAC-gated
+  // queries. Debounced so a burst of choke-point emits (e.g. propose+confirm)
+  // coalesces into one refetch instead of one per event.
+  const flushAgentNudge = useDebouncedInvalidate(() => {
+    void utils.aiAgentCenter.getReadModel.invalidate();
+    void utils.aiAgentCenter.getSavingsSummary.invalidate();
+  }, 1500);
+
+  useEffect(() => {
+    if (!isOpsRole) return; // non-ops can't query this page's data anyway
+    const socket = getSharedSocket();
+    const onConnect = () => socket.emit("subscribe", { aiAgents: true });
+    const onNudge = () => flushAgentNudge();
+    socket.on("connect", onConnect);
+    socket.on("ai:agents", onNudge);
+    if (socket.connected) onConnect();
+    return () => {
+      socket.emit("unsubscribe", { aiAgents: true });
+      socket.off("connect", onConnect);
+      socket.off("ai:agents", onNudge);
+      releaseSharedSocket();
+    };
+  }, [isOpsRole, flushAgentNudge]);
 
   // Store only the id, not the roster object itself — the drawer re-derives the
   // LIVE entry from the latest poll below so its header/summary stay fresh

@@ -5023,6 +5023,19 @@ async function startServer() {
     console.error("[TwinStream] gateway start failed:", (err as any)?.message || err);
   }
 
+  // E2-4 (doc69 Giai đoạn 4/Wave E2) — AI Agent Command Center live refresh
+  // bridge: eventBus `ai:agent` (published by aiAgentOrchestrator.ts /
+  // aiCopilotActions.ts choke points, AFTER their state change persists) →
+  // socket room `ai:agents`. A NO-OP unless AI_AGENTS_LIVE_ENABLED — when off,
+  // the Command Center keeps its 5s poll fallback (aiAgentCenter.getReadModel)
+  // unchanged. Signal-only: no control path, no plan/args/secret data on the wire.
+  try {
+    const { installAiAgentSocketBridge } = await import("../services/aiAgentRealtime");
+    installAiAgentSocketBridge();
+  } catch (err) {
+    console.error("[AiAgentRealtime] bridge install failed:", (err as any)?.message || err);
+  }
+
   // X1 (doc 16 Khối 1) — Field & device abstraction. Two flag-gated startups (no-ops
   // unless FIELD_V2_ENABLED). Both open NO control path (monitoring/signal only):
   //   (a) heartbeat TTL stale-detection sweep — marks a device 'lost_connection' once

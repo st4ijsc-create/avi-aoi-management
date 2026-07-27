@@ -31,6 +31,22 @@ import type {
 import { getTool, isWriteTool, isClientTool, type ToolExecContext, type ToolLang } from "./aiLocalTools/toolRegistry";
 import { proposeAction, confirmAction, cancelAction, type CopilotUser } from "./aiCopilotActions";
 import { planGoal, replanFromObservations, AGENT_MAX_STEPS, AGENT_MAX_REPLANS, type ReplanExecutedEntry, type ReplanResult } from "./aiAgentPlanner";
+// E2-4 (doc69 Giai đoạn 4/Wave E2) — realtime refresh nudge for the Agent Command
+// Center. ADDITIVE: publishAiAgentEvent() is fire-and-forget/non-throwing (see
+// aiAgentRealtime.ts) and carries only a minimal, non-sensitive payload — never
+// plan content/tool args. Called AFTER each choke point's own state change persists.
+import { publishAiAgentEvent, type AiAgentEventKind } from "./aiAgentRealtime";
+
+/** E2-4 — defensive call site: a realtime-nudge failure must never break the
+ *  choke point that triggered it. Belt-and-suspenders (publishAiAgentEvent
+ *  itself already never throws — see aiAgentRealtime.ts). */
+function nudge(event: AiAgentEventKind, sessionId?: string): void {
+  try {
+    publishAiAgentEvent(event, sessionId);
+  } catch (err) {
+    console.error("[aiAgentOrchestrator] realtime nudge failed:", (err as Error)?.message ?? err);
+  }
+}
 
 // ─── Tunables (read at call time so tests/config toggles take effect) ──────
 function agenticEnabled(): boolean {
@@ -151,6 +167,10 @@ export async function startSession(
     .set({ planJson: plan, status: "awaiting_approval", updatedAt: new Date() })
     .where(eq(aiAgentSessions.id, sessionId));
 
+  // E2-4 — nudge AFTER the row is persisted. Fire-and-forget, minimal payload
+  // (event + sessionId + timestamp only — no goal/plan on the wire).
+  nudge("session_started", sessionId);
+
   return {
     ok: true,
     enabled: true,
@@ -161,7 +181,13 @@ export async function startSession(
   };
 }
 
-/** User approves the plan → running → advance to the first stopping point. */
+/**
+ * User approves the plan → running → advance to the first stopping point.
+ * E2-4: no separate emit here — approvePlan always either bails out early
+ * (no state change, e.g. session not found) or delegates to advance() below,
+ * whose own wrapper already publishes the "advanced" nudge once its persist
+ * completes.
+ */
 export async function approvePlan(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
@@ -272,7 +298,7 @@ function resolveBranchTarget(
  * in-place; STOPS at a write step (after proposing) with status awaiting_confirm.
  * Never auto-confirms, never executes.
  */
-export async function advance(
+async function advanceImpl(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
 ): Promise<AdvanceResult> {
@@ -516,12 +542,29 @@ export async function advance(
 }
 
 /**
+ * E2-4 — thin wrapper: run advanceImpl(), then publish a minimal "advanced"
+ * refresh nudge (fire-and-forget, non-throwing — see aiAgentRealtime.ts) AFTER
+ * it resolves. advanceImpl persists on every path except its two very-first
+ * guards (session not found / not in `running` status, neither of which change
+ * any state) — nudging on those too is a harmless, occasional extra refetch of
+ * the caller's own (RBAC-gated) read-model, not a correctness issue.
+ */
+export async function advance(
+  sessionId: string,
+  ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+): Promise<AdvanceResult> {
+  const result = await advanceImpl(sessionId, ctx);
+  nudge("advanced", sessionId);
+  return result;
+}
+
+/**
  * Confirm the pending write at the current step. This is USER-TRIGGERED (tRPC).
  * It calls the CORE confirmAction (re-used 100%) — the orchestrator does not
  * execute the tool itself. Only after the core reports `executed` does the
  * cursor advance and the plan resume.
  */
-export async function confirmStep(
+async function confirmStepImpl(
   sessionId: string,
   actionId: string,
   token: string,
@@ -578,8 +621,25 @@ export async function confirmStep(
   return advance(sessionId, ctx);
 }
 
+/**
+ * E2-4 — thin wrapper: run confirmStepImpl(), then publish a minimal "confirmed"
+ * refresh nudge. Note the success path inside confirmStepImpl delegates to the
+ * (already-wrapped) advance(), which publishes its own "advanced" nudge too —
+ * two coalesced nudges for one user click is harmless (the FE debounces).
+ */
+export async function confirmStep(
+  sessionId: string,
+  actionId: string,
+  token: string,
+  ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+): Promise<AdvanceResult> {
+  const result = await confirmStepImpl(sessionId, actionId, token, ctx);
+  nudge("confirmed", sessionId);
+  return result;
+}
+
 /** Abort a session and cancel any still-pending proposed action(s). Owner only. */
-export async function cancelSession(
+async function cancelSessionImpl(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
 ): Promise<{ ok: boolean; status: AiAgentSession["status"]; message?: string }> {
@@ -600,6 +660,17 @@ export async function cancelSession(
 
   await db.update(aiAgentSessions).set({ status: "aborted", updatedAt: new Date() }).where(eq(aiAgentSessions.id, sessionId));
   return { ok: true, status: "aborted", message: "Đã huỷ phiên." };
+}
+
+/** E2-4 — thin wrapper: run cancelSessionImpl(), then publish a minimal
+ *  "cancelled" refresh nudge (fire-and-forget, non-throwing). */
+export async function cancelSession(
+  sessionId: string,
+  ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+): Promise<{ ok: boolean; status: AiAgentSession["status"]; message?: string }> {
+  const result = await cancelSessionImpl(sessionId, ctx);
+  nudge("cancelled", sessionId);
+  return result;
 }
 
 /** Fetch a session (owner only) for the UI to render its state. */

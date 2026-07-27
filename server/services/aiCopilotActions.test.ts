@@ -96,6 +96,15 @@ vi.mock("../db/system", () => ({ createAuditLog: vi.fn(async () => ({ id: 1 })) 
 // Silence audit writes (assert they are called, but they don't touch a DB).
 const logCrudOperation = vi.fn(async () => ({ id: 1 }));
 const logUpdate = vi.fn(async () => {});
+// ── E2-4 — spy on the realtime nudge; proposeAction/confirmAction call this as
+// their LAST step (after their own DB persist). Mocked here so these existing
+// behavioral tests stay decoupled from the realtime channel; aiAgentRealtime.
+// test.ts covers the publish/bridge mechanics themselves.
+const publishAiAgentEvent = vi.fn();
+vi.mock("./aiAgentRealtime", () => ({
+  publishAiAgentEvent: (...a: unknown[]) => publishAiAgentEvent(...a),
+}));
+
 vi.mock("./auditTrailService", () => ({
   AUDIT_ACTIONS: {
     AI_ACTION_PROPOSED: "ai_action_proposed",
@@ -224,5 +233,58 @@ describe("cancel write-action", () => {
     const conf = await confirmAction(pa.actionId, pa.token, ADMIN, "vi");
     expect(conf.ok).toBe(false);
     expect(updateMeasurementPointDef).not.toHaveBeenCalled();
+  });
+});
+
+describe("E2-4 — realtime nudge at the propose/confirm choke points", () => {
+  it("proposeAction publishes 'action_proposed' AFTER the row is persisted", async () => {
+    const res = await proposeAction(tool(), { measurementPointDefId: 12, usl: 10, lsl: 8, target: 9 }, ctx(ADMIN));
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("action_proposed");
+    // the row must already exist in the store by the time we publish
+    expect(store.has(res.pendingAction!.actionId)).toBe(true);
+  });
+
+  it("a DENIED propose (RBAC) does NOT publish (no state change)", async () => {
+    checkPermission.mockResolvedValue(false);
+    await proposeAction(tool(), { measurementPointDefId: 12, usl: 10, lsl: 8, target: 9 }, ctx(OPERATOR));
+    expect(publishAiAgentEvent).not.toHaveBeenCalled();
+  });
+
+  it("confirmAction publishes 'action_confirmed' AFTER execute persists (not on denied/expired)", async () => {
+    const proposed = await proposeAction(tool(), { measurementPointDefId: 12, usl: 10, lsl: 8, target: 9 }, ctx(ADMIN));
+    const pa = proposed.pendingAction!;
+    publishAiAgentEvent.mockClear();
+    const res = await confirmAction(pa.actionId, pa.token, ADMIN, "vi");
+    expect(res.status).toBe("executed");
+    expect(publishAiAgentEvent).toHaveBeenCalledWith("action_confirmed");
+  });
+
+  it("a wrong-owner confirm (blocked before execute) does NOT publish 'action_confirmed'", async () => {
+    const res = await proposeAction(tool(), { measurementPointDefId: 12, usl: 10, lsl: 8, target: 9 }, ctx(ADMIN));
+    const pa = res.pendingAction!;
+    publishAiAgentEvent.mockClear();
+    const conf = await confirmAction(pa.actionId, pa.token, OPERATOR, "vi");
+    expect(conf.status).toBe("invalid");
+    expect(publishAiAgentEvent).not.toHaveBeenCalled();
+  });
+
+  it("the published payload carries NO plan/args/secret fields — event name only", async () => {
+    await proposeAction(tool(), { measurementPointDefId: 12, usl: 10, lsl: 8, target: 9 }, ctx(ADMIN));
+    const call = publishAiAgentEvent.mock.calls.find((c) => c[0] === "action_proposed")!;
+    expect(call).toBeTruthy();
+    // proposeAction calls publishAiAgentEvent(event) — a single positional arg,
+    // never args/preview/secret data.
+    expect(call).toHaveLength(1);
+  });
+
+  it("a THROWING publishAiAgentEvent never breaks proposeAction/confirmAction", async () => {
+    publishAiAgentEvent.mockImplementation(() => {
+      throw new Error("nudge boom");
+    });
+    const res = await proposeAction(tool(), { measurementPointDefId: 12, usl: 10, lsl: 8, target: 9 }, ctx(ADMIN));
+    expect(res.ok).toBe(true);
+    const confirmRes = await confirmAction(res.pendingAction!.actionId, res.pendingAction!.token, ADMIN, "vi");
+    expect(confirmRes.ok).toBe(true);
+    expect(confirmRes.status).toBe("executed");
   });
 });
