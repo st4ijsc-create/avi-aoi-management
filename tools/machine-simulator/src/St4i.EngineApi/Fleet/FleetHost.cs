@@ -135,6 +135,20 @@ public sealed class FleetHost
     /// historian run-events above.</summary>
     private readonly IUnsPublisher? _unsPublisher;
 
+    /// <summary>G2-6 (WS-H, docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 6) —
+    /// optional (defaults null, same "every pre-existing test/call site that constructs
+    /// <see cref="FleetHost"/> directly without one keeps compiling/behaving byte-for-byte unchanged"
+    /// contract as every other optional dependency above) factory for the Modbus TCP driver's OWN pipeline
+    /// slot — the FIRST real field-protocol driver, riding G2-5's per-slot fault isolation so a Modbus
+    /// fault can never touch the simulated fleet (see <see cref="StartLocked"/>). Typed as a plain
+    /// <c>Func&lt;IDeviceDriver&gt;</c> (not the concrete <c>ModbusDriverFactory</c>) specifically so a
+    /// test can inject a fake driver with no NModbus/real-socket dependency
+    /// (<c>St4i.EngineApi.Tests.FleetHostModbusSlotTests</c>) — production (Program.cs) registers this as
+    /// <c>ModbusDriverFactory.Create</c>, invoked fresh on every <see cref="StartLocked"/> call, same "a
+    /// driver owns a live connection torn down on stop, so every (re)start needs a brand new instance"
+    /// reasoning the simulated fleet's own <c>SimulatorFactory.Create</c> already follows.</summary>
+    private readonly Func<IDeviceDriver>? _modbusDriverFactory;
+
     /// <summary>FF-1 (docs/plans/2026-07-27-ws-ff-fast-follows.md) — optional (defaults null, same
     /// "every pre-existing test that constructs <see cref="FleetHost"/> directly without one keeps
     /// compiling/behaving byte-for-byte unchanged" contract as every other optional store above)
@@ -207,7 +221,8 @@ public sealed class FleetHost
         St4i.EdgeCore.Config.ProductConfigStore? productConfigStore = null,
         HistorianWriter? historianWriter = null,
         FleetSettingsStore? settingsStore = null,
-        IUnsPublisher? unsPublisher = null)
+        IUnsPublisher? unsPublisher = null,
+        Func<IDeviceDriver>? modbusDriverFactory = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -219,6 +234,7 @@ public sealed class FleetHost
         _historianWriter = historianWriter;
         _settingsStore = settingsStore;
         _unsPublisher = unsPublisher;
+        _modbusDriverFactory = modbusDriverFactory;
 
         // FF-1 — eager load, no lock needed: runs once, before this instance is published to any other
         // thread (same reasoning SeedAoiProductLinks below documents for itself). See _settingsStore's own
@@ -529,6 +545,18 @@ public sealed class FleetHost
         if (extra is not null)
         {
             foreach (var g in extra) groups.Add((g.Label, g.Driver, g.Profile, null));
+        }
+
+        // G2-6 — the real Modbus slot, built fresh (never reused across restarts, see
+        // _modbusDriverFactory's own doc comment) whenever a factory was actually wired up (Program.cs
+        // only does this when ST4I_MODBUS_ENABLED=true AND its register map loaded — otherwise this stays
+        // null and the fleet is byte-identical to pre-G2-6). No per-machine MappingProfile override exists
+        // for Modbus yet (that's the roster/MachineDescriptor follow-up noted in task-6-report.md), so this
+        // uses a plain Automation-class fallback profile, same shape as `profile` above.
+        if (_modbusDriverFactory is not null)
+        {
+            var modbusProfile = new MappingProfile { Name = "modbus", DeviceClass = "Automation" };
+            groups.Add(("modbus", _modbusDriverFactory(), modbusProfile, null));
         }
 
         foreach (var g in groups)

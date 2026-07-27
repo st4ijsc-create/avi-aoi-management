@@ -415,6 +415,55 @@ if (unsOptions.Enabled)
     }
 }
 
+// G2-6 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 6) — the FIRST real
+// field-protocol driver: a Modbus TCP poller, run as its OWN isolated FleetHost pipeline slot (the payoff
+// of G2-5's per-slot fault isolation — a Modbus fault can never tear down the simulated fleet). Additive +
+// env-gated OFF BY DEFAULT (ST4I_MODBUS_ENABLED unset/false, the opposite default polarity from
+// ST4I_UNS_ENABLED — see ModbusOptions' own doc comment): when disabled, the Func<IDeviceDriver> below is
+// never registered, so FleetHost's optional `modbusDriverFactory` ctor param resolves to its own `null`
+// default — byte-identical to today, same contract as every other optional FleetHost dependency above. A
+// missing/malformed register map (ST4I_MODBUS_MAP) logs a warning and disables Modbus for this run rather
+// than crashing startup — same "never allowed to fail the host it's bolted onto" posture as the UNS
+// broker-bind failure just above.
+var modbusOptions = St4i.EdgeCore.Drivers.Modbus.ModbusOptions.FromEnvironment();
+if (modbusOptions.Enabled)
+{
+    St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap? modbusMap;
+    try
+    {
+        if (string.IsNullOrWhiteSpace(modbusOptions.MapPath))
+        {
+            throw new InvalidOperationException(
+                $"{St4i.EdgeCore.Drivers.Modbus.ModbusOptions.EnvVarMapPath} is not set.");
+        }
+
+        var mapJson = File.ReadAllText(modbusOptions.MapPath);
+        modbusMap = St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap.FromJson(mapJson);
+    }
+    catch (Exception ex)
+    {
+        // No app.Logger yet this early (same reasoning as the UNS broker-bind catch above) — this is a
+        // warning that must be visible even though the Modbus slot silently no-ops for this run.
+        Console.Error.WriteLine(
+            $"[startup] Modbus register map failed to load from '{modbusOptions.MapPath}' — Modbus driver disabled for this run: {ex.Message}");
+        modbusMap = null;
+    }
+
+    if (modbusMap is not null)
+    {
+        var capturedMap = modbusMap;
+        builder.Services.AddSingleton<Func<St4i.EdgeCore.Drivers.IDeviceDriver>>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Modbus");
+            var factory = new St4i.EdgeCore.Drivers.Modbus.ModbusDriverFactory(
+                modbusOptions, capturedMap,
+                logWarning: msg => logger.LogWarning("{ModbusMsg}", msg),
+                logError: (ex, msg) => logger.LogError(ex, "{ModbusMsg}", msg));
+            return factory.Create;
+        });
+    }
+}
+
 // Task 9 (WS-A) — per-machine OEE settings (ideal-cycle override + planned-production ratio), a plain
 // JSON-file-backed store (WS-A-T5) that was never wired into DI until now. Pointed at the SAME resolved
 // ST4I_HISTORIAN_DIR (or SqliteHistorianStore's own default when unset) so every historian-adjacent file

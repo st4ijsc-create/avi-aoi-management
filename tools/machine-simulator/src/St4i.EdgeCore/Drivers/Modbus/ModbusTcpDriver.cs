@@ -1,0 +1,198 @@
+using System.Net.Sockets;
+using System.Runtime.CompilerServices;
+using NModbus;
+using St4i.EdgeCore.Models;
+
+namespace St4i.EdgeCore.Drivers.Modbus;
+
+/// <summary>
+/// G2-6 (WS-H) — the FIRST real field-protocol driver (after Task 11's
+/// <see cref="Drivers.HotFolder.HotFolderAoiDriver"/> and Task 12's <see cref="Drivers.Mqtt.MqttDriver"/>):
+/// a periodic POLLER (unlike those two, which are event/file-driven) that reads a fixed, ordered set of
+/// registers off a Modbus TCP slave via NModbus (the maintained `rich.quackenbush` fork, NOT the abandoned
+/// NModbus4), decodes each per its <see cref="ModbusRegisterMap"/> entry, and yields ONE
+/// <see cref="DeviceReading"/> per poll — bridging onto the exact same <see cref="IDeviceDriver"/> seam
+/// every other driver uses. Proven end-to-end (no real hardware) against an in-process NModbus TCP slave
+/// in <c>ModbusTcpDriverLoopbackTests</c>.
+///
+/// Decode rules (deliberately minimal — see <see cref="ModbusDataType"/>): each register is ONE 16-bit
+/// word, read via FC03 (<see cref="ModbusRegisterType.Holding"/>) or FC04 (<see cref="ModbusRegisterType.Input"/>),
+/// decoded as unsigned (<see cref="ModbusDataType.UInt16"/>) or two's-complement signed
+/// (<see cref="ModbusDataType.Int16"/>), then multiplied by <see cref="ModbusRegister.Scale"/>. 32-bit/
+/// float values (a register PAIR combined per some word-order convention) and register-block batching
+/// (today: one read per register) are DELIBERATE follow-ups, not built here — see task-6-report.md.
+///
+/// Resilience/health model: <see cref="Health"/> starts <see cref="DriverHealthState.Down"/> (ctor never
+/// connects — non-blocking, like every other driver's ctor), flips to
+/// <see cref="DriverHealthState.Connected"/> on a successful poll, and to
+/// <see cref="DriverHealthState.Degraded"/> on ANY connect/read failure — which also force-closes the
+/// underlying TCP connection so the NEXT poll iteration reconnects from scratch (<see cref="EnsureConnectedAsync"/>).
+/// A transient error therefore never throws out of <see cref="ReadAsync"/> — the driver self-heals. This
+/// is deliberately what makes it safe to run as its own G2-5 pipeline slot: the per-slot fault-isolation
+/// catch that refactor added is the BACKSTOP for a truly fatal/unexpected throw, not this driver's normal
+/// path (a flaky OT link degrades and reconnects; it doesn't tear the slot down).
+/// </summary>
+public sealed class ModbusTcpDriver : IDeviceDriver
+{
+    private static readonly ModbusFactory Factory = new();
+
+    private readonly string _host;
+    private readonly int _port;
+    private readonly ModbusRegisterMap _map;
+    private readonly Action<string>? _logWarning;
+    private readonly Action<Exception, string>? _logError;
+
+    private TcpClient? _tcpClient;
+    private IModbusMaster? _master;
+    private volatile bool _disposed;
+
+    public ModbusTcpDriver(
+        string host, int port, ModbusRegisterMap map,
+        Action<string>? logWarning = null, Action<Exception, string>? logError = null)
+    {
+        _host = host ?? throw new ArgumentNullException(nameof(host));
+        _map = map ?? throw new ArgumentNullException(nameof(map));
+        _port = port;
+        _logWarning = logWarning;
+        _logError = logError;
+
+        Id = $"modbus:{host}:{port}:{map.MachineCode}";
+        Health = DriverHealthState.Down;
+    }
+
+    public string Id { get; }
+
+    public DriverKind Kind => DriverKind.Modbus;
+
+    public DriverHealthState Health { get; private set; }
+
+    /// <summary>The poll loop. `yield return`/`yield break` must stay OUTSIDE any try/catch (C# forbids a
+    /// `yield` inside a `catch`-bearing `try`) — so each iteration's connect+read attempt is wrapped in its
+    /// OWN try/catch that only ever sets <see cref="Health"/>/logs/tears down the connection, never
+    /// rethrows a non-cancellation exception; the actual `yield return`/delay happen after that block has
+    /// already exited.</summary>
+    public async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            DeviceReading? reading = null;
+            try
+            {
+                await EnsureConnectedAsync(ct).ConfigureAwait(false);
+                reading = await PollOnceAsync().ConfigureAwait(false);
+                Health = DriverHealthState.Connected;
+            }
+            catch (OperationCanceledException)
+            {
+                yield break;
+            }
+            catch (Exception ex)
+            {
+                // Resilient by design: a transient connect/read failure degrades + forces a fresh
+                // reconnect NEXT iteration — it does NOT throw out of this iterator. See the class doc
+                // comment's resilience/health model remarks.
+                Health = DriverHealthState.Degraded;
+                _logError?.Invoke(ex, $"Modbus poll failed for {_map.MachineCode}");
+                DisposeConnection();
+            }
+
+            if (reading is not null)
+            {
+                yield return reading;
+            }
+
+            try
+            {
+                await Task.Delay(_map.PollIntervalMs, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                yield break;
+            }
+        }
+    }
+
+    /// <summary>Lazily connects (or reuses an already-live connection) — a fresh <see cref="TcpClient"/> +
+    /// <see cref="IModbusMaster"/> are only ever built here, reused across polls until
+    /// <see cref="DisposeConnection"/> tears them down (on a poll failure, or final disposal).</summary>
+    private async Task EnsureConnectedAsync(CancellationToken ct)
+    {
+        if (_master is not null && _tcpClient is { Connected: true })
+        {
+            return;
+        }
+
+        DisposeConnection();
+
+        var tcp = new TcpClient();
+        await tcp.ConnectAsync(_host, _port, ct).ConfigureAwait(false);
+        _tcpClient = tcp;
+        _master = Factory.CreateMaster(tcp);
+    }
+
+    /// <summary>Reads every configured register ONE AT A TIME (block-batching is a documented follow-up —
+    /// see the class doc comment) and decodes+scales each into a <see cref="TelemetrySample"/>, bundled
+    /// into a single <see cref="DeviceReading"/> for this poll.</summary>
+    private async Task<DeviceReading> PollOnceAsync()
+    {
+        var master = _master ?? throw new InvalidOperationException("Modbus master not connected.");
+        var samples = new List<TelemetrySample>(_map.Registers.Count);
+
+        foreach (var reg in _map.Registers)
+        {
+            var raw = reg.Type == ModbusRegisterType.Holding
+                ? await master.ReadHoldingRegistersAsync(_map.UnitId, reg.Address, 1).ConfigureAwait(false)
+                : await master.ReadInputRegistersAsync(_map.UnitId, reg.Address, 1).ConfigureAwait(false);
+
+            // UInt16 keeps the raw 16-bit word as-is; Int16 reinterprets the SAME bits as two's-complement
+            // signed (e.g. raw 0xFFFF -> -1) BEFORE Scale is applied — see ModbusDataType's doc comment.
+            double decoded = reg.DataType == ModbusDataType.UInt16 ? raw[0] : unchecked((short)raw[0]);
+            var value = decoded * reg.Scale;
+
+            samples.Add(new TelemetrySample(reg.Metric, value, reg.Unit, "good"));
+        }
+
+        return new DeviceReading
+        {
+            MachineCode = _map.MachineCode,
+            Kind = ReadingKind.Telemetry,
+            Telemetry = samples,
+            Timestamp = DateTimeOffset.UtcNow,
+        };
+    }
+
+    /// <summary>Best-effort, idempotent teardown of the current TCP connection/master — called both on a
+    /// poll failure (forces a fresh reconnect next iteration) and from <see cref="DisposeAsync"/>.</summary>
+    private void DisposeConnection()
+    {
+        try
+        {
+            _master?.Dispose();
+        }
+        catch
+        {
+            // best-effort — a master whose underlying socket already faulted must not block teardown.
+        }
+
+        try
+        {
+            _tcpClient?.Dispose();
+        }
+        catch
+        {
+            // best-effort — same reasoning as above.
+        }
+
+        _master = null;
+        _tcpClient = null;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        if (_disposed) return ValueTask.CompletedTask;
+        _disposed = true;
+        Health = DriverHealthState.Down;
+        DisposeConnection();
+        return ValueTask.CompletedTask;
+    }
+}

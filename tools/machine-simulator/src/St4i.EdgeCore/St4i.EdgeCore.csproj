@@ -28,5 +28,10 @@
          itself. See README "NU1903" note for the full rationale. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
+    <!-- G2-6 (Modbus TCP driver) — the ONE new NuGet this task adds: NModbus 3.0.83, the maintained
+         `rich.quackenbush` fork (NOT the abandoned NModbus4) — provides the TCP master
+         (Drivers/Modbus/ModbusTcpDriver.cs) and, test-only, the in-process TCP slave/slave-network the
+         loopback test stands up (no real hardware). MIT-licensed. -->
+    <PackageReference Include="NModbus" Version="3.0.83" />
   </ItemGroup>
 </Project>
