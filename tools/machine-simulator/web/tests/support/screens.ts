@@ -143,6 +143,16 @@ export async function gotoAudit(page: Page): Promise<void> {
   await expect(page.getByRole("columnheader", { name: viDict.audit.table.seq })).toBeVisible()
 }
 
+/** P2-2 (WS-J Asset Registry) — `/assets` (Operator-readable, no page-level role gate). Waits past
+ * `useAssets()`'s own loading skeleton — the table header only renders once it has resolved at
+ * least once. */
+export async function gotoAssets(page: Page): Promise<void> {
+  await page.goto("/assets")
+  await expect(page.getByRole("heading", { name: viDict.assets.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  await expect(page.getByRole("columnheader", { name: viDict.assets.table.code })).toBeVisible()
+}
+
 export async function gotoScenario(page: Page): Promise<void> {
   await page.goto("/scenario")
   await expect(page.getByRole("heading", { name: viDict.scenario.title, level: 1 })).toBeVisible()

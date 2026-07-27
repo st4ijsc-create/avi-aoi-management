@@ -16,6 +16,7 @@ import Reports from "@/routes/Reports"
 import Settings from "@/routes/Settings"
 import Users from "@/routes/Users"
 import Audit from "@/routes/Audit"
+import AssetRegistry from "@/routes/AssetRegistry"
 import NotFound from "@/routes/NotFound"
 import { Sidebar } from "@/shell/Sidebar"
 import { TopBar } from "@/shell/TopBar"
@@ -57,6 +58,7 @@ export function Shell() {
             <Route path="/settings" component={Settings} />
             <Route path="/users" component={Users} />
             <Route path="/audit" component={Audit} />
+            <Route path="/assets" component={AssetRegistry} />
             <Route component={NotFound} />
           </Switch>
         </main>

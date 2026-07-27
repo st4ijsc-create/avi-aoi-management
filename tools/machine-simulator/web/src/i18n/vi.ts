@@ -77,6 +77,7 @@ export const vi = {
       settings: "Cài đặt",
       users: "Người dùng",
       audit: "Nhật ký kiểm toán",
+      assets: "Sổ đăng ký tài sản",
     },
     sidebar: {
       brandSubtitle: "Máy mô phỏng",
@@ -1758,6 +1759,55 @@ export const vi = {
     },
   },
 
+  // P2-2 (WS-J Asset Registry) — `/assets` (`routes/AssetRegistry.tsx`): the persisted asset roster
+  // P2-1's backend maintains (`GET /v1/assets`), Operator-readable like the rest of the fleet screens
+  // (no page-level role gate). Only the lifecycle TRANSITION control inside the detail dialog is
+  // gated (`assets.detail.transitionRequiresEngineer`) — the server's own `Policies.Engineer` on
+  // `PUT /v1/assets/{code}/lifecycle` is the real enforcement, this is purely a friendlier front line.
+  // Deliberately its OWN `lifecycle` vocabulary, not a reuse of `lifecycleStatus` above (that dict is
+  // ProductModel's development/active/eol/archived vocabulary — a different concept entirely).
+  assets: {
+    title: "Sổ đăng ký tài sản",
+    description:
+      "Danh sách các tài sản (máy) đã đăng ký trong hệ thống — mã tài sản, URN, loại thiết bị, driver và trạng thái vòng đời. Một máy được đăng ký tự động khi kết nối với engine lần đầu; chuyển đổi trạng thái vòng đời cần quyền Engineer trở lên.",
+    table: {
+      code: "Mã tài sản",
+      urn: "URN",
+      deviceClass: "Loại thiết bị",
+      driverKind: "Driver",
+      lifecycle: "Vòng đời",
+      updated: "Cập nhật lúc",
+      rowAria: (vars: Vars) => `Xem chi tiết tài sản ${vars.code}`,
+      empty: "Chưa có tài sản nào được đăng ký.",
+      loadFailed: "Không thể tải sổ đăng ký tài sản.",
+    },
+    lifecycle: {
+      Provisioned: "Đã cấp phát",
+      Commissioning: "Đang chạy thử",
+      Active: "Đang hoạt động",
+      Maintenance: "Bảo trì",
+      Decommissioned: "Đã ngừng sử dụng",
+    },
+    detail: {
+      title: (vars: Vars) => `Chi tiết tài sản ${vars.code}`,
+      description: "Thông tin đầy đủ và trạng thái vòng đời hiện tại của tài sản này.",
+      loadFailed: "Không thể tải chi tiết tài sản.",
+      urn: "URN",
+      deviceClass: "Loại thiết bị",
+      driverKind: "Driver",
+      machineType: "Loại máy",
+      currentLifecycle: "Trạng thái hiện tại",
+      checksum: "Checksum",
+      checksumNone: "Chưa có checksum.",
+      created: "Ngày tạo",
+      updated: "Cập nhật lần cuối",
+      transition: "Chuyển trạng thái vòng đời",
+      transitionRequiresEngineer: "Chỉ tài khoản Engineer trở lên mới có thể chuyển trạng thái vòng đời.",
+      save: "Lưu",
+      saving: "Đang lưu…",
+    },
+  },
+
   toast: {
     fleetStarted: "Đã chạy fleet.",
     fleetStartFailed: "Không thể chạy fleet.",
@@ -1807,6 +1857,8 @@ export const vi = {
     userPasswordReset: (vars: Vars) => `Đã đặt lại mật khẩu cho ${vars.username}.`,
     userPasswordResetFailed: "Không thể đặt lại mật khẩu.",
     logoutFailed: "Không thể đăng xuất.",
+    assetLifecycleUpdated: (vars: Vars) => `Đã cập nhật vòng đời của ${vars.code}.`,
+    assetLifecycleUpdateFailed: "Không thể cập nhật vòng đời tài sản.",
   },
 }
 

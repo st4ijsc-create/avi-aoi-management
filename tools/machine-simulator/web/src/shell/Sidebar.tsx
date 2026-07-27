@@ -5,6 +5,7 @@ import {
   Database,
   Factory,
   LayoutDashboard,
+  Package,
   PlugZap,
   ScrollText,
   Settings,
@@ -51,6 +52,14 @@ export const NAV_ITEMS: NavItem[] = [
   // (distinct from `Database`'s "stored records" reading just above), matching this screen's own
   // subject: computed KPI rollups, not raw browsable rows.
   { labelKey: "shell.nav.reports", path: "/reports", icon: BarChart3 },
+  // P2-2 (WS-J Asset Registry) — `/assets` (`routes/AssetRegistry.tsx`), the persisted asset roster
+  // P2-1's backend maintains. `Package` (a single physical unit) reads as "one registered asset",
+  // distinct from `Boxes`' own "a configuration catalog" reading (`productConfig`, above) and from
+  // `Factory`'s "the live fleet" reading (`machines`) — this screen is about WHAT'S REGISTERED, not
+  // what's configured or what's currently running. Reads are Operator (`AssetEndpoints.cs`), so no
+  // `minRole` — every authenticated role sees this entry, same as every other fleet-facing screen
+  // above; only the lifecycle-transition control INSIDE the screen is Engineer+-gated.
+  { labelKey: "shell.nav.assets", path: "/assets", icon: Package },
   { labelKey: "shell.nav.settings", path: "/settings", icon: Settings },
   // WS-D-D7 — Admin-only account management (`routes/Users.tsx`). `Users` (plural person glyph) reads
   // as "manage people/accounts", distinct from every icon above (all either a screen-shape or a single

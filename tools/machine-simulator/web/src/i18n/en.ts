@@ -70,6 +70,7 @@ export const en: Dictionary = {
       settings: "Settings",
       users: "Users",
       audit: "Audit Log",
+      assets: "Asset Registry",
     },
     sidebar: {
       brandSubtitle: "Machine Simulator",
@@ -1691,6 +1692,55 @@ export const en: Dictionary = {
     },
   },
 
+  // P2-2 (WS-J Asset Registry) — `/assets` (`routes/AssetRegistry.tsx`): the persisted asset roster
+  // P2-1's backend maintains (`GET /v1/assets`), Operator-readable like the rest of the fleet screens
+  // (no page-level role gate). Only the lifecycle TRANSITION control inside the detail dialog is
+  // gated (`assets.detail.transitionRequiresEngineer`) — the server's own `Policies.Engineer` on
+  // `PUT /v1/assets/{code}/lifecycle` is the real enforcement, this is purely a friendlier front line.
+  // Deliberately its OWN `lifecycle` vocabulary, not a reuse of `lifecycleStatus` above (that dict is
+  // ProductModel's development/active/eol/archived vocabulary — a different concept entirely).
+  assets: {
+    title: "Asset Registry",
+    description:
+      "The registered assets (machines) in the system — asset code, URN, device class, driver, and lifecycle state. A machine registers automatically the first time it connects to the engine; transitioning its lifecycle state requires Engineer or above.",
+    table: {
+      code: "Code",
+      urn: "URN",
+      deviceClass: "Device class",
+      driverKind: "Driver",
+      lifecycle: "Lifecycle",
+      updated: "Updated",
+      rowAria: (vars: Vars) => `View detail for asset ${vars.code}`,
+      empty: "No assets registered yet.",
+      loadFailed: "Couldn't load the asset registry.",
+    },
+    lifecycle: {
+      Provisioned: "Provisioned",
+      Commissioning: "Commissioning",
+      Active: "Active",
+      Maintenance: "Maintenance",
+      Decommissioned: "Decommissioned",
+    },
+    detail: {
+      title: (vars: Vars) => `Asset ${vars.code} detail`,
+      description: "Full record and current lifecycle state for this asset.",
+      loadFailed: "Couldn't load the asset detail.",
+      urn: "URN",
+      deviceClass: "Device class",
+      driverKind: "Driver",
+      machineType: "Machine type",
+      currentLifecycle: "Current state",
+      checksum: "Checksum",
+      checksumNone: "No checksum yet.",
+      created: "Created",
+      updated: "Last updated",
+      transition: "Transition lifecycle state",
+      transitionRequiresEngineer: "Only Engineer accounts (or above) can transition the lifecycle state.",
+      save: "Save",
+      saving: "Saving…",
+    },
+  },
+
   toast: {
     fleetStarted: "Fleet started.",
     fleetStartFailed: "Couldn't start the fleet.",
@@ -1740,5 +1790,7 @@ export const en: Dictionary = {
     userPasswordReset: (vars: Vars) => `Reset ${vars.username}'s password.`,
     userPasswordResetFailed: "Couldn't reset the password.",
     logoutFailed: "Couldn't log out.",
+    assetLifecycleUpdated: (vars: Vars) => `Updated ${vars.code}'s lifecycle.`,
+    assetLifecycleUpdateFailed: "Couldn't update the asset's lifecycle.",
   },
 }

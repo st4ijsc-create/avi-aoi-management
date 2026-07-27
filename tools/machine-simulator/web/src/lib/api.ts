@@ -1472,3 +1472,86 @@ export function useAuditVerify() {
     mutationFn: () => auditEndpoints.auditVerify(),
   })
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Asset Registry — P2-1/P2-2 (`routes/AssetRegistry.tsx`). Wire shape mirrors
+// `St4i.EngineApi.AssetRegistry.AssetRecord` exactly — the app's global JSON options already camelCase
+// + enum-as-string every response (same `JsonStringEnumConverter` every other section of this file
+// already documents), so `lifecycle` comes back as `"Provisioned" | "Commissioning" | "Active" |
+// "Maintenance" | "Decommissioned"`, never a numeric enum value.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `AssetLifecycleState` (`AssetRegistry/AssetLifecycleState.cs`) — ISA-95-flavored asset lifecycle. A
+ * machine registers as `"Active"` by default; the other four states are reachable only via an explicit
+ * `PUT /v1/assets/{code}/lifecycle`. */
+export type AssetLifecycleState = "Provisioned" | "Commissioning" | "Active" | "Maintenance" | "Decommissioned"
+
+/** `AssetRecord` (`AssetRegistry/AssetRecord.cs`). `deviceClass`/`driverKind` are kept as plain
+ * `string` here (not narrowed to the `DeviceClass`/`DriverKind` unions above) — the registry can
+ * already hold a value the web app has no case for yet (e.g. a `"Modbus"` driver, P2-3's own concern),
+ * and narrowing here would make TypeScript reject a real, valid server value. `configChecksum` is
+ * `null` until the asset's descriptor has synced at least once. */
+export interface AssetRecord {
+  urn: string
+  code: string
+  deviceClass: string
+  driverKind: string
+  machineType: string
+  lifecycle: AssetLifecycleState
+  configChecksum: string | null
+  createdAtUtc: string
+  updatedAtUtc: string
+}
+
+const ASSETS_QUERY_KEY = ["assets"] as const
+const assetQueryKey = (code: string) => ["assets", code] as const
+
+const assetEndpoints = {
+  assets: () => request<AssetRecord[]>("/v1/assets"),
+  asset: (code: string) => request<AssetRecord>(`/v1/assets/${encodeURIComponent(code)}`),
+  setAssetLifecycle: (code: string, state: AssetLifecycleState) =>
+    request<AssetRecord>(`/v1/assets/${encodeURIComponent(code)}/lifecycle`, {
+      method: "PUT",
+      body: JSON.stringify({ state }),
+    }),
+}
+
+/** `GET /v1/assets` (Operator) — the full persisted roster, no paging: unlike `useAudit`'s
+ * high-volume hash-chained log, the registry is expected to stay small (one row per provisioned
+ * machine), so `AssetRegistry.tsx` renders it as a plain unpaginated list. */
+export function useAssets(): UseQueryResult<AssetRecord[]> {
+  return useQuery({
+    queryKey: ASSETS_QUERY_KEY,
+    queryFn: assetEndpoints.assets,
+  })
+}
+
+/** `GET /v1/assets/{code}` (Operator) — used by the detail dialog so it always shows the server's
+ * CURRENT record rather than whatever the list row looked like at the moment it was clicked;
+ * `undefined` (no dialog open) disables the query entirely. */
+export function useAsset(code: string | undefined): UseQueryResult<AssetRecord> {
+  return useQuery({
+    queryKey: assetQueryKey(code ?? ""),
+    queryFn: () => assetEndpoints.asset(code as string),
+    enabled: code !== undefined,
+  })
+}
+
+/** `PUT /v1/assets/{code}/lifecycle` (Engineer; the client-side `RequireRole` in `AssetRegistry.tsx`
+ * is only a UX gate — this is the real enforcement). Writes the returned record straight into this
+ * code's own `useAsset` cache entry (so an open detail dialog reflects the new lifecycle immediately)
+ * AND invalidates the list query (`["assets"]`) so the table's own chip catches up too — same two-step
+ * "setQueryData the specific entry, invalidate the collection" idiom `useSyncConfig`/
+ * `useUpdateOeeSettings` use above. Rejected (400 bad state, 404 unknown code) touches neither cache
+ * entry — the caller's own `onError` is how the screen surfaces that. */
+export function useSetAssetLifecycle() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ code, state }: { code: string; state: AssetLifecycleState }) =>
+      assetEndpoints.setAssetLifecycle(code, state),
+    onSuccess: (data, variables) => {
+      queryClient.setQueryData(assetQueryKey(variables.code), data)
+      queryClient.invalidateQueries({ queryKey: ASSETS_QUERY_KEY })
+    },
+  })
+}
