@@ -2,7 +2,7 @@
   "id": "w0-lora-path-traversal",
   "title": "targetVersion do người dùng nhập ảnh hưởng trực tiếp đường dẫn file model đã huấn luyện",
   "agentId": "backend-engineer",
-  "objective": "Endpoint khởi chạy fine-tune LoRA nhận targetVersion do người dùng nhập và ghép trực tiếp vào tên file .gguf khi copy model đã huấn luyện ra đĩa, mở ra khả năng path traversal / ghi đè file tuỳ ý ngoài thư mục trained. Tìm nguyên nhân gốc và cách sửa.",
+  "objective": "Người dùng tự đặt tên cho phiên bản model khi khởi chạy fine-tune LoRA. Với một số chuỗi tên đặc biệt (chứa dấu gạch chéo hoặc hai dấu chấm liên tiếp), file .gguf kết quả sau khi huấn luyện xong lại được ghi ra một vị trí khác trên đĩa, nằm ngoài thư mục lưu model đã huấn luyện. Tìm nguyên nhân gốc trong cách xây dựng đường dẫn file kết quả, và cách sửa.",
   "files": ["server/services/aiLlmFinetuneSidecar.ts"],
   "expected": {
     "rootCauseKeywords": ["targetVersion", "finalPath", "path traversal"],

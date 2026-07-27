@@ -2,7 +2,7 @@
   "id": "w0-blocked-state-unreachable",
   "title": "Agent Command Center: trạng thái blocked không bao giờ hiện, working che mất awaiting_approval",
   "agentId": "backend-engineer",
-  "objective": "Trên Agent Command Center, persona Operations Agent không bao giờ hiển thị trạng thái 'blocked' dù có phiên đang bị paused, và khi cùng lúc có một phiên đang chạy (working) và một phiên khác đang chờ duyệt (awaiting_approval) thì màn chỉ hiện working, awaiting_approval bị che mất. Tìm nguyên nhân gốc và cách sửa.",
+  "objective": "Trên Agent Command Center, khung trạng thái của persona Operations Agent có hai biểu hiện sai: (1) khi một phiên vận hành đang bị tạm ngưng vì có thao tác ghi bị từ chối/vượt giới hạn, khung trạng thái không bao giờ phản ánh điều đó — nó luôn rơi về một giá trị khác; (2) khi cùng lúc có một phiên đang chạy bình thường VÀ một phiên khác đang cần người dùng xác nhận trước khi tiếp tục, khung trạng thái chỉ cho thấy phiên đang chạy bình thường, phiên cần xác nhận bị che mất hoàn toàn. Tìm nguyên nhân gốc trong cách persona này chọn ra phiên đại diện cho trạng thái hiển thị, và cách sửa.",
   "files": ["server/services/aiAgentCenterService.ts"],
   "expected": {
     "rootCauseKeywords": ["paused", "blocked", "awaiting_approval"],

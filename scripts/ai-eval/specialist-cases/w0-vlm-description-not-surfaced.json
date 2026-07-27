@@ -7,7 +7,7 @@
   "expected": {
     "rootCauseKeywords": ["ai_image_embeddings", "measurement_results", "aiAnalysisResult"],
     "mustMentionFiles": ["server/services/aoiImageEmbeddingWorker.ts"],
-    "fixDirectionKeywords": ["measurementResultId", "vlmSummary", "RepairStation"]
+    "fixDirectionKeywords": ["measurementResultId", "vlmSummary", "vision-escalation"]
   },
   "notes": "Bug thật đã sửa ở Wave 0, commit 6b91c909 (mô tả VLM chỉ ghi vào ai_image_embeddings.metadata; Repair Station đọc measurement_results.aiAnalysisResult nên không bao giờ thấy)."
 }

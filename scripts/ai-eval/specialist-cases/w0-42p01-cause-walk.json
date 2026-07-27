@@ -7,7 +7,7 @@
   "expected": {
     "rootCauseKeywords": ["err.cause", "DrizzleQueryError", "42P01"],
     "mustMentionFiles": ["server/_core/dbErrors.ts"],
-    "fixDirectionKeywords": ["isMissingTable", "err.cause", "walk"]
+    "fixDirectionKeywords": ["isMissingTable", "err.cause", "UNDEFINED_TABLE"]
   },
   "notes": "Bug thật đã sửa ở doc69 E3-2, commit eca33661 (kiểm tra err.code trần bỏ sót mã 42P01 vì drizzle-orm bọc lỗi driver thật trong DrizzleQueryError, mã nằm ở err.cause)."
 }

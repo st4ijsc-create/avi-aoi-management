@@ -7,7 +7,7 @@
   "expected": {
     "rootCauseKeywords": ["import", "không tồn tại", "undefined", "latestForMachine"],
     "mustMentionFiles": ["server/services/aiActionInbox.ts"],
-    "fixDirectionKeywords": ["readMachineStatuses", "nguồn thật", "aiAnomalyRouter"]
+    "fixDirectionKeywords": ["readMachineStatuses", "ScopedMachine", "aiAnomalyDetection"]
   },
   "notes": "Bug thật đã sửa ở Wave 0, commit 6b91c909."
 }

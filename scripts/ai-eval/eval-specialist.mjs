@@ -1,10 +1,34 @@
 /**
- * Wave 1 — bộ đề chuẩn cho 4 specialist agent.
+ * Wave 1 — bộ đề chuẩn 8 bài từ bug thật (git history), chấm tự động.
+ *
+ * PHẠM VI THẬT (không overclaim): cả 8 ca hiện tại đều dùng agentId
+ * "backend-engineer" — mọi bug nguồn được chọn đều là lỗi backend, nên
+ * "frontend-engineer"/"data-analyst"/"qa-optimizer" CHƯA có ca riêng nào
+ * exercise. Đây là giới hạn của bộ 8 ca hiện tại, không phải của cơ chế
+ * chấm — thêm ca cho 3 persona kia là fast-follow, không phải việc của
+ * bản sửa này.
  *
  * Chấm 3 tiêu chí, mỗi tiêu chí 0/1, điểm bài = trung bình:
  *   1. Đúng nguyên nhân — đạt >= 60% số rootCauseKeywords.
  *   2. Đúng chỗ        — nêu >= 1 file trong mustMentionFiles.
  *   3. Đúng hướng sửa  — chứa >= 1 fixDirectionKeywords.
+ *
+ * GIỚI HẠN đã biết của tiêu chí (2) "Đúng chỗ": `runSpecialistAgent` (qua
+ * `buildUserPrompt`) echo NGUYÊN VĂN danh sách `files` của case vào prompt
+ * ("Related files: ..."), và `mustMentionFiles` luôn là tập con của `files`
+ * — nên location=1 hầu như luôn đạt, kể cả khi model chỉ lặp lại đường dẫn
+ * được cho mà không hề định vị lỗi. location KHÔNG chứng minh model tự tìm
+ * ra vị trí lỗi; tín hiệu thật của bộ đề nằm ở rootCause + fixDirection.
+ * Đây là giới hạn cấu trúc của cách `runSpecialistAgent` dựng prompt, không
+ * sửa được trong phạm vi hàm chấm 3-tiêu-chí này — chỉ cần đọc điểm với
+ * hiểu biết này, đừng suy ra "model định vị lỗi tốt" chỉ từ location=1.
+ *
+ * KHÔNG-GIAN-LẬN: với 4 ca từng bị phát hiện rò rỉ (fix-round 1) —
+ * rootCauseKeywords/fixDirectionKeywords của mỗi case KHÔNG được là subset
+ * của chính `objective`/`files` của case đó, nếu không một câu trả lời chỉ
+ * lặp lại đề bài + danh sách file (không chẩn đoán gì) cũng đạt ngưỡng.
+ * Xem `.superpowers/sdd/w1-task6-report.md` phần "Fix round 1" để có ma
+ * trận kiểm chứng đối kháng 8×3 (generic / echo-only / ideal).
  *
  * CHẠY THỦ CÔNG (mỗi lượt gọi model 30B mất vài phút — KHÔNG đưa vào CI):
  *   npm run eval:specialist
