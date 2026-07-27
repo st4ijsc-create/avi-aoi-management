@@ -1005,7 +1005,7 @@ chạy xem được ở `GET /v1/capabilities` là `AssemblyVersion` 4 phần (`
 (`1.0.0`) mà file MSI dùng — cùng nguồn (`Directory.Build.props`) nhưng khác định dạng. Tự cập nhật đầy đủ
 + chính sách LTS để sau.)*
 
-### 15.8 Two known fast-follow gaps — be honest / Hai khoảng trống đã biết, nói thật
+### 15.8 Known fast-follow gaps (and fixes) — be honest / Các khoảng trống đã biết (và đã sửa), nói thật
 
 **(a) A runtime `PUT /v1/settings` edit is still in-memory only — persist config by env var instead
 (WS-F1 final-review fix F1 narrowed this gap; it did not remove it).** `FleetHost`'s
@@ -1025,14 +1025,35 @@ settings change durable, also update the registry `Environment` value (§15.2) t
 service — a deeper settings-persistence fast-follow (writing `PUT /v1/settings` through to disk/registry
 automatically) is not built in this workstream.
 
-**(b) `CredentialStore` uses per-user DPAPI (`DataProtectionScope.CurrentUser`).** A machine's `mk_`
-credential (§5) is encrypted to whichever specific Windows account was running the process when
-`Save()` was called — decryptable only by that same account on that same machine. An `mk_` onboarded
-interactively (as the logged-in operator) will **not** be readable once the engine is converted to run
-as a service under a different account (e.g. `LocalSystem`, or a dedicated service account) — it will
-need to be re-claimed/re-pasted through Onboarding under the new identity. A `LocalMachine`-scoped DPAPI
-fast-follow (matching what the DataProtection key ring already does — §14, `protectToLocalMachine:
-true`) is planned to remove this friction, but is not built in this workstream.
+**(b) `CredentialStore` DPAPI scope — FIXED (WS-FF, FF-2).** This used to be per-user DPAPI
+(`DataProtectionScope.CurrentUser`): a machine's `mk_` credential (§5) was encrypted to whichever
+specific Windows account was running the process when `Save()` was called, decryptable only by that
+same account on that same machine — an `mk_` onboarded interactively (as the logged-in operator) would
+**not** be readable once the engine was converted to run as a service under a different account (e.g.
+`LocalSystem`). FF-2 switched both `Save`/`Load` to `DataProtectionScope.LocalMachine` (matching what the
+DataProtection key ring already does — §14, `protectToLocalMachine: true`), so any local account can now
+decrypt any `.bin` on that same machine regardless of which account wrote it — filesystem ACLs on the
+containing directory (the same rationale as `SecurityDirAcl`, §14) are the confidentiality boundary
+now, not the Windows account. **Breaking, by design:** a `.bin` written by a pre-FF-2 build under
+`CurrentUser` can no longer be decrypted here — `ProtectedData.Unprotect` throws `CryptographicException`
+for it (wrong scope), which `Load` catches and treats as "no stored key" (returns `null`) rather than
+letting the exception propagate, so the caller's normal empty-credential path (re-claim through
+Onboarding) runs instead of a crash. The same `null`-not-throw behavior also covers any other
+corrupt/foreign `.bin` (e.g. bytes from a different machine, or plain garbage) — see
+`CredentialStoreTests` for the round-trip-under-`LocalMachine` and corrupt-blob coverage.
+
+**(c) NU1903 (`SQLitePCLRaw`/CVE-2025-6965) — cleared, not suppressed (WS-FF, FF-2).**
+`Microsoft.Data.Sqlite 10.0.10` pins the transitive `SQLitePCLRaw.bundle_e_sqlite3`/`lib.e_sqlite3` at
+`2.1.11`, which bundles a pre-3.50.2 SQLite affected by
+[GHSA-2m69-gcr7-jv3q](https://github.com/advisories/GHSA-2m69-gcr7-jv3q) (CVE-2025-6965, a
+memory-corruption issue, high severity). `2.1.12` is the first patched release on NuGet — verified by
+pinning it in a scratch project and reading back `select sqlite_version()` = `3.53.3`, well past the fix
+line, and by a clean `dotnet restore` emitting no NU1903 for it. `St4i.EdgeCore.csproj` now carries an
+explicit `<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />` — NuGet's
+nearest-wins resolution picks this direct reference over `Microsoft.Data.Sqlite`'s own `2.1.11` transitive
+minimum, so every project in the solution (via `St4i.EdgeCore`) gets the patched native SQLite build with
+no `Microsoft.Data.Sqlite` version change and no `<NoWarn>` suppression needed. The full historian/WAL
+SQLite test suites were re-run against this pin and are green.
 
 *(VI: (a) Sửa WS-F1 final-review F1 THU HẸP khoảng trống này, KHÔNG xoá hẳn: đổi `serverUrl`/
 `machineCode`/`verifyTls` qua `PUT /v1/settings` lúc đang chạy vẫn CHỈ ở bộ nhớ, mất khi service khởi
@@ -1041,7 +1062,12 @@ true`) is planned to remove this friction, but is not built in this workstream.
 trong 3 biến này cả (chỉ `EdgeWorker` của `St4i.EdgeService` đọc), nên service không có cách nào trỏ
 đúng server thật qua các lần restart. Cái CHƯA sửa: đổi qua `PUT /v1/settings` lúc runtime KHÔNG ghi
 ngược lại registry — muốn bền phải cập nhật registry `Environment` (§15.2) cho khớp rồi restart service.
-(b) `CredentialStore` mã hoá DPAPI theo TỪNG NGƯỜI DÙNG — khoá `mk_` claim lúc tương
-tác dưới tài khoản người dùng sẽ KHÔNG đọc được khi chuyển sang chạy dưới tài khoản service khác, phải
-claim lại qua Onboarding. Kế hoạch chuyển sang DPAPI theo LocalMachine để hết vướng này, chưa làm ở
-workstream này.)*
+(b) ĐÃ SỬA (WS-FF, FF-2): `CredentialStore` trước đây mã hoá DPAPI theo TỪNG NGƯỜI DÙNG — khoá `mk_`
+claim lúc tương tác dưới tài khoản người dùng sẽ KHÔNG đọc được khi chuyển sang chạy dưới tài khoản
+service khác. Giờ đã chuyển sang DPAPI theo LocalMachine (giống key-ring DataProtection, §14) — bất kỳ
+tài khoản cục bộ nào trên cùng máy đều giải mã được; ranh giới bảo mật giờ là ACL thư mục, không phải
+tài khoản Windows. Đây là thay đổi PHÁ VỠ TƯƠNG THÍCH có chủ đích: file `.bin` mã hoá kiểu cũ
+(CurrentUser) không đọc lại được nữa — `Load` bắt lỗi `CryptographicException` và trả về `null` (coi như
+chưa có khoá) thay vì crash, buộc claim lại qua Onboarding. (c) NU1903 (SQLitePCLRaw/CVE-2025-6965) —
+ĐÃ GIẢI QUYẾT bằng cách ghim phiên bản vá `SQLitePCLRaw.bundle_e_sqlite3 2.1.12` (đã xác minh SQLite bên
+trong là 3.53.3, qua ngưỡng vá 3.50.2), KHÔNG dùng `<NoWarn>` để ẩn cảnh báo.)*

@@ -5,12 +5,24 @@ using System.Linq;
 namespace St4i.EdgeCore.Infrastructure;
 
 /// <summary>
-/// Persists a machine's <c>mk_</c> API key on disk, DPAPI-encrypted to the current Windows user
-/// (<see cref="DataProtectionScope.CurrentUser"/>) so the plaintext key never touches disk — only
-/// a principal logged in as this same Windows user (on this same machine) can decrypt it back.
+/// Persists a machine's <c>mk_</c> API key on disk, DPAPI-encrypted to the local MACHINE
+/// (<see cref="DataProtectionScope.LocalMachine"/> — FF-2) so the plaintext key never touches disk
+/// and so it can be decrypted back by any principal on this same machine, not just whichever
+/// Windows user originally ran <see cref="Save"/>. This matters because a machine is often
+/// onboarded interactively (as a logged-in operator) but later run as a different account (e.g. a
+/// Windows Service/LocalSystem) — <see cref="DataProtectionScope.CurrentUser"/> would make that
+/// re-decrypt fail. The confidentiality boundary this relies on instead is filesystem ACLs on the
+/// containing directory tree — same rationale as WS-D's DataProtection key-ring
+/// <c>protectToLocalMachine: true</c> (see <c>St4i.EngineApi.Auth.SecurityDirAcl</c>) — restricting
+/// this directory to admins is a deployment-hardening step, not something this class enforces itself.
 ///
 /// One file per machine under <c>%ProgramData%\ST4I\sim\creds\&lt;machineCode&gt;.bin</c>, so the
 /// WPF app/edge service can hold credentials for an entire simulated fleet side by side.
+///
+/// NOTE (FF-2, breaking): this switches the DPAPI scope from <c>CurrentUser</c> to <c>LocalMachine</c>,
+/// so a <c>.bin</c> file written by a pre-FF-2 build can no longer be decrypted here — <see cref="Load"/>
+/// treats that (and any other corrupt/foreign blob) as "no stored key" rather than throwing, so the
+/// caller's normal empty-credential path (re-claim) kicks in instead of a crash.
 /// </summary>
 public static class CredentialStore
 {
@@ -27,7 +39,7 @@ public static class CredentialStore
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
         var plain = Encoding.UTF8.GetBytes(mkKey);
-        var protectedBytes = ProtectedData.Protect(plain, Entropy, DataProtectionScope.CurrentUser);
+        var protectedBytes = ProtectedData.Protect(plain, Entropy, DataProtectionScope.LocalMachine);
         File.WriteAllBytes(path, protectedBytes);
     }
 
@@ -49,7 +61,12 @@ public static class CredentialStore
     }
 
     /// <summary>Reads and DPAPI-unprotects the stored key for <paramref name="machineCode"/>, or
-    /// <c>null</c> if no credential file exists for it.</summary>
+    /// <c>null</c> if no credential file exists for it OR its bytes can't be unprotected (FF-2: a
+    /// corrupt file, one encrypted under a different DPAPI scope/entropy — e.g. a pre-FF-2
+    /// <c>CurrentUser</c>-encrypted <c>.bin</c> — or one copied in from a different machine all throw
+    /// <see cref="CryptographicException"/> from <see cref="ProtectedData.Unprotect"/>; all of those are
+    /// treated the same as "no stored key" so a caller's normal empty-credential path (forcing a
+    /// re-claim) runs instead of an unhandled crash).</summary>
     public static string? Load(string machineCode)
     {
         ArgumentException.ThrowIfNullOrEmpty(machineCode);
@@ -58,7 +75,15 @@ public static class CredentialStore
         if (!File.Exists(path)) return null;
 
         var protectedBytes = File.ReadAllBytes(path);
-        var plain = ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.CurrentUser);
+        byte[] plain;
+        try
+        {
+            plain = ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.LocalMachine);
+        }
+        catch (CryptographicException)
+        {
+            return null;
+        }
         return Encoding.UTF8.GetString(plain);
     }
 

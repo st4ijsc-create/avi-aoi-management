@@ -12,6 +12,16 @@
     <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
     <PackageReference Include="MQTTnet.Server" Version="5.2.0.1603" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <!-- FF-2 / NU1903: Microsoft.Data.Sqlite 10.0.10 pins the transitive SQLitePCLRaw.bundle_e_sqlite3
+         (and, through it, SQLitePCLRaw.lib.e_sqlite3) at 2.1.11, which the NuGet audit flags via
+         GHSA-2m69-gcr7-jv3q / CVE-2025-6965 (bundled SQLite < 3.50.2, a memory-corruption issue).
+         2.1.12 is the first patched release (confirmed: a scratch project pinned to this version
+         reports `select sqlite_version()` = 3.53.3, well past the 3.50.2 fix line, and a fresh
+         `dotnet restore` against it emits no NU1903). Pinning it explicitly here — NuGet's
+         nearest-wins resolution picks this direct reference over the 2.1.11 transitive minimum
+         Microsoft.Data.Sqlite declares — clears the advisory without touching Microsoft.Data.Sqlite
+         itself. See README "NU1903" note for the full rationale. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.0" />
   </ItemGroup>
 </Project>
