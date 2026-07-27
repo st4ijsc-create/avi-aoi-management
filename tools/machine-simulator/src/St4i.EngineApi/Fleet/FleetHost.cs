@@ -11,6 +11,7 @@ using St4i.EdgeCore.Mapping;
 using St4i.EdgeCore.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EdgeCore.Uns;
+using St4i.EngineApi.AssetRegistry;
 using Microsoft.Extensions.Logging;
 
 namespace St4i.EngineApi.Fleet;
@@ -150,6 +151,15 @@ public sealed class FleetHost
     /// reasoning the simulated fleet's own <c>SimulatorFactory.Create</c> already follows.</summary>
     private readonly Func<IDeviceDriver>? _modbusDriverFactory;
 
+    /// <summary>P2-1 (WS-J Asset Registry) — optional (defaults null, same "every pre-existing test that
+    /// constructs <see cref="FleetHost"/> directly without one keeps compiling/behaving byte-for-byte
+    /// unchanged" contract as every other optional dependency above) durable canonical asset registry.
+    /// Upserted — fire-and-forget, never awaited (<see cref="IAssetRegistry.UpsertAsync"/> itself never
+    /// throws, see that interface's doc comment) — once per roster-seed machine in the ctor below, and
+    /// again on every dynamic <see cref="RegisterMachine"/> call, so every machine this host ever knows
+    /// about becomes a durable asset row with no separate "sync the registry" step required.</summary>
+    private readonly IAssetRegistry? _assetRegistry;
+
     /// <summary>FF-1 (docs/plans/2026-07-27-ws-ff-fast-follows.md) — optional (defaults null, same
     /// "every pre-existing test that constructs <see cref="FleetHost"/> directly without one keeps
     /// compiling/behaving byte-for-byte unchanged" contract as every other optional store above)
@@ -233,7 +243,8 @@ public sealed class FleetHost
         HistorianWriter? historianWriter = null,
         FleetSettingsStore? settingsStore = null,
         IUnsPublisher? unsPublisher = null,
-        Func<IDeviceDriver>? modbusDriverFactory = null)
+        Func<IDeviceDriver>? modbusDriverFactory = null,
+        IAssetRegistry? assetRegistry = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -246,6 +257,7 @@ public sealed class FleetHost
         _settingsStore = settingsStore;
         _unsPublisher = unsPublisher;
         _modbusDriverFactory = modbusDriverFactory;
+        _assetRegistry = assetRegistry;
 
         // FF-1 — eager load, no lock needed: runs once, before this instance is published to any other
         // thread (same reasoning SeedAoiProductLinks below documents for itself). See _settingsStore's own
@@ -266,6 +278,10 @@ public sealed class FleetHost
         foreach (var descriptor in _fleet)
         {
             _states[descriptor.Code] = new MachineState(descriptor);
+            // P2-1 — fire-and-forget: UpsertAsync never throws (see IAssetRegistry's doc comment), and a
+            // null _assetRegistry (every pre-existing test/no-DI-registration case) makes this a no-op,
+            // byte-identical to before this task.
+            _ = _assetRegistry?.UpsertAsync(descriptor);
         }
 
         SeedAoiProductLinks();
@@ -854,6 +870,10 @@ public sealed class FleetHost
                 _fleet.RemoveAt(_fleet.Count - 1);
                 return false;
             }
+
+            // P2-1 — same fire-and-forget upsert as the ctor's roster-seed loop above; a newly-registered
+            // machine becomes a durable asset row too, not just the ones present at process start.
+            _ = _assetRegistry?.UpsertAsync(descriptor);
 
             if (IsRunning)
             {

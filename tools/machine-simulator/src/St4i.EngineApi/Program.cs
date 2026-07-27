@@ -358,6 +358,21 @@ builder.Services.AddSingleton(sp =>
         logError: (ex, msg) => logger.LogError(ex, "{HistorianMsg}", msg));
 });
 
+// P2-1 (WS-J Asset Registry) — the persistent canonical asset registry: a durable SQLite row per roster
+// machine (ISA-95 URN, lifecycle, config-checksum), auto-upserted by FleetHost (its optional
+// `assetRegistry` ctor param — see FleetHost.cs) on roster-seed + RegisterMachine, read/mutated via
+// AssetEndpoints (GET /v1/assets, GET /v1/assets/{code}, PUT /v1/assets/{code}/lifecycle). Registered as
+// a singleton BEFORE Build() (same "resolve FleetHost's optional ctor params from DI" convention as
+// HistorianWriter/MachineConfigStore/... above) and pointed at UnsOptions.FromEnvironment() for the
+// URN's site/area/line/cell address — the SAME process-wide address UnsTopicBuilder already uses.
+// Relocatable via ST4I_ASSETS_DIR, same ops/testability rationale as ST4I_HISTORIAN_DIR above.
+var assetsDir = Environment.GetEnvironmentVariable("ST4I_ASSETS_DIR");
+builder.Services.AddSingleton<St4i.EngineApi.AssetRegistry.IAssetRegistry>(sp =>
+    new St4i.EngineApi.AssetRegistry.AssetRegistryStore(
+        St4i.EdgeCore.Uns.UnsOptions.FromEnvironment(),
+        string.IsNullOrWhiteSpace(assetsDir) ? null : assetsDir,
+        logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("Assets").LogError(ex, "{AssetsMsg}", msg)));
+
 // G2-2 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 2) — the local UNS spine: an
 // always-on loopback MQTTnet broker (UnsBroker) plus the dual-topic (Sparkplug + retained semantic-mirror)
 // publisher (UnsPublisher) FleetHost threads into every EdgePipeline it builds (see FleetHost.StartLocked).
@@ -571,6 +586,7 @@ app.MapMachineSettingsEndpoints();
 app.MapHistorianEndpoints();
 app.MapAuditEndpoints();
 app.MapUserEndpoints();
+app.MapAssetEndpoints();
 app.MapInspectorStream();
 
 // WS-D-D1 — ENDPOINT, so it inherits the FallbackPolicy above like every other mapped route; without
