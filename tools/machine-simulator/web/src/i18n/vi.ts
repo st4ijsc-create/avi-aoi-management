@@ -78,6 +78,7 @@ export const vi = {
       users: "Người dùng",
       audit: "Nhật ký kiểm toán",
       assets: "Sổ đăng ký tài sản",
+      site: "Liên kết Site",
     },
     sidebar: {
       brandSubtitle: "Máy mô phỏng",
@@ -1809,6 +1810,70 @@ export const vi = {
     },
   },
 
+  // GĐ3 EC-4 (`routes/Site.tsx`, `.superpowers/sdd/2026-07-27-giaidoan3-ecosystem-connect-blueprint/
+  // task-4-brief.md`) — the web page over EC-3's `/v1/site*` endpoints: this device's own identity
+  // fingerprint + cert PEM (to register at a SYNAPSE Site), an Engineer-gated Site-link form (host/
+  // port + paste the Site's trust PEM + enable), and a live northbound bridge-status badge. Reads are
+  // Operator; only the PUT-driving form is Engineer+-gated (`site.form.readOnlyNote`), same "page open
+  // to everyone, one control gated" shape `assets` above already established.
+  site: {
+    title: "Site / Hệ sinh thái",
+    description:
+      "Định danh thiết bị này để đăng ký tại một SYNAPSE Site, và (Engineer trở lên) cấu hình liên kết lên Site để đẩy dữ liệu UNS cục bộ lên hệ sinh thái cấp cao hơn.",
+    identity: {
+      title: "Định danh thiết bị",
+      description: "Vân tay và chứng chỉ công khai của thiết bị này — dùng để đăng ký tại Site của bạn.",
+      fingerprintLabel: "Vân tay thiết bị (SHA-256)",
+      copyFingerprint: "Sao chép vân tay",
+      pemLabel: "Chứng chỉ thiết bị (PEM)",
+      showPem: "Hiện chứng chỉ",
+      hidePem: "Ẩn chứng chỉ",
+      copyPem: "Sao chép chứng chỉ",
+      copied: "Đã sao chép.",
+      copyFailed: "Không thể sao chép — hãy chọn và sao chép thủ công.",
+      register: "Đăng ký định danh này tại SYNAPSE Site của bạn.",
+      loadFailed: "Không thể tải định danh thiết bị.",
+    },
+    form: {
+      title: "Kết nối Site",
+      description: "Cấu hình liên kết lên SYNAPSE Site — cần dán lại chứng chỉ tin cậy của Site mỗi lần lưu.",
+      hostLabel: "Địa chỉ Site (host)",
+      hostPlaceholder: "site.example.com",
+      portLabel: "Cổng (port)",
+      trustPemLabel: "Chứng chỉ tin cậy của Site (PEM)",
+      trustPemPlaceholder: "Dán chứng chỉ CA hoặc chứng chỉ tự ký của Site broker…",
+      trustPemHint:
+        "Vì lý do bảo mật, chứng chỉ đã lưu không bao giờ được hiển thị lại — ô này luôn để trống; muốn BẬT kết nối, hãy dán lại chứng chỉ tin cậy mỗi lần lưu, kể cả khi chỉ đổi host/cổng.",
+      enabledLabel: "Bật kết nối tới Site",
+      save: "Lưu",
+      saving: "Đang lưu…",
+      readOnlyNote: "Chỉ tài khoản Engineer trở lên mới có thể chỉnh sửa kết nối Site.",
+      readOnlyHost: "Địa chỉ Site (host)",
+      readOnlyPort: "Cổng (port)",
+      readOnlyEnabled: "Đã bật",
+      readOnlyDisabled: "Đã tắt",
+    },
+    status: {
+      title: "Trạng thái cầu nối",
+      Disabled: "Đã tắt",
+      Connecting: "Đang kết nối…",
+      Connected: "Đã kết nối",
+      Degraded: "Suy giảm",
+      Down: "Mất kết nối",
+      lastError: (vars: Vars) => `Lỗi gần nhất: ${vars.error}`,
+      siteVerified: (vars: Vars) => `Đã xác thực chứng chỉ Site: ${vars.fingerprint}`,
+      unsDisabled:
+        "Lõi UNS cục bộ đang tắt (ST4I_UNS_ENABLED=false); hãy bật lõi UNS để liên kết thiết bị này với một Site.",
+    },
+    errors: {
+      badRequest: "Host, cổng hoặc chứng chỉ tin cậy không hợp lệ khi bật kết nối Site.",
+      conflict: "Lõi UNS cục bộ đang tắt — không thể áp dụng liên kết Site.",
+      forbidden: "Bạn không có quyền chỉnh sửa kết nối Site.",
+      generic: "Không thể lưu kết nối Site.",
+      loadFailed: "Không thể tải trạng thái kết nối Site.",
+    },
+  },
+
   toast: {
     fleetStarted: "Đã chạy fleet.",
     fleetStartFailed: "Không thể chạy fleet.",
@@ -1860,6 +1925,10 @@ export const vi = {
     logoutFailed: "Không thể đăng xuất.",
     assetLifecycleUpdated: (vars: Vars) => `Đã cập nhật vòng đời của ${vars.code}.`,
     assetLifecycleUpdateFailed: "Không thể cập nhật vòng đời tài sản.",
+    siteLinkSaved: "Đã lưu kết nối Site.",
+    siteLinkSaveFailed: "Không thể lưu kết nối Site.",
+    fingerprintCopied: "Đã sao chép vân tay.",
+    certCopied: "Đã sao chép chứng chỉ.",
   },
 }
 

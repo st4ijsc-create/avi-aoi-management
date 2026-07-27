@@ -1555,3 +1555,98 @@ export function useSetAssetLifecycle() {
     },
   })
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Site / Ecosystem — GĐ3 EC-4 (`routes/Site.tsx`). Wire shapes mirror `St4i.EngineApi.Endpoints.
+// SiteEndpoints`'s `SiteStatusDto`/`SiteLinkRequest`/`SiteIdentityDto` exactly (EC-3,
+// `src/St4i.EngineApi/Endpoints/SiteEndpoints.cs`) — the HTTP surface over EC-2's `SiteBridgeManager`
+// (federates this device's local UNS spine to a SYNAPSE Site over MQTT/TLS) + EC-1's `DeviceIdentity`
+// (this device's own cert/fingerprint, unconditional regardless of whether a Site link exists).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `St4i.EdgeCore.Site.BridgeStatus.BridgeState` — the northbound bridge's own health ramp. Kept as a
+ * plain `string` on `SiteStatusDto.BridgeState` (not narrowed to a TS union) since the server itself
+ * only ever emits `.ToString()` of the C# enum — `Site.tsx`'s own status-badge lookup falls back to
+ * the raw value verbatim for anything outside these five known names, same "known-value lookup with a
+ * verbatim fallback" idiom `deviceClassLabel`/`driverKindLabel` (`AssetRegistry.tsx`) already use. */
+export type BridgeState = "Disabled" | "Connecting" | "Connected" | "Degraded" | "Down"
+
+/** `SiteStatusDto` — `GET /v1/site` (Operator). `siteTrustPem` never appears here — it's write-only via
+ * `SiteLinkRequest` below (see `SiteEndpoints.cs`'s own doc comment); `siteFingerprint` is the PINNED
+ * value the bridge actually validated on its last successful handshake instead, `null` until then.
+ * `unsEnabled: false` means `SiteBridgeManager` isn't registered at all (`ST4I_UNS_ENABLED` off) —
+ * `enabled`/`host`/`port`/`bridgeState` are then fixed placeholders (`false`/`""`/`0`/`"Disabled"`),
+ * only `deviceFingerprint` stays a real value. */
+export interface SiteStatus {
+  enabled: boolean
+  host: string
+  port: number
+  bridgeState: string
+  lastError: string | null
+  siteFingerprint: string | null
+  deviceFingerprint: string
+  unsEnabled: boolean
+}
+
+/** `SiteIdentityDto` — `GET /v1/site/identity` (Operator). This device's own public identity, for an
+ * operator to register at a SYNAPSE Site — always real regardless of `unsEnabled`/whether a Site link
+ * is configured at all (EC-1's `DeviceIdentity` is generated/loaded once at process startup). */
+export interface SiteIdentity {
+  deviceFingerprint: string
+  deviceCertPem: string
+}
+
+/** `SiteLinkRequest` — `PUT /v1/site` (Engineer) body. `host`/`port`/`siteTrustPem` are only
+ * validated/required server-side when `enabled` is `true` — disabling the link needs none of them
+ * (see `SiteEndpoints.PutSiteAsync`). */
+export interface SiteLinkRequest {
+  enabled: boolean
+  host?: string
+  port?: number
+  siteTrustPem?: string
+}
+
+const SITE_QUERY_KEY = ["site"] as const
+
+const siteEndpoints = {
+  site: () => request<SiteStatus>("/v1/site"),
+  siteIdentity: () => request<SiteIdentity>("/v1/site/identity"),
+  setSiteLink: (body: SiteLinkRequest) =>
+    request<SiteStatus>("/v1/site", { method: "PUT", body: JSON.stringify(body) }),
+}
+
+/** `GET /v1/site` (Operator) — polled at 3s so the bridge-status badge (`Connecting` →
+ * `Connected`/`Degraded`/`Down` + `lastError`) tracks the live handshake without a manual refresh.
+ * Slower than `useFleet`/`useMachine`'s 1s tick — a Site link's own health changes far less often than
+ * a running cycle does, so 3s is enough to feel live without hammering the endpoint. */
+export function useSite(): UseQueryResult<SiteStatus> {
+  return useQuery({
+    queryKey: SITE_QUERY_KEY,
+    queryFn: siteEndpoints.site,
+    refetchInterval: 3000,
+  })
+}
+
+/** `GET /v1/site/identity` (Operator) — one-shot (no `refetchInterval`): this device's own cert/
+ * fingerprint never changes for the life of the process, so there's nothing external to poll for. */
+export function useSiteIdentity(): UseQueryResult<SiteIdentity> {
+  return useQuery({
+    queryKey: ["site", "identity"] as const,
+    queryFn: siteEndpoints.siteIdentity,
+  })
+}
+
+/** `PUT /v1/site` (Engineer — `Site.tsx`'s own client-side `RequireRole` is only a UX gate; this is the
+ * real enforcement). On success, invalidates `["site"]` so the badge/pre-filled form catch up to the
+ * new link immediately rather than waiting up to 3s for the next poll. Rejected — 400 (bad host/port/
+ * PEM when enabling), 409 (UNS spine disabled), 403 (non-Engineer) — touches the cache not at all; the
+ * caller's own `onError` (branching on `EngineApiError.status`) is how the form surfaces that inline. */
+export function useSetSiteLink() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: siteEndpoints.setSiteLink,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SITE_QUERY_KEY })
+    },
+  })
+}

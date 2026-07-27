@@ -5,6 +5,7 @@ import {
   Database,
   Factory,
   LayoutDashboard,
+  Network,
   Package,
   PlugZap,
   ScrollText,
@@ -60,6 +61,13 @@ export const NAV_ITEMS: NavItem[] = [
   // `minRole` — every authenticated role sees this entry, same as every other fleet-facing screen
   // above; only the lifecycle-transition control INSIDE the screen is Engineer+-gated.
   { labelKey: "shell.nav.assets", path: "/assets", icon: Package },
+  // GĐ3 EC-4 (`routes/Site.tsx`) — the Site/Ecosystem link screen: device identity + Site-link form +
+  // live bridge status, over EC-3's `/v1/site*` endpoints. `Network` reads as "federation/uplink to
+  // another system", distinct from `PlugZap`'s "join THIS fleet" reading (`onboarding`, above) — this
+  // screen is about linking OUT to a higher-tier SYNAPSE Site, not enrolling into the local fleet.
+  // Reads are Operator (`SiteEndpoints.cs`), so no `minRole` — only the Site-link SAVE control inside
+  // the screen is Engineer+-gated, same shape `assets`' own lifecycle-transition gate uses above.
+  { labelKey: "shell.nav.site", path: "/site", icon: Network },
   { labelKey: "shell.nav.settings", path: "/settings", icon: Settings },
   // WS-D-D7 — Admin-only account management (`routes/Users.tsx`). `Users` (plural person glyph) reads
   // as "manage people/accounts", distinct from every icon above (all either a screen-shape or a single

@@ -17,6 +17,7 @@ import Settings from "@/routes/Settings"
 import Users from "@/routes/Users"
 import Audit from "@/routes/Audit"
 import AssetRegistry from "@/routes/AssetRegistry"
+import Site from "@/routes/Site"
 import NotFound from "@/routes/NotFound"
 import { Sidebar } from "@/shell/Sidebar"
 import { TopBar } from "@/shell/TopBar"
@@ -59,6 +60,7 @@ export function Shell() {
             <Route path="/users" component={Users} />
             <Route path="/audit" component={Audit} />
             <Route path="/assets" component={AssetRegistry} />
+            <Route path="/site" component={Site} />
             <Route component={NotFound} />
           </Switch>
         </main>

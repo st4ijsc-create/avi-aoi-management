@@ -153,6 +153,17 @@ export async function gotoAssets(page: Page): Promise<void> {
   await expect(page.getByRole("columnheader", { name: viDict.assets.table.code })).toBeVisible()
 }
 
+/** GĐ3 EC-4 — `/site` (Operator-readable, no page-level role gate — only the Site-link Save control
+ * inside the screen is Engineer+-gated). Waits past both `useSiteIdentity()`'s and `useSite()`'s own
+ * loading skeletons — the fingerprint input only carries a real value, and the bridge-status badge
+ * only renders, once each has resolved at least once. */
+export async function gotoSite(page: Page): Promise<void> {
+  await page.goto("/site")
+  await expect(page.getByRole("heading", { name: viDict.site.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  await expect(page.locator("#site-device-fingerprint")).toHaveValue(/\S/, { timeout: 15_000 })
+}
+
 export async function gotoScenario(page: Page): Promise<void> {
   await page.goto("/scenario")
   await expect(page.getByRole("heading", { name: viDict.scenario.title, level: 1 })).toBeVisible()

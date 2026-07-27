@@ -71,6 +71,7 @@ export const en: Dictionary = {
       users: "Users",
       audit: "Audit Log",
       assets: "Asset Registry",
+      site: "Site Link",
     },
     sidebar: {
       brandSubtitle: "Machine Simulator",
@@ -1742,6 +1743,69 @@ export const en: Dictionary = {
     },
   },
 
+  // GĐ3 EC-4 (`routes/Site.tsx`, `.superpowers/sdd/2026-07-27-giaidoan3-ecosystem-connect-blueprint/
+  // task-4-brief.md`) — the web page over EC-3's `/v1/site*` endpoints: this device's own identity
+  // fingerprint + cert PEM (to register at a SYNAPSE Site), an Engineer-gated Site-link form (host/
+  // port + paste the Site's trust PEM + enable), and a live northbound bridge-status badge. Reads are
+  // Operator; only the PUT-driving form is Engineer+-gated (`site.form.readOnlyNote`), same "page open
+  // to everyone, one control gated" shape `assets` above already established.
+  site: {
+    title: "Site / Ecosystem",
+    description:
+      "This device's identity, for registering it at a SYNAPSE Site, and (Engineer or above) configuring the Site link that federates the local UNS spine up to the wider ecosystem.",
+    identity: {
+      title: "Device identity",
+      description: "This device's own fingerprint and public certificate — use these to register it at your Site.",
+      fingerprintLabel: "Device fingerprint (SHA-256)",
+      copyFingerprint: "Copy fingerprint",
+      pemLabel: "Device certificate (PEM)",
+      showPem: "Show certificate",
+      hidePem: "Hide certificate",
+      copyPem: "Copy certificate",
+      copied: "Copied.",
+      copyFailed: "Couldn't copy — select and copy manually instead.",
+      register: "Register this identity at your SYNAPSE Site.",
+      loadFailed: "Couldn't load the device identity.",
+    },
+    form: {
+      title: "Site connection",
+      description: "Configure the link up to a SYNAPSE Site — re-paste the Site's trust certificate every time you save.",
+      hostLabel: "Site host",
+      hostPlaceholder: "site.example.com",
+      portLabel: "Port",
+      trustPemLabel: "Site trust certificate (PEM)",
+      trustPemPlaceholder: "Paste the Site broker's CA or self-signed certificate…",
+      trustPemHint:
+        "For security, the saved certificate is never shown again — this field always starts blank; to ENABLE the connection, re-paste the trust certificate every time you save, even if you're only changing host/port.",
+      enabledLabel: "Enable the Site connection",
+      save: "Save",
+      saving: "Saving…",
+      readOnlyNote: "Only Engineer accounts (or above) can edit the Site connection.",
+      readOnlyHost: "Site host",
+      readOnlyPort: "Port",
+      readOnlyEnabled: "Enabled",
+      readOnlyDisabled: "Disabled",
+    },
+    status: {
+      title: "Bridge status",
+      Disabled: "Disabled",
+      Connecting: "Connecting…",
+      Connected: "Connected",
+      Degraded: "Degraded",
+      Down: "Down",
+      lastError: (vars: Vars) => `Last error: ${vars.error}`,
+      siteVerified: (vars: Vars) => `Verified Site certificate: ${vars.fingerprint}`,
+      unsDisabled: "The local UNS spine is disabled (ST4I_UNS_ENABLED=false); enable it to federate this device to a Site.",
+    },
+    errors: {
+      badRequest: "Host, port, or trust certificate is invalid for enabling the Site connection.",
+      conflict: "The local UNS spine is disabled — the Site link can't be applied.",
+      forbidden: "You don't have permission to edit the Site connection.",
+      generic: "Couldn't save the Site connection.",
+      loadFailed: "Couldn't load the Site connection status.",
+    },
+  },
+
   toast: {
     fleetStarted: "Fleet started.",
     fleetStartFailed: "Couldn't start the fleet.",
@@ -1793,5 +1857,9 @@ export const en: Dictionary = {
     logoutFailed: "Couldn't log out.",
     assetLifecycleUpdated: (vars: Vars) => `Updated ${vars.code}'s lifecycle.`,
     assetLifecycleUpdateFailed: "Couldn't update the asset's lifecycle.",
+    siteLinkSaved: "Site connection saved.",
+    siteLinkSaveFailed: "Couldn't save the Site connection.",
+    fingerprintCopied: "Fingerprint copied.",
+    certCopied: "Certificate copied.",
   },
 }
