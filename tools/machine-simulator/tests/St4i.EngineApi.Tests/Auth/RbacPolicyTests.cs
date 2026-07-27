@@ -66,6 +66,11 @@ public sealed class RbacPolicyTests
         // comment for the full rationale (that class isolates these two; this one hadn't, until now).
         var identityDir = Directory.CreateTempSubdirectory("st4i-rbac-identity-").FullName;
         var siteLinkDir = Directory.CreateTempSubdirectory("st4i-rbac-sitelink-").FullName;
+        // GĐ3 sub-4 LC-1 — isolated the same way as every other per-concern directory above: without
+        // this, a real Policy DENY occurring anywhere in this class's requests (PolicyResults.DenyAsync
+        // now resolves IAlarmStore and raises an alarm) would resolve AlarmStore against the REAL
+        // %ProgramData%\ST4I\sim\alarms\alarms.db instead of a throwaway temp dir.
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-rbac-alarms-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -75,6 +80,7 @@ public sealed class RbacPolicyTests
         var prevSettingsDir = Environment.GetEnvironmentVariable("ST4I_SETTINGS_DIR");
         var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
         var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
+        var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -85,6 +91,7 @@ public sealed class RbacPolicyTests
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", settingsDir);
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", identityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
+            Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -100,6 +107,7 @@ public sealed class RbacPolicyTests
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", prevSettingsDir);
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
+            Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }
@@ -180,6 +188,9 @@ public sealed class RbacPolicyTests
         new("/v1/assets/{code}", new[] { "GET" }, Policies.Operator),
         new("/v1/site", new[] { "GET" }, Policies.Operator),
         new("/v1/site/identity", new[] { "GET" }, Policies.Operator),
+        new("/v1/alarms", new[] { "GET" }, Policies.Operator),
+        new("/v1/alarms/history", new[] { "GET" }, Policies.Operator),
+        new("/v1/alarms/{id}/ack", new[] { "POST" }, Policies.Operator),
 
         // Engineer
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),

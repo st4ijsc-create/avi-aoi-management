@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using St4i.EngineApi.Alarms;
 using St4i.EngineApi.Auth;
 
 namespace St4i.EngineApi.Policy;
@@ -13,6 +15,32 @@ public static class PolicyResults
         var code = decision.Reason.ToWireCode();
         await recorder.RecordAsync(ctx, $"{action}.denied", "policy", code,
             null, new { reason = code, message = decision.Message }, ct).ConfigureAwait(false);
+
+        // GĐ3 sub-4 LC-1 — the FIRST alarm SOURCE: every policy DENY raises a latched Policy alarm.
+        // SAFETY_BLOCKED (the E-STOP guard) is Critical + an E-STOP-specific runbook; every other denial
+        // reason is High + a generic one. ClearOnAck=true — a DENY has no lingering condition of its own
+        // (see Alarm's doc comment for the EVENT-vs-CONDITION distinction); it's a point-in-time event an
+        // operator resolves by acknowledging it, so AckAsync both acks AND clears it in one step. Resolved
+        // from ctx.RequestServices (NOT a ctor-injected parameter) so this method's signature — and every
+        // existing call site (FleetEndpoints/ScenarioEndpoints) — is untouched; GetService (not
+        // GetRequiredService) so a host that never registers IAlarmStore still behaves exactly as before
+        // (null-safe, additive). RaiseAsync itself never throws (see AlarmStore's doc comment), so this call
+        // needs no try/catch of its own on top of that guarantee.
+        var alarms = ctx.RequestServices.GetService<IAlarmStore>();
+        if (alarms is not null)
+        {
+            var priority = decision.Reason == PolicyReasonCode.SafetyBlocked ? AlarmPriority.Critical : AlarmPriority.High;
+            var runbook = decision.Reason switch
+            {
+                PolicyReasonCode.SafetyBlocked =>
+                    "E-STOP is engaged. Verify the machine is safe, then reset the E-STOP latch (POST /v1/fleet/estop/reset) before starting.",
+                _ => "The action was denied by policy. Check the operator's role and the current fleet state.",
+            };
+            await alarms.RaiseAsync(
+                    new AlarmRaise(AlarmSource.Policy, code, priority, decision.Message, runbook, TargetId: action, ClearOnAck: true), ct)
+                .ConfigureAwait(false);
+        }
+
         var status = decision.Reason switch
         {
             PolicyReasonCode.SafetyBlocked or PolicyReasonCode.NotReady or PolicyReasonCode.Busy

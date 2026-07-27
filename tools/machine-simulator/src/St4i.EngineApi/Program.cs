@@ -373,6 +373,19 @@ builder.Services.AddSingleton<St4i.EngineApi.AssetRegistry.IAssetRegistry>(sp =>
         string.IsNullOrWhiteSpace(assetsDir) ? null : assetsDir,
         logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("Assets").LogError(ex, "{AssetsMsg}", msg)));
 
+// GĐ3 sub-4 LC-1 (.superpowers/sdd/2026-07-27-giaidoan3-alarms-linecontroller-blueprint/task-1-brief.md) —
+// the alarm backbone: a durable SQLite store (alarms.db) for the ISA-18.2 alarm model (raise/clear/ack/
+// list/history). Registered as a singleton BEFORE Build() (same convention as IAssetRegistry above) so
+// PolicyResults.DenyAsync's ctx.RequestServices.GetService<IAlarmStore>() resolves the SAME instance every
+// mutating handler's policy-deny path raises against — a singleton also matters here because AlarmStore's
+// SQLite connections are short-lived-per-call, not because of any in-process lock (unlike SqliteAuditStore).
+// Relocatable via ST4I_ALARMS_DIR, same ops/testability rationale as ST4I_ASSETS_DIR above.
+var alarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
+builder.Services.AddSingleton<St4i.EngineApi.Alarms.IAlarmStore>(sp =>
+    new St4i.EngineApi.Alarms.AlarmStore(
+        string.IsNullOrWhiteSpace(alarmsDir) ? null : alarmsDir,
+        logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("Alarms").LogError(ex, "{AlarmsMsg}", msg)));
+
 // G2-2 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 2) — the local UNS spine: an
 // always-on loopback MQTTnet broker (UnsBroker) plus the dual-topic (Sparkplug + retained semantic-mirror)
 // publisher (UnsPublisher) FleetHost threads into every EdgePipeline it builds (see FleetHost.StartLocked).
@@ -748,6 +761,8 @@ app.MapHistorianEndpoints();
 app.MapAuditEndpoints();
 app.MapUserEndpoints();
 app.MapAssetEndpoints();
+// GĐ3 sub-4 LC-1 — the alarm HTTP surface (GET /v1/alarms(+/history), POST /v1/alarms/{id}/ack).
+app.MapAlarmEndpoints();
 // GĐ3 EC-3 — the Site-link status/config + device-identity HTTP surface over EC-2's SiteBridgeManager.
 app.MapSiteEndpoints();
 app.MapInspectorStream();
