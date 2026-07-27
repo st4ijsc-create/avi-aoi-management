@@ -14,6 +14,17 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Wave 1 (w1-2) — aiSpecialistAgentRouter's procedures now carry
+// `.use(moduleGate("MOD_AI"))` (RBAC sweep, see aiSpecialistAgentRouter.ts). This
+// file never mocks "../db", so moduleGate's real entitlement resolution runs
+// against the isolated test DB and, when that carries no license row, falls back to
+// the on-disk `server/license/license-state-cache.json` — a real dev-machine cache
+// that predates MOD_AI and would genuinely deny. Bypass license enforcement (the
+// same escape hatch offline deployments use) so this file keeps testing what it's
+// actually about: the action-bridge tool/args validation, not licensing. Must be
+// set before the router's first (dynamic) import below evaluates "../_core/env".
+process.env.LICENSE_BYPASS = "true";
+
 const proposeAction = vi.fn();
 vi.mock("../services/aiCopilotActions", () => ({
   proposeAction: (...a: unknown[]) => proposeAction(...a),

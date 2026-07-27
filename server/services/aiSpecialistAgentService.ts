@@ -2,6 +2,7 @@ import { generateText, isGgufAvailable, type GgufGenerateResult } from "./aiGguf
 // doc69 Giai đoạn 4/Wave 3 D4 — specialist→action HITL bridge allow-list (see the
 // block near the end of this file for the full rationale).
 import { RCA_SUGGESTED_ACTION_TOOLS, ensureRcaToolsRegistered } from "./ai/rcaActionSuggester";
+import type { RepoContextResult } from "./ai/repoContextService";
 
 export type SpecialistAgentId =
   | "data-analyst"
@@ -31,6 +32,8 @@ export interface RunSpecialistAgentInput {
   files?: string[];
   language?: "vi" | "en";
   modelId?: string;
+  /** Wave 1 — ngữ cảnh repo đã nạp sẵn (nội dung file thật + phụ thuộc + RAG). */
+  repoContext?: RepoContextResult;
 }
 
 export interface SpecialistAgentRunResult {
@@ -221,7 +224,49 @@ function buildSystemPrompt(agent: SpecialistAgentInfo, language: "vi" | "en"): s
   ].join("\n");
 }
 
+/**
+ * Wave 1 — dựng khối ngữ cảnh repo cho prompt. Trả chuỗi rỗng khi không có
+ * repoContext, để prompt giữ NGUYÊN hành vi cũ (không đổi một byte).
+ */
+function buildRepoContextBlock(ctx?: RepoContextResult): string {
+  if (!ctx) return "";
+  const parts: string[] = [];
+
+  if (ctx.files.length > 0) {
+    const bodies = ctx.files.map((f) =>
+      [
+        `--- FILE CONTENT: ${f.path}${f.truncated ? " (truncated — only the first part is shown)" : ""}${f.redacted ? " (secrets redacted)" : ""} ---`,
+        f.content,
+      ].join("\n"),
+    );
+    parts.push(bodies.join("\n\n"));
+  }
+
+  if (ctx.skipped.length > 0) {
+    parts.push(
+      `Files NOT loaded (do not assume their content):\n${ctx.skipped
+        .map((s) => `- ${s.path} (${s.reason})`)
+        .join("\n")}`,
+    );
+  }
+
+  if (ctx.dependencies.length > 0) {
+    parts.push(`Files imported by the above:\n${ctx.dependencies.map((d) => `- ${d}`).join("\n")}`);
+  }
+
+  if (ctx.ragSnippets.length > 0) {
+    parts.push(
+      `Related context from the knowledge base:\n${ctx.ragSnippets
+        .map((s) => `- (${s.sourcePath}) ${s.text}`)
+        .join("\n")}`,
+    );
+  }
+
+  return parts.join("\n\n");
+}
+
 function buildUserPrompt(input: RunSpecialistAgentInput): string {
+  const repoBlock = buildRepoContextBlock(input.repoContext);
   return [
     `Objective: ${input.objective}`,
     `Module: ${input.moduleName ?? "(not specified)"}`,
@@ -234,6 +279,7 @@ function buildUserPrompt(input: RunSpecialistAgentInput): string {
     `Error logs:\n${input.errorLogs ?? "(none)"}`,
     "Code snippet:",
     input.codeSnippet ?? "(none)",
+    ...(repoBlock ? [repoBlock] : []),
     "Focus your recommendations on this exact context only.",
   ].join("\n\n");
 }

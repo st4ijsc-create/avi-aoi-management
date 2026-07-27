@@ -1,4 +1,4 @@
-import { and, desc, eq, SQL } from "drizzle-orm";
+import { and, desc, eq, lt, SQL } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
   aiSpecialistSessions,
@@ -104,6 +104,19 @@ export async function getAiSpecialistSessionById(sessionId: number, userId: numb
     .limit(1);
 
   return session ?? null;
+}
+
+/** Wave 1 — đánh dấu failed cho phiên đã chạy quá lâu (tiến trình nền chết giữa chừng). */
+export async function expireStaleSpecialistSessions(timeoutMs: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const cutoff = new Date(Date.now() - timeoutMs);
+  const updated = await db
+    .update(aiSpecialistSessions)
+    .set({ status: "failed", summary: "Hết thời gian chờ — tiến trình nền không hoàn tất.", updatedAt: new Date() })
+    .where(and(eq(aiSpecialistSessions.status, "running"), lt(aiSpecialistSessions.startedAt, cutoff)))
+    .returning({ id: aiSpecialistSessions.id });
+  return updated.length;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -51,15 +51,21 @@ function intervalMs(): number {
 
 let timer: NodeJS.Timeout | null = null;
 let lastRunAt: Date | null = null;
-let lastRunStats: { expiredSessions: number; expiredActions: number } | null = null;
+let lastRunStats: { expiredSessions: number; expiredActions: number; expiredSpecialist: number } | null = null;
 
 /**
  * Runs both cleanups once. Exported so the scheduler tick + tests share one code
  * path. Best-effort: each cleanup is wrapped in its OWN try/catch so a throw in one
  * never skips or aborts the other; a failure logs and contributes 0 to that half's
  * count instead of propagating.
+ *
+ * Wave 1 (w1-2) — also expires `ai_specialist_sessions` stuck in "running" past
+ * `AI_SPECIALIST_RUN_TIMEOUT_MS` (default 15min): the new fire-and-forget background
+ * runner (`runSpecialistSessionInBackground` / `runSpecialistWorkflowSessionInBackground`
+ * in aiSpecialistAgentRouter.ts) has no caller left to notice if the Node process dies
+ * mid-run, so without this the session would show "running" forever.
  */
-export async function runAgentHousekeepingOnce(): Promise<{ expiredSessions: number; expiredActions: number }> {
+export async function runAgentHousekeepingOnce(): Promise<{ expiredSessions: number; expiredActions: number; expiredSpecialist: number }> {
   let expiredSessions = 0;
   let expiredActions = 0;
 
@@ -75,11 +81,16 @@ export async function runAgentHousekeepingOnce(): Promise<{ expiredSessions: num
     console.error("[aiAgentHousekeepingScheduler] expireStaleActions failed:", (err as any)?.message ?? err);
   }
 
+  const { expireStaleSpecialistSessions } = await import("../db/aiSpecialist");
+  const expiredSpecialist = await expireStaleSpecialistSessions(
+    Number(process.env.AI_SPECIALIST_RUN_TIMEOUT_MS || 900_000),
+  ).catch(() => 0);
+
   lastRunAt = new Date();
-  lastRunStats = { expiredSessions, expiredActions };
-  if (expiredSessions > 0 || expiredActions > 0) {
+  lastRunStats = { expiredSessions, expiredActions, expiredSpecialist };
+  if (expiredSessions > 0 || expiredActions > 0 || expiredSpecialist > 0) {
     console.log(
-      `[aiAgentHousekeepingScheduler] expired ${expiredSessions} session(s), ${expiredActions} action(s)`,
+      `[aiAgentHousekeepingScheduler] expired ${expiredSessions} session(s), ${expiredActions} action(s), ${expiredSpecialist} specialist session(s)`,
     );
   }
   return lastRunStats;
