@@ -167,9 +167,20 @@ public sealed class FleetHost
     /// effect on an already-running fleet with no restart, same as a plain adjustment does.</summary>
     private readonly ConcurrentDictionary<string, string?> _currentProduct = new(StringComparer.OrdinalIgnoreCase);
 
-    private CancellationTokenSource? _cts;
-    private Task? _runTask;
-    private EdgePipeline? _currentPipeline;
+    /// <summary>G2-5 — one independent pipeline in the fleet: its EdgePipeline, the CTS that stops it, and its
+    /// background run-task. Each slot faults in ISOLATION (a fault removes only THIS slot from <see cref="_slots"/>,
+    /// never the others) so one flaky driver can't tear down the whole fleet. Mutated only under <see cref="_gate"/>
+    /// (except <see cref="RunTask"/>, assigned once right after Task.Run, before the slot is observed off-thread).</summary>
+    private sealed class PipelineSlot
+    {
+        public required string Label { get; init; }
+        public required EdgePipeline Pipeline { get; init; }
+        public required CancellationTokenSource Cts { get; init; }
+        public Task? RunTask { get; set; }
+    }
+
+    private readonly List<PipelineSlot> _slots = new();
+
     private DemoTransport? _outageTransport;
     private CancellationTokenSource? _burstRevertCts;
     private double _burstBaseline = 1.0;
@@ -283,7 +294,17 @@ public sealed class FleetHost
     /// built; production code never sets this (<c>internal</c>, requires <c>InternalsVisibleTo</c>).</summary>
     internal Func<IDeviceDriver, IDeviceDriver>? DriverDecoratorForTests { get; set; }
 
-    public bool IsRunning { get; private set; }
+    /// <summary>G2-5 — test-only seam (default null) — lets <c>St4i.EngineApi.Tests</c> inject ADDITIONAL
+    /// pipeline groups beyond the simulated one, so the multi-slot fault-isolation machinery can be
+    /// exercised deterministically before a real second driver (Modbus, G2-6) exists. Production never
+    /// sets this (<c>internal</c>, requires <c>InternalsVisibleTo</c>). Each tuple: a slot label, its
+    /// driver, and the fallback MappingProfile for its readings.</summary>
+    internal Func<IReadOnlyList<(string Label, IDeviceDriver Driver, MappingProfile Profile)>>? AdditionalPipelinesForTests { get; set; }
+
+    /// <summary>G2-5 — the fleet is "running" while at least one pipeline slot is live. With a single slot
+    /// (today's simulated fleet) this is byte-identical to the old stored flag: the slot's fault-catch removes
+    /// it (see <see cref="StartLocked"/>), so the last slot faulting flips this false exactly as before.</summary>
+    public bool IsRunning { get { lock (_gate) return _slots.Count > 0; } }
 
     /// <summary>Branch-review C-2 — the E-STOP latch, now owned by the engine (not any one browser
     /// tab's React state) so it's shared across every panel that polls <see cref="Snapshot"/> and
@@ -323,7 +344,7 @@ public sealed class FleetHost
     /// handed back to the caller instead of being discarded so it can be awaited/disposed OUTSIDE
     /// <see cref="_gate"/> (see <see cref="WaitAndDisposeOldPipeline"/>'s remarks on why that has to
     /// happen off-lock).</summary>
-    private readonly record struct PipelineHandle(Task? RunTask, CancellationTokenSource? Cts);
+    private readonly record struct PipelineHandle(IReadOnlyList<PipelineSlot>? OldSlots);
 
     /// <summary>Fix round 1 (WS-A-T7 review, Important) — the historian's "Start" run event belongs HERE,
     /// not inside <see cref="StartLocked"/>: that helper is also the shared restart chokepoint
@@ -495,15 +516,38 @@ public sealed class FleetHost
             logError: (ex, msg) => _logger?.LogWarning(ex, "{MappingProfileMsg}", msg));
 
         var profile = new MappingProfile { Name = "fleet-mixed", DeviceClass = "Mixed" };
-        var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus, mappingResolver.Resolve, _unsPublisher);
+
+        // G2-5 — the pipeline groups to run this cycle. Today: exactly the one simulated group
+        // (byte-identical to the old single pipeline). The test seam appends extra groups; a future
+        // task (Modbus, G2-6) will add real per-driver groups here. A group = (label, driver, fallback
+        // profile, per-reading resolver).
+        var groups = new List<(string Label, IDeviceDriver Driver, MappingProfile Profile, Func<string, MappingProfile?>? Resolver)>
+        {
+            ("simulated", driver, profile, mappingResolver.Resolve),
+        };
+        var extra = AdditionalPipelinesForTests?.Invoke();
+        if (extra is not null)
+        {
+            foreach (var g in extra) groups.Add((g.Label, g.Driver, g.Profile, null));
+        }
+
+        foreach (var g in groups)
+        {
+            StartSlot(g.Label, g.Driver, g.Profile, g.Resolver);
+        }
+    }
+
+    /// <summary>Builds one pipeline slot, wires its Committed handler, adds it to <see cref="_slots"/>, and
+    /// starts its background run-task with a PER-SLOT fault catch. Assumes the caller holds <see cref="_gate"/>.</summary>
+    private void StartSlot(string label, IDeviceDriver driver, MappingProfile profile, Func<string, MappingProfile?>? resolver)
+    {
+        var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus, resolver, _unsPublisher);
         pipeline.Committed += OnPipelineCommitted;
-        _currentPipeline = pipeline;
-
         var cts = new CancellationTokenSource();
-        _cts = cts;
-        IsRunning = true;
+        var slot = new PipelineSlot { Label = label, Pipeline = pipeline, Cts = cts };
+        _slots.Add(slot);
 
-        _runTask = Task.Run(async () =>
+        slot.RunTask = Task.Run(async () =>
         {
             try
             {
@@ -511,88 +555,83 @@ public sealed class FleetHost
             }
             catch (OperationCanceledException)
             {
-                // Expected on Stop() — see FleetService's matching remarks in the WPF app.
+                // Expected on Stop()/restart.
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "FleetHost pipeline faulted");
-
-                // Completion-review #1: this runs off-thread, well after StartLocked() returned — a
-                // restart (StopLocked immediately followed by StartLocked, see RegisterMachine/
-                // ApplyScenario below) can already have replaced _cts/_currentPipeline with a NEW
-                // pipeline's by the time a stale/cancelled-but-slow-to-unwind task's catch gets here.
-                // Re-acquire _gate and only touch the shared IsRunning/LastError if THIS task's own
-                // `cts`/`pipeline` closures are still the CURRENT ones — otherwise this is a superseded
-                // pipeline's fault and must not clobber a freshly-restarted, healthy fleet.
+                _logger?.LogError(ex, "FleetHost pipeline slot '{Slot}' faulted", label);
                 lock (_gate)
                 {
-                    if (ReferenceEquals(_cts, cts) && ReferenceEquals(_currentPipeline, pipeline))
+                    // Slot-membership IS the identity guard (replaces the old _cts/_currentPipeline ReferenceEquals):
+                    // a superseded slot was already removed by StopLocked, so a stale/slow-to-unwind fault can't
+                    // clobber a freshly-restarted fleet. Removing THIS slot isolates the fault — sibling slots stay
+                    // in _slots (fleet keeps running); when the LAST slot goes, IsRunning follows to false.
+                    if (_slots.Remove(slot))
                     {
                         LastError = ex;
-                        IsRunning = false;
+                        pipeline.Committed -= OnPipelineCommitted;
                     }
                 }
             }
         });
     }
 
-    /// <summary>Cancels + detaches the current pipeline and returns it as a <see cref="PipelineHandle"/>
-    /// instead of discarding it — callers that immediately restart (<see cref="RegisterMachine"/>/
-    /// <see cref="ApplyScenario"/>) release <see cref="_gate"/>, wait for the old task via
+    /// <summary>Cancels + detaches every current pipeline slot and returns them as a <see cref="PipelineHandle"/>
+    /// instead of discarding them — callers that immediately restart (<see cref="RegisterMachine"/>/
+    /// <see cref="ApplyScenario"/>) release <see cref="_gate"/>, wait for the old tasks via
     /// <see cref="WaitAndDisposeOldPipeline"/>, THEN re-acquire the gate to call <see cref="StartLocked"/>
-    /// — never while still holding it (the catch above re-acquires <see cref="_gate"/>, so waiting for
-    /// the old task from inside this same lock would deadlock whenever that catch actually needs to
+    /// — never while still holding it (a slot's own catch above re-acquires <see cref="_gate"/>, so waiting for
+    /// an old task from inside this same lock would deadlock whenever that catch actually needs to
     /// run). Assumes the caller already holds <see cref="_gate"/>.</summary>
     private PipelineHandle StopLocked()
     {
-        if (!IsRunning) return default;
+        if (_slots.Count == 0) return default;
 
-        var oldTask = _runTask;
-        var oldCts = _cts;
-
-        oldCts?.Cancel();
-        _cts = null;
-        _runTask = null;
-        IsRunning = false;
-
-        if (_currentPipeline is not null)
+        var old = _slots.ToList();
+        foreach (var slot in old)
         {
-            _currentPipeline.Committed -= OnPipelineCommitted;
-            _currentPipeline = null;
+            slot.Cts.Cancel();
+            slot.Pipeline.Committed -= OnPipelineCommitted;
         }
 
-        return new PipelineHandle(oldTask, oldCts);
+        _slots.Clear();
+        return new PipelineHandle(old);
     }
 
-    /// <summary>Completion-review #7 — bounded, OFF-LOCK wait for the old run-task to actually finish
-    /// (closing the "leaked CTS + briefly two pipelines share <see cref="_transport"/>" gap) before the
-    /// caller starts a new one. Must never be called while holding <see cref="_gate"/>: the run-task's
-    /// own catch handler (see <see cref="StartLocked"/>) re-acquires <see cref="_gate"/> to apply its
-    /// identity-guarded write, so a caller blocked on <c>Task.Wait()</c> for that same task WHILE holding
-    /// the gate would deadlock against it. If the old task is still stuck past the timeout, this gives up
-    /// and disposes the CTS anyway — Cancel() has already been requested, so the task will eventually
-    /// unwind and its own identity guard (not this method) is what keeps a late finish from corrupting
-    /// state.</summary>
+    /// <summary>Completion-review #7 — bounded, OFF-LOCK wait for each old slot's run-task to actually
+    /// finish (closing the "leaked CTS + briefly two pipelines share <see cref="_transport"/>" gap)
+    /// before the caller starts fresh ones. Must never be called while holding <see cref="_gate"/>: a
+    /// slot's own catch handler (see <see cref="StartSlot"/>) re-acquires <see cref="_gate"/> to apply
+    /// its slot-membership-guarded write, so a caller blocked on <c>Task.Wait()</c> for that same task
+    /// WHILE holding the gate would deadlock against it. If an old task is still stuck past the timeout,
+    /// this gives up and disposes its CTS anyway — Cancel() has already been requested, so the task will
+    /// eventually unwind and its own membership guard (not this method) is what keeps a late finish from
+    /// corrupting state.</summary>
     private void WaitAndDisposeOldPipeline(PipelineHandle handle)
     {
-        if (handle.RunTask is not null)
-        {
-            try
-            {
-                handle.RunTask.Wait(RestartTeardownTimeout);
-            }
-            catch (AggregateException ex)
-            {
-                // Defensive only: the run-task's own body catches every exception it can throw
-                // (OperationCanceledException and general Exception both handled internally, see
-                // StartLocked), so this Task should never actually fault. If something inside that catch
-                // itself somehow throws, this just keeps Task.Wait()'s unwrap-and-rethrow from surfacing
-                // as an unhandled exception on the restart caller instead of a log line.
-                _logger?.LogDebug(ex, "FleetHost old pipeline teardown wait observed a faulted task");
-            }
-        }
+        if (handle.OldSlots is null) return;
 
-        handle.Cts?.Dispose();
+        foreach (var slot in handle.OldSlots)
+        {
+            if (slot.RunTask is not null)
+            {
+                try
+                {
+                    slot.RunTask.Wait(RestartTeardownTimeout);
+                }
+                catch (AggregateException ex)
+                {
+                    // Defensive only: a slot's run-task body catches every exception it can throw
+                    // (OperationCanceledException and general Exception both handled internally, see
+                    // StartSlot), so this Task should never actually fault. If something inside that catch
+                    // itself somehow throws, this just keeps Task.Wait()'s unwrap-and-rethrow from surfacing
+                    // as an unhandled exception on the restart caller instead of a log line.
+                    _logger?.LogDebug(ex, "FleetHost old pipeline slot teardown wait observed a faulted task");
+                }
+            }
+
+            slot.Cts.Dispose();
+        }
     }
 
     private void OnPipelineCommitted(DeviceReading reading, TransportAck ack)
