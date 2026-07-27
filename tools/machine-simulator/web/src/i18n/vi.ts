@@ -1872,6 +1872,16 @@ export const vi = {
       generic: "Không thể lưu kết nối Site.",
       loadFailed: "Không thể tải trạng thái kết nối Site.",
     },
+    discover: {
+      title: "Dò tìm Site trên mạng LAN",
+      button: "Dò tìm Site",
+      scanning: "Đang quét mạng LAN… (~4 giây)",
+      resultsTitle: "Site tìm thấy trên mạng LAN",
+      empty: "Không tìm thấy Site nào trên mạng LAN.",
+      error: "Không thể quét mạng LAN để tìm Site.",
+      pick: (vars: Vars) =>
+        `Dùng ${vars.instanceName} (${vars.host}:${vars.port}) để điền vào ô Địa chỉ Site và Cổng`,
+    },
   },
 
   toast: {
@@ -1880,6 +1890,7 @@ export const vi = {
     fleetStopped: "Đã dừng fleet.",
     scenarioPresetApplied: (vars: Vars) => `Đã áp dụng preset “${vars.name}”.`,
     scenarioBurstApplied: "Đã kích hoạt Burst.",
+    sitePrefilled: (vars: Vars) => `Đã điền host/cổng từ ${vars.instanceName}.`,
     settingsSaved: "Đã lưu cài đặt.",
     settingsSaveFailed: "Không thể lưu cài đặt.",
     oeeTargetsSaved: "Đã lưu mục tiêu OEE.",

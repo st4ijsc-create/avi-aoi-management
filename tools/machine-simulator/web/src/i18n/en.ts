@@ -1804,6 +1804,15 @@ export const en: Dictionary = {
       generic: "Couldn't save the Site connection.",
       loadFailed: "Couldn't load the Site connection status.",
     },
+    discover: {
+      title: "Discover Sites on the LAN",
+      button: "Discover Sites",
+      scanning: "Scanning the LAN… (~4s)",
+      resultsTitle: "Sites found on the LAN",
+      empty: "No Sites found on the LAN.",
+      error: "Couldn't scan the LAN for Sites.",
+      pick: (vars: Vars) => `Use ${vars.instanceName} (${vars.host}:${vars.port}) to fill in the Site host and port`,
+    },
   },
 
   toast: {
@@ -1812,6 +1821,7 @@ export const en: Dictionary = {
     fleetStopped: "Fleet stopped.",
     scenarioPresetApplied: (vars: Vars) => `Applied the "${vars.name}" preset.`,
     scenarioBurstApplied: "Burst triggered.",
+    sitePrefilled: (vars: Vars) => `Filled host/port from ${vars.instanceName}.`,
     settingsSaved: "Settings saved.",
     settingsSaveFailed: "Couldn't save settings.",
     oeeTargetsSaved: "OEE targets saved.",

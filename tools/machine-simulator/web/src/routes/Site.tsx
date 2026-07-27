@@ -1,13 +1,21 @@
 import * as React from "react"
 import { motion } from "framer-motion"
 import type { VariantProps } from "class-variance-authority"
-import { Copy, Eye, EyeOff, Loader2, Network, Save, ShieldAlert } from "lucide-react"
+import { Copy, Eye, EyeOff, Loader2, Network, Radar, Save, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
 
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
-import { EngineApiError, useSetSiteLink, useSite, useSiteIdentity, type BridgeState } from "@/lib/api"
+import {
+  EngineApiError,
+  useSetSiteLink,
+  useSite,
+  useSiteDiscover,
+  useSiteIdentity,
+  type BridgeState,
+  type DiscoveredSite,
+} from "@/lib/api"
 import { fadeSlideUp } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
@@ -25,6 +33,13 @@ import { Switch } from "@/components/ui/switch"
  * bridge-status badge from the same polled `GET /v1/site`. Same "reads are Operator, one control is
  * Engineer+-gated" shape `AssetRegistry.tsx` (P2-2) established — that screen and `Settings.tsx`'s own
  * connection-form idiom (host/url + toggle + save) are this page's two templates.
+ *
+ * GĐ3 sub-2 SD-2 (`.superpowers/sdd/2026-07-27-giaidoan3-mdns-join-wizard-blueprint/task-2-brief.md`)
+ * adds `DiscoverSitesField` below: a "Discover Sites" scan (SD-1's `GET /v1/site/discover`) INSIDE the
+ * same Engineer-gated Site-link form, right above the Host field. Picking a result only ever sets the
+ * form's `host`/`port` state — the trust PEM + enable stay the manual, pinned path unchanged; same
+ * "click a button, read the mutation's own pending/data/error" idiom `Settings.tsx`'s "Check connection"
+ * (`useProbeSettings`) already established for a bounded, read-only, click-triggered network check.
  */
 
 type TFunc = ReturnType<typeof useT>
@@ -181,6 +196,73 @@ function DeviceIdentityCard() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// GĐ3 sub-2 SD-2 — "Discover Sites": an Engineer-triggered mDNS LAN scan (`GET /v1/site/discover`) that
+// lists candidate Sites so the operator can click one instead of hand-typing host/port. `onPick` is the
+// SAME `setHost`/`setPort` state `SiteConnectionCard` already binds the Host/Port `Input`s to below —
+// this component never touches `siteTrustPem`/`enabled` at all (discovery pre-fills host/port ONLY; the
+// operator still pastes/pins the trust PEM and flips the switch themselves, unchanged from EC-4).
+// ─────────────────────────────────────────────────────────────────────────
+
+function DiscoverSitesField({ onPick, disabled }: { onPick: (site: DiscoveredSite) => void; disabled: boolean }) {
+  const t = useT()
+  const discover = useSiteDiscover()
+  const results = discover.data ?? []
+
+  return (
+    <div className="flex flex-col gap-2 border border-border-strong bg-surface-muted/40 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-text-body">{t("site.discover.title")}</span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => discover.mutate()}
+          disabled={disabled || discover.isPending}
+        >
+          {discover.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Radar className="size-3.5" aria-hidden="true" />
+          )}
+          {discover.isPending ? t("site.discover.scanning") : t("site.discover.button")}
+        </Button>
+      </div>
+
+      {discover.isPending ? (
+        <p className="text-xs text-text-muted">{t("site.discover.scanning")}</p>
+      ) : discover.isError ? (
+        <p className="text-xs text-danger-text" role="alert">
+          {t("site.discover.error")}
+        </p>
+      ) : discover.isSuccess && results.length === 0 ? (
+        <p className="text-xs text-text-muted">{t("site.discover.empty")}</p>
+      ) : results.length > 0 ? (
+        <>
+          <span className="hmi-micro">{t("site.discover.resultsTitle")}</span>
+          <ul className="flex flex-col gap-1">
+            {results.map((site) => (
+              <li key={site.instanceName}>
+                <button
+                  type="button"
+                  aria-label={t("site.discover.pick", { instanceName: site.instanceName, host: site.host, port: site.port })}
+                  onClick={() => onPick(site)}
+                  className="flex w-full items-center justify-between gap-2 rounded-[var(--radius)] border border-border bg-surface-card px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]/40"
+                >
+                  <span className="font-medium text-text-strong">{site.instanceName}</span>
+                  <span className="font-mono text-text-muted">
+                    {site.host}:{site.port}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Site connection card — reads (host/port/enabled/bridge status) are Operator; the SAVE control
 // (driving `PUT /v1/site`) is Engineer-gated. Doubles as the live bridge-status badge host (its own
 // `useSite()` — same `["site"]` query TanStack Query already dedupes against `DeviceIdentityCard`'s and
@@ -218,6 +300,14 @@ function SiteConnectionCard() {
   }, [initialized, data])
 
   const unsDisabled = data?.unsEnabled === false
+
+  // SD-2 — picking a discovered Site sets ONLY the host/port state above; `siteTrustPem`/`enabled` are
+  // untouched (the operator still pastes/pins the trust PEM and flips the switch themselves).
+  function handleDiscoverPick(site: DiscoveredSite) {
+    setHost(site.host)
+    setPort(site.port)
+    toast.success(t("toast.sitePrefilled", { instanceName: site.instanceName }))
+  }
 
   function handleSave() {
     setFormError(null)
@@ -285,6 +375,8 @@ function SiteConnectionCard() {
 
           <RequireRole role="Engineer">
             <>
+              <DiscoverSitesField onPick={handleDiscoverPick} disabled={unsDisabled} />
+
               <FormField label={t("site.form.hostLabel")} labelEn={gloss("site.form.hostLabel")} htmlFor="site-host">
                 <Input
                   id="site-host"

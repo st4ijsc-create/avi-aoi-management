@@ -1606,6 +1606,22 @@ export interface SiteLinkRequest {
   siteTrustPem?: string
 }
 
+/**
+ * GĐ3 sub-2 SD-2 (`.superpowers/sdd/2026-07-27-giaidoan3-mdns-join-wizard-blueprint/task-2-brief.md`) —
+ * one mDNS-discovered SYNAPSE Site, mirroring SD-1's `St4i.EdgeCore.Site.DiscoveredSite` record exactly
+ * (`SiteDiscovery.cs`; camelCase on the wire via `Program.cs`'s `ConfigureHttpJsonOptions`, same as
+ * every other DTO in this file). `addresses` legitimately can be empty (the join wizard only needs
+ * `host`/`port` to pre-fill the form — `PUT /v1/site` dials by hostname, not a pre-resolved IP);
+ * `txt` is the mDNS TXT record's flat key/value properties, possibly `{}`.
+ */
+export interface DiscoveredSite {
+  instanceName: string
+  host: string
+  port: number
+  addresses: string[]
+  txt: Record<string, string>
+}
+
 const SITE_QUERY_KEY = ["site"] as const
 
 const siteEndpoints = {
@@ -1613,6 +1629,9 @@ const siteEndpoints = {
   siteIdentity: () => request<SiteIdentity>("/v1/site/identity"),
   setSiteLink: (body: SiteLinkRequest) =>
     request<SiteStatus>("/v1/site", { method: "PUT", body: JSON.stringify(body) }),
+  /** `GET /v1/site/discover` (Engineer) — a bounded ~4s mDNS LAN browse; an empty array is a legitimate
+   * result (no Site advertising on this LAN segment), never a 404/500 (see `SiteEndpoints.DiscoverAsync`). */
+  discover: () => request<DiscoveredSite[]>("/v1/site/discover"),
 }
 
 /** `GET /v1/site` (Operator) — polled at 3s so the bridge-status badge (`Connecting` →
@@ -1648,5 +1667,18 @@ export function useSetSiteLink() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SITE_QUERY_KEY })
     },
+  })
+}
+
+/**
+ * `GET /v1/site/discover` (Engineer) — the mDNS "Discover Sites" scan `Site.tsx`'s Site-link form
+ * triggers on click. A `useMutation` (not a polled `useQuery`), same "run-on-click, track pending/data/
+ * error" ergonomics `useProbeSettings` above already uses for its own click-triggered connectivity
+ * check — this is a read-only LAN browse, not a mutation of server state, so there's no cache to
+ * invalidate on success; the caller reads the discovered list straight off this mutation's own `data`.
+ */
+export function useSiteDiscover() {
+  return useMutation({
+    mutationFn: siteEndpoints.discover,
   })
 }

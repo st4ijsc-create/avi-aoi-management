@@ -38,6 +38,13 @@ test.describe("site — device identity + Site-link form + bridge status", () =>
     await expect(page.getByLabel(viDict.site.form.hostLabel)).toBeVisible()
     await expect(page.getByRole("button", { name: viDict.site.form.save })).toBeVisible()
 
+    // GĐ3 sub-2 SD-2 — "Discover Sites" (`GET /v1/site/discover`, a bounded ~4s mDNS LAN browse). No
+    // real Site advertises on this test env's LAN segment, so "no Sites found" is the deterministic
+    // happy path here — `SiteDiscovery`'s own "NEVER throws" contract means a scan failure ALSO
+    // surfaces as this same empty result, never an error, so this assertion covers both cases.
+    await page.getByRole("button", { name: viDict.site.discover.button }).click()
+    await expect(page.getByText(viDict.site.discover.empty)).toBeVisible({ timeout: 10_000 })
+
     await assertNoSeriousA11yViolations(page)
   })
 
