@@ -14,12 +14,15 @@
  *    exist") and degrade to an empty/`tableAvailable:false` result — NEVER throw. A page
  *    rendered before migration 0305 is applied sees "no corpora yet", not a crash.
  *  - The job-tracking WRITE paths used INSIDE the ingest flow (ensureCorpusRegistered,
- *    createJob, markJobSucceeded, markJobFailed) are all BEST-EFFORT / degrade-to-no-op on
- *    42P01: the actual document ingest (kb_studio_chunks, already migrated independently in
- *    0304) must never be blocked or fail just because the NEWER registry tables from this
- *    task haven't been migrated yet. `createJob` returns `{tableAvailable:false, job:null}`
- *    rather than throwing; the router proceeds to ingest regardless and simply reports
- *    `jobId: null` (no job row was written).
+ *    createJob, markJobSucceeded, markJobFailed) are all BEST-EFFORT: the actual document
+ *    ingest (kb_studio_chunks, already migrated independently in 0304) must never be blocked
+ *    or fail just because the NEWER registry tables from this task haven't been migrated yet
+ *    or a bookkeeping write hits some other fault. 42P01 no-ops silently (the expected,
+ *    unmigrated-table case); any OTHER error is logged via `console.warn("[kbStudio] …")`
+ *    and then ALSO swallowed (never blocks ingest) — so a real, persistent DB fault stays
+ *    operationally visible instead of vanishing with zero signal. `createJob` returns
+ *    `{tableAvailable:false, job:null}` rather than throwing; the router proceeds to ingest
+ *    regardless and simply reports `jobId: null` (no job row was written).
  *  - The EXPLICIT registry WRITE paths (createCorpus, deleteCorpus) are the "this write IS
  *    the point of the call" case — same discipline as kbIngestService.ingestDocument's
  *    kb_studio_chunks check and aiModelRouter's rethrowCardTableError: a 42P01 here throws
@@ -187,7 +190,10 @@ export async function ensureCorpusRegistered(name: string, createdBy?: number): 
     const db = await getDb();
     if (!db) return;
     await db.insert(kbCorpora).values({ name, createdBy }).onConflictDoNothing();
-  } catch {
+  } catch (e) {
+    if (!isMissingTableError(e)) {
+      console.warn("[kbStudio] ensureCorpusRegistered failed (non-42P01, swallowed):", (e as Error)?.message ?? e);
+    }
     /* best-effort — registry bookkeeping never blocks ingest */
   }
 }
@@ -314,7 +320,9 @@ export async function createJob(input: CreateJobInput): Promise<CreateJobResult>
   } catch (e) {
     if (isMissingTableError(e)) return { tableAvailable: false, job: null };
     // Any OTHER failure inserting the job row (e.g. a real connection error) must not
-    // block the caller's actual ingest either — job tracking is secondary bookkeeping.
+    // block the caller's actual ingest either — job tracking is secondary bookkeeping —
+    // but it deserves operational visibility since it's NOT the expected unmigrated case.
+    console.warn("[kbStudio] createJob failed (non-42P01, swallowed):", (e as Error)?.message ?? e);
     return { tableAvailable: false, job: null };
   }
 }
@@ -331,7 +339,10 @@ export async function markJobSucceeded(jobId: number | null, chunksAdded: number
       .update(kbIngestJobs)
       .set({ status: "succeeded", chunksAdded, finishedAt: new Date() })
       .where(eq(kbIngestJobs.id, jobId));
-  } catch {
+  } catch (e) {
+    if (!isMissingTableError(e)) {
+      console.warn("[kbStudio] markJobSucceeded failed (non-42P01, swallowed):", (e as Error)?.message ?? e);
+    }
     /* best-effort — see doc comment */
   }
 }
@@ -349,7 +360,10 @@ export async function markJobFailed(jobId: number | null, error: string): Promis
       .update(kbIngestJobs)
       .set({ status: "failed", error: error.slice(0, 4000), finishedAt: new Date() })
       .where(eq(kbIngestJobs.id, jobId));
-  } catch {
+  } catch (e) {
+    if (!isMissingTableError(e)) {
+      console.warn("[kbStudio] markJobFailed failed (non-42P01, swallowed):", (e as Error)?.message ?? e);
+    }
     /* best-effort — see doc comment */
   }
 }

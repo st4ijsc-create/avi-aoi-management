@@ -56,6 +56,15 @@ export function EvalTab() {
 
           {!corpus ? (
             <EmptyState variant="no-config" compact title={t("kbStudio.eval.corpusRequired")} description={t("kbStudio.eval.desc")} />
+          ) : previewQuery.isError ? (
+            <EmptyState
+              variant="error"
+              compact
+              title={t("kbStudio.eval.loadError")}
+              description={previewQuery.error instanceof Error ? previewQuery.error.message : undefined}
+              actionLabel={t("common.retry", "Retry")}
+              onAction={() => previewQuery.refetch()}
+            />
           ) : previewQuery.isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-6 w-40" />

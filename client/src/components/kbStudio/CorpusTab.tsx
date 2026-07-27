@@ -150,6 +150,15 @@ export function CorpusTab() {
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />
           </div>
+        ) : corporaQuery.isError ? (
+          <EmptyState
+            variant="error"
+            compact
+            title={t("kbStudio.corpus.loadError")}
+            description={corporaQuery.error instanceof Error ? corporaQuery.error.message : undefined}
+            actionLabel={t("common.retry", "Retry")}
+            onAction={() => corporaQuery.refetch()}
+          />
         ) : corporaQuery.data && !corporaQuery.data.tableAvailable ? (
           <EmptyState
             variant="no-config"

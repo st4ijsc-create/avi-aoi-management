@@ -71,6 +71,15 @@ export function JobsTab() {
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />
           </div>
+        ) : jobsQuery.isError ? (
+          <EmptyState
+            variant="error"
+            compact
+            title={t("kbStudio.jobs.loadError")}
+            description={jobsQuery.error instanceof Error ? jobsQuery.error.message : undefined}
+            actionLabel={t("common.retry", "Retry")}
+            onAction={() => jobsQuery.refetch()}
+          />
         ) : jobsQuery.data && !jobsQuery.data.tableAvailable ? (
           <EmptyState
             variant="no-config"
