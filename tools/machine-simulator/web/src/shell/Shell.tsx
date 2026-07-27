@@ -18,6 +18,8 @@ import Users from "@/routes/Users"
 import Audit from "@/routes/Audit"
 import AssetRegistry from "@/routes/AssetRegistry"
 import Site from "@/routes/Site"
+import AlarmCenter from "@/routes/AlarmCenter"
+import LineControl from "@/routes/LineControl"
 import NotFound from "@/routes/NotFound"
 import { Sidebar } from "@/shell/Sidebar"
 import { TopBar } from "@/shell/TopBar"
@@ -61,6 +63,8 @@ export function Shell() {
             <Route path="/audit" component={Audit} />
             <Route path="/assets" component={AssetRegistry} />
             <Route path="/site" component={Site} />
+            <Route path="/alarms" component={AlarmCenter} />
+            <Route path="/line" component={LineControl} />
             <Route component={NotFound} />
           </Switch>
         </main>

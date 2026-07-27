@@ -1682,3 +1682,237 @@ export function useSiteDiscover() {
     mutationFn: siteEndpoints.discover,
   })
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Alarms — GĐ3 sub-4 LC-4 (`routes/AlarmCenter.tsx`). Wire shapes mirror `St4i.EngineApi.Alarms.Alarm`/
+// `AlarmHistoryEntry`/`AlarmHistoryPage` exactly (`Alarms/Alarm.cs`, `Alarms/IAlarmStore.cs`) — camelCase
+// property names + enum values as their literal PascalCase C# member name via the app's global
+// `JsonStringEnumConverter` (`Program.cs`), same discipline every other DTO in this file documents.
+// LC-1/2/3 (the alarm backbone, `LineController`, `AlarmEndpoints.cs`/`LineEndpoints.cs`) all already
+// landed — this is purely the operator UI over them.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `AlarmSource` (`Alarms/Alarm.cs`) — where an alarm condition originates. `Policy` is every
+ * `PolicyResults.DenyAsync` denial (LC-1); `DriverHealth`/`NgRate` are LC-2's periodic evaluator. */
+export type AlarmSource = "Policy" | "DriverHealth" | "NgRate"
+
+/** `AlarmPriority` (`Alarms/Alarm.cs`) — ISA-18.2 priority, most-severe first; `ListActiveAsync` sorts
+ * by this (descending) then `lastRaisedUtc` (descending). */
+export type AlarmPriority = "Critical" | "High" | "Medium" | "Low"
+
+/** `AlarmState` (`Alarms/Alarm.cs`) — `Cleared` never appears in `GET /v1/alarms`'s response (an alarm
+ * in that state has already been deleted from the live set); it only ever shows up on the `Alarm` a
+ * clearing `ack` call itself returns, or as a "cleared" `AlarmHistoryEntry.event`. */
+export type AlarmState = "Active" | "Acked" | "Cleared"
+
+/** `Alarm` (`Alarms/Alarm.cs`) — one active alarm condition. `runbook`/`targetId` are `null` when the
+ * raising source didn't attach one; `ackedUtc`/`ackedBy` are `null` until acknowledged. */
+export interface Alarm {
+  id: number
+  key: string
+  source: AlarmSource
+  code: string
+  priority: AlarmPriority
+  state: AlarmState
+  message: string
+  runbook: string | null
+  targetId: string | null
+  clearOnAck: boolean
+  count: number
+  firstRaisedUtc: string
+  lastRaisedUtc: string
+  ackedUtc: string | null
+  ackedBy: string | null
+}
+
+/** `AlarmHistoryEntry` (`Alarms/IAlarmStore.cs`) — one append-only `alarm_history` row. `event` is a
+ * plain (non-enum) string on the wire — `"raised" | "cleared" | "acked"` in this build — and `actor` is
+ * `null` for a "raised" event (nobody raises an alarm) or a system-triggered clear. */
+export interface AlarmHistoryEntry {
+  seq: number
+  atUtc: string
+  key: string
+  event: string
+  source: AlarmSource
+  code: string
+  priority: AlarmPriority
+  message: string
+  actor: string | null
+}
+
+/** `AlarmHistoryPage` — same paging shape as `AuditPage`/`HistorianResultsPageDto`: `total` is the FULL
+ * filtered count, ignoring `limit`/`offset`. */
+export interface AlarmHistoryPage {
+  items: AlarmHistoryEntry[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** `GET /v1/alarms/history`'s own query-string vocabulary (`AlarmEndpoints.GetHistoryAsync`) — every
+ * field optional, same discipline as `AuditFilter`/`HistorianResultsFilter`. */
+export interface AlarmHistoryFilter {
+  source?: AlarmSource
+  priority?: AlarmPriority
+  from?: string
+  to?: string
+  limit?: number
+  offset?: number
+}
+
+function buildAlarmHistoryQueryString(filter: AlarmHistoryFilter): string {
+  const params = new URLSearchParams()
+  if (filter.source) params.set("source", filter.source)
+  if (filter.priority) params.set("priority", filter.priority)
+  if (filter.from) params.set("from", filter.from)
+  if (filter.to) params.set("to", filter.to)
+  if (filter.limit !== undefined) params.set("limit", String(filter.limit))
+  if (filter.offset !== undefined) params.set("offset", String(filter.offset))
+  return params.toString()
+}
+
+const ALARMS_QUERY_KEY = ["alarms"] as const
+
+const alarmEndpoints = {
+  alarms: () => request<Alarm[]>("/v1/alarms"),
+  history: (filter: AlarmHistoryFilter) =>
+    request<AlarmHistoryPage>(`/v1/alarms/history?${buildAlarmHistoryQueryString(filter)}`),
+  ack: (id: number) => request<Alarm>(`/v1/alarms/${id}/ack`, { method: "POST" }),
+}
+
+/** `GET /v1/alarms` (Operator) — polled at 4s so the active table's priorities/counts/ack state track
+ * live without a manual refresh. Slower than `useFleet`/`useMachine`'s 1s tick (an alarm condition
+ * doesn't need to feel as instantaneous as a running cycle counter) but fast enough that an Ack from
+ * another operator/tab disappears from this table within a few seconds. */
+export function useAlarms(): UseQueryResult<Alarm[]> {
+  return useQuery({
+    queryKey: ALARMS_QUERY_KEY,
+    queryFn: alarmEndpoints.alarms,
+    refetchInterval: 4000,
+  })
+}
+
+/** `GET /v1/alarms/history?…` (Operator) — on-demand (no `refetchInterval`), same "browse over
+ * already-settled history" reasoning `useAudit`/`useHistorianResults` document: the filter object IS
+ * the query key, so a page turn naturally refetches with no manual invalidation. */
+export function useAlarmHistory(filter: AlarmHistoryFilter): UseQueryResult<AlarmHistoryPage> {
+  return useQuery({
+    queryKey: ["alarm-history", filter] as const,
+    queryFn: () => alarmEndpoints.history(filter),
+  })
+}
+
+/** `POST /v1/alarms/{id}/ack` (Operator) — invalidates `["alarms"]` on success so the active table
+ * catches up immediately (an event alarm — `clearOnAck` — disappears entirely; a condition alarm's row
+ * flips to `Acked`) rather than waiting up to 4s for the next poll. A rejected 404 (unknown id, or
+ * already cleared by someone else) touches the cache not at all — the caller's own `onError` toasts
+ * that. */
+export function useAckAlarm() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => alarmEndpoints.ack(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ALARMS_QUERY_KEY })
+    },
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Line Control — GĐ3 sub-4 LC-4 (`routes/LineControl.tsx`). Wire shape mirrors `St4i.EngineApi.Line.
+// LineStatus`/`PackMlState`/`LineCommand` exactly (`Line/LineController.cs`, `Line/PackMlState.cs`) —
+// the operator UI over LC-3's supervisory PackML state machine (`GET /v1/line`, `POST /v1/line/
+// {command}`).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `PackMlState` (`Line/PackMlState.cs`) — the pragmatic PackML/ISA-88 stable-state subset
+ * `LineController` models (see that class's own doc comment for why only stable states, never the
+ * transient Starting/Stopping/etc. names a full PackML model has). */
+export type PackMlState = "Idle" | "Execute" | "Held" | "Stopped" | "Aborted"
+
+/** The lowercase route-segment form `POST /v1/line/{command}` actually takes (`LineEndpoints.
+ * MapLineEndpoints`'s own doc comment: "one per … route segment (lowercased)") — deliberately NOT the
+ * PascalCase C# `LineCommand` enum member name (`Line/PackMlState.cs`), since this union only ever
+ * builds the request URL, never gets displayed — the UI's own command labels come from `line.commands.*`
+ * i18n keys, keyed by this same lowercase form. */
+export type LineCommand = "start" | "hold" | "unhold" | "stop" | "abort" | "reset"
+
+/** `LineStatus` (`Line/LineController.cs`) — `holdReason` is non-null only while `state` is `"Held"`;
+ * `isRunning`/`estopEngaged` are read straight off `FleetHost` (the actual pipeline truth), never
+ * cached, so a caller can always tell the LineController's own COMMANDED state apart from what the
+ * fleet is really doing right now. */
+export interface LineStatus {
+  state: PackMlState
+  holdReason: string | null
+  isRunning: boolean
+  estopEngaged: boolean
+}
+
+const LINE_QUERY_KEY = ["line"] as const
+
+/** Mirrors `OeeSettingsApiError`/`UsersApiError` above — the shared `request<T>`/`EngineApiError` only
+ * carry a status code, but a rejected line command (409) needs to show the operator the SERVER's own
+ * `RejectReason` text (e.g. "critical alarm active", "Cannot Hold from Idle — Hold is only legal from
+ * Execute.") rather than a generic "request failed" — `LineEndpoints.ExecuteAsync` always returns that
+ * exact text as `ApiErrorDto.error` on a 409. */
+export class LineCommandError extends Error {
+  status: number
+  /** The server's own `ApiErrorDto.error` text — undefined only for a genuinely unparseable body. */
+  serverMessage?: string
+
+  constructor(status: number, serverMessage?: string) {
+    super(serverMessage ?? `request failed: ${status}`)
+    this.name = "LineCommandError"
+    this.status = status
+    this.serverMessage = serverMessage
+  }
+}
+
+async function postLineCommand(cmd: LineCommand): Promise<LineStatus> {
+  const res = await fetch(`${BASE_URL}/v1/line/${cmd}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+  })
+  if (res.status === 401) unauthorizedHandler?.()
+  if (!res.ok) {
+    let serverMessage: string | undefined
+    try {
+      const body = (await res.json()) as { error?: string }
+      serverMessage = body?.error
+    } catch {
+      // Non-JSON body (rare — a proxy/500 page) — fall back to the generic message.
+    }
+    throw new LineCommandError(res.status, serverMessage)
+  }
+  return (await res.json()) as LineStatus
+}
+
+const lineEndpoints = {
+  line: () => request<LineStatus>("/v1/line"),
+  command: postLineCommand,
+}
+
+/** `GET /v1/line` (Operator) — polled at 3s, same cadence `useSite` uses: the PackML state changes far
+ * less often than a running cycle count (only on an operator command or an alarm-gate flip), so 3s is
+ * enough to feel live without hammering the endpoint. */
+export function useLine(): UseQueryResult<LineStatus> {
+  return useQuery({
+    queryKey: LINE_QUERY_KEY,
+    queryFn: lineEndpoints.line,
+    refetchInterval: 3000,
+  })
+}
+
+/** `POST /v1/line/{command}` (Operator) — invalidates `["line"]` on success so the state badge/command
+ * buttons catch up to the new commanded state immediately rather than waiting up to 3s for the next
+ * poll. Rejected (409 illegal transition/SAFETY_BLOCKED, 403) throws `LineCommandError` and touches the
+ * cache not at all — the caller's own `onError` (reading `.serverMessage`) surfaces that inline. */
+export function useLineCommand() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (cmd: LineCommand) => lineEndpoints.command(cmd),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: LINE_QUERY_KEY })
+    },
+  })
+}

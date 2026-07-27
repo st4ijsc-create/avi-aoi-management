@@ -10,9 +10,11 @@ import {
   PlugZap,
   ScrollText,
   Settings,
+  Siren,
   SlidersHorizontal,
   Terminal,
   Users,
+  Workflow,
 } from "lucide-react"
 import { Link, useLocation } from "wouter"
 
@@ -68,6 +70,20 @@ export const NAV_ITEMS: NavItem[] = [
   // Reads are Operator (`SiteEndpoints.cs`), so no `minRole` — only the Site-link SAVE control inside
   // the screen is Engineer+-gated, same shape `assets`' own lifecycle-transition gate uses above.
   { labelKey: "shell.nav.site", path: "/site", icon: Network },
+  // GĐ3 sub-4 LC-4 (`routes/AlarmCenter.tsx`) — the ISA-18.2 alarm center over LC-1/2's alarm backbone.
+  // `Siren` reads as "active alarm/attention needed", distinct from every icon above (all either a
+  // screen-shape or a single status glyph) — this is the one nav entry specifically about ALARMS, not
+  // audit history (`ScrollText`) or a machine's own status. Reads are Operator (`AlarmEndpoints.cs`),
+  // so no `minRole` — only the Ack action inside the screen carries its own (effectively-everyone)
+  // `RequireRole` gate.
+  { labelKey: "shell.nav.alarms", path: "/alarms", icon: Siren },
+  // GĐ3 sub-4 LC-4 (`routes/LineControl.tsx`) — the PackML state machine control panel over LC-3's
+  // `LineController`. `Workflow` reads as "a staged process/state machine", distinct from `Factory`'s
+  // "the live fleet roster" reading (`machines`, above) — this screen is about the LINE's own
+  // commanded PackML state (Idle/Execute/Held/Stopped/Aborted), not which machines exist. Reads are
+  // Operator (`LineEndpoints.cs`), so no `minRole` — only the command buttons inside the screen carry
+  // their own (effectively-everyone) `RequireRole` gate.
+  { labelKey: "shell.nav.line", path: "/line", icon: Workflow },
   { labelKey: "shell.nav.settings", path: "/settings", icon: Settings },
   // WS-D-D7 — Admin-only account management (`routes/Users.tsx`). `Users` (plural person glyph) reads
   // as "manage people/accounts", distinct from every icon above (all either a screen-shape or a single

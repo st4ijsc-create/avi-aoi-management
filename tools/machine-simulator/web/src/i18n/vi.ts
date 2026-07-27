@@ -79,6 +79,8 @@ export const vi = {
       audit: "Nhật ký kiểm toán",
       assets: "Sổ đăng ký tài sản",
       site: "Liên kết Site",
+      alarms: "Trung tâm cảnh báo",
+      line: "Điều khiển dây chuyền",
     },
     sidebar: {
       brandSubtitle: "Máy mô phỏng",
@@ -1885,6 +1887,142 @@ export const vi = {
     },
   },
 
+  // GĐ3 sub-4 LC-4 (`routes/AlarmCenter.tsx`, `.superpowers/sdd/2026-07-27-giaidoan3-alarms-
+  // linecontroller-blueprint/task-4-brief.md`) — the operator UI over LC-1/2's ISA-18.2 alarm backbone:
+  // an active-alarms table (`GET /v1/alarms`, polled) with a priority chip, an Ack action
+  // (`POST /v1/alarms/{id}/ack`), a per-row detail dialog (runbook + first/last-raised + acked-by), and
+  // a History tab over the paged append-only log (`GET /v1/alarms/history`). Reads are Operator (every
+  // authenticated role sees the whole page); Ack is likewise Operator — the RequireRole wrap around it
+  // is a structural/defense-in-depth gate only (Operator is the lowest role, so in practice every
+  // signed-in user already passes it), same honest caveat the brief itself makes.
+  alarms: {
+    title: "Trung tâm cảnh báo",
+    description:
+      "Các cảnh báo đang hoạt động trong hệ thống (chính sách an toàn bị từ chối, sức khỏe driver, tỷ lệ NG) — xác nhận (Ack) để xử lý, hoặc xem lịch sử đầy đủ.",
+    tabs: {
+      active: "Đang hoạt động",
+      history: "Lịch sử",
+    },
+    table: {
+      priority: "Mức độ",
+      source: "Nguồn",
+      code: "Mã",
+      message: "Nội dung",
+      count: "Số lần",
+      lastRaised: "Lần gần nhất",
+      ack: "Xác nhận",
+      acking: "Đang xác nhận…",
+      viewDetail: "Xem chi tiết cảnh báo",
+      empty: "Không có cảnh báo nào đang hoạt động.",
+      loadFailed: "Không thể tải danh sách cảnh báo.",
+    },
+    priority: {
+      Critical: "Nghiêm trọng",
+      High: "Cao",
+      Medium: "Trung bình",
+      Low: "Thấp",
+    },
+    source: {
+      Policy: "Chính sách an toàn",
+      DriverHealth: "Sức khỏe driver",
+      NgRate: "Tỷ lệ NG",
+    },
+    detail: {
+      title: (vars: Vars) => `Chi tiết cảnh báo #${vars.id}`,
+      description: "Thông tin đầy đủ của cảnh báo này, bao gồm hướng dẫn xử lý (runbook).",
+      runbook: "Hướng dẫn xử lý",
+      runbookNone: "Chưa có hướng dẫn xử lý cho cảnh báo này.",
+      firstRaised: "Lần đầu phát sinh",
+      lastRaised: "Lần gần nhất",
+      state: "Trạng thái",
+      acked: "Xác nhận",
+      ackedBy: (vars: Vars) => `Đã xác nhận bởi ${vars.actor} lúc ${vars.at}`,
+      ackedNone: "Chưa được xác nhận.",
+    },
+    state: {
+      Active: "Đang hoạt động",
+      Acked: "Đã xác nhận",
+      Cleared: "Đã xóa",
+    },
+    history: {
+      table: {
+        time: "Thời điểm",
+        event: "Sự kiện",
+        key: "Khóa",
+        source: "Nguồn",
+        priority: "Mức độ",
+        message: "Nội dung",
+        actor: "Người thực hiện",
+        actorNone: "Hệ thống",
+        empty: "Chưa có lịch sử cảnh báo nào.",
+        loadFailed: "Không thể tải lịch sử cảnh báo.",
+      },
+      event: {
+        raised: "Phát sinh",
+        cleared: "Đã xóa",
+        acked: "Đã xác nhận",
+      },
+    },
+    pagination: {
+      showing: (vars: Vars) => `Hiển thị ${vars.from}–${vars.to} / ${vars.total}`,
+      prev: "Trước",
+      next: "Sau",
+    },
+  },
+
+  // GĐ3 sub-4 LC-4 (`routes/LineControl.tsx`) — the operator UI over LC-3's supervisory PackML state
+  // machine: a live state badge (`GET /v1/line`, polled) + transition-gated command buttons
+  // (`POST /v1/line/{command}`) mirroring `LineController.Execute`'s own transition table, so the UI
+  // never offers a command the server would reject. Abort is the one deliberate exception — styled as
+  // the always-enabled emergency action, same as a real E-STOP control never being greyed out.
+  line: {
+    title: "Điều khiển dây chuyền",
+    description:
+      "Trạng thái PackML hiện tại của dây chuyền và các lệnh điều khiển (Chạy/Tạm dừng/Tiếp tục/Dừng/Dừng khẩn cấp/Đặt lại) — chỉ những lệnh hợp lệ từ trạng thái hiện tại mới có thể bấm được.",
+    status: {
+      title: "Trạng thái dây chuyền",
+      holdReason: (vars: Vars) => `Lý do tạm dừng: ${vars.reason}`,
+      pipelineLabel: "Pipeline",
+      running: "Đang chạy",
+      notRunning: "Không chạy",
+      estopLabel: "Dừng khẩn cấp (E-STOP)",
+      estopEngaged: "Đã kích hoạt",
+      estopClear: "Chưa kích hoạt",
+      loadFailed: "Không thể tải trạng thái dây chuyền.",
+    },
+    state: {
+      Idle: "Chờ",
+      Execute: "Đang chạy",
+      Held: "Tạm dừng",
+      Stopped: "Đã dừng",
+      Aborted: "Đã dừng khẩn cấp",
+    },
+    commands: {
+      title: "Lệnh điều khiển",
+      start: "Chạy",
+      hold: "Tạm dừng",
+      unhold: "Tiếp tục",
+      stop: "Dừng",
+      abort: "Dừng khẩn cấp",
+      reset: "Đặt lại",
+      // Full accessible names (`aria-label`, not the visible button text) — the visible labels above
+      // are deliberately short PackML terms, but "Dừng" alone is IDENTICAL to `shell.topBar.stop`
+      // (TopBar's own Fleet-level Stop button, always visible in the same Shell chrome) — a real
+      // screen-reader user hearing "Dừng" twice on this one page couldn't tell the fleet-power-switch
+      // apart from the PackML line command without more context. These give every command button its
+      // own unambiguous full name while the visible chrome stays terse.
+      startAria: "Chạy dây chuyền",
+      holdAria: "Tạm dừng dây chuyền",
+      unholdAria: "Tiếp tục dây chuyền",
+      stopAria: "Dừng dây chuyền",
+      abortAria: "Dừng khẩn cấp dây chuyền",
+      resetAria: "Đặt lại dây chuyền",
+    },
+    errors: {
+      generic: "Không thể thực hiện lệnh — trạng thái hiện tại không hợp lệ cho lệnh này.",
+    },
+  },
+
   toast: {
     fleetStarted: "Đã chạy fleet.",
     fleetStartFailed: "Không thể chạy fleet.",
@@ -1941,6 +2079,10 @@ export const vi = {
     siteLinkSaveFailed: "Không thể lưu kết nối Site.",
     fingerprintCopied: "Đã sao chép vân tay.",
     certCopied: "Đã sao chép chứng chỉ.",
+    alarmAcked: (vars: Vars) => `Đã xác nhận cảnh báo ${vars.code}.`,
+    alarmAckFailed: "Không thể xác nhận cảnh báo.",
+    lineCommandApplied: (vars: Vars) => `Đã thực hiện lệnh — trạng thái hiện tại: ${vars.state}.`,
+    lineCommandFailed: "Không thể thực hiện lệnh điều khiển dây chuyền.",
   },
 }
 

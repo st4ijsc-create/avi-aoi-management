@@ -164,6 +164,30 @@ export async function gotoSite(page: Page): Promise<void> {
   await expect(page.locator("#site-device-fingerprint")).toHaveValue(/\S/, { timeout: 15_000 })
 }
 
+/** GĐ3 sub-4 LC-4 — `/alarms` (Operator-readable, no page-level role gate — only the per-row Ack
+ * action inside the screen carries its own, effectively-everyone `RequireRole` gate). Waits past
+ * `useAlarms()`'s own loading state — the Active/History tab toggle only renders once it has resolved
+ * at least once (the toggle itself, not the table content, since a fresh demo engine legitimately has
+ * NO active alarms — see `gotoAlarmCenter`'s own callers for the calm-empty-state assertion). */
+export async function gotoAlarmCenter(page: Page): Promise<void> {
+  await page.goto("/alarms")
+  await expect(page.getByRole("heading", { name: viDict.alarms.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  await expect(page.getByRole("radio", { name: viDict.alarms.tabs.active })).toBeVisible()
+}
+
+/** GĐ3 sub-4 LC-4 — `/line` (Operator-readable, no page-level role gate — only the command buttons
+ * inside the screen carry their own, effectively-everyone `RequireRole` gate). Waits past `useLine()`'s
+ * own loading skeleton — the PackML state badge only renders once it has resolved at least once. */
+export async function gotoLineControl(page: Page): Promise<void> {
+  await page.goto("/line")
+  await expect(page.getByRole("heading", { name: viDict.line.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  await expect(page.getByRole("heading", { name: viDict.line.status.title, level: 3 })).toBeVisible({
+    timeout: 15_000,
+  })
+}
+
 export async function gotoScenario(page: Page): Promise<void> {
   await page.goto("/scenario")
   await expect(page.getByRole("heading", { name: viDict.scenario.title, level: 1 })).toBeVisible()

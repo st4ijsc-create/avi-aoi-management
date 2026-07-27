@@ -8,6 +8,14 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
+      // GĐ3 sub-4 LC-4 — `tabIndex={0}` fixes an axe `scrollable-region-focusable` violation this
+      // wrapper's own `overflow-x-auto` was always latently exposed to (any table wider than its
+      // container becomes scrollable, but a plain `<div>` isn't in the keyboard tab order, so a
+      // keyboard-only user could never reach/scroll it) — surfaced once `AlarmCenter.tsx`'s
+      // wide multi-column history table was the first screen in this suite to actually overflow at
+      // the tested viewport. Harmless everywhere else: a table that doesn't overflow just gets one
+      // extra, inert tab stop.
+      tabIndex={0}
       className="relative w-full overflow-x-auto"
     >
       <table

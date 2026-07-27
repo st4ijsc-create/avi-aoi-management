@@ -72,6 +72,8 @@ export const en: Dictionary = {
       audit: "Audit Log",
       assets: "Asset Registry",
       site: "Site Link",
+      alarms: "Alarm Center",
+      line: "Line Control",
     },
     sidebar: {
       brandSubtitle: "Machine Simulator",
@@ -1816,6 +1818,140 @@ export const en: Dictionary = {
     },
   },
 
+  // GĐ3 sub-4 LC-4 (`routes/AlarmCenter.tsx`, `.superpowers/sdd/2026-07-27-giaidoan3-alarms-
+  // linecontroller-blueprint/task-4-brief.md`) — the operator UI over LC-1/2's ISA-18.2 alarm backbone:
+  // an active-alarms table (`GET /v1/alarms`, polled) with a priority chip, an Ack action
+  // (`POST /v1/alarms/{id}/ack`), a per-row detail dialog (runbook + first/last-raised + acked-by), and
+  // a History tab over the paged append-only log (`GET /v1/alarms/history`). Reads are Operator (every
+  // authenticated role sees the whole page); Ack is likewise Operator — the RequireRole wrap around it
+  // is a structural/defense-in-depth gate only (Operator is the lowest role, so in practice every
+  // signed-in user already passes it), same honest caveat the brief itself makes.
+  alarms: {
+    title: "Alarm Center",
+    description:
+      "Alarms currently active in the system (safety-policy denials, driver health, NG rate) — Ack to work one, or browse the full history.",
+    tabs: {
+      active: "Active",
+      history: "History",
+    },
+    table: {
+      priority: "Priority",
+      source: "Source",
+      code: "Code",
+      message: "Message",
+      count: "Count",
+      lastRaised: "Last raised",
+      ack: "Ack",
+      acking: "Acking…",
+      viewDetail: "View alarm detail",
+      empty: "No active alarms.",
+      loadFailed: "Couldn't load the active alarms.",
+    },
+    priority: {
+      Critical: "Critical",
+      High: "High",
+      Medium: "Medium",
+      Low: "Low",
+    },
+    source: {
+      Policy: "Safety policy",
+      DriverHealth: "Driver health",
+      NgRate: "NG rate",
+    },
+    detail: {
+      title: (vars: Vars) => `Alarm #${vars.id} detail`,
+      description: "The full record for this alarm, including its runbook.",
+      runbook: "Runbook",
+      runbookNone: "No runbook attached to this alarm.",
+      firstRaised: "First raised",
+      lastRaised: "Last raised",
+      state: "State",
+      acked: "Acknowledgment",
+      ackedBy: (vars: Vars) => `Acknowledged by ${vars.actor} at ${vars.at}`,
+      ackedNone: "Not yet acknowledged.",
+    },
+    state: {
+      Active: "Active",
+      Acked: "Acked",
+      Cleared: "Cleared",
+    },
+    history: {
+      table: {
+        time: "Time",
+        event: "Event",
+        key: "Key",
+        source: "Source",
+        priority: "Priority",
+        message: "Message",
+        actor: "Actor",
+        actorNone: "System",
+        empty: "No alarm history yet.",
+        loadFailed: "Couldn't load the alarm history.",
+      },
+      event: {
+        raised: "Raised",
+        cleared: "Cleared",
+        acked: "Acked",
+      },
+    },
+    pagination: {
+      showing: (vars: Vars) => `Showing ${vars.from}–${vars.to} of ${vars.total}`,
+      prev: "Prev",
+      next: "Next",
+    },
+  },
+
+  // GĐ3 sub-4 LC-4 (`routes/LineControl.tsx`) — the operator UI over LC-3's supervisory PackML state
+  // machine: a live state badge (`GET /v1/line`, polled) + transition-gated command buttons
+  // (`POST /v1/line/{command}`) mirroring `LineController.Execute`'s own transition table, so the UI
+  // never offers a command the server would reject. Abort is the one deliberate exception — styled as
+  // the always-enabled emergency action, same as a real E-STOP control never being greyed out.
+  line: {
+    title: "Line Control",
+    description:
+      "The line's current PackML state and its control commands (Start/Hold/Unhold/Stop/Abort/Reset) — only the commands valid from the current state can be pressed.",
+    status: {
+      title: "Line status",
+      holdReason: (vars: Vars) => `Hold reason: ${vars.reason}`,
+      pipelineLabel: "Pipeline",
+      running: "Running",
+      notRunning: "Not running",
+      estopLabel: "E-STOP",
+      estopEngaged: "Engaged",
+      estopClear: "Not engaged",
+      loadFailed: "Couldn't load the line status.",
+    },
+    state: {
+      Idle: "Idle",
+      Execute: "Running",
+      Held: "Held",
+      Stopped: "Stopped",
+      Aborted: "Aborted",
+    },
+    commands: {
+      title: "Control commands",
+      start: "Start",
+      hold: "Hold",
+      unhold: "Unhold",
+      stop: "Stop",
+      abort: "Abort",
+      reset: "Reset",
+      // Full accessible names (`aria-label`, not the visible button text) — see `vi.ts`'s own comment:
+      // "Stop" alone is IDENTICAL to `shell.topBar.stop` (TopBar's own Fleet-level Stop button, always
+      // visible in the same Shell chrome), so these disambiguate for assistive tech while the visible
+      // chrome stays terse PackML terms.
+      startAria: "Start the line",
+      holdAria: "Hold the line",
+      unholdAria: "Unhold the line",
+      stopAria: "Stop the line",
+      abortAria: "Abort (emergency stop) the line",
+      resetAria: "Reset the line",
+    },
+    errors: {
+      generic: "Couldn't run that command — the current state doesn't allow it.",
+    },
+  },
+
   toast: {
     fleetStarted: "Fleet started.",
     fleetStartFailed: "Couldn't start the fleet.",
@@ -1872,5 +2008,9 @@ export const en: Dictionary = {
     siteLinkSaveFailed: "Couldn't save the Site connection.",
     fingerprintCopied: "Fingerprint copied.",
     certCopied: "Certificate copied.",
+    alarmAcked: (vars: Vars) => `Acknowledged alarm ${vars.code}.`,
+    alarmAckFailed: "Couldn't acknowledge the alarm.",
+    lineCommandApplied: (vars: Vars) => `Command applied — current state: ${vars.state}.`,
+    lineCommandFailed: "Couldn't run the line control command.",
   },
 }
