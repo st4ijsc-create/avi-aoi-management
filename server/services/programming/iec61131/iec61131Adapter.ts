@@ -26,6 +26,7 @@ import { evalBool } from "./boolEval";
 import { parsePouProjectJson, countNetworks, type PouProject } from "./pouModel";
 import { lintPouProject, type PouLintDiagnostic } from "./pouLinter";
 import { transpilePouProject } from "./pouToSt";
+import { safetyLintDiagnostics } from "../safetyLinter";
 import type {
   ProgrammingAdapter,
   ProgrammingCapability,
@@ -85,6 +86,10 @@ export class Iec61131StAdapter implements ProgrammingAdapter {
       if (count(o) !== count(cl)) diags.push({ severity: "error", message: `Unbalanced ${name}.` });
     }
     if (!/:=/.test(c)) diags.push({ severity: "warning", message: "No assignment (`:=`) found." });
+    // C4 (doc 69 Wave-4) — SEMANTIC safety-linter pass: structural checks (unbounded loop /
+    // motion envelope / missing interlock) that fire even with no "safety" keyword present.
+    // Always WARNING severity (advisory) — never affects `ok`, never blocks codegen.
+    diags.push(...safetyLintDiagnostics("iec61131-st", c));
     return { ok: !diags.some((d) => d.severity === "error"), diagnostics: diags };
   }
 

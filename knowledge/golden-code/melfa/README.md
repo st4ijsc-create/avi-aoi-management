@@ -19,3 +19,12 @@ Golden MELFA examples land here after cited manual ingestion. Until then, genera
 
 **Safety rule (unchanged):** never author E-stop / interlock / SIL logic here — that stays in
 the certified controller configuration.
+
+## Safety-linter fixtures (doc 69 Wave-4 / C4) — separate from the above
+
+`gated-pick-place.prg` (safe) and `bare-pick-place.prg` (unsafe) were added for the
+platform's structural **safety-linter** (`server/services/programming/safetyLinter.ts`)
+golden-driven test corpus. They are **hand-authored, small, structurally-plausible**
+MELFA-BASIC programs — **not** vendor-manual-verified RAG examples, and this remains Tier B
+(no `programmingAdapter`, no `validate()` substrate) for authoring-generation purposes. Do not
+promote them to few-shot generation material without the manual-verified P1 ingestion above.

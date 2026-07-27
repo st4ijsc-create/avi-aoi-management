@@ -1,0 +1,15 @@
+' SAFETY: hand-authored example for the safety-linter golden corpus (doc 69 C4). Not a
+' vendor-manual-verified RAG example (Delta robot is still Tier B — see ../README.md);
+' reviewed + validated in DIAStudio / on real hardware before any use. Motion/process only.
+'
+' POSITIVE example: the pick-place block only runs when DI(1) is set (a part-present /
+' cell-ready digital input), so the motion + output block is guarded.
+SPEED 40
+IF DI(1) = 1 THEN
+  MOVJ P1
+  MOVL P2
+  DO(1) = ON
+  DELAY 300
+  DO(1) = OFF
+  MOVJ P0
+END IF

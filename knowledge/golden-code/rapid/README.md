@@ -21,3 +21,12 @@ stays in the certified ABB safety configuration.
 > Note: ABB RAPID was not called out explicitly in the doc 34 §VI-bis factory list; it is
 > included as a common Tier B robot-teach language for completeness. Prioritise the vendors
 > actually deployed in the plant (Fanuc, Mitsubishi MELFA, Delta) first.
+
+## Safety-linter fixtures (doc 69 Wave-4 / C4) — separate from the above
+
+`palletize-loop.mod` (safe) and `fast-traverse.mod` (unsafe) were added for the platform's
+structural **safety-linter** (`server/services/programming/safetyLinter.ts`) golden-driven
+test corpus. They are **hand-authored, small, structurally-plausible** RAPID modules — **not**
+vendor-manual-verified RAG examples, and this remains Tier B (no `programmingAdapter`, no
+`validate()` substrate) for authoring-generation purposes. Do not promote them to few-shot
+generation material without the manual-verified P1 ingestion above.

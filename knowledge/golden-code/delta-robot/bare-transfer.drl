@@ -1,0 +1,15 @@
+' SAFETY: hand-authored example for the safety-linter golden corpus (doc 69 C4). Not a
+' vendor-manual-verified RAG example (Delta robot is still Tier B — see ../README.md);
+' reviewed + validated in DIAStudio / on real hardware before any use. Motion/process only.
+'
+' NEGATIVE example: the same transfer sequence as gated-transfer.drl, but with no
+' conditional anywhere in the file -- MOVJ/MOVL/DO run unconditionally every cycle.
+' Structurally unsafe (unguarded motion + output) even though nothing here names any safety
+' concept at all.
+SPEED 40
+MOVJ P1
+MOVL P2
+DO(1) = ON
+DELAY 300
+DO(1) = OFF
+MOVJ P0

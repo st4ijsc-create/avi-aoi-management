@@ -1,0 +1,21 @@
+' SAFETY: AI-assisted golden example. The author reviews, validates and simulates the job,
+' then a human approves the gated push (HITL). Authors a MOTION job-list only; collision
+' zones, safety planes and E-stop stay on the TMflow robot controller, never in this job.
+'
+' NEGATIVE example added to the safety-linter golden corpus (doc 69 C4): FARSIDE's x
+' coordinate is far outside a conservative workspace envelope. Structurally unsafe (a huge
+' reach target) even though nothing here names any safety concept at all -- the linter flags
+' it on the numeric literal, not on vocabulary.
+'
+' Techman TMflow job-list: reach a far pallet position, then return to a normal drop point.
+POINT FARSIDE = (3200, -150, 200, 3.142, 0, 0)
+POINT DROPOFF = (450, 150, 200, 3.142, 0, 0)
+
+HOME
+MOVE FARSIDE
+GRIP
+WAIT t=300
+MOVEL DROPOFF
+RELEASE
+WAIT t=300
+HOME

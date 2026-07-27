@@ -24,6 +24,7 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { createHash } from "node:crypto";
+import { safetyLintDiagnostics } from "../safetyLinter";
 import type {
   ProgrammingAdapter,
   ProgrammingCapability,
@@ -116,6 +117,10 @@ export class RobotTmAdapter implements ProgrammingAdapter {
       return { ok: false, diagnostics: [{ severity: "error", message: "Empty robot job." }] };
     }
     const { diags } = parseJob(src.content);
+    // C4 (doc 69 Wave-4) — SEMANTIC safety-linter pass: structural checks (unbounded loop /
+    // motion envelope / missing interlock) that fire even with no "safety" keyword present.
+    // Always WARNING severity (advisory) — never affects `ok`, never blocks codegen.
+    diags.push(...safetyLintDiagnostics("robot-tm", src.content));
     return { ok: !diags.some((d) => d.severity === "error"), diagnostics: diags };
   }
 

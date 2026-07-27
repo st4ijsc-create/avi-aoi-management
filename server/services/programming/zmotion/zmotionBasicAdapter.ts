@@ -31,6 +31,7 @@ import { connect, type Socket } from "node:net";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { safetyLintDiagnostics } from "../safetyLinter";
 import type {
   ProgrammingAdapter,
   ProgrammingCapability,
@@ -92,6 +93,10 @@ function lint(src: ProgramSource): ProgDiagnostic[] {
   if (motionCount === 0) {
     diags.push({ severity: "warning", message: "No motion op (MOVE/MOVEABS/…) found — is this a motion program?" });
   }
+  // C4 (doc 69 Wave-4) — SEMANTIC safety-linter pass: structural checks (unbounded loop /
+  // motion envelope / missing interlock) that fire even with no "safety" keyword present.
+  // Always WARNING severity (advisory) — never affects `ok`, never blocks codegen.
+  diags.push(...safetyLintDiagnostics("zmotion-basic", src.content));
   return diags;
 }
 
