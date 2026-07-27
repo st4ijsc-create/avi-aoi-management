@@ -44,5 +44,11 @@
          (Drivers/Modbus/ModbusTcpDriver.cs) and, test-only, the in-process TCP slave/slave-network the
          loopback test stands up (no real hardware). MIT-licensed. -->
     <PackageReference Include="NModbus" Version="3.0.83" />
+    <!-- GĐ3 sub-3 OU-1 (OPC-UA driver) — the ONE new NuGet this task adds: the OPC Foundation .NET
+         reference-stack CLIENT library, relicensed GPLv2/RCL -> MIT on 2025-12-04 (see the licensing
+         spike write-up in docs/plans/2026-07-27-giaidoan3-opcua-driver-blueprint.md). Pinned EXACT
+         (never a floating range) — the relicense is recent, so drifting below this exact MIT release
+         would silently re-expose the old GPLv2/RCL terms. -->
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.156" />
   </ItemGroup>
 </Project>

@@ -562,6 +562,64 @@ if (modbusOptions.Enabled)
     }
 }
 
+// GĐ3 sub-3 OU-1 (docs/plans/2026-07-27-giaidoan3-opcua-driver-blueprint.md task 1) — the SECOND real
+// field-protocol driver, mirroring the Modbus block immediately above (G2-6): an OPC-UA CLIENT poller run
+// as its OWN isolated FleetHost pipeline slot (G2-5 fault isolation — an OPC-UA fault can never tear down
+// the simulated fleet or the Modbus slot). Additive + env-gated OFF BY DEFAULT (ST4I_OPCUA_ENABLED
+// unset/false — see OpcUaOptions' own doc comment): when disabled, no OpcUaDriverFactory is registered, so
+// FleetHost's optional `opcUaDriverFactory` ctor param resolves to its own `null` default — byte-identical
+// to today. A missing/malformed node map (ST4I_OPCUA_MAP) logs a warning and disables OPC-UA for this run
+// rather than crashing startup — same posture as the Modbus/UNS blocks above.
+//
+// DI disambiguation (the brief's explicit call-out): Modbus's factory is registered as a bare
+// `Func<IDeviceDriver>` singleton above — registering OPC-UA's factory the SAME way would collide with
+// that exact registration. Registering `OpcUaDriverFactory` AS ITSELF (a distinct concrete type) instead
+// means the two optional dependencies resolve independently; see OpcUaDriverFactory's own "DI
+// disambiguation" doc comment.
+//
+// OU-2 (roster/Snapshot/web visibility) is deliberately NOT done here — no MachineDescriptor is seeded for
+// the configured OPC-UA machine yet, so it produces telemetry (Verdict.Skip, mirrored onto the UNS/live
+// transport same as every other driver) but has no fleet Snapshot tile/historian row/Asset row until that
+// follow-up task lands.
+var opcUaOptions = St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.FromEnvironment();
+if (opcUaOptions.Enabled)
+{
+    St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap? opcUaMap;
+    try
+    {
+        if (string.IsNullOrWhiteSpace(opcUaOptions.MapPath))
+        {
+            throw new InvalidOperationException(
+                $"{St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.EnvVarMapPath} is not set.");
+        }
+
+        var mapJson = File.ReadAllText(opcUaOptions.MapPath);
+        opcUaMap = St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap.FromJson(mapJson);
+    }
+    catch (Exception ex)
+    {
+        // No app.Logger yet this early (same reasoning as the UNS/Modbus catches above) — this is a
+        // warning that must be visible even though the OPC-UA slot silently no-ops for this run.
+        Console.Error.WriteLine(
+            $"[startup] OPC-UA node map failed to load from '{opcUaOptions.MapPath}' — OPC-UA driver disabled for this run: {ex.Message}");
+        opcUaMap = null;
+    }
+
+    if (opcUaMap is not null)
+    {
+        var capturedOpcUaMap = opcUaMap;
+        builder.Services.AddSingleton(sp =>
+        {
+            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("OpcUa");
+            return new St4i.EdgeCore.Drivers.OpcUa.OpcUaDriverFactory(
+                capturedOpcUaMap,
+                pkiDir: opcUaOptions.PkiDir,
+                logWarning: msg => logger.LogWarning("{OpcUaMsg}", msg),
+                logError: (ex, msg) => logger.LogError(ex, "{OpcUaMsg}", msg));
+        });
+    }
+}
+
 // Task 9 (WS-A) — per-machine OEE settings (ideal-cycle override + planned-production ratio), a plain
 // JSON-file-backed store (WS-A-T5) that was never wired into DI until now. Pointed at the SAME resolved
 // ST4I_HISTORIAN_DIR (or SqliteHistorianStore's own default when unset) so every historian-adjacent file

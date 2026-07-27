@@ -2,7 +2,7 @@ namespace St4i.EdgeCore.Models;
 
 public enum ReadingKind { ProcessResult, Telemetry, Inspection }
 
-public enum DriverKind { Simulated, HotFolderAoi, Mqtt, Modbus }
+public enum DriverKind { Simulated, HotFolderAoi, Mqtt, Modbus, OpcUa }
 
 public enum DeviceClass { Automation, Iot, AoiAvi }
 

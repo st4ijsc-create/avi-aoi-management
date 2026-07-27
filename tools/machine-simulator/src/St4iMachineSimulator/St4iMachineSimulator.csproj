@@ -14,7 +14,15 @@
     <ProjectReference Include="..\St4i.EdgeCore\St4i.EdgeCore.csproj" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.0.0-rc5.4" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.9" />
+    <!-- GĐ3 sub-3 OU-1 (OPC-UA driver) — bumped 9.0.9 -> 10.0.8: St4i.EdgeCore's new
+         OPCFoundation.NetStandard.Opc.Ua.Client 1.5.378.156 reference pulls in
+         OPCFoundation.NetStandard.Opc.Ua.Core -> Microsoft.Extensions.Logging 10.0.8 ->
+         Microsoft.Extensions.DependencyInjection (>= 10.0.8) transitively (ProjectReference flows a
+         package's own transitive deps to every downstream consumer). Without this explicit bump, restore
+         failed with NU1605 (package downgrade 10.0.8 -> 9.0.9) here — same "pin the direct reference so
+         nearest-wins resolution beats the transitive minimum" idiom already used for
+         SQLitePCLRaw.bundle_e_sqlite3 in St4i.EdgeCore.csproj (see its own comment). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
   </ItemGroup>
   <ItemGroup>
     <!-- Task 20 — the sidebar/top-bar logo (referenced via a relative pack URI, e.g.

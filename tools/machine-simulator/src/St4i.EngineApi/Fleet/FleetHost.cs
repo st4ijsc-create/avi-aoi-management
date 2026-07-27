@@ -3,6 +3,7 @@ using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers;
 using St4i.EdgeCore.Drivers.HotFolder;
 using St4i.EdgeCore.Drivers.Modbus;
+using St4i.EdgeCore.Drivers.OpcUa;
 using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Engine;
 using St4i.EdgeCore.Historian;
@@ -151,6 +152,19 @@ public sealed class FleetHost
     /// reasoning the simulated fleet's own <c>SimulatorFactory.Create</c> already follows.</summary>
     private readonly Func<IDeviceDriver>? _modbusDriverFactory;
 
+    /// <summary>GĐ3 sub-3 OU-1 (docs/plans/2026-07-27-giaidoan3-opcua-driver-blueprint.md task 1) —
+    /// optional (defaults null, same "every pre-existing test/call site that constructs
+    /// <see cref="FleetHost"/> directly without one keeps compiling/behaving byte-for-byte unchanged"
+    /// contract as every other optional dependency above) factory for the OPC-UA client driver's OWN
+    /// pipeline slot — mirrors <see cref="_modbusDriverFactory"/>'s reasoning exactly (G2-5 per-slot fault
+    /// isolation; a fresh driver/session per <see cref="StartLocked"/> call). Typed as the CONCRETE
+    /// <see cref="OpcUaDriverFactory"/> (not another <c>Func&lt;IDeviceDriver&gt;</c>) specifically so its
+    /// DI registration never collides with Modbus's own <c>Func&lt;IDeviceDriver&gt;</c> singleton — see
+    /// <see cref="OpcUaDriverFactory"/>'s own "DI disambiguation" doc comment for the full reasoning.
+    /// Production (Program.cs) registers this as itself, invoked fresh on every <see cref="StartLocked"/>
+    /// call via <see cref="OpcUaDriverFactory.Create"/>.</summary>
+    private readonly OpcUaDriverFactory? _opcUaDriverFactory;
+
     /// <summary>P2-1 (WS-J Asset Registry) — optional (defaults null, same "every pre-existing test that
     /// constructs <see cref="FleetHost"/> directly without one keeps compiling/behaving byte-for-byte
     /// unchanged" contract as every other optional dependency above) durable canonical asset registry.
@@ -244,7 +258,8 @@ public sealed class FleetHost
         FleetSettingsStore? settingsStore = null,
         IUnsPublisher? unsPublisher = null,
         Func<IDeviceDriver>? modbusDriverFactory = null,
-        IAssetRegistry? assetRegistry = null)
+        IAssetRegistry? assetRegistry = null,
+        OpcUaDriverFactory? opcUaDriverFactory = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -258,6 +273,7 @@ public sealed class FleetHost
         _unsPublisher = unsPublisher;
         _modbusDriverFactory = modbusDriverFactory;
         _assetRegistry = assetRegistry;
+        _opcUaDriverFactory = opcUaDriverFactory;
 
         // FF-1 — eager load, no lock needed: runs once, before this instance is published to any other
         // thread (same reasoning SeedAoiProductLinks below documents for itself). See _settingsStore's own
@@ -589,6 +605,19 @@ public sealed class FleetHost
         {
             var modbusProfile = new MappingProfile { Name = "modbus", DeviceClass = "Automation" };
             groups.Add(("modbus", _modbusDriverFactory(), modbusProfile, null));
+        }
+
+        // GĐ3 sub-3 OU-1 — the real OPC-UA slot, built fresh (never reused across restarts, see
+        // _opcUaDriverFactory's own doc comment) whenever a factory was actually wired up (Program.cs only
+        // does this when ST4I_OPCUA_ENABLED=true AND its node map loaded — otherwise this stays null and
+        // the fleet is byte-identical to pre-OU-1). No roster/MachineDescriptor exists for OPC-UA yet
+        // (that's OU-2 — roster/Snapshot/web visibility — deliberately out of scope here), so unlike the
+        // Modbus slot there is no matching exclusion needed in `simFleet` above: nothing can be
+        // double-driven when nothing has registered an OpcUa-kind machine.
+        if (_opcUaDriverFactory is not null)
+        {
+            var opcUaProfile = new MappingProfile { Name = "opcua", DeviceClass = "Automation" };
+            groups.Add(("opcua", _opcUaDriverFactory.Create(), opcUaProfile, null));
         }
 
         foreach (var g in groups)

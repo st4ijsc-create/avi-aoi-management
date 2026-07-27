@@ -9,6 +9,12 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- GĐ3 sub-3 OU-1 (OPC-UA driver) — TEST-ONLY: the OPC Foundation reference SERVER stack (same
+         1.5.378.156 MIT release as the Client package St4i.EdgeCore references), used ONLY to stand up an
+         in-process loopback OPC-UA server (OpcUaDriverLoopbackTests) that proves OpcUaDriver's session
+         round-trip end-to-end with no real PLC. Never shipped — the production driver is client-only, per
+         the GĐ3 sub-3 blueprint's locked decision #2. -->
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" Version="1.5.378.156" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\St4i.EdgeCore\St4i.EdgeCore.csproj" />
