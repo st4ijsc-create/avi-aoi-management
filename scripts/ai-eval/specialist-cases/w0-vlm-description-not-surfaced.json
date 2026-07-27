@@ -1,0 +1,13 @@
+{
+  "id": "w0-vlm-description-not-surfaced",
+  "title": "Mô tả VLM tự sinh không bao giờ hiện trên màn Repair Station",
+  "agentId": "backend-engineer",
+  "objective": "Khi worker phát hiện bất thường trên ảnh AOI và VLM tự sinh mô tả giải thích, mô tả đó không bao giờ hiện trên màn Repair Station dù model đã chạy xong và không lỗi. Tìm nguyên nhân gốc và cách sửa.",
+  "files": ["server/services/aoiImageEmbeddingWorker.ts", "client/src/pages/RepairStation.tsx"],
+  "expected": {
+    "rootCauseKeywords": ["ai_image_embeddings", "measurement_results", "aiAnalysisResult"],
+    "mustMentionFiles": ["server/services/aoiImageEmbeddingWorker.ts"],
+    "fixDirectionKeywords": ["measurementResultId", "vlmSummary", "RepairStation"]
+  },
+  "notes": "Bug thật đã sửa ở Wave 0, commit 6b91c909 (mô tả VLM chỉ ghi vào ai_image_embeddings.metadata; Repair Station đọc measurement_results.aiAnalysisResult nên không bao giờ thấy)."
+}

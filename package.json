@@ -38,6 +38,7 @@
     "kb:test": "node scripts/ai-kb/test-phase2-api.mjs",
     "kb:eval": "node scripts/ai-kb/eval-rag.mjs",
     "kb:stale-check": "node scripts/ai-kb/check-kb-stale.mjs",
+    "eval:specialist": "tsx scripts/ai-eval/eval-specialist.mjs",
     "hooks:install": "node scripts/ai-kb/install-git-hooks.mjs",
     "ai:backfill": "tsx scripts/ai/backfill-ai-data.mjs",
     "sim:factory": "node scripts/sim-factory/seed.mjs",

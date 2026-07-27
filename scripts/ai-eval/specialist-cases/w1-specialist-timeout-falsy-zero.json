@@ -1,0 +1,13 @@
+{
+  "id": "w1-specialist-timeout-falsy-zero",
+  "title": "Đặt AI_SPECIALIST_RUN_TIMEOUT_MS=\"0\" làm mọi phiên specialist đang chạy hết hạn ngay lập tức",
+  "agentId": "backend-engineer",
+  "objective": "Khi biến môi trường AI_SPECIALIST_RUN_TIMEOUT_MS được đặt thành chuỗi \"0\", vòng dọn dẹp housekeeping coi MỌI phiên specialist đang chạy là đã hết hạn ngay lập tức, dù phiên vừa mới bắt đầu. Tìm nguyên nhân gốc và cách sửa.",
+  "files": ["server/services/aiAgentHousekeepingScheduler.ts"],
+  "expected": {
+    "rootCauseKeywords": ["AI_SPECIALIST_RUN_TIMEOUT_MS", "truthy", "expireStaleSpecialistSessions"],
+    "mustMentionFiles": ["server/services/aiAgentHousekeepingScheduler.ts"],
+    "fixDirectionKeywords": ["specialistTimeoutMs", "Number.isFinite", "raw > 0"]
+  },
+  "notes": "Bug thật đã sửa ở Wave 1, commit 521e788c (Number(env || 900_000): chuỗi \"0\" là truthy nên bỏ qua giá trị mặc định, Number(\"0\")=0 khiến ngưỡng hết hạn = 0)."
+}

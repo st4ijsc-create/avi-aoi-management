@@ -1,0 +1,13 @@
+{
+  "id": "w0-lora-path-traversal",
+  "title": "targetVersion do người dùng nhập ảnh hưởng trực tiếp đường dẫn file model đã huấn luyện",
+  "agentId": "backend-engineer",
+  "objective": "Endpoint khởi chạy fine-tune LoRA nhận targetVersion do người dùng nhập và ghép trực tiếp vào tên file .gguf khi copy model đã huấn luyện ra đĩa, mở ra khả năng path traversal / ghi đè file tuỳ ý ngoài thư mục trained. Tìm nguyên nhân gốc và cách sửa.",
+  "files": ["server/services/aiLlmFinetuneSidecar.ts"],
+  "expected": {
+    "rootCauseKeywords": ["targetVersion", "finalPath", "path traversal"],
+    "mustMentionFiles": ["server/services/aiLlmFinetuneSidecar.ts"],
+    "fixDirectionKeywords": ["safeTrainedFilePath", "assertSafeIdentifier", "jobId"]
+  },
+  "notes": "Bug thật đã sửa ở doc69 E3-6, commit 8ff6c969 (finalPath = path.join(trainedDir, `lora_${jobId}_${targetVersion}.gguf`) ghép trực tiếp targetVersion caller-supplied vào đường dẫn FS)."
+}

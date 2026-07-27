@@ -1,0 +1,13 @@
+{
+  "id": "w0-noop-broadcast-nudge",
+  "title": "advance/confirmStep/cancelSession phát broadcast realtime kể cả khi không có gì thay đổi",
+  "agentId": "backend-engineer",
+  "objective": "Các hàm advance(), confirmStep(), cancelSession() trong bộ điều phối agent luôn phát broadcast realtime 'ai:agents' tới mọi người xem Agent Command Center, kể cả khi sessionId không tồn tại/không thuộc về người gọi hoặc trạng thái phiên không hề thay đổi. Một người dùng ít quyền có thể lặp sessionId rác để ép broadcast liên tục. Tìm nguyên nhân gốc và cách sửa.",
+  "files": ["server/services/aiAgentOrchestrator.ts"],
+  "expected": {
+    "rootCauseKeywords": ["nudge", "no-op", "loadOwned"],
+    "mustMentionFiles": ["server/services/aiAgentOrchestrator.ts"],
+    "fixDirectionKeywords": ["markChanged", "changed", "advanceImpl"]
+  },
+  "notes": "Bug thật đã sửa ở doc69 E2-4, commit b4bb831b (advance/confirmStep/cancelSession gọi nudge(...) vô điều kiện sau khi *Impl trả về, kể cả khi *Impl chỉ chạm 2 guard no-op đầu tiên — không hề ghi DB)."
+}

@@ -1,0 +1,13 @@
+{
+  "id": "w0-action-inbox-dead-import",
+  "title": "Action Inbox không bao giờ trả cảnh báo bất thường",
+  "agentId": "backend-engineer",
+  "objective": "Hàm listAlerts trong server/services/aiActionInbox.ts luôn trả mảng rỗng cho nhánh bất thường dù dữ liệu bất thường có tồn tại. Tìm nguyên nhân gốc và cách sửa.",
+  "files": ["server/services/aiActionInbox.ts", "server/routers/aiAnomalyRouter.ts"],
+  "expected": {
+    "rootCauseKeywords": ["import", "không tồn tại", "undefined", "latestForMachine"],
+    "mustMentionFiles": ["server/services/aiActionInbox.ts"],
+    "fixDirectionKeywords": ["readMachineStatuses", "nguồn thật", "aiAnomalyRouter"]
+  },
+  "notes": "Bug thật đã sửa ở Wave 0, commit 6b91c909."
+}

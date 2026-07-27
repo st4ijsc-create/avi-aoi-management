@@ -1,0 +1,13 @@
+{
+  "id": "w0-42p01-cause-walk",
+  "title": "Kiểm tra bảng-chưa-migrate bỏ sót lỗi do drizzle bọc mã Postgres trong err.cause",
+  "agentId": "backend-engineer",
+  "objective": "Khi bảng kb_studio_chunks/kb_corpora chưa được migrate, service KB Studio ném lỗi 500 thô cho người dùng thay vì tự nhận biết bảng chưa tồn tại và trả kết quả rỗng/không sẵn sàng. Tìm nguyên nhân gốc và cách sửa.",
+  "files": ["server/_core/dbErrors.ts", "server/services/kbStudioService.ts"],
+  "expected": {
+    "rootCauseKeywords": ["err.cause", "DrizzleQueryError", "42P01"],
+    "mustMentionFiles": ["server/_core/dbErrors.ts"],
+    "fixDirectionKeywords": ["isMissingTable", "err.cause", "walk"]
+  },
+  "notes": "Bug thật đã sửa ở doc69 E3-2, commit eca33661 (kiểm tra err.code trần bỏ sót mã 42P01 vì drizzle-orm bọc lỗi driver thật trong DrizzleQueryError, mã nằm ở err.cause)."
+}
