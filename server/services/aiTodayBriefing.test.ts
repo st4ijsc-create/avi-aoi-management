@@ -110,12 +110,15 @@ beforeEach(() => {
 });
 
 describe("briefingRoleOf — role collapse", () => {
-  it("maps the 7 app roles to 4 briefing variants", () => {
+  it("maps the 8 app roles to 4 briefing variants", () => {
     expect(briefingRoleOf("maintenance")).toBe("maintenance");
     expect(briefingRoleOf("operator")).toBe("operator");
     expect(briefingRoleOf("supervisor")).toBe("manager");
     expect(briefingRoleOf("admin")).toBe("manager");
     expect(briefingRoleOf("quality_inspector")).toBe("quality");
+    // W0-E — engineer (kỹ thuật, roleEnum "engineer") gets the quality/defect
+    // briefing (QualityPayload) instead of falling through to the generic viewer.
+    expect(briefingRoleOf("engineer")).toBe("quality");
     expect(briefingRoleOf("viewer")).toBe("viewer");
     expect(briefingRoleOf("user")).toBe("viewer");
   });
@@ -247,6 +250,22 @@ describe("buildTodayBriefing — role routing & shape", () => {
     const b = await buildTodayBriefing({ id: 9, role: "user" }, "vi");
     expect(b.role).toBe("viewer");
     expect((b.payload as any).role).toBe("viewer");
+  });
+
+  // W0-E — engineer (kỹ thuật) previously fell through to the generic viewer
+  // briefing; it should now get the quality/defect briefing (same payload shape
+  // as quality_inspector: yield/ngRate/ngCount/topDefect).
+  it("engineer → quality briefing (defect/NG/SPC focus), NOT the generic viewer subset", async () => {
+    getUserFactoryAssignments.mockResolvedValue([{ factoryCode: "F1" }]);
+    getYieldTrendData.mockResolvedValue([{ totalCount: 80, ngCount: 6 }]);
+    const b = await buildTodayBriefing({ id: 14, role: "engineer" }, "vi");
+    expect(b.role).toBe("quality");
+    const p = b.payload as any;
+    expect(p.role).toBe("quality");
+    expect(p).toHaveProperty("yield");
+    expect(p).toHaveProperty("ngRate");
+    expect(p).toHaveProperty("ngCount");
+    expect(p).toHaveProperty("topDefect");
   });
 });
 

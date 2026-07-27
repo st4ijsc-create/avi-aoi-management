@@ -14,7 +14,9 @@
  *     anomaly machines (assigned scope).
  *   - supervisor/manager/admin → exception-first shift KPIs (OEE, yield, NG
  *     rate, throughput), exceptions, top defect, PdM-risk count.
- *   - quality_inspector/viewer/user → a sensible read-only subset.
+ *   - quality_inspector/engineer     → yield/NG-rate/top-defect (defect/SPC focus;
+ *     W0-E: engineer/kỹ thuật reuses this instead of falling through to viewer).
+ *   - viewer/user             → the same sensible read-only subset.
  *
  * PRINCIPLES (match aiActionInbox / aiExecutiveReport):
  *  - ADDITIVE + FAIL-SAFE: every section is wrapped; a failing source → that
@@ -109,7 +111,7 @@ const MAX_ATTENTION_ROWS = 3;
 
 // ─── Role mapping ──────────────────────────────────────────────────────────────
 
-/** Collapse the app's 7 roles into the 4 briefing variants. */
+/** Collapse the app's 8 roles into the 4 briefing variants. */
 export function briefingRoleOf(role: string): BriefingRole {
   switch (String(role)) {
     case "maintenance":
@@ -120,6 +122,13 @@ export function briefingRoleOf(role: string): BriefingRole {
     case "admin":
       return "manager";
     case "quality_inspector":
+      return "quality";
+    // W0-E (doc69 wave0 activation) — engineer (kỹ thuật, roleEnum "engineer": the
+    // automation-programming / process engineer) previously fell through to the
+    // generic viewer briefing. The quality/defect briefing (yield · NG · SPC top
+    // defect) is the useful analytical summary for this persona — reuse it as-is
+    // rather than inventing a new payload type.
+    case "engineer":
       return "quality";
     default:
       return "viewer"; // viewer / user / unknown → read-only subset
