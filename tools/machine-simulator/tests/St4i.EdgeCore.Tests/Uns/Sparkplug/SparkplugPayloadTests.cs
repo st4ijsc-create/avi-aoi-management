@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using St4i.EdgeCore.Uns.Sparkplug;
 using Xunit;
 
@@ -6,7 +7,14 @@ namespace St4i.EdgeCore.Tests.Uns.Sparkplug;
 /// <summary>G2-2 — <see cref="SparkplugPayload"/>: the hand-rolled encoder/decoder round-trips a
 /// <see cref="SparkplugPayloadMessage"/> through <see cref="SparkplugPayload.Encode"/> then
 /// <see cref="SparkplugPayload.Decode"/>, covering every datatype the codec supports (Int/Long/Float/
-/// Double/Boolean/String) plus the payload-level timestamp/seq fields and multi-metric ordering.</summary>
+/// Double/Boolean/String) plus the payload-level timestamp/seq fields and multi-metric ordering.
+///
+/// G2-2 review fix round 1 (Important): a pure round-trip (encode with THIS codec, decode with THIS
+/// SAME codec) can't by itself catch a wire-field-number regression — encoding seq at the wrong field
+/// and decoding from that SAME wrong field still "round-trips" successfully. <see cref="Encode_WritesSeqAtFieldThree_PerCanonicalSparkplugBSpec"/>
+/// below independently parses the raw encoded bytes with a plain <see cref="CodedInputStream"/> (NOT
+/// <see cref="SparkplugPayload.Decode"/>) to prove seq genuinely lands on wire field 3 — the canonical
+/// Eclipse Tahu <c>sparkplug_b.proto</c> field number a real Sparkplug host reads it from.</summary>
 public sealed class SparkplugPayloadTests
 {
     [Fact]
@@ -19,6 +27,50 @@ public sealed class SparkplugPayloadTests
         Assert.Equal(payload.Timestamp, decoded.Timestamp);
         Assert.Equal(payload.Seq, decoded.Seq);
         Assert.Empty(decoded.Metrics);
+    }
+
+    /// <summary>Spec-conformance assertion (G2-2 review fix round 1): reads the wire bytes with a plain
+    /// <see cref="CodedInputStream"/>, independent of <see cref="SparkplugPayload.Decode"/>, and confirms
+    /// <c>Payload.seq</c> (varint) is on field 3 and <c>Payload.timestamp</c> (varint) stays on field 1 —
+    /// per the canonical <c>sparkplug_b.proto</c> (field 3 = seq, NOT field 5 = body, which this codec
+    /// deliberately never writes). Guards against a future regression back to the wrong field number.</summary>
+    [Fact]
+    public void Encode_WritesSeqAtFieldThree_PerCanonicalSparkplugBSpec()
+    {
+        var payload = new SparkplugPayloadMessage(Timestamp: 123_456_789UL, Seq: 42UL, Array.Empty<SparkplugMetric>());
+        var bytes = SparkplugPayload.Encode(payload);
+
+        var input = new CodedInputStream(bytes);
+        ulong? timestampAtFieldOne = null;
+        ulong? seqAtFieldThree = null;
+        var sawFieldFive = false;
+
+        uint tag;
+        while ((tag = input.ReadTag()) != 0)
+        {
+            switch (WireFormat.GetTagFieldNumber(tag))
+            {
+                case 1:
+                    Assert.Equal(WireFormat.WireType.Varint, WireFormat.GetTagWireType(tag));
+                    timestampAtFieldOne = input.ReadUInt64();
+                    break;
+                case 3:
+                    Assert.Equal(WireFormat.WireType.Varint, WireFormat.GetTagWireType(tag));
+                    seqAtFieldThree = input.ReadUInt64();
+                    break;
+                case 5:
+                    sawFieldFive = true;
+                    input.SkipLastField();
+                    break;
+                default:
+                    input.SkipLastField();
+                    break;
+            }
+        }
+
+        Assert.Equal(123_456_789UL, timestampAtFieldOne);
+        Assert.Equal(42UL, seqAtFieldThree);
+        Assert.False(sawFieldFive, "Payload field 5 (body, per the canonical proto) must be left unwritten.");
     }
 
     [Theory]

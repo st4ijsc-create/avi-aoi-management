@@ -28,8 +28,15 @@ public sealed class UnsOptions
     public const string EnvVarCell = "ST4I_UNS_CELL";
     public const string EnvVarPort = "ST4I_UNS_PORT";
 
-    /// <summary>Non-1883 loopback default — see the class doc comment.</summary>
-    public const int DefaultBrokerPort = 18830;
+    /// <summary>Non-1883 loopback default — see the class doc comment. G2-2 review fix round 1: NOT
+    /// 18830 — that port is already hardcoded by the pre-existing <c>MqttDriverTests</c> (Task 12) for
+    /// its own <see cref="St4i.EdgeCore.Drivers.Mqtt.InProcessBroker"/>, and <see cref="UnsBroker"/>'s
+    /// default binds for EVERY <c>WebApplicationFactory&lt;Program&gt;</c>-booted
+    /// <c>St4i.EngineApi.Tests</c> test (since <see cref="Enabled"/> defaults true) — sharing 18830
+    /// would be a real cross-test-project port-contention smell if the two test projects' processes
+    /// ever run concurrently (observed happening under a plain <c>dotnet test</c> on this solution).
+    /// 18832 is confirmed unused anywhere else in this codebase/test suite.</summary>
+    public const int DefaultBrokerPort = 18832;
 
     /// <summary>Whether the UNS spine is active at all. Defaults to <see langword="true"/> — additive by
     /// default, but every call site that wires this up (FleetHost/Program.cs) treats a <see langword="null"/>

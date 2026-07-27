@@ -38,19 +38,22 @@ public sealed record SparkplugPayloadMessage(ulong Timestamp, ulong Seq, IReadOn
 /// "ONE new NuGet: Google.Protobuf, runtime only — NO protoc/Grpc.Tools" constraint), which is why every
 /// field below is written/read by raw field number rather than through generated message classes.
 ///
-/// Field numbers — <c>Metric</c> (name=1, alias=2, timestamp=3, datatype=4) matches the public Sparkplug B
-/// <c>sparkplug_b.proto</c> exactly, as do the value oneof fields this codec actually emits (int_value=10,
-/// long_value=11, float_value=12, double_value=13, boolean_value=14, string_value=15). <c>Payload</c>
-/// itself (timestamp=1, metrics=2, seq=5) is this task's OWN scheme, NOT the public proto's numbering
-/// (which puts seq at field 3) — this is deliberate per the task brief's explicit field-number spec, since
-/// this codec is for our own broker+subscriber round-trip, not off-the-shelf interop with a third-party
-/// Sparkplug host (that spec-fidelity work, if ever needed, is separate scope from G2-2).
+/// Field numbers — BOTH <c>Metric</c> (name=1, alias=2, timestamp=3, datatype=4, plus the value oneof
+/// fields this codec actually emits: int_value=10, long_value=11, float_value=12, double_value=13,
+/// boolean_value=14, string_value=15) AND <c>Payload</c> (timestamp=1, metrics=2, <b>seq=3</b>) match the
+/// canonical Eclipse Tahu <c>sparkplug_b.proto</c> exactly. G2-2 review fix round 1 (Important):
+/// <c>Payload.seq</c> was originally written at field 5 (the task brief's own error — it described field
+/// 5 as seq, but the real proto defines field 5 as <c>body</c> and field 3 as <c>seq</c>); a real
+/// Sparkplug host (Ignition/HiveMQ/a future SYNAPSE Site) reading a wire-type-mismatched or absent seq
+/// at field 3 would never see dropped/out-of-order detection, defeating the whole point of the field.
+/// Fixed to field 3, per spec; <c>Payload</c> field 4 (<c>uuid</c>) and field 5 (<c>body</c>) are left
+/// unwritten/unused — this codec doesn't need them for G2-2's scope.
 /// </summary>
 public static class SparkplugPayload
 {
     private const int PayloadFieldTimestamp = 1;
     private const int PayloadFieldMetrics = 2;
-    private const int PayloadFieldSeq = 5;
+    private const int PayloadFieldSeq = 3;
 
     private const int MetricFieldName = 1;
     private const int MetricFieldAlias = 2;
