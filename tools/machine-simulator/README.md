@@ -282,13 +282,22 @@ Policy layer + the XC-R40 `/v1/safety` supervisory E-STOP endpoint (§16.2), per
 isolation (§16.3), and a persistent ISA-95 Asset Registry (§16.5, the "canonical model" piece of
 this roadmap). See **§16** for all five middleware-backbone features together.
 
-**Genuinely still future, not touched by this build:** ecosystem join — mDNS discovery + a local
-UNS↔Site broker bridge + a join wizard ("no reinstall, no data loss"); and **WS-B B2 (bridge
+**Update (Giai đoạn 3, Ecosystem Connect):** the manual-join northbound Site federation this roadmap
+line used to list as future has since landed — a durable, self-signed device identity plus a
+trust-pinned mutual-TLS bridge that federates the local UNS spine (§16.1) up to a SYNAPSE Site; see
+**§17** for the full detail (env vars, endpoints, join flow, security posture).
+
+**Genuinely still future, not touched by this build:** **mDNS auto-discovery + a join wizard** — today
+the join is entirely manual (copy the device fingerprint from `/site`, register it at the Site by hand,
+paste the Site's trust certificate back, §17.6); **EST/SCEP enrollment + a Site CA** — today the device
+identity is a bare self-signed certificate and trust is a single operator-pasted PEM, not a
+CA-issued/rotated chain; **an inbound command path (NCMD or otherwise)** — the bridge is
+outbound-telemetry-only, so a Site can observe this device but never actuate it; **certificate
+rotation** — the device identity is minted once and never auto-renewed; and **WS-B B2 (bridge
 inversion)** — flipping the UNS spine from an additive mirror into the sole source of truth with
 ST4I/historian driven asynchronously off it instead of synchronously inside `EdgePipeline` — assessed
 and **deliberately deferred to a dedicated GĐ3 pass** (high blast-radius: ~34 files touch the
-synchronous ack today; see `docs/plans/2026-07-27-ws-b-b2-bridge-inversion-assessment.md`), bundled
-with the join/ecosystem work rather than bolted on here.
+synchronous ack today; see `docs/plans/2026-07-27-ws-b-b2-bridge-inversion-assessment.md`).
 
 *(VI: Vài mục P2/P3 phía trên ĐÃ giao trong Giai đoạn 2 (pass 1+2) — xem cột **Status** và **§16** để
 biết chi tiết đầy đủ (biến môi trường, endpoint, hành vi). Sparkplug B: ĐÃ GIAO qua UNS spine cục bộ
@@ -298,10 +307,21 @@ máy Modbus. OPC-UA vẫn tương lai — đang bị chặn bởi một "licensi
 mở xung đột RCL/GPLv2 và MIT trên bộ thư viện OPC-UA .NET). Cũng đã giao trong bản này dù không nằm
 trong bảng P1-P5 gốc: lớp Policy mặc định-từ-chối + endpoint an toàn XC-R40 `/v1/safety` (§16.2), cách
 ly lỗi theo từng pipeline (§16.3), và Asset Registry ISA-95 bền vững (§16.5 — chính là phần "mô hình
-canonical" của lộ trình này). Vẫn CHƯA làm: gia nhập hệ sinh thái (mDNS + bridge UNS↔Site + join
-wizard) và **WS-B B2 (đảo chiều bridge)** — đã đánh giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (phạm
-vi ảnh hưởng lớn — khoảng 34 file đang dùng ack đồng bộ), gộp chung với việc gia nhập hệ sinh thái thay
-vì làm lẻ ở đây.)*
+canonical" của lộ trình này).
+
+**Cập nhật (Giai đoạn 3, Ecosystem Connect):** phần gia nhập hệ sinh thái mà mục lộ trình này từng liệt
+kê là tương lai — nay ĐÃ GIAO: một danh tính thiết bị bền vững (chứng chỉ tự ký) cùng một bridge mTLS
+ghim tin cậy, liên kết xương sống UNS cục bộ (§16.1) lên một SYNAPSE Site. Xem **§17** để biết chi tiết
+đầy đủ (biến môi trường, endpoint, luồng gia nhập, tư thế bảo mật).
+
+Vẫn CHƯA làm: **mDNS tự động dò tìm + join wizard** (hiện gia nhập hoàn toàn thủ công — sao chép
+fingerprint từ `/site`, đăng ký thủ công tại Site, dán lại chứng chỉ tin cậy của Site, §17.6);
+**EST/SCEP + Site CA** để tự động cấp/xoay chứng chỉ (hiện danh tính thiết bị chỉ là chứng chỉ tự ký,
+tin cậy chỉ là một PEM operator dán tay, không phải chuỗi CA cấp/xoay); **đường lệnh vào (NCMD hay
+khác)** — bridge CHỈ GỬI telemetry RA, Site quan sát được máy này nhưng không điều khiển được;
+**xoay vòng chứng chỉ** — danh tính thiết bị chỉ tạo một lần, không tự gia hạn; và **WS-B B2 (đảo
+chiều bridge)** — đã đánh giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (phạm vi ảnh hưởng lớn — khoảng 34
+file đang dùng ack đồng bộ).)*
 
 See `docs/ECOSYSTEM/62_MACHINE_SIMULATOR_EDGE_MIDDLEWARE_DESIGN_2026-07-18.md` §11 for the full
 detail, and `docs/ECOSYSTEM/61_MACHINE_DEVELOPER_INTEGRATION_GUIDE_2026-07-18.md` for the contract
@@ -1359,3 +1379,254 @@ fleet. 3 endpoint: `GET /v1/assets` (Operator, danh sách), `GET /v1/assets/{cod
 tiết), `PUT /v1/assets/{code}/lifecycle` (Engineer, đổi vòng đời, có audit). **Việc CHƯA làm:** mục
 điều hướng `/assets` mới trên web UI cần chạy lại baseline visual-regression (`--update-snapshots`) —
 chưa làm tại thời điểm cập nhật tài liệu này.)*
+
+---
+
+## 17. Ecosystem Connect (Giai đoạn 3) — device identity + northbound Site federation / Kết nối hệ sinh thái (Giai đoạn 3) — danh tính thiết bị + liên kết Site hướng lên
+
+**EN** — Giai đoạn 3's Ecosystem-Connect features (EC-1..EC-4) give this device (a) a durable identity
+it can present over mutual TLS, and (b) an optional, **default-off**, **outbound-only** bridge that
+federates the local UNS spine (§16.1) up to a SYNAPSE Site's MQTT broker. A device with no Site link on
+file is byte-identical to every build before this feature landed: standalone, loopback-only, unchanged.
+Turning federation on never changes the local pipeline's own behavior — it only adds a second,
+independent republish path riding alongside it.
+
+*(VI: Các tính năng Ecosystem Connect của Giai đoạn 3 (EC-1..EC-4) cho thiết bị này (a) một danh tính
+bền vững để trình diện qua mutual TLS, và (b) một bridge tuỳ chọn, **MẶC ĐỊNH TẮT**, **CHỈ GỬI RA**,
+liên kết xương sống UNS cục bộ (§16.1) lên broker MQTT của một SYNAPSE Site. Một thiết bị chưa cấu hình
+Site link giống hệt bản build trước khi có tính năng này — độc lập, chỉ loopback, không đổi. Bật liên
+kết không bao giờ đổi hành vi của pipeline cục bộ — chỉ thêm một đường republish thứ hai, độc lập, chạy
+song song.)*
+
+### 17.1 Device identity (EC-1) / Danh tính thiết bị
+
+**EN** — `St4i.EdgeCore.Identity.DeviceIdentityStore` mints (once) and loads a self-signed **ECDSA
+P-256** X.509 certificate — this device's own durable identity, presented as the client certificate for
+mutual TLS when the bridge below federates to a Site. The private key never leaves the box:
+
+- **Storage:** the PFX bytes are DPAPI-protected (`DataProtectionScope.LocalMachine` — the same scope
+  and rationale `CredentialStore` already uses for the `mk_` API key, §15.8) and the containing
+  directory is ACL-locked (`SecurityDirAcl`, self-healed on every write). Default root
+  `%ProgramData%\ST4I\sim\identity` — a sibling of `...\sim\creds`/`...\sim\settings`/`...\sim\historian`
+  — relocatable via **`ST4I_IDENTITY_DIR`**.
+- **Minted once, at first startup** (`LoadOrCreate`, called exactly once from `Program.cs`): a corrupt
+  or unreadable stored blob (wrong machine, wrong DPAPI scope, garbage bytes) is treated as "no identity
+  yet" and silently regenerated — a device always ends up with a usable identity, never a crash.
+- The certificate's `CN` (and, when safe, a DNS SAN) is derived from this process's ISA-95 **Cell**
+  segment (`ST4I_UNS_CELL`, §16.1) — sanitized so an unusual value can never corrupt the X.500 subject.
+- Exposes a **SHA-256 fingerprint** and the **public certificate PEM** (never the private key) via
+  `GET /v1/site/identity` (§17.4) — this is what an operator hands to the Site to register the device.
+
+*(VI: `DeviceIdentityStore` tạo (một lần duy nhất) và nạp một chứng chỉ X.509 tự ký **ECDSA P-256** —
+danh tính bền vững của thiết bị, dùng làm chứng chỉ client cho mutual TLS khi bridge bên dưới liên kết
+tới Site. Khoá riêng KHÔNG BAO GIỜ rời khỏi máy: PFX được mã hoá DPAPI (LocalMachine, cùng cách
+`CredentialStore` đã dùng cho khoá `mk_`, §15.8), thư mục chứa bị khoá ACL. Thư mục mặc định
+`%ProgramData%\ST4I\sim\identity`, dời chỗ qua **`ST4I_IDENTITY_DIR`**. Được tạo LẦN ĐẦU lúc khởi động
+(`LoadOrCreate`) — blob hỏng/không đọc được bị coi là "chưa có danh tính" và tự tạo lại, không bao giờ
+crash. `CN` chứng chỉ lấy từ đoạn Cell ISA-95 (`ST4I_UNS_CELL`, §16.1), đã làm sạch an toàn. Fingerprint
+SHA-256 + chứng chỉ công khai (PEM) được lộ qua `GET /v1/site/identity` (§17.4) — đây là thứ operator
+đưa cho Site để đăng ký thiết bị.)*
+
+### 17.2 Site link + northbound bridge (EC-2) / Liên kết Site + bridge hướng lên
+
+**EN** — `St4i.EdgeCore.Site` persists a **Site link** (`site-link.json`, default root
+`%ProgramData%\ST4I\sim\sitelink`, relocatable via **`ST4I_SITELINK_DIR`**) holding exactly
+`{ enabled, host, port (default 8883), siteTrustPem }` — **no secrets** ever live in this file; the
+device's own private key stays where §17.1 already keeps it, and `siteTrustPem` is only ever a PUBLIC
+certificate (the Site's CA, or the Site's own self-signed leaf, pinned directly).
+
+When `enabled`, `UnsBridge` (owned/lifecycle-managed by `SiteBridgeManager`) dials the Site's broker
+over **mutual TLS**: it presents this device's own certificate (§17.1) and validates the Site's
+presented certificate against `siteTrustPem` — **fail-closed** (`SiteTrustPin.IsTrusted`): the
+machine's ambient default CA trust store is **deliberately irrelevant** here (a globally-trusted public
+CA saying "yes" proves nothing about "is this actually my operator's Site"), so a blank/malformed pin,
+or a certificate that doesn't chain to the pinned trust, is always rejected, never silently accepted.
+
+The bridge subscribes the LOCAL UNS spine (`spBv1.0/#` + `syn/#`) and republishes every message,
+byte-for-byte (retained for `syn/*`, matching §16.1's own retain policy), up to the Site. It is:
+
+- **Outbound-only** — the bridge's local client only ever subscribes, its remote client only ever
+  publishes; nothing the Site sends back is ever pulled into the local spine. There is no inbound
+  command path.
+- **Resilient** — both the local and remote connections reconnect on their own (bounded exponential
+  backoff, capped at 10s, never a tight loop); a bounded, drop-oldest forward queue means a slow/down
+  Site can never back-pressure or block the local pipeline.
+- **Default-off** — no Site link on file (or one saved with `enabled: false`) means `UnsBridge` never
+  opens a single socket; the local broker (`UnsBroker`, §16.1) stays loopback-only regardless of this
+  feature's existence either way — only the bridge's own outbound client ever dials off-box.
+- Only ever constructed when the local UNS spine itself is on (`ST4I_UNS_ENABLED`, §16.1 — a bridge with
+  nothing to subscribe to is meaningless); with UNS disabled, only the identity singleton (§17.1) is
+  registered, so `/v1/site/identity` still works standalone.
+
+**Bridge states** (`GET /v1/site`'s `bridgeState`): `Disabled` (no link, or link saved disabled) ·
+`Connecting` (link enabled, no successful remote connect yet) · `Connected` (both local + remote
+clients up) · `Degraded` (was connected at least once, remote currently down — a **Site outage**; the
+local pipeline is unaffected) · `Down` (the LOCAL client can't reach this device's own UNS spine).
+
+*(VI: `St4i.EdgeCore.Site` lưu một **Site link** (`site-link.json`, thư mục mặc định
+`%ProgramData%\ST4I\sim\sitelink`, dời chỗ qua **`ST4I_SITELINK_DIR`**) gồm đúng
+`{enabled, host, port (mặc định 8883), siteTrustPem}` — KHÔNG có bí mật nào trong file này; khoá riêng
+của thiết bị vẫn ở nguyên chỗ §17.1, còn `siteTrustPem` luôn chỉ là chứng chỉ CÔNG KHAI (CA của Site,
+hoặc leaf tự ký của chính Site, ghim trực tiếp). Khi `enabled`, `UnsBridge` (do `SiteBridgeManager`
+quản lý vòng đời) quay số tới broker của Site qua **mutual TLS**: trình diện chứng chỉ của chính thiết
+bị (§17.1) và xác thực chứng chỉ Site trình diện dựa trên `siteTrustPem` — **THẤT BẠI-THÌ-ĐÓNG**
+(`SiteTrustPin.IsTrusted`): kho tin cậy CA mặc định của máy KHÔNG liên quan gì ở đây — một CA công khai
+được tin cậy toàn cục nói "được" không chứng minh được "đây đúng là Site của operator tôi", nên pin
+rỗng/hỏng hoặc chứng chỉ không nối được vào chuỗi tin cậy đã ghim luôn bị TỪ CHỐI. Bridge subscribe
+xương sống UNS CỤC BỘ (`spBv1.0/#` + `syn/#`) và republish nguyên văn lên Site (giữ retain cho `syn/*`,
+giống §16.1). Đặc tính: **CHỈ GỬI RA** (không có đường lệnh vào); **BỀN BỈ** (tự kết nối lại với backoff
+tăng dần có trần 10s, hàng đợi forward có giới hạn/drop-oldest nên Site chậm/sập không bao giờ chặn
+pipeline cục bộ); **MẶC ĐỊNH TẮT** (chưa cấu hình hoặc `enabled:false` → không mở socket nào; broker
+cục bộ (`UnsBroker`, §16.1) luôn chỉ loopback bất kể tính năng này); chỉ được tạo khi UNS spine cục bộ
+đang bật (`ST4I_UNS_ENABLED`, §16.1) — tắt UNS thì chỉ còn singleton danh tính (§17.1), `/v1/site/identity`
+vẫn hoạt động độc lập. **5 trạng thái bridge** (`bridgeState` của `GET /v1/site`): `Disabled` ·
+`Connecting` · `Connected` · `Degraded` (Site sập, cục bộ không ảnh hưởng) · `Down` (client cục bộ
+không tới được UNS spine của chính máy này).)*
+
+### 17.3 Env vars / Biến môi trường
+
+**EN** — Both stores follow the exact same "explicit path (tests) → env var → `%ProgramData%` default"
+resolution idiom used elsewhere in this doc (e.g. §15.2's `ST4I_HISTORIAN_DIR`/`ST4I_WAL_DIR`/
+`ST4I_SECURITY_DIR`, §16.5's `ST4I_ASSETS_DIR`); an unset/blank env var falls back to the default
+rather than erroring:
+
+| Var | What it does | Default |
+|---|---|---|
+| `ST4I_IDENTITY_DIR` | Relocates the device-identity store (`device-identity.bin` + `device-node.txt`, §17.1) | `%ProgramData%\ST4I\sim\identity` |
+| `ST4I_SITELINK_DIR` | Relocates the Site-link store (`site-link.json`, §17.2) | `%ProgramData%\ST4I\sim\sitelink` |
+
+Neither feature introduces a new *enable* flag of its own — the Site bridge's on/off switch is the
+persisted link's own `enabled` field (set via `PUT /v1/site`, §17.4), not an environment variable. It
+does, however, depend on the **pre-existing** `ST4I_UNS_*` family (§16.1): `SiteBridgeManager` is only
+ever registered when `ST4I_UNS_ENABLED` is on (the default), the bridge's local client dials
+`ST4I_UNS_PORT` on loopback, and the device identity's `CN`/SAN is derived from `ST4I_UNS_CELL`.
+
+*(VI: Cả hai store đều theo đúng thứ tự phân giải "đường dẫn tường minh (test) → biến môi trường →
+mặc định `%ProgramData%`" đã dùng ở nơi khác trong tài liệu này (§15.2, §16.5) — biến trống/chưa đặt
+thì dùng mặc định, không báo lỗi. **`ST4I_IDENTITY_DIR`** dời thư mục danh tính thiết bị (mặc định
+`%ProgramData%\ST4I\sim\identity`). **`ST4I_SITELINK_DIR`** dời thư mục Site-link (mặc định
+`%ProgramData%\ST4I\sim\sitelink`). Không có cờ bật/tắt riêng — công tắc bật bridge chính là trường
+`enabled` của link (đặt qua `PUT /v1/site`). Tính năng phụ thuộc vào các biến `ST4I_UNS_*` CÓ SẴN
+(§16.1): `SiteBridgeManager` chỉ đăng ký khi `ST4I_UNS_ENABLED` bật (mặc định), client cục bộ của bridge
+quay số `ST4I_UNS_PORT` trên loopback, và `CN` của danh tính thiết bị lấy từ `ST4I_UNS_CELL`.)*
+
+### 17.4 Endpoints (EC-3) / Endpoint
+
+**EN** — `St4i.EngineApi.Endpoints.SiteEndpoints` exposes three routes:
+
+| Path | Verb | Role | Behavior |
+|---|---|---|---|
+| `/v1/site` | GET | Operator | Status + config: `{enabled, host, port, bridgeState, lastError, siteFingerprint, deviceFingerprint, unsEnabled}`. With the local UNS spine disabled, returns a fixed `Disabled`/`unsEnabled:false` view that still reports the real `deviceFingerprint` (a device has an identity whether or not anything is federated). |
+| `/v1/site` | PUT | Engineer, audited `site.link.set` | Body `{enabled, host, port, siteTrustPem}` — a **full replace** of the persisted link (an omitted field applies its own default, not "leave unchanged"). Drives `SiteBridgeManager.ApplyAsync` — stops the old bridge, persists, starts a fresh one if `enabled`. `400` if enabling with a missing host, an out-of-range port (must be 1–65535), or a `siteTrustPem` that doesn't parse to at least one certificate; `409` if the local UNS spine is disabled (nothing to bridge). The audit row never logs the raw PEM — only its length + a SHA-256 fingerprint of the PEM text itself. |
+| `/v1/site/identity` | GET | Operator | `{deviceFingerprint, deviceCertPem}` — this device's own public identity (§17.1), to register at a Site. |
+
+**Deferred:** a pre-save `POST /v1/site/test` connectivity probe (from the original blueprint) was not
+built — the live `bridgeState` badge `GET /v1/site` already exposes (`Connecting` → `Connected`/
+`Degraded` + `lastError`) is the operator's connection feedback once a link is saved, so a dedicated
+pre-save probe is a follow-up, not a blocker.
+
+*(VI: `SiteEndpoints` có 3 route: **`GET /v1/site`** (Operator) — trạng thái + cấu hình (enabled, host,
+port, bridgeState, lastError, siteFingerprint, deviceFingerprint, unsEnabled); UNS tắt thì trả về view
+cố định `Disabled` nhưng vẫn có `deviceFingerprint` thật. **`PUT /v1/site`** (Engineer, có audit
+`site.link.set`) — body `{enabled, host, port, siteTrustPem}`, **THAY THẾ TOÀN BỘ** link đã lưu (trường
+bỏ trống áp giá trị mặc định của nó, KHÔNG phải "giữ nguyên"); gọi `SiteBridgeManager.ApplyAsync` — dừng
+bridge cũ, lưu, khởi động bridge mới nếu `enabled`. Trả `400` nếu bật mà thiếu host/port sai khoảng
+(1–65535)/PEM không hợp lệ; trả `409` nếu UNS spine cục bộ đang tắt. Dòng audit KHÔNG BAO GIỜ ghi PEM
+thô — chỉ độ dài + fingerprint SHA-256 của chính văn bản PEM. **`GET /v1/site/identity`** (Operator) —
+`{deviceFingerprint, deviceCertPem}`, danh tính công khai của thiết bị để đăng ký tại Site. **Việc CHƯA
+làm:** `POST /v1/site/test` (probe kết nối trước khi lưu) chưa xây — badge `bridgeState` sống động của
+`GET /v1/site` đã là phản hồi kết nối cho operator sau khi lưu, nên probe riêng là việc làm tiếp theo,
+không phải điều kiện chặn.)*
+
+### 17.5 Web UI — the `/site` page (EC-4) / Trang web `/site`
+
+**EN** — The **"Site Link"** nav item (`routes/Site.tsx`, page title "Site / Ecosystem") gives two
+cards: a **Device identity** card (Operator-readable) showing the fingerprint + a reveal/copy control
+for the certificate PEM, with a hint to register it at the Site; and a **Site connection** card whose
+host/port/trust-PEM/enable form is gated to **Engineer or above** (a non-Engineer instead sees a
+read-only host/port/enabled summary), with a live bridge-status badge (polled off `GET /v1/site`,
+pulsing while `Connecting`) always visible in the card header regardless of role.
+
+*(VI: Mục điều hướng **"Site Link"** (`routes/Site.tsx`, tiêu đề trang "Site / Ecosystem") gồm 2 thẻ:
+thẻ **Danh tính thiết bị** (Operator đọc được) hiện fingerprint + nút xem/copy chứng chỉ PEM, kèm gợi ý
+đăng ký tại Site; và thẻ **Kết nối Site** với form host/port/trust-PEM/bật, CHỈ Engineer trở lên mới
+sửa được (người không đủ quyền chỉ thấy bản tóm tắt chỉ-đọc), cùng badge trạng thái bridge sống động
+(poll từ `GET /v1/site`) luôn hiện trên header thẻ bất kể vai trò.)*
+
+### 17.6 The join flow (operator steps) / Luồng gia nhập (thao tác của operator)
+
+**EN**
+1. Open `/site` (or call `GET /v1/site/identity`) and read this device's **fingerprint** (and, if the
+   Site needs it, the public certificate PEM).
+2. **Register that identity at the SYNAPSE Site** — Site-side provisioning, out of scope of this repo.
+3. Back on `/site` (Engineer or above), paste the **Site's trust certificate** (its CA, or its own
+   self-signed leaf — either pinning shape works, §17.2) plus its **host/port**, and enable the link —
+   or call `PUT /v1/site` directly with the same fields.
+4. The bridge connects: the status badge moves `Connecting` → `Connected`, and telemetry starts
+   forwarding upward. If the Site is unreachable, the badge instead settles on `Down`/`Degraded` and
+   `lastError` carries the reason — the local pipeline keeps running untouched either way.
+
+*(VI: (1) Mở `/site` (hoặc gọi `GET /v1/site/identity`) để lấy **fingerprint** của thiết bị (và PEM
+chứng chỉ nếu Site cần). (2) **Đăng ký danh tính đó tại SYNAPSE Site** — việc này nằm ở phía Site, ngoài
+phạm vi repo này. (3) Quay lại `/site` (vai trò Engineer trở lên), dán **chứng chỉ tin cậy của Site**
+(CA hoặc leaf tự ký, cả hai đều ghim được — §17.2) cùng **host/port**, rồi bật liên kết — hoặc gọi thẳng
+`PUT /v1/site`. (4) Bridge kết nối: badge chuyển `Connecting` → `Connected`, dữ liệu bắt đầu forward lên
+Site. Nếu không tới được Site, badge dừng ở `Down`/`Degraded` kèm lý do trong `lastError` — pipeline cục
+bộ vẫn chạy bình thường không bị ảnh hưởng.)*
+
+### 17.7 Security posture / Tư thế bảo mật
+
+**EN**
+- **Fail-closed mutual auth:** the device presents a real client certificate (§17.1); the Site's own
+  certificate is checked against an **operator-pinned** trust anchor, never the machine's ambient CA
+  trust store (§17.2) — a rogue listener on `host:port` (DNS spoofing, a compromised segment, ...) is
+  rejected, not silently trusted.
+- **Private key never leaves the box:** DPAPI(LocalMachine)-sealed + ACL-locked on disk (§17.1); loaded
+  with `PersistKeySet` (required for a real schannel client-auth handshake — verified empirically, see
+  the store's own doc comment), never re-exported.
+- **No secrets in the Site-link file:** `site-link.json` holds only host/port/enabled + the Site's own
+  PUBLIC trust PEM (§17.2); the trust PEM itself is write-only over the API (never echoed back by
+  `GET /v1/site`) and never logged in full (only a length + fingerprint in the audit row, §17.4).
+- **Outbound-only, default-off:** the bridge only ever dials out, never accepts a connection or a
+  command from the Site; with no Site link enabled, this device is indistinguishable from a build
+  before this feature existed. The local UNS broker itself stays loopback-only regardless — federation
+  never opens it up to the LAN.
+
+*(VI: **Xác thực hai chiều thất-bại-thì-đóng:** thiết bị trình diện chứng chỉ client thật (§17.1);
+chứng chỉ của Site được kiểm dựa trên tin cậy DO OPERATOR GHIM, không bao giờ dùng kho CA mặc định của
+máy (§17.2) — một listener giả trên `host:port` bị từ chối, không bao giờ được tin ngầm. **Khoá riêng
+không bao giờ rời máy:** mã hoá DPAPI(LocalMachine) + khoá ACL trên đĩa, nạp bằng `PersistKeySet` (bắt
+buộc để bắt tay schannel client-auth thật — đã kiểm chứng thực nghiệm). **Không bí mật nào trong file
+Site-link:** `site-link.json` chỉ có host/port/enabled + PEM tin cậy CÔNG KHAI của Site; PEM này chỉ ghi
+qua API (không bao giờ trả lại qua GET) và không bao giờ log nguyên văn (chỉ độ dài + fingerprint trong
+audit). **CHỈ GỬI RA, MẶC ĐỊNH TẮT:** bridge chỉ quay số ra ngoài, không bao giờ nhận kết nối hay lệnh từ
+Site; chưa bật Site link thì thiết bị giống hệt bản build trước khi có tính năng này. Broker UNS cục bộ
+luôn chỉ loopback bất kể liên kết — liên kết hệ sinh thái không bao giờ mở nó ra LAN.)*
+
+### 17.8 Honest deferrals / Những gì CHƯA làm
+
+**EN** — Documented here, not silently missing:
+
+- **Manual join only** — no mDNS auto-discovery, no join wizard; today's flow is the copy/paste in
+  §17.6.
+- **Self-signed identity + pinned trust only** — no EST/SCEP enrollment, no Site CA, no automated
+  cross-signing; a device's identity and a Site's trust are both provisioned by hand.
+- **No certificate rotation** — the device identity is minted once (§17.1) and never auto-renewed or
+  re-issued.
+- **Outbound telemetry only** — no inbound command path (NCMD or otherwise); the Site can observe this
+  device but never actuate it.
+- **No pre-save connectivity probe** (`POST /v1/site/test`) — see §17.4.
+- **WS-B B2 (bridge inversion)** — a separate, larger piece of work (flipping the UNS spine into the
+  sole source of truth) — assessed and deliberately deferred to its own GĐ3 pass (§12).
+- The new `/site` nav item means the existing visual-regression baselines need a CI
+  `--update-snapshots` pass — not yet done as of this doc update (same outstanding item §16.5 already
+  flagged for `/assets`).
+
+*(VI: Ghi rõ ở đây, không giấu: **Chỉ gia nhập thủ công** — chưa có mDNS tự dò, chưa có join wizard.
+**Chỉ danh tính tự ký + tin cậy ghim tay** — chưa có EST/SCEP, chưa có Site CA, chưa ký chéo tự động.
+**Chưa xoay vòng chứng chỉ** — danh tính thiết bị tạo một lần, không tự gia hạn/cấp lại. **Chỉ gửi
+telemetry ra ngoài** — chưa có đường lệnh vào (NCMD hay khác), Site quan sát được nhưng không điều
+khiển được máy. **Chưa có probe kết nối trước khi lưu** (`POST /v1/site/test`). **WS-B B2 (đảo chiều
+bridge)** — một hạng mục lớn riêng, đã đánh giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (§12). Mục điều
+hướng `/site` mới cần chạy lại baseline visual-regression CI (`--update-snapshots`) — chưa làm tại thời
+điểm cập nhật tài liệu này (giống hạng mục còn treo mà §16.5 đã nêu cho `/assets`).)*
