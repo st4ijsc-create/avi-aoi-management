@@ -287,9 +287,14 @@ line used to list as future has since landed — a durable, self-signed device i
 trust-pinned mutual-TLS bridge that federates the local UNS spine (§16.1) up to a SYNAPSE Site; see
 **§17** for the full detail (env vars, endpoints, join flow, security posture).
 
-**Genuinely still future, not touched by this build:** **mDNS auto-discovery + a join wizard** — today
-the join is entirely manual (copy the device fingerprint from `/site`, register it at the Site by hand,
-paste the Site's trust certificate back, §17.6); **EST/SCEP enrollment + a Site CA** — today the device
+**Update (Giai đoạn 3, sub-2 — mDNS join wizard):** **browse-side mDNS discovery + a join wizard** has
+since landed too — the `/site` page's **"Discover Sites"** button (backed by `GET /v1/site/discover`,
+§17.4) browses the LAN for Sites advertising `_synapse-site._tcp` (configurable via
+`ST4I_SITE_SERVICE_TYPE`, §17.3) and pre-fills the host/port for the operator; trust is still a manually
+pasted, pinned PEM (§17.5). Discovery is browse-only + on-demand (no always-on multicast socket).
+
+**Genuinely still future, not touched by this build:** **mDNS *advertising* (a Site auto-discovering the
+machine)** — this device browses for Sites but does not announce itself; **EST/SCEP enrollment + a Site CA** — today the device
 identity is a bare self-signed certificate and trust is a single operator-pasted PEM, not a
 CA-issued/rotated chain; **an inbound command path (NCMD or otherwise)** — the bridge is
 outbound-telemetry-only, so a Site can observe this device but never actuate it; **certificate
@@ -1494,6 +1499,7 @@ rather than erroring:
 |---|---|---|
 | `ST4I_IDENTITY_DIR` | Relocates the device-identity store (`device-identity.bin` + `device-node.txt`, §17.1) | `%ProgramData%\ST4I\sim\identity` |
 | `ST4I_SITELINK_DIR` | Relocates the Site-link store (`site-link.json`, §17.2) | `%ProgramData%\ST4I\sim\sitelink` |
+| `ST4I_SITE_SERVICE_TYPE` | The mDNS service type the "Discover Sites" browse (§17.4, `GET /v1/site/discover`) queries for | `_synapse-site._tcp` |
 
 Neither feature introduces a new *enable* flag of its own — the Site bridge's on/off switch is the
 persisted link's own `enabled` field (set via `PUT /v1/site`, §17.4), not an environment variable. It
@@ -1512,13 +1518,14 @@ quay số `ST4I_UNS_PORT` trên loopback, và `CN` của danh tính thiết bị
 
 ### 17.4 Endpoints (EC-3) / Endpoint
 
-**EN** — `St4i.EngineApi.Endpoints.SiteEndpoints` exposes three routes:
+**EN** — `St4i.EngineApi.Endpoints.SiteEndpoints` exposes four routes:
 
 | Path | Verb | Role | Behavior |
 |---|---|---|---|
 | `/v1/site` | GET | Operator | Status + config: `{enabled, host, port, bridgeState, lastError, siteFingerprint, deviceFingerprint, unsEnabled}`. With the local UNS spine disabled, returns a fixed `Disabled`/`unsEnabled:false` view that still reports the real `deviceFingerprint` (a device has an identity whether or not anything is federated). |
 | `/v1/site` | PUT | Engineer, audited `site.link.set` | Body `{enabled, host, port, siteTrustPem}` — a **full replace** of the persisted link (an omitted field applies its own default, not "leave unchanged"). Drives `SiteBridgeManager.ApplyAsync` — stops the old bridge, persists, starts a fresh one if `enabled`. `400` if enabling with a missing host, an out-of-range port (must be 1–65535), or a `siteTrustPem` that doesn't parse to at least one certificate; `409` if the local UNS spine is disabled (nothing to bridge). The audit row never logs the raw PEM — only its length + a SHA-256 fingerprint of the PEM text itself. |
 | `/v1/site/identity` | GET | Operator | `{deviceFingerprint, deviceCertPem}` — this device's own public identity (§17.1), to register at a Site. |
+| `/v1/site/discover` | GET | Engineer | **(GĐ3 sub-2, mDNS join wizard)** A bounded (~4s) mDNS browse of the LAN for the `ST4I_SITE_SERVICE_TYPE` service (§17.3, default `_synapse-site._tcp`) → `DiscoveredSite[] {instanceName, host, port, addresses[], txt{}}`. Read-only network scan (no audit); per-call ephemeral (opens no always-on multicast socket); never throws — an empty array means "no Sites found", not an error. Discovery only *pre-fills* the form host/port; it never sets the trust PEM or enables the link. |
 
 **Deferred:** a pre-save `POST /v1/site/test` connectivity probe (from the original blueprint) was not
 built — the live `bridgeState` badge `GET /v1/site` already exposes (`Connecting` → `Connected`/
@@ -1545,7 +1552,10 @@ cards: a **Device identity** card (Operator-readable) showing the fingerprint + 
 for the certificate PEM, with a hint to register it at the Site; and a **Site connection** card whose
 host/port/trust-PEM/enable form is gated to **Engineer or above** (a non-Engineer instead sees a
 read-only host/port/enabled summary), with a live bridge-status badge (polled off `GET /v1/site`,
-pulsing while `Connecting`) always visible in the card header regardless of role.
+pulsing while `Connecting`) always visible in the card header regardless of role. The Engineer-gated
+form also carries a **"Discover Sites"** button (GĐ3 sub-2, `GET /v1/site/discover`, §17.4) — an
+on-demand mDNS LAN scan whose discovered Sites the operator can click to pre-fill the host/port (the
+trust PEM + enable toggle stay manually operator-controlled).
 
 *(VI: Mục điều hướng **"Site Link"** (`routes/Site.tsx`, tiêu đề trang "Site / Ecosystem") gồm 2 thẻ:
 thẻ **Danh tính thiết bị** (Operator đọc được) hiện fingerprint + nút xem/copy chứng chỉ PEM, kèm gợi ý
