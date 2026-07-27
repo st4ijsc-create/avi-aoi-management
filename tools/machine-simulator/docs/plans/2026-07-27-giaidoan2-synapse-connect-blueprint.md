@@ -34,11 +34,14 @@ X.509 device identity via CredentialStore idiom (DPAPI LocalMachine + SecurityDi
 
 ## RECOMMENDED first pass: #1 mapping-quick-win + #2/#3 WS-B B0+B1 + #5 WS-G Policy-core + #6 per-driver-refactor → UNS spine + guardrail + fault-isolated drivers, small reviewable diff. Defer Modbus/OPC-UA/LineController-Alarm/identity/B2 to a 2nd GĐ2 pass or GĐ3.
 
-## USER SCOPING DECISIONS (checkpoint before execute)
-1. Broker = MQTTnet.Server (evolve InProcessBroker, loopback-only, zero new dep)? [rec: yes]
-2. Sparkplug codec: hand-roll minimal protobuf [rec] vs SparkplugNet (MQTTnet v4 conflict risk) vs protoc/Grpc.Tools?
-3. Protocol: Modbus-first via NModbus (MIT) [rec]; OPC-UA gated behind licensing spike? Real device catalog to pilot, or protocol-only?
-4. Policy depth: thin C# rules [rec] vs OPA/Rego (Site parity)?
-5. Confirm B2 bridge-inversion + mDNS/join wizard stay DEFERRED (B2→end-GĐ2/GĐ3; join→GĐ3)?
-6. Footprint OK: +broker thread + ≥1 more SQLite file (consolidate Asset+Alarm into 1)? Target IPC hardware headroom?
-7. First-pass scope: the recommended 4 (mapping + B0+B1 + Policy-core + per-driver-refactor)? or adjust?
+## DECISIONS LOCKED (27/07/2026)
+1. Broker = **MQTTnet.Server** (evolve InProcessBroker, loopback-only, 0 new dep). ✅
+2. Sparkplug codec = **hand-roll minimal protobuf** via Google.Protobuf runtime (no protoc; avoids SparkplugNet↔MQTTnet-v5 conflict). ✅
+3. Protocols = **Modbus-first (NModbus, MIT)**, NO real hardware yet → test via loopback/sim Modbus server; OPC-UA deferred behind a licensing spike. ✅
+4. Policy depth = **thin C# rule engine** (not OPA). ✅
+5. **B2 (bridge-inversion) + mDNS/join wizard DEFERRED to GĐ3.** ✅
+6. Footprint OK: MQTTnet.Server (loopback) + **Asset+Alarm consolidated into ONE SQLite file**. ✅
+7. First-pass scope = **6 tasks**: G2-1 mapping-quick-win + G2-2 UNS-B0 + G2-3 UNS-B1 + G2-4 Policy-core + G2-5 per-driver fault-isolation refactor + G2-6 Modbus TCP (NModbus, loopback test). ✅
+
+## FIRST-PASS EXECUTION ORDER (deps)
+G2-1 (mapping, indep) → G2-2 (UNS B0: UnsBroker/UnsOptions/UnsTopicBuilder + hand-rolled Sparkplug codec + UnsPublisher + EdgePipeline optional publish) → G2-3 (B1 Birth/Death at Start/Stop/Estop) → G2-4 (Policy-core: PolicyEngine default-deny + EstopGuard/RoleObligation + reason codes + XC-R40 safety-boundary formalization, wired into mutating endpoints) → G2-5 (per-driver-pipeline fault-isolation refactor — MUST precede G2-6) → G2-6 (Modbus TCP via NModbus + a minimal register→canonical tag map extension to MappingProfile; loopback/sim Modbus server test). Deferred (2nd pass / GĐ3): WS-J full asset registry, OPC-UA (license spike), LineController+Alarm UI, WS-D-field identity, B2, join/mDNS.
