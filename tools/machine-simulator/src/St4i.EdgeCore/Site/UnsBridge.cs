@@ -83,6 +83,19 @@ public sealed class UnsBridge : IAsyncDisposable
     /// — never a tight retry loop against a permanently broken collaborator.</summary>
     private static readonly TimeSpan FaultBackoff = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>WI-3 review fix round 1 (CRITICAL) — the starting/ceiling backoff for a replay PASS that
+    /// makes zero forward progress on a NON-empty batch (the oldest spooled item is being persistently
+    /// rejected by the Site broker, e.g. MQTT reason code 0x87 Not Authorized or 0x97 Quota Exceeded, or
+    /// <see cref="IBridgeSpool.AckThroughAsync"/> silently failing to actually delete the row — see
+    /// <see cref="TryReplayOneBatchAsync"/>'s own doc comment). Without this, the loop would retry the SAME
+    /// rejected publish at zero delay, forever: sustained 100% CPU/disk I/O on an unattended edge device, and
+    /// the same message hammering the Site thousands of times a second. Same doubling-with-cap shape as
+    /// <see cref="ConnectionLoopAsync"/>'s own <see cref="InitialBackoff"/>/<see cref="MaxBackoff"/>, kept as
+    /// separate constants because a replay stall and a transport-level reconnect are different failure modes
+    /// with no reason to share a cadence.</summary>
+    private static readonly TimeSpan ReplayStallInitialBackoff = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan ReplayStallMaxBackoff = TimeSpan.FromSeconds(30);
+
     private static readonly JsonSerializerOptions ResyncJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -90,6 +103,18 @@ public sealed class UnsBridge : IAsyncDisposable
     };
 
     private readonly record struct ForwardItem(string Topic, byte[] Payload, bool Retain);
+
+    /// <summary>WI-3 review fix round 1 (CRITICAL) — the outcome of one <see cref="TryReplayOneBatchAsync"/>
+    /// pass, distinguishing "nothing to do" from "tried and made zero progress" — the caller
+    /// (<see cref="RunSpoolForwardLoopAsync"/>) treats these very differently: <see cref="Empty"/> is a
+    /// healthy idle state (poll at the normal cadence); <see cref="NoProgress"/> means the Site broker (or
+    /// the spool's own ack) is stuck and MUST back off, escalating, or it spins.</summary>
+    private enum ReplayBatchOutcome
+    {
+        Empty,
+        Progress,
+        NoProgress,
+    }
 
     /// <summary>GĐ3 closeout WI-3 — the retained record published to
     /// <see cref="UnsTopicBuilder.BuildBridgeResyncTopic"/> immediately after a successful remote reconnect
@@ -126,6 +151,13 @@ public sealed class UnsBridge : IAsyncDisposable
     private volatile bool _disposed;
     private volatile BridgeSpoolStats? _lastSpoolStats;
     private long _lastAckedSeq;
+
+    /// <summary>WI-3 review fix round 1 (IMPORTANT 2) — set (and never cleared) the moment either spool
+    /// background loop terminates for any reason OTHER than this bridge's own shutdown cancellation. Checked
+    /// by <see cref="Snapshot"/> so a dead loop is never silently reported as <see cref="BridgeState.Connected"/>/
+    /// <see cref="BridgeState.Degraded"/> — see <see cref="BridgeState.Faulted"/>'s own doc comment.</summary>
+    private volatile bool _spoolWriterFaulted;
+    private volatile bool _spoolForwardFaulted;
 
     /// <param name="localUns">The local UNS spine's own options — only <see cref="UnsOptions.BrokerPort"/>
     /// is used (always dialled at <see cref="LoopbackHost"/>, matching <see cref="UnsBroker"/>'s own
@@ -248,6 +280,16 @@ public sealed class UnsBridge : IAsyncDisposable
                 : _everConnectedRemote
                     ? BridgeState.Degraded
                     : BridgeState.Connecting;
+
+        // WI-3 review fix round 1 (IMPORTANT 2) — a dead spool loop takes priority over whatever the MQTT
+        // clients otherwise look like: the clients can be perfectly Connected while the writer loop has
+        // stopped persisting messages, or the forward loop has stopped replaying/acking them — silently
+        // reporting Connected in that case is exactly the "fails silently" failure mode this task exists to
+        // eliminate. See BridgeState.Faulted's own doc comment.
+        if (_spoolWriterFaulted || _spoolForwardFaulted)
+        {
+            state = BridgeState.Faulted;
+        }
 
         // GĐ3 closeout WI-3 — a snapshot of the spool forward loop's own last-seen stats/bookkeeping. All
         // zero when there's no spool at all (ST4I_BRIDGE_SPOOL_ENABLED=0) — never garbage; see
@@ -379,14 +421,35 @@ public sealed class UnsBridge : IAsyncDisposable
     // GĐ3 closeout WI-3 — the spool-backed writer + forward loops (active only when _spool is non-null).
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>WI-3 review fix round 1 (IMPORTANT 2) — invokes <see cref="_logWarning"/>, if any, inside its
+    /// OWN try/catch: a throwing log delegate (e.g. <c>Console.Error.WriteLine</c> on a closed stderr pipe —
+    /// exactly how <c>Program.cs</c> wires this) must never itself take a background loop down. Swallowed
+    /// silently on failure — there is nowhere left to report a broken logger to.</summary>
+    private void SafeLogWarning(string message)
+    {
+        try { _logWarning?.Invoke(message); } catch { /* logging must never take a loop down */ }
+    }
+
+    /// <summary>Same rationale as <see cref="SafeLogWarning"/>, for <see cref="_logError"/>.</summary>
+    private void SafeLogError(Exception ex, string message)
+    {
+        try { _logError?.Invoke(ex, message); } catch { /* logging must never take a loop down */ }
+    }
+
     /// <summary>Write-behind: drains the SAME bounded channel <see cref="OnLocalMessageReceivedAsync"/>
-    /// feeds, batching into <see cref="IBridgeSpool.EnqueueAsync"/> — the local subscriber callback still
-    /// never touches SQLite; only this background task does. A <c>-1</c> return (the spool's OWN documented
-    /// safe failure — never throws) means the item was NOT persisted: logged and moved on, the same "message
-    /// is simply lost" outcome as this bridge's pre-WI-3 silent drop, just no longer invisible. Each item is
-    /// wrapped in its own broad catch purely as defense-in-depth against a spool implementation that
-    /// violates its documented never-throws contract (e.g. a test double) — a real <see cref="BridgeSpool"/>
-    /// never takes this branch.</summary>
+    /// feeds into <see cref="IBridgeSpool.EnqueueAsync"/> — the local subscriber callback still never touches
+    /// SQLite; only this background task does. NOTE: <see cref="IBridgeSpool"/> has no batch-insert overload
+    /// (WI-2's own contract), so despite the "write-behind" idiom name this is one full
+    /// open-connection/PRAGMAs/INSERT/<c>last_insert_rowid()</c> round trip PER MESSAGE, not a real batch
+    /// write — a forced consequence of the interface this task consumes, worth knowing for throughput
+    /// planning. A <c>-1</c> return (the spool's OWN documented safe failure — never throws) means the item
+    /// was NOT persisted: logged and moved on, the same "message is simply lost" outcome as this bridge's
+    /// pre-WI-3 silent drop, just no longer invisible. Each item is wrapped in its own broad catch purely as
+    /// defense-in-depth against a spool implementation that violates its documented never-throws contract
+    /// (e.g. a test double) — a real <see cref="BridgeSpool"/> never takes that branch. If this loop itself
+    /// ever terminates for a reason OTHER than this bridge's own shutdown cancellation, that is a FAULT (see
+    /// <see cref="_spoolWriterFaulted"/>) — messages silently stop being persisted otherwise, with nothing to
+    /// show for it.</summary>
     private async Task RunSpoolWriterLoopAsync(CancellationToken ct)
     {
         try
@@ -401,24 +464,34 @@ public sealed class UnsBridge : IAsyncDisposable
                         var seq = await _spool!.EnqueueAsync(item.Topic, item.Payload, item.Retain, ct).ConfigureAwait(false);
                         if (seq < 0)
                         {
-                            _logWarning?.Invoke($"Site bridge could not spool {item.Topic} — the message was not persisted and is lost.");
+                            SafeLogWarning($"Site bridge could not spool {item.Topic} — the message was not persisted and is lost.");
                         }
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
                         throw;
                     }
                     catch (Exception ex)
                     {
-                        _logWarning?.Invoke($"Site bridge spool writer failed for {item.Topic}: {ex.Message}");
+                        SafeLogWarning($"Site bridge spool writer failed for {item.Topic}: {ex.Message}");
                         await Task.Delay(FaultBackoff, ct).ConfigureAwait(false);
                     }
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Expected on shutdown.
+        }
+        catch (Exception ex)
+        {
+            // WI-3 review fix round 1 (IMPORTANT 2) — anything else — including an OperationCanceledException
+            // NOT caused by our own shutdown token, or an exception a throwing log delegate raised despite
+            // SafeLogWarning above (belt-and-braces) — means this loop is now DEAD: no channel item will ever
+            // be persisted again. Never silently swallow this.
+            _spoolWriterFaulted = true;
+            _lastError = $"Site bridge spool writer loop terminated unexpectedly: {ex.Message}";
+            SafeLogError(ex, "Site bridge spool writer loop terminated unexpectedly — messages are no longer being persisted to the spool");
         }
     }
 
@@ -428,11 +501,18 @@ public sealed class UnsBridge : IAsyncDisposable
     /// this bridge's very first connect) BEFORE attempting any replay — see <see cref="PublishResyncRecordAsync"/>'s
     /// own doc comment for why that ordering is deliberate. Runs <see cref="IBridgeSpool.TrimAsync"/> on its
     /// own independent cadence (<see cref="TrimInterval"/>) regardless of connectivity: a long outage is
-    /// exactly when the spool most needs its age/byte caps enforced.</summary>
+    /// exactly when the spool most needs its age/byte caps enforced.
+    ///
+    /// <para>WI-3 review fix round 1 (CRITICAL) — a replay pass that publishes NOTHING off a NON-empty batch
+    /// (<see cref="ReplayBatchOutcome.NoProgress"/>) is treated as a STALL, not as "caught up": it backs off
+    /// on its own escalating <c>replayStallBackoff</c> (reset on any real progress or a genuinely empty
+    /// batch), instead of looping at zero delay against a persistently-rejecting Site broker or a silently
+    /// failing ack forever.</para></summary>
     private async Task RunSpoolForwardLoopAsync(CancellationToken ct)
     {
         var wasConnected = false;
         var lastTrimUtc = DateTimeOffset.MinValue;
+        var replayStallBackoff = ReplayStallInitialBackoff;
 
         try
         {
@@ -444,13 +524,13 @@ public sealed class UnsBridge : IAsyncDisposable
                     stats = await _spool!.StatsAsync(ct).ConfigureAwait(false);
                     _lastSpoolStats = stats;
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
                     throw;
                 }
                 catch (Exception ex)
                 {
-                    _logWarning?.Invoke($"Site bridge spool StatsAsync failed: {ex.Message}");
+                    SafeLogWarning($"Site bridge spool StatsAsync failed: {ex.Message}");
                     await Task.Delay(FaultBackoff, ct).ConfigureAwait(false);
                     continue;
                 }
@@ -468,15 +548,41 @@ public sealed class UnsBridge : IAsyncDisposable
 
                 if (isConnected)
                 {
-                    var hadAnyBacklog = await TryReplayOneBatchAsync(ct).ConfigureAwait(false);
-                    if (!hadAnyBacklog)
+                    var outcome = await TryReplayOneBatchAsync(ct).ConfigureAwait(false);
+                    switch (outcome)
                     {
-                        // Caught up — idle rather than busy-poll the spool.
-                        await Task.Delay(MonitorInterval, ct).ConfigureAwait(false);
+                        case ReplayBatchOutcome.Progress:
+                            // Real progress — reset the stall backoff and loop again immediately; there is
+                            // likely more behind it.
+                            replayStallBackoff = ReplayStallInitialBackoff;
+                            break;
+
+                        case ReplayBatchOutcome.Empty:
+                            // Caught up — a healthy idle state, not a stall. Reset the backoff too (a prior
+                            // stall is over) and poll at the normal cadence rather than busy-polling.
+                            replayStallBackoff = ReplayStallInitialBackoff;
+                            await Task.Delay(MonitorInterval, ct).ConfigureAwait(false);
+                            break;
+
+                        case ReplayBatchOutcome.NoProgress:
+                        default:
+                            // CRITICAL fix: a non-empty batch that published NOTHING — see this method's own
+                            // doc comment and ReplayStallInitialBackoff's. Escalating backoff, never a spin.
+                            // Deliberately does NOT overwrite _lastError here: TryReplayOneBatchAsync (via
+                            // TryPublishToRemoteAsync, or its own ack-verification guard) already recorded
+                            // the SPECIFIC reason (publish rejected vs. an ack that silently didn't stick) —
+                            // clobbering it with a generic message here would throw away exactly the detail
+                            // an operator needs to tell those two failure modes apart.
+                            SafeLogWarning($"Site bridge replay made no progress this pass; backing off {replayStallBackoff}.");
+                            await Task.Delay(replayStallBackoff, ct).ConfigureAwait(false);
+                            replayStallBackoff = TimeSpan.FromMilliseconds(
+                                Math.Min(replayStallBackoff.TotalMilliseconds * 2, ReplayStallMaxBackoff.TotalMilliseconds));
+                            break;
                     }
                 }
                 else
                 {
+                    replayStallBackoff = ReplayStallInitialBackoff;
                     await Task.Delay(MonitorInterval, ct).ConfigureAwait(false);
                 }
 
@@ -486,48 +592,65 @@ public sealed class UnsBridge : IAsyncDisposable
                     {
                         await _spool!.TrimAsync(ct).ConfigureAwait(false);
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
                         throw;
                     }
                     catch (Exception ex)
                     {
-                        _logWarning?.Invoke($"Site bridge spool TrimAsync failed: {ex.Message}");
+                        SafeLogWarning($"Site bridge spool TrimAsync failed: {ex.Message}");
                     }
 
                     lastTrimUtc = DateTimeOffset.UtcNow;
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Expected on shutdown.
+        }
+        catch (Exception ex)
+        {
+            // WI-3 review fix round 1 (IMPORTANT 2) — see RunSpoolWriterLoopAsync's matching catch for the
+            // full rationale. This loop dying silently would mean replay/ack has stopped while Snapshot()
+            // keeps reporting Connected/Degraded as if everything were fine.
+            _spoolForwardFaulted = true;
+            _lastError = $"Site bridge spool forward loop terminated unexpectedly: {ex.Message}";
+            SafeLogError(ex, "Site bridge spool forward loop terminated unexpectedly — replay/ack has stopped");
         }
     }
 
     /// <summary>One <see cref="IBridgeSpool.PeekBatchAsync"/> → publish-each → <see
-    /// cref="IBridgeSpool.AckThroughAsync"/>(last success) pass. Returns whether the peeked batch had any
-    /// items at all (regardless of how many of them actually published) — the caller uses this to decide
-    /// whether to loop again immediately (there's likely more to drain) or idle.</summary>
-    private async Task<bool> TryReplayOneBatchAsync(CancellationToken ct)
+    /// cref="IBridgeSpool.AckThroughAsync"/>(last success) pass. Returns <see cref="ReplayBatchOutcome.Empty"/>
+    /// when there was nothing to replay, <see cref="ReplayBatchOutcome.Progress"/> when at least one item was
+    /// published AND verifiably acked, and <see cref="ReplayBatchOutcome.NoProgress"/> when the batch was
+    /// non-empty but nothing actually advanced.
+    ///
+    /// <para>WI-3 review fix round 1 (IMPORTANT 1) — <see cref="IBridgeSpool.AckThroughAsync"/> has NO
+    /// success signal by contract: it swallows every exception and returns normally either way, so a locked
+    /// DB or a full disk make the DELETE a silent no-op that looks identical to success. Blindly trusting it
+    /// would set <see cref="_lastAckedSeq"/> (and the resync record's <c>lastAckedSeq</c>) to a seq that was
+    /// never actually removed, and the SAME rows would republish forever. This method re-peeks (a cheap
+    /// 1-row read) after every ack to verify the row is actually gone before advancing anything.</para></summary>
+    private async Task<ReplayBatchOutcome> TryReplayOneBatchAsync(CancellationToken ct)
     {
         IReadOnlyList<SpooledItem> batch;
         try
         {
             batch = await _spool!.PeekBatchAsync(SpoolPeekBatchSize, ct).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
         catch (Exception ex)
         {
-            _logWarning?.Invoke($"Site bridge spool PeekBatchAsync failed: {ex.Message}");
+            SafeLogWarning($"Site bridge spool PeekBatchAsync failed: {ex.Message}");
             await Task.Delay(FaultBackoff, ct).ConfigureAwait(false);
-            return false;
+            return ReplayBatchOutcome.Empty;
         }
 
-        if (batch.Count == 0) return false;
+        if (batch.Count == 0) return ReplayBatchOutcome.Empty;
 
         // THE partial-batch ack rule this task exists to get right: the first publish that fails stops the
         // batch right there. Everything from that item onward — never attempted — stays in the spool
@@ -545,24 +668,57 @@ public sealed class UnsBridge : IAsyncDisposable
             lastSuccessSeq = item.Seq;
         }
 
-        if (lastSuccessSeq is { } seq)
+        if (lastSuccessSeq is not { } seq)
         {
-            try
-            {
-                await _spool!.AckThroughAsync(seq, ct).ConfigureAwait(false);
-                Interlocked.Exchange(ref _lastAckedSeq, seq);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logWarning?.Invoke($"Site bridge spool AckThroughAsync failed for seq {seq}: {ex.Message}");
-            }
+            // The very first item in the batch failed — this whole pass made zero progress. CRITICAL fix:
+            // the caller must back off, not spin.
+            return ReplayBatchOutcome.NoProgress;
         }
 
-        return true;
+        try
+        {
+            await _spool!.AckThroughAsync(seq, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _lastError = $"Site bridge spool AckThroughAsync failed for seq {seq}: {ex.Message}";
+            SafeLogWarning(_lastError);
+            return ReplayBatchOutcome.NoProgress;
+        }
+
+        // IMPORTANT 1 guard: verify the ack actually took effect (see this method's own doc comment) rather
+        // than trusting a call that has no success signal at all.
+        IReadOnlyList<SpooledItem> verify;
+        try
+        {
+            verify = await _spool!.PeekBatchAsync(1, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // Can't verify right now — the ack call itself didn't throw, so don't punish it on top of an
+            // unrelated peek hiccup; a genuinely stuck ack will still be caught on the NEXT pass's own
+            // verification.
+            verify = Array.Empty<SpooledItem>();
+        }
+
+        if (verify.Count > 0 && verify[0].Seq <= seq)
+        {
+            _lastError = $"Site bridge ack for seq {seq} did not take effect (row still present after " +
+                         "AckThroughAsync) — the spool store may be failing writes.";
+            SafeLogWarning(_lastError);
+            return ReplayBatchOutcome.NoProgress; // do NOT advance _lastAckedSeq on an ack that didn't stick.
+        }
+
+        Interlocked.Exchange(ref _lastAckedSeq, seq);
+        return ReplayBatchOutcome.Progress;
     }
 
     /// <summary>Publishes one spooled item to the remote client (QoS AtLeastOnce, retain per the
@@ -587,7 +743,7 @@ public sealed class UnsBridge : IAsyncDisposable
             if (result.IsSuccess) return true;
 
             _lastError = $"seq {item.Seq} ({item.Topic}) rejected: {result.ReasonCode}";
-            _logWarning?.Invoke($"Site bridge publish rejected by the Site broker for spooled seq {item.Seq} ({item.Topic}): {result.ReasonCode} — retrying on the next pass.");
+            SafeLogWarning($"Site bridge publish rejected by the Site broker for spooled seq {item.Seq} ({item.Topic}): {result.ReasonCode} — retrying on the next pass.");
             return false;
         }
         catch (OperationCanceledException)
@@ -597,7 +753,7 @@ public sealed class UnsBridge : IAsyncDisposable
         catch (Exception ex)
         {
             _lastError = ex.Message;
-            _logWarning?.Invoke($"Site bridge failed to forward spooled seq {item.Seq} ({item.Topic}) to the Site broker: {ex.Message} — retrying on the next pass.");
+            SafeLogWarning($"Site bridge failed to forward spooled seq {item.Seq} ({item.Topic}) to the Site broker: {ex.Message} — retrying on the next pass.");
             return false;
         }
     }
@@ -609,7 +765,14 @@ public sealed class UnsBridge : IAsyncDisposable
     /// camelCase JSON convention <see cref="UnsPublisher"/>'s own semantic-mirror publishes already use (see
     /// <see cref="ResyncJsonOptions"/>). Never throws into the forward loop — a failure here (including a
     /// broker rejection) is logged and does NOT block the replay that follows; the resync record is
-    /// best-effort telemetry, not a gate.</summary>
+    /// best-effort telemetry, not a gate.
+    ///
+    /// <para>WI-3 review fix round 1 (IMPORTANT 3) — published at QoS <c>AtLeastOnce</c>, matching every
+    /// backlog item. The original version omitted the QoS builder call entirely, defaulting to
+    /// <c>AtMostOnce</c>: with no PUBACK at all, <c>result.IsSuccess</c> is unconditionally <see
+    /// langword="true"/>, so the "rejected by the broker" check could never fire — the one message whose
+    /// entire purpose is telling the Site a gap exists would have been the LEAST reliably delivered thing in
+    /// the whole design.</para></summary>
     private async Task PublishResyncRecordAsync(BridgeSpoolStats stats, CancellationToken ct)
     {
         try
@@ -627,11 +790,12 @@ public sealed class UnsBridge : IAsyncDisposable
                 .WithTopic(topic)
                 .WithPayload(json)
                 .WithRetainFlag(true)
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                 .Build();
             var result = await _remoteClient!.PublishAsync(message, ct).ConfigureAwait(false);
             if (!result.IsSuccess)
             {
-                _logWarning?.Invoke($"Site bridge resync record was rejected by the Site broker: {result.ReasonCode}");
+                SafeLogWarning($"Site bridge resync record was rejected by the Site broker: {result.ReasonCode}");
             }
         }
         catch (OperationCanceledException)
@@ -640,7 +804,7 @@ public sealed class UnsBridge : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _logWarning?.Invoke($"Site bridge failed to publish the resync record: {ex.Message}");
+            SafeLogWarning($"Site bridge failed to publish the resync record: {ex.Message}");
         }
     }
 

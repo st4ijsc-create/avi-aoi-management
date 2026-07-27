@@ -223,9 +223,9 @@ public sealed class UnsBridgeSpoolTests : IAsyncLifetime
 
         Assert.False(siteBroker.ReceivedMessages.ContainsKey("t/mid/3"),
             "the item AFTER the poisoned one must not be attempted until the poisoned one succeeds");
-        Assert.Contains(seq1, spool.AckCalls);
-        Assert.DoesNotContain(seq2, spool.AckCalls);
-        Assert.DoesNotContain(seq3, spool.AckCalls);
+        Assert.Contains(seq1, spool.AckCallsSnapshot());
+        Assert.DoesNotContain(seq2, spool.AckCallsSnapshot());
+        Assert.DoesNotContain(seq3, spool.AckCallsSnapshot());
         Assert.Contains(spool.Snapshot(), i => i.Seq == seq2);
         Assert.Contains(spool.Snapshot(), i => i.Seq == seq3);
 
@@ -342,6 +342,74 @@ public sealed class UnsBridgeSpoolTests : IAsyncLifetime
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // 5b. WI-3 review fix round 1 (close gap 1) — the disable path exercised through the REAL
+    //     ST4I_BRIDGE_SPOOL_ENABLED env var + BridgeSpoolOptions.FromEnvironment() + conditional-construct
+    //     sequence Program.cs actually runs, not just "pass spool: null directly" (test 5 above did that).
+    //     This env var is the operator's documented way back to pre-WI-3 behavior — it needs a test that
+    //     goes through the real path, not just the already-covered end state.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task EnvVarBridgeSpoolEnabledFalse_ProgramCsWiringPath_ProducesNullSpool_LegacyBehaviorUnchanged()
+    {
+        var previousEnabledRaw = Environment.GetEnvironmentVariable(BridgeSpoolOptions.EnvVarEnabled);
+        try
+        {
+            Environment.SetEnvironmentVariable(BridgeSpoolOptions.EnvVarEnabled, "0");
+
+            // Mirrors Program.cs's own composition-root wiring EXACTLY (see that file's own "GĐ3 closeout
+            // WI-3" comment block): resolve BridgeSpoolOptions from the environment, then conditionally
+            // construct a real BridgeSpool only when Enabled is true.
+            var spoolOptions = BridgeSpoolOptions.FromEnvironment();
+            Assert.False(spoolOptions.Enabled, "sanity check: ST4I_BRIDGE_SPOOL_ENABLED=0 must actually disable it");
+
+            IBridgeSpool? bridgeSpool = spoolOptions.Enabled ? new BridgeSpool(spoolOptions.Directory) : null;
+            Assert.Null(bridgeSpool);
+
+            using var siteCa = TestCertificates.CreateCa("Test Site CA WI3-5b");
+            using var siteServerCertEphemeral = TestCertificates.CreateLeaf("127.0.0.1", siteCa);
+            using var siteServerCert = TestCertificates.Persist(siteServerCertEphemeral);
+            using var deviceCert = TestCertificates.Persist(TestCertificates.CreateSelfSignedLeaf("wi3-envvar-disabled"));
+
+            var localPort = GetFreePort();
+            var localUns = new UnsOptions { BrokerPort = localPort };
+            await using var localBroker = Track(new UnsBroker(localPort));
+            await localBroker.StartAsync();
+
+            var sitePort = GetFreePort();
+            var siteLink = BuildEnabledLink(sitePort, siteCa.ExportCertificatePem());
+
+            await using var bridge = Track(new UnsBridge(localUns, siteLink, deviceCert, "FP-ENVVAR-DISABLED", spool: bridgeSpool));
+
+            using var localPublisher = await ConnectLocalPublisherAsync(localPort);
+            const string droppedTopic = "syn/wi3/envvar-disabled/dropped-during-outage";
+            await localPublisher.PublishAsync(new MqttApplicationMessageBuilder()
+                .WithTopic(droppedTopic).WithPayload(new byte[] { 1 }).Build());
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+
+            await using var siteBroker = Track(await CapturingSiteBroker.StartAsync(siteServerCert, port: sitePort));
+            await WaitUntilAsync(() => bridge.Snapshot().State == BridgeState.Connected, "the bridge to eventually reconnect");
+
+            const string afterTopic = "syn/wi3/envvar-disabled/after-reconnect";
+            await BridgeTestNet.PublishUntilObservedAsync(
+                localPublisher, afterTopic, new byte[] { 2 },
+                () => siteBroker.ReceivedMessages.ContainsKey(afterTopic),
+                "a message published AFTER reconnect to arrive normally");
+
+            Assert.False(siteBroker.ReceivedMessages.ContainsKey(droppedTopic),
+                "ST4I_BRIDGE_SPOOL_ENABLED=0, driven through the real BridgeSpoolOptions/Program.cs wiring " +
+                "path, must reproduce the pre-WI-3 drop-on-disconnect behavior exactly");
+
+            await localPublisher.DisconnectAsync();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(BridgeSpoolOptions.EnvVarEnabled, previousEnabledRaw);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // 6. A spool whose methods throw/fail (violating IBridgeSpool's own never-throws contract) ⇒ the bridge
     //    stays alive and the local side is unaffected.
     // ─────────────────────────────────────────────────────────────────────
@@ -450,5 +518,97 @@ public sealed class UnsBridgeSpoolTests : IAsyncLifetime
 
         Assert.Equal(new byte[] { 11 }, siteBroker.ReceivedMessages["syn/wi3/restart/1"].Payload);
         Assert.Equal(new byte[] { 22 }, siteBroker.ReceivedMessages["syn/wi3/restart/2"].Payload);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 8. WI-3 review fix round 1 (CRITICAL) — a replay pass that makes ZERO forward progress on a NON-empty
+    //    batch must back off, escalating, never spin at zero delay. Distinguishes a real backoff from the
+    //    original bug by counting delivery ATTEMPTS over a bounded wall-clock window: a spin would produce
+    //    thousands of attempts in this window (StatsAsync + PeekBatchAsync + one rejected publish, in a
+    //    tight loop against an in-memory fake with no real I/O latency at all); the fixed escalating backoff
+    //    (500ms, 1s, 2s, ...) produces only a handful.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PublishPersistentlyRejected_BacksOffEscalatingly_NeverSpins()
+    {
+        using var siteCa = TestCertificates.CreateCa("Test Site CA WI3-8");
+        using var siteServerCertEphemeral = TestCertificates.CreateLeaf("127.0.0.1", siteCa);
+        using var siteServerCert = TestCertificates.Persist(siteServerCertEphemeral);
+        using var deviceCert = TestCertificates.Persist(TestCertificates.CreateSelfSignedLeaf("wi3-spin"));
+
+        var localPort = GetFreePort();
+        var localUns = new UnsOptions { BrokerPort = localPort };
+        await using var localBroker = Track(new UnsBroker(localPort));
+        await localBroker.StartAsync();
+
+        var spool = new FakeBridgeSpool();
+        const string topic = "t/persistently-rejected";
+        await spool.EnqueueAsync(topic, new byte[] { 1 }, retain: false);
+
+        await using var siteBroker = Track(await CapturingSiteBroker.StartAsync(siteServerCert));
+        siteBroker.PoisonTopics[topic] = 0; // NEVER un-poisoned — simulates a permanent Site-side rejection
+                                             // such as MQTT reason code 0x87 Not Authorized or 0x97 Quota Exceeded.
+
+        var siteLink = BuildEnabledLink(siteBroker.Port, siteCa.ExportCertificatePem());
+        await using var bridge = Track(new UnsBridge(localUns, siteLink, deviceCert, "FP-SPIN", spool: spool));
+
+        await WaitUntilAsync(() => siteBroker.ReceivedMessages.ContainsKey(topic),
+            "the persistently-rejected item to have been attempted at least once");
+
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        var attempts = siteBroker.ReceivedOrder.Count(t => t == topic);
+        Assert.True(attempts <= 10,
+            $"expected a bounded/escalating backoff on a persistently-rejected publish, not a tight spin — saw {attempts} attempts in ~2s");
+        Assert.Contains(spool.Snapshot(), i => i.Topic == topic); // never lost, never (falsely) acked either.
+        Assert.Contains("rejected", bridge.Snapshot().LastError ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 9. WI-3 review fix round 1 (IMPORTANT 1) — AckThroughAsync has no success signal by contract (it
+    //    swallows every exception and returns normally even when the underlying DELETE silently affects zero
+    //    rows). A bridge that blindly trusted it would advance LastAckedSeq/the resync record's lastAckedSeq
+    //    to a seq that was never actually removed, and republish the same rows forever. This must be caught
+    //    and treated as a stall (backoff), not a success.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AckThroughAsync_SilentlyFailsToDelete_NeverAdvancesLastAckedSeq_AndBacksOffInsteadOfSpinning()
+    {
+        using var siteCa = TestCertificates.CreateCa("Test Site CA WI3-9");
+        using var siteServerCertEphemeral = TestCertificates.CreateLeaf("127.0.0.1", siteCa);
+        using var siteServerCert = TestCertificates.Persist(siteServerCertEphemeral);
+        using var deviceCert = TestCertificates.Persist(TestCertificates.CreateSelfSignedLeaf("wi3-ack-silent-fail"));
+
+        var localPort = GetFreePort();
+        var localUns = new UnsOptions { BrokerPort = localPort };
+        await using var localBroker = Track(new UnsBroker(localPort));
+        await localBroker.StartAsync();
+
+        // The publish itself succeeds every time (the broker is NOT poisoning anything) — only the ack's
+        // own DELETE is silently a no-op, exactly like a locked DB or a full disk on the real BridgeSpool.
+        var spool = new FakeBridgeSpool { SilentlyFailAck = true };
+        const string topic = "t/ack-silently-fails";
+        var seq = await spool.EnqueueAsync(topic, new byte[] { 1 }, retain: false);
+
+        await using var siteBroker = Track(await CapturingSiteBroker.StartAsync(siteServerCert));
+        var siteLink = BuildEnabledLink(siteBroker.Port, siteCa.ExportCertificatePem());
+        await using var bridge = Track(new UnsBridge(localUns, siteLink, deviceCert, "FP-ACK-SILENT-FAIL", spool: spool));
+
+        await WaitUntilAsync(() => siteBroker.ReceivedMessages.ContainsKey(topic),
+            "the item to have been published (successfully, from the broker's point of view) at least once");
+
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(0, bridge.Snapshot().LastAckedSeq); // never advanced despite repeated "successful" publishes.
+        Assert.Contains(spool.Snapshot(), i => i.Seq == seq); // the row is still there — the ack never actually stuck.
+        Assert.Contains("did not take effect", bridge.Snapshot().LastError ?? "", StringComparison.OrdinalIgnoreCase);
+
+        // Same CRITICAL-fix backoff must kick in here too — a stuck ack is exactly as much a stall as a
+        // rejected publish, and must not spin either.
+        var attempts = siteBroker.ReceivedOrder.Count(t => t == topic);
+        Assert.True(attempts <= 10,
+            $"expected backoff, not a spin, once the ack repeatedly fails to stick — saw {attempts} publish attempts in ~1s");
     }
 }

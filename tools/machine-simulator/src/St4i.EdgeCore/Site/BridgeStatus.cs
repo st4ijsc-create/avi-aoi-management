@@ -16,6 +16,13 @@ namespace St4i.EdgeCore.Site;
 /// is paused, with the bounded channel dropping the oldest buffered item as new ones arrive.</item>
 /// <item><see cref="Down"/> — the bridge can't even reach its OWN local UNS spine (the loopback broker the
 /// local client subscribes to) — a bridge/local-broker misconfiguration, not a Site-side problem.</item>
+/// <item><see cref="Faulted"/> — GĐ3 closeout WI-3 review fix round 1: the spool writer and/or forward
+/// background loop (see <see cref="UnsBridge"/>'s own doc comment) terminated unexpectedly — an exception
+/// that was NOT this bridge's own shutdown cancellation. Takes priority over
+/// <see cref="Connected"/>/<see cref="Degraded"/>/<see cref="Connecting"/>: the MQTT clients can look
+/// perfectly healthy while messages are silently no longer being persisted (writer loop dead) or replayed
+/// (forward loop dead), which is a worse, more surprising failure than a known Site outage — this state
+/// exists so an operator never sees a lying "Connected" while forwarding has actually stopped.</item>
 /// </list>
 /// </summary>
 public enum BridgeState
@@ -25,6 +32,7 @@ public enum BridgeState
     Connected,
     Degraded,
     Down,
+    Faulted,
 }
 
 /// <summary>An immutable point-in-time read of <see cref="UnsBridge"/>'s health, for status

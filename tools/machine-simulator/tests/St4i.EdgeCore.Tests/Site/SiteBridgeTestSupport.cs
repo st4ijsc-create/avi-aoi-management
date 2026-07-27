@@ -185,11 +185,20 @@ internal sealed class FakeBridgeSpool : IBridgeSpool
     private long _nextSeq;
     private long _droppedTotal;
 
+    private readonly List<long> _ackCalls = new();
+
     public bool ThrowOnEnqueue { get; set; }
     public bool ThrowOnPeek { get; set; }
     public bool ThrowOnAck { get; set; }
     public bool ThrowOnStats { get; set; }
     public bool ThrowOnTrim { get; set; }
+
+    /// <summary>WI-3 review fix round 1 (IMPORTANT 1) — when set, <see cref="AckThroughAsync"/> records the
+    /// call (so a test can prove it was ATTEMPTED) but does NOT remove anything from <see cref="_items"/>,
+    /// simulating a real <see cref="BridgeSpool.AckThroughAsync"/> whose DELETE silently affects zero rows
+    /// (locked DB, full disk) — that method has no success signal by contract, so this is the one realistic
+    /// way for an ack to "succeed" (no exception) while changing nothing.</summary>
+    public bool SilentlyFailAck { get; set; }
 
     public bool ThrowEverything
     {
@@ -205,9 +214,16 @@ internal sealed class FakeBridgeSpool : IBridgeSpool
         set => Interlocked.Exchange(ref _droppedTotal, value);
     }
 
-    /// <summary>Every <c>seq</c> argument <see cref="AckThroughAsync"/> was ever called with, in call
-    /// order — the direct proof of the partial-batch-ack rule under test.</summary>
-    public List<long> AckCalls { get; } = new();
+    /// <summary>WI-3 review fix round 1 — a locked SNAPSHOT of every <c>seq</c> argument
+    /// <see cref="AckThroughAsync"/> was ever called with, in call order (the direct proof of the
+    /// partial-batch-ack rule under test). Was previously a directly-exposed <c>List&lt;long&gt;</c> read by
+    /// test code on one thread while <see cref="AckThroughAsync"/> mutated it under <see cref="_lock"/> on
+    /// the bridge's own forward-loop thread — a latent "collection was modified" race. <see cref="Snapshot"/>
+    /// already got this right; this now matches it.</summary>
+    public IReadOnlyList<long> AckCallsSnapshot()
+    {
+        lock (_lock) return _ackCalls.ToList();
+    }
 
     public int TrimCallCount => _trimCallCount;
     private int _trimCallCount;
@@ -259,8 +275,11 @@ internal sealed class FakeBridgeSpool : IBridgeSpool
 
         lock (_lock)
         {
-            AckCalls.Add(seq);
-            _items.RemoveAll(i => i.Seq <= seq);
+            _ackCalls.Add(seq);
+            if (!SilentlyFailAck)
+            {
+                _items.RemoveAll(i => i.Seq <= seq);
+            }
         }
 
         return Task.CompletedTask;
