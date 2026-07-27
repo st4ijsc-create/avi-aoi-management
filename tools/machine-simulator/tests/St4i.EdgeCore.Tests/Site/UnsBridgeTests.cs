@@ -33,9 +33,6 @@ namespace St4i.EdgeCore.Tests.Site;
 [Collection("St4i.EdgeCore.Tests.Site")]
 public sealed class UnsBridgeTests : IAsyncLifetime
 {
-    private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
-
     private readonly List<IAsyncDisposable> _disposables = new();
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -54,116 +51,13 @@ public sealed class UnsBridgeTests : IAsyncLifetime
         return disposable;
     }
 
-    private static int GetFreePort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
+    private static int GetFreePort() => BridgeTestNet.GetFreePort();
 
-    private static async Task WaitUntilAsync(Func<bool> predicate, string because)
-    {
-        var deadline = DateTime.UtcNow + PollTimeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (predicate()) return;
-            await Task.Delay(PollInterval);
-        }
+    private static Task WaitUntilAsync(Func<bool> predicate, string because) =>
+        BridgeTestNet.WaitUntilAsync(predicate, because);
 
-        Assert.True(predicate(), $"timed out after {PollTimeout} waiting for: {because}");
-    }
-
-    /// <summary>Publishes repeatedly (bounded) until <paramref name="observed"/> reports the message
-    /// arrived — avoids a race against the bridge's own (asynchronous, background) local-subscribe
-    /// completing before the very first publish attempt.</summary>
-    private static async Task PublishUntilObservedAsync(IMqttClient publisher, string topic, byte[] payload, Func<bool> observed, string because)
-    {
-        var deadline = DateTime.UtcNow + PollTimeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (observed()) return;
-
-            var message = new MqttApplicationMessageBuilder()
-                .WithTopic(topic)
-                .WithPayload(payload)
-                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                .Build();
-            await publisher.PublishAsync(message);
-            await Task.Delay(PollInterval);
-        }
-
-        Assert.True(observed(), $"timed out after {PollTimeout} waiting for: {because}");
-    }
-
-    /// <summary>Stands up a real MQTTnet server as the "Site" broker: TLS + mandatory client certificate,
-    /// bound to loopback on a dynamic port. Captures the client certificate the Site observed during the
-    /// handshake and every published message it received (topic/payload/retain), for assertions.</summary>
-    private sealed class CapturingSiteBroker : IAsyncDisposable
-    {
-        private readonly MqttServer _server;
-
-        public int Port { get; }
-
-        public X509Certificate2? ObservedClientCertificate { get; private set; }
-
-        public ConcurrentDictionary<string, (byte[] Payload, bool Retain)> ReceivedMessages { get; } = new();
-
-        private CapturingSiteBroker(MqttServer server, int port)
-        {
-            _server = server;
-            Port = port;
-        }
-
-        public static async Task<CapturingSiteBroker> StartAsync(X509Certificate2 serverCertificate)
-        {
-            var port = GetFreePort();
-            var factory = new MqttServerFactory();
-            var options = factory.CreateServerOptionsBuilder()
-                .WithoutDefaultEndpoint()
-                .WithEncryptedEndpoint()
-                .WithEncryptedEndpointBoundIPAddress(IPAddress.Loopback)
-                .WithEncryptedEndpointPort(port)
-                .WithEncryptionCertificate(serverCertificate)
-                .WithClientCertificate((_, _, _, _) => true, checkCertificateRevocation: false)
-                .Build();
-
-            var server = factory.CreateMqttServer(options);
-            var broker = new CapturingSiteBroker(server, port);
-
-            server.ValidatingConnectionAsync += args =>
-            {
-                broker.ObservedClientCertificate = args.ClientCertificate;
-                return Task.CompletedTask;
-            };
-            server.InterceptingPublishAsync += args =>
-            {
-                broker.ReceivedMessages[args.ApplicationMessage.Topic] =
-                    (System.Buffers.BuffersExtensions.ToArray(args.ApplicationMessage.Payload), args.ApplicationMessage.Retain);
-                return Task.CompletedTask;
-            };
-
-            await server.StartAsync().ConfigureAwait(false);
-            return broker;
-        }
-
-        public Task<int> GetConnectedClientCountAsync() => CountClientsAsync();
-
-        private async Task<int> CountClientsAsync()
-        {
-            var clients = await _server.GetClientsAsync().ConfigureAwait(false);
-            return clients.Count;
-        }
-
-        public Task StopListeningAsync() => _server.StopAsync();
-
-        public async ValueTask DisposeAsync()
-        {
-            try { await _server.StopAsync().ConfigureAwait(false); } catch { /* best-effort */ }
-            _server.Dispose();
-        }
-    }
+    private static Task PublishUntilObservedAsync(IMqttClient publisher, string topic, byte[] payload, Func<bool> observed, string because) =>
+        BridgeTestNet.PublishUntilObservedAsync(publisher, topic, payload, observed, because);
 
     private static PersistedSiteLink BuildEnabledLink(int sitePort, string siteTrustPem) => new()
     {

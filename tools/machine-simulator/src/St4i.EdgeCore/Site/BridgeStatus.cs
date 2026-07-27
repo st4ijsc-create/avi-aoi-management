@@ -33,5 +33,22 @@ public enum BridgeState
 /// handshake (null until the first successful connect); <see cref="DeviceFingerprint"/> is this device's OWN
 /// identity fingerprint (<see cref="Identity.DeviceIdentity.Fingerprint"/>) — always present, even
 /// <see cref="BridgeState.Disabled"/>, since a device has an identity whether or not it is federated
-/// anywhere.</summary>
-public sealed record BridgeStatusSnapshot(BridgeState State, string? LastError, string? SiteFingerprint, string DeviceFingerprint);
+/// anywhere.
+///
+/// <para>GĐ3 closeout WI-3 — <see cref="SpoolDepth"/>/<see cref="LastAckedSeq"/>/<see cref="DroppedTotal"/>
+/// surface the durable northbound spool's own state (see <see cref="BridgeSpool"/>) so an operator can see,
+/// e.g. via <c>/v1/site</c>, whether a Site outage is currently backing data up and how much (if anything)
+/// has ever been dropped by the spool's own age/byte caps. All three are <c>0</c> when there is no spool at
+/// all — either <see cref="BridgeState.Disabled"/>, or a bridge running with
+/// <c>ST4I_BRIDGE_SPOOL_ENABLED=0</c> (see <see cref="UnsBridge"/>'s own doc comment) — never garbage.
+/// <see cref="LastAckedSeq"/> is the bridge's OWN bookkeeping (not derivable from <see cref="BridgeSpoolStats"/>
+/// alone, since an acked item is deleted from the spool, not merely marked) — the highest
+/// <see cref="SpooledItem.Seq"/> this bridge has ever successfully forwarded and acked.</para></summary>
+public sealed record BridgeStatusSnapshot(
+    BridgeState State,
+    string? LastError,
+    string? SiteFingerprint,
+    string DeviceFingerprint,
+    long SpoolDepth = 0,
+    long LastAckedSeq = 0,
+    long DroppedTotal = 0);

@@ -537,13 +537,42 @@ builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<St4i.E
 // at all — byte-identical to pre-EC-2 behavior in that case.
 if (unsOptions.Enabled)
 {
+    // GĐ3 closeout WI-3 — the durable northbound spool backing UnsBridge's forward path (WI-2 built the
+    // store; this task wires it in). Resolved from the environment ONCE, right here, same "read env at the
+    // composition root, pass the resolved collaborator down" idiom unsOptions itself already uses just
+    // above — SiteBridgeManager/UnsBridge never read ST4I_BRIDGE_SPOOL_* themselves. ST4I_BRIDGE_SPOOL_ENABLED=0
+    // (or a construction failure, caught the same "additive, never fails the host it's bolted onto" way
+    // every other optional subsystem in this file already is) leaves bridgeSpool null, which reproduces
+    // UnsBridge's PRE-WI-3 behavior byte-for-byte (drop while disconnected, no resync record).
+    var spoolOptions = St4i.EdgeCore.Site.BridgeSpoolOptions.FromEnvironment();
+    St4i.EdgeCore.Site.IBridgeSpool? bridgeSpool = null;
+    if (spoolOptions.Enabled)
+    {
+        try
+        {
+            bridgeSpool = new St4i.EdgeCore.Site.BridgeSpool(
+                spoolOptions.Directory,
+                spoolOptions.MaxBytes,
+                spoolOptions.MaxAgeHours,
+                logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"));
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                $"[startup] Bridge spool failed to initialize — the Site bridge will run without a durable " +
+                $"backlog for this run (drop-on-disconnect, same as before WI-3): {ex.Message}");
+            bridgeSpool = null;
+        }
+    }
+
     var siteStore = new St4i.EdgeCore.Site.SiteLinkStore();
     var siteBridgeManager = new St4i.EdgeCore.Site.SiteBridgeManager(
         unsOptions,
         deviceIdentity,
         siteStore,
         logWarning: msg => Console.Error.WriteLine($"[startup] {msg}"),
-        logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"));
+        logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"),
+        spool: bridgeSpool);
 
     // Eager start (mirrors the UNS broker block above): ApplyAsync itself never throws (construct/connect
     // failures are caught+logged inside it, leaving the manager's Status() at Disabled/Down) — this

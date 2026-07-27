@@ -118,6 +118,17 @@ public static class UnsTopicBuilder
         return $"{SemanticNamespace}/{options.Site}/{options.Area}/{options.Line}/{options.Cell}/_line/state";
     }
 
+    /// <summary>GĐ3 closeout WI-3 — the retained topic <see cref="St4i.EdgeCore.Site.UnsBridge"/> publishes
+    /// its resync record onto, immediately after a successful remote (Site) reconnect and BEFORE replaying
+    /// any spooled backlog: <c>syn/{site}/{area}/{line}/{cell}/_bridge/resync</c>. Same underscore-prefixed
+    /// fixed-segment idiom as <see cref="BuildLineStateTopic"/>'s own <c>_line</c> segment (can never collide
+    /// with a real equipment code) — <c>_bridge</c> here instead of <c>_line</c>.</summary>
+    public static string BuildBridgeResyncTopic(UnsOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return $"{SemanticNamespace}/{options.Site}/{options.Area}/{options.Line}/{options.Cell}/_bridge/resync";
+    }
+
     /// <summary>result|telemetry|inspection — the semantic-mirror "aspect" segment for each
     /// <see cref="ReadingKind"/>, matching the same three buckets <see cref="St4i.EdgeCore.Mapping.Normalizer.Normalize"/>
     /// switches on (ProcessResult/Telemetry/Inspection → the same three HTTP ingest paths).</summary>

@@ -82,14 +82,16 @@ public static class SiteEndpoints
             // device's identity is unconditional (EC-1), independent of whether a Site link exists.
             return Results.Ok(new SiteStatusDto(
                 Enabled: false, Host: "", Port: 0, BridgeState: nameof(BridgeState.Disabled),
-                LastError: null, SiteFingerprint: null, DeviceFingerprint: identity.Fingerprint, UnsEnabled: false));
+                LastError: null, SiteFingerprint: null, DeviceFingerprint: identity.Fingerprint, UnsEnabled: false,
+                SpoolDepth: 0, LastAckedSeq: 0, DroppedTotal: 0));
         }
 
         var current = mgr.Current;
         var status = mgr.Status();
         return Results.Ok(new SiteStatusDto(
             current.Enabled, current.Host, current.Port, status.State.ToString(),
-            status.LastError, status.SiteFingerprint, status.DeviceFingerprint, UnsEnabled: true));
+            status.LastError, status.SiteFingerprint, status.DeviceFingerprint, UnsEnabled: true,
+            SpoolDepth: status.SpoolDepth, LastAckedSeq: status.LastAckedSeq, DroppedTotal: status.DroppedTotal));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -207,10 +209,18 @@ public static class SiteEndpoints
 /// string (e.g. <c>"Connecting"</c>) — NOT the raw <see cref="PersistedSiteLink.SiteTrustPem"/>, which
 /// is write-only via <see cref="SiteLinkRequest"/> (see <see cref="SiteEndpoints"/>'s own doc comment for
 /// why); <see cref="SiteFingerprint"/> is the pinned value the bridge actually validated on its last
-/// successful handshake instead.</summary>
+/// successful handshake instead.
+///
+/// <para>GĐ3 closeout WI-3 — <see cref="SpoolDepth"/>/<see cref="LastAckedSeq"/>/<see cref="DroppedTotal"/>
+/// mirror <see cref="St4i.EdgeCore.Site.BridgeStatusSnapshot"/>'s own same-named fields verbatim: how many
+/// northbound messages are currently backed up on disk, the highest spooled seq ever successfully forwarded
+/// and acked, and how many spooled messages have ever been dropped by the spool's own age/byte caps. All
+/// three are <c>0</c> — never garbage — whenever there's no durable spool at all (UNS disabled, no bridge,
+/// or <c>ST4I_BRIDGE_SPOOL_ENABLED=0</c>).</para></summary>
 public sealed record SiteStatusDto(
     bool Enabled, string Host, int Port, string BridgeState, string? LastError,
-    string? SiteFingerprint, string DeviceFingerprint, bool UnsEnabled);
+    string? SiteFingerprint, string DeviceFingerprint, bool UnsEnabled,
+    long SpoolDepth, long LastAckedSeq, long DroppedTotal);
 
 /// <summary>The <c>PUT /v1/site</c> request body. <see cref="Host"/>/<see cref="Port"/>/
 /// <see cref="SiteTrustPem"/> are only validated/required when <see cref="Enabled"/> is <see langword="true"/>

@@ -53,6 +53,9 @@ public sealed class AuditEndpointsTests
         // (PolicyResults.DenyAsync now resolves IAlarmStore and raises an alarm) would resolve AlarmStore
         // against the REAL %ProgramData%\ST4I\sim\alarms\alarms.db instead of a throwaway temp dir.
         var alarmsDir = Directory.CreateTempSubdirectory("st4i-audit-ep-alarms-").FullName;
+        // GĐ3 closeout WI-3 — without this, every WebApplicationFactory<Program> boot below (UNS defaults
+        // ON) has Program.cs construct a REAL BridgeSpool against %ProgramData%\ST4I\sim\bridge-spool\.
+        var bridgeSpoolDir = Directory.CreateTempSubdirectory("st4i-audit-ep-bridgespool-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -63,6 +66,7 @@ public sealed class AuditEndpointsTests
         var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
         var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
         var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
+        var prevBridgeSpoolDir = Environment.GetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -76,6 +80,7 @@ public sealed class AuditEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", identityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
+            Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", bridgeSpoolDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -92,6 +97,7 @@ public sealed class AuditEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
+            Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", prevBridgeSpoolDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }

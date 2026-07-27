@@ -173,4 +173,37 @@ public sealed class SiteBridgeManagerTests : IDisposable
         Assert.Null(exception);
         Assert.Equal(BridgeState.Disabled, manager.Status().State);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GĐ3 closeout WI-3 — the spool this manager is constructed with must actually reach the UnsBridge it
+    // builds (not just be stored and ignored) — proven here indirectly through Status().SpoolDepth, since
+    // that field is sourced from the LIVE bridge's own forward loop, not from the manager itself.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ApplyAsync_PassesTheSpoolThroughToTheBridge_StatusReportsItsDepth()
+    {
+        var identity = NewIdentity();
+        var store = new SiteLinkStore(NewTempDir());
+        var spool = new FakeBridgeSpool();
+        await spool.EnqueueAsync("t/manager-wiring", new byte[] { 1 }, retain: false);
+
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identity, store, spool: spool);
+        await manager.ApplyAsync(EnabledLink());
+
+        await WaitUntilAsync(() => manager.Status().SpoolDepth > 0,
+            "the manager-supplied spool's depth to surface through the live bridge's own Status()");
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate, string because)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (predicate()) return;
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        Assert.True(predicate(), $"timed out waiting for: {because}");
+    }
 }

@@ -79,6 +79,9 @@ public sealed class AuthPipelineTests
         // (PolicyResults.DenyAsync now resolves IAlarmStore and raises an alarm) would resolve AlarmStore
         // against the REAL %ProgramData%\ST4I\sim\alarms\alarms.db instead of a throwaway temp dir.
         var alarmsDir = Directory.CreateTempSubdirectory("st4i-auth-pipeline-alarms-").FullName;
+        // GĐ3 closeout WI-3 — without this, every WebApplicationFactory<Program> boot below (UNS defaults
+        // ON) has Program.cs construct a REAL BridgeSpool against %ProgramData%\ST4I\sim\bridge-spool\.
+        var bridgeSpoolDir = Directory.CreateTempSubdirectory("st4i-auth-pipeline-bridgespool-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -89,6 +92,7 @@ public sealed class AuthPipelineTests
         var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
         var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
         var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
+        var prevBridgeSpoolDir = Environment.GetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -107,6 +111,8 @@ public sealed class AuthPipelineTests
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
             // GĐ3 sub-4 LC-1 review follow-up — same rationale, for AlarmStore.
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
+            // GĐ3 closeout WI-3 — same rationale, for BridgeSpool.
+            Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", bridgeSpoolDir);
             // See this method's doc comment — sidesteps the Static Web Assets manifest's hardcoded
             // source-tree wwwroot path, which is only ever loaded in Development.
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
@@ -125,6 +131,7 @@ public sealed class AuthPipelineTests
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
+            Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", prevBridgeSpoolDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }

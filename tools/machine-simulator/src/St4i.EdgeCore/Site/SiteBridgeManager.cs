@@ -26,24 +26,40 @@ public sealed class SiteBridgeManager : IAsyncDisposable
     private readonly SiteLinkStore _store;
     private readonly Action<string>? _logWarning;
     private readonly Action<Exception, string>? _logError;
+    private readonly IBridgeSpool? _spool;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private UnsBridge? _bridge;
     private PersistedSiteLink _current = new();
     private volatile bool _disposed;
 
+    /// <param name="localUns">See <see cref="UnsBridge"/>'s own ctor doc comment.</param>
+    /// <param name="identity">This device's own identity (certificate + fingerprint).</param>
+    /// <param name="store">Where the applied <see cref="PersistedSiteLink"/> is persisted.</param>
+    /// <param name="logWarning">Optional recoverable-condition logger.</param>
+    /// <param name="logError">Optional fault logger.</param>
+    /// <param name="spool">GĐ3 closeout WI-3 — the durable northbound spool, or <see langword="null"/> to
+    /// keep every bridge this manager ever builds on the PRE-WI-3 drop-while-disconnected behavior (see
+    /// <see cref="UnsBridge"/>'s own doc comment). This manager never reads <c>ST4I_BRIDGE_SPOOL_*</c>
+    /// itself — the composition root (<c>Program.cs</c>) resolves <see cref="BridgeSpoolOptions.FromEnvironment"/>
+    /// and passes the (possibly <see langword="null"/>) resulting spool in, exactly once, for this manager's
+    /// entire lifetime. One spool instance is shared across every bridge <see cref="ApplyAsync"/> ever
+    /// builds (re-applying a link tears down and rebuilds the bridge, NOT the spool) — the durable backlog
+    /// must outlive any single bridge/TCP-connection lifecycle, which is the entire point of WI-2/WI-3.</param>
     public SiteBridgeManager(
         UnsOptions localUns,
         DeviceIdentity identity,
         SiteLinkStore store,
         Action<string>? logWarning = null,
-        Action<Exception, string>? logError = null)
+        Action<Exception, string>? logError = null,
+        IBridgeSpool? spool = null)
     {
         _localUns = localUns ?? throw new ArgumentNullException(nameof(localUns));
         _identity = identity ?? throw new ArgumentNullException(nameof(identity));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _logWarning = logWarning;
         _logError = logError;
+        _spool = spool;
     }
 
     /// <summary>The last-applied Site link (secrets-free — see <see cref="PersistedSiteLink"/>'s own doc
@@ -102,7 +118,7 @@ public sealed class SiteBridgeManager : IAsyncDisposable
             {
                 try
                 {
-                    _bridge = new UnsBridge(_localUns, link, _identity.Certificate, _identity.Fingerprint, _logWarning, _logError);
+                    _bridge = new UnsBridge(_localUns, link, _identity.Certificate, _identity.Fingerprint, _logWarning, _logError, _spool);
                 }
                 catch (Exception ex)
                 {
@@ -121,7 +137,7 @@ public sealed class SiteBridgeManager : IAsyncDisposable
     /// configured, or the last-applied link had <see cref="PersistedSiteLink.Enabled"/> = <see
     /// langword="false"/>), else the live bridge's own <see cref="UnsBridge.Snapshot"/>.</summary>
     public BridgeStatusSnapshot Status() =>
-        _bridge?.Snapshot() ?? new BridgeStatusSnapshot(BridgeState.Disabled, null, null, _identity.Fingerprint);
+        _bridge?.Snapshot() ?? new BridgeStatusSnapshot(BridgeState.Disabled, null, null, _identity.Fingerprint, 0, 0, 0);
 
     /// <summary>Idempotent. Tears down the currently-running bridge (if any) — DI disposes this manager on
     /// host shutdown since it's registered as an <see cref="IAsyncDisposable"/> singleton.</summary>
