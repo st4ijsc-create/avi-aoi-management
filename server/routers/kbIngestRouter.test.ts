@@ -39,10 +39,22 @@ vi.mock("../services/kbWebFetcher", async (importOriginal) => {
   };
 });
 
+const ingestVideoMock = vi.fn();
+const isVideoIngestEnabledMock = vi.fn(() => true);
+vi.mock("../services/kbVideoTranscriber", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/kbVideoTranscriber")>();
+  return {
+    ...actual,
+    ingestVideo: (...args: unknown[]) => ingestVideoMock(...args),
+    isVideoIngestEnabled: () => isVideoIngestEnabledMock(),
+  };
+});
+
 import { kbIngestRouter } from "./kbIngestRouter";
 import { KbIngestDisabledError, KbIngestValidationError, KbEmbedError, KbStoreError } from "../services/kbIngestService";
 import { KbUnsupportedTypeError, KbParseError } from "../services/kbDocParser";
 import { WebIngestDisabledError, SsrfBlockedError, FetchError } from "../services/kbWebFetcher";
+import { VideoIngestDisabledError, SttUnavailableError, SttValidationError, SttTranscribeError } from "../services/kbVideoTranscriber";
 
 const SMALL_PDF_B64 = Buffer.from("%PDF-1.4 minimal fake content").toString("base64");
 
@@ -57,10 +69,13 @@ const validInput = {
   base64: SMALL_PDF_B64,
 };
 
+const SMALL_VIDEO_B64 = Buffer.from("fake mp4 bytes").toString("base64");
+
 beforeEach(() => {
   vi.clearAllMocks();
   isKbStudioEnabledMock.mockReturnValue(true);
   isWebIngestEnabledMock.mockReturnValue(true);
+  isVideoIngestEnabledMock.mockReturnValue(true);
   ingestDocumentMock.mockResolvedValue({
     corpus: "vendor-x-manuals",
     sourceRef: "manual.pdf",
@@ -72,6 +87,12 @@ beforeEach(() => {
     sourceRef: "https://example.com/page",
     chunksAdded: 2,
     parsedMeta: { sourceType: "url", charCount: 50, truncated: false },
+  });
+  ingestVideoMock.mockResolvedValue({
+    corpus: "vendor-x-manuals",
+    sourceRef: "onboarding.mp4",
+    chunksAdded: 5,
+    parsedMeta: { sourceType: "video", charCount: 200, truncated: false },
   });
 });
 
@@ -117,7 +138,12 @@ describe("kbIngestRouter — admin/engineer RBAC", () => {
   it("status query also requires admin/engineer (+2FA)", async () => {
     await expect(callerFor("operator").status()).rejects.toMatchObject({ code: "FORBIDDEN" });
     const status = await callerFor("admin", true).status();
-    expect(status).toMatchObject({ enabled: true, allowedTypes: ["pdf", "docx", "md", "txt"], webIngestEnabled: true });
+    expect(status).toMatchObject({
+      enabled: true,
+      allowedTypes: ["pdf", "docx", "md", "txt"],
+      webIngestEnabled: true,
+      videoIngestEnabled: true,
+    });
   });
 });
 
@@ -326,6 +352,135 @@ describe("kbIngestRouter — typed error → TRPCError code mapping", () => {
     await expect(callerFor("admin", true).uploadDocument(validInput)).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
     });
+  });
+});
+
+// ─── E3-4: ingestVideo — admin/engineer RBAC (+2FA) ──────────────────────────
+
+describe("kbIngestRouter — ingestVideo admin/engineer RBAC", () => {
+  const videoInput = { corpus: "vendor-x-manuals", filename: "onboarding.mp4", base64: SMALL_VIDEO_B64 };
+
+  it("operator cannot ingestVideo", async () => {
+    await expect(callerFor("operator").ingestVideo(videoInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(ingestVideoMock).not.toHaveBeenCalled();
+  });
+
+  it("viewer cannot ingestVideo", async () => {
+    await expect(callerFor("viewer").ingestVideo(videoInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("admin WITHOUT 2FA is FORBIDDEN, service never touched", async () => {
+    await expect(callerFor("admin", false).ingestVideo(videoInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(ingestVideoMock).not.toHaveBeenCalled();
+  });
+
+  it("engineer WITHOUT 2FA is FORBIDDEN", async () => {
+    await expect(callerFor("engineer", false).ingestVideo(videoInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("admin WITH 2FA clears the RBAC gate and reaches the service", async () => {
+    const result = await callerFor("admin", true).ingestVideo(videoInput);
+    expect(result.chunksAdded).toBe(5);
+    expect(ingestVideoMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("engineer WITH 2FA clears the RBAC gate and reaches the service", async () => {
+    await expect(callerFor("engineer", true).ingestVideo(videoInput)).resolves.toMatchObject({ chunksAdded: 5 });
+  });
+});
+
+// ─── E3-4: ingestVideo — VIDEO_INGEST_ENABLED / KB_STUDIO_ENABLED gate ───────
+
+describe("kbIngestRouter — ingestVideo VIDEO_INGEST_ENABLED gate", () => {
+  const videoInput = { corpus: "vendor-x-manuals", filename: "onboarding.mp4", base64: SMALL_VIDEO_B64 };
+
+  it("VIDEO_INGEST_ENABLED off ⇒ FORBIDDEN before any transcription (service never called)", async () => {
+    isVideoIngestEnabledMock.mockReturnValue(false);
+    await expect(callerFor("admin", true).ingestVideo(videoInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(ingestVideoMock).not.toHaveBeenCalled();
+  });
+
+  it("KB_STUDIO_ENABLED off ⇒ FORBIDDEN before any transcription", async () => {
+    isKbStudioEnabledMock.mockReturnValue(false);
+    await expect(callerFor("admin", true).ingestVideo(videoInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(ingestVideoMock).not.toHaveBeenCalled();
+  });
+
+  it("a VideoIngestDisabledError surfaced FROM the service is also mapped to FORBIDDEN", async () => {
+    ingestVideoMock.mockRejectedValueOnce(new VideoIngestDisabledError());
+    await expect(callerFor("admin", true).ingestVideo(videoInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
+
+// ─── E3-4: ingestVideo — base64 decode + size bound + typed error mapping ────
+
+describe("kbIngestRouter — ingestVideo input validation + error mapping", () => {
+  const videoInput = { corpus: "vendor-x-manuals", filename: "onboarding.mp4", base64: SMALL_VIDEO_B64 };
+
+  it("rejects an oversized decoded video payload (PAYLOAD_TOO_LARGE)", async () => {
+    const original = process.env.KB_INGEST_MAX_VIDEO_UPLOAD_BYTES;
+    process.env.KB_INGEST_MAX_VIDEO_UPLOAD_BYTES = "16"; // 16 bytes cap
+    try {
+      vi.resetModules();
+      const { kbIngestRouter: freshRouter } = await import("./kbIngestRouter");
+      const caller = freshRouter.createCaller({
+        user: { id: 1, role: "admin", name: "Tester", twoFactorEnabled: true },
+      } as any);
+      const bigB64 = Buffer.from("x".repeat(1000)).toString("base64");
+      await expect(caller.ingestVideo({ ...videoInput, base64: bigB64 })).rejects.toMatchObject({
+        code: "PAYLOAD_TOO_LARGE",
+      });
+    } finally {
+      if (original === undefined) delete process.env.KB_INGEST_MAX_VIDEO_UPLOAD_BYTES;
+      else process.env.KB_INGEST_MAX_VIDEO_UPLOAD_BYTES = original;
+    }
+  });
+
+  it("rejects an empty video payload (base64 that decodes to zero bytes)", async () => {
+    await expect(
+      callerFor("admin", true).ingestVideo({ ...videoInput, base64: " " }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(ingestVideoMock).not.toHaveBeenCalled();
+  });
+
+  it("SttUnavailableError ⇒ SERVICE_UNAVAILABLE", async () => {
+    ingestVideoMock.mockRejectedValueOnce(new SttUnavailableError());
+    await expect(callerFor("admin", true).ingestVideo(videoInput)).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+    });
+  });
+
+  it("SttValidationError ⇒ BAD_REQUEST", async () => {
+    ingestVideoMock.mockRejectedValueOnce(new SttValidationError("video too large"));
+    await expect(callerFor("admin", true).ingestVideo(videoInput)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("SttTranscribeError ⇒ INTERNAL_SERVER_ERROR", async () => {
+    ingestVideoMock.mockRejectedValueOnce(new SttTranscribeError("whisper.cpp exited with code 1"));
+    await expect(callerFor("admin", true).ingestVideo(videoInput)).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
+  });
+
+  it("KbEmbedError ⇒ INTERNAL_SERVER_ERROR", async () => {
+    ingestVideoMock.mockRejectedValueOnce(new KbEmbedError("model not loaded"));
+    await expect(callerFor("admin", true).ingestVideo(videoInput)).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
+  });
+
+  it("happy path passes corpus/video.filename/video.buffer/userId/language through to ingestVideo", async () => {
+    await callerFor("admin", true).ingestVideo({ ...videoInput, language: "vi" });
+    expect(ingestVideoMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        corpus: "vendor-x-manuals",
+        userId: 1,
+        language: "vi",
+        video: expect.objectContaining({ filename: "onboarding.mp4" }),
+      }),
+    );
+    const call = ingestVideoMock.mock.calls[0]![0];
+    expect(Buffer.isBuffer(call.video.buffer)).toBe(true);
   });
 });
 

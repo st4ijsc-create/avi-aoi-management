@@ -6,8 +6,11 @@
  * added by this task), md/txt (plain read), url (E3-3 — pass-through only: kbWebFetcher.ts
  * fetches + extracts the page text itself via html-to-text/pdf-parse BEFORE calling
  * ingestDocument, so this module's "url" case is just bound+trim, same as md/txt — there is no
- * network I/O or HTML parsing in this file). E3-4 (video/STT) is still a separate future
- * source type, NOT handled here.
+ * network I/O or HTML parsing in this file), video (E3-4 — same pass-through shape:
+ * kbVideoTranscriber.ts runs ffmpeg+whisper.cpp and hands the ALREADY-transcribed plain text to
+ * ingestDocument BEFORE this file ever sees it — this module's "video" case never touches
+ * audio/video bytes, a sidecar process, or the filesystem, it just bounds+trims text like url/
+ * md/txt).
  *
  * Fail-safe discipline:
  *  - An unrecognised mime/extension throws {@link KbUnsupportedTypeError} BEFORE any parsing
@@ -19,7 +22,7 @@
  *    `meta.truncated` tells the caller when a document was cut.
  */
 
-export type KbSourceType = "pdf" | "docx" | "md" | "txt" | "url";
+export type KbSourceType = "pdf" | "docx" | "md" | "txt" | "url" | "video";
 
 /** Thrown when `mimeOrExt` does not resolve to a supported {@link KbSourceType}. */
 export class KbUnsupportedTypeError extends Error {
@@ -97,6 +100,9 @@ export function normalizeSourceType(mimeOrExt: string): KbSourceType {
   // E3-3: kbWebFetcher.ts passes sourceType:"url" into ingestDocument for already-fetched,
   // already-extracted page text — this is a pass-through marker, not a MIME type.
   if (candidate === "url" || raw === "url") return "url";
+  // E3-4: kbVideoTranscriber.ts passes sourceType:"video" into ingestDocument for an
+  // already-transcribed plain-text transcript — same pass-through marker convention as "url".
+  if (candidate === "video" || raw === "video") return "video";
   throw new KbUnsupportedTypeError(mimeOrExt);
 }
 
@@ -135,7 +141,7 @@ async function parseDocx(buf: Buffer): Promise<ParsedDocument> {
   return { text, meta: { sourceType: "docx", charCount: text.length, truncated } };
 }
 
-function parsePlain(raw: string, sourceType: "md" | "txt" | "url"): ParsedDocument {
+function parsePlain(raw: string, sourceType: "md" | "txt" | "url" | "video"): ParsedDocument {
   const { text, truncated } = boundText(raw);
   return { text, meta: { sourceType, charCount: text.length, truncated } };
 }
@@ -162,6 +168,8 @@ export async function parseDocument(input: Buffer | string, mimeOrExt: string): 
         return parsePlain(toText(input), "txt");
       case "url":
         return parsePlain(toText(input), "url");
+      case "video":
+        return parsePlain(toText(input), "video");
     }
   } catch (err) {
     if (err instanceof KbParseError) throw err;

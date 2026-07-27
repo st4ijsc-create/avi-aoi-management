@@ -22,6 +22,11 @@
  * `ingestUrl` (E3-3) reuses the SAME `kbStudioProcedure` gate, PLUS `WEB_INGEST_ENABLED`
  * (default OFF) checked here before any network I/O — see server/services/kbWebFetcher.ts for
  * the SSRF guard that unconditionally applies to every fetch it performs.
+ *
+ * `ingestVideo` (E3-4) reuses the SAME `kbStudioProcedure` gate, PLUS `VIDEO_INGEST_ENABLED`
+ * (default OFF) checked here BEFORE decoding the (potentially large) base64 video payload — see
+ * server/services/kbVideoTranscriber.ts for the ffmpeg+whisper.cpp sidecar pipeline and its
+ * shell-injection-safety + fail-safe discipline.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -42,6 +47,14 @@ import {
   SsrfBlockedError,
   FetchError,
 } from "../services/kbWebFetcher";
+import {
+  ingestVideo,
+  isVideoIngestEnabled,
+  VideoIngestDisabledError,
+  SttUnavailableError,
+  SttValidationError,
+  SttTranscribeError,
+} from "../services/kbVideoTranscriber";
 
 const kbStudioProcedure = roleProcedure("admin", "engineer").use(require2FA);
 
@@ -50,21 +63,34 @@ const MAX_UPLOAD_BYTES = (() => {
   return Number.isFinite(n) && n > 0 ? n : 20 * 1024 * 1024;
 })();
 
-function decodeBase64Doc(b64: string): Buffer {
+/** Separate, much higher cap for base64-encoded VIDEO payloads (default 300MB decoded) — kept
+ * independent of MAX_UPLOAD_BYTES so operators can tune document vs video upload limits apart.
+ * `kbVideoTranscriber.transcribeVideo` re-checks its OWN `VIDEO_INGEST_MAX_BYTES` bound too
+ * (defense-in-depth, same layering as the KB_STUDIO_ENABLED gate). */
+const MAX_VIDEO_UPLOAD_BYTES = (() => {
+  const n = Number(process.env.KB_INGEST_MAX_VIDEO_UPLOAD_BYTES ?? 300 * 1024 * 1024);
+  return Number.isFinite(n) && n > 0 ? n : 300 * 1024 * 1024;
+})();
+
+function decodeBase64Payload(b64: string, maxBytes: number, label: string): Buffer {
   const cleaned = b64.includes(",") ? b64.slice(b64.indexOf(",") + 1) : b64;
   let buf: Buffer;
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 document payload" });
+    throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid base64 ${label} payload` });
   }
   if (buf.length === 0) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Empty document payload" });
+    throw new TRPCError({ code: "BAD_REQUEST", message: `Empty ${label} payload` });
   }
-  if (buf.length > MAX_UPLOAD_BYTES) {
-    throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `Document exceeds ${MAX_UPLOAD_BYTES} bytes` });
+  if (buf.length > maxBytes) {
+    throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `${label} exceeds ${maxBytes} bytes` });
   }
   return buf;
+}
+
+function decodeBase64Doc(b64: string): Buffer {
+  return decodeBase64Payload(b64, MAX_UPLOAD_BYTES, "Document");
 }
 
 export const kbIngestRouter = router({
@@ -74,6 +100,8 @@ export const kbIngestRouter = router({
     maxUploadBytes: MAX_UPLOAD_BYTES,
     allowedTypes: ["pdf", "docx", "md", "txt"] as const,
     webIngestEnabled: isWebIngestEnabled(),
+    videoIngestEnabled: isVideoIngestEnabled(),
+    maxVideoUploadBytes: MAX_VIDEO_UPLOAD_BYTES,
   })),
 
   uploadDocument: kbStudioProcedure
@@ -169,6 +197,70 @@ export const kbIngestRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
         }
         if (err instanceof KbEmbedError || err instanceof KbStoreError) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+        }
+        throw err;
+      }
+    }),
+
+  /**
+   * E3-4 — transcribe a video locally (ffmpeg + whisper.cpp, fully offline — see
+   * kbVideoTranscriber.ts's module doc comment for the shell-injection-safety + fail-safe
+   * discipline) and feed the transcript into ingestDocument. Gated behind VIDEO_INGEST_ENABLED
+   * (checked HERE, before decoding the base64 payload) AND KB_STUDIO_ENABLED (checked here AND
+   * again inside ingestVideo — same defense-in-depth pattern as ingestUrl above). The video
+   * bytes are base64, decoded + size-bounded BEFORE any sidecar work — mirrors uploadDocument's
+   * decode-then-bound discipline, with a dedicated (larger) cap for video.
+   */
+  ingestVideo: kbStudioProcedure
+    .input(
+      z.object({
+        corpus: z.string().trim().min(1).max(120),
+        /** Original filename — METADATA ONLY (ingest sourceRef + an extension hint for
+         * ffmpeg's format probing). Never used to build a filesystem path. */
+        filename: z.string().trim().min(1).max(500),
+        /** Bounded base64 (optionally a data: URL) — see MAX_VIDEO_UPLOAD_BYTES for the
+         * DECODED cap. */
+        base64: z.string().min(1),
+        /** whisper.cpp -l language code, or "auto" (default) for auto-detect. */
+        language: z.string().trim().min(1).max(20).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!isKbStudioEnabled() || !isVideoIngestEnabled()) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Video ingest is disabled (VIDEO_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
+        });
+      }
+
+      const buffer = decodeBase64Payload(input.base64, MAX_VIDEO_UPLOAD_BYTES, "Video");
+
+      try {
+        return await ingestVideo({
+          corpus: input.corpus,
+          video: { buffer, filename: input.filename },
+          userId: ctx.user?.id,
+          language: input.language,
+        });
+      } catch (err) {
+        if (err instanceof VideoIngestDisabledError || err instanceof KbIngestDisabledError) {
+          throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+        }
+        if (err instanceof SttUnavailableError) {
+          throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: err.message });
+        }
+        if (
+          err instanceof SttValidationError ||
+          err instanceof KbUnsupportedTypeError ||
+          err instanceof KbIngestValidationError
+        ) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        }
+        if (err instanceof KbParseError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        }
+        if (err instanceof SttTranscribeError || err instanceof KbEmbedError || err instanceof KbStoreError) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
         }
         throw err;
