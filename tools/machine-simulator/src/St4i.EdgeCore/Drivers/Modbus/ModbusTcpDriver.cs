@@ -156,6 +156,11 @@ public sealed class ModbusTcpDriver : IDeviceDriver
         {
             MachineCode = _map.MachineCode,
             Kind = ReadingKind.Telemetry,
+            // Telemetry has no pass/fail concept (same rationale as IotSensorSim's telemetry path) — Verdict
+            // MUST be Skip, not the enum default (Pass). FleetHost.OnPipelineCommitted increments the
+            // fleet-wide FPY/judged/pass KPIs for any reading whose Verdict != Skip, so a defaulted Pass here
+            // would silently inflate the operator FPY toward 100% on every Modbus poll (whole-branch review).
+            Verdict = Verdict.Skip,
             Telemetry = samples,
             Timestamp = DateTimeOffset.UtcNow,
         };

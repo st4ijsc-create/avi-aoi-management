@@ -80,6 +80,9 @@ public class ModbusTcpDriverLoopbackTests
             Assert.NotNull(firstReading);
             Assert.Equal("PLC-LOOPBACK", firstReading!.MachineCode);
             Assert.Equal(ReadingKind.Telemetry, firstReading.Kind);
+            // Telemetry carries no pass/fail — Verdict MUST be Skip so it can never inflate the fleet-wide
+            // FPY/pass KPIs in FleetHost.OnPipelineCommitted (whole-branch review fix).
+            Assert.Equal(Verdict.Skip, firstReading.Verdict);
             Assert.Equal(2, firstReading.Telemetry.Count);
 
             var temperature = firstReading.Telemetry.Single(t => t.Metric == "temperature");
