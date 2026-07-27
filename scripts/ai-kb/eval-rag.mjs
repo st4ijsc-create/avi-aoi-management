@@ -45,7 +45,10 @@
  * GRAPHRAG NOTE (doc69 B4): unlike the reranker, aiSemanticGraph.ts (loadSemanticGraph +
  * expandWithGraph) is pure logic with NO TS-only dependencies (just node:fs/node:path), and Node's
  * built-in TypeScript type-stripping (confirmed on this runtime) loads it directly from this plain
- * .mjs — so --graph calls the REAL production functions, not a re-implementation. The seed pool for
+ * .mjs — so --graph calls the REAL production functions, not a re-implementation. It is imported
+ * DYNAMICALLY inside main(), only when --graph is passed, so the default/--ci/--rerank paths carry
+ * NO new dependency on Node's .ts type-stripping (Node >=22.6) and behave exactly as before this
+ * task on older/pinned Node runtimes. The seed pool for
  * expansion is the top `--pool` cosine candidates (same knob the reranker uses); after injecting
  * GraphRAG neighbours the combined pool is re-sorted by score and cut to top-K — a deliberate
  * MEASUREMENT choice so an injected neighbour can actually compete for the final K (aiLocalKnowledgeService's
@@ -88,7 +91,12 @@ import { fileURLToPath } from "node:url";
 // built-in type-stripping loads this .ts straight from a plain .mjs — see the GRAPHRAG
 // NOTE above). Not a re-implementation: this is the exact code aiLocalKnowledgeService.ts
 // calls when KB_GRAPHRAG_ENABLED=true.
-import { loadSemanticGraph, expandWithGraph } from "../../server/services/aiSemanticGraph.ts";
+// FIX (reviewer, doc69 B4): loaded via a DYNAMIC import gated on --graph (see main()) — NOT a
+// static top-level import. A static import here would make the ENTIRE script, including the
+// pre-existing --ci/plain-recall path, hard-depend on Node's native .ts type-stripping
+// (Node >=22.6) even though only --graph needs it. These stay `let` (populated inside main())
+// so graphExpandedTopK below can still close over them once --graph has loaded the module.
+let loadSemanticGraph, expandWithGraph;
 
 const ROOT = process.cwd();
 const KDIR = path.join(ROOT, "knowledge");
@@ -266,9 +274,14 @@ async function main() {
   const corpusDim = embeddings[0].embedding.length;
   const domainCount = new Set(questions.map((q) => q.domain || "(none)")).size;
 
-  // doc69 B4 — load the semantic graph ONCE (not per-question). loadSemanticGraph never
-  // throws: a missing/corrupt knowledge/semantic-graph.json yields an empty Map, which
-  // is the HONEST "graph absent" signal this harness reports below (no fabricated delta).
+  // doc69 B4 — load the semantic graph ONCE (not per-question). aiSemanticGraph.ts itself is
+  // only dynamically imported here, gated on DO_GRAPH, so --ci/plain-recall runs never touch it
+  // (see the top-of-file comment). loadSemanticGraph never throws: a missing/corrupt
+  // knowledge/semantic-graph.json yields an empty Map, which is the HONEST "graph absent" signal
+  // this harness reports below (no fabricated delta).
+  if (DO_GRAPH) {
+    ({ loadSemanticGraph, expandWithGraph } = await import("../../server/services/aiSemanticGraph.ts"));
+  }
   const graphAdj = DO_GRAPH ? loadSemanticGraph() : null;
   const graphAvailable = DO_GRAPH && graphAdj.size > 0;
   const graphOpts = DO_GRAPH ? graphRagOptsFromEnv() : null;
