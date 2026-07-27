@@ -64,12 +64,20 @@ public sealed class LiveSettingsEnvVarTests
         var securityDir = Directory.CreateTempSubdirectory("st4i-live-settings-security-").FullName;
         var historianDir = Directory.CreateTempSubdirectory("st4i-live-settings-historian-").FullName;
         var walDir = Directory.CreateTempSubdirectory("st4i-live-settings-wal-").FullName;
+        // FF-1 — isolated the same way as historian/WAL above: without this, FleetHost.UpdateSettings' new
+        // persist-on-change behavior (this env-var seeding call goes through that exact method) would
+        // read/write the REAL %ProgramData%\ST4I\sim\settings\fleet-settings.json — leaking state across
+        // test runs and defeating THIS file's whole "env var becomes FleetHost's initial setting" premise
+        // the very next time any WebApplicationFactory<Program> boots without ST4I_SETTINGS_DIR isolated,
+        // since a persisted file now takes precedence over these env vars (see FF-1's own precedence docs).
+        var settingsDir = Directory.CreateTempSubdirectory("st4i-live-settings-settings-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
         var prevDemoEnabled = Environment.GetEnvironmentVariable("ST4I_DEMO_ENABLED");
         var prevHistorianDir = Environment.GetEnvironmentVariable("ST4I_HISTORIAN_DIR");
         var prevWalDir = Environment.GetEnvironmentVariable("ST4I_WAL_DIR");
+        var prevSettingsDir = Environment.GetEnvironmentVariable("ST4I_SETTINGS_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         var prevServerUrl = Environment.GetEnvironmentVariable("ST4I_SERVER_URL");
         var prevMachineCode = Environment.GetEnvironmentVariable("ST4I_MACHINE_CODE");
@@ -80,6 +88,7 @@ public sealed class LiveSettingsEnvVarTests
             Environment.SetEnvironmentVariable("ST4I_DEMO_ENABLED", "true");
             Environment.SetEnvironmentVariable("ST4I_HISTORIAN_DIR", historianDir);
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", walDir);
+            Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", settingsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
             Environment.SetEnvironmentVariable("ST4I_SERVER_URL", serverUrl);
             Environment.SetEnvironmentVariable("ST4I_MACHINE_CODE", machineCode);
@@ -95,6 +104,7 @@ public sealed class LiveSettingsEnvVarTests
             Environment.SetEnvironmentVariable("ST4I_DEMO_ENABLED", prevDemoEnabled);
             Environment.SetEnvironmentVariable("ST4I_HISTORIAN_DIR", prevHistorianDir);
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", prevWalDir);
+            Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", prevSettingsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             Environment.SetEnvironmentVariable("ST4I_SERVER_URL", prevServerUrl);
             Environment.SetEnvironmentVariable("ST4I_MACHINE_CODE", prevMachineCode);

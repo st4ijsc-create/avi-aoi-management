@@ -116,6 +116,29 @@ public sealed class FleetHost
     /// <see cref="Estop"/> double-emit "Stop" + "Estop" for the same teardown.</summary>
     private readonly HistorianWriter? _historianWriter;
 
+    /// <summary>FF-1 (docs/plans/2026-07-27-ws-ff-fast-follows.md) — optional (defaults null, same
+    /// "every pre-existing test that constructs <see cref="FleetHost"/> directly without one keeps
+    /// compiling/behaving byte-for-byte unchanged" contract as every other optional store above)
+    /// atomic-JSON-backed persistence for <see cref="_serverUrl"/>/<see cref="_machineCode"/>/
+    /// <see cref="_verifyTls"/> — written by <see cref="UpdateSettings"/> on every change so a runtime
+    /// <c>PUT /v1/settings</c> survives a process restart. Deliberately never asked to persist
+    /// <see cref="_language"/> (a pure display preference) or any mk_ key (stays in
+    /// <see cref="CredentialStore"/>, DPAPI-encrypted — never written here).
+    ///
+    /// This ctor eagerly loads a persisted file (if one exists) straight into <see cref="_serverUrl"/>/
+    /// <see cref="_machineCode"/>/<see cref="_verifyTls"/> — same "read it back on construction" idiom
+    /// <see cref="MachineConfigStore"/>/<see cref="Historian.OeeSettingsStore"/> already use — so
+    /// <see cref="GetSettings"/> reports the right values for ANY caller immediately after construction,
+    /// with no extra glue required (this is what makes "new <see cref="FleetHost"/> pointed at the same
+    /// settings directory" a faithful in-process stand-in for a real process restart in tests). It
+    /// deliberately does NOT also call <see cref="TransportCoordinator.RebuildLive"/> here — that requires
+    /// a credential lookup and touches <see cref="_transportCoordinator"/>/<c>_configSyncCoordinator</c>,
+    /// which is exactly what <c>Program.cs</c>'s startup wiring does right after this ctor returns, via a
+    /// real <see cref="UpdateSettings"/> call (the one that also decides persisted-file-vs-env-var
+    /// precedence) — that single call is what actually re-points the Live transport to match, before
+    /// <c>app.Run()</c> ever serves a request.</summary>
+    private readonly FleetSettingsStore? _settingsStore;
+
     /// <summary>Task 3 — "what product is machine X running right now", keyed case-insensitively by
     /// <see cref="MachineDescriptor.Code"/>. A machine absent from this map (the common case — nothing
     /// sets it yet outside tests) resolves machine-scoped config only, exactly like a machine whose
@@ -152,7 +175,8 @@ public sealed class FleetHost
         St4i.EngineApi.Config.ConfigSyncCoordinator? configSyncCoordinator = null,
         MachineConfigStore? configStore = null,
         St4i.EdgeCore.Config.ProductConfigStore? productConfigStore = null,
-        HistorianWriter? historianWriter = null)
+        HistorianWriter? historianWriter = null,
+        FleetSettingsStore? settingsStore = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -162,6 +186,21 @@ public sealed class FleetHost
         _configStore = configStore;
         _productConfigStore = productConfigStore;
         _historianWriter = historianWriter;
+        _settingsStore = settingsStore;
+
+        // FF-1 — eager load, no lock needed: runs once, before this instance is published to any other
+        // thread (same reasoning SeedAoiProductLinks below documents for itself). See _settingsStore's own
+        // doc comment for why this only sets fields and leaves the actual transport rebuild to Program.cs.
+        if (_settingsStore is not null)
+        {
+            var persisted = _settingsStore.Load();
+            if (persisted is not null)
+            {
+                _serverUrl = persisted.ServerUrl;
+                _machineCode = persisted.MachineCode;
+                _verifyTls = persisted.VerifyTls;
+            }
+        }
 
         _fleet = LoadFleet().ToList();
         _states = new ConcurrentDictionary<string, MachineState>(StringComparer.OrdinalIgnoreCase);
@@ -887,6 +926,9 @@ public sealed class FleetHost
     public SettingsDto UpdateSettings(SettingsUpdateRequest request)
     {
         bool rebuildNeeded;
+        string persistedServerUrl;
+        string persistedMachineCode;
+        bool persistedVerifyTls;
         lock (_gate)
         {
             rebuildNeeded = false;
@@ -894,6 +936,10 @@ public sealed class FleetHost
             if (request.VerifyTls is not null) { _verifyTls = request.VerifyTls.Value; rebuildNeeded = true; }
             if (request.MachineCode is not null) { _machineCode = request.MachineCode; rebuildNeeded = true; }
             if (request.Language is not null) { _language = request.Language; }
+
+            persistedServerUrl = _serverUrl;
+            persistedMachineCode = _machineCode;
+            persistedVerifyTls = _verifyTls;
         }
 
         if (rebuildNeeded)
@@ -901,6 +947,19 @@ public sealed class FleetHost
             var mkKey = CredentialStore.Load(_machineCode);
             _transportCoordinator.RebuildLive(_serverUrl, _machineCode, mkKey, _verifyTls);
             _configSyncCoordinator?.RebuildLive(_serverUrl, _machineCode, mkKey, _verifyTls, _transportCoordinator.Mode);
+
+            // FF-1 — persist serverUrl/machineCode/verifyTls ONLY (never the mk_ key above, never
+            // _language) so this survives a process restart; see FleetSettingsStore's own doc comment for
+            // the file-vs-env-var precedence this enables. The values saved are the ones captured under
+            // _gate above (this call's own effective triple), not a fresh unsynchronized field read, so a
+            // concurrent second UpdateSettings call can never make this write a torn mix of both calls'
+            // values.
+            _settingsStore?.Save(new PersistedFleetSettings
+            {
+                ServerUrl = persistedServerUrl,
+                MachineCode = persistedMachineCode,
+                VerifyTls = persistedVerifyTls,
+            });
         }
 
         return GetSettings();

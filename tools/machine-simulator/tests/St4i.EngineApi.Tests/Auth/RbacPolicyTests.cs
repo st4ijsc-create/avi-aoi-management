@@ -55,12 +55,17 @@ public sealed class RbacPolicyTests
         var securityDir = Directory.CreateTempSubdirectory("st4i-rbac-security-").FullName;
         var historianDir = Directory.CreateTempSubdirectory("st4i-rbac-historian-").FullName;
         var walDir = Directory.CreateTempSubdirectory("st4i-rbac-wal-").FullName;
+        // FF-1 — isolated the same way as historian/WAL above: without this, FleetHost.UpdateSettings' new
+        // persist-on-change behavior would read/write the REAL %ProgramData%\ST4I\sim\settings\
+        // fleet-settings.json, leaking state across test runs (and across the whole test suite).
+        var settingsDir = Directory.CreateTempSubdirectory("st4i-rbac-settings-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
         var prevDemoEnabled = Environment.GetEnvironmentVariable("ST4I_DEMO_ENABLED");
         var prevHistorianDir = Environment.GetEnvironmentVariable("ST4I_HISTORIAN_DIR");
         var prevWalDir = Environment.GetEnvironmentVariable("ST4I_WAL_DIR");
+        var prevSettingsDir = Environment.GetEnvironmentVariable("ST4I_SETTINGS_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -68,6 +73,7 @@ public sealed class RbacPolicyTests
             Environment.SetEnvironmentVariable("ST4I_DEMO_ENABLED", demoEnabled ? "true" : null);
             Environment.SetEnvironmentVariable("ST4I_HISTORIAN_DIR", historianDir);
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", walDir);
+            Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", settingsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -80,6 +86,7 @@ public sealed class RbacPolicyTests
             Environment.SetEnvironmentVariable("ST4I_DEMO_ENABLED", prevDemoEnabled);
             Environment.SetEnvironmentVariable("ST4I_HISTORIAN_DIR", prevHistorianDir);
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", prevWalDir);
+            Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", prevSettingsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }

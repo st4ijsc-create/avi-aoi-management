@@ -349,6 +349,18 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton(
     _ => new St4i.EdgeCore.Historian.OeeSettingsStore(string.IsNullOrWhiteSpace(historianDir) ? null : historianDir));
 
+// FF-1 (docs/plans/2026-07-27-ws-ff-fast-follows.md) — atomic-JSON-backed persistence for FleetHost's
+// serverUrl/machineCode/verifyTls (see FleetSettingsStore's own doc comment for the full precedence
+// this enables against the WS-F1 env vars read just below). A SEPARATE directory/file from every store
+// above — never mixed with historian.db/oee-settings.json (a different concern) or CredentialStore's
+// creds/ (this file only ever holds non-secret fields, but keeps that invariant obvious on disk too).
+// Relocatable via ST4I_SETTINGS_DIR (FleetSettingsStore.EnvVarDir), same ops/testability rationale as
+// ST4I_HISTORIAN_DIR above. Constructed as a local (not just `_ => new ...` inside AddSingleton) because
+// the startup wiring further down needs to call Load() on this SAME instance BEFORE the first
+// FleetHost.UpdateSettings call, to decide the persisted-file-vs-env-var precedence.
+var settingsStore = new St4i.EdgeCore.Config.FleetSettingsStore();
+builder.Services.AddSingleton(settingsStore);
+
 // WS-F1 final-review fix F1 — a headless Windows Service install has no interactive Settings UI to
 // type a real serverUrl/machineCode into, and FleetHost's `_serverUrl`/`_machineCode`/`_verifyTls`
 // fields (see FleetHost.cs:142-145's DefaultServerUrl/DefaultMachineCode/`true`) are plain in-memory
@@ -362,6 +374,10 @@ builder.Services.AddSingleton(
 // `PUT /v1/settings` already uses, so the values chosen here take effect (rebuilding the Live
 // transport/config-sync backends) exactly like an operator's own settings edit would. Never logged —
 // none of these three are secrets, but there's no reason to echo config back into a log sink either.
+// FF-1 update — these three env vars are now only a FLOOR: settingsStore.Load() (right before the
+// FleetHost.UpdateSettings call further down) takes priority whenever fleet-settings.json already
+// exists, so a real operator PUT (or even this very env-seeded boot, on the NEXT restart) is what
+// actually wins from then on. See FleetSettingsStore's own doc comment for the full precedence writeup.
 var initialLiveServerUrl = Environment.GetEnvironmentVariable("ST4I_SERVER_URL");
 var initialLiveMachineCode = Environment.GetEnvironmentVariable("ST4I_MACHINE_CODE");
 var initialLiveVerifyTlsRaw = Environment.GetEnvironmentVariable("ST4I_VERIFY_TLS");
@@ -459,11 +475,25 @@ if (!string.IsNullOrWhiteSpace(initialLiveVerifyTlsRaw))
     initialLiveVerifyTls = !(trimmed == "0" || string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase));
 }
 
-fleetHost.UpdateSettings(new SettingsUpdateRequest(
-    ServerUrl: string.IsNullOrWhiteSpace(initialLiveServerUrl) ? null : initialLiveServerUrl,
-    VerifyTls: initialLiveVerifyTls,
-    Language: null,
-    MachineCode: string.IsNullOrWhiteSpace(initialLiveMachineCode) ? null : initialLiveMachineCode));
+// FF-1 (docs/plans/2026-07-27-ws-ff-fast-follows.md) — a persisted fleet-settings.json, if one already
+// exists, is the source of truth for serverUrl/machineCode/verifyTls and wins over the env vars above
+// outright (they're only ever the FLOOR for a machine that has never had these three set before). Either
+// branch below goes through this exact same FleetHost.UpdateSettings call, so the transport/config-sync
+// rebuild + (new) persistence-on-change both happen identically regardless of which source won.
+var persistedSettings = settingsStore.Load();
+var initialSettingsRequest = persistedSettings is not null
+    ? new SettingsUpdateRequest(
+        ServerUrl: persistedSettings.ServerUrl,
+        VerifyTls: persistedSettings.VerifyTls,
+        Language: null,
+        MachineCode: persistedSettings.MachineCode)
+    : new SettingsUpdateRequest(
+        ServerUrl: string.IsNullOrWhiteSpace(initialLiveServerUrl) ? null : initialLiveServerUrl,
+        VerifyTls: initialLiveVerifyTls,
+        Language: null,
+        MachineCode: string.IsNullOrWhiteSpace(initialLiveMachineCode) ? null : initialLiveMachineCode);
+
+fleetHost.UpdateSettings(initialSettingsRequest);
 
 app.Logger.LogInformation(
     "St4i.EngineApi ready — {Count} machine(s) in the fleet roster: {Codes} (mode={Mode})",
