@@ -1397,11 +1397,17 @@ export interface KbHealth {
   // + recall + when). null when autosync has never run a gate (disabled, or no
   // run since boot) — NOT the same as a failure, so the client must not treat
   // null as "bad".
+  //   rollbackFailed — (review fix) true only when a rollback was NEEDED
+  //   (evalGate:"fail") and BOTH restore attempts failed — the corpus may be
+  //   a mixed old/new state on disk until the next successful autosync
+  //   self-heals it. Distinct from rolledBack:false, which also covers the
+  //   normal "no rollback was needed" case (pass/skip).
   lastAutosyncEvalGate: {
     evalGate: "pass" | "fail" | "skipped";
     recall: number | null;
     reason?: string;
     rolledBack: boolean;
+    rollbackFailed: boolean;
     at: string;
   } | null;
 }

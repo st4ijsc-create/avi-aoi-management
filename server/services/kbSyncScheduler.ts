@@ -34,9 +34,16 @@
  *              load error, timeout) — NOT the same as "regressed". Keeps the
  *              new KB (an inconclusive eval must not roll back a good build),
  *              evalGate:"skipped".
- * Fail-safe: ANY unexpected error inside the gate's decision logic restores
- * the snapshot too — never leave a half-swapped KB up because the gate itself
- * crashed mid-decision.
+ * Fail-safe: ANY unexpected error inside the gate's decision logic triggers a
+ * best-effort restore of the snapshot too. That restore (restoreKbArtifacts)
+ * is a plain sequential copyFileSync/unlinkSync loop over the artifact list —
+ * it is NOT atomic across files. A hard kill mid-restore, or a second failure
+ * during this fail-safe retry, can leave a MIXED old/new corpus on disk. When
+ * both restore attempts fail we do not pretend otherwise: the run records
+ * rollbackFailed on the KB health signal (lastAutosyncEvalGate) so ops/UI can
+ * see the corpus may be inconsistent. That mixed state SELF-HEALS on the next
+ * successful autosync, which overwrites every artifact again regardless of
+ * what state it found them in.
  *
  * Env flags:
  *   KB_AUTOSYNC_ENABLED  (default "false" — master switch; safe no-op when off)
@@ -136,6 +143,14 @@ export interface KbSyncRunStats {
   // true when the pre-sync KB snapshot was restored (evalGate:"fail" or an
   // unexpected error inside the gate itself — the fail-safe path).
   rolledBack?: boolean;
+  // true when a rollback was NEEDED (evalGate:"fail", or the gate's own
+  // fail-safe path) but BOTH the primary restore attempt and the fail-safe
+  // retry threw — rolledBack stays false/unset and the corpus may be left in
+  // a mixed old/new state on disk (restoreKbArtifacts is a best-effort,
+  // non-atomic per-file loop). SELF-HEALS on the next successful autosync.
+  // Surfaced on the KB health signal (getLastAutosyncEvalGate) so ops/UI can
+  // see the corpus may be inconsistent in the meantime.
+  rollbackFailed?: boolean;
 }
 
 // ─── B1 — answer-eval gate: snapshot / restore / eval-harness helpers ─────────
@@ -152,8 +167,12 @@ interface KbArtifactSnapshot {
  * treats it as "no snapshot" and skips the gate for this run rather than risk
  * a broken restore later. */
 function snapshotKbArtifacts(): KbArtifactSnapshot | null {
+  // Hoisted out of the try so the catch can clean it up even when mkdtempSync
+  // itself succeeded but a later copyFileSync in the loop throws — otherwise
+  // the already-created temp dir is orphaned in os.tmpdir() forever.
+  let backupDir: string | undefined;
   try {
-    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-eval-gate-backup-"));
+    backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-eval-gate-backup-"));
     const existed = new Map<string, boolean>();
     for (const file of KB_ARTIFACT_FILES) {
       const isPresent = fs.existsSync(file);
@@ -165,13 +184,25 @@ function snapshotKbArtifacts(): KbArtifactSnapshot | null {
     return { backupDir, existed };
   } catch (err) {
     console.error("[kbSyncScheduler] snapshot failed — running this sync WITHOUT the eval gate:", (err as Error)?.message ?? err);
+    if (backupDir) {
+      try {
+        fs.rmSync(backupDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort — a leftover temp dir here is not worth crashing over */
+      }
+    }
     return null;
   }
 }
 
 /** Restore every artifact from the snapshot: copy back what existed, delete
- * what the (now-rejected) sync created. May throw — callers MUST handle that
- * as the fail-safe case (never assume a restore silently succeeded). */
+ * what the (now-rejected) sync created. Best-effort, NOT atomic — a plain
+ * sequential per-file loop, so a crash partway through (or a second failure
+ * on the fail-safe retry) can leave a mixed old/new corpus on disk rather
+ * than a clean all-old-or-all-new swap. May throw — callers MUST handle that
+ * as the fail-safe case (never assume a restore silently succeeded); the
+ * caller is also responsible for recording rollbackFailed when even the
+ * retry can't restore cleanly, so the KB health signal stays honest. */
 function restoreKbArtifacts(snapshot: KbArtifactSnapshot): void {
   for (const [file, wasPresent] of snapshot.existed) {
     const backupPath = path.join(snapshot.backupDir, path.basename(file));
@@ -446,6 +477,10 @@ export async function runKbSyncNow(): Promise<KbSyncRunStats> {
           "[kbSyncScheduler] CRITICAL — fail-safe restore ALSO failed; the KB may be inconsistent:",
           (restoreErr as Error)?.message ?? restoreErr,
         );
+        // Both restore attempts failed — record the honest, durable signal so
+        // the KB health surface can flag the corpus as possibly mixed until
+        // the next successful autosync self-heals it.
+        stats.rollbackFailed = true;
       }
       stats.evalGate = "fail";
       stats.evalReason = "gate_exception";
@@ -465,19 +500,23 @@ export async function runKbSyncNow(): Promise<KbSyncRunStats> {
   console.log(
     `[kbSyncScheduler] done in ${stats.durationMs}ms — ok=${stats.ok} exit=${stats.exitCode} ` +
       `chunks ${stats.chunksBefore}→${stats.chunksAfter} (Δ${stats.added})` +
-      (stats.evalGate ? ` evalGate=${stats.evalGate}` : ""),
+      (stats.evalGate ? ` evalGate=${stats.evalGate}` : "") +
+      (stats.rollbackFailed ? " rollbackFailed=true (KB may be inconsistent until next autosync)" : ""),
   );
   return stats;
 }
 
 /** B1 — the last autosync run's answer-eval gate outcome, for the KB health
  * signal. null when no autosync run has recorded a gate outcome yet (gate off,
- * or no run since boot). */
+ * or no run since boot). rollbackFailed (fix, doc69-B1 review) is true only
+ * when a rollback was needed AND both restore attempts failed — the corpus
+ * may be mixed old/new until the next successful autosync self-heals it. */
 export function getLastAutosyncEvalGate(): {
   evalGate: "pass" | "fail" | "skipped";
   recall: number | null;
   reason?: string;
   rolledBack: boolean;
+  rollbackFailed: boolean;
   at: string;
 } | null {
   if (!lastRunStats?.evalGate) return null;
@@ -486,6 +525,7 @@ export function getLastAutosyncEvalGate(): {
     recall: lastRunStats.evalRecall ?? null,
     reason: lastRunStats.evalReason,
     rolledBack: lastRunStats.rolledBack === true,
+    rollbackFailed: lastRunStats.rollbackFailed === true,
     at: (lastRunAt ?? new Date()).toISOString(),
   };
 }

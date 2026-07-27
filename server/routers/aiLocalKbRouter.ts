@@ -57,11 +57,15 @@ interface KbHealthResponse {
   staleDays?: number | null;
   // doc69 B1 (Wave 5) — last autosync answer-eval gate outcome, passed through
   // unchanged from getKbHealth. null when autosync hasn't run a gated sync yet.
+  // rollbackFailed (review fix) — true only when a rollback was needed but
+  // BOTH restore attempts failed; the KB may be a mixed old/new corpus until
+  // the next successful autosync self-heals it.
   lastAutosyncEvalGate?: {
     evalGate: "pass" | "fail" | "skipped";
     recall: number | null;
     reason?: string;
     rolledBack: boolean;
+    rollbackFailed: boolean;
     at: string;
   } | null;
 }

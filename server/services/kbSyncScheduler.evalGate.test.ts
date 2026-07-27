@@ -29,7 +29,13 @@
  *     gate's own catch retries the restore and the pre-sync KB ends up live.
  *   - fail-safe (worse case): the retry ALSO fails → the run still resolves (never hangs/
  *     throws out of runKbSyncNow, single-flight lock still released) and honestly reports
- *     rolledBack as falsy rather than claiming a restore it couldn't verify.
+ *     rolledBack as falsy rather than claiming a restore it couldn't verify — AND (review
+ *     fix) records rollbackFailed:true, surfaced verbatim through getLastAutosyncEvalGate()
+ *     (the same signal aiLocalKnowledgeService's KB health exposes), so ops/UI can see the
+ *     corpus may be a mixed old/new state until the next successful autosync self-heals it.
+ *   - snapshot cleanup (review fix): mkdtempSync succeeds but a later copyFileSync into the
+ *     backup dir throws → snapshotKbArtifacts() returns null (gate skipped for this run, as
+ *     before) AND removes the now-orphaned temp dir rather than leaking it into os.tmpdir().
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
@@ -47,6 +53,9 @@ let tmpDirCounter = 0;
 // snapshot temp dir) that should throw before behaving normally again. Snapshot-direction
 // copies (dst = the temp backup dir) are never affected — see isBackupPath below.
 let restoreFailuresRemaining = 0;
+// # of SNAPSHOT-direction copyFileSync calls (dst = the temp backup dir) that should throw —
+// simulates mkdtempSync succeeding but a later copy into it failing (fix 2: temp-dir leak).
+let snapshotFailuresRemaining = 0;
 
 function isBackupPath(p: string): boolean {
   return p.includes("kb-eval-gate-backup");
@@ -68,6 +77,10 @@ vi.mock("node:fs", () => {
       fsExist.add(p);
     },
     copyFileSync: (src: string, dst: string) => {
+      if (isBackupPath(dst) && snapshotFailuresRemaining > 0) {
+        snapshotFailuresRemaining--;
+        throw new Error("simulated transient disk error during snapshot");
+      }
       if (!isBackupPath(dst) && restoreFailuresRemaining > 0) {
         restoreFailuresRemaining--;
         throw new Error("simulated transient disk error during restore");
@@ -138,7 +151,7 @@ vi.mock("node:child_process", () => ({
   spawn: (...a: [string, string[], Record<string, unknown>?]) => (spawnMock as unknown as (...a: unknown[]) => FakeChild)(...a),
 }));
 
-import { runKbSyncNow, getKbSyncSchedulerStatus } from "./kbSyncScheduler";
+import { runKbSyncNow, getKbSyncSchedulerStatus, getLastAutosyncEvalGate } from "./kbSyncScheduler";
 
 // ─── fixtures ──────────────────────────────────────────────────────────────────
 function kbPath(name: string): string {
@@ -206,6 +219,7 @@ beforeEach(() => {
   spawnMock.mockClear();
   tmpDirCounter = 0;
   restoreFailuresRemaining = 0;
+  snapshotFailuresRemaining = 0;
   syncBehavior = syncSucceedsMutating;
   evalBehavior = evalPass(0.95);
   process.env.KB_AUTOSYNC_EVAL_GATE = "true";
@@ -331,7 +345,7 @@ describe("kbSyncScheduler — B1 answer-eval gate", () => {
     expect(getKbSyncSchedulerStatus().running).toBe(false);
   });
 
-  it("fail-safe (worse case): the retry ALSO fails → the run still resolves and honestly reports rolledBack as falsy rather than claiming an unverified restore", async () => {
+  it("fail-safe (worse case): the retry ALSO fails → the run still resolves, honestly reports rolledBack as falsy rather than claiming an unverified restore, AND flags rollbackFailed on the KB health signal", async () => {
     evalBehavior = evalFailRegression(0.4);
     restoreFailuresRemaining = 999; // every restore-direction copy throws — the retry can't succeed either
 
@@ -342,8 +356,48 @@ describe("kbSyncScheduler — B1 answer-eval gate", () => {
     expect(stats.ok).toBe(false);
     // must NOT claim a success it could not verify — this is the honesty half of fail-safe.
     expect(stats.rolledBack).toBeFalsy();
+    // review fix: BOTH restore attempts failed → the KB may be a mixed old/new corpus. That
+    // must be durably flagged, not silently swallowed.
+    expect(stats.rollbackFailed).toBe(true);
 
     // runKbSyncNow still resolved (never threw/hung) and released the single-flight lock.
     expect(getKbSyncSchedulerStatus().running).toBe(false);
+
+    // review fix: the KB health surface (getLastAutosyncEvalGate, read verbatim by
+    // aiLocalKnowledgeService.getKbHealth().lastAutosyncEvalGate) reports the same
+    // inconsistency warning — this is what ops/UI actually see.
+    const healthSignal = getLastAutosyncEvalGate();
+    expect(healthSignal?.evalGate).toBe("fail");
+    expect(healthSignal?.rolledBack).toBe(false);
+    expect(healthSignal?.rollbackFailed).toBe(true);
+  });
+
+  it("fail-safe: when the retry SUCCEEDS, the health signal reports rollbackFailed:false (not conflated with the worse-case above)", async () => {
+    evalBehavior = evalFailRegression(0.4);
+    restoreFailuresRemaining = 1; // only the first attempt fails — the retry succeeds
+
+    const stats = await runKbSyncNow();
+
+    expect(stats.rolledBack).toBe(true);
+    expect(stats.rollbackFailed).toBeFalsy();
+
+    const healthSignal = getLastAutosyncEvalGate();
+    expect(healthSignal?.rolledBack).toBe(true);
+    expect(healthSignal?.rollbackFailed).toBe(false);
+  });
+
+  it("snapshot cleanup (review fix): mkdtempSync succeeds but a later copyFileSync into the backup dir throws → the orphaned temp dir is removed, not leaked", async () => {
+    snapshotFailuresRemaining = 1; // first present-artifact copy INTO the fresh backup dir throws
+
+    const stats = await runKbSyncNow();
+
+    // snapshot failed → this sync ran WITHOUT the gate (existing, correct behavior).
+    expect(stats.evalGate).toBeUndefined();
+    expect(stats.ok).toBe(true);
+    expect(spawnCalls).toHaveLength(1); // only npm run kb:sync — no eval spawned
+
+    // the temp dir mkdtempSync created before the failure must not be left behind.
+    const backupDirs = [...fsExist].filter((p) => p.includes("kb-eval-gate-backup"));
+    expect(backupDirs).toHaveLength(0);
   });
 });
