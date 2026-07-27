@@ -1545,12 +1545,17 @@ export const navGroups: NavGroup[] = [
         // durable training asset, not an ephemeral pipeline step. Same RBAC
         // gate as /ai-data-processing. Knowledge Base (RAG docs, /ai-knowledge)
         // is a later E3 task — NOT added here.
-        // doc69 Wave 0-C — engineers own dataset splits as training-asset daily work.
+        // doc69 Wave 0-C fix round 1 — kept admin-only, NOT widened: the aiEval/MLOps
+        // surface (buildDataset, model eval, pipelines) is intentionally admin-governed
+        // (backend `aiEval.buildDataset` is `adminProcedure` by design, not an
+        // oversight). The engineer's training screen is /ai-training-studio (KB
+        // corpus/ingest, admin+engineer by design) — widening this one too would leave
+        // engineers on a page whose only action always 403s.
         href: "/ai-datasets",
         label: "nav.aiDatasets",
         icon: <Boxes className="h-4 w-4" />,
         description: "nav.aiDatasetsDesc",
-        requiredRole: ['admin', 'engineer'],
+        requiredRole: 'admin',
         permissionCategory: "admin",
         section: "knowledgeTraining",
       },
