@@ -7,7 +7,8 @@
 | Đối tượng rà soát | `tools/machine-simulator` (bộ `St4i.*`, .NET 10) — "St4i Machine Simulator" đang tiến hoá thành edge middleware |
 | Tài liệu đối chiếu | Kế hoạch & thiết kế **SYNAPSE** tại `D:\SOURCES\SYNAPSE` (SYN-RAOE-SDD-001 v1.0 + KE-HOACH-PHAT-TRIEN + 5 tầng) |
 | Phương pháp | 3 AI Agent rà soát song song: (1) chuẩn hoá 97 yêu cầu SYNAPSE, (2) kiểm kê hiện trạng theo mã nguồn, (3) phân tích contract + thương mại hoá |
-| Trạng thái | **Đã review — quyết định định hướng đã chốt 26/07/2026; đang lập kế hoạch chi tiết Giai đoạn 1** |
+| Trạng thái | **ĐANG THỰC HIỆN** — GĐ1 xong; GĐ2 xong (trừ B2); GĐ3 mới xong phần "Join" (WS-I). Xem **§0-bis Tiến độ** (cập nhật 28/07/2026) |
+| Cập nhật gần nhất | **28/07/2026** — nhánh `feat/machine-simulator` @ `669eba86` (đã push `fresh`) |
 
 ---
 
@@ -25,6 +26,75 @@
 | 8 | Vị trí tài liệu | Giữ tại `tools/machine-simulator/docs/` |
 | 9 | Khởi động | **Bắt đầu WS-A** (Historian/OEE/Report) theo trình tự WS-A → (WS-C ‖ WS-D) → WS-F1 |
 | 10 | Cách thực thi | **Subagent-driven** — mỗi task 1 subagent + review giữa các task |
+
+---
+
+## 0-bis. TIẾN ĐỘ THỰC HIỆN *(cập nhật 28/07/2026)*
+
+> Nhánh `feat/machine-simulator` @ `669eba86` (đã push remote `fresh`). Mỗi workstream đóng bằng một **whole-branch review** (agent `opus` cho phần an toàn/mật mã/đồng thời) với kết luận MERGE-READY, không còn Critical/Important. Bộ test: EngineApi 472 · EdgeCore 426 · EdgeService 28 · web build sạch · Playwright visual/a11y 44/44.
+
+### 0-bis.1 Đã giao
+
+| WS | GĐ | Đã giao | Commit | Tài liệu |
+|---|---|---|---|---|
+| **WS-A** Historian & Báo cáo | 1 | SQLite historian bền + `OeeCalculator` (A×P×Q, **3 nhóm tổn thất trung thực** thay vì six-big-losses) + 11 endpoint + xuất CSV/PDF + màn `/historian` `/reports` | `cd2d25cb` | *(chưa có §README riêng)* |
+| **WS-C** Store-and-forward bền | 1 | Wire WAL SDK ra đĩa (`queuePath`), `WalFlushPump` + `WalMaintenance`, chứng minh replay đúng thứ tự qua restart | `7720774e` | *(chỉ ở bảng env §15.2)* |
+| **WS-D-core** Bảo mật cục bộ | 1 | Cookie auth + user store + RBAC 3 vai + audit hash-chain + loopback-guard + `verifyTls` mặc định bật | `1491e9da` | §14 |
+| **WS-F1** Đóng gói | 1 | EngineApi chạy **Windows Service** + MSI WiX v4 (dựng thật) + `remove-data.ps1` | `99cd6271` | §15 |
+| **WS-FF** Fast-follows | 1 | `FleetSettingsStore` bền qua restart; DPAPI `LocalMachine` + ACL; xoá CVE NU1903 | `338f01ff` | §15.8 |
+| **WS-B** UNS spine | 2 | Broker nhúng + **Sparkplug B** + NBIRTH/NDEATH + cây `syn/{site}/...` retained | `1b005dfb` | §16.1 |
+| **WS-G-core** Policy | 2 | `PolicyEngine` default-deny (EstopGuard + RoleObligation) + `/v1/safety` chỉ-đọc (XC-R40) | `1b005dfb` | §16.2 |
+| *(G2-5)* Cách ly lỗi | 2 | FleetHost N-slot, 1 driver chết không kéo sập pipeline khác | `1b005dfb` | §16.3 |
+| **WS-H1a** Modbus TCP | 2 | `ModbusTcpDriver` (NModbus, MIT) chỉ-đọc, slot cách ly, telemetry `Verdict.Skip` (không bơm FPY) | `1b005dfb` | §16.4 |
+| **WS-J** Asset Registry | 2 | `AssetRegistryStore` (SQLite, **ISA-95 URN**, vòng đời Provisioned→…→Decommissioned) + `/v1/assets` + màn `/assets` | `88b5b1b7` | §16.5 |
+| **WS-D-field / EC** Danh tính + bridge | 3 | X.509 tự ký (ECDSA P-256, DPAPI+ACL) + bridge mTLS hướng lên Site theo **pinned trust** + `/v1/site*` + màn `/site` | `81c44e4a` | §17 |
+| **WS-I / SD** mDNS join | 3 | `SiteDiscovery` (Makaretu, MIT) **browse-only** + `GET /v1/site/discover` + nút "Discover Sites" điền sẵn host/port | *(sub-2)* | §17.4–17.5 |
+| **WS-H1b** OPC-UA | 3 | `OpcUaDriver` (OPC Foundation, **relicense MIT 04/12/2025**, pin 1.5.378.156) poll-only, slot cách ly, hiện trong roster/web | `d637c320` | §16.6 |
+| **WS-G-core+** Alarm + Line | 3 | **ISA-18.2 AlarmEngine** (3 nguồn: Policy-DENY / DriverHealth / NG-rate, SQLite `alarms.db`, evaluator định kỳ) + **LineController PackML/ISA-88** trên FleetHost + `/v1/alarms` `/v1/line` + UNS `_line/state` + khoá alarm→Held + màn `/alarms` `/line` | `669eba86` | §18 |
+
+### 0-bis.2 Đính chính cách đánh số giai đoạn
+
+Trình tự **thi công** khác trình tự **§6**. Cụ thể: bốn đợt được ledger gọi là "GĐ3" (EC · mDNS · OPC-UA · Alarms+Line) thực chất gồm **WS-I của GĐ3** (EC + mDNS) và **hai hạng mục còn nợ của GĐ2** (WS-H1 đa giao thức, WS-G-core Line/Alarm). Vì vậy:
+
+- **GĐ1 — XONG.** (License/Edition không thuộc GĐ1 theo quyết định #4.)
+- **GĐ2 — XONG, trừ hai điểm:** `WS-B B2` (đảo chiều bridge — đã đánh giá riêng, **chủ động hoãn**) và `WS-H1` phần **Serial/RS-485** (chưa làm).
+- **GĐ3 — MỚI XONG ~1/4.** §6 liệt kê 4 workstream; hiện trạng:
+
+| WS-GĐ3 (§6) | Trạng thái | Còn thiếu |
+|---|---|---|
+| **WS-I** Join | **PARTIAL** | mDNS **advertise** (Site tự thấy máy), auto-provision/trust-on-first-discovery, **reconciliation seq-number** + backfill khi nối lại |
+| **WS-E-full** License/Edition | **CHƯA BẮT ĐẦU** | Toàn bộ (Ed25519, fingerprint, offline activation, feature-flags theo edition, grace 30 ngày, license-credit nâng cấp) |
+| **WS-F4** Auto-update + LTS | **CHƯA BẮT ĐẦU** | Chỉ có nền (`Directory.Build.props`, `capabilities.version`); chưa có cơ chế phát hành/cập nhật, chưa có nhánh LTS |
+| **WS-G-plugin** Connector SDK | **CHƯA BẮT ĐẦU** | Driver hiện là in-process trực tiếp trên `IDeviceDriver`; chưa có `plugin.yaml`/apiVersion, sidecar DLL hãng, conformance suite, ký số |
+
+- **GĐ4 — CHƯA BẮT ĐẦU.**
+
+### 0-bis.3 Bảng GAP cập nhật
+
+| GAP | Trạng thái 28/07/2026 |
+|---|---|
+| **A** Dữ liệu bền & báo cáo | **DONE** (giữ 3 nhóm tổn thất thay vì six-big-losses — cố ý, trung thực) |
+| **B** Xương sống middleware | **PARTIAL** — B1 ✅ · B2 ✅ · B3 ✅ · B5 ✅ · **B4 dở** (Modbus/OPC-UA cơ bản; Serial/SECS chưa) |
+| **C** Cơ chế JOIN | **PARTIAL** — bridge ✅, định danh vị trí ✅, dual-connector ✅; **mDNS advertise + reconciliation seq chưa** |
+| **D** Bảo mật & an toàn | **PARTIAL** — D1–D3 ✅ · D4 ✅ (nhưng **chưa xoay vòng cert**, chưa EST/SCEP/Site-CA) · D5 ✅ · **D6 (ký số + SBOM + quét CVE) chưa** |
+| **E** Điều phối/Guardrail | **DONE** — E1 Policy ✅ · E2 LineController ✅ · E3 ISA-18.2 Alarm ✅ |
+| **F** Thương mại hoá | **PARTIAL** — F2 ✅ · F3 ✅; **F1 license chưa** · **F4 auto-update/LTS chưa** · F5 HA thật chưa |
+| **G** Plugin/SDK | **CHƯA BẮT ĐẦU** |
+| **H** Trí tuệ (T4) | **CHƯA BẮT ĐẦU** *(đúng chủ ý hoãn)* |
+
+### 0-bis.4 Backlog đang treo *(đã ghi nhận, chưa làm)*
+
+Mỗi mục dưới đây đều được ghi rõ trong ledger/blueprint hoặc mục "Honest deferrals" của README — **không có nợ ẩn**.
+
+| Nhóm | Mục treo |
+|---|---|
+| Join/UNS | `WS-B B2` đảo chiều bridge (~34 file, rủi ro cao — đã đánh giá riêng); mDNS **advertise**; reconciliation seq-number/backfill; NCMD lệnh vào từ Site; chuyển `SiteDiscovery` sang EngineApi (gọn binary) |
+| Bảo mật | Xoay vòng chứng thư; EST/SCEP + Site CA; `--reset-admin-password`; HMAC-khoá + neo audit ra ngoài (WORM); **D6 ký số MSI + SBOM + quét CVE** |
+| Giao thức | Modbus 32-bit/float + gộp block + **RTU**; OPC-UA **subscriptions** + xác thực bằng cert + duyệt address-space; Serial RS-485; S7/EtherNet-IP; SECS/GEM |
+| Alarm/Line | Tự động HOLD fleet **đang chạy** khi có Critical mới; hold theo từng máy; shelving/rationalization; trạng thái PackML chuyển tiếp đầy đủ |
+| Đóng gói | Ký số MSI (cần chứng thư OV/EV); smoke cài/gỡ trên VM sạch + đo mốc ≤30 phút; MSIX |
+| Dữ liệu/Báo cáo | `run_events` theo từng máy (OEE Availability đa line); PdfSharp-GDI ⇒ chỉ chạy Windows; telemetry chưa có idempotency-key (rủi ro trùng khi replay WAL) |
+| Kỹ thuật vặt | WPF `MachineViewModel` chưa chắn `IConvertible→ToDouble` (hiện chưa với tới); `remove-data.ps1` khớp xslt mong manh; `--install` + MSI feature đăng ký trùng chưa có chắn |
 
 ---
 
@@ -194,7 +264,7 @@ Digital Twin, PdM, RL/Optimization, MLOps, Copilot: **ecosystem-only, hoãn**. *
 
 > Nguyên tắc: mỗi giai đoạn **chạy được end-to-end** và **giao được giá trị bán hàng**; CI kiểm cả 2 profile (single-node ↔ sẵn-sàng-cluster) để chống "edition drift".
 
-### GIAI ĐOẠN 1 — "Máy độc lập bán được" *(P0)*
+### GIAI ĐOẠN 1 — "Máy độc lập bán được" *(P0)* — ✅ **XONG** *(28/07/2026)*
 **Mục tiêu:** một khách mua 1 máy, không hệ sinh thái, vẫn có sản phẩm hoàn chỉnh & giữ được dữ liệu.
 - **WS-A Historian & Báo cáo:** SQLite historian (kết quả/inspection/telemetry), **OEE A×P×Q + six-big-losses**, màn Historian/Report, xuất CSV/PDF, tra cứu serial/genealogy cục bộ. *(GAP-A)*
 - **WS-C Store-and-forward bền:** wire WAL SDK ra đĩa (`queuePath`), replay theo thứ tự + cờ historical. *(GAP-B2)*
@@ -203,7 +273,7 @@ Digital Twin, PdM, RL/Optimization, MLOps, Copilot: **ecosystem-only, hoãn**. *
 - *(License/Edition đã hoãn sang Giai đoạn 3 theo quyết định #4 — nhưng vẫn giữ `capabilities`/feature-flag seam để mở khoá về sau không phải sửa kiến trúc.)*
 - **Nghiệm thu:** cài ≤30 phút; chạy 1 ca không mạng, restart vẫn còn dữ liệu + OEE + báo cáo xuất được; đăng nhập phân quyền + audit "ai làm gì".
 
-### GIAI ĐOẠN 2 — "Xương sống middleware & sẵn sàng kết nối" *(P1)*
+### GIAI ĐOẠN 2 — "Xương sống middleware & sẵn sàng kết nối" *(P1)* — ✅ **XONG** *(trừ `WS-B B2` chủ động hoãn + Serial chưa làm)*
 **Mục tiêu:** đúng chuẩn "phần mềm trung gian", và nhúng sẵn khả năng join.
 - **WS-B UNS spine:** embedded broker + **Sparkplug B** + cây topic `syn/{site}/...` + retained state; historian & UI subscribe UNS; **ST4I trở thành 1 bridge**. *(GAP-B1, C3)*
 - **WS-J Canonical Model + Asset Registry** (ISA-95 URN, lifecycle, config-drift). *(GAP-B3)*
@@ -212,14 +282,14 @@ Digital Twin, PdM, RL/Optimization, MLOps, Copilot: **ecosystem-only, hoãn**. *
 - **WS-D-field:** X.509 device identity + rotation + mTLS nội bộ. *(GAP-D4)*
 - **Nghiệm thu:** cắm 1 thiết bị Modbus/OPC-UA thật qua adapter; mọi telemetry/kết quả đi qua UNS Sparkplug; mọi lệnh qua Policy + audit; onboard thiết bị mới trong vài giờ.
 
-### GIAI ĐOẠN 3 — "Gia nhập hệ sinh thái & Edition" *(P2)*
-- **WS-I Join:** mDNS discovery + broker bridge local→Site + **Join wizard** ("không cài lại, không mất dữ liệu"); reconciliation seq-number. *(GAP-C)*
-- **WS-E-full License/Edition:** feature-flags theo edition + license-credit nâng cấp; (license server on-prem là Site). *(GAP-F1)*
-- **WS-F4 Auto-update + LTS.** *(GAP-F4)*
-- **WS-G-plugin:** Connector SDK + **sidecar DLL hãng** + `plugin.yaml`/apiVersion + conformance + ký số. *(GAP-G)*
+### GIAI ĐOẠN 3 — "Gia nhập hệ sinh thái & Edition" *(P2)* — 🔶 **ĐANG LÀM (~1/4)**
+- **WS-I Join:** mDNS discovery + broker bridge local→Site + **Join wizard** ("không cài lại, không mất dữ liệu"); reconciliation seq-number. *(GAP-C)* — 🔶 **PARTIAL**: định danh X.509 + bridge mTLS + join thủ công + discover browse-only ✅; **advertise + reconciliation seq chưa**.
+- **WS-E-full License/Edition:** feature-flags theo edition + license-credit nâng cấp; (license server on-prem là Site). *(GAP-F1)* — ⬜ **chưa bắt đầu**.
+- **WS-F4 Auto-update + LTS.** *(GAP-F4)* — ⬜ **chưa bắt đầu** (mới có nền version/capabilities).
+- **WS-G-plugin:** Connector SDK + **sidecar DLL hãng** + `plugin.yaml`/apiVersion + conformance + ký số. *(GAP-G)* — ⬜ **chưa bắt đầu**.
 - **Nghiệm thu:** 2 máy Machine Edition tự thấy nhau, bridge vào 1 Site giả lập không cài lại; mở khoá Line bằng license mới.
 
-### GIAI ĐOẠN 4 — "Trí tuệ tăng cường qua hệ sinh thái" *(P2)*
+### GIAI ĐOẠN 4 — "Trí tuệ tăng cường qua hệ sinh thái" *(P2)* — ⬜ **chưa bắt đầu**
 - Hook AI qua Policy (không đường lệnh trực tiếp): **Vision/AOI defect classify** (lõi sản phẩm — ưu tiên), PdM/anomaly recommendation-only; Twin/RL để Site. *(GAP-H)*
 
 ### Tương quan với lộ trình P1–P5 hiện có (README §12)
