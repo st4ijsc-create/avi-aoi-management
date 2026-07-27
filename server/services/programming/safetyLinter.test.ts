@@ -134,6 +134,20 @@ const CASES: Case[] = [
     category: "motion-envelope",
     shouldFire: false,
   },
+  {
+    name: "zmotion-basic: SPEED=500 above mm/s ceiling → fires",
+    kind: "zmotion-basic",
+    content: "SPEED = 500\nMOVE(100)",
+    category: "motion-envelope",
+    shouldFire: true,
+  },
+  {
+    name: "zmotion-basic: SPEED=100 within mm/s ceiling → does NOT fire",
+    kind: "zmotion-basic",
+    content: "SPEED = 100\nMOVE(100)",
+    category: "motion-envelope",
+    shouldFire: false,
+  },
   // ── missing-interlock ────────────────────────────────────────────────────
   {
     name: "MELFA: bare MOV/M_OUT with no IF anywhere → fires",
@@ -297,7 +311,7 @@ describe("safetyLinter — golden-driven 6-vendor coverage", () => {
       }
     });
 
-    it(`${lang}: UNSAFE golden fires the expected category, with no safety keyword in the source`, () => {
+    it(`${lang}: UNSAFE golden fires the expected category, with no safety keyword anywhere in the fixture`, () => {
       const kw = /safety|interlock|e-?stop|emergency|guard|sil\b|light[-\s]?curtain|two[-\s]?hand|lockout|tagout|muting/i;
       for (const e of goldenTagged("safety-lint-unsafe", lang)) {
         const findings = lintProgramSafety(lang, e.code);
@@ -307,11 +321,14 @@ describe("safetyLinter — golden-driven 6-vendor coverage", () => {
         );
         expect(expectedCategory, `${e.id}: index.json tags must name one of the 3 categories`).toBeDefined();
         expect(findings.some((f) => f.category === expectedCategory)).toBe(true);
-        // No safety keyword in the CODE BODY (the boilerplate header comment is excluded —
-        // it is identical across every file in this corpus and carries no discriminating
-        // signal; the check below is on the code lines after the header block comment).
-        const bodyOnly = e.code.replace(/^[\s\S]*?\n\n/, ""); // drop the leading comment block
-        expect(kw.test(bodyOnly) === true || bodyOnly.length > 0).toBe(true); // sanity: body non-empty
+        // Real assertion (not a no-op): no safety-domain keyword anywhere in the FULL fixture
+        // content, including its header comment — proves the linter caught this fixture on
+        // STRUCTURE alone, with zero keyword signal available anywhere in the file. (The
+        // certification disclaimer for this fixture lives in its sibling .meta.md instead.)
+        expect(
+          kw.test(e.code),
+          `${e.id}: unsafe golden must contain no safety-domain keyword anywhere in the file`,
+        ).toBe(false);
       }
     });
   }

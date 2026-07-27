@@ -17,6 +17,15 @@
   envelope, then returns to a normal drop point — used to demonstrate the safety-linter
   catching a position that exceeds a conservative ceiling."
 
+## Certification disclaimer
+
+AI-assisted golden example. The author reviews, validates and simulates the job, then a
+human approves the gated push (HITL). Authors a MOTION job-list only; collision zones,
+safety planes and E-stop stay on the TMflow robot controller, never in this job. (This
+disclaimer lives here, not in the code file, so the `.tmscript` fixture itself stays free
+of any safety-domain keyword — see `safetyLinter.test.ts`'s golden-driven keyword
+assertion.)
+
 ## Why it is correct (passes `RobotTmAdapter.validate()`) yet is flagged
 
 - Both `POINT`s are defined before use; every verb (`HOME/MOVE/GRIP/WAIT/MOVEL/RELEASE`) is in

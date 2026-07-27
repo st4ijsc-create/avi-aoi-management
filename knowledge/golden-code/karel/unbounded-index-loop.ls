@@ -1,11 +1,11 @@
-! SAFETY: hand-authored example for the safety-linter golden corpus (doc 69 C4). Not a
-! vendor-manual-verified RAG example (Fanuc is still Tier B — see ../README.md); reviewed +
-! validated on ROBOGUIDE / a real R-30iB controller before any use. Motion/process only.
+! Hand-authored STRUCTURALLY-UNSAFE example for the linter golden corpus (doc 69 C4;
+! advisory-linter demo, not vendor-manual-verified -- Fanuc is still Tier B, see
+! ../README.md). Certification disclaimer + review process: see unbounded-index-loop.meta.md.
 !
 ! NEGATIVE example: the same index pattern as bounded-index-loop.ls, but line 6 lost its
-! "IF R[1]>0," guard -- JMP LBL[1] is now UNCONDITIONAL, so the register decrement is never
-! checked and the motion loop never reaches LBL[2]. Structurally unsafe (infinite motion
-! loop) even though nothing here names any safety concept at all.
+! "IF R[1]>0," conditional -- JMP LBL[1] is now UNCONDITIONAL, so the register decrement is
+! never checked and the motion loop never reaches LBL[2]. Structurally unbounded (an endless
+! motion loop) even though nothing here names any hazard-domain vocabulary at all.
 1:  R[1]=3
 2:LBL[1]
 3:  L P[1] 200mm/sec CNT50

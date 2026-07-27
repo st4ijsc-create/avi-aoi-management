@@ -15,6 +15,14 @@
 - **en**: "Write an ST program that polls a sensor and drives a motor continuously inside a
   loop — used to demonstrate the safety-linter catching a loop with no reachable exit."
 
+## Certification disclaimer
+
+AI-assisted golden example. The author reviews, validates and tests it on a simulator
+before device runs it. Authors PROCESS logic only; never E-stop / interlock / SIL safety
+functions (those stay on the certified controller). See `../README.md`. (This disclaimer
+lives here, not in the code file, so the `.st` fixture itself stays free of any
+safety-domain keyword — see `safetyLinter.test.ts`'s golden-driven keyword assertion.)
+
 ## Why it is correct (passes `Iec61131StAdapter.validate()`) yet is flagged
 
 - `VAR/END_VAR`, `WHILE/END_WHILE` are each balanced 1:1 — the adapter's structural check

@@ -15,6 +15,13 @@
 - **en**: "Same as gated-transfer.drl but with the IF block removed — illustrates the common
   authoring mistake of unconditional motion + output every cycle."
 
+## Certification disclaimer
+
+Reviewed + validated in DIAStudio / on real hardware before any use. Motion/process only.
+(This disclaimer lives here, not in the code file, so the `.drl` fixture itself stays free
+of any safety-domain keyword — see `safetyLinter.test.ts`'s golden-driven keyword
+assertion.)
+
 ## Why the safety-linter flags this
 
 - No line in the file matches the `delta-robot` profile's `guardOpenRe` (`IF … THEN`) — guard

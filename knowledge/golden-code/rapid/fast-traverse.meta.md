@@ -15,6 +15,13 @@
 - **en**: "Write a RAPID module that moves to a far point using a very high predefined speed
   (v1500) — illustrates a speed that exceeds a conservative ceiling."
 
+## Certification disclaimer
+
+Reviewed + validated in RobotStudio / on a real IRC5 controller before any use.
+Motion/process only. (This disclaimer lives here, not in the code file, so the `.mod`
+fixture itself stays free of any safety-domain keyword — see `safetyLinter.test.ts`'s
+golden-driven keyword assertion.)
+
 ## Why the safety-linter flags this
 
 - `MoveL pFar, v1500, fine, tool0;` — the linter's `rapid` motion extractor reads `v1500` =

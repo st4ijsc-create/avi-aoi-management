@@ -15,6 +15,14 @@
 - **en**: "Same as gated-pick-place.prg but with the IF block removed — illustrates the
   common authoring mistake of unconditional motion + output every scan."
 
+## Certification disclaimer
+
+Reviewed + validated in RT ToolBox / on a real controller before any use. Motion/process
+logic only -- distinct from `../mitsubishi-engineering/` (MELSEC PLC device/recipe
+tables). (This disclaimer lives here, not in the code file, so the `.prg` fixture itself
+stays free of any safety-domain keyword — see `safetyLinter.test.ts`'s golden-driven
+keyword assertion.)
+
 ## Why the safety-linter flags this
 
 - No line in the file matches the `melfa` profile's `guardOpenRe` (`IF … THEN`) — guard depth

@@ -15,6 +15,13 @@
 - **en**: "Same as bounded-index-loop.ls but the back-jump loses its `IF` guard — illustrates
   the common authoring mistake that turns a motion loop unbounded."
 
+## Certification disclaimer
+
+Reviewed + validated on ROBOGUIDE / a real R-30iB controller before any use. Motion/process
+only. (This disclaimer lives here, not in the code file, so the `.ls` fixture itself stays
+free of any safety-domain keyword — see `safetyLinter.test.ts`'s golden-driven keyword
+assertion.)
+
 ## Why the safety-linter flags this
 
 - Line 6 is `JMP LBL[1]` with **no `IF` on the same line** — the linter's `karel` profile
