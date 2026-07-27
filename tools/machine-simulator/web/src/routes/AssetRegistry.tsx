@@ -58,13 +58,13 @@ const LIFECYCLE_TONE: Record<AssetLifecycleState, "ok" | "warn" | "danger" | "in
 }
 
 // The web app's own `DeviceClass`/`DriverKind` unions (`lib/api.ts`) don't necessarily cover every
-// value the registry can hold (P2-3 adds a `"Modbus"` driver kind later) — `AssetRecord.deviceClass`/
-// `driverKind` are plain `string` for exactly that reason. These two label helpers render the
-// resolved i18n label for a KNOWN value, falling back to the raw wire value verbatim for anything
-// else, rather than `t()`'s own generic "missing key" fallback (which would print the ugly literal
-// dot-path, e.g. `"driverKind.Modbus"`).
+// value the registry can hold (P2-3 adds a `"Modbus"` driver kind later; GĐ3 sub-3 OU-2 adds `"OpcUa"`) —
+// `AssetRecord.deviceClass`/`driverKind` are plain `string` for exactly that reason. These two label
+// helpers render the resolved i18n label for a KNOWN value, falling back to the raw wire value verbatim
+// for anything else, rather than `t()`'s own generic "missing key" fallback (which would print the ugly
+// literal dot-path, e.g. `"driverKind.Modbus"`).
 const KNOWN_DEVICE_CLASSES = new Set(["Automation", "Iot", "AoiAvi"])
-const KNOWN_DRIVER_KINDS = new Set(["Simulated", "HotFolderAoi", "Mqtt", "Modbus"])
+const KNOWN_DRIVER_KINDS = new Set(["Simulated", "HotFolderAoi", "Mqtt", "Modbus", "OpcUa"])
 
 type TFunc = ReturnType<typeof useT>
 

@@ -38,11 +38,15 @@ public sealed record HistorianResultRecord(
         var telemetrySamples = new List<TelemetrySampleRecord>();
         foreach (var sample in reading.Telemetry)
         {
-            // Mirrors MachineState.cs:153's numeric-telemetry filter EXACTLY: only IConvertible values
-            // (doubles, ints, etc.) are kept; anything else (including null) is silently dropped.
-            if (sample.Value is not IConvertible convertible) continue;
+            // GĐ3 sub-3 OU-2 PART A — mirrors MachineState.cs's numeric-telemetry filter EXACTLY via the
+            // ONE shared St4i.EdgeCore.Models.TelemetryNumeric helper: a genuinely-numeric value (doubles,
+            // ints, a numeric string like "42.5") is kept; anything else (null, a non-numeric string like
+            // an OPC-UA "status"="RUNNING" tag) is silently skipped — NEVER throws (see TelemetryNumeric's
+            // own class doc comment for why the old `is IConvertible ... ToDouble(null)` pattern this
+            // replaced was unsafe: string IS IConvertible, so Convert.ToDouble("RUNNING") used to throw).
+            if (!St4i.EdgeCore.Models.TelemetryNumeric.TryGet(sample.Value, out var numeric)) continue;
 
-            telemetrySamples.Add(new TelemetrySampleRecord(sample.Metric, convertible.ToDouble(null), sample.Unit, sample.Quality));
+            telemetrySamples.Add(new TelemetrySampleRecord(sample.Metric, numeric, sample.Unit, sample.Quality));
         }
 
         return new HistorianResultRecord(

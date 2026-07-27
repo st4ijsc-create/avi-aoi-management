@@ -577,10 +577,15 @@ if (modbusOptions.Enabled)
 // means the two optional dependencies resolve independently; see OpcUaDriverFactory's own "DI
 // disambiguation" doc comment.
 //
-// OU-2 (roster/Snapshot/web visibility) is deliberately NOT done here — no MachineDescriptor is seeded for
-// the configured OPC-UA machine yet, so it produces telemetry (Verdict.Skip, mirrored onto the UNS/live
-// transport same as every other driver) but has no fleet Snapshot tile/historian row/Asset row until that
-// follow-up task lands.
+// GĐ3 sub-3 OU-2 — P2-3 parity: `opcUaSeedDescriptor` is hoisted OUTSIDE the `if (opcUaOptions.Enabled)`
+// block below (same reasoning as `modbusSeedDescriptor` above — `opcUaMap`/`capturedOpcUaMap` are scoped
+// INSIDE it, while the roster-seed call, further down, well after `app.Build()`, needs to reach a
+// descriptor built from that same map). Stays null (no-op) unless OPC-UA is enabled AND its node map
+// actually loaded — additive + still default-off, same contract as `_opcUaDriverFactory` above. Once
+// seeded, this OPC-UA machine gets a fleet Snapshot tile/historian row/Asset row (via the roster-seed
+// call below), not just an invisible telemetry stream.
+St4i.EdgeCore.Models.MachineDescriptor? opcUaSeedDescriptor = null;
+
 var opcUaOptions = St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.FromEnvironment();
 if (opcUaOptions.Enabled)
 {
@@ -617,6 +622,21 @@ if (opcUaOptions.Enabled)
                 logWarning: msg => logger.LogWarning("{OpcUaMsg}", msg),
                 logError: (ex, msg) => logger.LogError(ex, "{OpcUaMsg}", msg));
         });
+
+        // GĐ3 sub-3 OU-2 — the OPC-UA machine's roster descriptor, built from the SAME loaded node map
+        // (its MachineCode + PollIntervalMs), so it gets a MachineState (fleet Snapshot tile + historian)
+        // and, via P2-1's upsert-on-register, an Asset row — instead of being an invisible telemetry
+        // stream. Mirrors `modbusSeedDescriptor` above exactly.
+        opcUaSeedDescriptor = new St4i.EdgeCore.Models.MachineDescriptor(
+            Code: capturedOpcUaMap.MachineCode,
+            SerialSeed: $"SN-{capturedOpcUaMap.MachineCode}",
+            DeviceClass: St4i.EdgeCore.Models.DeviceClass.Automation,
+            MachineType: "OPC_UA",
+            StepType: null,
+            DriverKind: St4i.EdgeCore.Models.DriverKind.OpcUa,
+            RecipeCode: null,
+            MappingProfile: null,
+            CycleSeconds: Math.Max(0.1, capturedOpcUaMap.PollIntervalMs / 1000.0));
     }
 }
 
@@ -751,6 +771,16 @@ var fleetHost = app.Services.GetRequiredService<FleetHost>();
 if (modbusSeedDescriptor is not null)
 {
     fleetHost.RegisterMachine(modbusSeedDescriptor);
+}
+
+// GĐ3 sub-3 OU-2 — register the configured OPC-UA machine as a first-class roster member, mirroring the
+// Modbus P2-3 seed immediately above: it gets a MachineState (fleet Snapshot tile + historian) and, via
+// the asset registry, an Asset row. Idempotent: RegisterMachine returns false (benign) if it's already
+// present. StartLocked excludes DriverKind.OpcUa from simulation, so this machine is driven ONLY by the
+// real OPC-UA pipeline slot, never double-driven.
+if (opcUaSeedDescriptor is not null)
+{
+    fleetHost.RegisterMachine(opcUaSeedDescriptor);
 }
 
 // WS-F1 final-review fix F1 — apply the env-resolved (see the ST4I_SERVER_URL/ST4I_MACHINE_CODE/

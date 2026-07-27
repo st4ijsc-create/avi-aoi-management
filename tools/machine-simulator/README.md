@@ -274,7 +274,7 @@ P2/P3 items below have since landed — see the **Status** column and **§16** f
 | **P1 (this build)** | Simulator + EdgeCore + Normalizer + Live/Demo/Auto + Hot-folder AOI + MQTT + headless service seam + packaging | Hot-folder (doc 28), MQTT | Delivered |
 | P2 | Mapping UI + Sparkplug B + headless Device Manager | MQTT/Sparkplug B | **Sparkplug B: delivered** — a local UNS spine (always-on loopback MQTT broker + dual Sparkplug B/semantic-mirror publisher), see §16.1. Mapping UI + headless Device Manager: still future. |
 | P3 | Modbus TCP/RTU + Serial drivers (screw/glue guns, small PLCs, RS-232/485) | Modbus, Serial | **Modbus TCP: partially delivered** — TCP polling only, read-only, `UInt16`/`Int16` registers, one register per read, see §16.4. **Not yet:** 32-bit/float registers, register-block batching, Modbus **RTU** (serial), a per-machine `MappingProfile` override for Modbus. Serial drivers: still future. |
-| P4 | OPC-UA + Siemens S7 / EtherNet-IP drivers | OPC-UA, S7, EtherNet/IP | Future — OPC-UA is explicitly **gated behind a licensing spike** (the .NET OPC-UA stack's OSS license signals conflict: RCL/GPLv2 vs. MIT across `OPCFoundation.NetStandard.Opc.Ua.*`), not started. |
+| P4 | OPC-UA + Siemens S7 / EtherNet-IP drivers | OPC-UA, S7, EtherNet/IP | **OPC-UA client: partially delivered** — the licensing spike that used to gate this is resolved (the OPC Foundation .NET stack relicensed MIT on 2025-12-04); a read-only poller against ONE OPC-UA server, `SecurityMode=None` (anonymous or username/password), poll-only (no subscriptions), see §16.6. **Not yet:** Siemens S7 / EtherNet-IP drivers, Sign/SignAndEncrypt security modes, complex/structured-type node decoding. |
 | P5 | SECS/GEM + Zmotion (koffi FFI) + HA/buffering + security hardening + OTA config | SECS/GEM, Zmotion | Future. |
 
 **Also delivered this build, not originally scoped as its own P1-P5 phase above** — a default-deny
@@ -308,8 +308,11 @@ synchronous ack today; see `docs/plans/2026-07-27-ws-b-b2-bridge-inversion-asses
 biết chi tiết đầy đủ (biến môi trường, endpoint, hành vi). Sparkplug B: ĐÃ GIAO qua UNS spine cục bộ
 (§16.1). Modbus TCP: GIAO MỘT PHẦN — chỉ đọc qua TCP, thanh ghi UInt16/Int16, mỗi lần đọc 1 thanh ghi
 (§16.4); CHƯA có 32-bit/float, đọc theo khối, Modbus RTU (nối tiếp), hay MappingProfile riêng cho từng
-máy Modbus. OPC-UA vẫn tương lai — đang bị chặn bởi một "licensing spike" (tín hiệu giấy phép mã nguồn
-mở xung đột RCL/GPLv2 và MIT trên bộ thư viện OPC-UA .NET). Cũng đã giao trong bản này dù không nằm
+máy Modbus. OPC-UA: GIAO MỘT PHẦN — "licensing spike" trước đây từng chặn mục này đã được giải quyết (bộ
+thư viện .NET của OPC Foundation đổi giấy phép sang MIT ngày 2025-12-04); một poller chỉ-đọc nối với MỘT
+server OPC-UA, `SecurityMode=None` (ẩn danh hoặc username/password), chỉ poll (chưa có subscription), xem
+§16.6. CHƯA có: driver Siemens S7/EtherNet-IP, chế độ bảo mật Sign/SignAndEncrypt, giải mã kiểu
+phức hợp/cấu trúc. Cũng đã giao trong bản này dù không nằm
 trong bảng P1-P5 gốc: lớp Policy mặc định-từ-chối + endpoint an toàn XC-R40 `/v1/safety` (§16.2), cách
 ly lỗi theo từng pipeline (§16.3), và Asset Registry ISA-95 bền vững (§16.5 — chính là phần "mô hình
 canonical" của lộ trình này).
@@ -863,9 +866,10 @@ The env vars that actually matter to this engine:
 `dotnet run`/double-click launch; the registry `Environment` value is specifically how to set them when
 there's no shell/user session to export them from.)*
 
-*(Giai đoạn 2 additions, same idiom, cross-referenced rather than duplicated here — see §16 for the
+*(Giai đoạn 2/3 additions, same idiom, cross-referenced rather than duplicated here — see §16 for the
 full table: `ST4I_UNS_ENABLED`/`ST4I_UNS_SITE`/`_AREA`/`_LINE`/`_CELL`/`_PORT` (§16.1, the local UNS
-spine), `ST4I_MODBUS_ENABLED`/`_HOST`/`_PORT`/`_MAP` (§16.4, the Modbus TCP driver), `ST4I_ASSETS_DIR`
+spine), `ST4I_MODBUS_ENABLED`/`_HOST`/`_PORT`/`_MAP` (§16.4, the Modbus TCP driver),
+`ST4I_OPCUA_ENABLED`/`_ENDPOINT`/`_MAP`/`_PKI_DIR` (§16.6, the OPC-UA client driver), `ST4I_ASSETS_DIR`
 (§16.5, the Asset Registry's `assets.db` location).)*
 
 *(WS-F1 final-review fix F1 — `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/`ST4I_VERIFY_TLS` are read ONCE at
@@ -1167,6 +1171,14 @@ kèm endpoint an toàn E-STOP giám sát, cách ly lỗi theo từng pipeline, d
 (Modbus TCP), và một Asset Registry bền vững. Tất cả đều là THÊM VÀO — đường ingest HTTP ST4I hiện có,
 `EdgePipeline.Committed`, và mọi endpoint/hành vi trước đó không đổi trừ khi nói rõ.)*
 
+**Update (Giai đoạn 3, sub-3 — OPC-UA client driver):** §16.6 below is a later addition, filed as a
+sibling of this section rather than under §17 — a SECOND real field-protocol driver (mirrors Modbus
+exactly), landed after the rest of §16.
+
+*(VI: **Cập nhật (Giai đoạn 3, sub-3 — driver OPC-UA client):** §16.6 bên dưới được thêm sau, xếp cạnh
+mục này thay vì dưới §17 — driver giao thức trường thật thứ HAI (giống hệt Modbus), giao sau phần còn
+lại của §16.)*
+
 ### 16.1 Local UNS spine — Sparkplug B + retained semantic mirror / Xương sống UNS cục bộ
 
 **EN** — `St4i.EdgeCore.Uns` runs a local Unified Namespace spine: an embedded, loopback-only MQTTnet
@@ -1384,6 +1396,114 @@ fleet. 3 endpoint: `GET /v1/assets` (Operator, danh sách), `GET /v1/assets/{cod
 tiết), `PUT /v1/assets/{code}/lifecycle` (Engineer, đổi vòng đời, có audit). **Việc CHƯA làm:** mục
 điều hướng `/assets` mới trên web UI cần chạy lại baseline visual-regression (`--update-snapshots`) —
 chưa làm tại thời điểm cập nhật tài liệu này.)*
+
+### 16.6 OPC-UA client driver / Driver OPC-UA client
+
+**EN** — `St4i.EdgeCore.Drivers.OpcUa` is the SECOND real field-protocol driver (mirrors Modbus, §16.4): a
+periodic read poller built on the OPC Foundation .NET reference stack
+(`OPCFoundation.NetStandard.Opc.Ua.Client` **1.5.378.156** — relicensed **MIT on 2025-12-04**, no longer a
+licensing blocker for this roadmap, see §12), reading a fixed, ordered set of nodes off ONE OPC-UA server
+every poll, riding its own fault-isolated pipeline slot (§16.3). **Default OFF** — same polarity as
+Modbus — a fresh install/CI run with no OPC-UA endpoint configured is byte-identical to before this
+feature existed.
+
+Env vars (`OpcUaOptions.FromEnvironment`, same "read once, unparseable falls back to default" idiom as
+`ModbusOptions`):
+
+| Var | What it does | Default |
+|---|---|---|
+| `ST4I_OPCUA_ENABLED` | `true`/`1` (case-insensitive) turns the OPC-UA driver on; anything else (incl. unset) leaves it off | `false` |
+| `ST4I_OPCUA_ENDPOINT` | Reserved for a possible future "quick-connect, no map file" mode — currently **not consulted**; the node map's own `endpointUrl` (below) always wins | none |
+| `ST4I_OPCUA_MAP` | Path to the node-map JSON file (below) — required for OPC-UA to actually start even when `ENABLED=true` | none (unset/missing/malformed → OPC-UA is disabled for this run, logged, never crashes startup) |
+| `ST4I_OPCUA_PKI_DIR` | Overrides the app-instance-certificate PKI root directory | `%ProgramData%\ST4I\sim\opcua-pki` |
+
+Node-map JSON shape (`OpcUaNodeMap.FromJson` — property names matched case-insensitively):
+
+```json
+{
+  "machineCode": "OPCUA-01",
+  "endpointUrl": "opc.tcp://127.0.0.1:4840",
+  "securityMode": "None",
+  "username": null,
+  "password": null,
+  "pollIntervalMs": 1000,
+  "nodes": [
+    { "nodeId": "ns=2;s=Temperature", "metric": "temperature", "unit": "°C" },
+    { "nodeId": "ns=2;s=Status", "metric": "status" }
+  ]
+}
+```
+
+- `machineCode` — required, non-blank; becomes this OPC-UA machine's roster/asset code.
+- `endpointUrl` — required, non-blank; the ONLY source the driver ever reads its server address from
+  (`ST4I_OPCUA_ENDPOINT` above is defined but not consulted by this wiring).
+- `securityMode` — currently only `"None"` exists (no message signing/encryption) — an MVP/
+  loopback-and-trusted-network posture; `Sign`/`SignAndEncrypt` (Basic256Sha256 + trusted app-instance
+  certs) are a documented follow-up, not built.
+- `username`/`password` — `null` (default) means anonymous auth.
+- `pollIntervalMs` — poll cadence; defaults to `1000`.
+- `nodes[]` — required, at least one entry: `nodeId` (the OPC-UA string form, e.g. `"ns=2;s=Foo"`, parsed
+  straight into an `Opc.Ua.NodeId`) plus the `metric`/`unit` it becomes on the resulting telemetry sample.
+- A blank `machineCode`/`endpointUrl` or an empty `nodes` list is rejected at load (throws), which
+  Program.cs catches — it logs a warning and disables OPC-UA for the run rather than crashing startup.
+
+**Value decoding + Verdict.Skip semantics:** every signed/unsigned integer and floating-point OPC-UA type
+widens to `double` (one uniform numeric representation, same posture as Modbus's `TelemetrySample`
+values); `bool` and `string` pass through as their native .NET type — a **non-numeric string is a
+legitimate, supported telemetry value, not an error** (e.g. a `"status"` node reporting `"RUNNING"`):
+every numeric-aggregation consumer (the fleet tile's spark line, a machine's telemetry chart series, the
+historian's per-poll telemetry rows) goes through one shared `St4i.EdgeCore.Models.TelemetryNumeric`
+helper that SKIPS a non-numeric value instead of crashing, while still parsing a genuinely numeric string
+like `"42.5"`. Every reading carries `Verdict.Skip` (telemetry has no pass/fail concept — same
+KPI-inflation reasoning §16.4 documents for Modbus). A per-node bad/uncertain status code emits that one
+metric with `Quality="bad"`/`Value=null` rather than failing the whole poll.
+
+**Security posture (MVP, honestly documented):** the OPC-UA stack requires an app-instance certificate
+even at `SecurityMode=None` (it identifies the client to the server's audit log, not for encryption) —
+auto-generated on first run under the PKI root above. `AutoAcceptUntrustedCertificates=true` blanket-
+trusts whatever certificate the server presents — acceptable for a loopback/trusted-network exhibition
+link, **not** for exposure to an untrusted network; validating + pinning the SPECIFIC server certificate
+is a documented, non-blocking follow-up, the same posture the deferred Sign/SignAndEncrypt security modes
+above are held to.
+
+When OPC-UA is enabled and its node map loads successfully, the OPC-UA machine is wired in as a
+**first-class roster member** — it gets a fleet snapshot tile, a historian row per poll, and (via Asset
+Registry auto-upsert, §16.5) an asset row, not just an invisible telemetry stream.
+
+**Honest deferrals** (documented in the driver's own source, not silently missing): OPC-UA subscriptions
+(today: poll-only, one batched `Read` service call per cycle); complex/structured-type node decoding (an
+unexpected node value falls back to `ToString()` rather than a real decode); `Sign`/`SignAndEncrypt`
+security modes; Siemens S7 / EtherNet-IP drivers (still future, unstarted).
+
+*(VI: `St4i.EdgeCore.Drivers.OpcUa` là driver giao thức trường thật thứ HAI (giống Modbus, §16.4) — vòng
+lặp poll đọc định kỳ dựa trên bộ thư viện tham chiếu .NET của OPC Foundation
+(`OPCFoundation.NetStandard.Opc.Ua.Client` **1.5.378.156** — đổi giấy phép sang **MIT ngày 2025-12-04**,
+không còn là rào cản giấy phép cho lộ trình này nữa, xem §12), đọc một danh sách node cố định từ MỘT
+server OPC-UA mỗi lần poll, chạy trong pipeline slot cách ly lỗi riêng (§16.3). **MẶC ĐỊNH TẮT** — cùng
+cực với Modbus. 4 biến môi trường `ST4I_OPCUA_*` (bảng trên) — `ST4I_OPCUA_ENDPOINT` hiện CHƯA được dùng,
+`endpointUrl` trong node-map JSON luôn thắng. Định dạng JSON node-map: `machineCode`, `endpointUrl`
+(bắt buộc), `securityMode` (hiện chỉ có `"None"`), `username`/`password` (rỗng = ẩn danh),
+`pollIntervalMs` (mặc định 1000), `nodes[]` gồm `nodeId` (dạng chuỗi OPC-UA, vd `"ns=2;s=Foo"`) +
+`metric`/`unit`. `machineCode`/`endpointUrl` rỗng hoặc `nodes` rỗng bị từ chối lúc nạp — Program.cs bắt
+lỗi này, log cảnh báo, tắt OPC-UA cho lần chạy đó thay vì crash.
+
+**Giải mã giá trị:** số nguyên có/không dấu và số thực đều quy về `double`; `bool`/`string` giữ nguyên
+kiểu — một chuỗi KHÔNG PHẢI số (vd node `"status"` báo `"RUNNING"`) là một giá trị telemetry HỢP LỆ, không
+phải lỗi: mọi nơi tổng hợp số (spark line, chuỗi telemetry, dòng historian) đều đi qua MỘT helper dùng
+chung `TelemetryNumeric` — bỏ qua giá trị không phải số thay vì crash, vẫn parse được chuỗi số hợp lệ như
+`"42.5"`. Mọi reading đều mang `Verdict.Skip`. Một status code lỗi/không chắc chắn trên một node chỉ làm
+metric đó có `Quality="bad"`, không làm hỏng cả lượt poll.
+
+**Tư thế bảo mật (MVP, ghi rõ):** stack OPC-UA yêu cầu chứng chỉ app-instance ngay cả ở `SecurityMode=None`
+(để định danh client với audit log của server, không phải để mã hoá) — tự tạo lần đầu chạy dưới thư mục
+PKI trên. `AutoAcceptUntrustedCertificates=true` tin tưởng BẤT KỲ chứng chỉ nào server trình ra — chấp
+nhận được cho kết nối loopback/mạng tin cậy (trình diễn), KHÔNG chấp nhận được nếu lộ ra mạng không tin
+cậy; xác thực + ghim chứng chỉ CỤ THỂ của server là việc CHƯA làm, đã ghi rõ.
+
+Khi OPC-UA bật và node map nạp thành công, máy OPC-UA trở thành thành viên fleet CHÍNH THỨC (có tile,
+historian, asset) chứ không chỉ là luồng telemetry vô hình. **Những gì CHƯA làm:** OPC-UA subscription
+(hiện chỉ poll — một lệnh `Read` theo lô mỗi chu kỳ), giải mã kiểu phức hợp/cấu trúc (giá trị lạ rơi về
+`ToString()`), chế độ bảo mật Sign/SignAndEncrypt, driver Siemens S7/EtherNet-IP.)*
 
 ---
 

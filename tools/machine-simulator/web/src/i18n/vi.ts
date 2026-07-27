@@ -128,6 +128,7 @@ export const vi = {
     HotFolderAoi: "Hot-folder AOI",
     Mqtt: "MQTT",
     Modbus: "Modbus",
+    OpcUa: "OPC-UA",
   },
 
   lifecycleStatus: {

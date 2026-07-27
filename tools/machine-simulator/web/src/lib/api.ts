@@ -52,7 +52,7 @@ export const BASE_URL = (import.meta.env.VITE_ENGINE_URL as string | undefined) 
 // ─────────────────────────────────────────────────────────────────────────
 
 export type DeviceClass = "Automation" | "Iot" | "AoiAvi"
-export type DriverKind = "Simulated" | "HotFolderAoi" | "Mqtt" | "Modbus"
+export type DriverKind = "Simulated" | "HotFolderAoi" | "Mqtt" | "Modbus" | "OpcUa"
 export type TransportMode = "Live" | "Demo" | "Auto"
 
 /**

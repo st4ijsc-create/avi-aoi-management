@@ -97,6 +97,45 @@ public class HistorianRecordMappingTests
         Assert.Equal("good", sample.Quality);
     }
 
+    /// <summary>GĐ3 sub-3 OU-2 PART A — the REQUIRED gate OU-1's review flagged: a non-numeric string
+    /// telemetry value (e.g. an OPC-UA "status" node → "RUNNING") must be silently skipped here too, NOT
+    /// throw a <see cref="FormatException"/> (the old `is IConvertible convertible` pattern match would
+    /// have matched a string and then `convertible.ToDouble(null)` would have thrown). A numeric STRING
+    /// ("42.5") must still parse, same as a genuine numeric type.</summary>
+    [Fact]
+    public void From_SkipsNonNumericStringTelemetry_ButParsesNumericStringTelemetry_NeverThrows()
+    {
+        var descriptor = new MachineDescriptor(
+            "OPCUA-01", "SN-OPCUA-01", DeviceClass.Automation, "OPC_UA", null,
+            DriverKind.OpcUa, null, null, 1.0);
+
+        var reading = new DeviceReading
+        {
+            MachineCode = "OPCUA-01",
+            Kind = ReadingKind.Telemetry,
+            SerialNumber = "",
+            Verdict = Verdict.Skip,
+            Telemetry = new List<TelemetrySample>
+            {
+                new("temp", 23.5, "C", "good"),
+                new("status", "RUNNING", null, "good"),
+                new("setpoint", "42.5", "C", "good"),
+            },
+            CycleCounter = 1,
+            Timestamp = DateTimeOffset.UtcNow,
+        };
+        var ack = new TransportAck(Success: true);
+
+        var ex = Record.Exception(() => HistorianResultRecord.From(descriptor, reading, ack, DateTimeOffset.UtcNow));
+        Assert.Null(ex);
+
+        var record = HistorianResultRecord.From(descriptor, reading, ack, DateTimeOffset.UtcNow);
+        Assert.Equal(2, record.TelemetrySamples.Count);
+        Assert.Contains(record.TelemetrySamples, s => s.Metric == "temp" && s.Value == 23.5);
+        Assert.Contains(record.TelemetrySamples, s => s.Metric == "setpoint" && s.Value == 42.5);
+        Assert.DoesNotContain(record.TelemetrySamples, s => s.Metric == "status");
+    }
+
     [Fact]
     public void From_counts_NG_measurements_and_serializes_them_for_an_inspection_reading()
     {

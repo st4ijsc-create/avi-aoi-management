@@ -555,7 +555,11 @@ public sealed class FleetHost
         // simulated. Excluding it here is what prevents it being double-driven (a simulator AND the Modbus
         // slot) once it's a roster member. Non-Modbus rosters are unaffected (the Where is a no-op), so sim
         // seeds/indices are byte-identical to before.
-        var simFleet = effectiveFleet.Where(d => d.DriverKind != DriverKind.Modbus).ToList();
+        // GĐ3 sub-3 OU-2 — same reasoning, now ALSO excluding DriverKind.OpcUa: once Program.cs seeds a
+        // roster descriptor for a configured OPC-UA machine (below), it must be driven ONLY by the real
+        // OPC-UA pipeline slot, never simulated too. A roster with no Modbus/OPC-UA machines is unaffected
+        // (the Where stays a no-op), so sim seeds/indices are byte-identical to before this task.
+        var simFleet = effectiveFleet.Where(d => d.DriverKind != DriverKind.Modbus && d.DriverKind != DriverKind.OpcUa).ToList();
         var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
 

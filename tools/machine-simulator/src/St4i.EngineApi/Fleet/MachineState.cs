@@ -150,7 +150,14 @@ public sealed class MachineState
 
             foreach (var sample in reading.Telemetry)
             {
-                if (sample.Value is not IConvertible convertible) continue;
+                // GĐ3 sub-3 OU-2 PART A — the REQUIRED gate OU-1's review flagged: the old
+                // `is not IConvertible ... ToDouble(null)` pattern crashed on a non-numeric string tag
+                // (e.g. an OPC-UA "status" node → "RUNNING" — string IS IConvertible, so
+                // Convert.ToDouble("RUNNING") threw a FormatException straight out of
+                // FleetHost.OnPipelineCommitted, killing that machine's whole pipeline slot). The shared
+                // TelemetryNumeric helper never throws: a genuinely-numeric value (or a numeric string
+                // like "42.5") is kept exactly as before; a non-numeric string/anything else is skipped.
+                if (!TelemetryNumeric.TryGet(sample.Value, out var numeric)) continue;
 
                 if (!_telemetry.TryGetValue(sample.Metric, out var series))
                 {
@@ -158,7 +165,7 @@ public sealed class MachineState
                     _telemetry[sample.Metric] = series;
                 }
 
-                series.Add(convertible.ToDouble(null));
+                series.Add(numeric);
                 TrimFront(series, MaxChartPoints);
             }
 
@@ -294,7 +301,13 @@ public sealed class MachineState
     private static double SparkValue(DeviceReading reading)
     {
         if (reading.Metrics.Count > 0) return reading.Metrics[0].Value;
-        if (reading.Telemetry.Count > 0 && reading.Telemetry[0].Value is IConvertible c) return c.ToDouble(null);
+
+        // GĐ3 sub-3 OU-2 PART A — same TelemetryNumeric hardening as the telemetry-series loop above: a
+        // non-numeric first telemetry sample (e.g. a status string) must fall through to the pass/fail
+        // step below, never throw. A genuinely-numeric first sample (including a numeric string) keeps
+        // resolving to exactly the same spark value as before this task.
+        if (reading.Telemetry.Count > 0 && TelemetryNumeric.TryGet(reading.Telemetry[0].Value, out var numeric)) return numeric;
+
         return reading.Verdict == Verdict.Fail ? 0.0 : 1.0;
     }
 
