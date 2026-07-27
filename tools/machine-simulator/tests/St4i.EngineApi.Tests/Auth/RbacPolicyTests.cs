@@ -165,6 +165,8 @@ public sealed class RbacPolicyTests
         new("/v1/auth/change-password", new[] { "POST" }, Policies.Operator),
         new("/v1/assets", new[] { "GET" }, Policies.Operator),
         new("/v1/assets/{code}", new[] { "GET" }, Policies.Operator),
+        new("/v1/site", new[] { "GET" }, Policies.Operator),
+        new("/v1/site/identity", new[] { "GET" }, Policies.Operator),
 
         // Engineer
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),
@@ -194,6 +196,7 @@ public sealed class RbacPolicyTests
         new("/v1/scenario/burst", new[] { "POST" }, Policies.Engineer),
         new("/v1/historian/oee/settings", new[] { "PUT" }, Policies.Engineer),
         new("/v1/assets/{code}/lifecycle", new[] { "PUT" }, Policies.Engineer),
+        new("/v1/site", new[] { "PUT" }, Policies.Engineer),
         new("/v1/inspector/stream", Array.Empty<string>(), Policies.Engineer),
 
         // Admin

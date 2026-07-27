@@ -657,6 +657,8 @@ app.MapHistorianEndpoints();
 app.MapAuditEndpoints();
 app.MapUserEndpoints();
 app.MapAssetEndpoints();
+// GĐ3 EC-3 — the Site-link status/config + device-identity HTTP surface over EC-2's SiteBridgeManager.
+app.MapSiteEndpoints();
 app.MapInspectorStream();
 
 // WS-D-D1 — ENDPOINT, so it inherits the FallbackPolicy above like every other mapped route; without

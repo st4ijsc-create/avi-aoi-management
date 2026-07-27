@@ -154,6 +154,14 @@ public sealed class SiteBridgeManager : IAsyncDisposable
             _gate.Release();
         }
 
-        _gate.Dispose();
+        // EC-2 review Minor (folded in by EC-3): deliberately NOT calling _gate.Dispose() here. The
+        // concurrent PUT /v1/site path EC-3 wires makes the race real: ApplyAsync's own _disposed
+        // pre-check (above the WaitAsync call) can pass, then THIS method run to completion (setting
+        // _disposed + disposing _gate) before that same ApplyAsync call reaches _gate.WaitAsync(),
+        // which would throw ObjectDisposedException out of a call this class documents as never-throwing.
+        // SemaphoreSlim.Dispose() only frees a lazily-allocated WaitHandle — never allocated here, since
+        // only WaitAsync/Release are ever used (see SemaphoreSlim's own docs) — so skipping it leaks
+        // nothing observable and removes the race entirely. The _disposed pre-checks above still make a
+        // post-shutdown ApplyAsync a fast no-op in the common (non-racing) case.
     }
 }
