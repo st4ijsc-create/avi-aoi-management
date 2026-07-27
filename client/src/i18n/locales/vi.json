@@ -13815,7 +13815,7 @@
       "decisionRule": {
         "title": "Luật quyết định mức B",
         "criteria": "Điều kiện: ≥20 phiếu đánh giá và % Dùng được ≥ 50%.",
-        "current": "Hiện có {{total}} phiếu, % Dùng được {{pct}}%.",
+        "current": "Hiện có {{total}} phiếu, % Dùng được {{pct}}.",
         "insufficient": "Chưa đủ dữ liệu để quyết định.",
         "remaining": "Còn thiếu {{remaining}} phiếu để đạt tối thiểu 20.",
         "met": "Đủ điều kiện — có thể xem xét chuyển mức B.",

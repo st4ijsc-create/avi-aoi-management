@@ -14389,7 +14389,7 @@
       "decisionRule": {
         "title": "B 级判定规则",
         "criteria": "条件：≥20 条评分且有用率 ≥ 50%。",
-        "current": "目前有 {{total}} 条评分，有用率 {{pct}}%。",
+        "current": "目前有 {{total}} 条评分，有用率 {{pct}}。",
         "insufficient": "数据不足，暂无法判定。",
         "remaining": "还需 {{remaining}} 条评分才能达到最低 20 条。",
         "met": "已满足条件 — 可考虑升级至 B 级。",

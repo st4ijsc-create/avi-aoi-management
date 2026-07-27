@@ -134,15 +134,25 @@ export default function AISpecialistStudio() {
   // Which step of a (possibly multi-step) session the Result card currently
   // shows — reset to the first step whenever a different session loads.
   const [activeStepIdx, setActiveStepIdx] = useState(0);
-  // Task 5 — the Result card is now shared by 3 entry points (Dispatch here,
-  // History tab, Audit-module tab). FeedbackBar's `repoContextUsed` can only
-  // be trusted for a session THIS page just dispatched (it mirrors the
-  // `useEyes` toggle that was actually sent) — a session loaded from History/
-  // Audit was dispatched by a possibly-different toggle state we cannot
-  // recover from `getSessionDetail` (not a persisted column), so feedback is
-  // only offered for "dispatch"-sourced sessions to avoid mis-attributing
-  // with-eyes/without-eyes stats in the quality scoreboard.
-  const [sessionSource, setSessionSource] = useState<"dispatch" | "loaded">("dispatch");
+  // Task 5 (fix round 1) — the Result card is shared by 3 entry points
+  // (Dispatch here, History tab, Audit-module tab). FeedbackBar's
+  // `repoContextUsed` must be a value THIS page can actually vouch for, not a
+  // guess — the 3 sources differ:
+  //   - "dispatch": mirrors the `useEyes` toggle that was actually sent to
+  //     `run()` — known with certainty.
+  //   - "audit": `runModuleAudit` (server/routers/aiSpecialistAgentRouter.ts)
+  //     has NO `includeRepoContext` field in its input schema at all — it
+  //     calls `gatherRepoContext(...)` UNCONDITIONALLY for every module-audit
+  //     session. So repo-context is a known CONSTANT (`true`) the instant
+  //     "Chạy audit" is clicked — the same certainty as `useEyes` at Dispatch
+  //     time, not a client-side heuristic.
+  //   - "loaded" (History): a session dispatched at some point in the past.
+  //     `inputPayload` for workflow/module-audit steps never persists
+  //     `repoContext` (confirmed in `runSpecialistWorkflowSessionInBackground`,
+  //     aiSpecialistAgentRouter.ts) and single-agent `run` sessions don't
+  //     expose it back via `getSessionDetail` either — genuinely
+  //     unrecoverable. History-loaded sessions correctly get NO FeedbackBar.
+  const [sessionSource, setSessionSource] = useState<"dispatch" | "loaded" | "audit">("dispatch");
   const [activeTab, setActiveTab] = useState<"dispatch" | "history" | "audit" | "quality">("dispatch");
 
   const agents = trpc.aiSpecialistAgent.listAgents.useQuery();
@@ -198,11 +208,14 @@ export default function AISpecialistStudio() {
    * Task 5 — History tab row click / Audit-module "Chạy audit" both funnel
    * here: load the session into THIS SAME Result card (no second render/poll
    * scheme) and jump the Tabs back to "Giao việc" so it is immediately
-   * visible.
+   * visible. `source` is passed explicitly by the caller (never defaulted)
+   * so History and Audit cannot be silently conflated — see the
+   * `sessionSource` doc-comment above for why they need different
+   * FeedbackBar behavior.
    */
-  function handleLoadSession(id: number) {
+  function handleLoadSession(id: number, source: "loaded" | "audit") {
     setSessionId(id);
-    setSessionSource("loaded");
+    setSessionSource(source);
     setActiveTab("dispatch");
   }
 
@@ -545,19 +558,26 @@ export default function AISpecialistStudio() {
                     tokensGenerated={activeStep?.tokensGenerated}
                     totalTimeMs={activeStep?.totalTimeMs}
                   />
-                  {/* Feedback only for a session THIS page just dispatched —
-                      see the `sessionSource` doc-comment above for why a
-                      History/Audit-loaded session does not get this control. */}
-                  {sessionSource === "dispatch" && (
+                  {/* Feedback for "dispatch" (just-run) and "audit"
+                      (just-started, repoContextUsed is a known constant —
+                      see the `sessionSource` doc-comment above) — NOT for
+                      "loaded" (History), where repoContextUsed is genuinely
+                      unrecoverable. `agentId`/`moduleName` are read off the
+                      loaded session itself (the active step's agent, the
+                      session's own module), not the Dispatch form's current
+                      selection, so a rating on an audit session attributes
+                      correctly even though the form still shows whatever
+                      agent/module was last picked there. */}
+                  {(sessionSource === "dispatch" || sessionSource === "audit") && (
                     <div className="border-t pt-4">
                       <p className="mb-2 text-sm font-medium">
                         {t("specialistStudio.feedback.title", "Đánh giá kết quả này")}
                       </p>
                       <FeedbackBar
                         sessionId={sessionId}
-                        agentId={agentId}
-                        moduleName={moduleName.trim() || undefined}
-                        repoContextUsed={useEyes}
+                        agentId={activeStep?.agentId ?? agentId}
+                        moduleName={session.data?.moduleName ?? undefined}
+                        repoContextUsed={sessionSource === "audit" ? true : useEyes}
                       />
                     </div>
                   )}
@@ -569,11 +589,11 @@ export default function AISpecialistStudio() {
           </TabsContent>
 
           <TabsContent value="history">
-            <SpecialistHistoryTab onSelectSession={handleLoadSession} />
+            <SpecialistHistoryTab onSelectSession={(id) => handleLoadSession(id, "loaded")} />
           </TabsContent>
 
           <TabsContent value="audit">
-            <SpecialistAuditTab onSessionStarted={handleLoadSession} />
+            <SpecialistAuditTab onSessionStarted={(id) => handleLoadSession(id, "audit")} />
           </TabsContent>
 
           <TabsContent value="quality">
@@ -1035,9 +1055,11 @@ function SpecialistQualityTab() {
             {t("specialistStudio.quality.decisionRule.criteria", "Điều kiện: ≥20 phiếu đánh giá và % Dùng được ≥ 50%.")}
           </p>
           <p className="text-muted-foreground">
-            {t("specialistStudio.quality.decisionRule.current", "Hiện có {{total}} phiếu, % Dùng được {{pct}}%.", {
+            {t("specialistStudio.quality.decisionRule.current", "Hiện có {{total}} phiếu, % Dùng được {{pct}}.", {
               total: totalRatings,
-              pct: totalRatings > 0 ? usefulPct : 0,
+              // Same "never show 0% for an empty set" convention as the badge
+              // above — pct already carries its own "%" (or the "—" fallback).
+              pct: totalRatings > 0 ? `${usefulPct}%` : "—",
             })}
           </p>
           {!enoughVolume ? (

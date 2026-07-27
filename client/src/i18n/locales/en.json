@@ -13832,7 +13832,7 @@
       "decisionRule": {
         "title": "Tier B decision rule",
         "criteria": "Criteria: ≥20 ratings and ≥50% useful.",
-        "current": "Currently {{total}} ratings, {{pct}}% useful.",
+        "current": "Currently {{total}} ratings, {{pct}} useful.",
         "insufficient": "Not enough data to decide yet.",
         "remaining": "{{remaining}} more ratings needed to reach the minimum of 20.",
         "met": "Criteria met — Tier B can be considered.",
