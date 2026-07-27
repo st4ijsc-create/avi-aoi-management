@@ -13725,6 +13725,7 @@
       "runningHint": "Agent đang xử lý trên model local — có thể mất một lúc.",
       "failedTitle": "Phiên chạy lỗi",
       "notFound": "Không tìm thấy phiên này.",
+      "loadError": "Không thể tải kết quả phiên lúc này.",
       "meta": {
         "model": "Model",
         "tokens": "Token (prompt / sinh)",
@@ -13744,7 +13745,8 @@
       "copied": "Đã sao chép"
     },
     "feedback": {
-      "title": "Đánh giá kết quả này"
+      "title": "Đánh giá kết quả này",
+      "saveError": "Không ghi được đánh giá — thử lại."
     },
     "rating": {
       "useful": "Dùng được",

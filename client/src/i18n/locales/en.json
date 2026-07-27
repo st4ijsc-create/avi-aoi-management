@@ -13742,6 +13742,7 @@
       "runningHint": "The agent is processing on the local model — this can take a moment.",
       "failedTitle": "Session failed",
       "notFound": "Session not found.",
+      "loadError": "Could not load the session result right now.",
       "meta": {
         "model": "Model",
         "tokens": "Tokens (prompt / generated)",
@@ -13761,7 +13762,8 @@
       "copied": "Copied"
     },
     "feedback": {
-      "title": "Rate this result"
+      "title": "Rate this result",
+      "saveError": "Could not save the rating — please try again."
     },
     "rating": {
       "useful": "Useful",

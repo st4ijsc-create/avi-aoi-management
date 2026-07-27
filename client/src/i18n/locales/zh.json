@@ -14299,6 +14299,7 @@
       "runningHint": "代理正在本地模型上处理 — 可能需要一些时间。",
       "failedTitle": "会话失败",
       "notFound": "未找到该会话。",
+      "loadError": "目前无法加载该会话的结果。",
       "meta": {
         "model": "模型",
         "tokens": "Token（输入 / 生成）",
@@ -14318,7 +14319,8 @@
       "copied": "已复制"
     },
     "feedback": {
-      "title": "为该结果评分"
+      "title": "为该结果评分",
+      "saveError": "无法保存评分 — 请重试。"
     },
     "rating": {
       "useful": "有用",

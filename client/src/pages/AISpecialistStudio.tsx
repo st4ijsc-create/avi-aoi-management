@@ -57,6 +57,7 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { TRPCClientError } from "@trpc/client";
 import type { LucideIcon } from "lucide-react";
 import {
   Wrench,
@@ -151,7 +152,7 @@ export default function AISpecialistStudio() {
     try {
       const res = await runMutation.mutateAsync({
         agentId: agentId as "data-analyst" | "backend-engineer" | "frontend-engineer" | "qa-optimizer",
-        objective,
+        objective: objective.trim(),
         moduleName: moduleName.trim() || undefined,
         files: files.length ? files : undefined,
         includeRepoContext: useEyes,
@@ -174,6 +175,19 @@ export default function AISpecialistStudio() {
   const output = aggregateOutput?.result;
   const firstStep = session.data?.steps?.[0];
   const metaModelId = aggregateOutput?.modelId ?? firstStep?.modelId ?? undefined;
+  // Wave 1 T4 fix round 1 — status stays undefined both while the FIRST
+  // getSessionDetail response is still in flight (harmless, momentary — the
+  // row was already created with status "running" server-side) AND if the
+  // query errors permanently (NOT_FOUND, transient DB error, …). Without a
+  // branch keyed on this, the Result card renders nothing at all in the
+  // error case — never surfaced to the user. Distinguish NOT_FOUND (session
+  // genuinely doesn't belong to/exist for this user) from any other error
+  // so the message stays accurate instead of defaulting everything to
+  // "not found".
+  const sessionErrorCode =
+    session.error instanceof TRPCClientError
+      ? (session.error.data as { code?: string } | undefined)?.code
+      : undefined;
 
   return (
     <DashboardLayout>
@@ -393,7 +407,23 @@ export default function AISpecialistStudio() {
                 </p>
               )}
 
-              {sessionId !== null && status === "running" && (
+              {/* status stays undefined both while the first response is still
+                  loading (harmless — the row is already "running" server-side)
+                  AND if the query errors permanently. Never leave the card
+                  blank in the latter case. */}
+              {sessionId !== null && status === undefined && session.isError && (
+                <Alert variant="destructive">
+                  <AlertTriangle />
+                  <AlertTitle>{t("specialistStudio.result.failedTitle", "Phiên chạy lỗi")}</AlertTitle>
+                  <AlertDescription>
+                    {sessionErrorCode === "NOT_FOUND"
+                      ? t("specialistStudio.result.notFound", "Không tìm thấy phiên này.")
+                      : t("specialistStudio.result.loadError", "Không thể tải kết quả phiên lúc này.")}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {sessionId !== null && (status === "running" || (status === undefined && !session.isError)) && (
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
                   <Spinner className="h-5 w-5" />
                   {t("specialistStudio.result.running", "Đang chạy…")}
@@ -576,7 +606,7 @@ export function FeedbackBar({
       });
       setSaved(true);
     } catch (err: any) {
-      toast.error(err?.message || "Failed to save feedback");
+      toast.error(err?.message || t("specialistStudio.feedback.saveError", "Không ghi được đánh giá — thử lại."));
     }
   }
 
