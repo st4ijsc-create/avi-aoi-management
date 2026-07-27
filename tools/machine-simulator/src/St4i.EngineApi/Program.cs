@@ -391,6 +391,13 @@ if (unsOptions.Enabled)
                 logWarning: msg => logger.LogWarning("{UnsMsg}", msg),
                 logError: (ex, msg) => logger.LogError(ex, "{UnsMsg}", msg));
         });
+
+        // G2-3 — forwards the IUnsPublisher interface to the SAME concrete UnsPublisher singleton above, so
+        // FleetHost (which now depends on IUnsPublisher?, not the concrete type — see FleetHost.cs) resolves
+        // the real publisher when UNS is enabled. UnsPublisher.DisposeAsync is documented idempotent
+        // precisely for this dual concrete+interface registration (the DI container may dispose both).
+        builder.Services.AddSingleton<St4i.EdgeCore.Uns.IUnsPublisher>(
+            sp => sp.GetRequiredService<St4i.EdgeCore.Uns.UnsPublisher>());
     }
 }
 

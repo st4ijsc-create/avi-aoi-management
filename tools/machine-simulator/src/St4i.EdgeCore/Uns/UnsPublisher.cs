@@ -16,13 +16,15 @@ namespace St4i.EdgeCore.Uns;
 ///
 /// Internal shape is COPIED from <see cref="St4i.EdgeCore.Historian.HistorianWriter"/> on purpose (the
 /// task brief's explicit instruction): a bounded <see cref="Channel{T}"/> (drop-oldest when saturated) fed
-/// by <see cref="PublishReading"/>/<see cref="PublishBirth"/>/<see cref="PublishDeath"/> — all three are
-/// synchronous, non-blocking, and never throw — drained by a background flush loop that does the actual
-/// (async) MQTT publish. A broker hiccup (disconnected client, slow broker, ...) can therefore NEVER slow
-/// or fail <see cref="St4i.EdgeCore.Engine.EdgePipeline.RunAsync"/>'s hot commit loop — at worst, one
-/// reading's UNS mirror is dropped (logged via the optional <c>logWarning</c>/<c>logError</c> delegates,
-/// same "St4i.EdgeCore doesn't reference Microsoft.Extensions.Logging" reasoning HistorianWriter's own doc
-/// comment gives) while the ST4I HTTP path/<c>Committed</c> event carry on completely unaffected.
+/// by <see cref="PublishReading"/>/<see cref="PublishBirth"/>/<see cref="PublishDeath"/>/
+/// <see cref="PublishNodeBirth"/>/<see cref="PublishNodeDeath"/> (G2-3 — the last two are the NODE-level
+/// NBIRTH/NDEATH lifecycle) — all five are synchronous, non-blocking, and never throw — drained by a
+/// background flush loop that does the actual (async) MQTT publish. A broker hiccup (disconnected client,
+/// slow broker, ...) can therefore NEVER slow or fail
+/// <see cref="St4i.EdgeCore.Engine.EdgePipeline.RunAsync"/>'s hot commit loop — at worst, one reading's UNS
+/// mirror is dropped (logged via the optional <c>logWarning</c>/<c>logError</c> delegates, same "St4i.EdgeCore
+/// doesn't reference Microsoft.Extensions.Logging" reasoning HistorianWriter's own doc comment gives) while
+/// the ST4I HTTP path/<c>Committed</c> event carry on completely unaffected.
 ///
 /// Connects to the broker in the BACKGROUND from the constructor (same non-blocking-ctor idiom
 /// <see cref="St4i.EdgeCore.Drivers.Mqtt.MqttDriver"/> already uses) — always loopback-only
@@ -48,6 +50,12 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
 
     private sealed record DeathWorkItem(string EquipmentCode) : WorkItem;
 
+    private sealed record NodeBirthWorkItem(long BdSeq) : WorkItem;
+
+    private sealed record NodeDeathWorkItem(long BdSeq) : WorkItem;
+
+    private const string BdSeqMetricName = "bdSeq"; // exact spec metric name (case-sensitive)
+
     private readonly UnsOptions _options;
     private readonly IMqttClient _client;
     private readonly Action<string>? _logWarning;
@@ -58,6 +66,9 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
     private readonly Task _flushLoop;
     private readonly SparkplugSeqTracker _seq = new();
     private readonly ConcurrentDictionary<string, SparkplugAliasTable> _aliasTables = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _lifecycleGate = new();
+    private long _bdSeq = -1; // first PublishNodeBirth resolves to bdSeq 0
+    private bool _nodeBorn;
     private volatile bool _disposed;
 
     public UnsPublisher(
@@ -134,6 +145,51 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public void PublishNodeBirth()
+    {
+        if (_disposed)
+        {
+            _logWarning?.Invoke("UNS publisher already disposed — dropped node birth");
+            return;
+        }
+
+        long bd;
+        lock (_lifecycleGate)
+        {
+            bd = ++_bdSeq;
+            _nodeBorn = true;
+        }
+
+        if (!_channel.Writer.TryWrite(new NodeBirthWorkItem(bd)))
+        {
+            _logWarning?.Invoke("UNS publish queue saturated — dropped node birth");
+        }
+    }
+
+    /// <inheritdoc/>
+    public void PublishNodeDeath()
+    {
+        if (_disposed)
+        {
+            _logWarning?.Invoke("UNS publisher already disposed — dropped node death");
+            return;
+        }
+
+        long bd;
+        lock (_lifecycleGate)
+        {
+            if (!_nodeBorn) return; // no NDEATH without a matching NBIRTH — idempotent stop / E-STOP-while-idle no-op
+            _nodeBorn = false;
+            bd = _bdSeq;
+        }
+
+        if (!_channel.Writer.TryWrite(new NodeDeathWorkItem(bd)))
+        {
+            _logWarning?.Invoke("UNS publish queue saturated — dropped node death");
+        }
+    }
+
     private async Task ConnectAsync(MqttClientOptions options, CancellationToken ct)
     {
         try
@@ -196,6 +252,8 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         ReadingWorkItem r => $"reading({r.Reading.MachineCode})",
         BirthWorkItem b => $"birth({b.EquipmentCode})",
         DeathWorkItem d => $"death({d.EquipmentCode})",
+        NodeBirthWorkItem nb => $"nodeBirth(bdSeq={nb.BdSeq})",
+        NodeDeathWorkItem nd => $"nodeDeath(bdSeq={nd.BdSeq})",
         _ => "unknown",
     };
 
@@ -204,6 +262,8 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         ReadingWorkItem r => PublishReadingCoreAsync(r.Reading, r.Envelope, ct),
         BirthWorkItem b => PublishBirthCoreAsync(b.EquipmentCode, ct),
         DeathWorkItem d => PublishDeathCoreAsync(d.EquipmentCode, ct),
+        NodeBirthWorkItem nb => PublishNodeBirthCoreAsync(nb.BdSeq, ct),
+        NodeDeathWorkItem nd => PublishNodeDeathCoreAsync(nd.BdSeq, ct),
         _ => Task.CompletedTask,
     };
 
@@ -234,7 +294,9 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
 
     private async Task PublishBirthCoreAsync(string equipmentCode, CancellationToken ct)
     {
-        _seq.ResetOnBirth();
+        // G2-3: NBIRTH now owns the sequence reset (see PublishNodeBirthCoreAsync) — per Sparkplug B spec,
+        // ONLY an NBIRTH resets the edge node's sequence; a DBIRTH must NOT (fixed from G2-2, which
+        // incorrectly reset here too).
         var aliasTable = _aliasTables.GetOrAdd(equipmentCode, static _ => new SparkplugAliasTable());
         aliasTable.Reset();
 
@@ -257,6 +319,29 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
             .WithTopic(topic)
             .WithPayload(SparkplugPayload.Encode(payload))
             .Build();
+        await _client.PublishAsync(message, ct).ConfigureAwait(false);
+    }
+
+    private async Task PublishNodeBirthCoreAsync(long bdSeq, CancellationToken ct)
+    {
+        _seq.ResetOnBirth(); // NBIRTH is the ONLY sequence-resetting message (per spec)
+        var now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var metrics = new[] { new SparkplugMetric(BdSeqMetricName, 0, now, SparkplugDataType.Int64, bdSeq) };
+        var topic = UnsTopicBuilder.BuildSparkplugTopic(_options, SparkplugMsgType.NBIRTH);
+        var payload = new SparkplugPayloadMessage(now, _seq.Next(), metrics); // Next() == 0 right after reset
+        var message = new MqttApplicationMessageBuilder().WithTopic(topic)
+            .WithPayload(SparkplugPayload.Encode(payload)).Build();
+        await _client.PublishAsync(message, ct).ConfigureAwait(false);
+    }
+
+    private async Task PublishNodeDeathCoreAsync(long bdSeq, CancellationToken ct)
+    {
+        var now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var metrics = new[] { new SparkplugMetric(BdSeqMetricName, 0, now, SparkplugDataType.Int64, bdSeq) };
+        var topic = UnsTopicBuilder.BuildSparkplugTopic(_options, SparkplugMsgType.NDEATH);
+        var payload = new SparkplugPayloadMessage(now, _seq.Next(), metrics); // hosts don't gate on NDEATH seq; kept for the single-seq invariant
+        var message = new MqttApplicationMessageBuilder().WithTopic(topic)
+            .WithPayload(SparkplugPayload.Encode(payload)).Build();
         await _client.PublishAsync(message, ct).ConfigureAwait(false);
     }
 

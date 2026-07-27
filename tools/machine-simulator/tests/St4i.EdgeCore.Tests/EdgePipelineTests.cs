@@ -208,6 +208,14 @@ public class EdgePipelineTests
         public void PublishDeath(string equipmentCode)
         {
         }
+
+        public void PublishNodeBirth()
+        {
+        }
+
+        public void PublishNodeDeath()
+        {
+        }
     }
 
     [Fact]

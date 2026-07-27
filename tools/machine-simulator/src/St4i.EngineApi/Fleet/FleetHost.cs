@@ -123,8 +123,17 @@ public sealed class FleetHost
     /// store/writer above) local Unified Namespace publisher. Threaded straight into every
     /// <see cref="EdgePipeline"/> this host builds (see <see cref="StartLocked"/>) so every committed
     /// reading is additively mirrored onto the Sparkplug + <c>syn/...</c> topics — never instead of, and
-    /// never able to slow down, the existing ST4I HTTP path this same pipeline already drives.</summary>
-    private readonly UnsPublisher? _unsPublisher;
+    /// never able to slow down, the existing ST4I HTTP path this same pipeline already drives.
+    ///
+    /// G2-3 — typed against the <see cref="IUnsPublisher"/> INTERFACE (not the concrete
+    /// <see cref="UnsPublisher"/>) so a test can inject a fake that records calls without a real broker;
+    /// <see cref="EdgePipeline"/> already took the interface, so this only changes this field/ctor param's
+    /// own declared type — every existing call site (<see cref="StartLocked"/> passing <c>_unsPublisher</c>
+    /// into <see cref="EdgePipeline"/>'s ctor) keeps compiling unchanged. Also now the seam
+    /// <see cref="Start"/>/<see cref="Stop"/>/<see cref="Estop"/> call <see cref="IUnsPublisher.PublishNodeBirth"/>/
+    /// <see cref="IUnsPublisher.PublishNodeDeath"/> through, at the SAME guarded real-transition sites as the
+    /// historian run-events above.</summary>
+    private readonly IUnsPublisher? _unsPublisher;
 
     /// <summary>FF-1 (docs/plans/2026-07-27-ws-ff-fast-follows.md) — optional (defaults null, same
     /// "every pre-existing test that constructs <see cref="FleetHost"/> directly without one keeps
@@ -187,7 +196,7 @@ public sealed class FleetHost
         St4i.EdgeCore.Config.ProductConfigStore? productConfigStore = null,
         HistorianWriter? historianWriter = null,
         FleetSettingsStore? settingsStore = null,
-        UnsPublisher? unsPublisher = null)
+        IUnsPublisher? unsPublisher = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -330,6 +339,7 @@ public sealed class FleetHost
         if (started)
         {
             _ = _historianWriter?.RecordRunEventFireAndForget("Start");
+            _unsPublisher?.PublishNodeBirth();
         }
     }
 
@@ -357,6 +367,7 @@ public sealed class FleetHost
         if (stopped)
         {
             _ = _historianWriter?.RecordRunEventFireAndForget("Stop");
+            _unsPublisher?.PublishNodeDeath();
         }
 
         WaitAndDisposeOldPipeline(handle);
@@ -378,6 +389,7 @@ public sealed class FleetHost
         }
 
         _ = _historianWriter?.RecordRunEventFireAndForget("Estop");
+        _unsPublisher?.PublishNodeDeath();
         WaitAndDisposeOldPipeline(handle);
     }
 

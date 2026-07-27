@@ -26,4 +26,16 @@ public interface IUnsPublisher
 
     /// <summary>G2-3 hook — the (D)DEATH counterpart to <see cref="PublishBirth"/>.</summary>
     void PublishDeath(string equipmentCode);
+
+    /// <summary>G2-3 — publishes a node-level Sparkplug B <b>NBIRTH</b> for this edge node (the process's single
+    /// <see cref="UnsOptions.Cell"/>): resets the node sequence to 0 (per spec, NBIRTH is the ONLY message that
+    /// does) and carries a monotonic <c>bdSeq</c> metric a host uses to pair this birth with its eventual
+    /// <see cref="PublishNodeDeath"/>. Non-blocking; never throws (see the interface's own contract).</summary>
+    void PublishNodeBirth();
+
+    /// <summary>G2-3 — publishes the node-level <b>NDEATH</b> that terminates the most recent
+    /// <see cref="PublishNodeBirth"/>, carrying the SAME <c>bdSeq</c>. A no-op if the node is not currently
+    /// "born" (no matching NBIRTH is outstanding) — so an E-STOP on an idle fleet, or a duplicate stop, never
+    /// emits a spurious or unpaired NDEATH.</summary>
+    void PublishNodeDeath();
 }
