@@ -1,17 +1,15 @@
 using System.Security.AccessControl;
 using System.Security.Principal;
-using St4i.EngineApi.Auth;
+using St4i.EdgeCore.Infrastructure;
 using Xunit;
-
-namespace St4i.EngineApi.Tests.Auth;
 
 /// <summary>
 /// WS-D final-security-review I-1(a) — unit coverage for <see cref="SecurityDirAcl.Apply"/>, extracted into
 /// its own testable helper specifically so this hardening step doesn't have to be verified only "by
-/// inspection". Every <c>WebApplicationFactory&lt;Program&gt;</c>-based test elsewhere in this folder (e.g.
-/// <see cref="AuthPipelineTests"/>) already exercises the real <c>Program.cs</c> call site indirectly — it
-/// points <c>ST4I_SECURITY_DIR</c> at a temp directory that this same method runs against on every
-/// startup — but none of them assert anything about the RESULTING ACL, which is what this class adds.
+/// inspection". Moved here from St4i.EngineApi.Tests (FF-2 review) alongside the class itself, so it lives
+/// next to its EdgeCore home — both St4i.EngineApi's security-dir startup call AND
+/// <see cref="CredentialStore"/>'s creds-dir call (see <c>CredentialStoreTests</c>) now share this exact
+/// same helper.
 ///
 /// Runs for real against the filesystem (no mocking): the whole point of I-1(a) is genuine
 /// <see cref="System.Security.AccessControl"/> behavior, and a normal account's own temp directory always

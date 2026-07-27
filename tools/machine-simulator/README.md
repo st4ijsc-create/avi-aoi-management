@@ -1042,6 +1042,20 @@ Onboarding) runs instead of a crash. The same `null`-not-throw behavior also cov
 corrupt/foreign `.bin` (e.g. bytes from a different machine, or plain garbage) — see
 `CredentialStoreTests` for the round-trip-under-`LocalMachine` and corrupt-blob coverage.
 
+**(b, round 2) The creds directory itself is now ACL-locked too (FF-2 review fix).** Switching to
+`LocalMachine` scope in round 1 above created a real regression if left there alone: a `LocalMachine`
+blob is decryptable by **any** local account, so without also restricting who can even READ the `.bin`
+files, `%ProgramData%`'s permissive default ACL (`Authenticated Users` read) would let any local
+non-admin read + decrypt every stored `mk_`. Fixed by reusing `SecurityDirAcl` — the exact same
+SYSTEM/`BUILTIN\Administrators`/owner-only, inheritance-disabled lock-down §14 already applies to the
+`security` directory — against the creds directory too. `SecurityDirAcl` moved from
+`St4i.EngineApi.Auth` to **`St4i.EdgeCore.Infrastructure`** (pure `System.Security.AccessControl`, no
+ASP.NET dependency) specifically so `CredentialStore.Save` can call it directly for **every** host that
+stores credentials — `St4i.EngineApi`, `St4i.EdgeService`, and the WPF app alike — rather than only the
+one host that remembered to apply it. `Save` re-applies the lock-down every time it (re-)creates/ensures
+the creds directory (self-healing on the next credential save, same idiom `SecurityDirAcl.Apply`'s own
+doc comment already documents for the security directory), best-effort and never throwing.
+
 **(c) NU1903 (`SQLitePCLRaw`/CVE-2025-6965) — cleared, not suppressed (WS-FF, FF-2).**
 `Microsoft.Data.Sqlite 10.0.10` pins the transitive `SQLitePCLRaw.bundle_e_sqlite3`/`lib.e_sqlite3` at
 `2.1.11`, which bundles a pre-3.50.2 SQLite affected by
@@ -1068,6 +1082,12 @@ service khác. Giờ đã chuyển sang DPAPI theo LocalMachine (giống key-rin
 tài khoản cục bộ nào trên cùng máy đều giải mã được; ranh giới bảo mật giờ là ACL thư mục, không phải
 tài khoản Windows. Đây là thay đổi PHÁ VỠ TƯƠNG THÍCH có chủ đích: file `.bin` mã hoá kiểu cũ
 (CurrentUser) không đọc lại được nữa — `Load` bắt lỗi `CryptographicException` và trả về `null` (coi như
-chưa có khoá) thay vì crash, buộc claim lại qua Onboarding. (c) NU1903 (SQLitePCLRaw/CVE-2025-6965) —
+chưa có khoá) thay vì crash, buộc claim lại qua Onboarding. (b, vòng 2 — review fix) Vì blob LocalMachine
+giải mã được bởi BẤT KỲ tài khoản cục bộ nào, ACL mặc định lỏng lẻo của `%ProgramData%` (Authenticated
+Users đọc được) sẽ lộ mọi `mk_` cho tài khoản không phải admin nếu không khoá luôn thư mục `creds`. Đã sửa
+bằng cách chuyển `SecurityDirAcl` từ `St4i.EngineApi.Auth` sang `St4i.EdgeCore.Infrastructure` (không phụ
+thuộc ASP.NET) và cho `CredentialStore.Save` tự áp dụng khoá SYSTEM/Administrators/chủ thư mục này mỗi
+lần lưu khoá — mọi host dùng `CredentialStore` (EngineApi, EdgeService, WPF) đều được khoá tự động, không
+cần host nào tự nhớ gọi riêng. (c) NU1903 (SQLitePCLRaw/CVE-2025-6965) —
 ĐÃ GIẢI QUYẾT bằng cách ghim phiên bản vá `SQLitePCLRaw.bundle_e_sqlite3 2.1.12` (đã xác minh SQLite bên
 trong là 3.53.3, qua ngưỡng vá 3.50.2), KHÔNG dùng `<NoWarn>` để ẩn cảnh báo.)*

@@ -13,8 +13,12 @@ namespace St4i.EdgeCore.Infrastructure;
 /// Windows Service/LocalSystem) — <see cref="DataProtectionScope.CurrentUser"/> would make that
 /// re-decrypt fail. The confidentiality boundary this relies on instead is filesystem ACLs on the
 /// containing directory tree — same rationale as WS-D's DataProtection key-ring
-/// <c>protectToLocalMachine: true</c> (see <c>St4i.EngineApi.Auth.SecurityDirAcl</c>) — restricting
-/// this directory to admins is a deployment-hardening step, not something this class enforces itself.
+/// <c>protectToLocalMachine: true</c>. A <c>LocalMachine</c>-scoped blob is decryptable by ANY local
+/// account, so — unlike under the old <c>CurrentUser</c> scope, where a "wrong Windows account" was
+/// itself a (accidental) backstop — the ACL on the creds directory is now the ENTIRE confidentiality
+/// boundary. <see cref="Save"/> therefore applies <see cref="SecurityDirAcl.Apply"/> to the creds
+/// directory every time it (re-)creates/ensures it exists (FF-2 review fix), so this class enforces its
+/// own boundary rather than depending on a caller to have hardened it separately.
 ///
 /// One file per machine under <c>%ProgramData%\ST4I\sim\creds\&lt;machineCode&gt;.bin</c>, so the
 /// WPF app/edge service can hold credentials for an entire simulated fleet side by side.
@@ -29,14 +33,23 @@ public static class CredentialStore
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("st4i.edgecore.credentialstore.v1");
 
     /// <summary>DPAPI-protects <paramref name="mkKey"/> and writes it to this machine's credential file
-    /// (creating the containing directory tree if needed).</summary>
+    /// (creating the containing directory tree if needed, and locking down its ACL — see this class's
+    /// own doc comment and <see cref="SecurityDirAcl"/> — every time, so an install upgraded from a
+    /// pre-FF-2 build gets self-healed on the very next credential save, not just a fresh one).</summary>
     public static void Save(string machineCode, string mkKey)
     {
         ArgumentException.ThrowIfNullOrEmpty(machineCode);
         ArgumentException.ThrowIfNullOrEmpty(mkKey);
 
         var path = PathFor(machineCode);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var dir = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(dir);
+
+        // FF-2 review fix — restrict the creds directory to SYSTEM/Administrators/owner only, the exact
+        // same lock-down St4i.EngineApi's Program.cs already applies to the security directory. Runs
+        // unconditionally on every Save (self-healing, best-effort, never throws — see
+        // SecurityDirAcl.Apply's own doc comment), not just when the directory is first created.
+        SecurityDirAcl.Apply(dir, msg => Console.Error.WriteLine($"[credentialstore] {msg}"));
 
         var plain = Encoding.UTF8.GetBytes(mkKey);
         var protectedBytes = ProtectedData.Protect(plain, Entropy, DataProtectionScope.LocalMachine);

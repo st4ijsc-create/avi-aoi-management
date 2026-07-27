@@ -2,16 +2,28 @@ using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
 
-namespace St4i.EngineApi.Auth;
+namespace St4i.EdgeCore.Infrastructure;
 
 /// <summary>
-/// WS-D final-security-review I-1(a) — best-effort ACL lock-down for the security ROOT directory
-/// (<c>%ProgramData%\ST4I\sim\security</c>, the parent of BOTH <c>security.db</c> — PBKDF2 password hashes
-/// + the hash-chained audit log, see M-2 — and the <c>keys\</c> subdirectory the DataProtection key ring
-/// lives under, see <c>Program.cs</c>'s <c>AddDataProtection</c> wiring). <c>%ProgramData%</c>'s default ACL
-/// grants <c>Authenticated Users</c> Read (+ subfolder/file inheritance), so WITHOUT this fix any local
-/// non-admin account can read the key ring (letting them forge a <c>role=Admin</c> cookie — the original
-/// I-1 finding) and/or the password-hash/audit database.
+/// WS-D final-security-review I-1(a) (originated in <c>St4i.EngineApi</c>; moved here under FF-2 review so
+/// EVERY host that stores local secrets under <c>%ProgramData%\ST4I\sim\*</c> — not just
+/// <c>St4i.EngineApi</c> — can apply the exact same lock-down with zero duplicated logic) — a best-effort
+/// ACL lock-down for a "security-sensitive" leaf directory. Two current call sites:
+/// <list type="bullet">
+/// <item><c>St4i.EngineApi.Program.cs</c> — the security ROOT directory (<c>...\sim\security</c>, parent of
+/// BOTH <c>security.db</c> — PBKDF2 password hashes + the hash-chained audit log — and the <c>keys\</c>
+/// subdirectory the DataProtection key ring lives under).</item>
+/// <item><see cref="CredentialStore"/> (FF-2 review fix) — the creds directory (<c>...\sim\creds</c>) that
+/// holds every machine's DPAPI-protected <c>mk_</c> <c>.bin</c> file. This one matters MORE after FF-2
+/// switched <see cref="CredentialStore"/> to <see cref="System.Security.Cryptography.DataProtectionScope.LocalMachine"/>:
+/// a <c>LocalMachine</c>-scoped blob is decryptable by ANY local account, so the ACL on the directory
+/// containing it becomes the ENTIRE confidentiality boundary (there is no longer a "wrong Windows account"
+/// backstop the way <c>CurrentUser</c> scope used to provide).</item>
+/// </list>
+/// <c>%ProgramData%</c>'s default ACL grants <c>Authenticated Users</c> Read (+ subfolder/file
+/// inheritance), so WITHOUT this fix any local non-admin account can read whatever lives under an
+/// unprotected directory — the key ring (letting them forge a <c>role=Admin</c> cookie — the original I-1
+/// finding), the password-hash/audit database, or a stored <c>mk_</c> credential.
 ///
 /// Disables inheritance on the directory and replaces every inherited rule with exactly three explicit
 /// FullControl grants: <c>NT AUTHORITY\SYSTEM</c>, <c>BUILTIN\Administrators</c>, and the directory's
@@ -21,14 +33,13 @@ namespace St4i.EngineApi.Auth;
 /// Scope note: this only touches the ONE directory object passed in, not a recursive re-ACL of any files/
 /// subdirectories that may already exist under it from a run before this fix shipped (Windows does not
 /// propagate a parent ACL change onto already-materialized child ACEs without an explicit recursive walk,
-/// which is out of scope here). On a FRESH deployment (the common case — no <c>security.db</c>/<c>keys\</c>
-/// content exists yet the first time <c>Program.cs</c> creates this directory) that's a non-issue: every
-/// child created AFTER this call inherits the restricted ACL, because
-/// <see cref="FileSystemAccessRule"/> below sets container+object inherit flags. An UPGRADE of an existing,
-/// previously-unprotected install still gets the root directory itself locked down on next startup
-/// (self-healing — this runs unconditionally on every <c>Program.cs</c> start, not just once), which is an
-/// improvement even though pre-existing children keep whatever ACL they already had until they're
-/// rewritten/recreated (e.g. a future key-ring rotation, or a fresh <c>security.db</c>).
+/// which is out of scope here). On a FRESH deployment (the common case — no content exists yet the first
+/// time a call site creates this directory) that's a non-issue: every child created AFTER this call
+/// inherits the restricted ACL, because <see cref="FileSystemAccessRule"/> below sets container+object
+/// inherit flags. An UPGRADE of an existing, previously-unprotected install still gets the root directory
+/// itself locked down the next time a call site runs this (self-healing — both call sites run it
+/// unconditionally every time, not just once), which is an improvement even though pre-existing children
+/// keep whatever ACL they already had until they're rewritten/recreated.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public static class SecurityDirAcl
@@ -38,7 +49,7 @@ public static class SecurityDirAcl
     /// exception (unsupported filesystem, non-Windows CI container despite the <c>net10.0-windows</c> TFM,
     /// insufficient privilege to write a DACL, ...) is caught and reported via <paramref name="logWarning"/>
     /// instead of propagating — a local-confidentiality hardening step must never be able to crash startup
-    /// (see this method's call site in <c>Program.cs</c>, and the I-1 fix's own "never crash startup"
+    /// or a credential save (see this method's call sites, and the I-1 fix's own "never crash startup"
     /// requirement). When that happens the directory is simply left with whatever ACL it already had
     /// (typically the permissive <c>%ProgramData%</c> default this fix exists to remove) — the warning is
     /// the operator's signal to lock it down manually (e.g. <c>icacls</c>) if this automatic path didn't
@@ -75,10 +86,10 @@ public static class SecurityDirAcl
         catch (Exception ex)
         {
             logWarning(
-                $"Could not restrict ACL on security directory '{path}' ({ex.GetType().Name}: {ex.Message}). " +
-                "security.db (password hashes + audit log) and the DataProtection key ring under it may " +
-                "remain readable by other local accounts until this is fixed manually (e.g. via icacls) — " +
-                "see SecurityDirAcl.Apply's doc comment.");
+                $"Could not restrict ACL on directory '{path}' ({ex.GetType().Name}: {ex.Message}). " +
+                "Its contents (e.g. security.db/the DataProtection key ring, or CredentialStore's mk_ .bin " +
+                "files) may remain readable by other local accounts until this is fixed manually (e.g. via " +
+                "icacls) — see SecurityDirAcl.Apply's doc comment.");
         }
     }
 

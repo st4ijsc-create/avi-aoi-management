@@ -115,19 +115,22 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(securityKeysDir))
     .SetApplicationName("St4i.EngineApi")
     // WS-D final-security-review I-1(b) — DEFENSE-IN-DEPTH: encrypt the key ring at rest instead of
-    // leaving it plaintext XML on disk (CredentialStore already uses the same in-box DPAPI API for the
-    // mk_ device key, see its own doc comment). protectToLocalMachine: true (LocalMachine scope, not the
-    // CurrentUser scope CredentialStore uses) deliberately — CurrentUser DPAPI ties the encrypted keys to
-    // whichever single Windows account is running THIS process at the moment they're written; this host is
-    // meant to eventually run as a Windows Service (WS-F1), and a service's logon account can differ across
-    // machines/reinstalls (or get reconfigured) in a way an interactively-run desktop app's account
-    // normally doesn't — CurrentUser scope would silently invalidate every outstanding cookie (and force a
-    // fresh key-ring generation) the moment that happens. LocalMachine scope avoids that fragility (any
-    // process on THIS machine can decrypt, not just one specific account), which is an acceptable trade
-    // specifically BECAUSE SecurityDirAcl.Apply above already restricts local non-admin filesystem READ
-    // access to the key files in the first place — DPAPI here is a second, independent layer (protects the
-    // key material even if the ACL is ever misconfigured, bypassed, or the file is copied off by an admin
-    // process), not the only thing standing between a local non-admin and the key ring.
+    // leaving it plaintext XML on disk (CredentialStore uses the same in-box DPAPI API for the mk_
+    // device key, see its own doc comment — and, since FF-2, the SAME LocalMachine scope this key ring
+    // already used). protectToLocalMachine: true (LocalMachine scope) deliberately — CurrentUser DPAPI
+    // ties the encrypted keys to whichever single Windows account is running THIS process at the moment
+    // they're written; this host is meant to eventually run as a Windows Service (WS-F1), and a service's
+    // logon account can differ across machines/reinstalls (or get reconfigured) in a way an
+    // interactively-run desktop app's account normally doesn't — CurrentUser scope would silently
+    // invalidate every outstanding cookie (and force a fresh key-ring generation) the moment that happens.
+    // LocalMachine scope avoids that fragility (any process on THIS machine can decrypt, not just one
+    // specific account), which is an acceptable trade specifically BECAUSE SecurityDirAcl.Apply above
+    // already restricts local non-admin filesystem READ access to the key files in the first place — DPAPI
+    // here is a second, independent layer (protects the key material even if the ACL is ever
+    // misconfigured, bypassed, or the file is copied off by an admin process), not the only thing standing
+    // between a local non-admin and the key ring. (FF-2 review applied this exact same
+    // ACL-then-LocalMachine-DPAPI pairing to CredentialStore's creds directory too — see
+    // CredentialStore.Save and SecurityDirAcl's doc comment.)
     .ProtectKeysWithDpapi(protectToLocalMachine: true);
 
 builder.Services.AddSingleton<IUserStore>(_ => new SqliteUserStore(securityDir));

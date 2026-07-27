@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using St4i.EdgeCore.Infrastructure;
 using Xunit;
 
@@ -66,6 +69,37 @@ public class CredentialStoreTests
         File.WriteAllBytes(path, protectedBytes);
 
         Assert.Null(CredentialStore.Load(code));
+    }
+
+    // FF-2 review fix — a LocalMachine-scoped DPAPI blob is decryptable by ANY local account, so the
+    // creds directory's ACL is now the entire confidentiality boundary (there's no longer a "wrong
+    // Windows account" backstop the way CurrentUser scope incidentally provided). Save must apply the
+    // same SYSTEM/Administrators/owner-only lock-down SecurityDirAcl already gives the security
+    // directory (St4i.EngineApi/Program.cs) — asserted here directly against the real creds directory
+    // (there's no ST4I_CREDS_DIR override to redirect this to a temp dir, same as every other test in
+    // this file), mirroring SecurityDirAclTests' own inheritance/SYSTEM/Administrators assertions.
+    [Fact]
+    public void Save_locks_down_creds_directory_acl()
+    {
+        var code = "ACL-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+        CredentialStore.Save(code, "mk_acl_test");
+
+        var credsDir = Path.GetDirectoryName(PathForTest(code))!;
+        var acl = new DirectoryInfo(credsDir).GetAccessControl(AccessControlSections.Access);
+
+        // Inheritance disabled — %ProgramData%'s default Authenticated-Users grant no longer applies.
+        Assert.True(acl.AreAccessRulesProtected);
+
+        var grantedTo = acl
+            .GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>()
+            .Select(rule => (SecurityIdentifier)rule.IdentityReference)
+            .ToArray();
+
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, domainSid: null);
+        var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, domainSid: null);
+        Assert.Contains(grantedTo, sid => sid.Equals(system));
+        Assert.Contains(grantedTo, sid => sid.Equals(administrators));
     }
 
     // machineCode values used by these tests are already filename-safe (letters/digits/hyphens), so
