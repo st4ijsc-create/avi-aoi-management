@@ -1,5 +1,6 @@
 import { and, desc, eq, lt, SQL } from "drizzle-orm";
 import { getDb } from "./connection";
+import { isMissingTable } from "../_core/dbErrors";
 import {
   aiSpecialistSessions,
   aiSpecialistSessionSteps,
@@ -258,53 +259,81 @@ export interface QualityScoreboard {
   overall: { total: number; usefulPct: number };
 }
 
-/** 1 người 1 phiếu / phiên — chấm lại thì ghi đè (khớp unique index sessionId+userId). */
+/**
+ * 1 người 1 phiếu / phiên — chấm lại thì ghi đè (khớp unique index sessionId+userId).
+ * Fail-safe (mirrors server/services/aiKbFeedbackSignal.ts's recordAnswerFeedback):
+ * migration 0307 chưa chạy (`isMissingTable`) hay bất kỳ lỗi DB nào khác đều KHÔNG
+ * ném — degrade về `{ ok: false }` (khuôn "không có DB" đã có sẵn của hàm này).
+ */
 export async function upsertSpecialistFeedback(
   input: UpsertSpecialistFeedbackInput,
 ): Promise<{ ok: boolean }> {
   const db = await getDb();
   if (!db) return { ok: false };
-  await db
-    .insert(aiSpecialistFeedback)
-    .values({
-      sessionId: input.sessionId,
-      userId: input.userId,
-      agentId: input.agentId,
-      moduleName: input.moduleName ?? null,
-      rating: input.rating,
-      usefulSections: input.usefulSections ?? [],
-      reason: input.reason ?? null,
-      repoContextUsed: input.repoContextUsed,
-    })
-    .onConflictDoUpdate({
-      target: [aiSpecialistFeedback.sessionId, aiSpecialistFeedback.userId],
-      set: {
+  try {
+    await db
+      .insert(aiSpecialistFeedback)
+      .values({
+        sessionId: input.sessionId,
+        userId: input.userId,
+        agentId: input.agentId,
+        moduleName: input.moduleName ?? null,
         rating: input.rating,
         usefulSections: input.usefulSections ?? [],
         reason: input.reason ?? null,
         repoContextUsed: input.repoContextUsed,
-        updatedAt: new Date(),
-      },
-    });
-  return { ok: true };
+      })
+      .onConflictDoUpdate({
+        target: [aiSpecialistFeedback.sessionId, aiSpecialistFeedback.userId],
+        set: {
+          rating: input.rating,
+          usefulSections: input.usefulSections ?? [],
+          reason: input.reason ?? null,
+          repoContextUsed: input.repoContextUsed,
+          updatedAt: new Date(),
+        },
+      });
+    return { ok: true };
+  } catch (err) {
+    if (!isMissingTable(err)) {
+      console.warn("[aiSpecialist] upsertSpecialistFeedback failed (degrading to ok:false):", err);
+    }
+    return { ok: false };
+  }
 }
 
 function pct(part: number, whole: number): number {
   return whole === 0 ? 0 : Math.round((part / whole) * 100);
 }
 
-/** Bảng điểm chất lượng, nhóm theo agent × module, kèm tách có-mắt/không-mắt. */
+const EMPTY_SCOREBOARD: QualityScoreboard = { rows: [], overall: { total: 0, usefulPct: 0 } };
+
+/**
+ * Bảng điểm chất lượng, nhóm theo agent × module, kèm tách có-mắt/không-mắt.
+ * Fail-safe (mirrors server/services/aiKbFeedbackSignal.ts's loadFeedbackNetRatings):
+ * migration 0307 chưa chạy (`isMissingTable`) hay bất kỳ lỗi DB nào khác đều KHÔNG
+ * ném — degrade về bảng điểm rỗng thay vì để lỗi thô rò ra UI (Task 5 gọi hàm này
+ * lúc mount màn).
+ */
 export async function getSpecialistQualityScoreboard(userId?: number): Promise<QualityScoreboard> {
   const db = await getDb();
-  if (!db) return { rows: [], overall: { total: 0, usefulPct: 0 } };
+  if (!db) return EMPTY_SCOREBOARD;
 
   const conditions: SQL[] = [];
   if (userId) conditions.push(eq(aiSpecialistFeedback.userId, userId));
 
-  const all: any[] = await db
-    .select()
-    .from(aiSpecialistFeedback)
-    .where(conditions.length > 0 ? and(...conditions) : undefined);
+  let all: any[];
+  try {
+    all = await db
+      .select()
+      .from(aiSpecialistFeedback)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+  } catch (err) {
+    if (!isMissingTable(err)) {
+      console.warn("[aiSpecialist] getSpecialistQualityScoreboard failed (degrading to empty):", err);
+    }
+    return EMPTY_SCOREBOARD;
+  }
 
   const groups = new Map<string, any[]>();
   for (const r of all) {
