@@ -69,6 +69,30 @@ describe("normalizeSourceType", () => {
     expect(() => normalizeSourceType("application/zip")).toThrow(KbUnsupportedTypeError);
     expect(() => normalizeSourceType("")).toThrow(KbUnsupportedTypeError);
   });
+
+  it("resolves 'url' (E3-3's pass-through marker for kbWebFetcher-extracted text)", async () => {
+    const { normalizeSourceType } = await loadFresh();
+    expect(normalizeSourceType("url")).toBe("url");
+  });
+});
+
+// ─── url (E3-3 pass-through — no network/HTML parsing here, see kbWebFetcher.ts) ────────────
+
+describe("parseDocument — url (pass-through, mirrors md/txt)", () => {
+  it("treats already-extracted text as-is, bounded + trimmed like txt", async () => {
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument("  Already-extracted page text.  \r\n", "url");
+    expect(result.text).toBe("Already-extracted page text.");
+    expect(result.meta).toMatchObject({ sourceType: "url", truncated: false });
+  });
+
+  it("bounds extracted size via KB_PARSE_MAX_CHARS, same as md/txt", async () => {
+    process.env.KB_PARSE_MAX_CHARS = "10";
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument("0123456789ABCDEF", "url");
+    expect(result.text).toBe("0123456789");
+    expect(result.meta.truncated).toBe(true);
+  });
 });
 
 // ─── md / txt (no mocking needed) ───────────────────────────────────────────

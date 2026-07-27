@@ -3,8 +3,11 @@
  *
  * Extracts plain text from an operator-uploaded document so it can be chunked + embedded by
  * kbIngestService.ts. Supported today: pdf (pdf-parse, already a dependency), docx (mammoth,
- * added by this task), md/txt (plain read). Deliberately narrow — E3-3 (URL) and E3-4
- * (video/STT) are separate future source types, NOT handled here.
+ * added by this task), md/txt (plain read), url (E3-3 — pass-through only: kbWebFetcher.ts
+ * fetches + extracts the page text itself via html-to-text/pdf-parse BEFORE calling
+ * ingestDocument, so this module's "url" case is just bound+trim, same as md/txt — there is no
+ * network I/O or HTML parsing in this file). E3-4 (video/STT) is still a separate future
+ * source type, NOT handled here.
  *
  * Fail-safe discipline:
  *  - An unrecognised mime/extension throws {@link KbUnsupportedTypeError} BEFORE any parsing
@@ -16,7 +19,7 @@
  *    `meta.truncated` tells the caller when a document was cut.
  */
 
-export type KbSourceType = "pdf" | "docx" | "md" | "txt";
+export type KbSourceType = "pdf" | "docx" | "md" | "txt" | "url";
 
 /** Thrown when `mimeOrExt` does not resolve to a supported {@link KbSourceType}. */
 export class KbUnsupportedTypeError extends Error {
@@ -91,6 +94,9 @@ export function normalizeSourceType(mimeOrExt: string): KbSourceType {
     return "md";
   }
   if (candidate === "txt" || raw.includes("text/plain")) return "txt";
+  // E3-3: kbWebFetcher.ts passes sourceType:"url" into ingestDocument for already-fetched,
+  // already-extracted page text — this is a pass-through marker, not a MIME type.
+  if (candidate === "url" || raw === "url") return "url";
   throw new KbUnsupportedTypeError(mimeOrExt);
 }
 
@@ -129,7 +135,7 @@ async function parseDocx(buf: Buffer): Promise<ParsedDocument> {
   return { text, meta: { sourceType: "docx", charCount: text.length, truncated } };
 }
 
-function parsePlain(raw: string, sourceType: "md" | "txt"): ParsedDocument {
+function parsePlain(raw: string, sourceType: "md" | "txt" | "url"): ParsedDocument {
   const { text, truncated } = boundText(raw);
   return { text, meta: { sourceType, charCount: text.length, truncated } };
 }
@@ -154,6 +160,8 @@ export async function parseDocument(input: Buffer | string, mimeOrExt: string): 
         return parsePlain(toText(input), "md");
       case "txt":
         return parsePlain(toText(input), "txt");
+      case "url":
+        return parsePlain(toText(input), "url");
     }
   } catch (err) {
     if (err instanceof KbParseError) throw err;

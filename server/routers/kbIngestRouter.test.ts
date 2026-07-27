@@ -1,11 +1,13 @@
 /**
- * doc69 Giai đoạn 5 / Wave E3 (E3-1) — kbIngestRouter.ts unit tests.
+ * doc69 Giai đoạn 5 / Wave E3 (E3-1 + E3-3) — kbIngestRouter.ts unit tests.
  *
- * `../services/kbIngestService` is fully mocked (no real parse/embed/DB work); this file
- * covers ONLY the router's own responsibilities: admin/engineer RBAC (+2FA), the
- * KB_STUDIO_ENABLED gate checked BEFORE decoding the payload, base64 decode + size bound,
- * the MIME/extension allowlist checked before any heavy work, and the typed-error →
- * TRPCError code mapping.
+ * `../services/kbIngestService` and `../services/kbWebFetcher` are BOTH fully mocked (no real
+ * parse/embed/DB/network work); this file covers ONLY the router's own responsibilities:
+ * admin/engineer RBAC (+2FA), the KB_STUDIO_ENABLED gate checked BEFORE decoding the payload,
+ * base64 decode + size bound, the MIME/extension allowlist checked before any heavy work, the
+ * typed-error → TRPCError code mapping, and (E3-3) the WEB_INGEST_ENABLED gate + ingestUrl's
+ * own error mapping. The SSRF guard itself is NOT re-tested here — see kbWebFetcher.test.ts;
+ * this file only checks that the router wires the gate/RBAC/error-mapping correctly.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -26,9 +28,21 @@ vi.mock("../services/kbIngestService", async (importOriginal) => {
   };
 });
 
+const ingestUrlMock = vi.fn();
+const isWebIngestEnabledMock = vi.fn(() => true);
+vi.mock("../services/kbWebFetcher", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/kbWebFetcher")>();
+  return {
+    ...actual,
+    ingestUrl: (...args: unknown[]) => ingestUrlMock(...args),
+    isWebIngestEnabled: () => isWebIngestEnabledMock(),
+  };
+});
+
 import { kbIngestRouter } from "./kbIngestRouter";
 import { KbIngestDisabledError, KbIngestValidationError, KbEmbedError, KbStoreError } from "../services/kbIngestService";
 import { KbUnsupportedTypeError, KbParseError } from "../services/kbDocParser";
+import { WebIngestDisabledError, SsrfBlockedError, FetchError } from "../services/kbWebFetcher";
 
 const SMALL_PDF_B64 = Buffer.from("%PDF-1.4 minimal fake content").toString("base64");
 
@@ -46,11 +60,18 @@ const validInput = {
 beforeEach(() => {
   vi.clearAllMocks();
   isKbStudioEnabledMock.mockReturnValue(true);
+  isWebIngestEnabledMock.mockReturnValue(true);
   ingestDocumentMock.mockResolvedValue({
     corpus: "vendor-x-manuals",
     sourceRef: "manual.pdf",
     chunksAdded: 3,
     parsedMeta: { sourceType: "pdf", charCount: 100, truncated: false },
+  });
+  ingestUrlMock.mockResolvedValue({
+    corpus: "vendor-x-manuals",
+    sourceRef: "https://example.com/page",
+    chunksAdded: 2,
+    parsedMeta: { sourceType: "url", charCount: 50, truncated: false },
   });
 });
 
@@ -96,7 +117,108 @@ describe("kbIngestRouter — admin/engineer RBAC", () => {
   it("status query also requires admin/engineer (+2FA)", async () => {
     await expect(callerFor("operator").status()).rejects.toMatchObject({ code: "FORBIDDEN" });
     const status = await callerFor("admin", true).status();
-    expect(status).toMatchObject({ enabled: true, allowedTypes: ["pdf", "docx", "md", "txt"] });
+    expect(status).toMatchObject({ enabled: true, allowedTypes: ["pdf", "docx", "md", "txt"], webIngestEnabled: true });
+  });
+});
+
+// ─── E3-3: ingestUrl — admin/engineer RBAC (+2FA) ────────────────────────────
+
+describe("kbIngestRouter — ingestUrl admin/engineer RBAC", () => {
+  const urlInput = { corpus: "vendor-x-manuals", url: "https://example.com/page" };
+
+  it("operator cannot ingestUrl", async () => {
+    await expect(callerFor("operator").ingestUrl(urlInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(ingestUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("viewer cannot ingestUrl", async () => {
+    await expect(callerFor("viewer").ingestUrl(urlInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("admin WITHOUT 2FA is FORBIDDEN, service never touched", async () => {
+    await expect(callerFor("admin", false).ingestUrl(urlInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(ingestUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("engineer WITHOUT 2FA is FORBIDDEN", async () => {
+    await expect(callerFor("engineer", false).ingestUrl(urlInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("admin WITH 2FA clears the RBAC gate and reaches the service", async () => {
+    const result = await callerFor("admin", true).ingestUrl(urlInput);
+    expect(result.chunksAdded).toBe(2);
+    expect(ingestUrlMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("engineer WITH 2FA clears the RBAC gate and reaches the service", async () => {
+    await expect(callerFor("engineer", true).ingestUrl(urlInput)).resolves.toMatchObject({ chunksAdded: 2 });
+  });
+});
+
+// ─── E3-3: ingestUrl — WEB_INGEST_ENABLED / KB_STUDIO_ENABLED gate ───────────
+
+describe("kbIngestRouter — ingestUrl WEB_INGEST_ENABLED gate", () => {
+  const urlInput = { corpus: "vendor-x-manuals", url: "https://example.com/page" };
+
+  it("WEB_INGEST_ENABLED off ⇒ FORBIDDEN before any fetch (ingestUrl service never called)", async () => {
+    isWebIngestEnabledMock.mockReturnValue(false);
+    await expect(callerFor("admin", true).ingestUrl(urlInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(ingestUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("KB_STUDIO_ENABLED off ⇒ FORBIDDEN before any fetch", async () => {
+    isKbStudioEnabledMock.mockReturnValue(false);
+    await expect(callerFor("admin", true).ingestUrl(urlInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(ingestUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("a WebIngestDisabledError surfaced FROM the service is also mapped to FORBIDDEN", async () => {
+    ingestUrlMock.mockRejectedValueOnce(new WebIngestDisabledError());
+    await expect(callerFor("admin", true).ingestUrl(urlInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
+
+// ─── E3-3: ingestUrl — input validation + typed error → TRPCError mapping ────
+
+describe("kbIngestRouter — ingestUrl input validation + error mapping", () => {
+  const urlInput = { corpus: "vendor-x-manuals", url: "https://example.com/page" };
+
+  it("rejects a non-URL string before reaching the service", async () => {
+    await expect(
+      callerFor("admin", true).ingestUrl({ corpus: "c1", url: "not a url" }),
+    ).rejects.toBeTruthy();
+    expect(ingestUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("SsrfBlockedError ⇒ BAD_REQUEST", async () => {
+    ingestUrlMock.mockRejectedValueOnce(new SsrfBlockedError("blocked IP"));
+    await expect(callerFor("admin", true).ingestUrl(urlInput)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("FetchError ⇒ BAD_REQUEST", async () => {
+    ingestUrlMock.mockRejectedValueOnce(new FetchError("timed out"));
+    await expect(callerFor("admin", true).ingestUrl(urlInput)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("KbEmbedError ⇒ INTERNAL_SERVER_ERROR", async () => {
+    ingestUrlMock.mockRejectedValueOnce(new KbEmbedError("model not loaded"));
+    await expect(callerFor("admin", true).ingestUrl(urlInput)).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
+  });
+
+  it("KbStoreError ⇒ INTERNAL_SERVER_ERROR", async () => {
+    ingestUrlMock.mockRejectedValueOnce(new KbStoreError("table not migrated"));
+    await expect(callerFor("admin", true).ingestUrl(urlInput)).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
+  });
+
+  it("happy path passes corpus/url/userId through to ingestUrl", async () => {
+    await callerFor("admin", true).ingestUrl(urlInput);
+    expect(ingestUrlMock).toHaveBeenCalledWith(
+      expect.objectContaining({ corpus: "vendor-x-manuals", url: "https://example.com/page", userId: 1 }),
+    );
   });
 });
 

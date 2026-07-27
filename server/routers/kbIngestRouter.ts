@@ -18,6 +18,10 @@
  *  - Bounds: `KB_INGEST_MAX_UPLOAD_BYTES` (default 20MB decoded) + a pdf/docx/md/txt
  *    extension/MIME allowlist, both checked BEFORE the (potentially large) payload is
  *    handed to the parser.
+ *
+ * `ingestUrl` (E3-3) reuses the SAME `kbStudioProcedure` gate, PLUS `WEB_INGEST_ENABLED`
+ * (default OFF) checked here before any network I/O — see server/services/kbWebFetcher.ts for
+ * the SSRF guard that unconditionally applies to every fetch it performs.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -31,6 +35,13 @@ import {
   KbEmbedError,
   KbStoreError,
 } from "../services/kbIngestService";
+import {
+  ingestUrl,
+  isWebIngestEnabled,
+  WebIngestDisabledError,
+  SsrfBlockedError,
+  FetchError,
+} from "../services/kbWebFetcher";
 
 const kbStudioProcedure = roleProcedure("admin", "engineer").use(require2FA);
 
@@ -62,6 +73,7 @@ export const kbIngestRouter = router({
     enabled: isKbStudioEnabled(),
     maxUploadBytes: MAX_UPLOAD_BYTES,
     allowedTypes: ["pdf", "docx", "md", "txt"] as const,
+    webIngestEnabled: isWebIngestEnabled(),
   })),
 
   uploadDocument: kbStudioProcedure
@@ -105,6 +117,52 @@ export const kbIngestRouter = router({
           throw new TRPCError({ code: "FORBIDDEN", message: err.message });
         }
         if (err instanceof KbUnsupportedTypeError || err instanceof KbIngestValidationError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        }
+        if (err instanceof KbParseError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        }
+        if (err instanceof KbEmbedError || err instanceof KbStoreError) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+        }
+        throw err;
+      }
+    }),
+
+  /**
+   * E3-3 — fetch a URL under kbWebFetcher's SSRF guard, extract text, feed ingestDocument.
+   * Gated behind WEB_INGEST_ENABLED (checked HERE, before any network I/O) AND
+   * KB_STUDIO_ENABLED (checked here AND again inside ingestUrl — same defense-in-depth
+   * pattern as uploadDocument above). The SSRF guard itself has no bypass: it is not a flag,
+   * it is unconditional inside kbWebFetcher.fetchUrlForIngest whenever this endpoint runs.
+   */
+  ingestUrl: kbStudioProcedure
+    .input(
+      z.object({
+        corpus: z.string().trim().min(1).max(120),
+        url: z.string().trim().min(1).max(2000).url(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!isKbStudioEnabled() || !isWebIngestEnabled()) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Web URL ingest is disabled (WEB_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
+        });
+      }
+
+      try {
+        return await ingestUrl({ corpus: input.corpus, url: input.url, userId: ctx.user?.id });
+      } catch (err) {
+        if (err instanceof WebIngestDisabledError || err instanceof KbIngestDisabledError) {
+          throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+        }
+        if (
+          err instanceof SsrfBlockedError ||
+          err instanceof FetchError ||
+          err instanceof KbUnsupportedTypeError ||
+          err instanceof KbIngestValidationError
+        ) {
           throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
         }
         if (err instanceof KbParseError) {
