@@ -6108,6 +6108,8 @@
     "aiBrainDashboardDesc": "Local AI brain status and configuration",
     "aiCommandCenter": "Agent Command Center",
     "aiCommandCenterDesc": "System-wide AI agent roster, token savings, live activity feed and HITL steer controls",
+    "aiSpecialistStudio": "Specialist Studio",
+    "aiSpecialistStudioDesc": "Dispatch work to specialist AI agents: analysis, backend refactor, frontend UX, QA strategy",
     "qualityGroup": "Quality",
     "qualityGroupDesc": "Quality inspection workspace and analysis tools",
     "qualityHome": "Quality Home",
@@ -13700,6 +13702,74 @@
         "confirmError": "Could not confirm the action."
       }
     }
+  },
+  "specialistStudio": {
+    "title": "Specialist Studio",
+    "subtitle": "Dispatch work to specialist AI agents and track results per session",
+    "advisoryNotice": "The agent only gives RECOMMENDATIONS — no change is ever applied to source code.",
+    "agentBlurb": {
+      "data-analyst": "Finds anomaly patterns, proposes measurable KPIs",
+      "backend-engineer": "API refactors, query performance, backward compatibility",
+      "frontend-engineer": "User flows, state management, render performance, accessibility",
+      "qa-optimizer": "Test matrices, edge-case testcases, QA strategy"
+    },
+    "dispatch": {
+      "title": "Dispatch",
+      "agentLabel": "Choose a specialist agent",
+      "objectiveLabel": "Objective",
+      "objectivePlaceholder": "Describe what you want the agent to analyze or recommend…",
+      "objectiveHint": "Minimum 10 characters",
+      "moduleLabel": "Module",
+      "modulePlaceholder": "e.g. production-dashboard",
+      "filesLabel": "Related files",
+      "filesHint": "One file path per line",
+      "filesPlaceholder": "client/src/pages/...\nserver/routers/...",
+      "repoContextLabel": "Let the agent read source code",
+      "repoContextHint": "The agent reads the related files plus internal knowledge before answering (content is secret-redacted before entering the prompt).",
+      "advancedTitle": "Advanced",
+      "currentBehaviorLabel": "Current behavior",
+      "desiredBehaviorLabel": "Desired behavior",
+      "errorLogsLabel": "Error logs",
+      "codeSnippetLabel": "Related code snippet",
+      "submit": "Dispatch",
+      "submitting": "Dispatching…",
+      "dispatchError": "Could not dispatch — please try again."
+    },
+    "result": {
+      "title": "Result",
+      "idle": "Fill in the form on the left and click \"Dispatch\" to get the agent's recommendations.",
+      "running": "Running…",
+      "runningHint": "The agent is processing on the local model — this can take a moment.",
+      "failedTitle": "Session failed",
+      "notFound": "Session not found.",
+      "meta": {
+        "model": "Model",
+        "tokens": "Tokens (prompt / generated)",
+        "time": "Time"
+      },
+      "section": {
+        "summary": "Summary",
+        "diagnosis": "Diagnosis",
+        "actionPlan": "Action plan",
+        "patchHints": "Patch hints",
+        "testPlan": "Test plan",
+        "optimizationIdeas": "Optimization ideas",
+        "risks": "Risks"
+      },
+      "sectionEmpty": "No content",
+      "copy": "Copy",
+      "copied": "Copied"
+    },
+    "feedback": {
+      "title": "Rate this result"
+    },
+    "rating": {
+      "useful": "Useful",
+      "partial": "Partially useful",
+      "useless": "Useless"
+    },
+    "reasonPlaceholder": "Reason (optional)",
+    "feedbackSaved": "Feedback saved"
   },
   "kbStudio": {
     "title": "Training Studio",

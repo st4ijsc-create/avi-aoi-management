@@ -1394,6 +1394,17 @@ export const navGroups: NavGroup[] = [
         section: "agentOps",
       },
       {
+        // Wave 1 — cửa vào GIAO VIỆC cho 4 specialist agent. Cùng bộ quyền với
+        // /ai-command-center vì đây là việc phát triển phần mềm, không phải vận hành.
+        href: "/ai-specialist-studio",
+        label: "nav.aiSpecialistStudio",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "nav.aiSpecialistStudioDesc",
+        requiredRole: ['admin', 'engineer'],
+        permissionCategory: "admin",
+        section: "agentOps",
+      },
+      {
         // Wave 0-C: left admin-only — system health/config, not engineer daily work.
         href: "/ai-monitoring",
         label: "nav.aiMonitoring",

@@ -5887,6 +5887,8 @@
     "aiBrainDashboardDesc": "本地 AI 大脑状态与配置",
     "aiCommandCenter": "Agent 指挥中心",
     "aiCommandCenterDesc": "全系统 AI agent 编队、token 节省、实时活动流与人工在环干预",
+    "aiSpecialistStudio": "专家代理工作室",
+    "aiSpecialistStudioDesc": "向专业 AI 代理派发任务：分析、后端重构、前端 UX、测试策略",
     "qualityGroup": "质量",
     "qualityGroupDesc": "质量检验工作区与分析工具",
     "qualityHome": "质量主页",
@@ -14257,6 +14259,74 @@
         "confirmError": "无法确认该操作。"
       }
     }
+  },
+  "specialistStudio": {
+    "title": "专家代理工作室",
+    "subtitle": "向专业 AI 代理派发任务，并按会话跟踪结果",
+    "advisoryNotice": "代理仅提供建议 — 不会对源代码做任何更改。",
+    "agentBlurb": {
+      "data-analyst": "发现异常模式，提出可衡量的 KPI",
+      "backend-engineer": "API 重构、查询性能、向后兼容",
+      "frontend-engineer": "用户流程、状态管理、渲染性能、无障碍",
+      "qa-optimizer": "测试矩阵、边界用例、QA 策略"
+    },
+    "dispatch": {
+      "title": "派发任务",
+      "agentLabel": "选择专业代理",
+      "objectiveLabel": "目标",
+      "objectivePlaceholder": "描述需要代理分析或提出建议的内容…",
+      "objectiveHint": "至少 10 个字符",
+      "moduleLabel": "模块",
+      "modulePlaceholder": "例如：production-dashboard",
+      "filesLabel": "相关文件",
+      "filesHint": "每行一个文件路径",
+      "filesPlaceholder": "client/src/pages/...\nserver/routers/...",
+      "repoContextLabel": "允许代理读取源代码",
+      "repoContextHint": "代理会在回答前读取相关文件与内部知识（内容在进入提示词前已做敏感信息脱敏）。",
+      "advancedTitle": "高级选项",
+      "currentBehaviorLabel": "当前行为",
+      "desiredBehaviorLabel": "期望行为",
+      "errorLogsLabel": "错误日志",
+      "codeSnippetLabel": "相关代码片段",
+      "submit": "派发任务",
+      "submitting": "正在派发…",
+      "dispatchError": "派发失败 — 请重试。"
+    },
+    "result": {
+      "title": "结果",
+      "idle": "在左侧填写信息并点击“派发任务”以获取代理的建议。",
+      "running": "运行中…",
+      "runningHint": "代理正在本地模型上处理 — 可能需要一些时间。",
+      "failedTitle": "会话失败",
+      "notFound": "未找到该会话。",
+      "meta": {
+        "model": "模型",
+        "tokens": "Token（输入 / 生成）",
+        "time": "耗时"
+      },
+      "section": {
+        "summary": "摘要",
+        "diagnosis": "诊断",
+        "actionPlan": "行动计划",
+        "patchHints": "修改提示",
+        "testPlan": "测试计划",
+        "optimizationIdeas": "优化建议",
+        "risks": "风险"
+      },
+      "sectionEmpty": "暂无内容",
+      "copy": "复制",
+      "copied": "已复制"
+    },
+    "feedback": {
+      "title": "为该结果评分"
+    },
+    "rating": {
+      "useful": "有用",
+      "partial": "部分有用",
+      "useless": "无用"
+    },
+    "reasonPlaceholder": "原因（可选）",
+    "feedbackSaved": "已记录"
   },
   "kbStudio": {
     "title": "Training Studio",

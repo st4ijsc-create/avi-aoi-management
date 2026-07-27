@@ -6088,6 +6088,8 @@
     "aiBrainDashboardDesc": "Trạng thái và cấu hình bộ não AI nội bộ",
     "aiCommandCenter": "Agent Command Center",
     "aiCommandCenterDesc": "Đội hình AI agent toàn hệ thống, tiết kiệm token, luồng hoạt động và can thiệp HITL",
+    "aiSpecialistStudio": "Xưởng Agent chuyên môn",
+    "aiSpecialistStudioDesc": "Giao việc cho AI Agent chuyên môn: phân tích, refactor backend, UX frontend, chiến lược kiểm thử",
     "qualityGroup": "Chất lượng",
     "qualityGroupDesc": "Không gian làm việc kiểm tra chất lượng và công cụ phân tích",
     "qualityHome": "Trang chất lượng",
@@ -13683,6 +13685,74 @@
         "confirmError": "Không thể xác nhận thao tác."
       }
     }
+  },
+  "specialistStudio": {
+    "title": "Xưởng Agent chuyên môn",
+    "subtitle": "Giao việc cho AI Agent chuyên môn và theo dõi kết quả theo từng phiên",
+    "advisoryNotice": "Agent chỉ đưa ra KHUYẾN NGHỊ — không có thay đổi nào được áp dụng vào mã nguồn.",
+    "agentBlurb": {
+      "data-analyst": "Tìm mẫu bất thường, đề xuất KPI đo lường được",
+      "backend-engineer": "Tái cấu trúc API, hiệu năng truy vấn, tương thích ngược",
+      "frontend-engineer": "Luồng người dùng, quản lý state, hiệu năng render, khả năng tiếp cận",
+      "qa-optimizer": "Ma trận kiểm thử, testcase biên, chiến lược QA"
+    },
+    "dispatch": {
+      "title": "Giao việc",
+      "agentLabel": "Chọn Agent chuyên môn",
+      "objectiveLabel": "Mục tiêu",
+      "objectivePlaceholder": "Mô tả việc cần agent phân tích hoặc khuyến nghị…",
+      "objectiveHint": "Tối thiểu 10 ký tự",
+      "moduleLabel": "Module",
+      "modulePlaceholder": "Ví dụ: production-dashboard",
+      "filesLabel": "File liên quan",
+      "filesHint": "Mỗi dòng một đường dẫn file",
+      "filesPlaceholder": "client/src/pages/...\nserver/routers/...",
+      "repoContextLabel": "Cho agent đọc mã nguồn",
+      "repoContextHint": "Agent đọc nội dung file liên quan + tri thức nội bộ trước khi trả lời (nội dung đã được lọc bí mật trước khi vào prompt).",
+      "advancedTitle": "Nâng cao",
+      "currentBehaviorLabel": "Hành vi hiện tại",
+      "desiredBehaviorLabel": "Hành vi mong muốn",
+      "errorLogsLabel": "Log lỗi",
+      "codeSnippetLabel": "Đoạn mã liên quan",
+      "submit": "Giao việc",
+      "submitting": "Đang giao việc…",
+      "dispatchError": "Không giao được việc — thử lại."
+    },
+    "result": {
+      "title": "Kết quả",
+      "idle": "Điền thông tin bên trái và bấm \"Giao việc\" để nhận khuyến nghị từ agent.",
+      "running": "Đang chạy…",
+      "runningHint": "Agent đang xử lý trên model local — có thể mất một lúc.",
+      "failedTitle": "Phiên chạy lỗi",
+      "notFound": "Không tìm thấy phiên này.",
+      "meta": {
+        "model": "Model",
+        "tokens": "Token (prompt / sinh)",
+        "time": "Thời gian"
+      },
+      "section": {
+        "summary": "Tóm tắt",
+        "diagnosis": "Chẩn đoán",
+        "actionPlan": "Kế hoạch hành động",
+        "patchHints": "Gợi ý sửa",
+        "testPlan": "Kế hoạch kiểm thử",
+        "optimizationIdeas": "Ý tưởng tối ưu",
+        "risks": "Rủi ro"
+      },
+      "sectionEmpty": "Không có nội dung",
+      "copy": "Sao chép",
+      "copied": "Đã sao chép"
+    },
+    "feedback": {
+      "title": "Đánh giá kết quả này"
+    },
+    "rating": {
+      "useful": "Dùng được",
+      "partial": "Dùng được một phần",
+      "useless": "Vô dụng"
+    },
+    "reasonPlaceholder": "Lý do (tuỳ chọn)",
+    "feedbackSaved": "Đã ghi nhận"
   },
   "kbStudio": {
     "title": "Training Studio",

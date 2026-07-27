@@ -110,6 +110,7 @@ const AdvancedVisionLabPage = React.lazy(() => import("./pages/AdvancedVisionLab
 const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
 const AIBrainDashboard = React.lazy(() => import("./pages/AIBrainDashboard"));
 const AIAgentCommandCenter = React.lazy(() => import("./pages/AIAgentCommandCenter")); // doc69 GĐ4/E2-3: Agent Command Center (roster + savings + task feed + HITL drill-in)
+const AISpecialistStudio = React.lazy(() => import("./pages/AISpecialistStudio")); // Wave 1 T4: dispatch card + result card for the 4 specialist agents (trpc.aiSpecialistAgent.*)
 const ManagementInsight = React.lazy(() => import("./pages/ManagementInsight")); // B4.5: manager-facing insight (NL Q&A + exec summary + AI alerts)
 // doc 69 T6 — /ai-local-kb was a mislabeled chatbot (not a real knowledge base);
 // route now redirects to /ai-chat. Source file kept on disk unreferenced.
@@ -496,6 +497,7 @@ function Router() {
       {/* AI Control Plane / Ops / Vision — admin-gated. */}
       <Route path="/ai-brain"><RouteGuard navHref="/ai-brain"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-command-center"><RouteGuard navHref="/ai-command-center"><AIPageWrapper><AIAgentCommandCenter /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-specialist-studio"><RouteGuard navHref="/ai-specialist-studio"><AIPageWrapper><AISpecialistStudio /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-monitoring"><RouteGuard navHref="/ai-monitoring"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-performance"><RouteGuard navHref="/ai-performance"><AIPageWrapper><AIPerformanceDashboard /></AIPageWrapper></RouteGuard></Route>
       {/* doc 69 Wave E1 (T7) — split from AIPerformanceDashboard (evaluation before/after
