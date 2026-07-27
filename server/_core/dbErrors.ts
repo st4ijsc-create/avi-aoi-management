@@ -18,6 +18,7 @@ import { TRPCError } from "@trpc/server";
 
 const UNIQUE_VIOLATION = "23505";
 const UNDEFINED_TABLE = "42P01";
+const UNDEFINED_COLUMN = "42703";
 
 export interface DbErrorOptions {
   /** Message for the CONFLICT error shown to the user. Default: "Mã đã tồn tại". */
@@ -67,6 +68,31 @@ export function isMissingTable(err: unknown): boolean {
       const e = current as { code?: unknown; message?: unknown; cause?: unknown };
       if (e.code === UNDEFINED_TABLE) return true;
       if (typeof e.message === "string" && /relation .* does not exist/i.test(e.message)) {
+        return true;
+      }
+      current = e.cause;
+    } else {
+      break;
+    }
+  }
+  return false;
+}
+
+/**
+ * Walks err → err.cause → ... looking for a Postgres undefined-column error (42703,
+ * "column ... does not exist"). Mirrors {@link isMissingTable}'s cause-chain walk: a raw
+ * postgres.js error surfaces `code === '42703'` directly, but drizzle-orm ≥0.44 wraps it in
+ * a `DrizzleQueryError` (message starting with "Failed query: ...") that carries the real
+ * driver error — code and all — on `.cause`. A naive `(err as {code}).code === '42703'`
+ * check misses the wrapped case entirely, exactly like the `isMissingTable` bug this mirrors.
+ */
+export function isMissingColumn(err: unknown): boolean {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current; depth++) {
+    if (typeof current === "object") {
+      const e = current as { code?: unknown; message?: unknown; cause?: unknown };
+      if (e.code === UNDEFINED_COLUMN) return true;
+      if (typeof e.message === "string" && /column .* does not exist/i.test(e.message)) {
         return true;
       }
       current = e.cause;

@@ -40,6 +40,15 @@ import {
 
 export type InboxUser = { id: number; role: string; name?: string | null };
 
+/** A machine in the user's scope, carrying both id (needed by readMachineStatuses) and
+ *  code (needed by ai_insights.machineCode / display). `id` is nullable only to tolerate
+ *  legacy callers/fixtures that resolved codes without ids — such rows are simply
+ *  excluded from the alert source (no id ⇒ can't look up anomaly status). */
+export interface ScopedMachine {
+  id: number | null;
+  code: string;
+}
+
 export type InboxItemType = "proposal" | "insight" | "alert";
 export type InboxAction = "approve" | "dismiss" | "ask" | "view";
 export type InboxSeverity = "critical" | "warning" | "info";
@@ -98,26 +107,31 @@ async function factoryScope(user: InboxUser): Promise<string[] | null> {
 }
 
 /**
- * Resolve the set of machineCodes the user is allowed to see, derived from their
- * factory scope (machine.code → station → line → workshop → factory.code). Admin
+ * Resolve the machines (id + code) the user is allowed to see, derived from their
+ * factory scope (machine → station → line → workshop → factory.code). Admin
  * (scope null) ⇒ null (no restriction). Empty scope ⇒ [] (sees no machines).
  * Best-effort: any error degrades to [] (insights/alerts simply hidden).
+ *
+ * `id` is carried alongside `code` so the anomaly-alert source (readMachineStatuses,
+ * which is keyed by numeric machineId) can be queried without a second round-trip.
  */
-async function machineScope(user: InboxUser, scope: string[] | null): Promise<string[] | null> {
+async function machineScope(user: InboxUser, scope: string[] | null): Promise<ScopedMachine[] | null> {
   if (scope === null) return null; // admin: unrestricted
   if (scope.length === 0) return [];
   try {
     const db = await getDb();
     if (!db) return [];
     const rows = await db
-      .select({ code: machinesTable.code })
+      .select({ id: machinesTable.id, code: machinesTable.code })
       .from(machinesTable)
       .innerJoin(stations, eq(machinesTable.stationId, stations.id))
       .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
       .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
       .innerJoin(factories, eq(workshops.factoryId, factories.id))
       .where(inArray(factories.code, scope));
-    return rows.map((r) => r.code).filter((c): c is string => !!c);
+    return rows
+      .filter((r) => !!r.code)
+      .map((r) => ({ id: Number.isInteger(Number(r.id)) ? Number(r.id) : null, code: r.code as string }));
   } catch {
     return [];
   }
@@ -201,40 +215,44 @@ async function listInsights(machines: string[] | null, limit: number): Promise<I
 
 // ─── (c) Anomaly / PdM alerts for my machines (best-effort, optional) ──────────
 
-async function listAlerts(machines: string[] | null, limit: number): Promise<InboxItem[]> {
-  // Optional source — only emit when a scoped machine set is available and the
-  // anomaly service exposes a per-machine latest read. Fully fail-safe / no-op.
+/**
+ * The REAL per-machine anomaly source: `readMachineStatuses` (server/routers/aiAnomalyRouter.ts),
+ * the same plain, exported, non-tRPC function that backs the `aiAnomaly.latestForMachine` /
+ * `aiAnomaly.machineStatuses` procedures AND that `aiTodayBriefing.ts`'s `recentAnomalies()`
+ * already imports the exact same way (dynamic `import("../routers/aiAnomalyRouter")`, called with
+ * `(ids, null)`). It reads the latest scored row per machine from
+ * `ai_image_embeddings.metadata->'anomaly'` — never the dead `aiAnomalyDetection.latestForMachine`
+ * this branch used to (mis)reference, which doesn't exist on that module.
+ *
+ * Fully fail-safe: any failure (import rejection, DB error — readMachineStatuses itself never
+ * throws, but the dynamic import can) degrades to no anomaly alerts, never a throw.
+ */
+export async function listAlerts(machines: ScopedMachine[] | null, limit: number): Promise<InboxItem[]> {
   if (!machines || machines.length === 0) return [];
+  const scoped = machines.filter((m): m is { id: number; code: string } => Number.isInteger(m.id)).slice(0, limit);
+  if (scoped.length === 0) return [];
   try {
-    const mod: any = await import("./aiAnomalyDetection").catch(() => null);
-    let latestForMachine: any;
-    try {
-      latestForMachine = mod?.latestForMachine ?? mod?.aiAnomaly?.latestForMachine;
-    } catch {
-      latestForMachine = undefined; // mock/proxy may throw on unknown export access
-    }
-    if (typeof latestForMachine !== "function") return [];
+    const { readMachineStatuses } = await import("../routers/aiAnomalyRouter");
+    const statuses = await readMachineStatuses(scoped.map((m) => m.id), null);
 
     const out: InboxItem[] = [];
-    for (const code of machines.slice(0, limit)) {
-      let a: any = null;
-      try {
-        a = await latestForMachine(code);
-      } catch {
-        a = null;
-      }
+    for (const m of scoped) {
+      const a = statuses?.[m.id];
       if (!a || !a.isAnomaly) continue;
-      const sev: InboxSeverity = (a.score ?? 0) >= 0.85 ? "critical" : "warning";
+      const score = a.latestScore ?? 0;
+      const sev: InboxSeverity = score >= 0.85 ? "critical" : "warning";
+      const scoreStr = a.latestScore != null ? a.latestScore.toFixed(3) : "?";
+      const thresholdStr = a.latestThreshold != null ? ` (ngưỡng ${a.latestThreshold.toFixed(3)})` : "";
       out.push({
-        id: `anomaly:${code}`,
+        id: `anomaly:${m.code}`,
         type: "alert",
         severity: sev,
-        title: `Bất thường trên máy ${code}`,
-        body: a.summary ?? a.reason ?? `Phát hiện bất thường (score ${a.score ?? "?"}).`,
+        title: `Bất thường trên máy ${m.code}`,
+        body: `Phát hiện bất thường (score ${scoreStr}${thresholdStr}).`,
         actions: ["view", "dismiss", "ask"],
-        machineCode: code,
-        recommendation: a.recommendation ?? null,
-        createdAt: (a.detectedAt ? new Date(a.detectedAt) : new Date()).toISOString(),
+        machineCode: m.code,
+        recommendation: null,
+        createdAt: (a.latestAt ? new Date(a.latestAt) : new Date()).toISOString(),
       });
     }
     return out;
@@ -262,10 +280,11 @@ export async function listInbox(user: InboxUser, opts?: { limit?: number }): Pro
 
   const scope = await factoryScope(user);
   const machines = await machineScope(user, scope);
+  const machineCodes = machines === null ? null : machines.map((m) => m.code);
 
   const [proposals, insights, alerts] = await Promise.all([
     listProposals(user, limit),
-    listInsights(machines, limit),
+    listInsights(machineCodes, limit),
     listAlerts(machines, Math.min(limit, 20)),
   ]);
 
@@ -296,9 +315,10 @@ export async function countInbox(user: InboxUser): Promise<{ count: number }> {
 
     const scope = await factoryScope(user);
     const machines = await machineScope(user, scope);
-    if (!(machines !== null && machines.length === 0)) {
+    const machineCodes = machines === null ? null : machines.map((m) => m.code);
+    if (!(machineCodes !== null && machineCodes.length === 0)) {
       const conds = [eq(aiInsights.status, "new")];
-      if (machines !== null) conds.push(inArray(aiInsights.machineCode, machines));
+      if (machineCodes !== null) conds.push(inArray(aiInsights.machineCode, machineCodes));
       const insightRows = await db.select({ id: aiInsights.id }).from(aiInsights).where(and(...conds));
       count += insightRows.length;
     }
@@ -346,7 +366,7 @@ export async function dismissInboxItem(
       const machines = await machineScope(user, scope);
       const [row] = await db.select().from(aiInsights).where(eq(aiInsights.id, numId)).limit(1);
       if (!row) return { ok: false, type, id, status: "not_found" };
-      if (machines !== null && !(row.machineCode && machines.includes(row.machineCode))) {
+      if (machines !== null && !(row.machineCode && machines.some((m) => m.code === row.machineCode))) {
         return { ok: false, type, id, status: "forbidden" };
       }
 

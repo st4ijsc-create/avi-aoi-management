@@ -21,8 +21,13 @@ vi.mock("./aiCopilotActions", () => ({
   confirmAction: (...a: unknown[]) => confirmAction(...a),
 }));
 
-// ── Anomaly source: not present → alerts no-op (keeps the feed deterministic). ──
-vi.mock("./aiAnomalyDetection", () => ({}));
+// ── Anomaly source: the REAL per-machine reader (server/routers/aiAnomalyRouter.ts),
+//    dynamically imported by listAlerts. Default: no statuses (alerts no-op) unless a
+//    test overrides the resolved value. ──
+const readMachineStatuses = vi.fn(async (_ids: number[], _productModelId: number | null) => ({}) as Record<number, any>);
+vi.mock("../routers/aiAnomalyRouter", () => ({
+  readMachineStatuses: (...a: [number[], number | null]) => readMachineStatuses(...a),
+}));
 
 // ── Factory assignments per user. ──
 const getUserFactoryAssignments = vi.fn(async (_userId: number) => [] as Array<{ factoryCode: string }>);
@@ -106,7 +111,7 @@ vi.mock("../../drizzle/schema", () => ({
   factories: { __table: "factories", id: {}, code: {} },
 }));
 
-import { listInbox, countInbox, dismissInboxItem } from "./aiActionInbox";
+import { listInbox, countInbox, dismissInboxItem, listAlerts } from "./aiActionInbox";
 
 const NOW = Date.now();
 const future = new Date(NOW + 5 * 60_000);
@@ -115,6 +120,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   data = {};
   getUserFactoryAssignments.mockResolvedValue([]);
+  readMachineStatuses.mockResolvedValue({});
 });
 
 describe("listInbox — aggregation shape", () => {
@@ -163,6 +169,74 @@ describe("listInbox — per-user scoping", () => {
 
     const { items } = await listInbox({ id: 2, role: "maintenance" });
     expect(items.some((i) => i.type === "insight" && i.machineCode === "M5")).toBe(true);
+  });
+
+  it("non-admin WITH machines sees an anomaly alert sourced from readMachineStatuses (the real source)", async () => {
+    getUserFactoryAssignments.mockResolvedValue([{ factoryCode: "F1" }]);
+    data.machines = [{ id: 5, code: "M5" }]; // machineScope join result, now carrying id.
+    readMachineStatuses.mockResolvedValue({
+      5: {
+        hasData: true,
+        latestScore: 0.91,
+        latestThreshold: 0.5,
+        isAnomaly: true,
+        latestAt: new Date(NOW),
+        recent: { windowCount: 10, anomalyCount: 3, anomalyRate: 0.3 },
+      },
+    });
+
+    const { items } = await listInbox({ id: 2, role: "maintenance" });
+    expect(readMachineStatuses).toHaveBeenCalledWith([5], null);
+    const alert = items.find((i) => i.type === "alert");
+    expect(alert).toBeDefined();
+    expect(alert!.machineCode).toBe("M5");
+    expect(alert!.severity).toBe("critical"); // score 0.91 ≥ 0.85
+  });
+});
+
+describe("listAlerts — real anomaly source (readMachineStatuses from aiAnomalyRouter)", () => {
+  it("returns the anomaly alert(s) from the real source (not [])", async () => {
+    readMachineStatuses.mockResolvedValue({
+      5: {
+        hasData: true,
+        latestScore: 0.9,
+        latestThreshold: 0.4,
+        isAnomaly: true,
+        latestAt: new Date(NOW),
+        recent: { windowCount: 5, anomalyCount: 1, anomalyRate: 0.2 },
+      },
+      6: { hasData: true, latestScore: 0.1, latestThreshold: 0.4, isAnomaly: false, latestAt: null, recent: { windowCount: 5, anomalyCount: 0, anomalyRate: 0 } },
+    });
+
+    const items = await listAlerts(
+      [
+        { id: 5, code: "M5" },
+        { id: 6, code: "M6" },
+      ],
+      20,
+    );
+
+    expect(readMachineStatuses).toHaveBeenCalledWith([5, 6], null);
+    expect(items).toHaveLength(1); // only M5 (isAnomaly=true); M6 is not anomalous.
+    expect(items[0]).toMatchObject({ type: "alert", machineCode: "M5", severity: "critical" });
+  });
+
+  it("no machines in scope → [] without calling the source", async () => {
+    expect(await listAlerts([], 20)).toEqual([]);
+    expect(await listAlerts(null, 20)).toEqual([]);
+    expect(readMachineStatuses).not.toHaveBeenCalled();
+  });
+
+  it("a thrown anomaly source → no anomaly alerts, no crash (fail-safe)", async () => {
+    readMachineStatuses.mockRejectedValue(new Error("anomaly source boom"));
+    const items = await listAlerts([{ id: 5, code: "M5" }], 20);
+    expect(items).toEqual([]);
+  });
+
+  it("an empty anomaly source (no data for the machine) → no anomaly alerts, no crash", async () => {
+    readMachineStatuses.mockResolvedValue({}); // machine 5 absent from the map entirely.
+    const items = await listAlerts([{ id: 5, code: "M5" }], 20);
+    expect(items).toEqual([]);
   });
 });
 

@@ -33,12 +33,13 @@
 import path from "path";
 import fs from "fs";
 import JSZip from "jszip";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { getAiModelByCode } from "../db/ai";
 import { measurementResults, productInspections, aiImageEmbeddings } from "../../drizzle/schema";
 import { extractEmbedding, storeEmbedding } from "./aiImageEmbedding";
 import { storageGet } from "../storage";
+import { isMissingTable, isMissingColumn } from "../_core/dbErrors";
 
 // ─── Config ────────────────────────────────────────────────────
 const ENABLED = process.env.AOI_EMBEDDING_ENABLED === "true";
@@ -233,6 +234,7 @@ export async function runAoiInspectionEmbedding(
       if (isAnomalyDetectionEnabled() && embeddingId != null) {
         void runAnomalyAndEscalation({
           embeddingId,
+          measurementResultId: r.id,
           buffer: buf,
           classification: r.result ?? null,
           machineId: insp?.machineId ?? null,
@@ -263,6 +265,9 @@ function isAnomalyDetectionEnabled(): boolean {
 
 export interface AnomalyEscalationParams {
   embeddingId: number;
+  /** measurement_results.id this embedding/image belongs to — the row whose
+   *  aiAnalysisResult the auto-generated VLM description is routed to. */
+  measurementResultId: number;
   buffer: Buffer;
   classification: string | null;
   machineId: number | null;
@@ -368,6 +373,60 @@ export async function runAnomalyAndEscalation(params: AnomalyEscalationParams): 
     `);
   } catch (e) {
     console.warn(`[aoiEmbed] persist anomaly meta emb#${params.embeddingId} failed:`, (e as Error)?.message ?? e);
+  }
+
+  // Route the auto-generated VLM description to measurement_results.aiAnalysisResult so
+  // Repair Station's existing "Sparkles" AI panel (RepairStation.tsx vlmSummary(), which reads
+  // measurement_results.aiAnalysisResult — NOT ai_image_embeddings.metadata) shows the
+  // already-computed explanation with zero new UI. Only when there's actually a description
+  // (VL didn't escalate, or the sidecar was unavailable/failed → visionDescription is null →
+  // nothing to write).
+  //
+  // No-clobber: aiAnalysisResult is a plain `text` column (inspectionRouters.ts analyzeWithAI
+  // writes a JSON.stringify'd string, not native jsonb), so a true SQL jsonb '||' merge — like
+  // the metadata write above — isn't natural here. Instead this UPDATE is conditional on the
+  // cell still being empty/null (WHERE aiAnalysisResult IS NULL OR = ''), which is atomic and
+  // race-free: a MANUAL analysis (inspectionRouters.ts analyzeWithAI, an unconditional UPDATE)
+  // either already occupies the cell — this write is then a no-op — or arrives afterwards and
+  // freely overwrites this auto value, exactly as V24's "re-analyze overwrites" behaviour
+  // already documents. The payload is additionally tagged `source:"vision-escalation"`
+  // (provenance) so any downstream reader can tell an auto value apart from a manual one, and
+  // the `description` key is what vlmSummary() (RepairStation.tsx) looks for first.
+  if (visionDescription) {
+    try {
+      const payload = JSON.stringify({
+        description: visionDescription,
+        source: "vision-escalation",
+        isAnomaly: result.isAnomaly,
+        score: Number(result.score.toFixed(6)),
+        scoredAt: anomalyMeta.anomaly.scoredAt,
+      });
+      await db
+        .update(measurementResults)
+        .set({ aiAnalysisResult: payload })
+        .where(
+          and(
+            eq(measurementResults.id, params.measurementResultId),
+            or(isNull(measurementResults.aiAnalysisResult), eq(measurementResults.aiAnalysisResult, "")),
+          ),
+        );
+    } catch (e) {
+      // Fail-safe: NEVER throw out of this fire-and-forget worker. Use the cause-walking
+      // helpers (not a naive `.code` check — drizzle-orm ≥0.44 wraps the real driver error,
+      // code and all, inside `.cause`) to recognize an unmigrated schema and log accordingly;
+      // any other DB error still degrades the same way (log + continue).
+      if (isMissingTable(e) || isMissingColumn(e)) {
+        console.warn(
+          `[aoiEmbed] measurement_results.aiAnalysisResult write skipped mr#${params.measurementResultId} (schema not migrated yet):`,
+          (e as Error)?.message ?? e,
+        );
+      } else {
+        console.warn(
+          `[aoiEmbed] measurement_results.aiAnalysisResult write failed mr#${params.measurementResultId}:`,
+          (e as Error)?.message ?? e,
+        );
+      }
+    }
   }
 
   // U1-a — publish anomaly.detected for a positive image anomaly (fire-and-forget;

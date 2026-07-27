@@ -3,7 +3,14 @@
 import { describe, it, expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 
-import { isUniqueViolation, isMissingTable, getViolatedConstraint, rethrowDbError, withDbErrors } from "./dbErrors";
+import {
+  isUniqueViolation,
+  isMissingTable,
+  isMissingColumn,
+  getViolatedConstraint,
+  rethrowDbError,
+  withDbErrors,
+} from "./dbErrors";
 
 function pgUniqueError() {
   const err = new Error('duplicate key value violates unique constraint "skills_code_unique"') as Error & {
@@ -79,6 +86,45 @@ describe("isMissingTable", () => {
     expect(isMissingTable(new Error("generic failure"))).toBe(false);
     expect(isMissingTable(null)).toBe(false);
     expect(isMissingTable("boom")).toBe(false);
+  });
+});
+
+function pgMissingColumnError() {
+  const err = new Error('column "aiAnalysisResult" of relation "measurement_results" does not exist') as Error & {
+    code: string;
+  };
+  err.code = "42703";
+  return err;
+}
+
+function drizzleWrappedMissingColumn() {
+  // Same wrap shape as drizzleWrappedMissingTable, but 42703 (undefined column) — the
+  // shape a pre-migration UPDATE against a not-yet-added column produces.
+  const wrapped = new Error('Failed query: update "measurement_results" set "aiAnalysisResult" = $1 where "id" = $2');
+  (wrapped as Error & { cause: unknown }).cause = pgMissingColumnError();
+  return wrapped;
+}
+
+describe("isMissingColumn", () => {
+  it("detects a raw postgres.js 42703 error", () => {
+    expect(isMissingColumn(pgMissingColumnError())).toBe(true);
+  });
+
+  it("detects a drizzle 'Failed query' wrapper via cause chain (the shape a naive .code check misses)", () => {
+    expect(isMissingColumn(drizzleWrappedMissingColumn())).toBe(true);
+  });
+
+  it("detects by message when code is missing", () => {
+    expect(isMissingColumn(new Error('column "x" of relation "y" does not exist'))).toBe(true);
+  });
+
+  it("ignores unrelated errors, including a DIFFERENT postgres error code (42P01 missing table)", () => {
+    expect(isMissingColumn(pgMissingTableError())).toBe(false);
+    expect(isMissingColumn(drizzleWrappedMissingTable())).toBe(false);
+    expect(isMissingColumn(pgUniqueError())).toBe(false);
+    expect(isMissingColumn(new Error("connection refused"))).toBe(false);
+    expect(isMissingColumn(null)).toBe(false);
+    expect(isMissingColumn("boom")).toBe(false);
   });
 });
 
