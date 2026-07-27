@@ -59,6 +59,13 @@ public sealed class RbacPolicyTests
         // persist-on-change behavior would read/write the REAL %ProgramData%\ST4I\sim\settings\
         // fleet-settings.json, leaking state across test runs (and across the whole test suite).
         var settingsDir = Directory.CreateTempSubdirectory("st4i-rbac-settings-").FullName;
+        // EC-3 review follow-up — without these, every WebApplicationFactory<Program> boot below (UNS
+        // defaults ON) resolves DeviceIdentityStore/SiteLinkStore to the REAL %ProgramData%\ST4I\sim\
+        // identity\ / ...\sitelink\, minting a real CNG keystore entry (PersistKeySet) and writing a real
+        // site-link.json on every single test run, with no cleanup — see SiteEndpointsTests' own doc
+        // comment for the full rationale (that class isolates these two; this one hadn't, until now).
+        var identityDir = Directory.CreateTempSubdirectory("st4i-rbac-identity-").FullName;
+        var siteLinkDir = Directory.CreateTempSubdirectory("st4i-rbac-sitelink-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -66,6 +73,8 @@ public sealed class RbacPolicyTests
         var prevHistorianDir = Environment.GetEnvironmentVariable("ST4I_HISTORIAN_DIR");
         var prevWalDir = Environment.GetEnvironmentVariable("ST4I_WAL_DIR");
         var prevSettingsDir = Environment.GetEnvironmentVariable("ST4I_SETTINGS_DIR");
+        var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
+        var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -74,6 +83,8 @@ public sealed class RbacPolicyTests
             Environment.SetEnvironmentVariable("ST4I_HISTORIAN_DIR", historianDir);
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", walDir);
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", settingsDir);
+            Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", identityDir);
+            Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -87,6 +98,8 @@ public sealed class RbacPolicyTests
             Environment.SetEnvironmentVariable("ST4I_HISTORIAN_DIR", prevHistorianDir);
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", prevWalDir);
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", prevSettingsDir);
+            Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
+            Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }

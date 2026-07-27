@@ -48,6 +48,11 @@ public sealed class AuditWiringTests
         // the whole test suite, since it's a real file on disk) — this class's own settings.update tests
         // below would be especially prone to false pass/fail from stale persisted state.
         var settingsDir = Directory.CreateTempSubdirectory("st4i-audit-wiring-settings-").FullName;
+        // EC-3 review follow-up — see SiteEndpointsTests' own doc comment: without these, every
+        // WebApplicationFactory<Program> boot below (UNS defaults ON) resolves DeviceIdentityStore/
+        // SiteLinkStore to the REAL %ProgramData%\ST4I\sim\identity\ / ...\sitelink\.
+        var identityDir = Directory.CreateTempSubdirectory("st4i-audit-wiring-identity-").FullName;
+        var siteLinkDir = Directory.CreateTempSubdirectory("st4i-audit-wiring-sitelink-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -55,6 +60,8 @@ public sealed class AuditWiringTests
         var prevHistorianDir = Environment.GetEnvironmentVariable("ST4I_HISTORIAN_DIR");
         var prevWalDir = Environment.GetEnvironmentVariable("ST4I_WAL_DIR");
         var prevSettingsDir = Environment.GetEnvironmentVariable("ST4I_SETTINGS_DIR");
+        var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
+        var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -63,6 +70,8 @@ public sealed class AuditWiringTests
             Environment.SetEnvironmentVariable("ST4I_HISTORIAN_DIR", historianDir);
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", walDir);
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", settingsDir);
+            Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", identityDir);
+            Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -81,6 +90,8 @@ public sealed class AuditWiringTests
             Environment.SetEnvironmentVariable("ST4I_HISTORIAN_DIR", prevHistorianDir);
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", prevWalDir);
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", prevSettingsDir);
+            Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
+            Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }

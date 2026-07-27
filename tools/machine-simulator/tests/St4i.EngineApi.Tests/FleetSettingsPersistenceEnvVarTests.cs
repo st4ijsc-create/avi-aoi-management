@@ -55,6 +55,11 @@ public sealed class FleetSettingsPersistenceEnvVarTests
         var securityDir = Directory.CreateTempSubdirectory("st4i-ff1-security-").FullName;
         var historianDir = Directory.CreateTempSubdirectory("st4i-ff1-historian-").FullName;
         var walDir = Directory.CreateTempSubdirectory("st4i-ff1-wal-").FullName;
+        // EC-3 review follow-up — see SiteEndpointsTests' own doc comment: without these, every
+        // WebApplicationFactory<Program> boot below (UNS defaults ON) resolves DeviceIdentityStore/
+        // SiteLinkStore to the REAL %ProgramData%\ST4I\sim\identity\ / ...\sitelink\.
+        var identityDir = Directory.CreateTempSubdirectory("st4i-ff1-identity-").FullName;
+        var siteLinkDir = Directory.CreateTempSubdirectory("st4i-ff1-sitelink-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -66,6 +71,8 @@ public sealed class FleetSettingsPersistenceEnvVarTests
         var prevMachineCode = Environment.GetEnvironmentVariable("ST4I_MACHINE_CODE");
         var prevVerifyTls = Environment.GetEnvironmentVariable("ST4I_VERIFY_TLS");
         var prevSettingsDir = Environment.GetEnvironmentVariable(FleetSettingsStore.EnvVarDir);
+        var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
+        var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
         try
         {
             Environment.SetEnvironmentVariable("ST4I_SECURITY_DIR", securityDir);
@@ -77,6 +84,8 @@ public sealed class FleetSettingsPersistenceEnvVarTests
             Environment.SetEnvironmentVariable("ST4I_MACHINE_CODE", overrides.MachineCode);
             Environment.SetEnvironmentVariable("ST4I_VERIFY_TLS", overrides.VerifyTlsRaw);
             Environment.SetEnvironmentVariable(FleetSettingsStore.EnvVarDir, overrides.SettingsDir);
+            Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", identityDir);
+            Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
 
             var factory = new WebApplicationFactory<Program>();
             _ = factory.Server; // force the host to build NOW, while the env vars above are still set.
@@ -93,6 +102,8 @@ public sealed class FleetSettingsPersistenceEnvVarTests
             Environment.SetEnvironmentVariable("ST4I_MACHINE_CODE", prevMachineCode);
             Environment.SetEnvironmentVariable("ST4I_VERIFY_TLS", prevVerifyTls);
             Environment.SetEnvironmentVariable(FleetSettingsStore.EnvVarDir, prevSettingsDir);
+            Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
+            Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
             EnvLock.Release();
         }
     }

@@ -41,6 +41,11 @@ public sealed class AssetEndpointsTests
         var walDir = Directory.CreateTempSubdirectory("st4i-assets-ep-wal-").FullName;
         var settingsDir = Directory.CreateTempSubdirectory("st4i-assets-ep-settings-").FullName;
         var assetsDir = Directory.CreateTempSubdirectory("st4i-assets-ep-assets-").FullName;
+        // EC-3 review follow-up — see SiteEndpointsTests' own doc comment: without these, every
+        // WebApplicationFactory<Program> boot below (UNS defaults ON) resolves DeviceIdentityStore/
+        // SiteLinkStore to the REAL %ProgramData%\ST4I\sim\identity\ / ...\sitelink\.
+        var identityDir = Directory.CreateTempSubdirectory("st4i-assets-ep-identity-").FullName;
+        var siteLinkDir = Directory.CreateTempSubdirectory("st4i-assets-ep-sitelink-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -49,6 +54,8 @@ public sealed class AssetEndpointsTests
         var prevWalDir = Environment.GetEnvironmentVariable("ST4I_WAL_DIR");
         var prevSettingsDir = Environment.GetEnvironmentVariable("ST4I_SETTINGS_DIR");
         var prevAssetsDir = Environment.GetEnvironmentVariable("ST4I_ASSETS_DIR");
+        var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
+        var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -58,6 +65,8 @@ public sealed class AssetEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", walDir);
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", settingsDir);
             Environment.SetEnvironmentVariable("ST4I_ASSETS_DIR", assetsDir);
+            Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", identityDir);
+            Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -72,6 +81,8 @@ public sealed class AssetEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", prevWalDir);
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", prevSettingsDir);
             Environment.SetEnvironmentVariable("ST4I_ASSETS_DIR", prevAssetsDir);
+            Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
+            Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }
