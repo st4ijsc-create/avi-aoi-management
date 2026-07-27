@@ -13601,6 +13601,7 @@
       "desc": "Cần quyền admin hoặc kỹ thuật để xem Agent Command Center."
     },
     "loadError": "Không thể tải dữ liệu Agent Command Center lúc này.",
+    "dispatchWork": "Giao việc →",
     "standby": "Đang chờ — không có việc",
     "status": {
       "working": "Đang làm việc",
@@ -13690,6 +13691,12 @@
     "title": "Xưởng Agent chuyên môn",
     "subtitle": "Giao việc cho AI Agent chuyên môn và theo dõi kết quả theo từng phiên",
     "advisoryNotice": "Agent chỉ đưa ra KHUYẾN NGHỊ — không có thay đổi nào được áp dụng vào mã nguồn.",
+    "tabs": {
+      "dispatch": "Giao việc",
+      "history": "Lịch sử",
+      "audit": "Audit module",
+      "quality": "Chất lượng"
+    },
     "agentBlurb": {
       "data-analyst": "Tìm mẫu bất thường, đề xuất KPI đo lường được",
       "backend-engineer": "Tái cấu trúc API, hiệu năng truy vấn, tương thích ngược",
@@ -13742,7 +13749,9 @@
       },
       "sectionEmpty": "Không có nội dung",
       "copy": "Sao chép",
-      "copied": "Đã sao chép"
+      "copied": "Đã sao chép",
+      "chainSummaryTitle": "Tóm tắt chuỗi",
+      "stepSelectorAria": "Chọn bước"
     },
     "feedback": {
       "title": "Đánh giá kết quả này",
@@ -13754,7 +13763,65 @@
       "useless": "Vô dụng"
     },
     "reasonPlaceholder": "Lý do (tuỳ chọn)",
-    "feedbackSaved": "Đã ghi nhận"
+    "feedbackSaved": "Đã ghi nhận",
+    "sessionType": {
+      "single": "Đơn lẻ",
+      "workflow": "Chuỗi agent",
+      "module-audit": "Audit module"
+    },
+    "status": {
+      "running": "Đang chạy",
+      "completed": "Hoàn tất",
+      "failed": "Lỗi"
+    },
+    "history": {
+      "title": "Lịch sử",
+      "loadError": "Không thể tải lịch sử phiên lúc này.",
+      "empty": "Chưa có phiên nào.",
+      "rowAria": "Xem kết quả phiên #{{id}}",
+      "col": {
+        "time": "Thời gian",
+        "type": "Loại phiên",
+        "agent": "Agent",
+        "module": "Module",
+        "status": "Trạng thái",
+        "objective": "Mục tiêu"
+      }
+    },
+    "audit": {
+      "title": "Audit module",
+      "loadError": "Không thể tải danh sách audit lúc này.",
+      "empty": "Chưa có audit preset nào.",
+      "run": "Chạy audit",
+      "running": "Đang chạy…",
+      "runError": "Không chạy được audit — thử lại."
+    },
+    "quality": {
+      "title": "Chất lượng",
+      "loadError": "Không thể tải bảng điểm chất lượng lúc này.",
+      "totalRatings": "Tổng số phiếu",
+      "usefulPct": "% Dùng được",
+      "empty": "Chưa có đánh giá nào.",
+      "col": {
+        "agent": "Agent",
+        "module": "Module",
+        "total": "Tổng",
+        "useful": "Dùng được %",
+        "partial": "Một phần %",
+        "useless": "Vô dụng %",
+        "withEyes": "Có đọc mã %",
+        "withoutEyes": "Không đọc mã %"
+      },
+      "decisionRule": {
+        "title": "Luật quyết định mức B",
+        "criteria": "Điều kiện: ≥20 phiếu đánh giá và % Dùng được ≥ 50%.",
+        "current": "Hiện có {{total}} phiếu, % Dùng được {{pct}}%.",
+        "insufficient": "Chưa đủ dữ liệu để quyết định.",
+        "remaining": "Còn thiếu {{remaining}} phiếu để đạt tối thiểu 20.",
+        "met": "Đủ điều kiện — có thể xem xét chuyển mức B.",
+        "belowThreshold": "Đủ số phiếu nhưng % Dùng được chưa đạt 50%."
+      }
+    }
   },
   "kbStudio": {
     "title": "Training Studio",

@@ -13618,6 +13618,7 @@
       "desc": "Admin or engineer role required to view the Agent Command Center."
     },
     "loadError": "Could not load Agent Command Center data right now.",
+    "dispatchWork": "Dispatch work →",
     "standby": "Standby — no active task",
     "status": {
       "working": "Working",
@@ -13707,6 +13708,12 @@
     "title": "Specialist Studio",
     "subtitle": "Dispatch work to specialist AI agents and track results per session",
     "advisoryNotice": "The agent only gives RECOMMENDATIONS — no change is ever applied to source code.",
+    "tabs": {
+      "dispatch": "Dispatch",
+      "history": "History",
+      "audit": "Module audit",
+      "quality": "Quality"
+    },
     "agentBlurb": {
       "data-analyst": "Finds anomaly patterns, proposes measurable KPIs",
       "backend-engineer": "API refactors, query performance, backward compatibility",
@@ -13759,7 +13766,9 @@
       },
       "sectionEmpty": "No content",
       "copy": "Copy",
-      "copied": "Copied"
+      "copied": "Copied",
+      "chainSummaryTitle": "Chain summary",
+      "stepSelectorAria": "Select step"
     },
     "feedback": {
       "title": "Rate this result",
@@ -13771,7 +13780,65 @@
       "useless": "Useless"
     },
     "reasonPlaceholder": "Reason (optional)",
-    "feedbackSaved": "Feedback saved"
+    "feedbackSaved": "Feedback saved",
+    "sessionType": {
+      "single": "Single",
+      "workflow": "Agent chain",
+      "module-audit": "Module audit"
+    },
+    "status": {
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "history": {
+      "title": "History",
+      "loadError": "Could not load session history right now.",
+      "empty": "No sessions yet.",
+      "rowAria": "View result for session #{{id}}",
+      "col": {
+        "time": "Time",
+        "type": "Session type",
+        "agent": "Agent",
+        "module": "Module",
+        "status": "Status",
+        "objective": "Objective"
+      }
+    },
+    "audit": {
+      "title": "Module audit",
+      "loadError": "Could not load audit presets right now.",
+      "empty": "No audit presets available.",
+      "run": "Run audit",
+      "running": "Running…",
+      "runError": "Could not run the audit — please try again."
+    },
+    "quality": {
+      "title": "Quality",
+      "loadError": "Could not load the quality scoreboard right now.",
+      "totalRatings": "Total ratings",
+      "usefulPct": "% Useful",
+      "empty": "No ratings yet.",
+      "col": {
+        "agent": "Agent",
+        "module": "Module",
+        "total": "Total",
+        "useful": "Useful %",
+        "partial": "Partial %",
+        "useless": "Useless %",
+        "withEyes": "With repo context %",
+        "withoutEyes": "Without repo context %"
+      },
+      "decisionRule": {
+        "title": "Tier B decision rule",
+        "criteria": "Criteria: ≥20 ratings and ≥50% useful.",
+        "current": "Currently {{total}} ratings, {{pct}}% useful.",
+        "insufficient": "Not enough data to decide yet.",
+        "remaining": "{{remaining}} more ratings needed to reach the minimum of 20.",
+        "met": "Criteria met — Tier B can be considered.",
+        "belowThreshold": "Enough ratings, but the useful rate has not reached 50%."
+      }
+    }
   },
   "kbStudio": {
     "title": "Training Studio",

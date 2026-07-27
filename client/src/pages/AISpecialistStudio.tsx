@@ -35,11 +35,11 @@
  * generates a patch, creates a branch, or touches machine/OT control — see
  * the persistent notice under the Dispatch button.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
-import { PageHeader, PageContainer } from "@/components/patterns";
+import { PageHeader, PageContainer, StatusBadge } from "@/components/patterns";
 import {
   Card,
   CardContent,
@@ -55,8 +55,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { useLocaleDate } from "@/lib/format";
 import { TRPCClientError } from "@trpc/client";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -69,6 +72,9 @@ import {
   Check,
   AlertTriangle,
   Info,
+  History,
+  ClipboardList,
+  Gauge,
 } from "lucide-react";
 
 // The 7 output blocks a completed specialist session always carries at
@@ -125,6 +131,19 @@ export default function AISpecialistStudio() {
   const [errorLogs, setErrorLogs] = useState("");
   const [codeSnippet, setCodeSnippet] = useState("");
   const [sessionId, setSessionId] = useState<number | null>(null);
+  // Which step of a (possibly multi-step) session the Result card currently
+  // shows — reset to the first step whenever a different session loads.
+  const [activeStepIdx, setActiveStepIdx] = useState(0);
+  // Task 5 — the Result card is now shared by 3 entry points (Dispatch here,
+  // History tab, Audit-module tab). FeedbackBar's `repoContextUsed` can only
+  // be trusted for a session THIS page just dispatched (it mirrors the
+  // `useEyes` toggle that was actually sent) — a session loaded from History/
+  // Audit was dispatched by a possibly-different toggle state we cannot
+  // recover from `getSessionDetail` (not a persisted column), so feedback is
+  // only offered for "dispatch"-sourced sessions to avoid mis-attributing
+  // with-eyes/without-eyes stats in the quality scoreboard.
+  const [sessionSource, setSessionSource] = useState<"dispatch" | "loaded">("dispatch");
+  const [activeTab, setActiveTab] = useState<"dispatch" | "history" | "audit" | "quality">("dispatch");
 
   const agents = trpc.aiSpecialistAgent.listAgents.useQuery();
   const runMutation = trpc.aiSpecialistAgent.run.useMutation();
@@ -138,6 +157,12 @@ export default function AISpecialistStudio() {
       refetchInterval: (q) => (q.state.data?.status === "running" ? 2000 : false),
     },
   );
+
+  // A different session loaded (dispatch / history row / audit run) → always
+  // start the Result card back on its first step.
+  useEffect(() => {
+    setActiveStepIdx(0);
+  }, [sessionId]);
 
   const objectiveTrimmedLen = objective.trim().length;
   const objectiveValid = objectiveTrimmedLen >= 10;
@@ -163,18 +188,38 @@ export default function AISpecialistStudio() {
         codeSnippet: codeSnippet.trim() || undefined,
       });
       setSessionId(res.sessionId);
+      setSessionSource("dispatch");
     } catch (err: any) {
       toast.error(err?.message || t("specialistStudio.dispatch.dispatchError", "Không giao được việc — thử lại."));
     }
   }
 
+  /**
+   * Task 5 — History tab row click / Audit-module "Chạy audit" both funnel
+   * here: load the session into THIS SAME Result card (no second render/poll
+   * scheme) and jump the Tabs back to "Giao việc" so it is immediately
+   * visible.
+   */
+  function handleLoadSession(id: number) {
+    setSessionId(id);
+    setSessionSource("loaded");
+    setActiveTab("dispatch");
+  }
+
   const status = session.data?.status as "running" | "completed" | "failed" | undefined;
-  const aggregateOutput = session.data?.aggregateOutput as
-    | { result?: SpecialistOutput; modelId?: string }
-    | undefined;
-  const output = aggregateOutput?.result;
-  const firstStep = session.data?.steps?.[0];
-  const metaModelId = aggregateOutput?.modelId ?? firstStep?.modelId ?? undefined;
+  const steps = session.data?.steps ?? [];
+  // Task 5 — the dispatch flow only ever creates 1-step sessions, so reading
+  // steps[0] used to be an (accidental) correct simplification. History/Audit
+  // load workflow-chain and module-audit sessions here too, which carry
+  // MULTIPLE steps — one per specialist agent in the chain — each with its
+  // own output/model/tokens/time. Always resolve output+meta from the
+  // user-selected step (default: the first) instead of the session-level
+  // `aggregateOutput`, which for those modes holds `finalSummary`/
+  // `orderedAgents`, not a renderable `SpecialistOutput`.
+  const clampedStepIdx = steps.length > 0 ? Math.min(activeStepIdx, steps.length - 1) : 0;
+  const activeStep = steps[clampedStepIdx];
+  const output = activeStep?.outputPayload as SpecialistOutput | undefined;
+  const metaModelId = activeStep?.modelId ?? undefined;
   // Wave 1 T4 fix round 1 — status stays undefined both while the FIRST
   // getSessionDetail response is still in flight (harmless, momentary — the
   // row was already created with status "running" server-side) AND if the
@@ -201,6 +246,27 @@ export default function AISpecialistStudio() {
           )}
         />
 
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+          <TabsList>
+            <TabsTrigger value="dispatch">
+              <Wrench className="h-4 w-4 mr-1" />
+              {t("specialistStudio.tabs.dispatch", "Giao việc")}
+            </TabsTrigger>
+            <TabsTrigger value="history">
+              <History className="h-4 w-4 mr-1" />
+              {t("specialistStudio.tabs.history", "Lịch sử")}
+            </TabsTrigger>
+            <TabsTrigger value="audit">
+              <ClipboardList className="h-4 w-4 mr-1" />
+              {t("specialistStudio.tabs.audit", "Audit module")}
+            </TabsTrigger>
+            <TabsTrigger value="quality">
+              <Gauge className="h-4 w-4 mr-1" />
+              {t("specialistStudio.tabs.quality", "Chất lượng")}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="dispatch">
         <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 items-start">
           {/* ── Dispatch card ──────────────────────────────────────────── */}
           <Card>
@@ -440,29 +506,80 @@ export default function AISpecialistStudio() {
 
               {sessionId !== null && status === "completed" && (
                 <>
+                  {/* Task 5 — a workflow-chain/module-audit session carries >1
+                      step (one per specialist agent). Let the user switch
+                      which step's output the result view below renders. */}
+                  {steps.length > 1 && (
+                    <>
+                      {session.data?.summary && (
+                        <Alert>
+                          <Info />
+                          <AlertTitle>{t("specialistStudio.result.chainSummaryTitle", "Tóm tắt chuỗi")}</AlertTitle>
+                          <AlertDescription>{session.data.summary}</AlertDescription>
+                        </Alert>
+                      )}
+                      <div
+                        className="flex flex-wrap gap-1.5"
+                        role="tablist"
+                        aria-label={t("specialistStudio.result.stepSelectorAria", "Chọn bước")}
+                      >
+                        {steps.map((step, idx) => (
+                          <Button
+                            key={step.id}
+                            type="button"
+                            size="sm"
+                            variant={idx === clampedStepIdx ? "default" : "outline"}
+                            aria-pressed={idx === clampedStepIdx}
+                            onClick={() => setActiveStepIdx(idx)}
+                          >
+                            {idx + 1}. {t(`agentCenter.persona.specialist-${step.agentId}`, step.agentId)}
+                          </Button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   <SpecialistResultView
                     output={output}
                     modelId={metaModelId}
-                    tokensPrompt={firstStep?.tokensPrompt}
-                    tokensGenerated={firstStep?.tokensGenerated}
-                    totalTimeMs={firstStep?.totalTimeMs}
+                    tokensPrompt={activeStep?.tokensPrompt}
+                    tokensGenerated={activeStep?.tokensGenerated}
+                    totalTimeMs={activeStep?.totalTimeMs}
                   />
-                  <div className="border-t pt-4">
-                    <p className="mb-2 text-sm font-medium">
-                      {t("specialistStudio.feedback.title", "Đánh giá kết quả này")}
-                    </p>
-                    <FeedbackBar
-                      sessionId={sessionId}
-                      agentId={agentId}
-                      moduleName={moduleName.trim() || undefined}
-                      repoContextUsed={useEyes}
-                    />
-                  </div>
+                  {/* Feedback only for a session THIS page just dispatched —
+                      see the `sessionSource` doc-comment above for why a
+                      History/Audit-loaded session does not get this control. */}
+                  {sessionSource === "dispatch" && (
+                    <div className="border-t pt-4">
+                      <p className="mb-2 text-sm font-medium">
+                        {t("specialistStudio.feedback.title", "Đánh giá kết quả này")}
+                      </p>
+                      <FeedbackBar
+                        sessionId={sessionId}
+                        agentId={agentId}
+                        moduleName={moduleName.trim() || undefined}
+                        repoContextUsed={useEyes}
+                      />
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>
           </Card>
         </div>
+          </TabsContent>
+
+          <TabsContent value="history">
+            <SpecialistHistoryTab onSelectSession={handleLoadSession} />
+          </TabsContent>
+
+          <TabsContent value="audit">
+            <SpecialistAuditTab onSessionStarted={handleLoadSession} />
+          </TabsContent>
+
+          <TabsContent value="quality">
+            <SpecialistQualityTab />
+          </TabsContent>
+        </Tabs>
       </PageContainer>
     </DashboardLayout>
   );
@@ -628,6 +745,319 @@ export function FeedbackBar({
       {saved && (
         <span className="text-sm text-muted-foreground">{t("specialistStudio.feedbackSaved", "Đã ghi nhận")}</span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Task 5, Step 1 — "Lịch sử" tab: `listSessions.useQuery({ limit: 20 })`
+ * rendered as a table (time / session type / agent(s) / module / status /
+ * objective). Clicking a row hands the sessionId to the SAME Result card the
+ * Dispatch tab uses (via `onSelectSession` → `handleLoadSession`) — no
+ * separate result view or poll is built here.
+ */
+function SpecialistHistoryTab({ onSelectSession }: { onSelectSession: (sessionId: number) => void }) {
+  const { t } = useTranslation();
+  const { dateTime } = useLocaleDate();
+  const sessionsQuery = trpc.aiSpecialistAgent.listSessions.useQuery({ limit: 20 });
+  const sessions = sessionsQuery.data?.sessions ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("specialistStudio.history.title", "Lịch sử")}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {sessionsQuery.isLoading && (
+          <div className="space-y-2">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-9 w-full rounded-md" />
+            ))}
+          </div>
+        )}
+
+        {sessionsQuery.isError && (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>{t("specialistStudio.result.failedTitle", "Phiên chạy lỗi")}</AlertTitle>
+            <AlertDescription>
+              {t("specialistStudio.history.loadError", "Không thể tải lịch sử phiên lúc này.")}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {sessionsQuery.data && sessions.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            {t("specialistStudio.history.empty", "Chưa có phiên nào.")}
+          </p>
+        )}
+
+        {sessions.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("specialistStudio.history.col.time", "Thời gian")}</TableHead>
+                <TableHead>{t("specialistStudio.history.col.type", "Loại phiên")}</TableHead>
+                <TableHead>{t("specialistStudio.history.col.agent", "Agent")}</TableHead>
+                <TableHead>{t("specialistStudio.history.col.module", "Module")}</TableHead>
+                <TableHead>{t("specialistStudio.history.col.status", "Trạng thái")}</TableHead>
+                <TableHead>{t("specialistStudio.history.col.objective", "Mục tiêu")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sessions.map((s) => (
+                <TableRow
+                  key={s.id}
+                  className="cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={t("specialistStudio.history.rowAria", "Xem kết quả phiên #{{id}}", { id: s.id })}
+                  onClick={() => onSelectSession(s.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelectSession(s.id);
+                    }
+                  }}
+                >
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                    {dateTime(s.createdAt)}
+                  </TableCell>
+                  <TableCell>{t(`specialistStudio.sessionType.${s.sessionType}`, s.sessionType)}</TableCell>
+                  <TableCell className="max-w-[220px] truncate">
+                    {(s.requestedAgents ?? []).map((a) => t(`agentCenter.persona.specialist-${a}`, a)).join(", ") || "—"}
+                  </TableCell>
+                  <TableCell>{s.moduleName ?? "—"}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={s.status} label={t(`specialistStudio.status.${s.status}`, s.status)} />
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate whitespace-normal" title={s.objective}>
+                    {s.objective}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Task 5, Step 2 — "Audit module" tab: `listModuleAuditPresets.useQuery()`
+ * renders each of the (5) presets as a card; "Chạy audit" fires
+ * `runModuleAudit` (fire-and-forget — returns `{ sessionId, started }`
+ * immediately) and hands the id to `onSessionStarted`, which loads it into
+ * the shared Result card and starts the SAME poll the Dispatch tab uses.
+ */
+function SpecialistAuditTab({ onSessionStarted }: { onSessionStarted: (sessionId: number) => void }) {
+  const { t } = useTranslation();
+  const presetsQuery = trpc.aiSpecialistAgent.listModuleAuditPresets.useQuery();
+  const runAudit = trpc.aiSpecialistAgent.runModuleAudit.useMutation();
+  const presets = presetsQuery.data?.presets ?? [];
+
+  async function handleRun(presetId: string) {
+    try {
+      const res = await runAudit.mutateAsync({ presetId });
+      onSessionStarted(res.sessionId);
+    } catch (err: any) {
+      toast.error(err?.message || t("specialistStudio.audit.runError", "Không chạy được audit — thử lại."));
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("specialistStudio.audit.title", "Audit module")}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {presetsQuery.isLoading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-32 rounded-lg" />
+            ))}
+          </div>
+        )}
+
+        {presetsQuery.isError && (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>{t("specialistStudio.result.failedTitle", "Phiên chạy lỗi")}</AlertTitle>
+            <AlertDescription>
+              {t("specialistStudio.audit.loadError", "Không thể tải danh sách audit lúc này.")}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {presetsQuery.data && presets.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            {t("specialistStudio.audit.empty", "Chưa có audit preset nào.")}
+          </p>
+        )}
+
+        {presets.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {presets.map((preset) => {
+              const running = runAudit.isPending && runAudit.variables?.presetId === preset.id;
+              return (
+                <div key={preset.id} className="flex flex-col gap-2 rounded-lg border p-3">
+                  <div>
+                    <p className="font-medium text-foreground">{preset.label}</p>
+                    <p className="text-xs text-muted-foreground">{preset.moduleName}</p>
+                  </div>
+                  <p className="line-clamp-3 flex-1 text-sm text-foreground/90">{preset.objective}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="self-start"
+                    disabled={runAudit.isPending}
+                    onClick={() => handleRun(preset.id)}
+                  >
+                    {running ? (
+                      <>
+                        <Spinner className="mr-2 h-4 w-4" />
+                        {t("specialistStudio.audit.running", "Đang chạy…")}
+                      </>
+                    ) : (
+                      t("specialistStudio.audit.run", "Chạy audit")
+                    )}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Task 5, Step 3 — "Chất lượng" tab: `getQualityScoreboard.useQuery({ mineOnly: true })`.
+ * Renders the overall line, the per agent×module table (`—` for the null
+ * with/without-eyes buckets — NEVER rendered as 0), and the "Luật quyết định
+ * mức B" block, whose 3 states are all measured from `overall`, never
+ * projected:
+ *   1. total < 20            → "Chưa đủ dữ liệu để quyết định" + shortfall count
+ *   2. total ≥ 20, useful<50 → enough volume, but the bar is not met
+ *   3. total ≥ 20, useful≥50 → criteria met
+ */
+function SpecialistQualityTab() {
+  const { t } = useTranslation();
+  const scoreboard = trpc.aiSpecialistAgent.getQualityScoreboard.useQuery({ mineOnly: true });
+  const rows = scoreboard.data?.rows ?? [];
+  const overall = scoreboard.data?.overall;
+  const totalRatings = overall?.total ?? 0;
+  const usefulPct = overall?.usefulPct ?? 0;
+
+  const MIN_RATINGS = 20;
+  const MIN_USEFUL_PCT = 50;
+  const enoughVolume = totalRatings >= MIN_RATINGS;
+  const meetsBar = enoughVolume && usefulPct >= MIN_USEFUL_PCT;
+  const remaining = Math.max(MIN_RATINGS - totalRatings, 0);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("specialistStudio.quality.title", "Chất lượng")}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {scoreboard.isLoading && <Skeleton className="h-40 w-full rounded-lg" />}
+
+          {scoreboard.isError && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>{t("specialistStudio.result.failedTitle", "Phiên chạy lỗi")}</AlertTitle>
+              <AlertDescription>
+                {t("specialistStudio.quality.loadError", "Không thể tải bảng điểm chất lượng lúc này.")}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {scoreboard.data && (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">
+                  {t("specialistStudio.quality.totalRatings", "Tổng số phiếu")}: {totalRatings}
+                </Badge>
+                <Badge variant="outline">
+                  {t("specialistStudio.quality.usefulPct", "% Dùng được")}: {totalRatings > 0 ? `${usefulPct}%` : "—"}
+                </Badge>
+              </div>
+
+              {rows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {t("specialistStudio.quality.empty", "Chưa có đánh giá nào.")}
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("specialistStudio.quality.col.agent", "Agent")}</TableHead>
+                      <TableHead>{t("specialistStudio.quality.col.module", "Module")}</TableHead>
+                      <TableHead>{t("specialistStudio.quality.col.total", "Tổng")}</TableHead>
+                      <TableHead>{t("specialistStudio.quality.col.useful", "Dùng được %")}</TableHead>
+                      <TableHead>{t("specialistStudio.quality.col.partial", "Một phần %")}</TableHead>
+                      <TableHead>{t("specialistStudio.quality.col.useless", "Vô dụng %")}</TableHead>
+                      <TableHead>{t("specialistStudio.quality.col.withEyes", "Có đọc mã %")}</TableHead>
+                      <TableHead>{t("specialistStudio.quality.col.withoutEyes", "Không đọc mã %")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((r) => (
+                      <TableRow key={`${r.agentId}::${r.moduleName ?? ""}`}>
+                        <TableCell>{t(`agentCenter.persona.specialist-${r.agentId}`, r.agentId)}</TableCell>
+                        <TableCell>{r.moduleName ?? "—"}</TableCell>
+                        <TableCell>{r.total}</TableCell>
+                        <TableCell>{r.usefulPct}%</TableCell>
+                        <TableCell>{r.partialPct}%</TableCell>
+                        <TableCell>{r.uselessPct}%</TableCell>
+                        <TableCell>{r.withEyesUsefulPct == null ? "—" : `${r.withEyesUsefulPct}%`}</TableCell>
+                        <TableCell>{r.withoutEyesUsefulPct == null ? "—" : `${r.withoutEyesUsefulPct}%`}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("specialistStudio.quality.decisionRule.title", "Luật quyết định mức B")}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p className="text-muted-foreground">
+            {t("specialistStudio.quality.decisionRule.criteria", "Điều kiện: ≥20 phiếu đánh giá và % Dùng được ≥ 50%.")}
+          </p>
+          <p className="text-muted-foreground">
+            {t("specialistStudio.quality.decisionRule.current", "Hiện có {{total}} phiếu, % Dùng được {{pct}}%.", {
+              total: totalRatings,
+              pct: totalRatings > 0 ? usefulPct : 0,
+            })}
+          </p>
+          {!enoughVolume ? (
+            <p className="font-medium text-foreground">
+              {t("specialistStudio.quality.decisionRule.insufficient", "Chưa đủ dữ liệu để quyết định.")}{" "}
+              {t("specialistStudio.quality.decisionRule.remaining", "Còn thiếu {{remaining}} phiếu để đạt tối thiểu 20.", {
+                remaining,
+              })}
+            </p>
+          ) : meetsBar ? (
+            <p className="font-medium text-success">
+              {t("specialistStudio.quality.decisionRule.met", "Đủ điều kiện — có thể xem xét chuyển mức B.")}
+            </p>
+          ) : (
+            <p className="font-medium text-warning">
+              {t("specialistStudio.quality.decisionRule.belowThreshold", "Đủ số phiếu nhưng % Dùng được chưa đạt 50%.")}
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

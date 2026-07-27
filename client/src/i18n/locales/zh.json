@@ -14175,6 +14175,7 @@
       "desc": "需要管理员或工程师权限才能查看 Agent 指挥中心。"
     },
     "loadError": "目前无法加载 Agent 指挥中心数据。",
+    "dispatchWork": "派发任务 →",
     "standby": "待机中 — 无任务",
     "status": {
       "working": "工作中",
@@ -14264,6 +14265,12 @@
     "title": "专家代理工作室",
     "subtitle": "向专业 AI 代理派发任务，并按会话跟踪结果",
     "advisoryNotice": "代理仅提供建议 — 不会对源代码做任何更改。",
+    "tabs": {
+      "dispatch": "派发任务",
+      "history": "历史",
+      "audit": "模块审计",
+      "quality": "质量"
+    },
     "agentBlurb": {
       "data-analyst": "发现异常模式，提出可衡量的 KPI",
       "backend-engineer": "API 重构、查询性能、向后兼容",
@@ -14316,7 +14323,9 @@
       },
       "sectionEmpty": "暂无内容",
       "copy": "复制",
-      "copied": "已复制"
+      "copied": "已复制",
+      "chainSummaryTitle": "链摘要",
+      "stepSelectorAria": "选择步骤"
     },
     "feedback": {
       "title": "为该结果评分",
@@ -14328,7 +14337,65 @@
       "useless": "无用"
     },
     "reasonPlaceholder": "原因（可选）",
-    "feedbackSaved": "已记录"
+    "feedbackSaved": "已记录",
+    "sessionType": {
+      "single": "单一",
+      "workflow": "Agent 链",
+      "module-audit": "模块审计"
+    },
+    "status": {
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "失败"
+    },
+    "history": {
+      "title": "历史",
+      "loadError": "目前无法加载会话历史。",
+      "empty": "暂无会话。",
+      "rowAria": "查看会话 #{{id}} 的结果",
+      "col": {
+        "time": "时间",
+        "type": "会话类型",
+        "agent": "Agent",
+        "module": "模块",
+        "status": "状态",
+        "objective": "目标"
+      }
+    },
+    "audit": {
+      "title": "模块审计",
+      "loadError": "目前无法加载审计预设。",
+      "empty": "暂无审计预设。",
+      "run": "运行审计",
+      "running": "运行中…",
+      "runError": "无法运行审计 — 请重试。"
+    },
+    "quality": {
+      "title": "质量",
+      "loadError": "目前无法加载质量评分表。",
+      "totalRatings": "评分总数",
+      "usefulPct": "有用率 %",
+      "empty": "暂无评分。",
+      "col": {
+        "agent": "Agent",
+        "module": "模块",
+        "total": "总数",
+        "useful": "有用 %",
+        "partial": "部分有用 %",
+        "useless": "无用 %",
+        "withEyes": "读代码 %",
+        "withoutEyes": "不读代码 %"
+      },
+      "decisionRule": {
+        "title": "B 级判定规则",
+        "criteria": "条件：≥20 条评分且有用率 ≥ 50%。",
+        "current": "目前有 {{total}} 条评分，有用率 {{pct}}%。",
+        "insufficient": "数据不足，暂无法判定。",
+        "remaining": "还需 {{remaining}} 条评分才能达到最低 20 条。",
+        "met": "已满足条件 — 可考虑升级至 B 级。",
+        "belowThreshold": "评分数量已足够，但有用率未达到 50%。"
+      }
+    }
   },
   "kbStudio": {
     "title": "Training Studio",

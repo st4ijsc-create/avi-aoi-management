@@ -33,6 +33,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { AlertCircle, CheckCircle2, Loader2, ChevronRight, User, Info } from "lucide-react";
 import { ContextDrawer } from "@/components/workspace/ContextDrawer";
@@ -230,8 +231,22 @@ function OrchestratorDetail({ entry, sessions, currentUserId, onMutated }: { ent
   );
 }
 
+const SPECIALIST_ROSTER_PREFIX = "specialist-";
+
+/**
+ * Wave 1 T5 — roster ids for the "specialist" kind are built by
+ * `specialistRosterId()` (server/services/aiAgentCenterService.ts) as
+ * `specialist-<agentId>` (e.g. `specialist-data-analyst`). The Studio's
+ * `?agent=` query param expects the bare id (`data-analyst`) — strip the
+ * roster prefix, not a generic "first dash" split.
+ */
+function specialistIdOf(rosterId: string): string {
+  return rosterId.startsWith(SPECIALIST_ROSTER_PREFIX) ? rosterId.slice(SPECIALIST_ROSTER_PREFIX.length) : rosterId;
+}
+
 function SimpleAgentDetail({ entry, taskFeed }: { entry: AgentRosterEntry; taskFeed: TaskFeedItem[] }) {
   const { t } = useTranslation();
+  const [, navigate] = useLocation();
   const items = useMemo(() => taskFeed.filter((i) => i.agentId === entry.id), [taskFeed, entry.id]);
 
   return (
@@ -275,7 +290,16 @@ function SimpleAgentDetail({ entry, taskFeed }: { entry: AgentRosterEntry; taskF
         )}
       </div>
 
-      <p className="text-[11px] text-muted-foreground italic">{t("agentCenter.drawer.readOnlyNote", "Xem nhanh — chưa có hành động khả dụng ở đây.")}</p>
+      {entry.kind === "specialist" ? (
+        <Button
+          className="w-full"
+          onClick={() => navigate(`/ai-specialist-studio?agent=${encodeURIComponent(specialistIdOf(entry.id))}`)}
+        >
+          {t("agentCenter.dispatchWork", "Giao việc →")}
+        </Button>
+      ) : (
+        <p className="text-[11px] text-muted-foreground italic">{t("agentCenter.drawer.readOnlyNote", "Xem nhanh — chưa có hành động khả dụng ở đây.")}</p>
+      )}
     </div>
   );
 }
