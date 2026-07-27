@@ -24,6 +24,18 @@ function missingTableError(): Error & { code: string } {
   return Object.assign(new Error('relation "kb_corpora" does not exist'), { code: "42P01" });
 }
 
+/** doc69/E3-2 fix — the REAL shape a drizzle-orm ≥0.44 query against an unmigrated table
+ * produces: a "Failed query: ..." wrapper Error with `code: undefined` at the top level and
+ * the real postgres.js driver error (code 42P01) on `.cause`. Before the fix, kbStudioService's
+ * local `isMissingTableError` only checked the top-level `.code`, so THIS shape leaked as a
+ * raw, un-degraded error instead of `tableAvailable:false` — this is the live bug being
+ * regression-tested here. */
+function wrappedMissingTableError(): Error {
+  const wrapped = new Error('Failed query: select "id" from "kb_corpora" order by "createdAt" desc');
+  (wrapped as Error & { cause: unknown }).cause = missingTableError();
+  return wrapped;
+}
+
 /** Generic thenable chain-stub: EVERY chain method (from/where/orderBy/limit/groupBy/values/
  * returning/onConflictDoNothing/set) returns the SAME stub, and awaiting it resolves to
  * `result` — avoids hand-writing the exact chain shape per call site (kbStudioService.ts
@@ -87,6 +99,12 @@ describe("kbStudioService.listCorpora", () => {
     await expect(svc.listCorpora()).resolves.toEqual({ tableAvailable: false, corpora: [] });
   });
 
+  it("kb_corpora unmigrated, WRAPPED in a drizzle DrizzleQueryError (real shape) ⇒ tableAvailable:false, empty — regression for the live bug", async () => {
+    selectMock.mockReturnValueOnce(chainableRejecting(wrappedMissingTableError()));
+    const svc = await loadService();
+    await expect(svc.listCorpora()).resolves.toEqual({ tableAvailable: false, corpora: [] });
+  });
+
   it("no registered corpora ⇒ tableAvailable:true, empty, no stats queries issued", async () => {
     selectMock.mockReturnValueOnce(chainable([]));
     const svc = await loadService();
@@ -142,6 +160,12 @@ describe("kbStudioService.createCorpus", () => {
 
   it("kb_corpora unmigrated (42P01) ⇒ throws KbStudioTableUnavailableError", async () => {
     insertMock.mockReturnValueOnce(chainableRejecting(missingTableError()));
+    const svc = await loadService();
+    await expect(svc.createCorpus({ name: "x" })).rejects.toBeInstanceOf(svc.KbStudioTableUnavailableError);
+  });
+
+  it("kb_corpora unmigrated, WRAPPED in a drizzle DrizzleQueryError ⇒ still throws KbStudioTableUnavailableError, not the raw wrapped error", async () => {
+    insertMock.mockReturnValueOnce(chainableRejecting(wrappedMissingTableError()));
     const svc = await loadService();
     await expect(svc.createCorpus({ name: "x" })).rejects.toBeInstanceOf(svc.KbStudioTableUnavailableError);
   });
@@ -240,6 +264,12 @@ describe("kbStudioService.listJobs", () => {
 
   it("42P01 ⇒ tableAvailable:false, empty — fail-safe, never throws", async () => {
     selectMock.mockReturnValueOnce(chainableRejecting(missingTableError()));
+    const svc = await loadService();
+    await expect(svc.listJobs({ corpus: "vendor-x" })).resolves.toEqual({ tableAvailable: false, jobs: [] });
+  });
+
+  it("42P01 WRAPPED in a drizzle DrizzleQueryError ⇒ tableAvailable:false, empty — fail-safe, never throws", async () => {
+    selectMock.mockReturnValueOnce(chainableRejecting(wrappedMissingTableError()));
     const svc = await loadService();
     await expect(svc.listJobs({ corpus: "vendor-x" })).resolves.toEqual({ tableAvailable: false, jobs: [] });
   });

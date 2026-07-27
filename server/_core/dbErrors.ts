@@ -17,6 +17,7 @@
 import { TRPCError } from "@trpc/server";
 
 const UNIQUE_VIOLATION = "23505";
+const UNDEFINED_TABLE = "42P01";
 
 export interface DbErrorOptions {
   /** Message for the CONFLICT error shown to the user. Default: "Mã đã tồn tại". */
@@ -35,6 +36,37 @@ export function isUniqueViolation(err: unknown): boolean {
         (e.message.includes("duplicate key value violates unique constraint") ||
           e.message.includes(UNIQUE_VIOLATION))
       ) {
+        return true;
+      }
+      current = e.cause;
+    } else {
+      break;
+    }
+  }
+  return false;
+}
+
+/**
+ * Walks err → err.cause → ... looking for a Postgres undefined-table error (42P01,
+ * "relation ... does not exist"). Registry/store services across the codebase (e.g.
+ * server/services/kbStudioService.ts, server/services/kbVectorStore.ts) use this to degrade
+ * gracefully (empty result / `tableAvailable:false`) when a migration hasn't been applied
+ * yet, instead of leaking a raw "Failed query: ..." error to the client.
+ *
+ * Mirrors {@link isUniqueViolation}'s cause-chain walk: postgres.js surfaces the raw driver
+ * error with `code === '42P01'` directly, but drizzle-orm ≥0.44 wraps it in a
+ * `DrizzleQueryError` (message starting with "Failed query: ...") that carries the real
+ * driver error — code and all — on `.cause`. Checking only `(err as {code}).code` misses the
+ * wrapped case entirely (the top-level `code` is `undefined`), which is exactly the bug this
+ * walk fixes.
+ */
+export function isMissingTable(err: unknown): boolean {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current; depth++) {
+    if (typeof current === "object") {
+      const e = current as { code?: unknown; message?: unknown; cause?: unknown };
+      if (e.code === UNDEFINED_TABLE) return true;
+      if (typeof e.message === "string" && /relation .* does not exist/i.test(e.message)) {
         return true;
       }
       current = e.cause;

@@ -27,6 +27,19 @@ function missingTableError(): Error & { code: string } {
   return Object.assign(new Error('relation "kb_studio_chunks" does not exist'), { code: "42P01" });
 }
 
+/** doc69/E3-2 fix — the REAL shape a drizzle-orm ≥0.44 query against an unmigrated table
+ * produces: a "Failed query: ..." wrapper Error with `code: undefined` at the top level and
+ * the real postgres.js driver error (code 42P01) on `.cause`. Before the fix, kbVectorStore's
+ * local `isMissingTableError` only checked the top-level `.code`, so THIS shape leaked as a
+ * raw, un-degraded error instead of `tableAvailable:false` / `[]` — this is the live bug
+ * being regression-tested here. Note: kbVectorStore uses raw `db.execute(sql\`...\`)`, not
+ * drizzle's query builder, but the SAME DrizzleQueryError wrapping applies to `execute()`. */
+function wrappedMissingTableError(): Error {
+  const wrapped = new Error('Failed query: SELECT * FROM kb_studio_chunks WHERE "corpus" = $1');
+  (wrapped as Error & { cause: unknown }).cause = missingTableError();
+  return wrapped;
+}
+
 /**
  * Recursively flattens a drizzle `sql\`...\`` tagged-template result into its LITERAL SQL
  * text (only the parts that are actually sent to postgres as raw query text — including
@@ -236,6 +249,12 @@ describe("upsertChunks", () => {
     expect(result).toEqual({ tableAvailable: false, inserted: 0, skipped: 1 });
   });
 
+  it("degrades to {tableAvailable:false} on 42P01 WRAPPED in a drizzle DrizzleQueryError (real shape) — regression for the live bug", async () => {
+    executeMock.mockRejectedValueOnce(wrappedMissingTableError());
+    const result = await upsertChunks("c1", [makeChunk()]);
+    expect(result).toEqual({ tableAvailable: false, inserted: 0, skipped: 1 });
+  });
+
   it("a REAL error (not 42P01) is rethrown — no half-written corpus is reported as success", async () => {
     executeMock
       .mockResolvedValueOnce(undefined) // DELETE (corpus, "manual.pdf") ok
@@ -286,6 +305,13 @@ describe("searchCorpus", () => {
 
   it("missing table (42P01) ⇒ empty array, no throw, no second (brute-force) query attempted", async () => {
     executeMock.mockRejectedValueOnce(missingTableError());
+    const hits = await searchCorpus("c1", QUERY_VEC, 5);
+    expect(hits).toEqual([]);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("missing table (42P01) WRAPPED in a drizzle DrizzleQueryError ⇒ empty array, no throw, no brute-force fallthrough — regression for the live bug", async () => {
+    executeMock.mockRejectedValueOnce(wrappedMissingTableError());
     const hits = await searchCorpus("c1", QUERY_VEC, 5);
     expect(hits).toEqual([]);
     expect(executeMock).toHaveBeenCalledTimes(1);

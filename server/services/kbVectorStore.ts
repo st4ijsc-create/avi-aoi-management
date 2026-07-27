@@ -24,6 +24,7 @@
  */
 import { sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
+import { isMissingTable } from "../_core/dbErrors";
 
 /** Dimension written to the pgvector column (matches GGUF_EMBED_DIM's default, aiGgufEngine.ts). */
 const VECTOR_DIM = 1024;
@@ -56,8 +57,11 @@ export interface KbChunkHit {
   score: number;
 }
 
+/** Delegates to `_core/dbErrors.ts`'s cause-chain walk — a naive `(e as {code}).code ===
+ * "42P01"` misses drizzle-orm's `DrizzleQueryError` wrapper (the real driver error, code and
+ * all, lives on `.cause`), which is exactly the shape this codebase's DB layer produces. */
 function isMissingTableError(e: unknown): boolean {
-  return (e as { code?: string } | null | undefined)?.code === "42P01";
+  return isMissingTable(e);
 }
 
 function formatVectorLiteral(vec: number[]): string {

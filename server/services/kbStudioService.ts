@@ -31,6 +31,7 @@
  */
 import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
+import { isMissingTable } from "../_core/dbErrors";
 import {
   kbCorpora,
   kbIngestJobs,
@@ -57,8 +58,11 @@ export class KbCorpusNotFoundError extends Error {
   }
 }
 
+/** Delegates to `_core/dbErrors.ts`'s cause-chain walk — a naive `(e as {code}).code ===
+ * "42P01"` misses drizzle-orm's `DrizzleQueryError` wrapper (the real driver error, code and
+ * all, lives on `.cause`), which is exactly the shape this codebase's DB layer produces. */
 function isMissingTableError(e: unknown): boolean {
-  return (e as { code?: string } | null | undefined)?.code === "42P01";
+  return isMissingTable(e);
 }
 
 // ─── Corpus registry ────────────────────────────────────────────────────────
