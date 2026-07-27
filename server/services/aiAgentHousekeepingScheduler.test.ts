@@ -117,6 +117,30 @@ describe("runAgentHousekeepingOnce", () => {
     await runAgentHousekeepingOnce();
     expect(expireStaleSpecialistSessions).toHaveBeenCalledWith(120_000);
   });
+
+  // Fix round 1 (review Important finding) — AI_SPECIALIST_RUN_TIMEOUT_MS="0" is a
+  // non-empty (truthy) STRING, so a naive `Number(process.env.X || 900_000)` never
+  // falls back: `"0" || 900_000` evaluates to `"0"` (the string is truthy), giving
+  // Number("0") = 0 → cutoff = now → EVERY currently-running session matches and
+  // gets marked failed on the next tick. A negative value is worse (cutoff lands in
+  // the future). Each garbage class below must fall back to the 900_000 default —
+  // never a value that would expire everything.
+  it.each([
+    ["0", "the exact failure scenario from the review — zero-as-truthy-string"],
+    ["-1000", "negative — cutoff would land in the future, matching all running rows"],
+    ["not-a-number", "non-numeric garbage"],
+    [undefined, "unset"],
+  ])(
+    "AI_SPECIALIST_RUN_TIMEOUT_MS=%s (%s) ⇒ falls back to the 900000ms default, NOT expire-everything (Wave 1 w1-2 fix round 1)",
+    async (value) => {
+      if (value === undefined) delete process.env.AI_SPECIALIST_RUN_TIMEOUT_MS;
+      else process.env.AI_SPECIALIST_RUN_TIMEOUT_MS = value;
+
+      await runAgentHousekeepingOnce();
+
+      expect(expireStaleSpecialistSessions).toHaveBeenCalledWith(900_000);
+    },
+  );
 });
 
 describe("initAgentHousekeepingScheduler — enabled (default true)", () => {

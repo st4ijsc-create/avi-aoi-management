@@ -32,6 +32,7 @@
  * Env flags:
  *   AI_AGENT_HOUSEKEEPING_ENABLED       (default "true")
  *   AI_AGENT_HOUSEKEEPING_INTERVAL_MS   (default 300000 = 5min; floor 30000 = 30s)
+ *   AI_SPECIALIST_RUN_TIMEOUT_MS        (default 900000 = 15min; garbage/0/negative → default, see specialistTimeoutMs())
  *
  * Tunables are read AT CALL TIME (not cached at module load) — mirrors the documented
  * rationale in aiAgentOrchestrator.ts's own "read at call time so tests/config toggles
@@ -47,6 +48,18 @@ function housekeepingEnabled(): boolean {
 function intervalMs(): number {
   const raw = Number(process.env.AI_AGENT_HOUSEKEEPING_INTERVAL_MS);
   return Number.isFinite(raw) && raw >= 30_000 ? raw : 5 * 60_000;
+}
+
+/**
+ * Wave 1 (w1-2 fix round 1) — mốc hết hạn phiên specialist. Giá trị rác/0/âm ⇒ mặc
+ * định an toàn 15 phút, cùng khuôn với `intervalMs()` ở trên. `raw > 0` (không dùng
+ * `>= 30_000` như `intervalMs()`) vì đây là NGƯỠNG "tiến trình nền coi như đã chết",
+ * không phải chu kỳ polling — một giá trị nhỏ nhưng dương (vd. test override
+ * 120_000) là hợp lệ và có chủ đích, chỉ 0/âm/NaN mới là giá trị rác cần chặn.
+ */
+function specialistTimeoutMs(): number {
+  const raw = Number(process.env.AI_SPECIALIST_RUN_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 900_000;
 }
 
 let timer: NodeJS.Timeout | null = null;
@@ -81,10 +94,13 @@ export async function runAgentHousekeepingOnce(): Promise<{ expiredSessions: num
     console.error("[aiAgentHousekeepingScheduler] expireStaleActions failed:", (err as any)?.message ?? err);
   }
 
-  const { expireStaleSpecialistSessions } = await import("../db/aiSpecialist");
-  const expiredSpecialist = await expireStaleSpecialistSessions(
-    Number(process.env.AI_SPECIALIST_RUN_TIMEOUT_MS || 900_000),
-  ).catch(() => 0);
+  let expiredSpecialist = 0;
+  try {
+    const { expireStaleSpecialistSessions } = await import("../db/aiSpecialist");
+    expiredSpecialist = await expireStaleSpecialistSessions(specialistTimeoutMs());
+  } catch (err) {
+    console.error("[aiAgentHousekeepingScheduler] expireStaleSpecialistSessions failed:", (err as any)?.message ?? err);
+  }
 
   lastRunAt = new Date();
   lastRunStats = { expiredSessions, expiredActions, expiredSpecialist };
