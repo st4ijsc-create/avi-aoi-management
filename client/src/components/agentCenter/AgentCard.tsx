@@ -90,7 +90,7 @@ export function AgentCard({ entry, onClick }: AgentCardProps) {
           <div className="min-w-0 flex items-center gap-1.5">
             <Icon className={cn("size-4 shrink-0", isStandby ? "text-muted-foreground" : "text-primary")} />
             <div className="min-w-0">
-              <div className="truncate text-[13px] font-semibold text-foreground">{personaName}</div>
+              <div className="line-clamp-2 break-words text-[13px] font-semibold leading-tight text-foreground">{personaName}</div>
               <div className="truncate text-[10.5px] uppercase tracking-wide text-muted-foreground">{kindLabel}</div>
             </div>
           </div>

@@ -18,7 +18,7 @@ export function AgentFloor({ roster, isLoading, onSelect }: AgentFloorProps) {
 
   if (isLoading && !roster) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-[132px] w-full rounded-lg" />
         ))}
@@ -39,7 +39,7 @@ export function AgentFloor({ roster, isLoading, onSelect }: AgentFloorProps) {
     <div
       role="list"
       aria-label={t("agentCenter.floor.title", "Đội hình Agent")}
-      className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3"
+      className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3"
     >
       {roster.map((entry) => (
         <div role="listitem" key={entry.id}>
