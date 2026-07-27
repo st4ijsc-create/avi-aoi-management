@@ -460,6 +460,18 @@ if (unsOptions.Enabled)
     }
 }
 
+// GĐ3 sub-4 LC-3 (.superpowers/sdd/2026-07-27-giaidoan3-alarms-linecontroller-blueprint/task-3-brief.md) —
+// the supervisory PackML/ISA-88 state machine over FleetHost (GET /v1/line, POST /v1/line/{command}).
+// GetService (not GetRequiredService) for IUnsPublisher — a host with UNS disabled (unsOptions.Enabled
+// false, or the broker failed to bind above) never registers it, and LineController's own ctor param is
+// optional (null → PublishLineState calls are simply skipped), same "byte-identical to today" contract
+// FleetHost's own optional unsPublisher ctor param already gives every UNS-adjacent collaborator.
+builder.Services.AddSingleton<St4i.EngineApi.Line.LineController>(sp =>
+    new St4i.EngineApi.Line.LineController(
+        sp.GetRequiredService<FleetHost>(),
+        sp.GetService<St4i.EdgeCore.Uns.IUnsPublisher>(),
+        logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("Line").LogError(ex, "{LineMsg}", msg)));
+
 // GĐ3 EC-2 (docs/plans .../2026-07-27-giaidoan3-ecosystem-connect-blueprint/task-2-brief.md) — the device
 // identity singleton (EC-1) + the Site-link northbound bridge manager.
 //
@@ -780,6 +792,8 @@ app.MapUserEndpoints();
 app.MapAssetEndpoints();
 // GĐ3 sub-4 LC-1 — the alarm HTTP surface (GET /v1/alarms(+/history), POST /v1/alarms/{id}/ack).
 app.MapAlarmEndpoints();
+// GĐ3 sub-4 LC-3 — the LineController HTTP surface (GET /v1/line, POST /v1/line/{command}).
+app.MapLineEndpoints();
 // GĐ3 EC-3 — the Site-link status/config + device-identity HTTP surface over EC-2's SiteBridgeManager.
 app.MapSiteEndpoints();
 app.MapInspectorStream();

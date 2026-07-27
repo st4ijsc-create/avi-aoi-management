@@ -216,6 +216,10 @@ public class EdgePipelineTests
         public void PublishNodeDeath()
         {
         }
+
+        public void PublishLineState(string state)
+        {
+        }
     }
 
     [Fact]

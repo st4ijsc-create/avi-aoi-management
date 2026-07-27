@@ -191,6 +191,8 @@ public sealed class RbacPolicyTests
         new("/v1/alarms", new[] { "GET" }, Policies.Operator),
         new("/v1/alarms/history", new[] { "GET" }, Policies.Operator),
         new("/v1/alarms/{id}/ack", new[] { "POST" }, Policies.Operator),
+        new("/v1/line", new[] { "GET" }, Policies.Operator),
+        new("/v1/line/{command}", new[] { "POST" }, Policies.Operator),
 
         // Engineer
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),

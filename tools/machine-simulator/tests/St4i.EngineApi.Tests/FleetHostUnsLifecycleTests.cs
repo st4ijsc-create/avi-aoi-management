@@ -152,5 +152,9 @@ public sealed class FleetHostUnsLifecycleTests
         public void PublishNodeBirth() => Interlocked.Increment(ref _nodeBirths);
 
         public void PublishNodeDeath() => Interlocked.Increment(ref _nodeDeaths);
+
+        public void PublishLineState(string state)
+        {
+        }
     }
 }

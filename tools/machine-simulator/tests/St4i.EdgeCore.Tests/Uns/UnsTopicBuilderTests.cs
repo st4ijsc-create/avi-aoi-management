@@ -41,6 +41,14 @@ public sealed class UnsTopicBuilderTests
         Assert.Equal("syn/s1/a1/l1/c1/EQ-1/result", topic);
     }
 
+    [Fact]
+    public void BuildLineStateTopic_ProducesTheExactLineStateTopicString()
+    {
+        var topic = UnsTopicBuilder.BuildLineStateTopic(Options);
+
+        Assert.Equal("syn/s1/a1/l1/c1/_line/state", topic);
+    }
+
     [Theory]
     [InlineData(ReadingKind.ProcessResult, "result")]
     [InlineData(ReadingKind.Telemetry, "telemetry")]

@@ -106,6 +106,18 @@ public static class UnsTopicBuilder
         return $"{SemanticNamespace}/{options.Site}/{options.Area}/{options.Line}/{options.Cell}/{equipmentCode}/{AspectFor(kind)}";
     }
 
+    /// <summary>GĐ3 sub-4 LC-3 — the retained topic <see cref="UnsPublisher.PublishLineState"/> publishes
+    /// the PackML line state onto: <c>syn/{site}/{area}/{line}/{cell}/_line/state</c>. Deliberately its OWN
+    /// builder (not a <see cref="BuildSemanticTopic(UnsOptions,string,ReadingKind)"/> overload) — the line
+    /// state isn't keyed by an equipment code/<see cref="ReadingKind"/> at all, it's a single per-process
+    /// value, hence the fixed literal <c>_line</c> segment (underscore-prefixed so it can never collide with
+    /// a real equipment code, which this codebase always derives from <see cref="St4i.EdgeCore.Models.MachineDescriptor.Code"/>).</summary>
+    public static string BuildLineStateTopic(UnsOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return $"{SemanticNamespace}/{options.Site}/{options.Area}/{options.Line}/{options.Cell}/_line/state";
+    }
+
     /// <summary>result|telemetry|inspection — the semantic-mirror "aspect" segment for each
     /// <see cref="ReadingKind"/>, matching the same three buckets <see cref="St4i.EdgeCore.Mapping.Normalizer.Normalize"/>
     /// switches on (ProcessResult/Telemetry/Inspection → the same three HTTP ingest paths).</summary>

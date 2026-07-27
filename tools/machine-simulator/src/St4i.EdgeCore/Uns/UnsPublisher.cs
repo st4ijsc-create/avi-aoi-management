@@ -54,6 +54,9 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
 
     private sealed record NodeDeathWorkItem(long BdSeq) : WorkItem;
 
+    /// <summary>GĐ3 sub-4 LC-3 — see <see cref="PublishLineState"/>.</summary>
+    private sealed record LineStateWorkItem(string State) : WorkItem;
+
     private const string BdSeqMetricName = "bdSeq"; // exact spec metric name (case-sensitive)
 
     private readonly UnsOptions _options;
@@ -190,6 +193,21 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public void PublishLineState(string state)
+    {
+        if (_disposed)
+        {
+            _logWarning?.Invoke($"UNS publisher already disposed — dropped line state '{state}'");
+            return;
+        }
+
+        if (!_channel.Writer.TryWrite(new LineStateWorkItem(state)))
+        {
+            _logWarning?.Invoke($"UNS publish queue saturated — dropped line state '{state}'");
+        }
+    }
+
     private async Task ConnectAsync(MqttClientOptions options, CancellationToken ct)
     {
         try
@@ -254,6 +272,7 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         DeathWorkItem d => $"death({d.EquipmentCode})",
         NodeBirthWorkItem nb => $"nodeBirth(bdSeq={nb.BdSeq})",
         NodeDeathWorkItem nd => $"nodeDeath(bdSeq={nd.BdSeq})",
+        LineStateWorkItem l => $"lineState({l.State})",
         _ => "unknown",
     };
 
@@ -264,6 +283,7 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         DeathWorkItem d => PublishDeathCoreAsync(d.EquipmentCode, ct),
         NodeBirthWorkItem nb => PublishNodeBirthCoreAsync(nb.BdSeq, ct),
         NodeDeathWorkItem nd => PublishNodeDeathCoreAsync(nd.BdSeq, ct),
+        LineStateWorkItem l => PublishLineStateCoreAsync(l.State, ct),
         _ => Task.CompletedTask,
     };
 
@@ -344,6 +364,29 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
             .WithPayload(SparkplugPayload.Encode(payload)).Build();
         await _client.PublishAsync(message, ct).ConfigureAwait(false);
     }
+
+    /// <summary>GĐ3 sub-4 LC-3 — retained JSON <c>{ state, atUtc }</c> on
+    /// <see cref="UnsTopicBuilder.BuildLineStateTopic"/>, reusing the SAME <see cref="SemanticJsonOptions"/>
+    /// serializer every other semantic-mirror publish in this class already uses (camelCase, string enums —
+    /// though <paramref name="state"/> here is already a plain string, not an enum, per
+    /// <see cref="IUnsPublisher.PublishLineState"/>'s own doc comment on why).</summary>
+    private async Task PublishLineStateCoreAsync(string state, CancellationToken ct)
+    {
+        var topic = UnsTopicBuilder.BuildLineStateTopic(_options);
+        var payload = new LineStatePayload(state, DateTimeOffset.UtcNow);
+        var json = JsonSerializer.Serialize(payload, SemanticJsonOptions);
+        var message = new MqttApplicationMessageBuilder()
+            .WithTopic(topic)
+            .WithPayload(json)
+            .WithRetainFlag(true)
+            .Build();
+        await _client.PublishAsync(message, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>GĐ3 sub-4 LC-3 — the exact <c>{ state, atUtc }</c> wire shape the brief calls for; a named
+    /// record (not an anonymous type) so <see cref="SemanticJsonOptions"/>'s camelCase policy has a stable
+    /// property set to serialize.</summary>
+    private sealed record LineStatePayload(string State, DateTimeOffset AtUtc);
 
     /// <summary>Maps a <see cref="DeviceReading"/>'s own fields onto Sparkplug metrics, covering the
     /// codec's full datatype set (Int64/Double/Boolean/String) across the three <see cref="ReadingKind"/>

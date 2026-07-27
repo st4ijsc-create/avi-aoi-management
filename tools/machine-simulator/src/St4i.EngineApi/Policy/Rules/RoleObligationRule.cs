@@ -14,6 +14,16 @@ public sealed class RoleObligationRule : IPolicyRule
         ["fleet.estop"] = Roles.Operator,
         ["fleet.estop_reset"] = Roles.Operator,
         ["scenario.burst"] = Roles.Engineer,
+
+        // GĐ3 sub-4 LC-3 — the LineController command surface (POST /v1/line/{command}); same Operator
+        // obligation as every other fleet-actuating action above (RbacPolicyTests.ExpectedRoutes also
+        // requires GET /v1/line + POST /v1/line/{command} to carry Policies.Operator).
+        ["line.start"] = Roles.Operator,
+        ["line.hold"] = Roles.Operator,
+        ["line.unhold"] = Roles.Operator,
+        ["line.stop"] = Roles.Operator,
+        ["line.abort"] = Roles.Operator,
+        ["line.reset"] = Roles.Operator,
     };
 
     public PolicyDecision? Evaluate(PolicyRequest request)

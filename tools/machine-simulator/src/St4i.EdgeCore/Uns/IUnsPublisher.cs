@@ -38,4 +38,14 @@ public interface IUnsPublisher
     /// "born" (no matching NBIRTH is outstanding) — so an E-STOP on an idle fleet, or a duplicate stop, never
     /// emits a spurious or unpaired NDEATH.</summary>
     void PublishNodeDeath();
+
+    /// <summary>GĐ3 sub-4 LC-3 — publishes the current PackML/ISA-88 line state (see
+    /// <see cref="St4i.EngineApi.Line.LineController"/>) as a RETAINED semantic-mirror message on
+    /// <c>syn/{site}/{area}/{line}/{cell}/_line/state</c> (see <see cref="UnsTopicBuilder.BuildLineStateTopic"/>),
+    /// so a Site (or any other UNS subscriber) can read the fleet's standard operational state without
+    /// polling the HTTP API. <paramref name="state"/> is the plain <see cref="St4i.EngineApi.Line.PackMlState"/>
+    /// name (e.g. <c>"Execute"</c>) — this method takes a bare string (not the enum itself) so
+    /// <c>St4i.EdgeCore</c> never has to reference <c>St4i.EngineApi.Line</c>. Same contract as every other
+    /// method on this interface: non-blocking, MUST NEVER throw into the caller.</summary>
+    void PublishLineState(string state);
 }
