@@ -1976,7 +1976,11 @@ export async function generateComprehensiveReportWithNarration(params: Analytics
  *
  * Call this after getControlChart() whenever you want to store + broadcast
  * detected violations. Idempotent: duplicate violations on the same day are
- * skipped by checking detectedAt date.
+ * skipped by checking detectedAt date — same machineId + ruleType +
+ * measurementPointDefId, still active, detected today (see the dedup SELECT
+ * below). This guards a proactive periodic sweep (W0-D) from spamming
+ * duplicate rows/socket alerts every time it re-detects the same
+ * still-unresolved violation.
  */
 export async function triggerSpcAlerts(opts: {
   violations: SpcViolation[];
@@ -1996,6 +2000,46 @@ export async function triggerSpcAlerts(opts: {
     const severity = v.severity === "critical" ? "critical"
       : v.severity === "info" ? "info"
       : "warning";
+
+    // W0-D — same-day dedup check. Dedup key: machineId + ruleType +
+    // measurementPointDefId (all nullable-safe via `IS NOT DISTINCT FROM`, so
+    // e.g. two machine-less violations of the same rule still correctly
+    // dedup against each other instead of a naive `=` silently never
+    // matching NULLs), isActive = true, detectedAt::date = CURRENT_DATE.
+    // workstationId/productModelId/severity are deliberately excluded — they
+    // describe the violation, they don't identify it.
+    //
+    // Fail-OPEN by design: if this SELECT itself throws (missing table before
+    // a migration runs, transient connection error, etc.), we do NOT treat
+    // that as "no duplicate" silently nor as "suppress the alert" — we fall
+    // through to the pre-existing behavior (insert + broadcast). A dedup
+    // check failure must never cost a genuinely new SPC alert. A generic
+    // catch is used on purpose (not an `isMissingTable`-only special case)
+    // so ANY dedup-check failure — not just a missing table — fails open.
+    let isDuplicateToday = false;
+    if (db) {
+      try {
+        const dedupResult = (await db.execute(sql`
+          SELECT 1 FROM spc_rule_violations
+          WHERE "machineId" IS NOT DISTINCT FROM ${machineId ?? null}
+            AND "ruleType" = ${v.ruleId}
+            AND "measurementPointDefId" IS NOT DISTINCT FROM ${measurementPointDefId ?? null}
+            AND "isActive" = true
+            AND "detectedAt"::date = CURRENT_DATE
+          LIMIT 1
+        `)) as any;
+        const dedupRows = dedupResult.rows || dedupResult || [];
+        isDuplicateToday = dedupRows.length > 0;
+      } catch (err) {
+        console.error(`[SPC] Dedup check failed for ${v.ruleId} — failing open (insert+broadcast):`, err);
+        isDuplicateToday = false;
+      }
+    }
+
+    if (isDuplicateToday) {
+      // Same-day duplicate: skip BOTH the insert and the broadcast.
+      continue;
+    }
 
     if (db) {
       try {

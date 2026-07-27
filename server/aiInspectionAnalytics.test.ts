@@ -10,12 +10,18 @@ import {
   getDefectTrend,
   getMachinePerformance,
   buildAnalyticsConditions,
+  triggerSpcAlerts,
+  type SpcViolation,
 } from "../server/services/aiInspectionAnalytics";
 import { cacheService } from "../server/services/cacheService";
 import * as dbConnection from "../server/db/connection";
+import * as socketCore from "../server/_core/socket";
 
 // Mock the database connection
 vi.mock("../server/db/connection");
+// W0-D — mock the socket broadcast so idempotency tests can assert it fires/skips
+// without a real Socket.IO instance.
+vi.mock("../server/_core/socket");
 
 describe("FIX #1: N+1 Query Optimization & Caching", () => {
   beforeEach(() => {
@@ -396,5 +402,83 @@ describe("Performance Metrics", () => {
     // Target: 100-200ms (5x faster than original 500-1000ms)
     console.log(`Correlation analysis completed in ${elapsed}ms`);
     // Note: This is a performance indicator, not a hard requirement in test
+  });
+});
+
+describe("W0-D: triggerSpcAlerts — idempotency (dedup same-day duplicates)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function buildMockDb(dedupExecute: (...args: any[]) => Promise<any>) {
+    const insertValues = vi.fn().mockResolvedValue(undefined);
+    const mockDb = {
+      execute: vi.fn(dedupExecute),
+      insert: vi.fn(() => ({ values: insertValues })),
+    };
+    return { mockDb, insertValues };
+  }
+
+  const violation: SpcViolation = {
+    ruleId: "nelson_1",
+    ruleName: "Beyond 3-sigma",
+    severity: "critical",
+    pointIndices: [5],
+  };
+
+  it("skips BOTH insert and broadcast when a same-day duplicate already exists", async () => {
+    const { mockDb, insertValues } = buildMockDb(async () => [{ "?column?": 1 }]); // dedup SELECT found a match
+    vi.spyOn(dbConnection, "getDb").mockResolvedValue(mockDb as any);
+
+    await triggerSpcAlerts({
+      violations: [violation],
+      metric: "defectRate",
+      machineId: 3,
+      controlLimits: { ucl: 10, lcl: 2, cl: 6 },
+    });
+
+    expect(mockDb.execute).toHaveBeenCalledTimes(1); // dedup SELECT ran
+    expect(mockDb.insert).not.toHaveBeenCalled();
+    expect(insertValues).not.toHaveBeenCalled();
+    expect(socketCore.emitSpcViolationAlert).not.toHaveBeenCalled();
+  });
+
+  it("inserts AND broadcasts when no same-day duplicate exists", async () => {
+    const { mockDb, insertValues } = buildMockDb(async () => []); // dedup SELECT found nothing
+    vi.spyOn(dbConnection, "getDb").mockResolvedValue(mockDb as any);
+
+    await triggerSpcAlerts({
+      violations: [violation],
+      metric: "defectRate",
+      machineId: 3,
+      controlLimits: { ucl: 10, lcl: 2, cl: 6 },
+    });
+
+    expect(mockDb.insert).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    expect(socketCore.emitSpcViolationAlert).toHaveBeenCalledTimes(1);
+    expect(socketCore.emitSpcViolationAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ ruleId: "nelson_1", machineId: 3 })
+    );
+  });
+
+  it("fails OPEN (insert + broadcast) when the dedup SELECT itself throws — never suppress a real alert", async () => {
+    const { mockDb, insertValues } = buildMockDb(async () => {
+      throw new Error('relation "spc_rule_violations" does not exist');
+    });
+    vi.spyOn(dbConnection, "getDb").mockResolvedValue(mockDb as any);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await triggerSpcAlerts({
+      violations: [violation],
+      metric: "defectRate",
+      machineId: 3,
+      controlLimits: { ucl: 10, lcl: 2, cl: 6 },
+    });
+
+    expect(mockDb.insert).toHaveBeenCalledTimes(1);
+    expect(insertValues).toHaveBeenCalledTimes(1);
+    expect(socketCore.emitSpcViolationAlert).toHaveBeenCalledTimes(1);
+    consoleErrorSpy.mockRestore();
   });
 });

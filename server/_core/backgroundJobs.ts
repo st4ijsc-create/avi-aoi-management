@@ -125,6 +125,14 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[aiBatchRcaScheduler] init failed:", (err as any)?.message || err);
   }
 
+  // W0-D — proactive SPC-alert sweep. Opt in via AI_SPC_ALERT_SWEEP_ENABLED=true.
+  try {
+    const { initSpcAlertScheduler } = await import("../services/aiSpcAlertScheduler");
+    initSpcAlertScheduler();
+  } catch (err) {
+    console.error("[aiSpcAlertScheduler] init failed:", (err as any)?.message || err);
+  }
+
   // WS-1 — AI self-learning scan. Opt in via AI_SELF_LEARNING_ENABLED=true.
   try {
     const { initSelfLearningScheduler } = await import("../services/aiSelfLearningScheduler");
