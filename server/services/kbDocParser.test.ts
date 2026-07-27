@@ -1,0 +1,173 @@
+/**
+ * doc69 Giai đoạn 5 / Wave E3 (E3-1) — kbDocParser.ts unit tests.
+ *
+ * `pdf-parse` and `mammoth` are BOTH mocked — no live parser/model is ever exercised here.
+ * md/txt paths need no mocking (plain string handling).
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const getTextMock = vi.fn();
+const destroyMock = vi.fn(async () => undefined);
+const PDFParseMock = vi.fn().mockImplementation(() => ({ getText: getTextMock, destroy: destroyMock }));
+vi.mock("pdf-parse", () => ({ PDFParse: PDFParseMock }));
+
+const extractRawTextMock = vi.fn();
+vi.mock("mammoth", () => ({
+  extractRawText: (...args: unknown[]) => extractRawTextMock(...args),
+}));
+
+async function loadFresh() {
+  vi.resetModules();
+  return import("./kbDocParser");
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  destroyMock.mockResolvedValue(undefined);
+  delete process.env.KB_PARSE_MAX_CHARS;
+  delete process.env.KB_PARSE_TIMEOUT_MS;
+});
+
+afterEach(() => {
+  delete process.env.KB_PARSE_MAX_CHARS;
+  delete process.env.KB_PARSE_TIMEOUT_MS;
+});
+
+// ─── normalizeSourceType ────────────────────────────────────────────────────
+
+describe("normalizeSourceType", () => {
+  it("resolves bare extensions", async () => {
+    const { normalizeSourceType } = await loadFresh();
+    expect(normalizeSourceType("pdf")).toBe("pdf");
+    expect(normalizeSourceType("docx")).toBe("docx");
+    expect(normalizeSourceType("md")).toBe("md");
+    expect(normalizeSourceType("txt")).toBe("txt");
+  });
+
+  it("resolves dotted extensions and filenames", async () => {
+    const { normalizeSourceType } = await loadFresh();
+    expect(normalizeSourceType(".pdf")).toBe("pdf");
+    expect(normalizeSourceType("manual.pdf")).toBe("pdf");
+    expect(normalizeSourceType("notes.MD")).toBe("md");
+    expect(normalizeSourceType("readme.txt")).toBe("txt");
+    expect(normalizeSourceType("spec-v2.docx")).toBe("docx");
+  });
+
+  it("resolves MIME types", async () => {
+    const { normalizeSourceType } = await loadFresh();
+    expect(normalizeSourceType("application/pdf")).toBe("pdf");
+    expect(normalizeSourceType("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe(
+      "docx",
+    );
+    expect(normalizeSourceType("text/markdown")).toBe("md");
+    expect(normalizeSourceType("text/plain")).toBe("txt");
+  });
+
+  it("throws KbUnsupportedTypeError for anything else", async () => {
+    const { normalizeSourceType, KbUnsupportedTypeError } = await loadFresh();
+    expect(() => normalizeSourceType("pptx")).toThrow(KbUnsupportedTypeError);
+    expect(() => normalizeSourceType("application/zip")).toThrow(KbUnsupportedTypeError);
+    expect(() => normalizeSourceType("")).toThrow(KbUnsupportedTypeError);
+  });
+});
+
+// ─── md / txt (no mocking needed) ───────────────────────────────────────────
+
+describe("parseDocument — md/txt", () => {
+  it("extracts plain markdown text as-is", async () => {
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument("# Title\n\nSome body text.", "md");
+    expect(result.text).toBe("# Title\n\nSome body text.");
+    expect(result.meta).toMatchObject({ sourceType: "md", truncated: false });
+  });
+
+  it("extracts plain txt from a Buffer input", async () => {
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument(Buffer.from("hello world", "utf8"), "readme.txt");
+    expect(result.text).toBe("hello world");
+    expect(result.meta.sourceType).toBe("txt");
+  });
+
+  it("normalizes CRLF to LF and trims", async () => {
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument("  line one\r\nline two  ", "txt");
+    expect(result.text).toBe("line one\nline two");
+  });
+
+  it("bounds extracted size via KB_PARSE_MAX_CHARS and flags truncated", async () => {
+    process.env.KB_PARSE_MAX_CHARS = "10";
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument("0123456789ABCDEF", "txt");
+    expect(result.text).toBe("0123456789");
+    expect(result.meta.truncated).toBe(true);
+    expect(result.meta.charCount).toBe(10);
+  });
+});
+
+// ─── pdf (mocked pdf-parse) ──────────────────────────────────────────────────
+
+describe("parseDocument — pdf", () => {
+  it("extracts text via PDFParse.getText and destroys the parser", async () => {
+    getTextMock.mockResolvedValueOnce({
+      text: "page one text\n\npage two text",
+      pages: [{ num: 1, text: "page one text" }, { num: 2, text: "page two text" }],
+      total: 2,
+    });
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument(Buffer.from("%PDF-1.4 fake"), "application/pdf");
+    expect(result.text).toBe("page one text\n\npage two text");
+    expect(result.meta).toMatchObject({ sourceType: "pdf", pageCount: 2, truncated: false });
+    expect(destroyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to joining per-page text when `text` is absent", async () => {
+    getTextMock.mockResolvedValueOnce({ pages: [{ num: 1, text: "only page" }], total: 1 });
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument(Buffer.from("%PDF-1.4 fake"), "pdf");
+    expect(result.text).toBe("only page");
+  });
+
+  it("a corrupt/unparseable PDF throws KbParseError (destroy still called)", async () => {
+    getTextMock.mockRejectedValueOnce(new Error("Invalid PDF structure"));
+    const { parseDocument, KbParseError } = await loadFresh();
+    await expect(parseDocument(Buffer.from("not a pdf"), "pdf")).rejects.toThrow(KbParseError);
+    expect(destroyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a hanging parse is aborted by the timeout guard (never hangs)", async () => {
+    process.env.KB_PARSE_TIMEOUT_MS = "20";
+    getTextMock.mockImplementationOnce(() => new Promise(() => {})); // never resolves
+    const { parseDocument, KbParseError } = await loadFresh();
+    await expect(parseDocument(Buffer.from("x"), "pdf")).rejects.toThrow(KbParseError);
+  });
+});
+
+// ─── docx (mocked mammoth) ───────────────────────────────────────────────────
+
+describe("parseDocument — docx", () => {
+  it("extracts text via mammoth.extractRawText", async () => {
+    extractRawTextMock.mockResolvedValueOnce({ value: "Docx body content.", messages: [] });
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument(Buffer.from("PK fake docx"), "docx");
+    expect(result.text).toBe("Docx body content.");
+    expect(result.meta.sourceType).toBe("docx");
+    expect(extractRawTextMock).toHaveBeenCalledWith({ buffer: expect.any(Buffer) });
+  });
+
+  it("a corrupt docx throws KbParseError, not a raw exception", async () => {
+    extractRawTextMock.mockRejectedValueOnce(new Error("Can't find end of central directory"));
+    const { parseDocument, KbParseError } = await loadFresh();
+    await expect(parseDocument(Buffer.from("not a zip"), "docx")).rejects.toThrow(KbParseError);
+  });
+});
+
+// ─── unsupported type never attempts to parse ───────────────────────────────
+
+describe("parseDocument — unsupported type", () => {
+  it("throws KbUnsupportedTypeError and never calls any parser", async () => {
+    const { parseDocument, KbUnsupportedTypeError } = await loadFresh();
+    await expect(parseDocument(Buffer.from("data"), "application/zip")).rejects.toThrow(KbUnsupportedTypeError);
+    expect(getTextMock).not.toHaveBeenCalled();
+    expect(extractRawTextMock).not.toHaveBeenCalled();
+  });
+});

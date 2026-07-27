@@ -172,6 +172,7 @@ import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orch
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
 import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
 import { kbVectorRouter } from "./routers/kbVectorRouter"; // Phase 4: KB pgvector store (ingest + search)
+import { kbIngestRouter } from "./routers/kbIngestRouter"; // doc69 Giai đoạn 5/Wave E3 (E3-1): Training Studio doc ingest upload (pdf/docx/md/txt, admin/engineer, KB_STUDIO_ENABLED)
 import { sitesRouter } from "./routers/sitesRouter"; // Doc 13 / F0: Multi-site Federation sites registry (admin CRUD + probe + self-enroll-local; read-only)
 import { federationRouter } from "./routers/federationRouter"; // Doc 13 / F1: Federation roll-up read API (siteRollups/history/syncLog/aggregateSummary; read-only)
 import { commandCenterRouter } from "./routers/commandCenterRouter"; // Doc 21 / U2: Ecosystem Command Center aggregation (hierarchy tree + KPI strip + seed alerts; read-only)
@@ -493,6 +494,7 @@ export const appRouter = router({
   aiInbox: aiInboxRouter,
   aiToday: aiTodayRouter,
   kbVector: kbVectorRouter,
+  kbIngest: kbIngestRouter, // doc69 GĐ5/Wave E3 (E3-1): Training Studio doc ingest upload — separate from kbVector (kb_chunks, mig 0121)
 
   // Federation (doc 13 / F0) — sites registry + enrollment + probe (read-only)
   sites: sitesRouter,
