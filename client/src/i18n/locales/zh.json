@@ -16119,6 +16119,8 @@
     "extractiveAnswerNote": "⚠️ 以抽取模式回答（未使用 LLM）",
     "extractiveMode": "抽取模式",
     "extractiveTip": "LLM 未加载 — 以文档摘录回答。",
+    "kbAge": "知识库已构建 {{days}} 天",
+    "kbAgeTip": "知识库是在 {{days}} 天前构建的。",
     "loading": "加载中…",
     "ready": "就绪"
   },

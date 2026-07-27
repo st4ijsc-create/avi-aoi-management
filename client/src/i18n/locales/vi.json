@@ -15787,6 +15787,8 @@
     "extractiveAnswerNote": "⚠️ Trả lời ở chế độ trích dẫn (chưa dùng LLM)",
     "extractiveMode": "Chế độ trích dẫn",
     "extractiveTip": "LLM chưa nạp — đang trả lời bằng trích dẫn tài liệu.",
+    "kbAge": "KB {{days}} ngày tuổi",
+    "kbAgeTip": "Kho tri thức được xây dựng cách đây {{days}} ngày.",
     "loading": "Đang tải...",
     "ready": "Sẵn sàng"
   },

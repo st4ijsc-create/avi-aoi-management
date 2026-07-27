@@ -15804,6 +15804,8 @@
     "extractiveAnswerNote": "⚠️ Answered in extractive mode (LLM not in use)",
     "extractiveMode": "Extractive mode",
     "extractiveTip": "LLM not loaded — answering with document excerpts.",
+    "kbAge": "KB {{days}} days old",
+    "kbAgeTip": "The knowledge base was built {{days}} days ago.",
     "loading": "Loading...",
     "ready": "Ready"
   },

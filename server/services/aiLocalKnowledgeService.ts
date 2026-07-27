@@ -25,6 +25,10 @@ import { planInference } from "./aiGateway";
 // gating). Pure/no side effects beyond a cached read of
 // knowledge/operational-cards.json — never throws, never blocks the answer.
 import { resolveOperationalNavigate } from "./aiOperationalGrounding";
+// doc69 B1 (Wave 5) — last-autosync answer-eval gate result, surfaced read-only
+// in the KB health signal so ops can see "did the last KB rebuild pass its
+// answer-quality eval". Never throws (best-effort import/call, see getKbHealth).
+import { getLastAutosyncEvalGate } from "./kbSyncScheduler";
 
 export type KbIntent =
   | "how_to"
@@ -1389,6 +1393,28 @@ export interface KbHealth {
   kbBuiltAt: string | null;
   chunkCount: number;
   staleDays: number | null;
+  // doc69 B1 (Wave 5) — last autosync answer-eval gate outcome (pass/fail/skipped
+  // + recall + when). null when autosync has never run a gate (disabled, or no
+  // run since boot) — NOT the same as a failure, so the client must not treat
+  // null as "bad".
+  lastAutosyncEvalGate: {
+    evalGate: "pass" | "fail" | "skipped";
+    recall: number | null;
+    reason?: string;
+    rolledBack: boolean;
+    at: string;
+  } | null;
+}
+
+/** Best-effort read of the last autosync eval-gate outcome. Never throws —
+ * degrades to null so KB health stays available even if the scheduler module
+ * itself failed to load. */
+function readLastAutosyncEvalGate(): KbHealth["lastAutosyncEvalGate"] {
+  try {
+    return getLastAutosyncEvalGate();
+  } catch {
+    return null;
+  }
 }
 
 // W0.2 (doc 11) — best-effort "is a text LLM loadable?" check. Never throws;
@@ -1433,6 +1459,7 @@ export async function getKbHealth(): Promise<KbHealth> {
       kbBuiltAt: data.kbBuiltAt,
       chunkCount: data.chunksById.size,
       staleDays: wholeDaysSince(data.kbBuiltAt),
+      lastAutosyncEvalGate: readLastAutosyncEvalGate(),
     };
   } catch {
     return {
@@ -1446,6 +1473,7 @@ export async function getKbHealth(): Promise<KbHealth> {
       llmReady: false,
       embedModel: null,
       queryEmbedModel,
+      lastAutosyncEvalGate: readLastAutosyncEvalGate(),
       embedModelMatches: true,
       kbBuiltAt: null,
       chunkCount: 0,

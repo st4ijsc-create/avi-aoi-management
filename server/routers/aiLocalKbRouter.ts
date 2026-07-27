@@ -55,6 +55,15 @@ interface KbHealthResponse {
   kbBuiltAt?: string | null;
   chunkCount?: number;
   staleDays?: number | null;
+  // doc69 B1 (Wave 5) — last autosync answer-eval gate outcome, passed through
+  // unchanged from getKbHealth. null when autosync hasn't run a gated sync yet.
+  lastAutosyncEvalGate?: {
+    evalGate: "pass" | "fail" | "skipped";
+    recall: number | null;
+    reason?: string;
+    rolledBack: boolean;
+    at: string;
+  } | null;
 }
 
 interface KbApiResult {

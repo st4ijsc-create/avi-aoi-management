@@ -79,6 +79,12 @@ import { ListChecks } from "lucide-react";
 
 const STORAGE_MESSAGES_KEY = "ai_chat_messages_v2";
 const MAX_STORED_MESSAGES = 40;
+// doc69 B1 (Wave 5) — the KB autosync's default cron is nightly (03:00); a corpus
+// older than a week means the KB either isn't being rebuilt or has been failing
+// its rebuilds, so the "KB age" badge switches from neutral to attention beyond
+// this threshold. Purely visual (does not gate `isReady`/input, which stay keyed
+// off health.ready as before).
+const KB_STALE_DAYS_THRESHOLD = 7;
 
 // C5 — role is now derived from the logged-in user via mapAppRoleToAiRole().
 // (Previously hard-coded to "engineer".) The AI role only shapes the
@@ -1098,6 +1104,26 @@ export function AILocalChatBubble() {
                   >
                     💬 Chi tiết
                   </span>
+                  {/* doc69 B1 (Wave 5) — KB corpus age badge. staleDays is computed server-side
+                      (aiLocalKnowledgeService.wholeDaysSince) and was already returned in the
+                      health payload but never rendered — this wires it into the badge row that
+                      already exists here (color-neutral when fresh, amber past the threshold). */}
+                  {typeof health?.staleDays === "number" && (
+                    <span
+                      className={cn(
+                        "text-xs px-1.5 py-0.5 rounded-full border ml-1 leading-none",
+                        health.staleDays > KB_STALE_DAYS_THRESHOLD
+                          ? "border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                          : "border-border bg-muted text-muted-foreground",
+                      )}
+                      title={t("aiHealth.kbAgeTip", {
+                        defaultValue: "Kho tri thức được xây dựng cách đây {{days}} ngày.",
+                        days: health.staleDays,
+                      })}
+                    >
+                      {t("aiHealth.kbAge", { defaultValue: "KB {{days}} ngày tuổi", days: health.staleDays })}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
