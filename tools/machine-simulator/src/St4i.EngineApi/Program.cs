@@ -440,6 +440,13 @@ if (unsOptions.Enabled)
 // missing/malformed register map (ST4I_MODBUS_MAP) logs a warning and disables Modbus for this run rather
 // than crashing startup — same "never allowed to fail the host it's bolted onto" posture as the UNS
 // broker-bind failure just above.
+// P2-3 (docs/plans/2026-07-27-giaidoan2-pass2-blueprint.md task 3) — hoisted OUTSIDE the
+// `if (modbusOptions.Enabled)` block below because `modbusMap`/`capturedMap` are scoped INSIDE it, while
+// the roster-seed call (`fleetHost.RegisterMachine`, further down, well after `app.Build()`) needs to reach
+// a descriptor built from that same map. Stays null (no-op) unless Modbus is enabled AND its register map
+// actually loaded — additive + still default-off, same contract as `_modbusDriverFactory` above.
+St4i.EdgeCore.Models.MachineDescriptor? modbusSeedDescriptor = null;
+
 var modbusOptions = St4i.EdgeCore.Drivers.Modbus.ModbusOptions.FromEnvironment();
 if (modbusOptions.Enabled)
 {
@@ -476,6 +483,20 @@ if (modbusOptions.Enabled)
                 logError: (ex, msg) => logger.LogError(ex, "{ModbusMsg}", msg));
             return factory.Create;
         });
+
+        // P2-3 — the Modbus machine's roster descriptor, built from the SAME loaded register map (its
+        // MachineCode + PollIntervalMs), so it gets a MachineState (fleet Snapshot tile + historian) and,
+        // via P2-1's upsert-on-register, an Asset row — instead of being an invisible telemetry stream.
+        modbusSeedDescriptor = new St4i.EdgeCore.Models.MachineDescriptor(
+            Code: capturedMap.MachineCode,
+            SerialSeed: $"SN-{capturedMap.MachineCode}",
+            DeviceClass: St4i.EdgeCore.Models.DeviceClass.Automation,
+            MachineType: "MODBUS_TCP",
+            StepType: null,
+            DriverKind: St4i.EdgeCore.Models.DriverKind.Modbus,
+            RecipeCode: null,
+            MappingProfile: null,
+            CycleSeconds: Math.Max(0.1, capturedMap.PollIntervalMs / 1000.0));
     }
 }
 
@@ -600,6 +621,15 @@ app.MapFallbackToFile("index.html").AllowAnonymous();
 // resolution — and any FleetConfigException it might swallow — happens at startup, where a log line is
 // actually useful, not silently on whichever request happens to hit it first.
 var fleetHost = app.Services.GetRequiredService<FleetHost>();
+
+// P2-3 — register the configured Modbus machine as a first-class roster member so it gets a MachineState
+// (fleet Snapshot tile + historian) and, via the asset registry, an Asset row. Idempotent: RegisterMachine
+// returns false (benign) if it's already present. StartLocked excludes DriverKind.Modbus from simulation, so
+// this machine is driven ONLY by the real Modbus pipeline slot, never double-driven.
+if (modbusSeedDescriptor is not null)
+{
+    fleetHost.RegisterMachine(modbusSeedDescriptor);
+}
 
 // WS-F1 final-review fix F1 — apply the env-resolved (see the ST4I_SERVER_URL/ST4I_MACHINE_CODE/
 // ST4I_VERIFY_TLS reads above) settings as this instance's INITIAL Live config, now that FleetHost

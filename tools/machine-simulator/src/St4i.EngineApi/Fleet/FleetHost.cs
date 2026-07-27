@@ -535,7 +535,12 @@ public sealed class FleetHost
         // overriding it outright. Safe to bake in at construction (not a live Func<double>, unlike
         // _configStore itself): a multiplier change ALWAYS restarts this whole pipeline (multiplierChanged
         // check in ApplyScenario/Burst), so it can never go stale for the lifetime of these sim instances.
-        var sims = effectiveFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
+        // G2-6/P2-3 — a DriverKind.Modbus machine is driven by the real Modbus pipeline slot (below), NOT
+        // simulated. Excluding it here is what prevents it being double-driven (a simulator AND the Modbus
+        // slot) once it's a roster member. Non-Modbus rosters are unaffected (the Where is a no-op), so sim
+        // seeds/indices are byte-identical to before.
+        var simFleet = effectiveFleet.Where(d => d.DriverKind != DriverKind.Modbus).ToList();
+        var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
 
         var decorator = DriverDecoratorForTests;

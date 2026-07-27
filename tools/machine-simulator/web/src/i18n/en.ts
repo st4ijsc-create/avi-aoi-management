@@ -122,6 +122,7 @@ export const en: Dictionary = {
     Simulated: "Simulated",
     HotFolderAoi: "Hot-folder AOI",
     Mqtt: "MQTT",
+    Modbus: "Modbus",
   },
 
   lifecycleStatus: {

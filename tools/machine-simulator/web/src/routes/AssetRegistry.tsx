@@ -64,7 +64,7 @@ const LIFECYCLE_TONE: Record<AssetLifecycleState, "ok" | "warn" | "danger" | "in
 // else, rather than `t()`'s own generic "missing key" fallback (which would print the ugly literal
 // dot-path, e.g. `"driverKind.Modbus"`).
 const KNOWN_DEVICE_CLASSES = new Set(["Automation", "Iot", "AoiAvi"])
-const KNOWN_DRIVER_KINDS = new Set(["Simulated", "HotFolderAoi", "Mqtt"])
+const KNOWN_DRIVER_KINDS = new Set(["Simulated", "HotFolderAoi", "Mqtt", "Modbus"])
 
 type TFunc = ReturnType<typeof useT>
 

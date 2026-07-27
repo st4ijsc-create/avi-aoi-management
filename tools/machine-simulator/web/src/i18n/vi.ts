@@ -126,6 +126,7 @@ export const vi = {
     Simulated: "Mô phỏng",
     HotFolderAoi: "Hot-folder AOI",
     Mqtt: "MQTT",
+    Modbus: "Modbus",
   },
 
   lifecycleStatus: {
