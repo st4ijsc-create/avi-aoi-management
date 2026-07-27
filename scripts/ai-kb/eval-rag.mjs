@@ -18,6 +18,9 @@
  *   # CI gate (exit 1 if overall recall@5 < 0.80 OR any domain < 0.60):
  *   node scripts/ai-kb/eval-rag.mjs --ci
  *   KB_EVAL_MIN=0.85 KB_EVAL_DOMAIN_MIN=0.7 node scripts/ai-kb/eval-rag.mjs   # env-driven gate
+ *   # doc69 B4 — GraphRAG WITH-vs-WITHOUT comparison (does 1-hop expansion lift recall@K?
+ *   # decides whether KB_GRAPHRAG_ENABLED is worth flipping — see .env.example note):
+ *   node scripts/ai-kb/eval-rag.mjs --graph
  *
  * FLAGS:
  *   --rerank        apply the LLM rerank pass (only takes effect if RAG_RERANKER_ENABLED is truthy)
@@ -26,15 +29,33 @@
  *   --ci            enable the CI gate (also auto-on if KB_EVAL_MIN / KB_EVAL_DOMAIN_MIN set)
  *   --min <f>       overall recall@K floor for --ci (default 0.80; or KB_EVAL_MIN)
  *   --domain-min <f> per-domain recall@K floor for --ci (default 0.60; or KB_EVAL_DOMAIN_MIN)
- *   --pool <n> --topn <n>  rerank pool size / K
+ *   --pool <n> --topn <n>  rerank pool size / K (also the GraphRAG seed-pool size, see below)
+ *   --graph         ADDITIONALLY compute recall@K WITH GraphRAG 1-hop expansion and print it
+ *                   alongside the WITHOUT-graph baseline + the delta. Informational only — never
+ *                   affects --ci's pass/fail, and never flips KB_GRAPHRAG_ENABLED itself (that stays
+ *                   an operator decision made AFTER reading this comparison; see .env.example).
+ *                   HONEST when knowledge/semantic-graph.json is absent/empty: reports that plainly
+ *                   instead of printing a fabricated delta (run `npm run kb:graph` to build it first).
  *
  * RERANKER NOTE: production reranking lives in server/services/aiReranker.ts (TS, RAG_RERANKER_ENABLED=true,
  * RAG_RERANKER_MODE=llm). It imports the TS GGUF engine and can't be loaded from this .mjs without a TS
  * loader, so this harness re-implements the SAME llm-scoring prompt locally (llmRerank). The default
  * cosine-only metric therefore measures EMBEDDING retrieval (PRE-rerank) recall@K.
  *
- * OUTPUT: console (per-question + per-domain recall@K table + overall + CI verdict) AND a machine-readable
- * summary at knowledge/rag-eval-results.json (overall + per-domain + timestamp).
+ * GRAPHRAG NOTE (doc69 B4): unlike the reranker, aiSemanticGraph.ts (loadSemanticGraph +
+ * expandWithGraph) is pure logic with NO TS-only dependencies (just node:fs/node:path), and Node's
+ * built-in TypeScript type-stripping (confirmed on this runtime) loads it directly from this plain
+ * .mjs — so --graph calls the REAL production functions, not a re-implementation. The seed pool for
+ * expansion is the top `--pool` cosine candidates (same knob the reranker uses); after injecting
+ * GraphRAG neighbours the combined pool is re-sorted by score and cut to top-K — a deliberate
+ * MEASUREMENT choice so an injected neighbour can actually compete for the final K (aiLocalKnowledgeService's
+ * own non-reranked path instead appends injected neighbours after the full deduped candidate list, so
+ * they only reach the final top-K there when the reranker is ALSO on and its pool is wide enough —
+ * this harness isolates the graph signal on its own rather than reproducing that ordering detail).
+ *
+ * OUTPUT: console (per-question + per-domain recall@K table + overall + CI verdict + optional GraphRAG
+ * comparison) AND a machine-readable summary at knowledge/rag-eval-results.json (overall + per-domain +
+ * graphRag block when --graph was passed + timestamp).
  *
  * ENV (reuses the server's GGUF config):
  *   GGUF_MODELS_DIR, GGUF_EMBED_MODEL  → query embeddings (MUST match the model the
@@ -62,6 +83,12 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+// doc69 B4 — the REAL production GraphRAG pure functions (no TS-only deps, so Node's
+// built-in type-stripping loads this .ts straight from a plain .mjs — see the GRAPHRAG
+// NOTE above). Not a re-implementation: this is the exact code aiLocalKnowledgeService.ts
+// calls when KB_GRAPHRAG_ENABLED=true.
+import { loadSemanticGraph, expandWithGraph } from "../../server/services/aiSemanticGraph.ts";
 
 const ROOT = process.cwd();
 const KDIR = path.join(ROOT, "knowledge");
@@ -90,6 +117,49 @@ const DO_RERANK =
 const RERANK_REQUESTED = has("--rerank") || has("--force-rerank");
 const TOP_K = Number(val("--topn", "5"));
 const POOL = Number(val("--pool", "20"));
+
+// ─── doc69 B4 — GraphRAG WITH-vs-WITHOUT comparison (--graph) ─────────────────
+const DO_GRAPH = has("--graph");
+// Mirrors graphRagOpts() in server/services/aiLocalKnowledgeService.ts (~:1561-1570).
+// Only the env-var defaults are duplicated here (5 lines) — the actual expansion
+// algorithm is imported directly from aiSemanticGraph.ts above, not re-implemented.
+function graphRagOptsFromEnv() {
+  return {
+    seeds: Number(process.env.KB_GRAPHRAG_SEEDS ?? 5),
+    hopsPerSeed: Number(process.env.KB_GRAPHRAG_HOPS_PER_SEED ?? 3),
+    minSim: Number(process.env.KB_GRAPHRAG_MIN_SIM ?? 0.72),
+    decay: Number(process.env.KB_GRAPHRAG_DECAY ?? 0.85),
+    maxInject: Number(process.env.KB_GRAPHRAG_MAX_INJECT ?? 8),
+  };
+}
+
+/**
+ * PURE (no I/O) — given the already cosine-sorted `scored` list for one question, the
+ * chunk lookup `byId`, the semantic-graph adjacency `adj`, GraphRAG options, and the
+ * seed-pool/top-K sizes, returns the resolved top-K chunk objects GraphRAG expansion
+ * would produce. Exported for a lightweight, model-free unit check (see the --graph
+ * test note in the doc69 B4 report) — it takes no filesystem/model dependency itself,
+ * so it can be exercised with a synthetic `scored`/`byId`/`adj` fixture.
+ *
+ * Seed pool = top `poolSize` cosine candidates (same knob `--pool` already controls for
+ * the reranker). After expandWithGraph injects up to maxInject neighbours, the combined
+ * pool is RE-SORTED by score and cut to `topK` — see the GRAPHRAG NOTE at the top of this
+ * file for why that differs from aiLocalKnowledgeService's own non-reranked ordering.
+ */
+export function graphExpandedTopK(scored, byId, adj, opts, poolSize, topK) {
+  const seedPool = scored.slice(0, poolSize).map((s) => ({ id: s.id, score: s.cos }));
+  const expanded = expandWithGraph(seedPool, adj, opts, (id, score) => {
+    const c = byId.get(id);
+    return c ? { id, score } : null;
+  });
+  const top = expanded.pool
+    .slice()
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+    .map((c) => byId.get(c.id))
+    .filter(Boolean);
+  return { top, injected: expanded.injected };
+}
 
 // ─── CI gate (--ci / KB_EVAL_MIN / KB_EVAL_DOMAIN_MIN) ────────────────────────
 const DO_CI = has("--ci") || process.env.KB_EVAL_MIN != null || process.env.KB_EVAL_DOMAIN_MIN != null;
@@ -195,16 +265,31 @@ async function main() {
   if (!embeddings.length) throw new Error("No embeddings. Run kb:embed first.");
   const corpusDim = embeddings[0].embedding.length;
   const domainCount = new Set(questions.map((q) => q.domain || "(none)")).size;
+
+  // doc69 B4 — load the semantic graph ONCE (not per-question). loadSemanticGraph never
+  // throws: a missing/corrupt knowledge/semantic-graph.json yields an empty Map, which
+  // is the HONEST "graph absent" signal this harness reports below (no fabricated delta).
+  const graphAdj = DO_GRAPH ? loadSemanticGraph() : null;
+  const graphAvailable = DO_GRAPH && graphAdj.size > 0;
+  const graphOpts = DO_GRAPH ? graphRagOptsFromEnv() : null;
+
   console.log(
     `[eval] corpus: ${embeddings.length} vectors (dim=${corpusDim}), ${questions.length} golden questions across ${domainCount} domains, K=${TOP_K}` +
       (DO_RERANK ? `, rerank pool=${POOL}` : "") +
-      (DO_CI ? `, CI gate ON (min=${CI_MIN}, domain-min=${CI_DOMAIN_MIN})` : ""),
+      (DO_CI ? `, CI gate ON (min=${CI_MIN}, domain-min=${CI_DOMAIN_MIN})` : "") +
+      (DO_GRAPH
+        ? graphAvailable
+          ? `, GraphRAG comparison ON (seed-pool=${POOL}, ${graphAdj.size} graph nodes)`
+          : ", GraphRAG comparison requested but knowledge/semantic-graph.json is MISSING/EMPTY"
+        : ""),
   );
 
   const { embedTextGguf } = await import("./_gguf-embed.mjs");
 
   let baseHits = 0;
   let rerankHits = 0;
+  let graphHits = 0;
+  let totalInjected = 0;
   const rows = [];
 
   for (const q of questions) {
@@ -233,13 +318,25 @@ async function main() {
       if (rerankHit) rerankHits++;
     }
 
+    // doc69 B4 — GraphRAG-expanded top-K for the SAME question (cosine-only comparison,
+    // independent of --rerank so the graph signal isn't muddied by the LLM rerank pass).
+    let graphHit = null;
+    if (graphAvailable) {
+      const g = graphExpandedTopK(scored, byId, graphAdj, graphOpts, POOL, TOP_K);
+      totalInjected += g.injected;
+      graphHit = g.top.some((c) => isHit(c, q));
+      if (graphHit) graphHits++;
+    }
+
     // The metric used for per-domain recall + CI = reranked if reranking, else cosine.
+    // (--graph is informational only — it never changes this metric or the CI verdict.)
     const effHit = DO_RERANK ? rerankHit : baseHit;
     rows.push({
       id: q.id,
       domain: q.domain || "(none)",
       base: baseHit ? "HIT" : "miss",
       rerank: DO_RERANK ? (rerankHit ? "HIT" : "miss") : "-",
+      graph: graphAvailable ? (graphHit ? "HIT" : "miss") : DO_GRAPH ? "n/a" : "-",
       effHit,
       top1: baseTop[0]?.sourcePath ?? "(none)",
     });
@@ -249,7 +346,9 @@ async function main() {
   console.log("\n[eval] per-question:");
   for (const r of rows) {
     console.log(
-      `  ${r.id.padEnd(7)} [${r.domain.padEnd(26)}] base=${r.base.padEnd(4)} rerank=${String(r.rerank).padEnd(4)} top1=${r.top1}`,
+      `  ${r.id.padEnd(7)} [${r.domain.padEnd(26)}] base=${r.base.padEnd(4)} rerank=${String(r.rerank).padEnd(4)}` +
+        (DO_GRAPH ? ` graph=${String(r.graph).padEnd(4)}` : "") +
+        ` top1=${r.top1}`,
     );
   }
 
@@ -292,6 +391,44 @@ async function main() {
     console.log("        Run with --rerank and RAG_RERANKER_ENABLED=true to approximate the production reranked recall.");
   }
 
+  // ─── doc69 B4 — GraphRAG WITH-vs-WITHOUT comparison (--graph) ────────────────
+  // Informational only: never affects the CI gate/exit code, never flips KB_GRAPHRAG_ENABLED.
+  // HONEST when the graph is absent — no fabricated delta, just a clear "can't compare" note.
+  let graphRagSummary = null;
+  if (DO_GRAPH) {
+    console.log(`\n[eval] ── GraphRAG comparison (recall@${TOP_K}, cosine-only, --rerank not applied here) ──`);
+    if (!graphAvailable) {
+      console.log("  ✗ SKIPPED — knowledge/semantic-graph.json is missing or empty (no edges to expand with).");
+      console.log("    Build it first: npm run kb:graph   (then re-run: node scripts/ai-kb/eval-rag.mjs --graph)");
+      graphRagSummary = { available: false, reason: "knowledge/semantic-graph.json missing or empty" };
+    } else {
+      const graphRecall = graphHits / n;
+      const baseRecallForGraph = baseHits / n;
+      const delta = graphRecall - baseRecallForGraph;
+      console.log(`  WITHOUT GraphRAG (cosine baseline): ${baseHits}/${n} = ${baseRecallForGraph.toFixed(3)}`);
+      console.log(`  WITH GraphRAG expansion:            ${graphHits}/${n} = ${graphRecall.toFixed(3)}`);
+      console.log(`  delta:                               ${delta >= 0 ? "+" : ""}${delta.toFixed(3)}`);
+      console.log(`  avg neighbours injected/question:    ${(totalInjected / n).toFixed(2)}`);
+      if (delta > 0) {
+        console.log(
+          `  → GraphRAG LIFTS recall@${TOP_K} on this golden set. Consider enabling KB_GRAPHRAG_ENABLED=true` +
+            " (see the enable-after-eval note in .env.example) — record this result first.",
+        );
+      } else if (delta === 0) {
+        console.log(`  → No recall difference on this golden set. Leave KB_GRAPHRAG_ENABLED=false (no measured benefit yet).`);
+      } else {
+        console.log(`  → GraphRAG REDUCED recall@${TOP_K} on this golden set. Do NOT enable — investigate before flipping the flag.`);
+      }
+      graphRagSummary = {
+        available: true,
+        withoutGraph: { hit: baseHits, total: n, recall: Number(baseRecallForGraph.toFixed(4)) },
+        withGraph: { hit: graphHits, total: n, recall: Number(graphRecall.toFixed(4)) },
+        delta: Number(delta.toFixed(4)),
+        avgInjectedPerQuestion: Number((totalInjected / n).toFixed(2)),
+      };
+    }
+  }
+
   // ─── machine-readable summary → knowledge/rag-eval-results.json ──────────────
   const summary = {
     metric: metricLabel,
@@ -299,6 +436,7 @@ async function main() {
     overall: { hit: effHits, total: n, recall: Number((effHits / n).toFixed(4)) },
     cosineBaseline: { hit: baseHits, total: n, recall: Number((baseHits / n).toFixed(4)) },
     reranked: DO_RERANK ? { hit: rerankHits, total: n, recall: Number((rerankHits / n).toFixed(4)) } : null,
+    graphRag: graphRagSummary,
     perDomain: Object.fromEntries(
       domainNames.map((d) => {
         const { hit, total } = domains.get(d);
@@ -351,7 +489,14 @@ async function main() {
   process.exit(DO_CI && ciFail ? 1 : 0);
 }
 
-main().catch((err) => {
-  console.error("[eval] failed:", err?.message ?? err);
-  process.exit(1);
-});
+// doc69 B4 — "run only as the CLI entrypoint" guard. Without this, a test importing
+// `graphExpandedTopK` above would also trigger the full model-loading eval run as a
+// side effect of the import. Behavior for the normal `node scripts/ai-kb/eval-rag.mjs`
+// invocation is unchanged: process.argv[1] IS this file's path in that case.
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMain) {
+  main().catch((err) => {
+    console.error("[eval] failed:", err?.message ?? err);
+    process.exit(1);
+  });
+}

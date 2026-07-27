@@ -10861,7 +10861,40 @@
       "qualityReports": "指导我查看质量报告",
       "rootCause": "指导我进行根本原因分析（RCA）",
       "alerts": "指导我处理缺陷警报"
-    }
+    },
+    "typingSearching": "🔍 正在搜索来源...",
+    "typingAnalyzing": "🧠 正在分析内容...",
+    "typingComposing": "✍️ 正在撰写答案...",
+    "confidenceHigh": "非常相关",
+    "confidenceGood": "比较相关",
+    "confidenceMaybe": "可能有帮助",
+    "confidenceLow": "仅供参考",
+    "notReady": "系统尚未就绪，请稍后再试。",
+    "processingError": "抱歉，处理您的问题时出错，请重试。",
+    "connectionError": "无法连接到系统，请检查网络后重试。",
+    "assistantTitle": "智能助手",
+    "personaDetailedTip": "助手会给出详细、透彻的说明",
+    "personaDetailedLabel": "💬 详细",
+    "clearHistoryTip": "清除记录",
+    "refreshTip": "刷新数据",
+    "minimizeTip": "最小化",
+    "welcomeGreeting": "您好！有什么可以帮您？",
+    "welcomeSubtitle": "向我询问系统使用方法、查看报表、设备设置…",
+    "faqLabel": "常见问题",
+    "cachedBadge": "缓存",
+    "feedbackHelpful": "有帮助",
+    "feedbackNotHelpful": "没帮助",
+    "feedbackThanksPositive": "感谢您的积极反馈！",
+    "feedbackThanksNegative": "谢谢！我们会努力改进。",
+    "feedbackSendFailed": "无法发送反馈。",
+    "dataNotLoaded": "数据尚未加载，请点击上方刷新按钮。",
+    "listeningPlaceholder": "正在聆听...（说出您的问题）",
+    "bubblePlaceholder": "输入您的问题...（按 Enter 发送）",
+    "startingPlaceholder": "正在启动，请稍候...",
+    "clearHistorySuccess": "聊天记录已清除。",
+    "reloadSuccess": "数据刷新成功！",
+    "reloadFailed": "刷新失败。",
+    "genericErrorFallback": "出错了。"
   },
   "aiGuided": {
     "sectionTitle": "引导式工程任务",
@@ -12504,7 +12537,9 @@
   },
   "voice": {
     "speak": "说话",
-    "stop": "停止"
+    "stop": "停止",
+    "notSupported": "您的浏览器不支持语音识别。",
+    "recognitionFailed": "未能识别语音，请重试。"
   },
   "apiKeys": {
     "title": "API 密钥",

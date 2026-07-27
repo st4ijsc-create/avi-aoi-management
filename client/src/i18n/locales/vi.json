@@ -11061,7 +11061,40 @@
       "qualityReports": "Hướng dẫn tôi cách xem báo cáo chất lượng",
       "rootCause": "Hướng dẫn tôi cách phân tích nguyên nhân gốc rễ (RCA)",
       "alerts": "Hướng dẫn tôi cách xử lý cảnh báo lỗi"
-    }
+    },
+    "typingSearching": "🔍 Đang tìm kiếm nguồn...",
+    "typingAnalyzing": "🧠 Đang phân tích nội dung...",
+    "typingComposing": "✍️ Đang soạn câu trả lời...",
+    "confidenceHigh": "Rất phù hợp",
+    "confidenceGood": "Khá phù hợp",
+    "confidenceMaybe": "Có thể hữu ích",
+    "confidenceLow": "Tham khảo thêm",
+    "notReady": "Hệ thống chưa sẵn sàng. Vui lòng thử lại sau.",
+    "processingError": "Xin lỗi, có lỗi xảy ra khi xử lý câu hỏi. Vui lòng thử lại.",
+    "connectionError": "Không thể kết nối đến hệ thống. Vui lòng kiểm tra mạng và thử lại.",
+    "assistantTitle": "Trợ lý thông minh",
+    "personaDetailedTip": "Trợ lý trả lời chi tiết, giải thích cặn kẽ",
+    "personaDetailedLabel": "💬 Chi tiết",
+    "clearHistoryTip": "Xóa lịch sử",
+    "refreshTip": "Làm mới dữ liệu",
+    "minimizeTip": "Thu nhỏ",
+    "welcomeGreeting": "Xin chào! Tôi có thể giúp gì?",
+    "welcomeSubtitle": "Hỏi tôi về cách sử dụng hệ thống, xem báo cáo, cài đặt máy móc…",
+    "faqLabel": "Câu hỏi thường gặp",
+    "cachedBadge": "Cache",
+    "feedbackHelpful": "Hữu ích",
+    "feedbackNotHelpful": "Chưa hữu ích",
+    "feedbackThanksPositive": "Cảm ơn phản hồi tích cực!",
+    "feedbackThanksNegative": "Cảm ơn! Chúng tôi sẽ cải thiện.",
+    "feedbackSendFailed": "Không thể gửi phản hồi.",
+    "dataNotLoaded": "Dữ liệu chưa tải. Nhấn nút làm mới ở trên.",
+    "listeningPlaceholder": "Đang nghe... (nói câu hỏi của bạn)",
+    "bubblePlaceholder": "Nhập câu hỏi... (Enter để gửi)",
+    "startingPlaceholder": "Đang khởi động, vui lòng chờ...",
+    "clearHistorySuccess": "Đã xóa lịch sử trò chuyện.",
+    "reloadSuccess": "Cập nhật dữ liệu thành công!",
+    "reloadFailed": "Cập nhật thất bại.",
+    "genericErrorFallback": "Có lỗi xảy ra."
   },
   "aiGuided": {
     "sectionTitle": "Tác vụ kỹ thuật có hướng dẫn",
@@ -12704,7 +12737,9 @@
   },
   "voice": {
     "speak": "Nói",
-    "stop": "Dừng nói"
+    "stop": "Dừng nói",
+    "notSupported": "Trình duyệt không hỗ trợ nhận dạng giọng nói.",
+    "recognitionFailed": "Không nhận diện được giọng nói. Vui lòng thử lại."
   },
   "apiKeys": {
     "title": "Khoá API",

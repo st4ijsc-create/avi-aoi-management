@@ -126,17 +126,22 @@ const QUICK_QUESTIONS_BY_ROLE: Record<
   ],
 };
 
-const TYPING_STAGES = [
-  "🔍 Đang tìm kiếm nguồn...",
-  "🧠 Đang phân tích nội dung...",
-  "✍️ Đang soạn câu trả lời...",
+// doc69 B4 — key+fallback tuples (same shape as QUICK_QUESTIONS_BY_ROLE above) so the
+// rotating typing-stage text resolves through t() at the render site (this array is
+// module-level, outside the component, so it has no access to the `t` hook itself).
+const TYPING_STAGES: { key: string; fallback: string }[] = [
+  { key: "aiChat.typingSearching", fallback: "🔍 Đang tìm kiếm nguồn..." },
+  { key: "aiChat.typingAnalyzing", fallback: "🧠 Đang phân tích nội dung..." },
+  { key: "aiChat.typingComposing", fallback: "✍️ Đang soạn câu trả lời..." },
 ];
 
-function getConfidenceLabel(score: number) {
-  if (score >= 0.8) return { label: "Rất phù hợp", color: "text-green-600", icon: "✅" };
-  if (score >= 0.6) return { label: "Khá phù hợp", color: "text-blue-600", icon: "👍" };
-  if (score >= 0.4) return { label: "Có thể hữu ích", color: "text-amber-600", icon: "💡" };
-  return { label: "Tham khảo thêm", color: "text-gray-500", icon: "📖" };
+// doc69 B4 — takes `t` as a parameter (module-level function, no hook access) so the
+// confidence label localizes instead of always rendering the Vietnamese literal.
+function getConfidenceLabel(score: number, t: (key: string, fallback: string) => string) {
+  if (score >= 0.8) return { label: t("aiChat.confidenceHigh", "Rất phù hợp"), color: "text-green-600", icon: "✅" };
+  if (score >= 0.6) return { label: t("aiChat.confidenceGood", "Khá phù hợp"), color: "text-blue-600", icon: "👍" };
+  if (score >= 0.4) return { label: t("aiChat.confidenceMaybe", "Có thể hữu ích"), color: "text-amber-600", icon: "💡" };
+  return { label: t("aiChat.confidenceLow", "Tham khảo thêm"), color: "text-gray-500", icon: "📖" };
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -423,7 +428,7 @@ export function AILocalChatBubble() {
           : null;
 
     if (!SRConstructor) {
-      toast.error("Trình duyệt không hỗ trợ nhận dạng giọng nói.");
+      toast.error(t("voice.notSupported", "Trình duyệt không hỗ trợ nhận dạng giọng nói."));
       return;
     }
 
@@ -445,7 +450,7 @@ export function AILocalChatBubble() {
 
     recognition.onerror = () => {
       setIsListening(false);
-      toast.error("Không nhận diện được giọng nói. Vui lòng thử lại.");
+      toast.error(t("voice.recognitionFailed", "Không nhận diện được giọng nói. Vui lòng thử lại."));
     };
 
     recognition.onend = () => setIsListening(false);
@@ -453,7 +458,7 @@ export function AILocalChatBubble() {
     recognitionRef.current = recognition;
     recognition.start();
     setIsListening(true);
-  }, [isListening]);
+  }, [isListening, t]);
 
   // ─── P3/D8 (doc 34) — image attach / remove / paste ─────────────────────────
   const notifyImageError = useCallback(
@@ -500,7 +505,7 @@ export function AILocalChatBubble() {
         (image ? t("aiChat.imageDefaultPrompt", "Ảnh này cho thấy gì? Hãy giải thích.") : "");
       if (!query || isStreaming) return;
       if (!isReady) {
-        toast.error("Hệ thống chưa sẵn sàng. Vui lòng thử lại sau.");
+        toast.error(t("aiChat.notReady", "Hệ thống chưa sẵn sàng. Vui lòng thử lại sau."));
         return;
       }
 
@@ -738,11 +743,16 @@ export function AILocalChatBubble() {
                 };
               }
             } else {
-              accumulatedContent =
-                "Xin lỗi, có lỗi xảy ra khi xử lý câu hỏi. Vui lòng thử lại.";
+              accumulatedContent = t(
+                "aiChat.processingError",
+                "Xin lỗi, có lỗi xảy ra khi xử lý câu hỏi. Vui lòng thử lại.",
+              );
             }
           } catch {
-            accumulatedContent = "Không thể kết nối đến hệ thống. Vui lòng kiểm tra mạng và thử lại.";
+            accumulatedContent = t(
+              "aiChat.connectionError",
+              "Không thể kết nối đến hệ thống. Vui lòng kiểm tra mạng và thử lại.",
+            );
           }
         }
       } finally {
@@ -751,11 +761,17 @@ export function AILocalChatBubble() {
         abortRef.current = null;
       }
 
+      // doc69 B4 — reuses the existing aiChat.noAnswer key (same string AIChatPage.tsx
+      // already renders for this fallback); `lng` forces the reply's DETECTED question
+      // language (metaResult.language), not the active UI locale — preserves the
+      // pre-existing en-vs-vi selection behavior exactly (only en/vi were ever chosen
+      // here; the UI-locale-driven default the option omits was never in play before).
       const finalContent =
         accumulatedContent ||
-        (metaResult?.language === "en"
-          ? "I couldn't find a suitable answer. Please try rephrasing."
-          : "Tôi chưa tìm được câu trả lời phù hợp. Vui lòng thử câu hỏi khác.");
+        t("aiChat.noAnswer", {
+          defaultValue: "Tôi chưa tìm được câu trả lời phù hợp. Vui lòng thử câu hỏi khác.",
+          lng: metaResult?.language === "en" ? "en" : "vi",
+        });
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -802,12 +818,16 @@ export function AILocalChatBubble() {
         setMessages((prev) =>
           prev.map((m) => (m.id === msg.id ? { ...m, feedbackGiven: vote } : m)),
         );
-        toast.success(vote === "up" ? "Cảm ơn phản hồi tích cực!" : "Cảm ơn! Chúng tôi sẽ cải thiện.");
+        toast.success(
+          vote === "up"
+            ? t("aiChat.feedbackThanksPositive", "Cảm ơn phản hồi tích cực!")
+            : t("aiChat.feedbackThanksNegative", "Cảm ơn! Chúng tôi sẽ cải thiện."),
+        );
       } catch {
-        toast.error("Không thể gửi phản hồi.");
+        toast.error(t("aiChat.feedbackSendFailed", "Không thể gửi phản hồi."));
       }
     },
-    [messages, feedbackMutation],
+    [messages, feedbackMutation, t],
   );
 
   // ─── GĐ2 — Confirm / cancel write-action ──────────────────────────────────────
@@ -1036,16 +1056,16 @@ export function AILocalChatBubble() {
   const handleClearHistory = useCallback(() => {
     setMessages([]);
     localStorage.removeItem(STORAGE_MESSAGES_KEY);
-    toast.success("Đã xóa lịch sử trò chuyện.");
-  }, []);
+    toast.success(t("aiChat.clearHistorySuccess", "Đã xóa lịch sử trò chuyện."));
+  }, [t]);
 
   const handleReload = async () => {
     try {
       const result = await reloadMutation.mutateAsync();
-      if (result.success) toast.success("Cập nhật dữ liệu thành công!");
-      else toast.error(result.error || "Cập nhật thất bại.");
+      if (result.success) toast.success(t("aiChat.reloadSuccess", "Cập nhật dữ liệu thành công!"));
+      else toast.error(result.error || t("aiChat.reloadFailed", "Cập nhật thất bại."));
     } catch (error: any) {
-      toast.error(error.message || "Có lỗi xảy ra.");
+      toast.error(error.message || t("aiChat.genericErrorFallback", "Có lỗi xảy ra."));
     }
   };
 
@@ -1072,7 +1092,7 @@ export function AILocalChatBubble() {
                 <Bot className="size-4 text-primary-foreground" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold leading-none">Trợ lý thông minh</p>
+                <p className="text-sm font-semibold leading-none">{t("aiChat.assistantTitle", "Trợ lý thông minh")}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   {/* W0.2/W0.3 (doc 11) — honest status badge (green/amber/red). */}
                   {healthLoading ? (
@@ -1117,9 +1137,9 @@ export function AILocalChatBubble() {
                   {/* Persona fixed: trợ lý chi tiết cho mọi người dùng */}
                   <span
                     className="text-xs px-1.5 py-0.5 rounded-full border bg-muted ml-1 leading-none text-muted-foreground"
-                    title="Trợ lý trả lời chi tiết, giải thích cặn kẽ"
+                    title={t("aiChat.personaDetailedTip", "Trợ lý trả lời chi tiết, giải thích cặn kẽ")}
                   >
-                    💬 Chi tiết
+                    {t("aiChat.personaDetailedLabel", "💬 Chi tiết")}
                   </span>
                   {/* doc69 B1 (Wave 5) — KB corpus age badge. staleDays is computed server-side
                       (aiLocalKnowledgeService.wholeDaysSince) and was already returned in the
@@ -1187,7 +1207,7 @@ export function AILocalChatBubble() {
                 variant="ghost"
                 className="h-7 w-7 text-muted-foreground hover:text-foreground"
                 onClick={handleClearHistory}
-                title="Xóa lịch sử"
+                title={t("aiChat.clearHistoryTip", "Xóa lịch sử")}
                 disabled={messages.length === 0}
               >
                 <Trash2 className="size-3.5" />
@@ -1198,14 +1218,14 @@ export function AILocalChatBubble() {
                 className="h-7 w-7 text-muted-foreground hover:text-foreground"
                 onClick={handleReload}
                 disabled={reloadMutation.isPending}
-                title="Làm mới dữ liệu"
+                title={t("aiChat.refreshTip", "Làm mới dữ liệu")}
               >
                 <RefreshCw className={cn("size-3.5", reloadMutation.isPending && "animate-spin")} />
               </Button>
-              <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setMinimized(true)} title="Thu nhỏ">
+              <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setMinimized(true)} title={t("aiChat.minimizeTip", "Thu nhỏ")}>
                 <Minus className="size-3.5" />
               </Button>
-              <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)} title="Đóng">
+              <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)} title={t("common.close", "Đóng")}>
                 <X className="size-3.5" />
               </Button>
             </div>
@@ -1219,15 +1239,15 @@ export function AILocalChatBubble() {
                   <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center">
                     <Sparkles className="h-6 w-6 text-primary" />
                   </div>
-                  <p className="font-semibold text-sm">Xin chào! Tôi có thể giúp gì?</p>
+                  <p className="font-semibold text-sm">{t("aiChat.welcomeGreeting", "Xin chào! Tôi có thể giúp gì?")}</p>
                   <p className="text-xs text-muted-foreground max-w-64">
-                    Hỏi tôi về cách sử dụng hệ thống, xem báo cáo, cài đặt máy móc…
+                    {t("aiChat.welcomeSubtitle", "Hỏi tôi về cách sử dụng hệ thống, xem báo cáo, cài đặt máy móc…")}
                   </p>
                 </div>
                 <div className="w-full">
                   <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1 justify-center">
                     <Lightbulb className="size-3" />
-                    Câu hỏi thường gặp
+                    {t("aiChat.faqLabel", "Câu hỏi thường gặp")}
                   </p>
                   <div className="flex flex-wrap gap-1.5 justify-center">
                     {quickQuestions.map((q, i) => (
@@ -1307,7 +1327,9 @@ export function AILocalChatBubble() {
                                 <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
                                 <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
                               </div>
-                              <span className="text-xs text-muted-foreground">{TYPING_STAGES[typingStage]}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {t(TYPING_STAGES[typingStage].key, TYPING_STAGES[typingStage].fallback)}
+                              </span>
                             </div>
                           ) : (
                             <>
@@ -1358,7 +1380,7 @@ export function AILocalChatBubble() {
                                     )}
                                     {msg.result.structured.steps && msg.result.structured.steps.length > 0 && (
                                       <div className="text-[11px] bg-background/60 border border-border/40 rounded px-2 py-1.5">
-                                        <p className="font-semibold text-muted-foreground mb-1">Các bước thực hiện</p>
+                                        <p className="font-semibold text-muted-foreground mb-1">{t("aiChat.stepsTitle", "Các bước thực hiện")}</p>
                                         <ol className="list-decimal list-inside space-y-0.5 marker:text-primary marker:font-semibold">
                                           {msg.result.structured.steps.map((s, i) => (
                                             <li key={i} className="leading-snug">{s}</li>
@@ -1368,7 +1390,7 @@ export function AILocalChatBubble() {
                                     )}
                                     {msg.result.structured.recommendations && msg.result.structured.recommendations.length > 0 && (
                                       <div className="text-[11px] bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded px-2 py-1.5">
-                                        <p className="font-semibold text-amber-700 dark:text-amber-400 mb-1">Khuyến nghị</p>
+                                        <p className="font-semibold text-amber-700 dark:text-amber-400 mb-1">{t("aiChat.recommendationsTitle", "Khuyến nghị")}</p>
                                         <ul className="list-disc list-inside space-y-0.5">
                                           {msg.result.structured.recommendations.map((r, i) => (
                                             <li key={i} className="leading-snug">{r}</li>
@@ -1398,7 +1420,7 @@ export function AILocalChatBubble() {
                           {msg.result && !msg.streaming && (
                             <div className="flex items-center gap-1.5 pt-1 border-t border-border/30 flex-wrap">
                               {(() => {
-                                const conf = getConfidenceLabel(msg.result.confidence ?? 0);
+                                const conf = getConfidenceLabel(msg.result.confidence ?? 0, t);
                                 return (
                                   <span className={cn("text-xs flex items-center gap-0.5", conf.color)}>
                                     {conf.icon} {conf.label}
@@ -1411,17 +1433,21 @@ export function AILocalChatBubble() {
                                   onClick={() => setShowSources(showSources === msg.id ? null : msg.id)}
                                 >
                                   <BookOpen className="size-3" />
-                                  {msg.result.citations.length} nguồn
+                                  {t("aiChat.sourcesCount", "{{count}} nguồn", { count: msg.result.citations.length })}
                                 </button>
                               )}
-                              {msg.result.cached && <Badge variant="secondary" className="text-xs h-4 px-1.5">Cache</Badge>}
+                              {msg.result.cached && (
+                                <Badge variant="secondary" className="text-xs h-4 px-1.5">
+                                  {t("aiChat.cachedBadge", "Cache")}
+                                </Badge>
+                              )}
                               {/* Feedback buttons */}
                               <div className="ml-auto flex items-center gap-0.5">
                                 <button
                                   className={cn("p-0.5 rounded hover:bg-background/50 transition-colors", msg.feedbackGiven === "up" && "text-green-600")}
                                   onClick={() => handleFeedback(msg, "up")}
                                   disabled={!!msg.feedbackGiven}
-                                  title="Hữu ích"
+                                  title={t("aiChat.feedbackHelpful", "Hữu ích")}
                                 >
                                   <ThumbsUp className="size-3" />
                                 </button>
@@ -1429,7 +1455,7 @@ export function AILocalChatBubble() {
                                   className={cn("p-0.5 rounded hover:bg-background/50 transition-colors", msg.feedbackGiven === "down" && "text-red-500")}
                                   onClick={() => handleFeedback(msg, "down")}
                                   disabled={!!msg.feedbackGiven}
-                                  title="Chưa hữu ích"
+                                  title={t("aiChat.feedbackNotHelpful", "Chưa hữu ích")}
                                 >
                                   <ThumbsDown className="size-3" />
                                 </button>
@@ -1467,7 +1493,7 @@ export function AILocalChatBubble() {
                           {msg.result?.followUpSuggestions && !msg.streaming && (
                             <div className="pt-1 border-t border-border/30">
                               <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                                <ChevronRight className="size-3" /> Câu hỏi tiếp theo:
+                                <ChevronRight className="size-3" /> {t("aiChat.followUps", "Câu hỏi tiếp theo")}:
                               </p>
                               <div className="flex flex-col gap-1">
                                 {msg.result.followUpSuggestions.slice(0, 2).map((suggestion, i) => (
@@ -1565,7 +1591,7 @@ export function AILocalChatBubble() {
             {!isReady && !healthLoading && (
               <div className="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
                 <AlertCircle className="size-3.5 text-amber-600 shrink-0" />
-                Dữ liệu chưa tải. Nhấn nút làm mới ở trên.
+                {t("aiChat.dataNotLoaded", "Dữ liệu chưa tải. Nhấn nút làm mới ở trên.")}
               </div>
             )}
             {/* P3/D8 (doc 34) — attached-image preview chip (remove with ×). */}
@@ -1605,10 +1631,10 @@ export function AILocalChatBubble() {
               <Textarea
                 placeholder={
                   isListening
-                    ? "Đang nghe... (nói câu hỏi của bạn)"
+                    ? t("aiChat.listeningPlaceholder", "Đang nghe... (nói câu hỏi của bạn)")
                     : isReady
-                      ? "Nhập câu hỏi... (Enter để gửi)"
-                      : "Đang khởi động, vui lòng chờ..."
+                      ? t("aiChat.bubblePlaceholder", "Nhập câu hỏi... (Enter để gửi)")
+                      : t("aiChat.startingPlaceholder", "Đang khởi động, vui lòng chờ...")
                 }
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
@@ -1690,7 +1716,7 @@ export function AILocalChatBubble() {
           onClick={() => setMinimized(false)}
         >
           <Bot className="size-4" />
-          <span className="text-sm font-medium">Trợ lý thông minh</span>
+          <span className="text-sm font-medium">{t("aiChat.assistantTitle", "Trợ lý thông minh")}</span>
           {isStreaming && <Loader2 className="size-3.5 animate-spin" />}
         </button>
       )}

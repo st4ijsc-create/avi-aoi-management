@@ -11078,7 +11078,40 @@
       "qualityReports": "Walk me through viewing quality reports",
       "rootCause": "Walk me through root-cause analysis (RCA)",
       "alerts": "Walk me through handling defect alerts"
-    }
+    },
+    "typingSearching": "🔍 Searching sources...",
+    "typingAnalyzing": "🧠 Analyzing content...",
+    "typingComposing": "✍️ Composing the answer...",
+    "confidenceHigh": "Highly relevant",
+    "confidenceGood": "Fairly relevant",
+    "confidenceMaybe": "Might be helpful",
+    "confidenceLow": "For reference only",
+    "notReady": "The system isn't ready yet. Please try again later.",
+    "processingError": "Sorry, something went wrong while processing your question. Please try again.",
+    "connectionError": "Couldn't connect to the system. Please check your network and try again.",
+    "assistantTitle": "Smart Assistant",
+    "personaDetailedTip": "The assistant gives detailed, thorough explanations",
+    "personaDetailedLabel": "💬 Detailed",
+    "clearHistoryTip": "Clear history",
+    "refreshTip": "Refresh data",
+    "minimizeTip": "Minimize",
+    "welcomeGreeting": "Hi! How can I help?",
+    "welcomeSubtitle": "Ask me about using the system, viewing reports, machine setup…",
+    "faqLabel": "Frequently asked",
+    "cachedBadge": "Cached",
+    "feedbackHelpful": "Helpful",
+    "feedbackNotHelpful": "Not helpful",
+    "feedbackThanksPositive": "Thanks for the positive feedback!",
+    "feedbackThanksNegative": "Thanks! We'll work on improving this.",
+    "feedbackSendFailed": "Couldn't send feedback.",
+    "dataNotLoaded": "Data not loaded. Tap the refresh button above.",
+    "listeningPlaceholder": "Listening... (say your question)",
+    "bubblePlaceholder": "Type your question... (Enter to send)",
+    "startingPlaceholder": "Starting up, please wait...",
+    "clearHistorySuccess": "Chat history cleared.",
+    "reloadSuccess": "Data refreshed successfully!",
+    "reloadFailed": "Refresh failed.",
+    "genericErrorFallback": "Something went wrong."
   },
   "aiGuided": {
     "sectionTitle": "Guided engineering tasks",
@@ -12721,7 +12754,9 @@
   },
   "voice": {
     "speak": "Speak",
-    "stop": "Stop"
+    "stop": "Stop",
+    "notSupported": "Your browser doesn't support voice recognition.",
+    "recognitionFailed": "Couldn't recognize your voice. Please try again."
   },
   "apiKeys": {
     "title": "API Keys",
