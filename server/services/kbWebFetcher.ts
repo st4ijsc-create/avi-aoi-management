@@ -183,6 +183,14 @@ const BLOCKED_V6_CIDRS: Array<[base: string, prefix: number]> = [
   ["fe80::", 10], // link-local
   ["::", 128], // unspecified
   ["ff00::", 8], // multicast (not in the brief's explicit list, safe/standard addition)
+  // IPv6-embedded-IPv4 escape forms: unlike `::ffff:/96` (v4-mapped, which BlockList already
+  // auto-normalizes to its embedded v4 form — see the comment above this table), these two
+  // encodings are NOT auto-decoded by BlockList, so a literal like "64:ff9b::169.254.169.254" or
+  // "2002:7f00:0001::" (which embed the cloud-metadata address / 127.0.0.1 respectively) would
+  // sail through the v4 CIDR table entirely undetected. Rather than decode-then-recheck (extra
+  // parsing surface for a security control), the whole translation prefix is blocked outright.
+  ["64:ff9b::", 96], // NAT64 well-known prefix (RFC 6052) — carries an embedded IPv4 address
+  ["2002::", 16], // 6to4 (RFC 3056) — carries an embedded IPv4 address in bits 16-47
 ];
 
 function buildBlockList(): BlockList {
@@ -211,7 +219,7 @@ export function isBlockedIp(ip: string): boolean {
 
 // ─── DNS + scheme + allowlist validation (guard layers 1-3) ────────────────────────────────
 
-interface ValidatedTarget {
+export interface ValidatedTarget {
   url: URL;
   address: string;
   family: 4 | 6;
@@ -268,46 +276,83 @@ async function validateTarget(url: URL): Promise<ValidatedTarget> {
 /** Custom `lookup` for http(s).request: ignores whatever hostname Node would otherwise
  * re-resolve and always hands back the ALREADY-VALIDATED address — the connect step performs
  * no DNS resolution of its own. Host header / TLS SNI still come from `options.hostname`
- * (the real hostname), so this only pins the raw socket destination, not certificate identity. */
+ * (the real hostname), so this only pins the raw socket destination, not certificate identity.
+ *
+ * ROBUST TO BOTH lookup-callback CONTRACTS Node uses, verified against real Node v24: `http(s)
+ * .request` defaults to `autoSelectFamily: true` (Node 20+), which invokes `lookup` with
+ * `options.all === true` and expects the callback to reply with an ARRAY of `{address, family}`
+ * (the Happy-Eyeballs multi-address shape) — replying with the legacy 3-arg `(err, address,
+ * family)` form in that case makes Node throw "Invalid IP address: undefined" and EVERY real
+ * request fails closed (safe, but non-functional; the fully-mocked test suite never drove this
+ * real contract, so it missed the bug). `singleHop` below also sets `autoSelectFamily: false`
+ * (pinning to the single validated family, disabling happy-eyeballs), so in practice the legacy
+ * branch is what actually runs — but this function replies correctly under EITHER contract
+ * (belt-and-suspenders), so it stays correct even if that request option is ever removed. */
 function pinnedLookup(address: string, family: 4 | 6) {
   return (
     _hostname: string,
     optionsOrCallback: unknown,
-    maybeCallback?: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
+    maybeCallback?: (...args: unknown[]) => void,
   ): void => {
-    const callback =
-      typeof optionsOrCallback === "function"
-        ? (optionsOrCallback as (err: NodeJS.ErrnoException | null, address: string, family: number) => void)
-        : maybeCallback!;
-    callback(null, address, family);
+    const isDirectCallback = typeof optionsOrCallback === "function";
+    const options = isDirectCallback ? undefined : (optionsOrCallback as { all?: boolean } | null | undefined);
+    const callback = (isDirectCallback ? optionsOrCallback : maybeCallback) as (...args: unknown[]) => void;
+
+    if (options?.all === true) {
+      // Array-of-addresses contract (autoSelectFamily / happy-eyeballs lookup shape).
+      callback(null, [{ address, family }]);
+    } else {
+      // Legacy single-address contract.
+      callback(null, address, family);
+    }
   };
 }
 
-type HopResult =
+export type HopResult =
   | { redirectTo: URL }
   | { statusCode: number; headers: http.IncomingHttpHeaders; body: Buffer };
 
-function singleHop(target: ValidatedTarget, signal: AbortSignal): Promise<HopResult> {
+/** Exported for testing only (the unmocked loopback transport test in
+ * kbWebFetcher.transport.test.ts drives this directly with an already-validated target, since
+ * the SSRF guard correctly refuses to validate a loopback target — see that file's header
+ * comment). Not part of the module's intended public API surface otherwise. */
+export function singleHop(target: ValidatedTarget, signal: AbortSignal): Promise<HopResult> {
   return new Promise<HopResult>((resolve, reject) => {
     const { url, address, family } = target;
     const lib = url.protocol === "https:" ? https : http;
     const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
 
-    const req = lib.request(
-      {
-        hostname: url.hostname,
-        port,
-        path: `${url.pathname}${url.search}`,
-        method: "GET",
-        lookup: pinnedLookup(address, family) as unknown as http.RequestOptions["lookup"],
-        headers: {
-          "User-Agent": USER_AGENT,
-          Accept: "text/html,text/plain,application/pdf",
-          // Deliberately NO cookies, NO Authorization, NO other credential headers — this is a
-          // fresh, unauthenticated, uncredentialed request every time.
-        },
-        signal,
+    // `autoSelectFamily` is a real, respected runtime option on http(s).request — Node forwards
+    // unrecognized request options through to the underlying `net.createConnection`/`tls.connect`
+    // call, which is where `autoSelectFamily` is actually consumed — but @types/node only
+    // declares it on `net.TcpSocketConnectOpts`, not on `http.RequestOptions`/
+    // `ClientRequestArgs` (a DefinitelyTyped gap, not a runtime restriction; verified empirically
+    // against real Node v24 — see pinnedLookup's doc comment above for why this option matters).
+    // Typing the options object explicitly (rather than inline) avoids TS's excess-property
+    // check on object literals while keeping everything else strictly typed.
+    const requestOptions: http.RequestOptions & { autoSelectFamily?: boolean } = {
+      hostname: url.hostname,
+      port,
+      path: `${url.pathname}${url.search}`,
+      method: "GET",
+      // Pin to the single validated address family and disable Node's default happy-eyeballs
+      // auto-family-selection — that default is what makes Node invoke `lookup` with the
+      // array-of-addresses contract (see pinnedLookup's doc comment above). Disabling it here
+      // means the socket connects via exactly the family we already validated, no ambiguity.
+      family,
+      autoSelectFamily: false,
+      lookup: pinnedLookup(address, family) as unknown as http.RequestOptions["lookup"],
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "text/html,text/plain,application/pdf",
+        // Deliberately NO cookies, NO Authorization, NO other credential headers — this is a
+        // fresh, unauthenticated, uncredentialed request every time.
       },
+      signal,
+    };
+
+    const req = lib.request(
+      requestOptions,
       (res) => {
         const status = res.statusCode ?? 0;
 

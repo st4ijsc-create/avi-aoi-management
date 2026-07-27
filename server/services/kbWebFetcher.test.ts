@@ -200,6 +200,10 @@ describe("isBlockedIp — block matrix", () => {
     ["::ffff:8.8.8.8", false, "IPv4-mapped public"],
     ["2001:4860:4860::8888", false, "public IPv6 (Google DNS)"],
     ["2606:4700:4700::1111", false, "public IPv6 (Cloudflare)"],
+    ["64:ff9b::169.254.169.254", true, "NAT64 (RFC 6052) embedding cloud-metadata IPv4"],
+    ["64:ff9b::7f00:1", true, "NAT64 (RFC 6052) embedding 127.0.0.1 (hex form)"],
+    ["2002:7f00:0001::", true, "6to4 (RFC 3056) embedding 127.0.0.1"],
+    ["2002:a9fe:a9fe::", true, "6to4 (RFC 3056) embedding 169.254.169.254"],
   ])("isBlockedIp(%s) === %s (%s)", (ip, expected) => {
     expect(isBlockedIp(ip)).toBe(expected);
   });
