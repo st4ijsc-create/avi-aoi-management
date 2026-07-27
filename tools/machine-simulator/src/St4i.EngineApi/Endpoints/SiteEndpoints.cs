@@ -48,6 +48,15 @@ namespace St4i.EngineApi.Endpoints;
 /// (<c>Connecting</c> → <c>Connected</c>/<c>Degraded</c> + <c>LastError</c>) that <c>GET /v1/site</c>
 /// already exposes IS the operator's connection feedback once a link is saved, so a dedicated pre-save
 /// probe is a follow-up, not a blocker for this task.</para>
+///
+/// <para><b>GĐ3 sub-2 SD-1</b> (<c>.superpowers/sdd/2026-07-27-giaidoan3-mdns-join-wizard-blueprint/task-1-brief.md</c>)
+/// adds <c>GET /v1/site/discover</c>: an mDNS LAN scan (<see cref="St4i.EdgeCore.Site.ISiteDiscovery"/>) so
+/// the web join wizard can pre-fill a Site's host/port instead of an operator hand-typing them. Engineer
+/// (an ACTIVE network scan — sends a real multicast query onto the LAN — is a step up from the read-only
+/// Operator-level <c>GET /v1/site</c>/<c>GET /v1/site/identity</c> above, but still read-only from THIS
+/// device's own state's point of view: it changes nothing, persists nothing, so no audit row). Discovery
+/// never changes trust — see <see cref="St4i.EdgeCore.Site.SiteDiscovery"/>'s own doc comment; the operator
+/// still pins the Site's certificate via the UNCHANGED <c>PUT /v1/site</c> above.</para>
 /// </summary>
 public static class SiteEndpoints
 {
@@ -56,6 +65,7 @@ public static class SiteEndpoints
         app.MapGet("/v1/site", GetSiteAsync).RequireAuthorization(Policies.Operator);
         app.MapPut("/v1/site", PutSiteAsync).RequireAuthorization(Policies.Engineer);
         app.MapGet("/v1/site/identity", GetIdentityAsync).RequireAuthorization(Policies.Operator);
+        app.MapGet("/v1/site/discover", DiscoverAsync).RequireAuthorization(Policies.Engineer);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -148,6 +158,16 @@ public static class SiteEndpoints
     // ─────────────────────────────────────────────────────────────────────
     internal static IResult GetIdentityAsync(DeviceIdentity identity) =>
         Results.Ok(new SiteIdentityDto(identity.Fingerprint, identity.CertificatePem));
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GET /v1/site/discover — mDNS LAN browse (SD-1). Bounded ~4s; empty array is a legitimate result
+    // (no Site advertising on this LAN segment, or none reachable within the window) — never a 404/500.
+    // ─────────────────────────────────────────────────────────────────────
+    internal static async Task<IResult> DiscoverAsync(ISiteDiscovery discovery, CancellationToken ct)
+    {
+        var sites = await discovery.DiscoverAsync(TimeSpan.FromSeconds(4), ct).ConfigureAwait(false);
+        return Results.Ok(sites);
+    }
 
     /// <summary>Fail-closed, same intent as <see cref="SiteTrustPin.IsTrusted"/>: a blank/missing PEM, or
     /// one that doesn't parse into at least one certificate, is rejected (400) rather than silently

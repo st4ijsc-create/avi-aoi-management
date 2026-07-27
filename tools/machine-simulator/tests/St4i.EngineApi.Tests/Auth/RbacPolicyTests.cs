@@ -210,6 +210,7 @@ public sealed class RbacPolicyTests
         new("/v1/historian/oee/settings", new[] { "PUT" }, Policies.Engineer),
         new("/v1/assets/{code}/lifecycle", new[] { "PUT" }, Policies.Engineer),
         new("/v1/site", new[] { "PUT" }, Policies.Engineer),
+        new("/v1/site/discover", new[] { "GET" }, Policies.Engineer),
         new("/v1/inspector/stream", Array.Empty<string>(), Policies.Engineer),
 
         // Admin

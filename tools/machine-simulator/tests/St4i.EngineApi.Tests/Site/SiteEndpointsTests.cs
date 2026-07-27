@@ -300,6 +300,41 @@ public sealed class SiteEndpointsTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // GET /v1/site/discover — GĐ3 sub-2 SD-1 (mDNS LAN browse). Engineer 200 with an array (empty is fine
+    // — no real Site advertising in the test env); Operator 403 (an ACTIVE network scan is Engineer, one
+    // step up from the read-only Operator-level GET /v1/site above — see SiteEndpoints' own doc comment).
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Engineer_GetsDiscover_Returns200WithAnArray()
+    {
+        await using var factory = await CreateFactoryAsync();
+        await BootstrapAdminAsync(factory, "site-admin-11", "AdminPass123!");
+        await CreateUserAsync(factory, "site-engineer-11", "EngineerPass123!", Roles.Engineer);
+
+        using var engineerClient = await LoginAsAsync(factory, "site-engineer-11", "EngineerPass123!");
+
+        using var discover = await engineerClient.GetAsync("/v1/site/discover");
+        Assert.Equal(HttpStatusCode.OK, discover.StatusCode);
+
+        var sites = await discover.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        Assert.Equal(JsonValueKind.Array, sites.ValueKind);
+    }
+
+    [Fact]
+    public async Task Operator_GetsDiscover_Gets403()
+    {
+        await using var factory = await CreateFactoryAsync();
+        await BootstrapAdminAsync(factory, "site-admin-12", "AdminPass123!");
+        await CreateUserAsync(factory, "site-operator-12", "OperatorPass123!", Roles.Operator);
+
+        using var operatorClient = await LoginAsAsync(factory, "site-operator-12", "OperatorPass123!");
+
+        using var discover = await operatorClient.GetAsync("/v1/site/discover");
+        Assert.Equal(HttpStatusCode.Forbidden, discover.StatusCode);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // UNS disabled — SiteBridgeManager is not registered at all: GET still returns identity; PUT 409s.
     // ─────────────────────────────────────────────────────────────────────
 

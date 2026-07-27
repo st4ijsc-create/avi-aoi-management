@@ -444,6 +444,19 @@ var deviceIdentity = new St4i.EdgeCore.Identity.DeviceIdentityStore(
     .LoadOrCreate(unsOptions.Cell);
 builder.Services.AddSingleton(deviceIdentity);
 
+// GĐ3 sub-2 SD-1 (.superpowers/sdd/2026-07-27-giaidoan3-mdns-join-wizard-blueprint/task-1-brief.md) — the
+// mDNS Site-discovery singleton backing GET /v1/site/discover. Registered UNCONDITIONALLY (unlike the
+// UNS-gated SiteBridgeManager below) — browsing the LAN for a Site to join has nothing to do with whether
+// THIS device's own local UNS spine happens to be enabled, and SiteEndpoints.DiscoverAsync takes a plain
+// (non-nullable) ISiteDiscovery parameter, which — same [FromServices]/inferred-body-parameter hazard this
+// class' own doc comment documents for SiteBridgeManager? — REQUIRES the type to always be registered, or
+// minimal API's endpoint-metadata build throws at the first request touching ANY route. The singleton
+// itself holds no socket (see SiteDiscovery's own doc comment: per-call ephemeral) — this registration is
+// just wiring a real logger into its never-throws logError callback.
+builder.Services.AddSingleton<St4i.EdgeCore.Site.ISiteDiscovery>(sp =>
+    new St4i.EdgeCore.Site.SiteDiscovery(
+        logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("SiteDiscovery").LogError(ex, "{Msg}", msg)));
+
 // The Site bridge manager only makes sense when there's an actual local UNS spine to bridge (a bridge with
 // nothing to subscribe to is meaningless) — gated on the SAME unsOptions.Enabled this task's own UNS broker
 // block above already gates on. When UNS is disabled, only the identity singleton above is registered (so

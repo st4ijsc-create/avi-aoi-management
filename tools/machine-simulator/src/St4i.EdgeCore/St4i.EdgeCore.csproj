@@ -9,6 +9,17 @@
     <Compile Include="..\..\..\..\examples\device-client\csharp\St4iDeviceClient.cs" Link="Sdk\St4iDeviceClient.cs" />
   </ItemGroup>
   <ItemGroup>
+    <!-- GĐ3 sub-2 SD-1 (mDNS join wizard, task-1-brief.md) — the ONE new NuGet this task adds:
+         Makaretu.Dns.Multicast.New 0.38.0, the jdomnitz-maintained fork of the original
+         richardschneider/net-mdns (the brief named it "Makaretu.Dns.Multicast.N" — the actual package ID
+         on nuget.org is "Makaretu.Dns.Multicast.New"; same author/fork/intent, see task-1-report.md for
+         the full de-risk-gate write-up). MIT-licensed; ships a net9.0 lib target that resolves cleanly
+         against net10.0-windows with zero NU1701 downgrade warning. Pulls in Makaretu.Dns.New 3.1.2 (MIT)
+         + Common.Logging 3.4.1 (Apache-2.0) transitively. Used by Site/SiteDiscovery.cs to browse the LAN
+         for SYNAPSE Sites (RFC 6762/6763 mDNS) — confirmed via a real loopback advertise->browse round-trip
+         (SiteDiscoveryTests.LoopbackRoundTrip_AdvertisedInstance_IsDiscovered) that this exact package
+         works end-to-end on net10.0-windows. -->
+    <PackageReference Include="Makaretu.Dns.Multicast.New" Version="0.38.0" />
     <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
     <PackageReference Include="MQTTnet.Server" Version="5.2.0.1603" />
     <!-- G2-2 (UNS spine) — the ONE new NuGet this task adds: runtime-only, used by
