@@ -430,6 +430,55 @@ if (unsOptions.Enabled)
     }
 }
 
+// GĐ3 EC-2 (docs/plans .../2026-07-27-giaidoan3-ecosystem-connect-blueprint/task-2-brief.md) — the device
+// identity singleton (EC-1) + the Site-link northbound bridge manager.
+//
+// The identity is resolved via DeviceIdentityStore.LoadOrCreate exactly ONCE, right here, and reused as a
+// DI singleton for the rest of this process's life — DeviceIdentityStore's own doc comment (EC-1 review
+// C-1) is explicit that PersistKeySet writes a fresh CNG key-store entry on every LoadOrCreate call, so
+// this must NEVER be called again per-request/per-call. A standalone box that never configures a Site link
+// still legitimately gets a device identity (one keystore entry, once, at startup) — accepted/documented
+// per EC-1/EC-2 — so this happens unconditionally, unlike the Site bridge manager below.
+var deviceIdentity = new St4i.EdgeCore.Identity.DeviceIdentityStore(
+        logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"))
+    .LoadOrCreate(unsOptions.Cell);
+builder.Services.AddSingleton(deviceIdentity);
+
+// The Site bridge manager only makes sense when there's an actual local UNS spine to bridge (a bridge with
+// nothing to subscribe to is meaningless) — gated on the SAME unsOptions.Enabled this task's own UNS broker
+// block above already gates on. When UNS is disabled, only the identity singleton above is registered (so
+// EC-3's identity endpoint still works standalone), and no SiteLinkStore/SiteBridgeManager is constructed
+// at all — byte-identical to pre-EC-2 behavior in that case.
+if (unsOptions.Enabled)
+{
+    var siteStore = new St4i.EdgeCore.Site.SiteLinkStore();
+    var siteBridgeManager = new St4i.EdgeCore.Site.SiteBridgeManager(
+        unsOptions,
+        deviceIdentity,
+        siteStore,
+        logWarning: msg => Console.Error.WriteLine($"[startup] {msg}"),
+        logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"));
+
+    // Eager start (mirrors the UNS broker block above): ApplyAsync itself never throws (construct/connect
+    // failures are caught+logged inside it, leaving the manager's Status() at Disabled/Down) — this
+    // try/catch is only extra insurance so a truly unexpected failure here still can't crash startup.
+    try
+    {
+        siteBridgeManager.ApplyAsync(siteStore.Load() ?? new St4i.EdgeCore.Site.PersistedSiteLink())
+            .GetAwaiter().GetResult();
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"[startup] Site bridge failed to start for this run — standalone: {ex.Message}");
+    }
+
+    // Registered via a factory lambda (NOT the raw-instance AddSingleton overload) so the built-in DI
+    // container actually owns/disposes this IAsyncDisposable on host shutdown — the raw-instance overload
+    // does NOT get disposed by the container (verified: an externally-constructed instance handed to
+    // AddSingleton(instance) is never Dispose()'d by ServiceProvider, unlike one returned from a factory).
+    builder.Services.AddSingleton(_ => siteBridgeManager);
+}
+
 // G2-6 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 6) — the FIRST real
 // field-protocol driver: a Modbus TCP poller, run as its OWN isolated FleetHost pipeline slot (the payoff
 // of G2-5's per-slot fault isolation — a Modbus fault can never tear down the simulated fleet). Additive +
