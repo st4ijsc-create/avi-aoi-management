@@ -16,6 +16,7 @@ using St4i.EngineApi.Config;
 using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.Hubs;
+using St4i.EngineApi.Safety;
 using St4i.EngineApi.ServiceHost;
 
 // WS-F1-T1 — install/uninstall/status verbs are handled as the VERY FIRST thing this process does,
@@ -144,6 +145,19 @@ builder.Services.AddSingleton<IUserStore>(_ => new SqliteUserStore(securityDir))
 // available to call).
 builder.Services.AddSingleton<IAuditStore>(_ => new SqliteAuditStore(securityDir));
 builder.Services.AddSingleton<AuditRecorder>();
+
+// G2-4 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 4) — the thin default-deny
+// policy layer sitting INSIDE the existing RBAC+audit boundary at the fleet-actuating HTTP endpoints (see
+// FleetEndpoints.cs/ScenarioEndpoints.cs). Rules are stateless singletons; EstopGuardRule is ordered FIRST
+// so a SAFETY_BLOCKED denial always wins/reports over a later RoleObligationRule denial (PolicyEngine
+// itself is "any deny wins", so this ordering only matters for WHICH reason code is reported when both
+// would deny — see PolicyEngine's own doc comment).
+builder.Services.AddSingleton<St4i.EngineApi.Policy.PolicyEngine>(_ =>
+    new St4i.EngineApi.Policy.PolicyEngine(new St4i.EngineApi.Policy.IPolicyRule[]
+    {
+        new St4i.EngineApi.Policy.Rules.EstopGuardRule(),   // safety-first (deny precedence)
+        new St4i.EngineApi.Policy.Rules.RoleObligationRule(),
+    }));
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -495,6 +509,9 @@ app.UseWebSockets();
 
 app.MapAuthEndpoints();
 app.MapFleetEndpoints();
+// G2-4 — XC-R40: the read-only safety status surface (GET /v1/safety). No write route exists here —
+// see SafetyEndpoints' own doc comment.
+app.MapSafetyEndpoints();
 app.MapModeEndpoints();
 app.MapCapabilitiesEndpoints();
 app.MapScenarioEndpoints();

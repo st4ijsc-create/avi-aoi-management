@@ -138,6 +138,7 @@ public sealed class RbacPolicyTests
         new("/v1/fleet/estop", new[] { "POST" }, Policies.Operator),
         new("/v1/fleet/estop/reset", new[] { "POST" }, Policies.Operator),
         new("/v1/mode", new[] { "GET" }, Policies.Operator),
+        new("/v1/safety", new[] { "GET" }, Policies.Operator),
         new("/v1/products", new[] { "GET" }, Policies.Operator),
         new("/v1/products/{code}", new[] { "GET" }, Policies.Operator),
         new("/v1/products/{code}/points", new[] { "GET" }, Policies.Operator),

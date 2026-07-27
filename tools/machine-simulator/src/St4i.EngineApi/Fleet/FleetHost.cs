@@ -294,6 +294,15 @@ public sealed class FleetHost
 
     private bool _estopEngaged;
 
+    /// <summary>XC-R40 — the single read-only accessor for the supervisory safety state (see
+    /// <see cref="St4i.EngineApi.Safety.SafetySnapshot"/>). Pure read: takes <see cref="_gate"/> only to
+    /// read a consistent estop+running pair, never mutates. No corresponding setter exists — the latch
+    /// changes ONLY through <see cref="Estop"/>/<see cref="ResetEstop"/>.</summary>
+    public St4i.EngineApi.Safety.SafetySnapshot GetSafetyStatus()
+    {
+        lock (_gate) { return new St4i.EngineApi.Safety.SafetySnapshot(_estopEngaged, IsRunning); }
+    }
+
     public Exception? LastError { get; private set; }
 
     public TransportMode Mode => _transportCoordinator.Mode;

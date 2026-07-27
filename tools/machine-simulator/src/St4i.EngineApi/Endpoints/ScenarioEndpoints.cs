@@ -1,5 +1,6 @@
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Policy;
 
 namespace St4i.EngineApi.Endpoints;
 
@@ -40,8 +41,12 @@ public static class ScenarioEndpoints
             return Results.Ok(new { scenario = applied, hotFolderStatus });
         }).RequireAuthorization(Policies.Engineer);
 
-        app.MapPost("/v1/scenario/burst", async (FleetHost host, HttpContext context, AuditRecorder recorder, CancellationToken ct) =>
+        app.MapPost("/v1/scenario/burst", async (FleetHost host, HttpContext context, AuditRecorder recorder, PolicyEngine policy, CancellationToken ct) =>
         {
+            var decision = policy.Evaluate(PolicyRequest.For(context, "scenario.burst", host.GetSafetyStatus()));
+            if (!decision.IsPermitted)
+                return await PolicyResults.DenyAsync(context, recorder, "scenario.burst", decision, ct).ConfigureAwait(false);
+
             var applied = host.Burst();
             await recorder.RecordAsync(context, "scenario.burst", null, null, null, applied, ct).ConfigureAwait(false);
             return Results.Ok(applied);
