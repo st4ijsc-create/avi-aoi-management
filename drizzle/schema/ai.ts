@@ -1482,6 +1482,28 @@ export const aiSpecialistSessionSteps = pgTable("ai_specialist_session_steps", {
 export type AiSpecialistSessionStep = typeof aiSpecialistSessionSteps.$inferSelect;
 export type InsertAiSpecialistSessionStep = typeof aiSpecialistSessionSteps.$inferInsert;
 
+/** Wave 1 — chấm tay mức hữu ích của một phiên specialist (1 người 1 phiếu/phiên). */
+export const aiSpecialistFeedback = pgTable("ai_specialist_feedback", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("sessionId").notNull(),
+  userId: integer("userId").notNull(),
+  agentId: varchar("agentId", { length: 64 }).notNull(),
+  moduleName: varchar("moduleName", { length: 255 }),
+  rating: varchar("rating", { length: 16 }).notNull(),
+  usefulSections: json("usefulSections").$type<string[]>(),
+  reason: text("reason"),
+  repoContextUsed: boolean("repoContextUsed").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_ai_specialist_feedback_session_user").on(table.sessionId, table.userId),
+  index("idx_ai_specialist_feedback_agent").on(table.agentId),
+  index("idx_ai_specialist_feedback_module").on(table.moduleName),
+]);
+
+export type AiSpecialistFeedback = typeof aiSpecialistFeedback.$inferSelect;
+export type InsertAiSpecialistFeedback = typeof aiSpecialistFeedback.$inferInsert;
+
 // ============= B3 — Unsupervised Anomaly Detection (PatchCore-style) =============
 //
 // Memory bank chứa embedding ảnh OK (coreset subsample) theo scope

@@ -15,9 +15,12 @@ import {
   appendAiSpecialistSessionStep,
   completeAiSpecialistSession,
   createAiSpecialistSession,
+  getAiSpecialistSessionById,
   getAiSpecialistSessionDetail,
   listAiSpecialistSessions,
   getModuleImprovementStats,
+  upsertSpecialistFeedback,
+  getSpecialistQualityScoreboard,
 } from "../db/aiSpecialist";
 import { getTool, isWriteTool } from "../services/aiLocalTools/toolRegistry";
 import { proposeAction } from "../services/aiCopilotActions";
@@ -403,5 +406,33 @@ export const aiSpecialistAgentRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       }
       return stats;
+    }),
+
+  // ─── Wave 1 Task 3 — Quality Feedback (human rating half of the quality gate) ─
+
+  submitFeedback: specialistProcedure
+    .input(z.object({
+      sessionId: z.number().int().positive(),
+      agentId: z.string().min(1).max(64),
+      moduleName: z.string().max(255).optional(),
+      rating: z.enum(["useful", "partial", "useless"]),
+      usefulSections: z.array(z.enum([
+        "diagnosis", "actionPlan", "patchHints", "testPlan", "optimizationIdeas", "risks",
+      ])).max(6).optional(),
+      reason: z.string().max(500).optional(),
+      repoContextUsed: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await getAiSpecialistSessionById(input.sessionId, ctx.user.id);
+      if (!session) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Session does not belong to current user" });
+      }
+      return upsertSpecialistFeedback({ ...input, userId: ctx.user.id });
+    }),
+
+  getQualityScoreboard: specialistProcedure
+    .input(z.object({ mineOnly: z.boolean().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return getSpecialistQualityScoreboard(input?.mineOnly ? ctx.user.id : undefined);
     }),
 });

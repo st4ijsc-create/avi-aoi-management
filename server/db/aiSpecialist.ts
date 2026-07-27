@@ -3,6 +3,7 @@ import { getDb } from "./connection";
 import {
   aiSpecialistSessions,
   aiSpecialistSessionSteps,
+  aiSpecialistFeedback,
   type InsertAiSpecialistSession,
   type InsertAiSpecialistSessionStep,
 } from "../../drizzle/schema";
@@ -221,5 +222,124 @@ export async function getModuleImprovementStats(
     avgTokensPerSecond,
     avgTimePerStepMs,
     improvementScore,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 1 — Specialist Quality Feedback (human rating + scoreboard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SpecialistRating = "useful" | "partial" | "useless";
+
+export interface UpsertSpecialistFeedbackInput {
+  sessionId: number;
+  userId: number;
+  agentId: string;
+  moduleName?: string | null;
+  rating: SpecialistRating;
+  usefulSections?: string[];
+  reason?: string | null;
+  repoContextUsed: boolean;
+}
+
+export interface QualityScoreboardRow {
+  agentId: string;
+  moduleName: string | null;
+  total: number;
+  usefulPct: number;
+  partialPct: number;
+  uselessPct: number;
+  withEyesUsefulPct: number | null;
+  withoutEyesUsefulPct: number | null;
+}
+
+export interface QualityScoreboard {
+  rows: QualityScoreboardRow[];
+  overall: { total: number; usefulPct: number };
+}
+
+/** 1 người 1 phiếu / phiên — chấm lại thì ghi đè (khớp unique index sessionId+userId). */
+export async function upsertSpecialistFeedback(
+  input: UpsertSpecialistFeedbackInput,
+): Promise<{ ok: boolean }> {
+  const db = await getDb();
+  if (!db) return { ok: false };
+  await db
+    .insert(aiSpecialistFeedback)
+    .values({
+      sessionId: input.sessionId,
+      userId: input.userId,
+      agentId: input.agentId,
+      moduleName: input.moduleName ?? null,
+      rating: input.rating,
+      usefulSections: input.usefulSections ?? [],
+      reason: input.reason ?? null,
+      repoContextUsed: input.repoContextUsed,
+    })
+    .onConflictDoUpdate({
+      target: [aiSpecialistFeedback.sessionId, aiSpecialistFeedback.userId],
+      set: {
+        rating: input.rating,
+        usefulSections: input.usefulSections ?? [],
+        reason: input.reason ?? null,
+        repoContextUsed: input.repoContextUsed,
+        updatedAt: new Date(),
+      },
+    });
+  return { ok: true };
+}
+
+function pct(part: number, whole: number): number {
+  return whole === 0 ? 0 : Math.round((part / whole) * 100);
+}
+
+/** Bảng điểm chất lượng, nhóm theo agent × module, kèm tách có-mắt/không-mắt. */
+export async function getSpecialistQualityScoreboard(userId?: number): Promise<QualityScoreboard> {
+  const db = await getDb();
+  if (!db) return { rows: [], overall: { total: 0, usefulPct: 0 } };
+
+  const conditions: SQL[] = [];
+  if (userId) conditions.push(eq(aiSpecialistFeedback.userId, userId));
+
+  const all: any[] = await db
+    .select()
+    .from(aiSpecialistFeedback)
+    .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+  const groups = new Map<string, any[]>();
+  for (const r of all) {
+    const key = `${r.agentId}::${r.moduleName ?? ""}`;
+    const arr = groups.get(key) ?? [];
+    arr.push(r);
+    groups.set(key, arr);
+  }
+
+  const rows: QualityScoreboardRow[] = [];
+  for (const [key, items] of groups) {
+    const [agentId, moduleRaw] = key.split("::");
+    const withEyes = items.filter((i) => i.repoContextUsed === true);
+    const withoutEyes = items.filter((i) => i.repoContextUsed !== true);
+    rows.push({
+      agentId,
+      moduleName: moduleRaw === "" ? null : moduleRaw,
+      total: items.length,
+      usefulPct: pct(items.filter((i) => i.rating === "useful").length, items.length),
+      partialPct: pct(items.filter((i) => i.rating === "partial").length, items.length),
+      uselessPct: pct(items.filter((i) => i.rating === "useless").length, items.length),
+      withEyesUsefulPct: withEyes.length
+        ? pct(withEyes.filter((i) => i.rating === "useful").length, withEyes.length)
+        : null,
+      withoutEyesUsefulPct: withoutEyes.length
+        ? pct(withoutEyes.filter((i) => i.rating === "useful").length, withoutEyes.length)
+        : null,
+    });
+  }
+
+  return {
+    rows,
+    overall: {
+      total: all.length,
+      usefulPct: pct(all.filter((i) => i.rating === "useful").length, all.length),
+    },
   };
 }
