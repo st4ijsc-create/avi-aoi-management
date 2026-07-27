@@ -1315,8 +1315,8 @@ export const navGroups: NavGroup[] = [
       { key: "analyticsReports", label: "nav.section.aiAnalyticsReports" },
       { key: "visionLab", label: "nav.section.aiVisionLab" },
       // doc 69 Wave E1 (T7) — NEW section T6 deferred: durable training assets
-      // (dataset splits today; Knowledge Base RAG docs + Training Studio are
-      // later E3 tasks, NOT built here — see doc 69 §B1.2/§B3).
+      // (dataset splits; Knowledge Base RAG docs is a later E3 task, NOT built here —
+      // see doc 69 §B1.2/§B3). Training Studio (E3-2) added below.
       { key: "knowledgeTraining", label: "nav.section.aiKnowledgeTraining" },
       { key: "models", label: "nav.section.aiModels" },
       { key: "settings", label: "nav.section.aiSettings" },
@@ -1532,11 +1532,25 @@ export const navGroups: NavGroup[] = [
         // Split out of AIDataProcessingPage's dataset tab: a dataset split is a
         // durable training asset, not an ephemeral pipeline step. Same RBAC
         // gate as /ai-data-processing. Knowledge Base (RAG docs, /ai-knowledge)
-        // and Training Studio are later E3 tasks — NOT added here.
+        // is a later E3 task — NOT added here.
         href: "/ai-datasets",
         label: "nav.aiDatasets",
         icon: <Boxes className="h-4 w-4" />,
         description: "nav.aiDatasetsDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+        section: "knowledgeTraining",
+      },
+      {
+        // doc69 GĐ5/Wave E3 (E3-2) — Training Studio: corpus registry + job-tracked
+        // doc/URL ingest (Source/Jobs/Corpus/Eval/Model Builder tabs). Mirrors the
+        // SAME nav gate shape as /ai-datasets/aiCommandCenter (requiredRole:'admin'
+        // in the nav — the backend kbStudioRouter.ts itself is broader, admin+
+        // engineer, +2FA; deleteCorpus narrower still, admin-only).
+        href: "/ai-training-studio",
+        label: "nav.aiTrainingStudio",
+        icon: <GraduationCap className="h-4 w-4" />,
+        description: "nav.aiTrainingStudioDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
         section: "knowledgeTraining",

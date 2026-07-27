@@ -86,6 +86,7 @@ const AIPerformanceDashboard = React.lazy(() => import("./pages/AIPerformanceDas
 // + A/B canary tabs) and AIDataProcessingPage (dataset-split tab) respectively.
 const AIExperimentsPage = React.lazy(() => import("./pages/AIExperimentsPage"));
 const AIDatasetsPage = React.lazy(() => import("./pages/AIDatasetsPage"));
+const KbStudioPage = React.lazy(() => import("./pages/KbStudioPage")); // doc69 GĐ5/Wave E3 (E3-2): Training Studio — corpus registry + job-tracked ingest (Source/Jobs/Corpus/Eval/Model Builder)
 const BatchInferencePage = React.lazy(() => import("./pages/BatchInferencePage"));
 const ModelMonitoringPage = React.lazy(() => import("./pages/ModelMonitoringPage"));
 const ModelVersionsPage = React.lazy(() => import("./pages/ModelVersionsPage"));
@@ -509,6 +510,11 @@ function Router() {
       {/* doc 69 Wave E1 (T7) — split from AIDataProcessingPage (dataset-split tab, a
           durable Knowledge & Training asset); same RBAC guard as /ai-data-processing. */}
       <Route path="/ai-datasets"><RouteGuard navHref="/ai-datasets"><AIPageWrapper><AIDatasetsPage /></AIPageWrapper></RouteGuard></Route>
+      {/* doc69 GĐ5/Wave E3 (E3-2) — Training Studio: the nav comment at /ai-datasets's
+          registration (doc 69 Wave E1/T7) said Training Studio was "a later E3 task — NOT
+          added here"; this is that task. Same admin-gated RouteGuard shape as /ai-datasets
+          (kbStudioRouter.ts itself allows admin+engineer — see navigation.tsx's comment). */}
+      <Route path="/ai-training-studio"><RouteGuard navHref="/ai-training-studio"><AIPageWrapper><KbStudioPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-time-series"><RouteGuard navHref="/ai-time-series"><AIPageWrapper><AITimeSeriesPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-reports"><RouteGuard navHref="/ai-reports"><AIPageWrapper><AIReportsPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-quality-gate"><RouteGuard navHref="/ai-quality-gate"><AIPageWrapper><AIQualityGatePage /></AIPageWrapper></RouteGuard></Route>
