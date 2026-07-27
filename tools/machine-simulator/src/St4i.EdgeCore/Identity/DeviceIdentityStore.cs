@@ -34,6 +34,27 @@ namespace St4i.EdgeCore.Identity;
 /// — never lets a bad file crash the caller. <see cref="LoadOrCreate"/> then regenerates a brand new
 /// identity in that case, exactly like a fresh install. A device must always end up with a usable
 /// identity; there is no "half-working" state.</para>
+///
+/// <para><b>Load flag: <see cref="X509KeyStorageFlags.PersistKeySet"/>, NOT
+/// <see cref="X509KeyStorageFlags.EphemeralKeySet"/> (EC-1 review C-1):</b> empirically verified (Win11 +
+/// .NET 10, a real <see cref="System.Net.Security.SslStream"/> client-auth handshake, loopback) that a
+/// certificate loaded with <c>EphemeralKeySet</c> FAILS mutual-TLS on Windows/schannel —
+/// <c>AuthenticateAsClientAsync</c> throws <c>AuthenticationException</c> (<c>SEC_E_UNKNOWN_CREDENTIALS</c>)
+/// and the server never receives the client certificate at all — even though <c>HasPrivateKey</c> reports
+/// <see langword="true"/> the whole time. <c>PersistKeySet</c> is the verified-working fix (only that flag
+/// changed). This is EC-1's entire reason to exist — EC-2's northbound bridge presents this certificate to
+/// a Site broker (MQTTnet's <c>WithClientCertificates</c>, which is <c>SslStream</c>/schannel underneath) —
+/// so an unusable-for-TLS certificate is a correctness bug, not a style choice.
+/// <para><b>Trade-off knowingly reintroduced:</b> <c>PersistKeySet</c> creates a CNG/CAPI key-store entry
+/// (under the loading account's own key store) on every load — the exact on-disk residue
+/// <c>EphemeralKeySet</c> exists to avoid — but this is unavoidable for client-certificate auth under
+/// schannel. Works uniformly for both an interactive host account and a Windows Service/LocalSystem
+/// account, each loading into its own account-scoped key store. Deliberately NOT <c>MachineKeySet</c>:
+/// that requires administrator privilege to write, which would break the non-admin interactive host
+/// scenario — plain <c>PersistKeySet</c> is the least-privileged, verified-working choice. See
+/// <c>DeviceIdentityStoreTests.Certificate_LoadedFromStore_CanCompleteARealMutualTlsHandshake</c> for the
+/// regression test that would have caught this (and must keep passing — it fails outright under
+/// <c>EphemeralKeySet</c>).</para></para>
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class DeviceIdentityStore
@@ -120,7 +141,9 @@ public sealed class DeviceIdentityStore
         {
             var protectedBytes = File.ReadAllBytes(pfxPath);
             var pfxBytes = ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.LocalMachine);
-            var cert = X509CertificateLoader.LoadPkcs12(pfxBytes, PfxPassword, X509KeyStorageFlags.EphemeralKeySet);
+            // PersistKeySet, not EphemeralKeySet — see this class's own doc comment (EC-1 review C-1):
+            // an ephemeral-keyset cert is unusable for a real SslStream/schannel client-auth handshake.
+            var cert = X509CertificateLoader.LoadPkcs12(pfxBytes, PfxPassword, X509KeyStorageFlags.PersistKeySet);
             var nodeId = ReadNodeId() ?? ExtractCommonName(cert) ?? "unknown";
             return ToView(cert, nodeId);
         }
@@ -163,8 +186,9 @@ public sealed class DeviceIdentityStore
         // rather than throwing the caller (the bridge) into a crash. An unwritable identity directory is
         // an operational problem to fix on disk, not a reason the device can't come up at all. Re-import
         // (rather than reusing the disposed `cert` above) so the returned certificate's private-key
-        // handle has its own independent lifetime.
-        var fallback = X509CertificateLoader.LoadPkcs12(pfxBytes, PfxPassword, X509KeyStorageFlags.EphemeralKeySet);
+        // handle has its own independent lifetime. PersistKeySet here too (EC-1 review C-1) — same
+        // schannel-usability requirement as TryLoad's own load call.
+        var fallback = X509CertificateLoader.LoadPkcs12(pfxBytes, PfxPassword, X509KeyStorageFlags.PersistKeySet);
         return ToView(fallback, nodeId);
     }
 
@@ -182,7 +206,14 @@ public sealed class DeviceIdentityStore
 
     private static CertificateRequest BuildRequest(string nodeId, ECDsa ecdsa)
     {
-        var request = new CertificateRequest($"CN={nodeId}", ecdsa, HashAlgorithmName.SHA256);
+        // EC-1 review M-1: nodeId is caller-supplied (the machine's own config) and gets interpolated
+        // into an X.500 DN string ("CN=<nodeId>"), which CertificateRequest's string-subject constructor
+        // parses as RFC 2253-ish name syntax. DN metacharacters (',', '=', '"', a trailing '\') in a raw
+        // nodeId would either produce a WRONG subject (extra bogus RDNs) or throw out of the parser,
+        // either of which breaks LoadOrCreate's never-throw promise. Sanitize to a safe CN value instead
+        // of interpolating nodeId directly.
+        var commonName = SanitizeForCommonName(nodeId);
+        var request = new CertificateRequest($"CN={commonName}", ecdsa, HashAlgorithmName.SHA256);
 
         // Not a CA (can't sign other certs); DigitalSignature is exactly what a TLS client-auth
         // certificate needs (RFC 5280 keyUsage for the TLS handshake's signature).
@@ -199,6 +230,27 @@ public sealed class DeviceIdentityStore
         }
 
         return request;
+    }
+
+    /// <summary>EC-1 review M-1 — reduces an arbitrary <c>nodeId</c> to a value safe to interpolate into
+    /// an X.500 <c>CN=</c> DN string: trims surrounding whitespace, keeps
+    /// <c>[A-Za-z0-9._-]</c>, replaces every other character (DN metacharacters like <c>,</c> <c>=</c>
+    /// <c>"</c>, a trailing <c>\</c>, embedded whitespace, ...) with <c>_</c>, and falls back to a fixed
+    /// constant if that leaves nothing at all (e.g. a whitespace-only <c>nodeId</c>) — so
+    /// <see cref="Create"/> can never throw out of the DN parser, upholding <see cref="LoadOrCreate"/>'s
+    /// never-throw contract regardless of what a caller passes as <c>nodeId</c>.</summary>
+    private static string SanitizeForCommonName(string nodeId)
+    {
+        var trimmed = nodeId.Trim();
+        if (trimmed.Length == 0) return "st4i-device";
+
+        var sb = new StringBuilder(trimmed.Length);
+        foreach (var c in trimmed)
+        {
+            sb.Append(char.IsLetterOrDigit(c) || c is '.' or '_' or '-' ? c : '_');
+        }
+
+        return sb.Length == 0 ? "st4i-device" : sb.ToString();
     }
 
     private static DeviceIdentity ToView(X509Certificate2 cert, string nodeId) =>

@@ -1,3 +1,7 @@
+using System.Net;
+using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using St4i.EdgeCore.Identity;
@@ -173,5 +177,103 @@ public sealed class DeviceIdentityStoreTests : IDisposable
 
         Assert.NotEqual(credsDefaultRoot, identityDefaultRoot);
         Assert.Equal(Path.GetDirectoryName(credsDefaultRoot), Path.GetDirectoryName(identityDefaultRoot));
+    }
+
+    // EC-1 review C-1/I-1 — the regression test that would have caught the EphemeralKeySet bug: a
+    // real SslStream mutual-TLS loopback handshake using the EXACT certificate DeviceIdentityStore hands
+    // out. Under EphemeralKeySet this fails on Windows/schannel with an AuthenticationException
+    // (SEC_E_UNKNOWN_CREDENTIALS) even though Certificate.HasPrivateKey reports true — HasPrivateKey alone
+    // is NOT proof the key is usable for a TLS handshake. Uses the store's own generated cert as BOTH the
+    // server and client certificate (self-signed; a permissive RemoteCertificateValidationCallback accepts
+    // it on both sides) — this test is about key USABILITY for schannel, not chain-of-trust validation.
+    [Fact]
+    public async Task Certificate_LoadedFromStore_CanCompleteARealMutualTlsHandshake()
+    {
+        var store = new DeviceIdentityStore(NewTempDir());
+        var identity = store.LoadOrCreate("NODE-MTLS");
+
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        Exception? serverError = null;
+        Exception? clientError = null;
+        var serverSawClientCert = false;
+
+        var serverTask = Task.Run(async () =>
+        {
+            try
+            {
+                using var connection = await listener.AcceptTcpClientAsync();
+                using var ssl = new SslStream(connection.GetStream(), leaveInnerStreamOpen: false);
+                var options = new SslServerAuthenticationOptions
+                {
+                    ServerCertificate = identity.Certificate,
+                    ClientCertificateRequired = true,
+                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                    RemoteCertificateValidationCallback = (_, _, _, _) => true,
+                };
+                await ssl.AuthenticateAsServerAsync(options, CancellationToken.None);
+                serverSawClientCert = ssl.RemoteCertificate is not null;
+
+                var buffer = new byte[1];
+                _ = await ssl.ReadAsync(buffer);
+            }
+            catch (Exception ex)
+            {
+                serverError = ex;
+            }
+        });
+
+        var clientTask = Task.Run(async () =>
+        {
+            try
+            {
+                using var tcp = new TcpClient();
+                await tcp.ConnectAsync(IPAddress.Loopback, port);
+                using var ssl = new SslStream(tcp.GetStream(), leaveInnerStreamOpen: false);
+                var options = new SslClientAuthenticationOptions
+                {
+                    TargetHost = "localhost",
+                    ClientCertificates = new X509CertificateCollection { identity.Certificate },
+                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                    RemoteCertificateValidationCallback = (_, _, _, _) => true,
+                };
+                await ssl.AuthenticateAsClientAsync(options, CancellationToken.None);
+                await ssl.WriteAsync(new byte[] { 42 });
+            }
+            catch (Exception ex)
+            {
+                clientError = ex;
+            }
+        });
+
+        var both = Task.WhenAll(serverTask, clientTask);
+        var finished = await Task.WhenAny(both, Task.Delay(TimeSpan.FromSeconds(15)));
+        listener.Stop();
+
+        Assert.True(ReferenceEquals(finished, both), "mTLS handshake timed out");
+        Assert.True(clientError is null, $"client-side handshake threw: {clientError}");
+        Assert.True(serverError is null, $"server-side handshake threw: {serverError}");
+        Assert.True(serverSawClientCert, "server did not receive a client certificate during the handshake");
+    }
+
+    // EC-1 review M-1 — nodeId is interpolated into an X.500 "CN=<nodeId>" DN string; raw DN
+    // metacharacters (',', '=', '"') or a whitespace-only nodeId must not throw out of Create (breaking
+    // LoadOrCreate's never-throw promise) or silently corrupt the subject into extra bogus RDNs.
+    [Theory]
+    [InlineData("a,b=c\"d ")]
+    [InlineData("   ")]
+    public void LoadOrCreate_NodeIdWithDnMetacharactersOrWhitespaceOnly_DoesNotThrow_AndYieldsAUsableCert(string weirdNodeId)
+    {
+        var store = new DeviceIdentityStore(NewTempDir());
+
+        var exception = Record.Exception(() => store.LoadOrCreate(weirdNodeId));
+
+        Assert.Null(exception);
+        var identity = store.TryLoad();
+        Assert.NotNull(identity);
+        Assert.True(identity!.Certificate.HasPrivateKey);
+        Assert.NotEmpty(identity.Fingerprint);
     }
 }
