@@ -224,6 +224,31 @@ describe("generateProgram (doc 34 · P2) — LLM codegen on the safety substrate
     expect(r.citations).toContainEqual({ vendor: "Universal Robots", docTitle: "URScript Manual", page: 46 });
   });
 
+  // Doc 69 Wave 4 · C3 — companion to the "attaches RAG citations" case above: pins the OTHER
+  // half of the flag-gated contract (aiProgrammingKnowledgeService.ts isEnabled()/PROG_KB_ENABLED
+  // default false → searchProgrammingKb returns {enabled:false, citations:[], answerContext:""},
+  // see aiProgrammingKnowledgeService.ts:489/502). The top-of-file mock already returns that exact
+  // disabled shape by default, so every OTHER test in this suite implicitly exercises this path —
+  // this test makes the empty-citations contract EXPLICIT instead of merely incidental, and proves
+  // generateProgram() stays well-formed (ok:true, real code, no crash) when grounding is off.
+  it("PROG_KB_ENABLED=false (KB disabled) → citations empty, result still well-formed (no crash)", async () => {
+    vi.mocked(searchProgrammingKb).mockResolvedValueOnce({
+      query: "toggle a bit",
+      enabled: false,
+      semanticUsed: false,
+      answerContext: "",
+      citations: [],
+      chunks: [],
+    });
+    vi.mocked(chatCompletion).mockResolvedValueOnce(llm("```st\nVAR\n  run : BOOL;\nEND_VAR\nrun := TRUE;\n```"));
+    const r = await generateProgram({ kind: "iec61131-st", request: "toggle a bit" });
+    expect(searchProgrammingKb).toHaveBeenCalledTimes(1);
+    expect(r.citations).toEqual([]);
+    expect(r.ok).toBe(true);
+    expect(r.code).toContain("run := TRUE");
+    expect(r.refused).toBe(false);
+  });
+
   it("explain mode → grounded explanation, NO codegen, NO validation", async () => {
     vi.mocked(chatCompletion).mockResolvedValueOnce(llm("This program debounces a digital input using a TON timer [1]."));
     const r = await generateProgram({
