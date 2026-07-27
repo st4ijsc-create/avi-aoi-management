@@ -14,7 +14,10 @@
  *   5. poll    <jobDir>/progress.json — atomic-safe, parse failures ignored,
  *              mirror into updateTrainingJob(progress/currentEpoch/trainingMetrics)
  *   6. on exit code 0 + <jobDir>/output/model.onnx present → read result.json,
- *              copy ONNX into uploads/models/trained/sidecar_<jobId>_<version>.onnx,
+ *              copy ONNX into uploads/models/trained/sidecar_<jobId>.onnx (filename derived
+ *              SOLELY from the internally-generated numeric jobId — see the path-safety note in
+ *              runSidecarTraining below; targetVersion is caller-supplied and is never
+ *              concatenated into this path),
  *              return { success:true, outputModelPath, finalMetrics, ... }
  *      otherwise / timeout → { success:false, error }
  *
@@ -212,10 +215,16 @@ export async function runSidecarTraining(req: SidecarTrainingRequest): Promise<L
       result = {};
     }
 
-    // Copy the produced ONNX into the canonical trained-models dir.
+    // Copy the produced ONNX into the canonical trained-models dir. finalPath is built SOLELY
+    // from `req.jobId` — an internally generated `training_jobs` primary key (a number, never
+    // caller-influenced) — NEVER from `req.targetVersion` (a caller-supplied, zod-bounded but
+    // not charset-restricted string; the sibling `aiLlmFinetuneSidecar.ts` had the identical
+    // one-line path-traversal bug via its own targetVersion — see that module's doc comment).
+    // targetVersion still flows through as METADATA in the job.json contract above (read by the
+    // Python sidecar) — only removed from the FILESYSTEM PATH construction here.
     const trainedDir = trainedModelsDir();
     fs.mkdirSync(trainedDir, { recursive: true });
-    const finalPath = path.join(trainedDir, `sidecar_${req.jobId}_${req.targetVersion}.onnx`);
+    const finalPath = path.join(trainedDir, `sidecar_${req.jobId}.onnx`);
     fs.copyFileSync(outputModelPath, finalPath);
 
     const m = result.metrics ?? {};

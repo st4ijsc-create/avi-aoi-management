@@ -80,6 +80,13 @@
  *    `jobId` (`lora_<timestamp>_<random hex>` — never influenced by any request field), and the
  *    spawned command's argument array is `[...LLM_FINETUNE_CMD tail, jobDir]` — the corpus string
  *    never appears in `cmd`/`args` at all.
+ *  - Likewise, a malicious `targetVersion` (`"../../../../etc/cron.d/pwned"`, `"..\\..\\x"`,
+ *    `"a/b"`, …) can never influence the trained-artifact's filesystem path: `finalPath` is built
+ *    SOLELY from the internally generated `jobId` (see {@link safeTrainedFilePath}) — never from
+ *    `targetVersion`, which is used only as METADATA (the `model_versions.version` column and the
+ *    changeLog text), exactly like `corpus`. A charset guard (`assertSafeIdentifier`) additionally
+ *    REJECTS a `targetVersion` containing path separators/`..`/anything outside
+ *    `[A-Za-z0-9._-]` up front, before any of this runs, as a belt-and-suspenders measure.
  */
 
 import { spawn } from "child_process";
@@ -168,6 +175,22 @@ export class LoraFinetuneError extends Error {
   }
 }
 
+/**
+ * Charset guard for caller-supplied identifiers that are handled near filesystem paths
+ * elsewhere in this codebase (defense in depth — see {@link jobRootDir}'s doc comment and
+ * `finalPath` below for the PRIMARY defense, which is simply never concatenating these values
+ * into a path at all). Rejects path separators, `..`, and anything outside a conservative
+ * allowlist with a clear typed error instead of silently coercing a malicious value.
+ */
+const SAFE_IDENTIFIER_RE = /^[A-Za-z0-9._-]+$/;
+function assertSafeIdentifier(value: string, field: string): void {
+  if (!SAFE_IDENTIFIER_RE.test(value)) {
+    throw new LoraFinetuneError(
+      `${field} contains characters that are not allowed (only letters, digits, '.', '_', '-') — got "${value}".`,
+    );
+  }
+}
+
 // ─── Request / result types ────────────────────────────────────
 
 export interface LoraHyperparams {
@@ -245,6 +268,22 @@ function jobRootDir(jobId: string): string {
 
 function trainedGgufDir(): string {
   return path.join(process.cwd(), "uploads", "models", "trained");
+}
+
+/**
+ * Build the final trained-artifact path from an internally-generated `fileName` only (never a
+ * raw caller-supplied field — see the CVE-class note in {@link startLoraFinetune}) and, as a
+ * defense-in-depth safety net, assert the resolved result never escapes `trainedDir` before
+ * anything is written there.
+ */
+function safeTrainedFilePath(trainedDir: string, fileName: string): string {
+  const finalPath = path.join(trainedDir, fileName);
+  const resolvedDir = path.resolve(trainedDir);
+  const resolvedFinal = path.resolve(finalPath);
+  if (resolvedFinal !== resolvedDir && !resolvedFinal.startsWith(resolvedDir + path.sep)) {
+    throw new LoraFinetuneError(`Refusing to write trained artifact outside ${trainedDir}.`);
+  }
+  return finalPath;
 }
 
 function resolveFsPath(filePath: string): string {
@@ -548,6 +587,11 @@ export async function startLoraFinetune(req: StartLoraFinetuneRequest): Promise<
   if (!targetVersion) {
     throw new LoraFinetuneError("targetVersion is required.");
   }
+  // Belt-and-suspenders: reject a targetVersion containing path separators/traversal sequences
+  // outright, even though the PRIMARY defense below is that targetVersion is never concatenated
+  // into a filesystem path at all (see the `finalPath` comment further down). targetVersion is
+  // still passed through as plain METADATA to createModelVersion — exactly like `corpus`.
+  assertSafeIdentifier(targetVersion, "targetVersion");
 
   const baseModel = await getAiModelById(req.baseModelId);
   if (!baseModel) {
@@ -563,6 +607,14 @@ export async function startLoraFinetune(req: StartLoraFinetuneRequest): Promise<
   const jobDir = jobRootDir(jobId);
   const outputDir = path.join(jobDir, "output");
   const logsDir = path.join(jobDir, "logs");
+
+  // Set once the trained GGUF has been copied into the durable trainedDir; `registered` flips
+  // true only once `createModelVersion` has actually returned a row. If the copy happened but
+  // registration never completed (e.g. `createModelVersion` throws), the catch block below
+  // unlinks `copiedFinalPath` (best-effort) so a failed run never leaves an orphaned, untracked
+  // .gguf with no `model_versions` row — see the module doc comment's fail-safe section.
+  let copiedFinalPath: string | null = null;
+  let registered = false;
 
   try {
     fs.mkdirSync(outputDir, { recursive: true });
@@ -607,8 +659,15 @@ export async function startLoraFinetune(req: StartLoraFinetuneRequest): Promise<
 
     const trainedDir = trainedGgufDir();
     fs.mkdirSync(trainedDir, { recursive: true });
-    const finalPath = path.join(trainedDir, `lora_${jobId}_${targetVersion}.gguf`);
+    // finalPath is built SOLELY from the internally-generated jobId — NEVER from targetVersion
+    // (caller-supplied, zod-bounded but not charset-restricted). Putting targetVersion in a
+    // filesystem path was a path-traversal / arbitrary-file-write vector (e.g.
+    // targetVersion="../../../../etc/cron.d/pwned" could escape trainedDir). targetVersion is
+    // still recorded — as pure METADATA — on the model_versions row created just below (the
+    // `version` column and the changeLog text), exactly like `corpus` already is.
+    const finalPath = safeTrainedFilePath(trainedDir, `lora_${jobId}.gguf`);
     fs.copyFileSync(ggufPath, finalPath);
+    copiedFinalPath = finalPath;
 
     // ── Register — status "VALIDATING" ("needs eval"); NEVER "ACTIVE". ──
     const created: ModelVersion | undefined = await createModelVersion({
@@ -629,6 +688,7 @@ export async function startLoraFinetune(req: StartLoraFinetuneRequest): Promise<
     if (!created) {
       throw new LoraFinetuneError("createModelVersion returned no row.");
     }
+    registered = true;
 
     // ── Independent eval on the LOCKED held-out test split — best-effort; a failure here
     //    never un-registers the version, it just leaves it without an evalReport (so
@@ -665,6 +725,23 @@ export async function startLoraFinetune(req: StartLoraFinetuneRequest): Promise<
     return { jobId, status: "succeeded", versionId: created.id, version: created.version, gate, evaluated, skipped };
   } catch (err) {
     cleanupJobDir(jobDir);
+    // A downstream failure AFTER the GGUF was copied into trainedDir but BEFORE registration
+    // completed (e.g. createModelVersion throws, or returns no row) would otherwise leave an
+    // orphaned .gguf sitting in trainedDir with no model_versions row pointing at it. Clean it
+    // up best-effort so a failed run leaves no untracked artifact behind. Never runs once
+    // `registered` is true — the "no half-registered model" DB invariant stays intact (a
+    // registered version's artifact is always kept, even if the LATER, best-effort eval step
+    // fails — that failure is swallowed above and never reaches this catch at all).
+    if (copiedFinalPath && !registered) {
+      try {
+        fs.unlinkSync(copiedFinalPath);
+      } catch (cleanupErr) {
+        console.warn(
+          `[aiLlmFinetuneSidecar] failed to clean up orphaned trained artifact ${copiedFinalPath} (best-effort):`,
+          (cleanupErr as Error)?.message ?? cleanupErr,
+        );
+      }
+    }
     if (err instanceof LoraFinetuneError || err instanceof LoraFinetuneUnavailableError) throw err;
     throw new LoraFinetuneError(err instanceof Error ? err.message : String(err));
   }

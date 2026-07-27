@@ -26,6 +26,10 @@ const fsStore = new Map<string, string>();
 const fsExist = new Set<string>();
 const mkdirSpy = vi.fn();
 const rmSpy = vi.fn();
+const unlinkSpy = vi.fn((p: string) => {
+  fsExist.delete(p);
+  fsStore.delete(p);
+});
 const copySpy = vi.fn((src: string, dst: string) => {
   fsExist.add(dst);
   fsStore.set(dst, fsStore.get(src) ?? "<gguf-bytes>");
@@ -41,6 +45,7 @@ vi.mock("fs", () => {
     },
     existsSync: (p: string) => fsExist.has(p),
     copyFileSync: (s: string, d: string) => copySpy(s, d),
+    unlinkSync: (p: string) => unlinkSpy(p),
     rmSync: (p: string, opts: unknown) => {
       rmSpy(p, opts);
       for (const key of Array.from(fsExist)) if (key.startsWith(p)) fsExist.delete(key);
@@ -132,6 +137,7 @@ beforeEach(() => {
   fsExist.clear();
   mkdirSpy.mockClear();
   rmSpy.mockClear();
+  unlinkSpy.mockClear();
   copySpy.mockClear();
   spawnSpy.mockClear();
   allSpawnArgs.length = 0;
@@ -317,6 +323,9 @@ describe("startLoraFinetune — happy path (orchestration)", () => {
     expect(createModelVersionMock).toHaveBeenCalledTimes(1);
     // status was never bumped to READY because the eval step threw before that line.
     expect(updateModelVersionMock).not.toHaveBeenCalled();
+    // The registered version's .gguf is NOT treated as orphaned — the DB row genuinely tracks
+    // it (only the evalReport is missing), so the failure-path cleanup must never delete it.
+    expect(unlinkSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -422,6 +431,27 @@ describe("startLoraFinetune — fail-safe", () => {
     lastChild!.emit("exit", 0);
     await expect(p).rejects.toBeInstanceOf(LoraFinetuneError);
     expect(persistEvalReportMock).not.toHaveBeenCalled();
+    // The GGUF was already copied into trainedDir before createModelVersion returned no row —
+    // that copy must be cleaned up (best-effort unlink) so no orphaned, untracked artifact is
+    // left behind; the DB never gets a half-registered model either way.
+    expect(copySpy).toHaveBeenCalledTimes(1);
+    const orphanedPath = copySpy.mock.calls[0]![1] as string;
+    expect(unlinkSpy).toHaveBeenCalledWith(orphanedPath);
+    expect(rmSpy).toHaveBeenCalledTimes(1); // jobDir cleanup still happens too
+  });
+
+  it("createModelVersion THROWING (not just returning no row) also cleans up the orphaned .gguf", async () => {
+    createModelVersionMock.mockRejectedValueOnce(new Error("db connection lost"));
+    const p = startLoraFinetune({ baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1", generateFn: perfectGenerateFn });
+    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    const contract = JSON.parse(fsStore.get(findWritten("job.json")!)!);
+    fsExist.add(contract.output.ggufPath);
+    fsStore.set(contract.output.resultPath, JSON.stringify({ success: true, metrics: {} }));
+    lastChild!.emit("exit", 0);
+    await expect(p).rejects.toBeInstanceOf(LoraFinetuneError);
+    const orphanedPath = copySpy.mock.calls[0]![1] as string;
+    expect(unlinkSpy).toHaveBeenCalledWith(orphanedPath);
+    expect(rmSpy).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -468,6 +498,61 @@ describe("startLoraFinetune — a malicious corpus name cannot inject via spawn 
     fsStore.set(contract.output.resultPath, JSON.stringify({ success: true, metrics: {} }));
     lastChild!.emit("exit", 0);
     await p;
+  });
+});
+
+describe("startLoraFinetune — a malicious targetVersion cannot escape trainedDir via the finalPath", () => {
+  beforeEach(() => {
+    process.env.LLM_FINETUNE_CMD = "python tools/trainer/finetune_lora.py";
+  });
+
+  it.each([
+    "../../../etc/x",
+    "..\\..\\x",
+    "a/b",
+  ])("targetVersion=%j is rejected up front — no spawn, no DB call, no filesystem work", async (maliciousVersion) => {
+    await expect(
+      startLoraFinetune({ baseModelId: 7, corpus: "vendor-x", targetVersion: maliciousVersion, generateFn: perfectGenerateFn }),
+    ).rejects.toBeInstanceOf(LoraFinetuneError);
+    // Rejected by the charset guard BEFORE the base model is even looked up — zero side effects,
+    // exactly like the LLM_FINETUNE_CMD-unset gate test above.
+    expect(getAiModelByIdMock).not.toHaveBeenCalled();
+    expect(listCorpusChunksForTrainingMock).not.toHaveBeenCalled();
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(mkdirSpy).not.toHaveBeenCalled();
+    expect(createModelVersionMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("startLoraFinetune — finalPath is built from jobId only (targetVersion is metadata, not a path component)", () => {
+  beforeEach(() => {
+    process.env.LLM_FINETUNE_CMD = "python tools/trainer/finetune_lora.py";
+  });
+
+  it("the registered filePath is confined to trainedDir and derived solely from jobId, even for a benign-but-tricky version string containing dots", async () => {
+    // This documents the PRIMARY defense directly (belt-and-suspenders charset rejection is
+    // covered separately above): a value like "1.0.0-lora.1" legitimately contains characters
+    // that WOULD be allowed by the charset guard, so this exercises the actual path-construction
+    // code (not just the guard) and confirms it never echoes targetVersion into the filename.
+    const p = startLoraFinetune({
+      baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1", generateFn: perfectGenerateFn,
+    });
+    await vi.waitFor(() => expect(lastChild).not.toBeNull());
+    const contract = JSON.parse(fsStore.get(findWritten("job.json")!)!);
+    fsExist.add(contract.output.ggufPath);
+    fsStore.set(contract.output.resultPath, JSON.stringify({ success: true, metrics: {} }));
+    lastChild!.emit("exit", 0);
+    const result = await p;
+
+    const createArgs = createModelVersionMock.mock.calls[0]![0] as Record<string, unknown>;
+    const finalPath = createArgs.filePath as string;
+    // finalPath is confined to trainedDir and built purely from the jobId shape — the version
+    // string "1.0.0-lora.1" (still recorded separately as createArgs.version, i.e. METADATA)
+    // does not appear anywhere in the filesystem path.
+    expect(finalPath).toMatch(/[\\/]uploads[\\/]models[\\/]trained[\\/]lora_lora_\d+_[0-9a-f]{8}\.gguf$/);
+    expect(finalPath).not.toContain("1.0.0-lora.1");
+    expect(createArgs.version).toBe("1.0.0-lora.1"); // metadata is preserved, just not in the path
+    expect(result.status).toBe("succeeded");
   });
 });
 
