@@ -205,3 +205,62 @@ describe("aiAgentRouter — listAgentSessionsForOps (D4)", () => {
     expect(listSessionsForOps).not.toHaveBeenCalled();
   });
 });
+
+// ── FIX (E2-4 review, Minor) — sessionId/actionId/token are now bounded
+// (`.min(1).max(128)`) so an attacker-chosen unbounded string can't be echoed
+// into the ai:agents broadcast payload's sessionId. UUID-length values (the
+// real shape produced by randomUUID()) must still pass through untouched.
+describe("aiAgentRouter — sessionId/actionId/token are length-bounded (E2-4 review, Minor)", () => {
+  const UUID = "11111111-1111-1111-1111-111111111111"; // 36 chars — well within 128
+  const OVERSIZED = "x".repeat(200); // > 128
+
+  it("confirmStep rejects an oversized sessionId", async () => {
+    const { aiAgentRouter } = await import("./aiAgentRouter");
+    const op = aiAgentRouter.createCaller(ctx(OPERATOR));
+    await expect(op.confirmStep({ sessionId: OVERSIZED, actionId: UUID, token: UUID })).rejects.toThrow();
+  });
+
+  it("confirmStep rejects an oversized actionId", async () => {
+    const { aiAgentRouter } = await import("./aiAgentRouter");
+    const op = aiAgentRouter.createCaller(ctx(OPERATOR));
+    await expect(op.confirmStep({ sessionId: UUID, actionId: OVERSIZED, token: UUID })).rejects.toThrow();
+  });
+
+  it("confirmStep rejects an oversized token", async () => {
+    const { aiAgentRouter } = await import("./aiAgentRouter");
+    const op = aiAgentRouter.createCaller(ctx(OPERATOR));
+    await expect(op.confirmStep({ sessionId: UUID, actionId: UUID, token: OVERSIZED })).rejects.toThrow();
+  });
+
+  it("confirmStep accepts UUID-shaped (within-bound) values and reaches the service", async () => {
+    const { aiAgentRouter } = await import("./aiAgentRouter");
+    const { confirmStep } = await import("../services/aiAgentOrchestrator");
+    (confirmStep as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, status: "done", cursor: 1 });
+    const op = aiAgentRouter.createCaller(ctx(OPERATOR));
+    const res = await op.confirmStep({ sessionId: UUID, actionId: UUID, token: UUID });
+    expect(res).toEqual({ ok: true, status: "done", cursor: 1 });
+    expect(confirmStep).toHaveBeenCalledWith(UUID, UUID, UUID, expect.objectContaining({ user: expect.objectContaining({ id: OPERATOR.id }) }));
+  });
+
+  it("cancelSession rejects an oversized sessionId", async () => {
+    const { aiAgentRouter } = await import("./aiAgentRouter");
+    const op = aiAgentRouter.createCaller(ctx(OPERATOR));
+    await expect(op.cancelSession({ sessionId: OVERSIZED })).rejects.toThrow();
+  });
+
+  it("cancelSession accepts a UUID-shaped (within-bound) sessionId and reaches the service", async () => {
+    const { aiAgentRouter } = await import("./aiAgentRouter");
+    const { cancelSession } = await import("../services/aiAgentOrchestrator");
+    (cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, status: "aborted" });
+    const op = aiAgentRouter.createCaller(ctx(OPERATOR));
+    const res = await op.cancelSession({ sessionId: UUID });
+    expect(res).toEqual({ ok: true, status: "aborted" });
+  });
+
+  it("approvePlan and getSession also reject an oversized sessionId (sibling procedures)", async () => {
+    const { aiAgentRouter } = await import("./aiAgentRouter");
+    const op = aiAgentRouter.createCaller(ctx(OPERATOR));
+    await expect(op.approvePlan({ sessionId: OVERSIZED })).rejects.toThrow();
+    await expect(op.getSession({ sessionId: OVERSIZED })).rejects.toThrow();
+  });
+});

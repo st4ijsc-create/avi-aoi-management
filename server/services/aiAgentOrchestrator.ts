@@ -301,6 +301,7 @@ function resolveBranchTarget(
 async function advanceImpl(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+  markChanged?: () => void,
 ): Promise<AdvanceResult> {
   const { db, row } = await loadOwned(sessionId, ctx.user);
   if (!db || !row) return { ok: false, status: "failed", cursor: 0, message: "Session không tồn tại." };
@@ -308,6 +309,16 @@ async function advanceImpl(
   if (row.status !== "running") {
     return { ok: false, status: row.status, cursor: row.cursor, message: `Không thể tiến ở trạng thái ${row.status}.` };
   }
+
+  // FIX (E2-4 review, Important) — from this point on, EVERY remaining return
+  // in this function is preceded by persist()/db.update() (verified: the write/
+  // read/navigate/prefill/branch/guidance branches all persist before an early
+  // return, and the natural end-of-plan fallthrough persists status "done" too).
+  // The only two genuine NO-OPs (no DB write at all) are the two guards above —
+  // session not found/not owned by ctx.user, or not currently `running`. Mark
+  // the change here so the exported wrapper's nudge fires ONLY on a real state
+  // change, never on those two guards (E2-4 review, Important finding).
+  markChanged?.();
 
   // `plan` is mutable: an observe→replan cycle may replace the not-yet-executed
   // tail (see the `read` branch below). It only ever splices from `cursor`
@@ -544,17 +555,26 @@ async function advanceImpl(
 /**
  * E2-4 — thin wrapper: run advanceImpl(), then publish a minimal "advanced"
  * refresh nudge (fire-and-forget, non-throwing — see aiAgentRealtime.ts) AFTER
- * it resolves. advanceImpl persists on every path except its two very-first
- * guards (session not found / not in `running` status, neither of which change
- * any state) — nudging on those too is a harmless, occasional extra refetch of
- * the caller's own (RBAC-gated) read-model, not a correctness issue.
+ * it resolves.
+ *
+ * FIX (E2-4 review, Important) — the nudge now fires ONLY when advanceImpl
+ * actually persisted a state change (tracked via the `markChanged` callback it
+ * invokes right after its two no-op guards). Because `advance`/`confirmStep`
+ * are protectedProcedure (any authenticated user), an unconditional nudge here
+ * let a low-privilege user loop garbage/foreign sessionIds and force a
+ * broadcast to every Command Center viewer at the debounce cadence, with zero
+ * state ever changing. `loadOwned` returning null (not found / wrong owner) or
+ * the session not being `running` are both true no-ops now — no nudge.
  */
 export async function advance(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
 ): Promise<AdvanceResult> {
-  const result = await advanceImpl(sessionId, ctx);
-  nudge("advanced", sessionId);
+  let changed = false;
+  const result = await advanceImpl(sessionId, ctx, () => {
+    changed = true;
+  });
+  if (changed) nudge("advanced", sessionId);
   return result;
 }
 
@@ -569,6 +589,7 @@ async function confirmStepImpl(
   actionId: string,
   token: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+  markChanged?: () => void,
 ): Promise<AdvanceResult> {
   const { db, row } = await loadOwned(sessionId, ctx.user);
   if (!db || !row) return { ok: false, status: "failed", cursor: 0, message: "Session không tồn tại." };
@@ -582,6 +603,14 @@ async function confirmStepImpl(
   if (!current || current.status !== "awaiting_confirm" || current.actionId !== actionId) {
     return { ok: false, status: row.status, cursor: row.cursor, message: "actionId không khớp thao tác đang chờ." };
   }
+
+  // FIX (E2-4 review, Important) — same reasoning as advanceImpl above: both
+  // remaining branches below (confirm failed/denied/expired → persist "paused";
+  // confirm executed → persist "running" + delegate to advance()) persist before
+  // returning. The three guards above (session not found/not owned, wrong
+  // session status, mismatched actionId — e.g. a stale/foreign actionId) are the
+  // only genuine no-ops; mark the change only past them.
+  markChanged?.();
 
   const lang = (row.lang as ToolLang) ?? "vi";
 
@@ -626,6 +655,14 @@ async function confirmStepImpl(
  * refresh nudge. Note the success path inside confirmStepImpl delegates to the
  * (already-wrapped) advance(), which publishes its own "advanced" nudge too —
  * two coalesced nudges for one user click is harmless (the FE debounces).
+ *
+ * FIX (E2-4 review, Important) — the nudge now fires ONLY when confirmStepImpl
+ * actually persisted a state change (`markChanged`, set right after its three
+ * no-op guards). `confirmStep` is protectedProcedure (any authenticated user);
+ * without this gate, looping a not-found/foreign sessionId or a stale/mismatched
+ * actionId forced a broadcast to every Command Center viewer for zero state
+ * change. A genuine confirm still nudges "confirmed" here, plus "advanced" from
+ * the delegated advance() — that pre-existing harmless double-nudge is kept.
  */
 export async function confirmStep(
   sessionId: string,
@@ -633,8 +670,11 @@ export async function confirmStep(
   token: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
 ): Promise<AdvanceResult> {
-  const result = await confirmStepImpl(sessionId, actionId, token, ctx);
-  nudge("confirmed", sessionId);
+  let changed = false;
+  const result = await confirmStepImpl(sessionId, actionId, token, ctx, () => {
+    changed = true;
+  });
+  if (changed) nudge("confirmed", sessionId);
   return result;
 }
 
@@ -642,12 +682,20 @@ export async function confirmStep(
 async function cancelSessionImpl(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
+  markChanged?: () => void,
 ): Promise<{ ok: boolean; status: AiAgentSession["status"]; message?: string }> {
   const { db, row } = await loadOwned(sessionId, ctx.user);
   if (!db || !row) return { ok: false, status: "failed", message: "Session không tồn tại." };
   if (row.status === "done" || row.status === "aborted" || row.status === "failed") {
     return { ok: false, status: row.status, message: `Đã kết thúc (${row.status}).` };
   }
+
+  // FIX (E2-4 review, Important) — from here on the function unconditionally
+  // persists status "aborted" below (the linked-action cancel loop is
+  // best-effort/swallows errors and never short-circuits the final db.update).
+  // The two guards above (session not found/not owned, already terminal) are
+  // the only genuine no-ops; mark the change only past them.
+  markChanged?.();
 
   // Cancel any proposed (not-yet-executed) linked actions. Best-effort.
   for (const actionId of row.linkedActionIds ?? []) {
@@ -662,14 +710,26 @@ async function cancelSessionImpl(
   return { ok: true, status: "aborted", message: "Đã huỷ phiên." };
 }
 
-/** E2-4 — thin wrapper: run cancelSessionImpl(), then publish a minimal
- *  "cancelled" refresh nudge (fire-and-forget, non-throwing). */
+/**
+ * E2-4 — thin wrapper: run cancelSessionImpl(), then publish a minimal
+ * "cancelled" refresh nudge (fire-and-forget, non-throwing).
+ *
+ * FIX (E2-4 review, Important) — the nudge now fires ONLY when cancelSessionImpl
+ * actually persisted a state change (`markChanged`, set right after its two
+ * no-op guards). `cancelSession` is protectedProcedure (any authenticated
+ * user); without this gate, looping a not-found/foreign/already-terminal
+ * sessionId forced a broadcast to every Command Center viewer for zero state
+ * change.
+ */
 export async function cancelSession(
   sessionId: string,
   ctx: { user: AgentUser; req?: ToolExecContext["req"] },
 ): Promise<{ ok: boolean; status: AiAgentSession["status"]; message?: string }> {
-  const result = await cancelSessionImpl(sessionId, ctx);
-  nudge("cancelled", sessionId);
+  let changed = false;
+  const result = await cancelSessionImpl(sessionId, ctx, () => {
+    changed = true;
+  });
+  if (changed) nudge("cancelled", sessionId);
   return result;
 }
 

@@ -76,7 +76,10 @@ export const aiAgentRouter = router({
 
   /** User approves the plan → run to the first stopping point (read/done/awaiting_confirm). */
   approvePlan: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1) }))
+    // FIX (E2-4 review, Minor) — bound to a UUID-shaped length (sessionId is a
+    // randomUUID(), 36 chars); prevents an unbounded attacker-chosen string
+    // from being echoed back on the ai:agents broadcast payload's sessionId.
+    .input(z.object({ sessionId: z.string().min(1).max(128) }))
     .mutation(async ({ input, ctx }) => {
       const user = toAgentUser(ctx.user as any);
       return approvePlan(input.sessionId, { user, req: reqMeta(ctx) });
@@ -84,7 +87,11 @@ export const aiAgentRouter = router({
 
   /** Confirm the pending write at the current step (calls core confirmAction), then resume. */
   confirmStep: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1), actionId: z.string().min(1), token: z.string().min(1) }))
+    // FIX (E2-4 review, Minor) — sessionId/actionId/token are all randomUUID()
+    // (36 chars) in practice; bound to 128 (matches the repo's `.min(1).max(128)`
+    // convention for id-shaped strings, e.g. goldenSampleRouter/edgeRuntimeRouter)
+    // so an unbounded string can't be echoed into the ai:agents broadcast.
+    .input(z.object({ sessionId: z.string().min(1).max(128), actionId: z.string().min(1).max(128), token: z.string().min(1).max(128) }))
     .mutation(async ({ input, ctx }) => {
       const user = toAgentUser(ctx.user as any);
       return confirmStep(input.sessionId, input.actionId, input.token, { user, req: reqMeta(ctx) });
@@ -92,7 +99,8 @@ export const aiAgentRouter = router({
 
   /** Abort the session + cancel any pending proposed actions. */
   cancelSession: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1) }))
+    // FIX (E2-4 review, Minor) — see confirmStep above.
+    .input(z.object({ sessionId: z.string().min(1).max(128) }))
     .mutation(async ({ input, ctx }) => {
       const user = toAgentUser(ctx.user as any);
       return cancelSession(input.sessionId, { user, req: reqMeta(ctx) });
@@ -130,7 +138,8 @@ export const aiAgentRouter = router({
 
   /** Fetch session state (owner only). */
   getSession: protectedProcedure
-    .input(z.object({ sessionId: z.string().min(1) }))
+    // FIX (E2-4 review, Minor) — see confirmStep above.
+    .input(z.object({ sessionId: z.string().min(1).max(128) }))
     .query(async ({ input, ctx }) => {
       const user = toAgentUser(ctx.user as any);
       const row = await getSession(input.sessionId, user);

@@ -118,6 +118,7 @@ vi.mock("./aiLocalTools/toolRegistry", () => ({
 import {
   startSession,
   approvePlan,
+  advance,
   confirmStep,
   cancelSession,
   canUseAgentic,
@@ -399,5 +400,89 @@ describe("E2-4 — realtime nudge at each choke point", () => {
     const res = await approvePlan(s.sessionId!, { user: MANAGER as any });
     expect(res.ok).toBe(true);
     expect(res.status).toBe("done");
+  });
+
+  // ── FIX (E2-4 review, Important) — nudge only on a REAL state change. ──
+  // confirmStep/cancelSession/advance are protectedProcedure (ANY authenticated
+  // user); before this fix a low-privilege user could loop garbage/foreign
+  // sessionIds and force a broadcast to every Command Center viewer even though
+  // nothing ever changed. Every no-op guard below must nudge NOTHING.
+  describe("nudge gating — no-op paths must NOT publish", () => {
+    it("advance() on a NOT-FOUND sessionId does not nudge", async () => {
+      const res = await advance("does-not-exist", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe("failed");
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("advance() on ANOTHER user's session (wrong owner) does not nudge", async () => {
+      plan([{ kind: "read", tool: "read_thing", args: {} }]);
+      const s = await startSession("g", { user: MANAGER as any });
+      publishAiAgentEvent.mockClear();
+      const res = await advance(s.sessionId!, { user: WORKER as any });
+      expect(res.ok).toBe(false);
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("advance() on a session that is NOT `running` (e.g. still awaiting_approval) does not nudge", async () => {
+      plan([{ kind: "read", tool: "read_thing", args: {} }]);
+      const s = await startSession("g", { user: MANAGER as any });
+      publishAiAgentEvent.mockClear();
+      const res = await advance(s.sessionId!, { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe("awaiting_approval");
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("confirmStep() on a NOT-FOUND sessionId does not nudge", async () => {
+      const res = await confirmStep("does-not-exist", "ACT1", "ACT1", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("confirmStep() on a session that is NOT awaiting_confirm does not nudge", async () => {
+      // read-only plan runs straight through to `done` — never parks awaiting_confirm.
+      plan([{ kind: "read", tool: "read_thing", args: {} }]);
+      const s = await startSession("g", { user: MANAGER as any });
+      await approvePlan(s.sessionId!, { user: MANAGER as any });
+      publishAiAgentEvent.mockClear();
+      const res = await confirmStep(s.sessionId!, "ACT1", "ACT1", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe("done");
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("confirmStep() with a MISMATCHED actionId (session IS awaiting_confirm) does not nudge", async () => {
+      plan([{ kind: "write", tool: "write_thing", args: { id: 1 } }]);
+      proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+      const s = await startSession("g", { user: MANAGER as any });
+      await approvePlan(s.sessionId!, { user: MANAGER as any });
+      publishAiAgentEvent.mockClear();
+      const res = await confirmStep(s.sessionId!, "SOME-OTHER-ACTION-ID", "tok", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(confirmAction).not.toHaveBeenCalled();
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("cancelSession() on a NOT-FOUND sessionId does not nudge", async () => {
+      const res = await cancelSession("does-not-exist", { user: MANAGER as any });
+      expect(res.ok).toBe(false);
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
+
+    it("cancelSession() on an ALREADY-TERMINAL session (double cancel) does not nudge the 2nd time", async () => {
+      plan([{ kind: "write", tool: "write_thing", args: { id: 1 } }]);
+      proposeAction.mockResolvedValue({ ok: true, pendingAction: { actionId: "ACT1", token: "ACT1" } });
+      const s = await startSession("g", { user: MANAGER as any });
+      await approvePlan(s.sessionId!, { user: MANAGER as any });
+      const first = await cancelSession(s.sessionId!, { user: MANAGER as any });
+      expect(first.ok).toBe(true);
+      expect(publishAiAgentEvent).toHaveBeenCalledWith("cancelled", s.sessionId);
+      publishAiAgentEvent.mockClear();
+      const second = await cancelSession(s.sessionId!, { user: MANAGER as any });
+      expect(second.ok).toBe(false);
+      expect(second.status).toBe("aborted");
+      expect(publishAiAgentEvent).not.toHaveBeenCalled();
+    });
   });
 });
