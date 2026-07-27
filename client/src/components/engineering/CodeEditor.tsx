@@ -9,12 +9,14 @@
  * hành, thụt lề, tô cú pháp theo `language`, chủ đề sáng/tối theo app, và (tuỳ chọn)
  * chẩn đoán inline khi caller truyền `diagnostics`.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactCodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { StreamLanguage, type StreamParser } from "@codemirror/language";
 import { linter, type Diagnostic as CmDiagnostic } from "@codemirror/lint";
+import { trpc } from "@/lib/trpc";
+import { inlineCopilotExtension } from "./inlineCopilotExtension";
 
 /** Chẩn đoán tĩnh (tuỳ chọn) — map lỗi validate → gạch dòng trong editor. */
 export interface CodeDiagnostic {
@@ -41,6 +43,14 @@ export interface CodeEditorProps {
   /** Mất focus (tuỳ chọn) — giữ tương thích nếu caller cần lưu on-blur. */
   onBlur?: () => void;
   "aria-label"?: string;
+  /**
+   * Doc 69 · Wave 4 / C1 — bật gợi ý inline kiểu ghost-text (debounce → programming.copilotComplete
+   * → Tab để chèn, Esc để bỏ). OPT-IN, mặc định false: KHÔNG bật tự động cho mọi consumer của
+   * CodeEditor — chỉ mặt soạn thảo chính của Programming Copilot mới truyền cờ này. Khi cờ server
+   * `AI_PROGRAMMING_COPILOT_ENABLED` tắt hoặc model FIM vắng mặt, endpoint trả `completion:""` nên
+   * editor xử sự y hệt hôm nay (không có ghost text).
+   */
+  inlineCopilot?: boolean;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -205,9 +215,20 @@ export function CodeEditor({
   diagnostics,
   onBlur,
   "aria-label": ariaLabel,
+  inlineCopilot = false,
   ...rest
 }: CodeEditorProps) {
   const theme = useAppTheme();
+
+  // doc69 C1 — the trpc mutation object's identity/state churns on every request (isPending
+  // flips true/false etc.); routing calls through a ref (instead of depending on it directly)
+  // keeps `extensions` below stable across keystrokes so the CodeMirror extension array — and
+  // the InlineCopilotController instance living inside it — is NOT torn down/recreated mid-type.
+  const copilotComplete = trpc.programming.copilotComplete.useMutation();
+  const copilotCompleteRef = useRef(copilotComplete.mutateAsync);
+  useEffect(() => {
+    copilotCompleteRef.current = copilotComplete.mutateAsync;
+  }, [copilotComplete.mutateAsync]);
 
   const extensions = useMemo<Extension[]>(() => {
     const ext: Extension[] = [EditorView.lineWrapping];
@@ -217,6 +238,17 @@ export function CodeEditor({
     // CodeMirror), không phải div bọc — giữ tên khả truy cập như bản textarea cũ.
     if (ariaLabel) ext.push(EditorView.contentAttributes.of({ "aria-label": ariaLabel }));
     if (onBlur) ext.push(EditorView.domEventHandlers({ blur: () => { onBlur(); return false; } }));
+    if (inlineCopilot) {
+      ext.push(
+        inlineCopilotExtension({
+          fetchCompletion: (win) =>
+            copilotCompleteRef
+              .current({ prefix: win.prefix, suffix: win.suffix, language })
+              .then((r) => r?.completion ?? "")
+              .catch(() => ""),
+        }),
+      );
+    }
     if (diagnostics && diagnostics.length > 0) {
       ext.push(
         linter((view): CmDiagnostic[] => {
@@ -240,7 +272,9 @@ export function CodeEditor({
       );
     }
     return ext;
-  }, [language, diagnostics, onBlur, ariaLabel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- copilotCompleteRef is a stable ref
+    // (see comment above); intentionally excluded so `extensions` isn't rebuilt on every request.
+  }, [language, diagnostics, onBlur, ariaLabel, inlineCopilot]);
 
   return (
     <div

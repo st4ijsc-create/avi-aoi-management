@@ -709,3 +709,82 @@ export async function generateProgram(input: GenerateProgramInput): Promise<Gene
 
   return { ok, refused: false, kind: outKind, code, validation, citations, note, repairAttempts };
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// Doc 69 Wave 4 · C1 — IN-EDITOR INLINE completion (fill-in-middle ghost text).
+//
+// A DIFFERENT surface from generateProgram() above: a short in-editor infill suggested as
+// the engineer types (CodeMirror ghost text, Tab to accept), wired to generateFim() (doc 34
+// P0's FIM engine). It deliberately does NOT run generateProgram's author HARD-REFUSE guard
+// or programmingAdapter validation — this is trivially short fill-in-middle infill, not an
+// authored program, and nothing is ever inserted without the engineer pressing Tab — but it
+// stays BOUNDED (small maxTokens + a hard char cap + a stop sequence) so a runaway
+// completion can never hand the editor a large block of unreviewed code.
+//
+// FAIL-SAFE at every branch: flag off / no prefix+suffix / model absent-slow-or-erroring →
+// {completion:""} (the editor simply shows no ghost text). NEVER throws.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface CompleteInlineInput {
+  /** Code immediately BEFORE the cursor. The router bounds this length before it reaches here. */
+  prefix: string;
+  /** Code immediately AFTER the cursor (optional — enables true fill-in-middle). */
+  suffix?: string;
+  /** Language hint (informational; generateFim's infill path is language-agnostic text). */
+  language?: string;
+  /** Caller-requested token budget; clamped into [1, INLINE_HARD_MAX_TOKENS]. */
+  maxTokens?: number;
+}
+
+export interface CompleteInlineResult {
+  completion: string;
+}
+
+/** Inline completions are ghost text, not authored programs — keep them SHORT. */
+const INLINE_DEFAULT_MAX_TOKENS = 48;
+const INLINE_HARD_MAX_TOKENS = 128;
+/** Belt-and-braces char cap even if the model ignores maxTokens/stop sequences. */
+const INLINE_MAX_CHARS = 480;
+
+function clampInlineMaxTokens(requested?: number): number {
+  if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0) {
+    return INLINE_DEFAULT_MAX_TOKENS;
+  }
+  return Math.min(Math.floor(requested), INLINE_HARD_MAX_TOKENS);
+}
+
+/**
+ * Doc 69 · C1 — inline fill-in-middle completion for the CodeMirror ghost-text extension.
+ * Thin wrapper over generateFim() (server/services/aiGgufEngine.ts) with sane inline
+ * defaults. Fail-safe at every branch — see module header. Dynamically imports
+ * aiGgufEngine (mirrors this file's other lazy-engine call sites) so importing this module
+ * never pulls node-llama-cpp in eagerly.
+ */
+export async function completeInline(input: CompleteInlineInput): Promise<CompleteInlineResult> {
+  if (!copilotEnabled()) return { completion: "" };
+
+  const prefix = typeof input?.prefix === "string" ? input.prefix : "";
+  const suffix = typeof input?.suffix === "string" ? input.suffix : "";
+  if (!prefix.trim() && !suffix.trim()) return { completion: "" };
+
+  try {
+    const { generateFim, stripThinking } = await import("../aiGgufEngine");
+    const res = await generateFim({
+      prefix,
+      suffix,
+      maxTokens: clampInlineMaxTokens(input?.maxTokens),
+      temperature: 0.1,
+      // Stop at a blank line — inline completion is a short infill, not a whole file.
+      stopSequences: ["\n\n"],
+    });
+    const raw = (res?.text ?? "").toString();
+    if (!raw) return { completion: "" };
+    const { answer } = stripThinking(raw);
+    const text = (answer ?? raw).trim();
+    if (!text) return { completion: "" };
+    return { completion: text.length > INLINE_MAX_CHARS ? text.slice(0, INLINE_MAX_CHARS) : text };
+  } catch (e) {
+    console.warn("[aiProgrammingCopilot] inline FIM completion failed (fail-safe empty):", (e as Error)?.message ?? e);
+    return { completion: "" };
+  }
+}

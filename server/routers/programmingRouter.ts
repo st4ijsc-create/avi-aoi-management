@@ -72,6 +72,7 @@ import {
   explainProgram,
   copilotEnabled,
   generateProgram,
+  completeInline,
 } from "../services/programming/aiProgrammingCopilot";
 // ── doc 40 W5 §11 — fleet program rollout (canary) + machine×version matrix ──
 import { deployToFleet, fleetVersionMatrix } from "../services/programming/fleetRollout";
@@ -899,6 +900,36 @@ export const programmingRouter = router({
         };
       }
       return result;
+    }),
+
+  /**
+   * Doc 69 · Wave 4 / C1 — IN-EDITOR INLINE completion (CodeMirror ghost text ↔ generateFim).
+   *
+   * A DIFFERENT surface from copilotGenerate: a short fill-in-middle infill requested by the
+   * CodeMirror extension as the engineer types (debounced), rendered as dimmed ghost text,
+   * Tab to accept. NOT the AUTHOR path — no HARD-REFUSE guard, no substrate validation — this
+   * is a trivially short infill and nothing is inserted without an explicit Tab; `completeInline`
+   * still keeps it BOUNDED (small maxTokens + char cap). Read-gated exactly like copilotSuggest
+   * (machine_monitoring / canView) — a suggestion, not a write. FAIL-SAFE: flag off / model
+   * absent-slow-or-erroring → `{ completion: "" }`, NEVER throws (the try/catch here is a
+   * belt-and-braces second layer on top of completeInline's own internal fail-safe).
+   */
+  copilotComplete: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        prefix: z.string().max(4000),
+        suffix: z.string().max(2000).optional(),
+        language: z.string().max(32).optional(),
+        maxTokens: z.number().int().positive().max(128).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      try {
+        return await completeInline(input);
+      } catch {
+        return { completion: "" as const };
+      }
     }),
 
   // ── IEC 61131-3 structured POU (LAD/FBD/SFC) — P4 (doc 24 Wave-3) ──

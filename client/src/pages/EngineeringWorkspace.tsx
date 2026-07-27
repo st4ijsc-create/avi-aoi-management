@@ -1000,7 +1000,15 @@ export default function EngineeringWorkspace() {
                         <TeachJogPanel value={code} onChange={setCode} />
                       )
                     ) : (
-                      <CodeEditor value={code} onChange={setCode} language={language} aria-label="program-source" />
+                      <CodeEditor
+                        value={code}
+                        onChange={setCode}
+                        language={language}
+                        aria-label="program-source"
+                        // doc69 · Wave 4 / C1 — the primary authoring surface gets inline (ghost-text)
+                        // completion; opt-in per CodeEditor.tsx, other consumers are unchanged.
+                        inlineCopilot
+                      />
                     )}
 
                     <div className="mt-3 flex flex-wrap gap-2">
