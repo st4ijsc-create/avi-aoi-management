@@ -334,12 +334,26 @@ public sealed class FleetHost
             var wasRunning = IsRunning;
             StartLocked();
             started = !wasRunning && IsRunning;
+
+            // Review fix (Important) — the NBIRTH call is made HERE, still inside _gate, deliberately: two
+            // genuinely concurrent operator calls (e.g. a Start racing a Stop on two threads) could otherwise
+            // order the gate-protected transitions one way while off-gate publish calls raced the other way,
+            // letting a Stop's NDEATH run before its logically-preceding Start's NBIRTH — hitting the
+            // born-guard, no-op'ing, and leaving that birth's NDEATH never sent. Holding _gate across this
+            // call is cheap/deadlock-free: PublishNodeBirth only takes the publisher's own _lifecycleGate
+            // briefly and does a non-blocking channel TryWrite (no I/O, never calls back into FleetHost), so
+            // lock order is always _gate -> _lifecycleGate, never reversed. The historian run-event below
+            // stays OUTSIDE _gate — that's a pre-existing async fire-and-forget pattern, unchanged/out of
+            // scope here.
+            if (started)
+            {
+                _unsPublisher?.PublishNodeBirth();
+            }
         }
 
         if (started)
         {
             _ = _historianWriter?.RecordRunEventFireAndForget("Start");
-            _unsPublisher?.PublishNodeBirth();
         }
     }
 
@@ -362,12 +376,20 @@ public sealed class FleetHost
             var wasRunning = IsRunning;
             handle = StopLocked();
             stopped = wasRunning && !IsRunning;
+
+            // Review fix (Important) — same reasoning as Start()'s own NBIRTH call: kept inside _gate so the
+            // NDEATH's enqueue order is serialized with the transition decision itself, not racing an
+            // off-gate concurrent Start's NBIRTH. The historian run-event below stays OUTSIDE _gate
+            // (pre-existing async fire-and-forget pattern, unchanged here).
+            if (stopped)
+            {
+                _unsPublisher?.PublishNodeDeath();
+            }
         }
 
         if (stopped)
         {
             _ = _historianWriter?.RecordRunEventFireAndForget("Stop");
-            _unsPublisher?.PublishNodeDeath();
         }
 
         WaitAndDisposeOldPipeline(handle);
@@ -386,10 +408,15 @@ public sealed class FleetHost
         {
             handle = StopLocked();
             _estopEngaged = true;
+
+            // Review fix (Important) — same reasoning as Start()/Stop()'s own moved calls: kept inside
+            // _gate so this NDEATH is serialized with the transition, never racing an off-gate concurrent
+            // Start's NBIRTH. The historian run-event below stays OUTSIDE _gate (pre-existing async
+            // fire-and-forget pattern, unchanged here).
+            _unsPublisher?.PublishNodeDeath();
         }
 
         _ = _historianWriter?.RecordRunEventFireAndForget("Estop");
-        _unsPublisher?.PublishNodeDeath();
         WaitAndDisposeOldPipeline(handle);
     }
 
