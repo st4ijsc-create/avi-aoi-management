@@ -79,6 +79,38 @@ public class ModbusRegisterMapTests
         Assert.Equal(ModbusDataType.Int16, map.Registers[0].DataType);
     }
 
+    /// <summary>P2-3 review fix (Important) — <c>required</c> only enforces the JSON key is PRESENT, not
+    /// that the value is non-blank; a blank/whitespace <c>machineCode</c> used to sail through
+    /// <see cref="ModbusRegisterMap.FromJson"/> and produce a blank-Code seed descriptor that crashed
+    /// engine startup downstream (<c>FleetHost.RegisterMachine</c> throws on a blank Code, called OUTSIDE
+    /// any try/catch in Program.cs). Asserts <see cref="FromJson"/> itself now rejects this — the SAME
+    /// method Program.cs's existing try/catch already wraps, so this turns into the graceful "Modbus
+    /// disabled for this run" outcome instead of an uncaught crash.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void FromJson_Throws_WhenMachineCodeBlank(string blankCode)
+    {
+        var json = $$"""
+        { "machineCode": "{{blankCode}}",
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+    }
+
+    /// <summary>P2-3 review fix (Important, "consider while you're there") — a map with zero registers is
+    /// useless (the driver would poll nothing); rejected the same way a blank <c>machineCode</c> is.</summary>
+    [Fact]
+    public void FromJson_Throws_WhenRegistersEmpty()
+    {
+        const string json = """
+        { "machineCode": "PLC-EMPTY", "registers": [] }
+        """;
+
+        Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+    }
+
     [Theory]
     [InlineData(0xFFFF, ModbusDataType.Int16, 0.1, -0.1)]
     [InlineData(0xFFFF, ModbusDataType.UInt16, 1.0, 65535.0)]

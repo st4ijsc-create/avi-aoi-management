@@ -47,13 +47,40 @@ public sealed class ModbusRegisterMap
     /// property names are matched case-insensitively, enum values as their C# member names — "Holding"/
     /// "Input", "UInt16"/"Int16" — also matched case-insensitively). Throws
     /// <see cref="JsonException"/>/<see cref="InvalidOperationException"/> straight through on malformed
-    /// JSON or a missing required field (<see cref="MachineCode"/>/<see cref="Registers"/>) — the caller
-    /// (Program.cs's startup wiring) is the one that decides "log + disable Modbus for this run" rather
-    /// than crash, exactly like the UNS broker-bind failure already does; this method itself stays a
-    /// plain, throwing parse function, same as <c>MappingProfile.FromJson</c>.</summary>
+    /// JSON, a missing required field (<see cref="MachineCode"/>/<see cref="Registers"/>), a
+    /// blank/whitespace-only <see cref="MachineCode"/>, or an empty <see cref="Registers"/> list — the
+    /// caller (Program.cs's startup wiring) is the one that decides "log + disable Modbus for this run"
+    /// rather than crash, exactly like the UNS broker-bind failure already does; this method itself stays
+    /// a plain, throwing parse function, same as <c>MappingProfile.FromJson</c>.
+    ///
+    /// P2-3 review fix (Important) — <c>required</c> only enforces the JSON KEY is present, not that its
+    /// value is non-blank/non-empty: a map with <c>"machineCode": ""</c> used to sail through this method,
+    /// producing a <see cref="MachineDescriptor"/>-shaped seed with a blank Code that
+    /// <c>FleetHost.RegisterMachine</c> (called post-<c>app.Build()</c>, OUTSIDE any try/catch) then
+    /// rejected with an uncaught <see cref="ArgumentException"/> — crashing the whole engine at startup.
+    /// Validating here, INSIDE the one throwing parse function every malformed-map case already funnels
+    /// through, means Program.cs's existing try/catch around this call (which logs "Modbus register map
+    /// failed to load ... — Modbus driver disabled for this run" and sets its map variable to null) now
+    /// also catches this case — no seed descriptor is ever built from a blank/absent-registers map, and
+    /// the host never crashes.</summary>
     public static ModbusRegisterMap FromJson(string json)
     {
         var map = JsonSerializer.Deserialize<ModbusRegisterMap>(json, JsonOptions);
-        return map ?? throw new InvalidOperationException("ModbusRegisterMap.FromJson: JSON deserialized to null.");
+        if (map is null)
+        {
+            throw new InvalidOperationException("ModbusRegisterMap.FromJson: JSON deserialized to null.");
+        }
+
+        if (string.IsNullOrWhiteSpace(map.MachineCode))
+        {
+            throw new InvalidOperationException("Modbus register map: 'machineCode' must be a non-blank string.");
+        }
+
+        if (map.Registers.Count == 0)
+        {
+            throw new InvalidOperationException("Modbus register map: 'registers' must contain at least one entry.");
+        }
+
+        return map;
     }
 }
