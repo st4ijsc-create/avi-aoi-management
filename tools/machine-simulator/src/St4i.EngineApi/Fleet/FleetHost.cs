@@ -17,6 +17,12 @@ using Microsoft.Extensions.Logging;
 
 namespace St4i.EngineApi.Fleet;
 
+/// <summary>GĐ3 sub-4 LC-2 — one pipeline slot's driver health, as read by <see cref="FleetHost.GetDriverHealth"/>:
+/// the slot's label, its driver's <see cref="DriverKind"/>, and its current <see cref="DriverHealthState"/>.
+/// A top-level (not nested) type — same "small DTO sitting alongside the class it's produced by" idiom as
+/// <see cref="St4i.EngineApi.Safety.SafetySnapshot"/> for <see cref="FleetHost.GetSafetyStatus"/>.</summary>
+public sealed record DriverHealthSnapshot(string SlotLabel, DriverKind Kind, DriverHealthState Health);
+
 /// <summary>
 /// Task 3 — the headless composition root: builds + runs the simulated fleet with NO UI, reusing
 /// exactly the same EdgeCore driver→normalize→transport pipeline the WPF app's <c>FleetService</c>
@@ -381,6 +387,32 @@ public sealed class FleetHost
     public St4i.EngineApi.Safety.SafetySnapshot GetSafetyStatus()
     {
         lock (_gate) { return new St4i.EngineApi.Safety.SafetySnapshot(_estopEngaged, IsRunning); }
+    }
+
+    /// <summary>GĐ3 sub-4 LC-2 — per-slot driver health, read-only: the FIRST production reader of
+    /// <see cref="IDeviceDriver.Health"/> (added for <see cref="Alarms.AlarmEvaluator"/>'s DriverHealth
+    /// alarm source). Pure read under <see cref="_gate"/> — same lock every other read of <see cref="_slots"/>
+    /// in this class already takes, mirroring <see cref="GetSafetyStatus"/>'s own "pure read, never mutates"
+    /// contract. Returns one entry per CURRENTLY live slot (an empty list while the fleet is stopped) —
+    /// nothing here reaches into a slot that has been removed; <see cref="Alarms.AlarmEvaluator"/> is what
+    /// notices a slot's disappearance (by diffing this list against its own last pass) and clears that
+    /// slot's alarms on its behalf.</summary>
+    public IReadOnlyList<DriverHealthSnapshot> GetDriverHealth()
+    {
+        lock (_gate)
+        {
+            return _slots.Select(s => new DriverHealthSnapshot(s.Label, s.Driver.Kind, s.Driver.Health)).ToList();
+        }
+    }
+
+    /// <summary>GĐ3 sub-4 LC-2 — the raw cumulative fleet-wide KPI counters (added for
+    /// <see cref="Alarms.AlarmEvaluator"/>'s windowed NG-rate source, which diffs successive calls to
+    /// compute a DELTA rather than a fleet-lifetime rate). Pure read under <see cref="_kpiGate"/> — the
+    /// SAME lock/fields <see cref="Snapshot"/>'s own FPY computation already reads, just handed back raw
+    /// instead of pre-divided into a ratio.</summary>
+    public (long TotalPass, long TotalJudged) GetKpiCounters()
+    {
+        lock (_kpiGate) { return (_totalPass, _totalJudged); }
     }
 
     public Exception? LastError { get; private set; }

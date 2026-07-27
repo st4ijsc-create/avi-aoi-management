@@ -386,6 +386,23 @@ builder.Services.AddSingleton<St4i.EngineApi.Alarms.IAlarmStore>(sp =>
         string.IsNullOrWhiteSpace(alarmsDir) ? null : alarmsDir,
         logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("Alarms").LogError(ex, "{AlarmsMsg}", msg)));
 
+// GĐ3 sub-4 LC-2 (.superpowers/sdd/2026-07-27-giaidoan3-alarms-linecontroller-blueprint/task-2-brief.md) —
+// the automatic (condition-based) alarm SOURCES riding on top of LC-1's store above: a periodic evaluator
+// that polls FleetHost.GetDriverHealth()/GetKpiCounters() and raises/clears DriverHealth + windowed
+// fleet-NG-rate alarms. AlarmThresholds.FromEnvironment() resolves ST4I_ALARM_NGRATE_THRESHOLD/MINSAMPLE/
+// ST4I_ALARM_EVAL_INTERVAL_MS (unparseable/unset -> built-in defaults, same posture as WalOptions above).
+// AlarmEvaluator is the pure, directly-testable core (see its own doc comment); AlarmEvaluatorService is
+// the FIRST IHostedService this project registers — a thin PeriodicTimer loop that never crashes the host
+// even if a tick fails (see that class's own doc comment). Both singletons resolve FleetHost/IAlarmStore,
+// already registered above/below as singletons themselves.
+builder.Services.AddSingleton(_ => St4i.EngineApi.Alarms.AlarmThresholds.FromEnvironment());
+builder.Services.AddSingleton<St4i.EngineApi.Alarms.AlarmEvaluator>(sp =>
+    new St4i.EngineApi.Alarms.AlarmEvaluator(
+        sp.GetRequiredService<St4i.EngineApi.Alarms.IAlarmStore>(),
+        sp.GetRequiredService<St4i.EngineApi.Alarms.AlarmThresholds>(),
+        logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmEvaluator").LogError(ex, "{AlarmEvaluatorMsg}", msg)));
+builder.Services.AddHostedService<St4i.EngineApi.Alarms.AlarmEvaluatorService>();
+
 // G2-2 (docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 2) — the local UNS spine: an
 // always-on loopback MQTTnet broker (UnsBroker) plus the dual-topic (Sparkplug + retained semantic-mirror)
 // publisher (UnsPublisher) FleetHost threads into every EdgePipeline it builds (see FleetHost.StartLocked).
