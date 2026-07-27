@@ -1,5 +1,5 @@
 /**
- * WS-G3 — Unit tests for invokeLLM (local GGUF routing) + processChat ordering.
+ * WS-G3 — Unit tests for invokeLLM (local GGUF routing).
  *
  * aiProviderRouter is fully mocked so no real model/binary is required.
  * Asserts:
@@ -7,8 +7,12 @@
  *  - json_schema → generateInsightJson, content JSON.parse-able
  *  - vision (image_url) → describeImage called with a Buffer
  *  - invokeLLM does NOT throw when no forge/OPENAI key is set (regression)
- *  - processChat prefers GGUF even when OPENAI_API_KEY is set (fake)
- *  - offline reply is non-empty in both en + vi
+ *
+ * doc69 B2 (Wave 5) — the deprecated `processChat` backend (aiChatAssistant.ts)
+ * was deleted; this file never actually exercised it (no import/call), so no
+ * test bodies changed — only this header's stale processChat/offline-reply
+ * bullets, which described assertions that live in the deleted
+ * aiChatAssistant.ws-g3.test.ts, not here.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 

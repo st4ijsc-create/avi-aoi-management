@@ -10,7 +10,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 // P1 (doc 11) — unify on the RAG/KB backend. The non-stream `chat` mutation now
 // routes through `answerQuestion` (the SAME pipeline `streamAnswer` uses: tool →
 // RAG retrieval → LLM → extractive fallback), NOT the inferior no-RAG
-// `aiChatAssistant.processChat`.
+// `processChat` (aiChatAssistant.ts).
 //
 // doc69 W0-5 item 3 — the UI tool-count footer used to read from
 // `aiChatAssistant.getAvailableTools()`, a hard-coded list of the 6 tools the
@@ -19,7 +19,12 @@ import { router, protectedProcedure } from "../_core/trpc";
 // read/write/client, F6/F7/P2 groups, programming copilot, etc.), so the footer was
 // silently advertising a stale 1/10th of the real tool surface. `listTools()` is the
 // real registry (server/services/aiLocalTools/toolRegistry.ts) — source the footer
-// from it. `aiChatAssistant.processChat` itself is untouched (separate Wave-5 cleanup).
+// from it.
+//
+// doc69 B2 (Wave 5) — `aiChatAssistant.ts` (processChat + its 6 hard-coded SQL
+// tools + getAvailableTools) has been DELETED entirely: confirmed no live caller,
+// this router never imported it. The RAG path (`answerQuestion` /
+// `aiLocalKnowledgeService`) is now the sole chat backend.
 import { answerQuestion, type UserRole } from "../services/aiLocalKnowledgeService";
 import { listTools, type ToolExecContext, type ToolLang } from "../services/aiLocalTools";
 import { getDb } from "../db/connection";
@@ -347,7 +352,8 @@ export const aiChatRouter = router({
 
   // ─── Get Available Chat Tools ────────────────────────────────
   // doc69 W0-5 item 3 — sourced from the REAL tool registry (~67 tools), not the
-  // deprecated aiChatAssistant.getAvailableTools() 6-tool stub. See import comment.
+  // deprecated aiChatAssistant.getAvailableTools() 6-tool stub (that whole file
+  // was deleted in doc69 B2, Wave 5). See import comment.
   tools: protectedProcedure
     .query(() => {
       return listTools().map((t) => ({ name: t.name, description: t.description }));

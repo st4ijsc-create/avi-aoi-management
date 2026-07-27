@@ -57,15 +57,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useAIStream } from "@/hooks/useAIStream";
 import MachineQuickScan from "@/components/MachineQuickScan";
-
-// P3/W3.1 (doc 11) — Rollback switch. When true, /ai-chat sends to the
-// RAG-grounded local knowledge-base backend (/api/ai/local-kb/stream) — the SAME
-// endpoint the floating chat bubble uses — so it answers with full KB retrieval +
-// the aiLocalTools registry. Flip to false to fall back to the old bare-LLM
-// useAIStream path (/api/ai/stream/chat) with one line.
-const USE_KB_BACKEND = true;
+// doc69 B2 — unify the renderer with AILocalChatBubble/AILocalKnowledgeBase:
+// assistant messages render via react-markdown (safe, no raw HTML), not plain text.
+import Markdown from "react-markdown";
 
 // Localized "suggested prompts" shown in the empty state for discoverability.
 const SUGGESTED_PROMPTS: { emoji: string; key: string; fallback: string }[] = [
@@ -133,10 +128,10 @@ export default function AIChatPage() {
   // about that specific machine. The user can clear the chip at any time.
   const [machineCode, setMachineCode] = useState<string | null>(null);
 
-  // Streaming hooks.
-  //  - useAIStream     → old bare-LLM path (/api/ai/stream/chat). Kept for rollback.
-  //  - useKbChatStream → P3/W3.1 (doc 11) RAG-grounded path (/api/ai/local-kb/stream).
-  const { streamingText, isStreaming, error: streamError, startStream, stopStream } = useAIStream();
+  // Streaming hook — P3/W3.1 (doc 11) RAG-grounded path (/api/ai/local-kb/stream).
+  // doc69 B2 removed the legacy bare-LLM useAIStream fallback + USE_KB_BACKEND
+  // toggle — this is now the ONLY streaming engine (useAIStream the hook is kept
+  // for DashboardAIWidget, which still uses it independently).
   const {
     streamingText: kbStreamingText,
     isStreaming: kbIsStreaming,
@@ -211,24 +206,17 @@ export default function AIChatPage() {
     },
   });
 
-  // P3/W3.1 (doc 11) — unify the two streaming hooks behind one set of names so
-  // the render layer is backend-agnostic. Flip USE_KB_BACKEND to switch paths.
-  const effStreamingText = USE_KB_BACKEND ? kbStreamingText : streamingText;
-  const effIsStreaming = USE_KB_BACKEND ? kbIsStreaming : isStreaming;
-  const effStreamError = USE_KB_BACKEND ? kbStreamError : streamError;
-  const effStopStream = USE_KB_BACKEND ? stopKbStream : stopStream;
-
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation?.messages, effStreamingText, optimisticUserMsg]);
+  }, [conversation?.messages, kbStreamingText, optimisticUserMsg]);
 
   // Show stream errors
   useEffect(() => {
-    if (effStreamError) {
-      toast.error(effStreamError);
+    if (kbStreamError) {
+      toast.error(kbStreamError);
     }
-  }, [effStreamError]);
+  }, [kbStreamError]);
 
   // Deep-link prefill: /ai-chat?q=...&machine=<code> (e.g. from a QR/NFC scan via
   // MachineQuickScan, or MachineAISummary "Hỏi AI"). Read ?machine= to scope the
@@ -290,140 +278,108 @@ export default function AIChatPage() {
       content: m.content,
     }));
 
-    // ── P3/W3.1 (doc 11) — RAG-grounded path ─────────────────────────────────
+    // ── P3/W3.1 (doc 11) — RAG-grounded path (SOLE engine; doc69 B2 removed the
+    // legacy bare-LLM useAIStream fallback + USE_KB_BACKEND toggle) ──────────
     // Send to the SAME backend the chat bubble uses so /ai-chat answers with the
     // full knowledge base + tool grounding. We pass the prior turns as `history`,
     // the auth-derived AI role, and the page context (route + UI lang + machine).
-    if (USE_KB_BACKEND) {
-      // Reset per-turn extras (citations/tool/structured/followups/pending) so a
-      // new answer never shows the previous turn's cards.
-      setLastExtras(null);
+    // Reset per-turn extras (citations/tool/structured/followups/pending) so a
+    // new answer never shows the previous turn's cards.
+    setLastExtras(null);
+    setStreamToolResult(null);
+    setStreamVision(null);
+    setShowSources(false);
+    // P3/W3.1 (doc 11) — reset the inline confirm lifecycle for the new turn.
+    setActionState("pending");
+    setActionMessage(null);
+
+    const kbResult = await startKbStream(
+      {
+        question: userMsg,
+        topK: 5,
+        history: existingMessages,
+        userRole: mapAppRoleToAiRole(user?.role),
+        context: {
+          route: "/ai-chat",
+          uiLanguage: i18n.language,
+          selectedMachineCode:
+            scopeCode ?? selection.selectedMachineCode ?? undefined,
+        },
+        // P3/D8 (doc 34) — attach the image (base64 data URL) when present.
+        image: image?.dataUrl,
+      },
+      {
+        // Live tool card while streaming (mirrors the bubble).
+        onToolResult: (toolResult, toolName) =>
+          setStreamToolResult({ toolResult, toolName }),
+        // P3/D8 (doc 34) — live VL step (shown above the streaming answer).
+        onVision: (v) => setStreamVision(v),
+        // FE-only directive: navigate / prefill_form. No DB mutation; never
+        // auto-executes a write. Same behaviour as the bubble — EXCEPT doc69
+        // G2-7's `suggested` (grounded from a how-to answer, not an explicit
+        // "mở trang X" command): that one must NOT auto-navigate the user away
+        // from the answer they're reading. It's surfaced as a button instead
+        // (rendered in renderKbExtras via lastExtras.navigateAction below).
+        onClientAction: (ca) => {
+          if (!ca.route) return;
+          if (ca.suggested) return; // handled via lastExtras.navigateAction, not here
+          if (ca.action === "prefill_form" && ca.values) {
+            publishPrefill(ca.route, ca.values);
+          }
+          setLocation(ca.route);
+        },
+      },
+    );
+
+    if (kbResult) {
+      setOptimisticUserMsg(null);
+      // Stash the extras so they render under the persisted assistant message.
+      setLastExtras({
+        citations: kbResult.citations,
+        toolResult: kbResult.toolResult,
+        toolName: kbResult.toolName,
+        structured: kbResult.structured,
+        followUpSuggestions: kbResult.followUpSuggestions,
+        provider: kbResult.provider,
+        cached: kbResult.cached,
+        pendingAction: kbResult.pendingAction,
+        vision: kbResult.vision,
+        navigateAction:
+          kbResult.clientAction?.suggested && kbResult.clientAction.route
+            ? { route: kbResult.clientAction.route, message: kbResult.clientAction.message }
+            : null,
+      });
       setStreamToolResult(null);
       setStreamVision(null);
-      setShowSources(false);
-      // P3/W3.1 (doc 11) — reset the inline confirm lifecycle for the new turn.
-      setActionState("pending");
-      setActionMessage(null);
-
-      const kbResult = await startKbStream(
-        {
-          question: userMsg,
-          topK: 5,
-          history: existingMessages,
-          userRole: mapAppRoleToAiRole(user?.role),
-          context: {
-            route: "/ai-chat",
-            uiLanguage: i18n.language,
-            selectedMachineCode:
-              scopeCode ?? selection.selectedMachineCode ?? undefined,
-          },
-          // P3/D8 (doc 34) — attach the image (base64 data URL) when present.
-          image: image?.dataUrl,
-        },
-        {
-          // Live tool card while streaming (mirrors the bubble).
-          onToolResult: (toolResult, toolName) =>
-            setStreamToolResult({ toolResult, toolName }),
-          // P3/D8 (doc 34) — live VL step (shown above the streaming answer).
-          onVision: (v) => setStreamVision(v),
-          // FE-only directive: navigate / prefill_form. No DB mutation; never
-          // auto-executes a write. Same behaviour as the bubble — EXCEPT doc69
-          // G2-7's `suggested` (grounded from a how-to answer, not an explicit
-          // "mở trang X" command): that one must NOT auto-navigate the user away
-          // from the answer they're reading. It's surfaced as a button instead
-          // (rendered in renderKbExtras via lastExtras.navigateAction below).
-          onClientAction: (ca) => {
-            if (!ca.route) return;
-            if (ca.suggested) return; // handled via lastExtras.navigateAction, not here
-            if (ca.action === "prefill_form" && ca.values) {
-              publishPrefill(ca.route, ca.values);
-            }
-            setLocation(ca.route);
-          },
-        },
-      );
-
-      if (kbResult) {
-        setOptimisticUserMsg(null);
-        // Stash the extras so they render under the persisted assistant message.
-        setLastExtras({
-          citations: kbResult.citations,
-          toolResult: kbResult.toolResult,
-          toolName: kbResult.toolName,
-          structured: kbResult.structured,
-          followUpSuggestions: kbResult.followUpSuggestions,
-          provider: kbResult.provider,
-          cached: kbResult.cached,
-          pendingAction: kbResult.pendingAction,
-          vision: kbResult.vision,
-          navigateAction:
-            kbResult.clientAction?.suggested && kbResult.clientAction.route
-              ? { route: kbResult.clientAction.route, message: kbResult.clientAction.message }
-              : null,
-        });
-        setStreamToolResult(null);
-        setStreamVision(null);
-        // saveStreamedMessage requires a non-empty assistant message.
-        const assistantText =
-          kbResult.fullText.trim() ||
-          t(
-            "aiChat.noAnswer",
-            "Tôi chưa tìm được câu trả lời phù hợp. Vui lòng thử câu hỏi khác.",
-          );
-        saveStreamedMsg.mutate({
-          conversationId: convId!,
-          userMessage: userMsg,
-          assistantMessage: assistantText,
-        });
-      } else if (kbAbortedRef.current) {
-        // User cancelled — just drop the optimistic message, persist nothing.
-        setOptimisticUserMsg(null);
-        setStreamToolResult(null);
-      } else {
-        // Stream failed (non-abort) — fall back to the tRPC `chat` mutation. P1
-        // (doc 11): that mutation now routes through the SAME RAG/KB backend
-        // (`answerQuestion`) as the stream, so the fallback answer is grounded in
-        // the knowledge base + tools (extractive on LLM failure) — never the old
-        // no-RAG assistant. We pass the prior turns so RAG keeps conversational
-        // context, not just the latest message.
-        chatMutation.mutate({
-          conversationId: String(convId),
-          userMessage: userMsg,
-          messages: [...existingMessages, { role: "user" as const, content: userMsg }],
-          language: "vi",
-        });
-      }
-      return;
-    }
-
-    // ── Legacy path (USE_KB_BACKEND === false): bare-LLM useAIStream ──────────
-    const allMessages = [...existingMessages, { role: "user" as const, content: userMsg }];
-
-    // Try streaming first
-    const result = await startStream(allMessages, { maxTokens: 512, temperature: 0.7 });
-
-    if (result) {
-      // Streaming succeeded — persist messages
-      setOptimisticUserMsg(null);
+      // saveStreamedMessage requires a non-empty assistant message.
+      const assistantText =
+        kbResult.fullText.trim() ||
+        t(
+          "aiChat.noAnswer",
+          "Tôi chưa tìm được câu trả lời phù hợp. Vui lòng thử câu hỏi khác.",
+        );
       saveStreamedMsg.mutate({
         conversationId: convId!,
         userMessage: userMsg,
-        assistantMessage: result.fullText,
-        tokensUsed: result.tokensGenerated,
+        assistantMessage: assistantText,
       });
-    } else if (!streamError?.includes("AbortError")) {
-      // Streaming failed — fall back to the tRPC `chat` mutation. P1 (doc 11):
-      // this mutation is now RAG/KB-backed (`answerQuestion`), so even the legacy
-      // bare-LLM stream path degrades to a knowledge-grounded answer, not the old
-      // no-RAG assistant.
+    } else if (kbAbortedRef.current) {
+      // User cancelled — just drop the optimistic message, persist nothing.
+      setOptimisticUserMsg(null);
+      setStreamToolResult(null);
+    } else {
+      // Stream failed (non-abort) — fall back to the tRPC `chat` mutation. P1
+      // (doc 11): that mutation now routes through the SAME RAG/KB backend
+      // (`answerQuestion`) as the stream, so the fallback answer is grounded in
+      // the knowledge base + tools (extractive on LLM failure) — never the old
+      // no-RAG assistant. We pass the prior turns so RAG keeps conversational
+      // context, not just the latest message.
       chatMutation.mutate({
         conversationId: String(convId),
         userMessage: userMsg,
         messages: [...existingMessages, { role: "user" as const, content: userMsg }],
         language: "vi",
       });
-    } else {
-      setOptimisticUserMsg(null);
     }
   };
 
@@ -503,7 +459,7 @@ export default function AIChatPage() {
     [notifyImageError],
   );
 
-  const isBusy = effIsStreaming || chatMutation.isPending;
+  const isBusy = kbIsStreaming || chatMutation.isPending;
   const messages = conversation?.messages ?? [];
   // P3/W3.1 (doc 11) — index of the last assistant message (extras render here).
   const lastAssistantIdx = (() => {
@@ -788,7 +744,7 @@ export default function AIChatPage() {
             /* Messages */
             <ScrollArea className="flex-1 p-4">
                 <div className="max-w-3xl mx-auto space-y-4">
-                  {messages.length === 0 && !optimisticUserMsg && !effIsStreaming && (
+                  {messages.length === 0 && !optimisticUserMsg && !kbIsStreaming && (
                     <div className="py-10">
                       <div className="text-center text-muted-foreground mb-6">
                         <Bot className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -842,7 +798,16 @@ export default function AIChatPage() {
                             : "bg-muted"
                         )}
                       >
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                        {/* doc69 B2 — assistant messages render via react-markdown
+                            (mirrors AILocalChatBubble/AILocalKnowledgeBase); user
+                            messages stay plain text. */}
+                        {msg.role === "user" ? (
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        ) : (
+                          <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
+                            <Markdown>{msg.content}</Markdown>
+                          </div>
+                        )}
                         {msg.toolCalls && (
                           <Badge variant="outline" className="mt-1.5 text-xs">
                             <Wrench className="h-3 w-3 mr-1" />
@@ -851,8 +816,7 @@ export default function AIChatPage() {
                         )}
                         {/* P3/W3.1 (doc 11) — RAG extras (citations / tool card /
                             structured / follow-ups) under the latest answer. */}
-                        {USE_KB_BACKEND &&
-                          msg.role !== "user" &&
+                        {msg.role !== "user" &&
                           idx === lastAssistantIdx &&
                           lastExtras &&
                           renderKbExtras(lastExtras)}
@@ -876,7 +840,7 @@ export default function AIChatPage() {
                     </div>
                   )}
                   {/* Streaming AI response — also shows a live vision + tool card (KB path). */}
-                  {effIsStreaming && (effStreamingText || streamToolResult || streamVision) && (
+                  {kbIsStreaming && (kbStreamingText || streamToolResult || streamVision) && (
                     <div className="flex gap-3 justify-start">
                       <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                         <Zap className="h-4 w-4 text-primary animate-pulse" />
@@ -890,8 +854,10 @@ export default function AIChatPage() {
                             <AIToolResultCard toolResult={streamToolResult.toolResult} />
                           </div>
                         )}
-                        {effStreamingText && (
-                          <p className="whitespace-pre-wrap">{effStreamingText}</p>
+                        {kbStreamingText && (
+                          <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
+                            <Markdown>{kbStreamingText}</Markdown>
+                          </div>
                         )}
                         <Badge variant="outline" className="mt-1.5 text-xs">
                           <Zap className="h-3 w-3 mr-1" />
@@ -902,7 +868,7 @@ export default function AIChatPage() {
                   )}
                   {/* Loading spinner (fallback non-streaming) */}
                   {(chatMutation.isPending ||
-                    (effIsStreaming && !effStreamingText && !streamToolResult && !streamVision)) && (
+                    (kbIsStreaming && !kbStreamingText && !streamToolResult && !streamVision)) && (
                     <div className="flex gap-3">
                       <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
                         <Bot className="h-4 w-4 text-primary" />
@@ -1053,8 +1019,8 @@ export default function AIChatPage() {
                   }}
                   disabled={isBusy}
                 />
-                {effIsStreaming ? (
-                  <Button variant="destructive" onClick={effStopStream}>
+                {kbIsStreaming ? (
+                  <Button variant="destructive" onClick={stopKbStream}>
                     <StopCircle className="h-4 w-4" />
                   </Button>
                 ) : (

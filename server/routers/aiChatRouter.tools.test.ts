@@ -7,9 +7,14 @@
  * groups, ~67 entries — so the footer was silently advertising ~1/10th of the actual
  * tool surface.
  *
- * This proves the router's `tools` query now returns the REAL registry (count/names
- * match `listTools()` 1:1), and that this is strictly MORE than the stale 6-tool
- * `getAvailableTools()` set (so a regression back to the old source would be caught).
+ * This proves the router's `tools` query returns the REAL registry (count/names match
+ * `listTools()` 1:1).
+ *
+ * doc69 B2 (Wave 5) — `aiChatAssistant.ts` (processChat + getAvailableTools) has now
+ * been DELETED entirely (no live caller), so the old "stale 6-tool set" regression
+ * guard against `getAvailableTools()` no longer applies — there is nothing left to
+ * regress back to. Dropped those two assertions; kept the one that still matters
+ * (the footer is sourced from the real registry).
  *
  * The chat-answer pipeline (`answerQuestion` / RAG / GGUF) is irrelevant to the
  * tools-footer query — mocked out so importing the router stays cheap/deterministic
@@ -26,7 +31,6 @@ vi.mock("../db/connection", () => ({ getDb: (...a: unknown[]) => mockGetDb(...a)
 
 import { aiChatRouter } from "./aiChatRouter";
 import { listTools } from "../services/aiLocalTools";
-import { getAvailableTools } from "../services/aiChatAssistant";
 
 const ctxFor = (id: number, role: string) => ({ user: { id, role } }) as never;
 
@@ -44,25 +48,13 @@ describe("aiChatRouter.tools — sourced from the real tool registry (doc69 W0-5
     }
   });
 
-  it("the real registry is strictly larger than the deprecated 6-tool hardcoded footer (regression guard)", async () => {
+  it("the real registry is strictly larger than the old deprecated 6-tool footer (regression guard)", async () => {
     const caller = aiChatRouter.createCaller(ctxFor(2, "operator"));
     const result = await caller.tools();
 
-    const stale = getAvailableTools();
-    expect(stale.length).toBe(6); // the OLD hard-coded set, pinned so a drift here is visible
-    expect(result.length).toBeGreaterThan(stale.length);
+    // The deprecated processChat backend only ever knew about 6 hard-coded tools
+    // (aiChatAssistant.ts, deleted doc69 B2). Pin that number directly so a
+    // regression back to a tiny hard-coded list would still be caught.
     expect(result.length).toBeGreaterThan(6);
-  });
-
-  it("does NOT return the stale hard-coded tool names verbatim as the full set", async () => {
-    const caller = aiChatRouter.createCaller(ctxFor(3, "operator"));
-    const result = await caller.tools();
-    const resultNames = new Set(result.map((t: any) => t.name));
-
-    const stale = getAvailableTools();
-    // Every stale name being present is fine (some tools may overlap by name), but the
-    // stale list must NOT be the same closed set — the real registry has extra tools.
-    const extra = [...resultNames].filter((n) => !stale.some((s) => s.name === n));
-    expect(extra.length).toBeGreaterThan(0);
   });
 });
