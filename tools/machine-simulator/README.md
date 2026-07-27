@@ -293,6 +293,14 @@ since landed too — the `/site` page's **"Discover Sites"** button (backed by `
 `ST4I_SITE_SERVICE_TYPE`, §17.3) and pre-fills the host/port for the operator; trust is still a manually
 pasted, pinned PEM (§17.5). Discovery is browse-only + on-demand (no always-on multicast socket).
 
+**Update (Giai đoạn 3, sub-4 — Alarms (ISA-18.2) + Line control (PackML)):** an ISA-18.2 alarm engine
+(Policy DENY / DriverHealth / NG-rate sources, an SQLite active-set + history store, a periodic
+background evaluator) and a supervisory PackML/ISA-88 line-control state machine layered over
+`FleetHost` (Start/Hold/Unhold/Stop/Abort/Reset, an alarm→hold interlock, a retained UNS `_line/state`
+topic) have both since landed — see **§18** for the full detail (env vars, endpoints, alarm
+sources/priorities, PackML states+commands+FleetHost mapping, and the alarm→hold gate's honest
+boundary).
+
 **Genuinely still future, not touched by this build:** **mDNS *advertising* (a Site auto-discovering the
 machine)** — this device browses for Sites but does not announce itself; **EST/SCEP enrollment + a Site CA** — today the device
 identity is a bare self-signed certificate and trust is a single operator-pasted PEM, not a
@@ -321,6 +329,13 @@ canonical" của lộ trình này).
 kê là tương lai — nay ĐÃ GIAO: một danh tính thiết bị bền vững (chứng chỉ tự ký) cùng một bridge mTLS
 ghim tin cậy, liên kết xương sống UNS cục bộ (§16.1) lên một SYNAPSE Site. Xem **§17** để biết chi tiết
 đầy đủ (biến môi trường, endpoint, luồng gia nhập, tư thế bảo mật).
+
+**Cập nhật (Giai đoạn 3, sub-4 — Cảnh báo ISA-18.2 + Điều khiển line PackML):** một cỗ máy cảnh báo
+ISA-18.2 (nguồn Policy DENY / DriverHealth / NG-rate, kho SQLite tập-đang-hoạt-động + lịch sử, một bộ
+đánh giá nền định kỳ) và một máy trạng thái PackML/ISA-88 giám sát nằm trên `FleetHost`
+(Start/Hold/Unhold/Stop/Abort/Reset, khoá liên động cảnh báo→hold, một topic UNS `_line/state` giữ lại)
+đều đã giao — xem **§18** để biết chi tiết đầy đủ (biến môi trường, endpoint, nguồn/mức ưu tiên cảnh
+báo, trạng thái+lệnh PackML+ánh xạ FleetHost, và ranh giới thật của khoá cảnh báo→hold).
 
 Vẫn CHƯA làm: **mDNS tự động dò tìm + join wizard** (hiện gia nhập hoàn toàn thủ công — sao chép
 fingerprint từ `/site`, đăng ký thủ công tại Site, dán lại chứng chỉ tin cậy của Site, §17.6);
@@ -1760,3 +1775,346 @@ khiển được máy. **Chưa có probe kết nối trước khi lưu** (`POST 
 bridge)** — một hạng mục lớn riêng, đã đánh giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (§12). Mục điều
 hướng `/site` mới cần chạy lại baseline visual-regression CI (`--update-snapshots`) — chưa làm tại thời
 điểm cập nhật tài liệu này (giống hạng mục còn treo mà §16.5 đã nêu cho `/assets`).)*
+
+---
+
+## 18. Alarms (ISA-18.2) + Line control (PackML) / Cảnh báo (ISA-18.2) + Điều khiển line (PackML)
+
+**EN** — GĐ3 sub-4 gives this device two new supervisory layers, both landed this build: an
+**ISA-18.2 alarm engine** (a durable, auto-clearing alarm backbone fed by three sources — Policy
+denials, driver health, and fleet NG-rate) and a **PackML/ISA-88 line-control state machine** layered
+over `FleetHost` (Start/Hold/Unhold/Stop/Abort/Reset), with an alarm→hold interlock tying the two
+together: a live Critical alarm blocks the line from starting or resuming. Both are additive — neither
+changes `FleetHost`'s own Start/Stop/Estop/ResetEstop behavior, they only supervise it.
+
+*(VI: GĐ3 sub-4 cho thiết bị này hai lớp giám sát mới, đều đã giao trong bản này: một **cỗ máy cảnh báo
+ISA-18.2** (một xương sống cảnh báo bền vững, tự xoá khi hết điều kiện, nạp từ ba nguồn — Policy từ
+chối, sức khoẻ driver, và NG-rate của fleet) và một **máy trạng thái điều khiển line PackML/ISA-88**
+nằm trên `FleetHost` (Start/Hold/Unhold/Stop/Abort/Reset), cùng một khoá liên động cảnh báo→hold nối
+hai lớp này lại: một cảnh báo Critical đang hoạt động sẽ chặn line khởi động hoặc tiếp tục chạy. Cả hai
+đều là bổ sung — không đổi hành vi Start/Stop/Estop/ResetEstop của chính `FleetHost`, chỉ giám sát nó.)*
+
+### 18.1 The alarm model (ISA-18.2) / Mô hình cảnh báo (ISA-18.2)
+
+**EN** — `St4i.EngineApi.Alarms.Alarm` is one alarm condition, keyed for dedup by `Source:Code:TargetId`
+(`AlarmRaise.Key`): a re-raise of the same key UPDATEs `Count`/`LastRaisedUtc` while PRESERVING
+`FirstRaisedUtc` and any existing ack state — never resets a re-raised alarm back to "freshly raised".
+
+- **`AlarmSource`** — `Policy` | `DriverHealth` | `NgRate` (§18.2 below for the two automatic sources).
+- **`AlarmPriority`** — `Critical` | `High` | `Medium` | `Low`, most-severe first (the same order
+  `GET /v1/alarms` sorts by).
+- **`AlarmState`** — `Active` | `Acked` | `Cleared` (`Cleared` is transient — a cleared alarm is already
+  DELETEd from the live set; it only ever appears as the state on the in-memory `Alarm` a clearing call
+  just returned, or as the `"cleared"` row in history).
+- **EVENT vs. CONDITION (`ClearOnAck`)** — the model's central distinction. `ClearOnAck=true` (an EVENT
+  alarm — today, only Policy denials): the triggering event has no lingering condition to watch, so an
+  operator's Ack both acks AND clears it in one step. `ClearOnAck=false` (a CONDITION alarm —
+  DriverHealth/NgRate): the condition can still be true after an Ack, so Ack only silences it
+  (`Active`→`Acked`) — only the periodic evaluator's own `ClearAsync`, once the condition itself ends,
+  actually removes it.
+- **Store** — `AlarmStore` is its own SQLite file, `alarms.db`, under a directory resolved the same
+  "explicit path (tests) → env var → `%ProgramData%` default" idiom as every other store in this doc
+  (§15.2, §16.5, §17.3): default `%ProgramData%\ST4I\sim\alarms`, relocatable via **`ST4I_ALARMS_DIR`**.
+  Two tables: `active_alarms` (the live set — one row per `Key`, UPSERTed/DELETEd) and `alarm_history`
+  (append-only `raised`/`cleared`/`acked` events, never mutated). `RaiseAsync`/`ClearAsync` **NEVER
+  throw** (a swallowed, logged failure) — a Policy-deny handler or the periodic evaluator must never
+  fail an HTTP response or crash a tick just because `alarms.db` hiccuped; `AckAsync`/`ListActiveAsync`/
+  `QueryHistoryAsync` are direct, caller-invoked reads/writes and may surface an ordinary exception.
+
+**Sources:**
+
+| Source | Raised by | Priority | `ClearOnAck` | Clears when |
+|---|---|---|---|---|
+| **Policy DENY** | `PolicyResults.DenyAsync` — every policy denial across the policy-gated fleet/scenario/line mutation routes (`FleetEndpoints`, `ScenarioEndpoints`, `LineEndpoints`) | `Critical` for `SAFETY_BLOCKED` (the E-STOP guard); `High` for every other denial reason | `true` (EVENT) | The operator's own Ack (both acks and clears it in one step) |
+| **DriverHealth** | `AlarmEvaluator`'s periodic per-slot health pass (`FleetHost.GetDriverHealth`) | `High` for `Degraded`; `Critical` for `Down` | `false` (CONDITION) | The evaluator sees the slot `Connected` again, or the slot is removed from the fleet |
+| **NG-rate** | `AlarmEvaluator`'s periodic windowed fleet-wide NG-rate pass (`FleetHost.GetKpiCounters`) | `High` | `false` (CONDITION) | The evaluator's next windowed rate falls back at/under the threshold |
+
+Only the Policy source carries a **`Runbook`** hint: `SAFETY_BLOCKED` gets an E-STOP-specific one ("...
+reset the E-STOP latch (`POST /v1/fleet/estop/reset`) before starting"); every other denial reason gets
+a generic one. DriverHealth/NgRate alarms carry no runbook.
+
+The NG-rate source is a **windowed DELTA since the evaluator's last pass**, never a lifetime-cumulative
+rate: if the judged-unit delta since the last pass is below **`ST4I_ALARM_NGRATE_MINSAMPLE`**, the
+source evaluates nothing at all this pass (neither raises nor clears, to avoid flapping on a tiny
+sample); a cumulative counter that goes backwards (e.g. a fleet reset) also just re-seeds the baseline
+and skips the pass, rather than computing a nonsense negative rate.
+
+*(VI: `Alarm` là một điều kiện cảnh báo, khoá trùng lặp theo `Source:Code:TargetId` — raise lại cùng
+khoá CHỈ cập nhật `Count`/`LastRaisedUtc`, GIỮ NGUYÊN `FirstRaisedUtc` và trạng thái ack đã có. Ba enum:
+`AlarmSource` (Policy/DriverHealth/NgRate), `AlarmPriority` (Critical/High/Medium/Low, nghiêm trọng nhất
+trước), `AlarmState` (Active/Acked/Cleared — Cleared chỉ là trạng thái tức thời, alarm đã bị XOÁ khỏi
+tập sống). Phân biệt cốt lõi **SỰ KIỆN vs. ĐIỀU KIỆN** (`ClearOnAck`): `true` (sự kiện — hiện chỉ Policy
+DENY) — Ack vừa ghi nhận vừa XOÁ luôn trong một bước; `false` (điều kiện — DriverHealth/NgRate) — Ack
+chỉ im lặng nó (Active→Acked), CHỈ bộ đánh giá định kỳ mới thực sự xoá khi điều kiện tự hết. Kho lưu
+`AlarmStore` là file SQLite riêng `alarms.db`, mặc định `%ProgramData%\ST4I\sim\alarms`, dời chỗ qua
+**`ST4I_ALARMS_DIR`**. Hai bảng: `active_alarms` (tập sống) và `alarm_history` (log chỉ-ghi-thêm).
+`RaiseAsync`/`ClearAsync` KHÔNG BAO GIỜ throw. Ba nguồn: **Policy DENY** (mọi lần từ chối policy trên
+các route fleet/scenario/line — `SAFETY_BLOCKED` = Critical + runbook E-STOP, còn lại = High + runbook
+chung; sự kiện, Ack tự xoá); **DriverHealth** (đánh giá định kỳ theo từng slot — Degraded=High,
+Down=Critical; tự xoá khi slot Connected lại hoặc bị gỡ khỏi fleet); **NG-rate** (đánh giá NG-rate CỬA
+SỔ theo delta kể từ lần trước, không phải tỷ lệ cộng dồn trọn đời — dưới `ST4I_ALARM_NGRATE_MINSAMPLE`
+thì bỏ qua hẳn lượt này để tránh nhấp nháy). Chỉ nguồn Policy có `Runbook`.)*
+
+### 18.2 The periodic evaluator (env vars) / Bộ đánh giá định kỳ (biến môi trường)
+
+**EN** — `AlarmEvaluator` is the pure, directly-testable evaluation core for the two automatic sources
+(no timer of its own — each of DriverHealth/NG-rate runs inside its own try/catch, and `EvaluateAsync`
+itself never throws). `AlarmEvaluatorService` is the **first `IHostedService`** registered in
+`St4i.EngineApi`: a thin `PeriodicTimer` loop that, every tick, reads a fresh driver-health snapshot +
+KPI-counter pair and hands them to the evaluator — wrapped in its own try/catch too (defense in depth),
+so a bad tick is logged and the loop simply continues, never taking the host down.
+
+| Var | What it does | Default |
+|---|---|---|
+| `ST4I_ALARMS_DIR` | Relocates the alarm store directory (`alarms.db`, §18.1) | `%ProgramData%\ST4I\sim\alarms` |
+| `ST4I_ALARM_NGRATE_THRESHOLD` | The NG-rate fraction (0.0-1.0) above which the fleet-wide NG-rate alarm raises | `0.20` (20%) |
+| `ST4I_ALARM_NGRATE_MINSAMPLE` | The minimum judged-unit delta a window must accumulate before the NG-rate source evaluates at all | `5` |
+| `ST4I_ALARM_EVAL_INTERVAL_MS` | `AlarmEvaluatorService`'s `PeriodicTimer` period, in milliseconds | `5000` (5s) |
+
+An unset or unparseable value keeps its built-in default rather than crashing startup — same posture
+`WalOptions.FromEnvironment` already uses.
+
+*(VI: `AlarmEvaluator` là lõi đánh giá thuần, test được trực tiếp, cho hai nguồn tự động (không có timer
+riêng — không bao giờ throw). `AlarmEvaluatorService` là `IHostedService` ĐẦU TIÊN của
+`St4i.EngineApi` — vòng lặp `PeriodicTimer` mỗi tick đọc health/KPI mới rồi đưa cho evaluator, tự bọc
+try/catch riêng để một tick lỗi không bao giờ làm sập host. Bốn biến môi trường: **`ST4I_ALARMS_DIR`**
+(thư mục `alarms.db`, mặc định `%ProgramData%\ST4I\sim\alarms`); **`ST4I_ALARM_NGRATE_THRESHOLD`**
+(ngưỡng tỷ lệ NG kích hoạt cảnh báo, mặc định `0.20` = 20%); **`ST4I_ALARM_NGRATE_MINSAMPLE`** (số mẫu
+tối thiểu để đánh giá, mặc định `5`); **`ST4I_ALARM_EVAL_INTERVAL_MS`** (chu kỳ đánh giá, mặc định
+`5000` ms = 5s). Giá trị trống/không đọc được thì giữ mặc định, không crash lúc khởi động.)*
+
+### 18.3 Alarm endpoints / Endpoint cảnh báo
+
+**EN** — `AlarmEndpoints` exposes three routes:
+
+| Path | Verb | Role | Behavior |
+|---|---|---|---|
+| `/v1/alarms` | GET | Operator | The live/active set (`ListActiveAsync`) — every alarm currently `Active` or `Acked`, `Critical`-first then most-recently-raised-first. |
+| `/v1/alarms/history` | GET | Operator | Paged/filtered read of the append-only `alarm_history` log (`?source=&priority=&from=&to=&limit=(200)&offset=(0)`), newest-first; `limit` is clamped to 1-1000, `offset` to ≥0 (same clamp-before-store discipline `AuditEndpoints.GetAuditAsync` uses); `total` is the FULL filtered count. |
+| `/v1/alarms/{id}/ack` | POST | Operator, audited `alarm.ack` | Acknowledges the alarm by its `Id` (rowid) — for an EVENT alarm (`ClearOnAck=true`) this both acks and clears it; for a CONDITION alarm it only silences it (`Active`→`Acked`). `404` if `id` is unknown or already cleared (no audit row is written on a 404 — same "mutate THEN record" ordering `AssetEndpoints.SetLifecycleAsync` uses). |
+
+*(VI: `AlarmEndpoints` có 3 route: **`GET /v1/alarms`** (Operator) — tập đang hoạt động, Critical
+trước, mới nhất trước. **`GET /v1/alarms/history`** (Operator) — đọc phân trang/lọc log
+`alarm_history`, mới nhất trước; `limit` giới hạn 1-1000, `offset` ≥0, `total` là tổng số đã lọc.
+**`POST /v1/alarms/{id}/ack`** (Operator, có audit `alarm.ack`) — xác nhận theo `Id`; alarm SỰ KIỆN thì
+vừa ack vừa xoá luôn, alarm ĐIỀU KIỆN thì chỉ im lặng (Active→Acked); `404` nếu `id` không tồn tại/đã
+xoá, không ghi audit khi 404.)*
+
+### 18.4 LineController — the PackML state machine / Máy trạng thái PackML
+
+**EN** — `St4i.EngineApi.Line.LineController` is a supervisory PackML/ISA-88 state machine layered OVER
+`FleetHost` — it calls `FleetHost.Start`/`Stop`/`Estop`/`ResetEstop` to actually drive the fleet, never
+reimplementing that logic. It's a deliberately **pragmatic ISA-88 stable-state subset**: since
+`FleetHost`'s own Start/Stop/Estop/ResetEstop calls return only once the pipeline transition has
+already happened, the transient states a real PackML model names (Starting/Stopping/Holding/Aborting/
+Resetting/…) are instantaneous here and not modeled — only the **five stable states** a caller can ever
+actually observe between commands:
+
+**States (`PackMlState`):** `Idle` · `Execute` · `Held` · `Stopped` · `Aborted`
+
+**Commands (`LineCommand`), one per `POST /v1/line/{command}` route segment:** `Start` · `Hold` ·
+`Unhold` · `Stop` · `Abort` · `Reset`
+
+**FleetHost mapping** — `Hold` is a resumable pause, distinct from `FleetHost`'s own plain "stopped":
+
+| Command | FleetHost call | Notes |
+|---|---|---|
+| `Start` | `FleetHost.Start` | Unless a Critical alarm is active (§18.7) |
+| `Hold` | `FleetHost.Stop` | Remembers the operator's intent to resume via `Unhold` |
+| `Unhold` | `FleetHost.Start` | Unless a Critical alarm is active (§18.7) |
+| `Stop` | `FleetHost.Stop` | No implied resume (unlike `Hold`) |
+| `Abort` | `FleetHost.Estop` | |
+| `Reset` | `FleetHost.ResetEstop` | Idempotent — a no-op on the latch if it wasn't actually engaged |
+
+**Transition table** (validated against the CURRENT commanded state; an illegal command is REJECTED —
+`Accepted=false` — never silently ignored):
+
+- **Start** — legal from `{Idle, Stopped}`. If a Critical alarm is active, the target is redirected to
+  `Held` (`HoldReason` = `"critical alarm active"`) and `FleetHost.Start` is deliberately **not**
+  called — this is still an ACCEPTED transition (the command was legal; the interlock's permissive just
+  wasn't met). Otherwise → `Execute` + `FleetHost.Start`.
+- **Hold** — legal only from `Execute` → `Held` (`"operator hold"`) + `FleetHost.Stop`.
+- **Unhold** — legal only from `Held`. If a Critical alarm is active, REJECTED (`Accepted=false`, stays
+  `Held`, reason `"critical alarm active"`) — unlike Start's redirect, there's no NEW state to report
+  here. Otherwise → `Execute` + `FleetHost.Start`.
+- **Stop** — legal from `{Execute, Held}` → `Stopped` + `FleetHost.Stop`.
+- **Abort** — legal from any state except `Aborted` (an E-STOP must always be reachable) → `Aborted` +
+  `FleetHost.Estop`.
+- **Reset** — legal from `{Stopped, Aborted}` → `Idle` + `FleetHost.ResetEstop`.
+
+`Snapshot` reports the **effective** state, which can diverge from the raw commanded state: a commanded
+`Execute` with a Critical alarm currently active reads back as `Held` (§18.7) — a pure read, it never
+mutates the commanded state. Initial commanded state is `Stopped` (not derived from
+`FleetHost.IsRunning` at construction). Thread-safe (its own private lock). Publishes to the UNS spine
+(§18.6) on every commanded-state **change** — never on a rejection, never on `Snapshot`'s own read-time
+override.
+
+*(VI: `LineController` là máy trạng thái PackML/ISA-88 giám sát nằm TRÊN `FleetHost` — gọi
+Start/Stop/Estop/ResetEstop của FleetHost để thực sự điều khiển fleet, không tự làm lại logic đó. Đây
+là tập con TRẠNG THÁI ỔN ĐỊNH thực dụng của ISA-88 — vì các lệnh của FleetHost là đồng bộ (trả về khi đã
+xong việc), các trạng thái tức thời PackML thật đặt tên (Starting/Stopping/Holding/...) không được mô
+hình hoá — chỉ có 5 TRẠNG THÁI ỔN ĐỊNH: `Idle`, `Execute`, `Held`, `Stopped`, `Aborted`. 6 LỆNH (mỗi
+lệnh một đoạn route `POST /v1/line/{command}`): `Start`, `Hold`, `Unhold`, `Stop`, `Abort`, `Reset`. Ánh
+xạ FleetHost: Start→FleetHost.Start; Hold/Stop→FleetHost.Stop (Hold nhớ ý định tiếp tục qua Unhold, Stop
+thì không); Unhold→FleetHost.Start; Abort→FleetHost.Estop; Reset→FleetHost.ResetEstop (idempotent).
+Bảng chuyển trạng thái: **Start** hợp lệ từ {Idle, Stopped} — nếu có cảnh báo Critical đang hoạt động
+thì chuyển hướng sang `Held` (lý do "critical alarm active") mà KHÔNG gọi FleetHost.Start (vẫn là
+chuyển trạng thái ĐƯỢC CHẤP NHẬN); **Hold** chỉ hợp lệ từ Execute → Held ("operator hold"); **Unhold**
+chỉ hợp lệ từ Held — nếu Critical đang hoạt động thì BỊ TỪ CHỐI (không phải chuyển hướng, vì không có
+trạng thái mới để báo); **Stop** hợp lệ từ {Execute, Held} → Stopped; **Abort** hợp lệ từ MỌI trạng
+thái trừ Aborted (E-STOP luôn phải với tới được) → Aborted; **Reset** hợp lệ từ {Stopped, Aborted} →
+Idle. `Snapshot` trả về trạng thái HIỆU LỰC (có thể khác trạng thái đã lệnh) — Execute + Critical đang
+hoạt động đọc về thành Held (§18.7). Trạng thái lệnh ban đầu là `Stopped`. An toàn luồng (khoá riêng).
+Publish lên UNS (§18.6) mỗi khi trạng thái LỆNH đổi — không bao giờ khi bị từ chối hay khi Snapshot tự
+ghi đè lúc đọc.)*
+
+### 18.5 Line endpoints / Endpoint line
+
+**EN** — `LineEndpoints` exposes two routes:
+
+| Path | Verb | Role | Behavior |
+|---|---|---|---|
+| `/v1/line` | GET | Operator | The effective `LineStatus` — `{state, holdReason, isRunning, estopEngaged}`. `holdReason` is non-null only when `state` is `Held`; `isRunning`/`estopEngaged` are read straight off `FleetHost` (the ACTUAL truth), never cached. |
+| `/v1/line/{command}` | POST | Operator, policy-gated + audited | Policy-evaluated as `line.{command}` (derived from the PARSED enum, never the raw route text, so casing never matters) — same `policy.Evaluate` → `PolicyResults.DenyAsync` → mutate → `recorder.RecordAsync` template `/v1/fleet/*` already uses. `line.start`/`line.unhold` are **`EstopGuardRule`**-blocked while E-STOPped (`SAFETY_BLOCKED`, same guard `fleet.start` already has) — a denial here is what raises the Critical Policy alarm (§18.1). A REJECTED `LineController` transition (illegal state, or an Unhold blocked by a Critical alarm) returns `409` and writes NO audit row (only the Policy-deny path is audited pre-mutation); an ACCEPTED transition audits before/after `LineStatus` snapshots. |
+
+*(VI: `LineEndpoints` có 2 route: **`GET /v1/line`** (Operator) — trạng thái hiệu lực
+`{state, holdReason, isRunning, estopEngaged}`; `holdReason` chỉ khác null khi `state` là Held;
+`isRunning`/`estopEngaged` đọc thẳng từ FleetHost (sự thật THỰC), không cache. **`POST
+/v1/line/{command}`** (Operator, có policy-gate + audit) — đánh giá policy dưới tên `line.{command}`
+(lấy từ enum đã parse, không phải chữ route thô); `line.start`/`line.unhold` bị **`EstopGuardRule`**
+chặn khi đang E-STOP (`SAFETY_BLOCKED`, cùng guard mà `fleet.start` đã có) — một lần từ chối ở đây
+chính là thứ nâng cảnh báo Policy Critical (§18.1). Chuyển trạng thái BỊ TỪ CHỐI trả `409`, KHÔNG ghi
+audit; chuyển trạng thái ĐƯỢC CHẤP NHẬN thì có audit trước/sau.)*
+
+### 18.6 UNS `_line/state` / UNS `_line/state`
+
+**EN** — `LineController` publishes the PackML state to the local UNS spine (§16.1) on every commanded
+state change, via `IUnsPublisher.PublishLineState` — a RETAINED message on its own dedicated topic
+(`UnsTopicBuilder.BuildLineStateTopic`):
+
+```
+syn/{site}/{area}/{line}/{cell}/_line/state
+```
+
+(`{site}/{area}/{line}/{cell}` is this process's own ISA-95 address, the same one §16.1's semantic-mirror
+topics already use — the `{line}` segment there is the ISA-95 Line, not to be confused with this
+section's "line control" feature name.) Payload: `{ state, atUtc }` (e.g.
+`{"state":"Execute","atUtc":"2026-07-28T09:00:00Z"}`). The underscore-prefixed `_line` segment can
+never collide with a real equipment code (always derived from `MachineDescriptor.Code`). Non-blocking,
+optional — a `null` `IUnsPublisher` (UNS disabled, §16.1) is a no-op, same convention as every other
+UNS-adjacent collaborator.
+
+*(VI: `LineController` publish trạng thái PackML lên UNS spine cục bộ (§16.1) mỗi khi trạng thái LỆNH
+đổi, qua `IUnsPublisher.PublishLineState` — một message GIỮ LẠI (retained) trên topic riêng:
+`syn/{site}/{area}/{line}/{cell}/_line/state` (địa chỉ ISA-95 của chính process, giống §16.1; đoạn
+`{line}` ở đây là Line theo ISA-95, khác với tên tính năng "điều khiển line" của mục này), payload
+`{state, atUtc}`. Đoạn `_line` có gạch dưới không bao giờ trùng mã thiết bị thật. Không chặn, tuỳ chọn —
+UNS tắt thì đây là no-op.)*
+
+### 18.7 The alarm→hold gate — honest boundary / Khoá cảnh báo→hold — ranh giới thật
+
+**EN** — Both `GET /v1/line` and `POST /v1/line/{command}` compute `criticalAlarmActive` as "does
+`GET /v1/alarms`' active set contain ANY alarm with `Priority=Critical`" (from ANY source — a Policy
+`SAFETY_BLOCKED`, a `DriverHealth` `Down`, or a future Critical source; not just Policy). That single
+boolean drives the gate:
+
+- **Start** into a Critical alarm redirects to `Held` (not `Execute`) — accepted, not rejected.
+- **Unhold** out of `Held` while a Critical alarm is active is rejected — stays `Held`.
+- **Every poll's effective state** (`Snapshot`) shows `Held` the instant a Critical alarm is active,
+  even if the commanded state is still `Execute` — so a Critical alarm raised WHILE the line is already
+  running becomes visible on the very next `GET /v1/line`, without waiting for an operator to issue a
+  fresh `Hold`.
+
+Note also: "active" here means anything still in the live set returned by `ListActiveAsync` — `Active`
+**or** `Acked` (§18.1). Acknowledging a CONDITION-type Critical alarm (e.g. a `DriverHealth` `Down`)
+does **not**, by itself, lift the gate — it stays counted until the evaluator's own `ClearAsync` removes
+it once the condition ends. A Policy `SAFETY_BLOCKED` Critical alarm is the one exception: it's an
+EVENT alarm (`ClearOnAck=true`), so acknowledging it clears it in the same call, and the gate lifts
+immediately.
+
+**The honest boundary the brief calls out:** this gate only ever engages through a **Start/Unhold
+command** (blocking/redirecting it) or through **`Snapshot`'s read-time display** (showing `Held`
+instead of `Execute`). It does **not** reach into `FleetHost` on its own initiative — nothing in this
+codebase watches for a NEW Critical alarm and automatically calls `FleetHost.Stop` on an already-
+`Execute` line. Concretely: if the line is commanded `Execute` and a Critical alarm is raised mid-run,
+the fleet **keeps physically producing** (`FleetHost.IsRunning` stays `true`) until an operator (or a
+future auto-hold feature, §18.9) actually issues `Hold`/`Stop` — the poll only makes that Critical
+condition **visible**, it does not act on it by itself.
+
+*(VI: Cả `GET /v1/line` lẫn `POST /v1/line/{command}` đều tính `criticalAlarmActive` = "tập cảnh báo
+đang hoạt động (`GET /v1/alarms`) có bất kỳ cảnh báo Critical nào không" (từ BẤT KỲ nguồn nào — Policy
+SAFETY_BLOCKED, DriverHealth Down, hay nguồn Critical tương lai). Giá trị boolean đó điều khiển khoá:
+**Start** vào lúc Critical đang hoạt động → chuyển hướng sang `Held` (không phải Execute) — được CHẤP
+NHẬN, không bị từ chối. **Unhold** ra khỏi `Held` khi Critical đang hoạt động → BỊ TỪ CHỐI, giữ nguyên
+Held. **Mỗi lần đọc** (`Snapshot`) hiện `Held` ngay khi có Critical, dù trạng thái lệnh vẫn là Execute —
+nên một cảnh báo Critical nổi lên GIỮA LÚC line đang chạy sẽ hiện ra ngay ở lần `GET /v1/line` kế tiếp,
+không cần đợi operator ra lệnh Hold mới. Lưu ý: "đang hoạt động" ở đây gồm cả `Active` LẪN `Acked`
+(§18.1) — ack một cảnh báo Critical dạng ĐIỀU KIỆN (ví dụ DriverHealth Down) KHÔNG tự gỡ khoá, nó vẫn bị
+tính cho tới khi bộ đánh giá thực sự xoá. Cảnh báo Policy SAFETY_BLOCKED là ngoại lệ duy nhất — đó là
+alarm SỰ KIỆN (ClearOnAck=true), ack là xoá luôn, nên khoá gỡ ngay.
+
+**Ranh giới thật:** khoá này CHỈ tác động qua lệnh Start/Unhold (chặn/chuyển hướng) hoặc qua HIỂN THỊ
+lúc đọc của Snapshot (hiện Held thay vì Execute). Nó KHÔNG tự ý gọi vào FleetHost — không có gì trong mã
+nguồn này theo dõi một cảnh báo Critical MỚI rồi tự động gọi FleetHost.Stop trên một line đang Execute.
+Cụ thể: nếu line đang lệnh Execute và một cảnh báo Critical nổi lên giữa chừng, fleet VẪN TIẾP TỤC SẢN
+XUẤT THẬT (FleetHost.IsRunning vẫn true) cho tới khi operator (hay một tính năng auto-hold tương lai,
+§18.9) thực sự ra lệnh Hold/Stop — việc đọc chỉ làm điều kiện Critical đó HIỂN THỊ RA, không tự hành
+động theo nó.)*
+
+### 18.8 Web UI — `/alarms` and `/line` / Web UI — trang `/alarms` và `/line`
+
+**EN** — Two new nav items (`shell.nav.alarms`/`shell.nav.line`, `Shell.tsx`/`Sidebar.tsx`):
+
+- **`/alarms` — Alarm Center** (`routes/AlarmCenter.tsx`) — an **Active** tab (polled list, a priority
+  chip per row, a view-detail dialog with message/priority/first-raised/last-raised/runbook/acked-by,
+  and an **Ack** button) and a **History** tab (a paged, filtered read of `alarm_history`, same
+  limit/offset/prev-next idiom `Audit.tsx` established). Reads are Operator (the lowest role, so every
+  signed-in user); the Ack button is wrapped in a client-side `RequireRole role="Operator"` for shape —
+  the real enforcement is the server's own `Policies.Operator` on `POST /v1/alarms/{id}/ack`.
+- **`/line` — Line Control** (`routes/LineControl.tsx`) — a **Status** card (the live PackML badge,
+  polled off `GET /v1/line`, a `holdReason` banner, and `isRunning`/`estopEngaged` readouts) and a
+  **Commands** card (Start/Hold/Unhold/Stop/Abort/Reset buttons, each disabled unless legal from the
+  current state per §18.4's own transition table — mirrored client-side so the UI never offers a
+  command the server would `409`-reject; **Abort is the one deliberate exception, always enabled**,
+  since a real E-STOP control should never be greyed out — a redundant Abort-from-`Aborted` still 409s
+  and surfaces the same inline error every other rejected command does). This is a dedicated route,
+  distinct from `TopBar.tsx`'s own separate fleet-level Start/Stop pair (the whole simulated fleet's
+  power switch) — shoehorning this PackML-level surface into the KPI strip would conflate the two.
+
+*(VI: Hai mục điều hướng mới. **`/alarms` — Alarm Center** — tab **Active** (danh sách polled, chip mức
+ưu tiên, dialog xem chi tiết, nút **Ack**) và tab **History** (đọc phân trang/lọc `alarm_history`). Đọc
+là quyền Operator (thấp nhất — mọi người dùng đăng nhập); nút Ack có `RequireRole role="Operator"` phía
+client chỉ mang tính hình thức, thực thi thật nằm ở server (`Policies.Operator`). **`/line` — Line
+Control** — thẻ **Status** (badge PackML sống, banner `holdReason`, `isRunning`/`estopEngaged`) và thẻ
+**Commands** (nút Start/Hold/Unhold/Stop/Abort/Reset, disable theo đúng bảng chuyển trạng thái §18.4 —
+riêng **Abort LUÔN BẬT** vì nút E-STOP thật không bao giờ nên bị xám; Abort dư thừa từ Aborted vẫn 409
+như bình thường). Đây là route RIÊNG, khác với cặp Start/Stop cấp-fleet của `TopBar.tsx`.)*
+
+### 18.9 Honest deferrals / Những gì CHƯA làm
+
+**EN** — Documented here, not silently missing:
+
+- **Per-machine hold** — `LineController` drives the WHOLE fleet through `FleetHost`; there is no
+  per-machine PackML state or per-machine Hold.
+- **Auto-hold of an already-running fleet on a new Critical alarm** — see §18.7's own boundary: only
+  Start/Unhold (and the read-time effective-state display) are gated; nothing automatically transitions
+  or stops a line already commanded `Execute`.
+- **NCMD inbound line commands from a Site** — the northbound UNS bridge (§17.2) is
+  outbound-telemetry-only; a Site can observe `_line/state` (§18.6) but cannot issue
+  Start/Hold/Stop/etc. to this device.
+- **Alarm shelving/suppression/rationalization workflow** — no shelve/suppress, no duplicate-alarm
+  rationalization beyond the dedup-by-`Key` upsert (§18.1); every raised alarm is either active or
+  acked, nothing in between.
+- **Full PackML transient-state/mode machinery** — only the five stable states are modeled (§18.4); no
+  Starting/Stopping/Holding/Aborting/Resetting transient states, and no PackML Modes
+  (Auto/Manual/Maintenance/…).
+
+*(VI: Ghi rõ ở đây, không giấu: **Chỉ hold cấp fleet** — LineController điều khiển CẢ fleet qua
+FleetHost, không có trạng thái PackML hay Hold riêng theo từng máy. **Chưa tự động hold một fleet đang
+chạy khi có cảnh báo Critical mới** — xem ranh giới §18.7: chỉ Start/Unhold (và hiển thị lúc đọc) bị
+khoá, không có gì tự chuyển/dừng một line đang lệnh Execute. **Chưa có đường lệnh line vào (NCMD) từ
+Site** — bridge UNS hướng lên (§17.2) chỉ gửi telemetry ra, Site xem được `_line/state` nhưng không ra
+lệnh được. **Chưa có luồng shelving/suppression/rationalization cảnh báo** — không có shelve/suppress,
+không hợp lý hoá trùng lặp ngoài việc upsert theo Key (§18.1). **Chưa có đầy đủ máy trạng thái/mode
+PackML** — chỉ mô hình hoá 5 trạng thái ổn định, không có các trạng thái tức thời hay Mode
+(Auto/Manual/Maintenance/…).)*
