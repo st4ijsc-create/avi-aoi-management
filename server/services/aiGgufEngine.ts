@@ -1120,17 +1120,20 @@ function modelSupportsFim(modelId?: string): boolean {
 
 /**
  * Doc 34 (P0) — Best-effort fill-in-middle (inline autocomplete) using the resident coder/fast
- * model. IMPORTANT: high-quality FIM with native special-token infill + prefix-cache is the job of
- * the persistent llama-server coder gateway (doc 34 §3.3a / P0). node-llama-cpp's in-process
- * `LlamaChatSession` does not expose native infill decoding here, so this method is a FAIL-SAFE
- * fallback so autocomplete still works WITHOUT the gateway:
- *   • If the resolved model advertises FIM tokens (or a dedicated GGUF_FIM_MODEL is configured) AND
- *     a suffix is given, assemble a Prefix–Suffix–Middle (PSM) template with the standard sentinels.
- *   • Otherwise degrade to a plain PREFIX completion, passing the suffix as trailing context so the
- *     model stays consistent with the code that follows.
- * Reuses generateText() so it inherits the GGUF concurrency slot, latency telemetry and KV sizing.
- * Never throws for a missing FIM model — falls back to the fast/default model. New signature; no
- * existing method is modified.
+ * model. High-quality FIM with native special-token infill + prefix-cache under a PERSISTENT
+ * llama-server (doc 34 §3.3a / P0) is now wired below (doc69 Wave 4 C2) — gated OFF by default
+ * (LLAMA_SERVER_ENABLED). When it's off/unhealthy/erroring, this falls through to the in-process
+ * path exactly as before C2:
+ *   • Prefer TRUE native infill via node-llama-cpp's `LlamaCompletion` (`generateFimNative`) — it
+ *     feeds the raw prefix/suffix through the model's own FIM tokens (no chat template), so a
+ *     coder model like Qwen2.5-Coder returns clean inline code instead of a chat reply.
+ *   • Otherwise (or if that throws) `generateFimChatFallback`: if the resolved model advertises
+ *     FIM tokens (or a dedicated GGUF_FIM_MODEL is configured) AND a suffix is given, assemble a
+ *     Prefix–Suffix–Middle (PSM) template with the standard sentinels; else degrade to a plain
+ *     PREFIX completion, passing the suffix as trailing context.
+ * Reuses generateText() (via the chat fallback) so it inherits the GGUF concurrency slot, latency
+ * telemetry and KV sizing. Never throws for a missing FIM model — falls back to the fast/default
+ * model (or, under LLAMA_SERVER_STRICT, surfaces a server error instead of silently degrading).
  */
 export async function generateFim(
   options: GgufFimOptions,
@@ -1140,6 +1143,36 @@ export async function generateFim(
   const suffix = typeof options.suffix === "string" ? options.suffix : "";
   // Resolve the model: explicit arg → FIM model → fast → default (fimModelBasename()).
   const effectiveId = modelId ?? fimModelBasename();
+
+  // doc69 Wave 4 C2 — offload FIM to the PERSISTENT llama-server (prefix-cache, kept-loaded
+  // coder model) when configured, mirroring generateText's server→in-process fallback EXACTLY
+  // (preflight → generate → fall back in-process, or throw under LLAMA_SERVER_STRICT). OFF by
+  // default (LLAMA_SERVER_ENABLED unset) → shouldUseServerForFim() returns false immediately and
+  // this block is a no-op, so behavior is byte-identical to before C2 (see aiLlamaServerClient.ts
+  // module header + docs/ECOSYSTEM/70_AI_PERSISTENT_LLAMA_SERVER_RUNBOOK_2026-07-26.md §10).
+  {
+    const srv = await import("./aiLlamaServerClient");
+    if (srv.shouldUseServerForFim(effectiveId)) {
+      const healthy = await srv.preflightHealthyForFim().catch(() => false);
+      if (!healthy) {
+        if (srv.llamaServerStrict()) {
+          throw new Error("[aiGgufEngine] llama-server FIM preflight health check failed (LLAMA_SERVER_STRICT=true)");
+        }
+        console.warn(
+          "[aiGgufEngine] llama-server FIM preflight health check failed — falling back in-process (server unreachable/unhealthy)",
+        );
+      } else {
+        try {
+          return await srv.generateFimViaServer(prefix, suffix, options);
+        } catch (e) {
+          if (srv.llamaServerStrict()) throw e;
+          console.warn(
+            `[aiGgufEngine] llama-server FIM generation failed, falling back in-process: ${(e as Error)?.message || e}`,
+          );
+        }
+      }
+    }
+  }
 
   // Prefer TRUE native infill via node-llama-cpp's LlamaCompletion — it feeds the raw
   // prefix/suffix through the model's own FIM tokens (no chat template), so a coder model
