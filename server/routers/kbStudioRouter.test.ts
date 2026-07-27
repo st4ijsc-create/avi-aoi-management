@@ -68,11 +68,21 @@ vi.mock("../services/kbWebFetcher", async (importOriginal) => {
   };
 });
 
+const startLoraFinetuneMock = vi.fn();
+vi.mock("../services/aiLlmFinetuneSidecar", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/aiLlmFinetuneSidecar")>();
+  return {
+    ...actual,
+    startLoraFinetune: (...a: unknown[]) => startLoraFinetuneMock(...a),
+  };
+});
+
 import { kbStudioRouter } from "./kbStudioRouter";
 import { KbIngestDisabledError, KbIngestValidationError, KbEmbedError, KbStoreError } from "../services/kbIngestService";
 import { KbUnsupportedTypeError, KbParseError } from "../services/kbDocParser";
 import { WebIngestDisabledError, SsrfBlockedError, FetchError } from "../services/kbWebFetcher";
 import { KbStudioTableUnavailableError, KbCorpusNotFoundError } from "../services/kbStudioService";
+import { LoraFinetuneUnavailableError, LoraFinetuneError } from "../services/aiLlmFinetuneSidecar";
 
 const SMALL_PDF_B64 = Buffer.from("%PDF-1.4 minimal fake content").toString("base64");
 
@@ -102,6 +112,15 @@ beforeEach(() => {
     sourceRef: "https://example.com/page",
     chunksAdded: 2,
     parsedMeta: { sourceType: "url", charCount: 50, truncated: false },
+  });
+  startLoraFinetuneMock.mockResolvedValue({
+    jobId: "lora_1_abcd1234",
+    status: "succeeded",
+    versionId: 99,
+    version: "1.0.0-lora.1",
+    gate: { pass: true, reason: "No baseline — candidate accepted as first version.", accuracyDelta: 0.8, epsilon: 0 },
+    evaluated: 5,
+    skipped: 0,
   });
 });
 
@@ -344,5 +363,66 @@ describe("kbStudioRouter — corpusPreview", () => {
 
   it("viewer cannot corpusPreview", async () => {
     await expect(callerFor("viewer").corpusPreview({ corpus: "vendor-x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
+
+// ─── startFinetune (doc69 E3-6 — LoRA fine-tune) ──────────────────────────────
+
+describe("kbStudioRouter — startFinetune", () => {
+  const validInput = { baseModelId: 7, corpus: "vendor-x", targetVersion: "1.0.0-lora.1" };
+
+  it.each(["operator", "viewer", "quality_inspector"])("%s cannot startFinetune", async (role) => {
+    await expect(callerFor(role).startFinetune(validInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(startLoraFinetuneMock).not.toHaveBeenCalled();
+  });
+
+  it("admin WITHOUT 2FA is FORBIDDEN, service never called", async () => {
+    await expect(callerFor("admin", false).startFinetune(validInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(startLoraFinetuneMock).not.toHaveBeenCalled();
+  });
+
+  it("engineer WITHOUT 2FA is FORBIDDEN, service never called", async () => {
+    await expect(callerFor("engineer", false).startFinetune(validInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(startLoraFinetuneMock).not.toHaveBeenCalled();
+  });
+
+  it("admin WITH 2FA reaches the service and forwards actor id + hyperparams", async () => {
+    const result = await callerFor("admin", true).startFinetune({
+      ...validInput,
+      hyperparams: { rank: 8, quantization: "4bit" },
+    });
+    expect(result.versionId).toBe(99);
+    expect(startLoraFinetuneMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseModelId: 7,
+        corpus: "vendor-x",
+        targetVersion: "1.0.0-lora.1",
+        hyperparams: { rank: 8, quantization: "4bit" },
+        userId: 1,
+      }),
+    );
+  });
+
+  it("engineer WITH 2FA also reaches the service (same gate as the rest of this router)", async () => {
+    await expect(callerFor("engineer", true).startFinetune(validInput)).resolves.toMatchObject({ versionId: 99 });
+  });
+
+  it("LoraFinetuneUnavailableError (LLM_FINETUNE_CMD unset) ⇒ FORBIDDEN", async () => {
+    startLoraFinetuneMock.mockRejectedValueOnce(new LoraFinetuneUnavailableError());
+    await expect(callerFor("admin", true).startFinetune(validInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("LoraFinetuneError (e.g. corpus too small, sidecar failure) ⇒ INTERNAL_SERVER_ERROR", async () => {
+    startLoraFinetuneMock.mockRejectedValueOnce(new LoraFinetuneError("Corpus \"vendor-x\" has only 2 chunk(s)"));
+    await expect(callerFor("admin", true).startFinetune(validInput)).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
+  });
+
+  it("rejects an out-of-range hyperparam before the service is ever called", async () => {
+    await expect(
+      callerFor("admin", true).startFinetune({ ...validInput, hyperparams: { rank: -1 } }),
+    ).rejects.toBeTruthy();
+    expect(startLoraFinetuneMock).not.toHaveBeenCalled();
   });
 });

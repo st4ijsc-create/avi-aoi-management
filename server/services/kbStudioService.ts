@@ -403,6 +403,58 @@ const PREVIEW_TEXT_MAX_CHARS = 600;
  * see kbStudioRouter.ts's corpusPreview doc comment for the documented ops-step pointer
  * (reuse the existing eval-rag* tooling).
  */
+// ─── Training-data read (doc69 E3-6 — LoRA fine-tune sidecar) ───────────────
+
+export interface TrainingChunk {
+  id: number;
+  sourceRef: string;
+  chunkIndex: number;
+  text: string;
+}
+
+export interface ListCorpusChunksForTrainingResult {
+  /** false when kb_studio_chunks isn't migrated yet — caller must degrade/refuse, not throw. */
+  tableAvailable: boolean;
+  chunks: TrainingChunk[];
+}
+
+/**
+ * ALL chunks for a corpus (full text, no truncation), ordered deterministically
+ * (`sourceRef`, `chunkIndex`) and bounded by `limit` — the actual TRAINING DATA SOURCE consumed
+ * by `server/services/aiLlmFinetuneSidecar.ts` to build a LoRA fine-tune's train/test JSONL.
+ * Deliberately a SEPARATE function from {@link previewCorpus}: that one caps at 50 rows and
+ * truncates each chunk's text to a display-safe length for a human to eyeball ("what got
+ * ingested") — this one returns the FULL text a caller needs to actually assemble training
+ * examples from, up to a much larger (but still bounded — see `LLM_FINETUNE_MAX_SAMPLES` in
+ * aiLlmFinetuneSidecar.ts) cap. Same fail-safe triage as every other READ path in this module:
+ * degrades to `{tableAvailable:false, chunks:[]}` on 42P01, never throws.
+ */
+export async function listCorpusChunksForTraining(corpus: string, limit: number): Promise<ListCorpusChunksForTrainingResult> {
+  const db = await getDb();
+  if (!db) return { tableAvailable: false, chunks: [] };
+  const trimmed = (corpus ?? "").trim();
+  if (!trimmed) return { tableAvailable: true, chunks: [] };
+  const safeLimit = Math.max(1, Math.min(limit, 20000));
+
+  try {
+    const rows = await db
+      .select({
+        id: kbStudioChunks.id,
+        sourceRef: kbStudioChunks.sourceRef,
+        chunkIndex: kbStudioChunks.chunkIndex,
+        text: kbStudioChunks.text,
+      })
+      .from(kbStudioChunks)
+      .where(eq(kbStudioChunks.corpus, trimmed))
+      .orderBy(kbStudioChunks.sourceRef, kbStudioChunks.chunkIndex)
+      .limit(safeLimit);
+    return { tableAvailable: true, chunks: rows };
+  } catch (e) {
+    if (isMissingTableError(e)) return { tableAvailable: false, chunks: [] };
+    throw e;
+  }
+}
+
 export async function previewCorpus(corpus: string, limit: number): Promise<CorpusPreviewResult> {
   const db = await getDb();
   if (!db) return { tableAvailable: false, totalChunks: 0, distinctSources: 0, sample: [] };

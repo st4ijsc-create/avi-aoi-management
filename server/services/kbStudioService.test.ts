@@ -381,3 +381,66 @@ describe("kbStudioService.previewCorpus", () => {
     expect(result.sample[1]!.text).toBe("short chunk");
   });
 });
+
+// ─── listCorpusChunksForTraining (doc69 E3-6 — LoRA fine-tune data source) ──
+
+describe("kbStudioService.listCorpusChunksForTraining", () => {
+  it("no db ⇒ tableAvailable:false, empty", async () => {
+    getDbMock.mockResolvedValue(null);
+    const svc = await loadService();
+    await expect(svc.listCorpusChunksForTraining("vendor-x", 100)).resolves.toEqual({
+      tableAvailable: false,
+      chunks: [],
+    });
+  });
+
+  it("blank corpus ⇒ short-circuits, issues no queries", async () => {
+    const svc = await loadService();
+    const result = await svc.listCorpusChunksForTraining("   ", 100);
+    expect(result).toEqual({ tableAvailable: true, chunks: [] });
+    expect(selectMock).not.toHaveBeenCalled();
+  });
+
+  it("42P01 ⇒ tableAvailable:false — fail-safe, never throws", async () => {
+    selectMock.mockReturnValueOnce(chainableRejecting(missingTableError()));
+    const svc = await loadService();
+    await expect(svc.listCorpusChunksForTraining("vendor-x", 100)).resolves.toEqual({
+      tableAvailable: false,
+      chunks: [],
+    });
+  });
+
+  it("the drizzle-wrapped 42P01 shape also degrades fail-safe", async () => {
+    selectMock.mockReturnValueOnce(chainableRejecting(wrappedMissingTableError()));
+    const svc = await loadService();
+    await expect(svc.listCorpusChunksForTraining("vendor-x", 100)).resolves.toEqual({
+      tableAvailable: false,
+      chunks: [],
+    });
+  });
+
+  it("success ⇒ returns FULL (untruncated) chunk text, ordered", async () => {
+    const longText = "x".repeat(1000);
+    selectMock.mockReturnValueOnce(
+      chainable([
+        { id: 1, sourceRef: "a.pdf", chunkIndex: 0, text: longText },
+        { id: 2, sourceRef: "a.pdf", chunkIndex: 1, text: "short chunk" },
+      ]),
+    );
+    const svc = await loadService();
+    const result = await svc.listCorpusChunksForTraining("vendor-x", 100);
+    expect(result.tableAvailable).toBe(true);
+    expect(result.chunks).toHaveLength(2);
+    // Unlike previewCorpus, the full text is returned — no truncation.
+    expect(result.chunks[0]!.text).toBe(longText);
+    expect(result.chunks[1]!.text).toBe("short chunk");
+  });
+
+  it("clamps an absurd limit to the 20000 hard cap (no unbounded query)", async () => {
+    selectMock.mockReturnValueOnce(chainable([]));
+    const svc = await loadService();
+    await svc.listCorpusChunksForTraining("vendor-x", 999_999);
+    const chain = selectMock.mock.results[0]!.value;
+    expect(chain.limit).toHaveBeenCalledWith(20000);
+  });
+});

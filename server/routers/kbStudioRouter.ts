@@ -27,6 +27,14 @@
  * kb_corpora/kb_ingest_jobs (pg 42P01) — see server/services/kbStudioService.ts's module doc
  * comment for the exact read-vs-write triage. The two ingest mutations NEVER let a missing
  * registry table block the actual ingest (job tracking degrades to `jobId: null`).
+ *
+ * doc69 E3-6 addendum — `startFinetune` wires the Training Studio "Model Builder" tab's LoRA
+ * fine-tune subsystem (`server/services/aiLlmFinetuneSidecar.ts`) behind the SAME admin/engineer
+ * + 2FA gate as the rest of this router. See that module's doc comment for the full
+ * mirror-of-localSidecarTrainer protocol, the never-auto-activate discipline, and the honest
+ * "LoRA=style, not facts" framing. The client-side `ModelBuilderTab.tsx` placeholder is NOT
+ * wired to this endpoint in this task (left as a documented fast-follow per the brief) — this
+ * endpoint is the deliverable.
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -50,6 +58,7 @@ import {
 } from "../services/kbWebFetcher";
 import * as kbStudioService from "../services/kbStudioService";
 import { KbStudioTableUnavailableError, KbCorpusNotFoundError } from "../services/kbStudioService";
+import { startLoraFinetune, LoraFinetuneUnavailableError, LoraFinetuneError } from "../services/aiLlmFinetuneSidecar";
 
 const kbStudioProcedure = roleProcedure("admin", "engineer").use(require2FA);
 /** deleteCorpus only — see module doc comment for why this is narrower than the rest. */
@@ -308,4 +317,59 @@ export const kbStudioRouter = router({
       }),
     )
     .query(({ input }) => kbStudioService.previewCorpus(input.corpus, input.limit ?? 20)),
+
+  // ─── Model Builder — LoRA fine-tune (doc69 E3-6) ─────────────────────────
+  /**
+   * Gated entry point for `server/services/aiLlmFinetuneSidecar.ts`'s `startLoraFinetune` — the
+   * SAME admin/engineer + 2FA gate as the rest of this router (the brief's requirement is
+   * "admin/engineer + require2FA", not the narrower admin-only gate `deleteCorpus` uses).
+   * `startLoraFinetune` itself checks `isLlmFinetuneEnabled()` (LLM_FINETUNE_CMD) FIRST and
+   * throws {@link LoraFinetuneUnavailableError} before touching the filesystem or DB when the
+   * subsystem is off (default) — mapped to FORBIDDEN here, same shape as the KB_STUDIO_ENABLED/
+   * WEB_INGEST_ENABLED gates above. This mutation AWAITS the full sidecar run (build data →
+   * spawn → register → eval) and returns once it's done — it is not a fire-and-forget job
+   * kickoff; a real GPU fine-tune is expected to take a while, which is an accepted ops
+   * characteristic of this gated subsystem (not built as a background/polled job in this task).
+   * NEVER activates the resulting model_versions row — see aiLlmFinetuneSidecar.ts's module doc
+   * comment; activation is the separate, human-driven `aiModelRouter.activateVersion` /
+   * `activateModelVersionManual` path.
+   */
+  startFinetune: kbStudioProcedure
+    .input(
+      z.object({
+        baseModelId: z.number().int().positive(),
+        corpus: z.string().trim().min(1).max(120),
+        targetVersion: z.string().trim().min(1).max(50),
+        hyperparams: z
+          .object({
+            rank: z.number().int().positive().max(256).optional(),
+            alpha: z.number().int().positive().max(512).optional(),
+            epochs: z.number().int().positive().max(50).optional(),
+            learningRate: z.number().positive().max(1).optional(),
+            quantization: z.enum(["none", "4bit", "8bit"]).optional(),
+            maxSeqLen: z.number().int().positive().max(32768).optional(),
+            batchSize: z.number().int().positive().max(256).optional(),
+          })
+          .optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await startLoraFinetune({
+          baseModelId: input.baseModelId,
+          corpus: input.corpus,
+          targetVersion: input.targetVersion,
+          hyperparams: input.hyperparams,
+          userId: ctx.user?.id,
+        });
+      } catch (err) {
+        if (err instanceof LoraFinetuneUnavailableError) {
+          throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+        }
+        if (err instanceof LoraFinetuneError) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+        }
+        throw err;
+      }
+    }),
 });
