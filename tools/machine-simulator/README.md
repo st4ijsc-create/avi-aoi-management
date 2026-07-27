@@ -265,15 +265,43 @@ publish (see §10), so a publish output is fully self-contained for a demo booth
 
 This build is **P1** of doc 62 §11's middleware evolution plan — `IDeviceDriver`/`Normalizer`/
 `MappingProfile` are deliberately shaped so each later phase only adds one driver class + mapping
-preset, never touches the pipeline/transport/UI:
+preset, never touches the pipeline/transport/UI. **Update (Giai đoạn 2, pass 1 + pass 2):** several
+P2/P3 items below have since landed — see the **Status** column and **§16** for the full detail
+(env vars, endpoints, behavior) of everything now shipped.
 
-| Phase | Adds | Protocol |
-|---|---|---|
-| **P1 (this build)** | Simulator + EdgeCore + Normalizer + Live/Demo/Auto + Hot-folder AOI + MQTT + headless service seam + packaging | Hot-folder (doc 28), MQTT |
-| P2 | Mapping UI + Sparkplug B + headless Device Manager | MQTT/Sparkplug B |
-| P3 | Modbus TCP/RTU + Serial drivers (screw/glue guns, small PLCs, RS-232/485) | Modbus, Serial |
-| P4 | OPC-UA + Siemens S7 / EtherNet-IP drivers | OPC-UA, S7, EtherNet/IP |
-| P5 | SECS/GEM + Zmotion (koffi FFI) + HA/buffering + security hardening + OTA config | SECS/GEM, Zmotion |
+| Phase | Adds | Protocol | Status |
+|---|---|---|---|
+| **P1 (this build)** | Simulator + EdgeCore + Normalizer + Live/Demo/Auto + Hot-folder AOI + MQTT + headless service seam + packaging | Hot-folder (doc 28), MQTT | Delivered |
+| P2 | Mapping UI + Sparkplug B + headless Device Manager | MQTT/Sparkplug B | **Sparkplug B: delivered** — a local UNS spine (always-on loopback MQTT broker + dual Sparkplug B/semantic-mirror publisher), see §16.1. Mapping UI + headless Device Manager: still future. |
+| P3 | Modbus TCP/RTU + Serial drivers (screw/glue guns, small PLCs, RS-232/485) | Modbus, Serial | **Modbus TCP: partially delivered** — TCP polling only, read-only, `UInt16`/`Int16` registers, one register per read, see §16.4. **Not yet:** 32-bit/float registers, register-block batching, Modbus **RTU** (serial), a per-machine `MappingProfile` override for Modbus. Serial drivers: still future. |
+| P4 | OPC-UA + Siemens S7 / EtherNet-IP drivers | OPC-UA, S7, EtherNet/IP | Future — OPC-UA is explicitly **gated behind a licensing spike** (the .NET OPC-UA stack's OSS license signals conflict: RCL/GPLv2 vs. MIT across `OPCFoundation.NetStandard.Opc.Ua.*`), not started. |
+| P5 | SECS/GEM + Zmotion (koffi FFI) + HA/buffering + security hardening + OTA config | SECS/GEM, Zmotion | Future. |
+
+**Also delivered this build, not originally scoped as its own P1-P5 phase above** — a default-deny
+Policy layer + the XC-R40 `/v1/safety` supervisory E-STOP endpoint (§16.2), per-pipeline fault
+isolation (§16.3), and a persistent ISA-95 Asset Registry (§16.5, the "canonical model" piece of
+this roadmap). See **§16** for all five middleware-backbone features together.
+
+**Genuinely still future, not touched by this build:** ecosystem join — mDNS discovery + a local
+UNS↔Site broker bridge + a join wizard ("no reinstall, no data loss"); and **WS-B B2 (bridge
+inversion)** — flipping the UNS spine from an additive mirror into the sole source of truth with
+ST4I/historian driven asynchronously off it instead of synchronously inside `EdgePipeline` — assessed
+and **deliberately deferred to a dedicated GĐ3 pass** (high blast-radius: ~34 files touch the
+synchronous ack today; see `docs/plans/2026-07-27-ws-b-b2-bridge-inversion-assessment.md`), bundled
+with the join/ecosystem work rather than bolted on here.
+
+*(VI: Vài mục P2/P3 phía trên ĐÃ giao trong Giai đoạn 2 (pass 1+2) — xem cột **Status** và **§16** để
+biết chi tiết đầy đủ (biến môi trường, endpoint, hành vi). Sparkplug B: ĐÃ GIAO qua UNS spine cục bộ
+(§16.1). Modbus TCP: GIAO MỘT PHẦN — chỉ đọc qua TCP, thanh ghi UInt16/Int16, mỗi lần đọc 1 thanh ghi
+(§16.4); CHƯA có 32-bit/float, đọc theo khối, Modbus RTU (nối tiếp), hay MappingProfile riêng cho từng
+máy Modbus. OPC-UA vẫn tương lai — đang bị chặn bởi một "licensing spike" (tín hiệu giấy phép mã nguồn
+mở xung đột RCL/GPLv2 và MIT trên bộ thư viện OPC-UA .NET). Cũng đã giao trong bản này dù không nằm
+trong bảng P1-P5 gốc: lớp Policy mặc định-từ-chối + endpoint an toàn XC-R40 `/v1/safety` (§16.2), cách
+ly lỗi theo từng pipeline (§16.3), và Asset Registry ISA-95 bền vững (§16.5 — chính là phần "mô hình
+canonical" của lộ trình này). Vẫn CHƯA làm: gia nhập hệ sinh thái (mDNS + bridge UNS↔Site + join
+wizard) và **WS-B B2 (đảo chiều bridge)** — đã đánh giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (phạm
+vi ảnh hưởng lớn — khoảng 34 file đang dùng ack đồng bộ), gộp chung với việc gia nhập hệ sinh thái thay
+vì làm lẻ ở đây.)*
 
 See `docs/ECOSYSTEM/62_MACHINE_SIMULATOR_EDGE_MIDDLEWARE_DESIGN_2026-07-18.md` §11 for the full
 detail, and `docs/ECOSYSTEM/61_MACHINE_DEVELOPER_INTEGRATION_GUIDE_2026-07-18.md` for the contract
@@ -810,6 +838,11 @@ The env vars that actually matter to this engine:
 `dotnet run`/double-click launch; the registry `Environment` value is specifically how to set them when
 there's no shell/user session to export them from.)*
 
+*(Giai đoạn 2 additions, same idiom, cross-referenced rather than duplicated here — see §16 for the
+full table: `ST4I_UNS_ENABLED`/`ST4I_UNS_SITE`/`_AREA`/`_LINE`/`_CELL`/`_PORT` (§16.1, the local UNS
+spine), `ST4I_MODBUS_ENABLED`/`_HOST`/`_PORT`/`_MAP` (§16.4, the Modbus TCP driver), `ST4I_ASSETS_DIR`
+(§16.5, the Asset Registry's `assets.db` location).)*
+
 *(WS-F1 final-review fix F1 — `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/`ST4I_VERIFY_TLS` are read ONCE at
 process start and applied via `FleetHost.UpdateSettings` — the exact same code path a runtime
 `PUT /v1/settings` call already uses (so the rebuild of the Live transport/config-sync backends behaves
@@ -1091,3 +1124,238 @@ lần lưu khoá — mọi host dùng `CredentialStore` (EngineApi, EdgeService,
 cần host nào tự nhớ gọi riêng. (c) NU1903 (SQLitePCLRaw/CVE-2025-6965) —
 ĐÃ GIẢI QUYẾT bằng cách ghim phiên bản vá `SQLitePCLRaw.bundle_e_sqlite3 2.1.12` (đã xác minh SQLite bên
 trong là 3.53.3, qua ngưỡng vá 3.50.2), KHÔNG dùng `<NoWarn>` để ẩn cảnh báo.)*
+
+---
+
+## 16. Middleware backbone (Giai đoạn 2) — UNS spine, Policy/safety, fault isolation, Modbus, Asset Registry / Middleware nền tảng (Giai đoạn 2)
+
+**EN** — Giai đoạn 2 (pass 1 + pass 2, "SYNAPSE connect") adds five features that turn this exhibition
+simulator into real edge middleware: a local Unified Namespace spine, a default-deny Policy layer with
+a supervisory E-STOP safety endpoint, per-pipeline fault isolation, a first real field-protocol driver
+(Modbus TCP), and a persistent Asset Registry. Everything below is **additive** — the existing ST4I
+HTTP ingest path, `EdgePipeline.Committed`, and every pre-existing endpoint/behavior are unchanged
+unless explicitly called out.
+
+*(VI: Giai đoạn 2 (pass 1+2, "SYNAPSE connect") thêm 5 tính năng biến trình mô phỏng triển lãm này
+thành middleware edge thật: một xương sống Unified Namespace (UNS) cục bộ, lớp Policy mặc định-từ-chối
+kèm endpoint an toàn E-STOP giám sát, cách ly lỗi theo từng pipeline, driver giao thức trường đầu tiên
+(Modbus TCP), và một Asset Registry bền vững. Tất cả đều là THÊM VÀO — đường ingest HTTP ST4I hiện có,
+`EdgePipeline.Committed`, và mọi endpoint/hành vi trước đó không đổi trừ khi nói rõ.)*
+
+### 16.1 Local UNS spine — Sparkplug B + retained semantic mirror / Xương sống UNS cục bộ
+
+**EN** — `St4i.EdgeCore.Uns` runs a local Unified Namespace spine: an embedded, loopback-only MQTTnet
+broker (`UnsBroker`, bound to `127.0.0.1` only — LAN exposure is explicitly out of scope until mTLS
+lands) that is **on by default, even when running fully standalone/offline** — this is a local spine,
+not something that requires a Site/ecosystem connection to be useful. `UnsPublisher` additively mirrors
+every committed reading onto it via two topic families, with zero change to the existing ST4I HTTP
+path or `EdgePipeline.Committed`:
+
+1. **Sparkplug B wire topic** — `spBv1.0/{site}.{area}.{line}/{msgType}/{cell}[/{equipment}]`. NBIRTH
+   is published on a real operator `Start` (edge-node level, no device segment); NDEATH on `Stop` or
+   `Estop`; DDATA once per committed reading (device-level, `{equipment}` = the machine's code).
+2. **Retained semantic mirror** — `syn/{site}/{area}/{line}/{cell}/{equipment}/{aspect}`, where
+   `aspect` is `result` / `telemetry` / `inspection` (the same three reading-kind buckets the HTTP
+   ingest path already switches on) — the reading's own canonical JSON envelope, published with the
+   MQTT retain flag set.
+
+Env vars (`UnsOptions.FromEnvironment`, read once at startup — unset/blank falls back to the default,
+an unparseable port is silently ignored rather than crashing):
+
+| Var | What it does | Default |
+|---|---|---|
+| `ST4I_UNS_ENABLED` | `false`/`0` (case-insensitive) turns the whole spine off; anything else (incl. unset) leaves it on | `true` |
+| `ST4I_UNS_SITE` | ISA-95 Site segment (Sparkplug `group_id`'s first part; also feeds the Asset Registry URN, §16.5) | `"site"` |
+| `ST4I_UNS_AREA` | ISA-95 Area segment | `"area"` |
+| `ST4I_UNS_LINE` | ISA-95 Line segment | `"line"` |
+| `ST4I_UNS_CELL` | ISA-95 Cell segment — this process's Sparkplug `edge_node_id` | `"cell"` |
+| `ST4I_UNS_PORT` | The embedded broker's loopback TCP port | `18832` (deliberately not 1883 — the standard MQTT port — nor 18830, already used by the pre-existing `InProcessBroker` test fixture) |
+
+Failure modes are deliberately non-fatal: if the broker fails to bind at startup (e.g. the port is
+already in use), the failure is logged to stderr and the process continues with the UNS spine simply
+disabled for that run — it never crashes the host. If the internal publish queue saturates (a stuck/
+slow broker connection), the oldest queued item is dropped and a warning logged — a UNS hiccup can
+never slow or fail the pipeline's hot commit loop.
+
+*(VI: `St4i.EdgeCore.Uns` chạy một xương sống Unified Namespace cục bộ: một broker MQTTnet nhúng, chỉ
+nghe loopback (`127.0.0.1`) — **BẬT mặc định kể cả khi chạy độc lập/ngoại tuyến hoàn toàn**, đây là
+xương sống cục bộ, không cần kết nối Site/hệ sinh thái mới có ích. `UnsPublisher` phản chiếu THÊM VÀO
+mọi reading đã commit lên hai họ topic, không đổi đường ingest HTTP ST4I hay `EdgePipeline.Committed`
+hiện có: (1) topic dây Sparkplug B `spBv1.0/{site}.{area}.{line}/{msgType}/{cell}[/{equipment}]` —
+NBIRTH lúc Start thật, NDEATH lúc Stop/Estop, DDATA mỗi reading đã commit; (2) mirror ngữ nghĩa retained
+`syn/{site}/{area}/{line}/{cell}/{equipment}/{aspect}` (aspect = result/telemetry/inspection). 6 biến
+môi trường `ST4I_UNS_*` đọc một lần lúc khởi động, giá trị sai định dạng bị bỏ qua thay vì crash. Lỗi
+bind cổng hay hàng đợi đầy đều chỉ log cảnh báo, KHÔNG BAO GIỜ làm crash host hay chậm vòng lặp commit.)*
+
+### 16.2 Policy layer + XC-R40 safety endpoint / Lớp Policy + endpoint an toàn XC-R40
+
+**EN** — `St4i.EngineApi.Policy` adds a thin, default-deny policy engine (`PolicyEngine`) evaluated
+INSIDE the existing RBAC gate for every fleet-actuating command (`fleet.start`, `fleet.stop`,
+`fleet.estop`, `fleet.estop_reset`, `scenario.burst`): rules are evaluated safety-first, any explicit
+**Deny wins over any Permit**, and an action no rule explicitly permits is denied. The
+operator-visible behavior change: **`POST /v1/fleet/start` while the E-STOP latch is engaged now
+returns `409 Conflict` with reason `SAFETY_BLOCKED`** (plus an audited `fleet.start.denied` row) —
+before this, the same call silently no-op'd with a `200`.
+
+Policy reason code → HTTP status mapping: `SAFETY_BLOCKED` / `NOT_READY` / `BUSY` → `409`;
+`POLICY_DENIED` → `403`; `INVALID_ARGS` / `UNSUPPORTED` → `400`. Every denial (not just safety ones) is
+audited.
+
+New read-only endpoint:
+
+| Path | Verb | Role | Behavior |
+|---|---|---|---|
+| `/v1/safety` | GET | Operator | Returns `{ estopEngaged, isRunning, safetyClass: "SupervisorySoftwareLatch", advisory }` |
+
+**The XC-R40 boundary** — read this before treating the E-STOP latch as more than it is: it is a
+**SUPERVISORY software control**, not a substitute for a machine's independent, safety-rated
+emergency-stop circuit, and must never be relied on as a protective safety function; `/v1/safety`
+itself carries this advisory string verbatim in its response. `GET /v1/safety` is **read-only by
+design** — there is deliberately no write route here. The only two ways to change the underlying latch
+remain the pre-existing operator actions: `POST /v1/fleet/estop` (engage) and
+`POST /v1/fleet/estop/reset` (clear) — both still Operator-role, both still audited, both still always
+reachable even while the latch is engaged (the policy rule never blocks stop/estop/estop-reset/reads).
+
+*(VI: `St4i.EngineApi.Policy` thêm một lớp policy mặc định-từ-chối, đánh giá BÊN TRONG cổng RBAC hiện
+có cho mọi lệnh tác động lên fleet — bất kỳ Deny nào cũng THẮNG mọi Permit. Thay đổi hành vi người vận
+hành thấy được: `POST /v1/fleet/start` khi E-STOP đang cài giờ trả về `409` lý do `SAFETY_BLOCKED` (kèm
+dòng audit `fleet.start.denied`) thay vì im lặng no-op trả 200 như trước. Endpoint mới `GET /v1/safety`
+(vai trò Operator, CHỈ ĐỌC) trả trạng thái chốt E-STOP giám sát + cảnh báo XC-R40. **Ranh giới XC-R40**:
+chốt này là điều khiển phần mềm GIÁM SÁT, KHÔNG thay thế mạch dừng khẩn cấp an toàn độc lập của máy —
+không bao giờ được coi là chức năng an toàn bảo vệ. Chỉ có 2 cách ghi vào chốt: `POST /v1/fleet/estop`
+và `POST /v1/fleet/estop/reset` — cả hai vẫn như cũ, vẫn Operator, vẫn được audit, vẫn luôn gọi được kể
+cả khi chốt đang cài.)*
+
+### 16.3 Per-pipeline fault isolation / Cách ly lỗi theo từng pipeline
+
+**EN** — `FleetHost` now runs each driver in its own independent `PipelineSlot` — its own `EdgePipeline`,
+cancellation token, and background run-task. A slot that faults is removed **in isolation**: only that
+slot's own driver is disposed and torn down; every sibling slot (and the rest of the fleet, simulated
+or real) keeps running untouched. This is the load-bearing precondition for adding a real OT driver
+(Modbus, §16.4) alongside the simulated fleet without risk — a flaky real field connection can degrade,
+reconnect, or even fault outright without ever taking the whole engine down. There is no new endpoint
+for this — it's an internal reliability property of `FleetHost`, observable as "the rest of the fleet
+kept running" behavior rather than a new API surface.
+
+*(VI: `FleetHost` giờ chạy mỗi driver trong một `PipelineSlot` độc lập riêng — EdgePipeline, token huỷ,
+và tác vụ nền riêng. Một slot lỗi sẽ bị gỡ CÁCH LY: chỉ driver của slot đó bị dispose/dọn dẹp, mọi slot
+khác (và phần còn lại của fleet, mô phỏng hay thật) vẫn chạy không hề bị ảnh hưởng. Đây là điều kiện tiên
+quyết để thêm driver OT thật (Modbus, §16.4) cạnh fleet mô phỏng mà không rủi ro — một kết nối trường
+thật chập chờn có thể suy giảm/kết nối lại/thậm chí lỗi hẳn mà không bao giờ kéo sập cả engine. Không có
+endpoint mới cho việc này — đây là thuộc tính tin cậy nội bộ của `FleetHost`.)*
+
+### 16.4 Modbus TCP driver / Driver Modbus TCP
+
+**EN** — `St4i.EdgeCore.Drivers.Modbus` is the first real field-protocol driver: a periodic TCP poller
+(NModbus) that reads a fixed, ordered register list off one Modbus TCP slave, riding its own
+fault-isolated pipeline slot (§16.3). **Default OFF** — the opposite polarity from the UNS spine — a
+fresh install/CI run with no Modbus endpoint configured is byte-identical to before this feature
+existed.
+
+Env vars (`ModbusOptions.FromEnvironment`, same "read once, unparseable falls back to default" idiom
+as `UnsOptions`):
+
+| Var | What it does | Default |
+|---|---|---|
+| `ST4I_MODBUS_ENABLED` | `true`/`1` (case-insensitive) turns the Modbus driver on; anything else (incl. unset) leaves it off | `false` |
+| `ST4I_MODBUS_HOST` | Modbus TCP slave host to dial | `127.0.0.1` |
+| `ST4I_MODBUS_PORT` | Modbus TCP slave port | `502` |
+| `ST4I_MODBUS_MAP` | Path to the register-map JSON file (below) — required for Modbus to actually start even when `ENABLED=true` | none (unset/missing/malformed → Modbus is disabled for this run, logged, never crashes startup) |
+
+Register-map JSON shape (`ModbusRegisterMap.FromJson` — property names matched case-insensitively):
+
+```json
+{
+  "machineCode": "MODBUS-01",
+  "unitId": 1,
+  "pollIntervalMs": 1000,
+  "registers": [
+    { "address": 100, "type": "Holding", "dataType": "UInt16", "scale": 0.1, "metric": "temperature", "unit": "°C" },
+    { "address": 101, "type": "Input", "dataType": "Int16", "scale": 1.0, "metric": "pressure", "unit": "kPa" }
+  ]
+}
+```
+
+- `machineCode` — required, non-blank; becomes this Modbus machine's roster/asset code.
+- `unitId` — the Modbus slave address on the wire (not related to `machineCode`); defaults to `1`.
+- `pollIntervalMs` — poll cadence; defaults to `1000`.
+- `registers[]` — required, at least one entry:
+  - `address` — the register address (`ushort`).
+  - `type` — `"Holding"` (FC03, read/write on the real device) or `"Input"` (FC04, read-only) — this
+    driver only ever **reads**, regardless of type.
+  - `dataType` — `"UInt16"` (raw 16-bit word) or `"Int16"` (the same bits reinterpreted as two's-complement
+    signed) — decoded, **then** multiplied by `scale`.
+  - `scale` — e.g. a raw `235` with `scale: 0.1` → telemetry value `23.5`; this is the entire
+    unit-conversion story.
+  - `metric`/`unit` — the resulting telemetry sample's name/unit.
+- A blank `machineCode` or an empty `registers` list is rejected at load (throws), which Program.cs
+  catches — it logs a warning and disables Modbus for the run rather than crashing startup.
+
+When Modbus is enabled and its map loads successfully, the Modbus machine is wired in as a
+**first-class roster member** — it gets a fleet snapshot tile, a historian row per poll, and (via
+Asset Registry auto-upsert, §16.5) an asset row, not just an invisible telemetry stream — and its
+readings are mirrored onto the UNS spine (§16.1) exactly like every other machine's.
+
+**Honest deferrals** (documented in the driver's own source, not silently missing): 32-bit/float
+register values (combining a register PAIR) and register-block batching (today: one read per
+register, per poll) are follow-ups, not built; **Modbus RTU (serial)** is not implemented — TCP only;
+there is no per-machine `MappingProfile` override for Modbus yet (it uses one shared `Automation`-class
+fallback profile for every Modbus machine today).
+
+*(VI: `St4i.EdgeCore.Drivers.Modbus` là driver giao thức trường thật đầu tiên — vòng lặp poll TCP định
+kỳ (NModbus) đọc danh sách thanh ghi cố định từ một Modbus TCP slave, chạy trong pipeline slot cách ly
+lỗi riêng (§16.3). **MẶC ĐỊNH TẮT** — ngược cực với UNS spine. 4 biến môi trường `ST4I_MODBUS_*` (bảng
+trên). Định dạng JSON register-map: `machineCode`, `unitId` (mặc định 1), `pollIntervalMs` (mặc định
+1000), `registers[]` gồm `address`/`type` (Holding FC03 hoặc Input FC04, chỉ ĐỌC dù loại nào)/`dataType`
+(UInt16 hoặc Int16, giải mã XONG mới nhân `scale`)/`scale`/`metric`/`unit`. `machineCode` rỗng hoặc
+`registers` rỗng bị từ chối lúc nạp — Program.cs bắt lỗi này, log cảnh báo, tắt Modbus cho lần chạy đó
+thay vì crash. Khi bật và map nạp thành công, máy Modbus trở thành thành viên fleet CHÍNH THỨC (có tile,
+historian, asset) chứ không chỉ là luồng telemetry vô hình; dữ liệu cũng được phản chiếu lên UNS spine.
+**Những gì CHƯA làm** (đã ghi rõ trong code, không giấu): thanh ghi 32-bit/float, đọc theo khối, Modbus
+RTU (nối tiếp) — hiện chỉ có TCP; chưa có `MappingProfile` riêng cho từng máy Modbus.)*
+
+### 16.5 Asset Registry / Sổ đăng ký tài sản
+
+**EN** — `St4i.EngineApi.AssetRegistry` (`AssetRegistryStore`) is a persistent SQLite registry giving
+every registered machine a durable, ISA-95-addressed identity independent of the in-memory fleet
+roster.
+
+- **Storage:** `assets.db`, default location `%ProgramData%\ST4I\sim\assets\assets.db` — a sibling of
+  `...\sim\historian`/`...\sim\security`/`...\sim\wal` — relocatable via **`ST4I_ASSETS_DIR`** (same
+  idiom as `ST4I_HISTORIAN_DIR`/`ST4I_WAL_DIR`/`ST4I_SECURITY_DIR`, §15.2).
+- **URN:** `urn:isa95:{site}:{area}:{line}:{cell}:{code}` — the site/area/line/cell segments come from
+  the same process-wide `UnsOptions` address the UNS spine (§16.1) uses; `code` is the machine's own
+  code.
+- **Lifecycle:** `Provisioned` → `Commissioning` → `Active` → `Maintenance` → `Decommissioned`. A
+  machine registers/re-registers as `Active` on a fresh insert; critically, **re-registration (every
+  process start's roster-seed, or a dynamic `RegisterMachine` call) never resets an already-set
+  lifecycle back to `Active`** — only an explicit operator transition changes it, so a machine parked in
+  `Maintenance` stays there across restarts.
+- **Every registered machine auto-upserts as an asset** (roster-seed at every process start, plus every
+  dynamic registration) — this upsert never throws into its caller; a registry hiccup (locked file,
+  missing directory, disk full) is logged and swallowed, so starting/registering the fleet is never
+  blocked by an `assets.db` problem.
+
+Endpoints:
+
+| Path | Verb | Role | Behavior |
+|---|---|---|---|
+| `/v1/assets` | GET | Operator | List every asset |
+| `/v1/assets/{code}` | GET | Operator | One asset's detail; `404` if the code is unknown |
+| `/v1/assets/{code}/lifecycle` | PUT | Engineer | Transition lifecycle state (body: `{"state":"Maintenance"}`); `400` on an unrecognized state, `404` on an unknown code, audited as `asset.lifecycle.set` |
+
+**Honest deferral:** the web UI's new `/assets` nav item (`AssetRegistry.tsx`) means the existing
+visual-regression baselines need a CI `--update-snapshots` pass to account for the new navigation
+entry — not yet done as of this doc update.
+
+*(VI: `St4i.EngineApi.AssetRegistry` là sổ đăng ký SQLite bền vững, cho mỗi máy đã đăng ký một danh
+tính ISA-95 độc lập với roster fleet trong bộ nhớ. Lưu tại `assets.db` (mặc định
+`%ProgramData%\ST4I\sim\assets`, dời chỗ qua `ST4I_ASSETS_DIR`). URN dạng
+`urn:isa95:{site}:{area}:{line}:{cell}:{code}`. Vòng đời: Provisioned → Commissioning → Active →
+Maintenance → Decommissioned — đăng ký lại KHÔNG BAO GIỜ đưa lifecycle đã set về lại Active, chỉ thao
+tác thủ công của operator mới đổi được, nên máy đang ở Maintenance vẫn giữ nguyên qua các lần khởi động
+lại. Mọi máy đăng ký đều tự động upsert thành asset, lỗi ghi registry không bao giờ chặn việc khởi động
+fleet. 3 endpoint: `GET /v1/assets` (Operator, danh sách), `GET /v1/assets/{code}` (Operator, chi
+tiết), `PUT /v1/assets/{code}/lifecycle` (Engineer, đổi vòng đời, có audit). **Việc CHƯA làm:** mục
+điều hướng `/assets` mới trên web UI cần chạy lại baseline visual-regression (`--update-snapshots`) —
+chưa làm tại thời điểm cập nhật tài liệu này.)*
