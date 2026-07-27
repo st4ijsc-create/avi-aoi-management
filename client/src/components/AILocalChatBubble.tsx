@@ -155,7 +155,16 @@ interface ChatMessage {
     confidence: number;
     intent: string;
     language: string;
-    citations: Array<{ title: string; sourcePath: string }>;
+    citations: Array<{
+      title: string;
+      sourcePath: string;
+      // doc69 B3 (Wave 5) — deep-link target, resolved server-side ONLY for a
+      // KNOWN operational card whose route passes the ALLOWED_CLIENT_ROUTES
+      // whitelist. null/absent -> render as plain, non-clickable text.
+      route?: string | null;
+      id?: string;
+      sourceType?: string;
+    }>;
     cached?: boolean;
     followUpSuggestions?: string[];
     provider?: string;
@@ -781,6 +790,14 @@ export function AILocalChatBubble() {
           answer: msg.content.slice(0, 200),
           rating: vote === "up" ? 1 : -1,
           toolName: msg.toolName ?? null,
+          // doc69 B3 (Wave 5) — the citations shown for THIS answer, persisted
+          // alongside the vote so the re-ranking aggregate can attribute it to
+          // the right source(s).
+          citations: (msg.result?.citations ?? []).map((c) => ({
+            id: c.id,
+            sourcePath: c.sourcePath,
+            title: c.title,
+          })),
         });
         setMessages((prev) =>
           prev.map((m) => (m.id === msg.id ? { ...m, feedbackGiven: vote } : m)),
@@ -1420,13 +1437,27 @@ export function AILocalChatBubble() {
                             </div>
                           )}
 
-                          {/* Sources list */}
+                          {/* Sources list — doc69 B3 (Wave 5): clickable ONLY when
+                              the server resolved a whitelisted deep-link route
+                              (cite.route); otherwise plain, non-clickable text
+                              (honest — never navigate to an arbitrary string). */}
                           {showSources === msg.id && (msg.result?.citations?.length ?? 0) > 0 && (
                             <div className="space-y-1 pt-1 border-t border-border/30">
                               {msg.result?.citations?.slice(0, 4).map((cite: any, i: number) => (
                                 <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground bg-background/60 rounded p-1.5">
                                   <span className="shrink-0 font-semibold text-primary">{i + 1}.</span>
-                                  <span className="break-all">{cite.title || cite.sourcePath}</span>
+                                  {cite.route ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setLocation(cite.route)}
+                                      title={t("aiChat.openCitation", "Mở trang liên quan")}
+                                      className="break-all text-left underline decoration-dotted underline-offset-2 hover:text-primary transition-colors"
+                                    >
+                                      {cite.title || cite.sourcePath}
+                                    </button>
+                                  ) : (
+                                    <span className="break-all">{cite.title || cite.sourcePath}</span>
+                                  )}
                                 </div>
                               ))}
                             </div>

@@ -97,6 +97,16 @@ export interface KbVisionNote {
 export interface KbCitation {
   title: string;
   sourcePath: string;
+  // doc69 B3 (Wave 5) — deep-link target, resolved server-side ONLY for a KNOWN
+  // operational card whose route passes the ALLOWED_CLIENT_ROUTES whitelist (see
+  // server/services/aiOperationalGrounding.ts's resolveCitationRoute). null/absent
+  // means the citation has no safe navigable target — render it as plain,
+  // non-clickable text (never navigate to an arbitrary string).
+  route?: string | null;
+  // Present when the server can supply them (chunk id / source kind) — optional so
+  // older payload shapes stay valid.
+  id?: string;
+  sourceType?: string;
 }
 
 export interface KbStructured {

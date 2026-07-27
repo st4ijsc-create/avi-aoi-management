@@ -1899,3 +1899,43 @@ export const aiLlmAudit = pgTable("ai_llm_audit", {
 
 export type AiLlmAuditRow = typeof aiLlmAudit.$inferSelect;
 export type InsertAiLlmAudit = typeof aiLlmAudit.$inferInsert;
+
+// ============= KB Answer Feedback — doc69 B3 (Wave 5, AI#2) =============
+// Closes the KB answer feedback loop: every thumbs up/down on an assistant answer
+// (server/routers/aiLocalKbRouter.ts's `feedback` mutation) is now persisted here IN
+// ADDITION to the pre-existing append-only knowledge/feedback.jsonl log (Stage 13.D,
+// server/routes/aiLocalKnowledgeApi.ts) — the JSONL stays unchanged as a secondary
+// log; this table is the QUERYABLE source. server/services/aiKbFeedbackSignal.ts
+// aggregates it into a net rating (SUM of -1/0/1) per cited sourcePath and folds a
+// BOUNDED multiplier into aiLocalKnowledgeService.retrieveKnowledge()'s existing
+// score blend, flag-gated by KB_FEEDBACK_RERANK_ENABLED (default OFF — pure semantic
+// ranking is unchanged until an operator opts in).
+//
+// `citations` is a SNAPSHOT (jsonb array of {id?, sourcePath}) of what was shown for
+// that answer at feedback time — NOT a live FK to any chunk/embedding row, so a later
+// re-embed/removal of that source never breaks this table or an old vote's meaning.
+//
+// Additive migration: drizzle/0306_kb_answer_feedback.sql (CREATE TABLE IF NOT
+// EXISTS, owner `aoi`) — NOT applied by this task, ships unapplied until an operator
+// with the `aoi` role runs it. Every read/write path MUST treat a missing table (pg
+// error 42P01, walked via server/_core/dbErrors.ts's isMissingTable cause-walker —
+// NOT a naive `.code` check, which misses drizzle-orm's DrizzleQueryError wrapping)
+// as "no signal" / "not persisted" — see aiKbFeedbackSignal.ts.
+export const kbAnswerFeedback = pgTable("kb_answer_feedback", {
+  id: serial("id").primaryKey(),
+  query: text("query").notNull(),
+  // FE-generated per-turn message id (Stage 13.D's `messageId`) — a stable handle
+  // for "which answer", not a FK to any chat-messages table.
+  answerId: varchar("answerId", { length: 100 }).notNull(),
+  rating: integer("rating").notNull(), // -1 | 0 | 1
+  citations: jsonb("citations").$type<Array<{ id?: string; sourcePath: string }>>().default([]),
+  userId: integer("userId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_kb_answer_feedback_answer").on(table.answerId),
+  index("idx_kb_answer_feedback_created").on(table.createdAt),
+  index("idx_kb_answer_feedback_rating").on(table.rating),
+]);
+
+export type KbAnswerFeedback = typeof kbAnswerFeedback.$inferSelect;
+export type InsertKbAnswerFeedback = typeof kbAnswerFeedback.$inferInsert;

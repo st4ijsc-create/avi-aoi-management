@@ -24,11 +24,19 @@ import { planInference } from "./aiGateway";
 // (see aiOperationalGrounding.ts's top-of-file doc comment for the fail-safe
 // gating). Pure/no side effects beyond a cached read of
 // knowledge/operational-cards.json — never throws, never blocks the answer.
-import { resolveOperationalNavigate } from "./aiOperationalGrounding";
+import { resolveOperationalNavigate, resolveCitationRoute } from "./aiOperationalGrounding";
 // doc69 B1 (Wave 5) — last-autosync answer-eval gate result, surfaced read-only
 // in the KB health signal so ops can see "did the last KB rebuild pass its
 // answer-quality eval". Never throws (best-effort import/call, see getKbHealth).
 import { getLastAutosyncEvalGate } from "./kbSyncScheduler";
+// doc69 B3 (Wave 5) — closes the KB answer-feedback loop: a bounded, flag-gated
+// (KB_FEEDBACK_RERANK_ENABLED, default OFF) re-ranking nudge derived from
+// accumulated thumbs up/down votes (server/services/aiKbFeedbackSignal.ts).
+// FAIL-SAFE: disabled/no feedback/table-absent/DB-error all degrade to an empty
+// map -> computeFeedbackWeight(0) === 1 for every source -> byte-identical to the
+// pre-existing pure-semantic scoring below. This is a SEPARATE, independently
+// flagged signal from the aiReranker.ts LLM/gguf semantic reranker imported above.
+import { isFeedbackRerankEnabled, computeFeedbackWeight, loadFeedbackNetRatings } from "./aiKbFeedbackSignal";
 
 export type KbIntent =
   | "how_to"
@@ -65,6 +73,11 @@ export interface KbCitation {
   title: string;
   sourceType: string;
   score: number;
+  // doc69 B3 (Wave 5) — deep-link target, resolved via aiOperationalGrounding's
+  // resolveCitationRoute (KNOWN operational card + ALLOWED_CLIENT_ROUTES whitelist
+  // ONLY — never an arbitrary string). null/absent when unresolvable: the FE must
+  // render the citation as plain, non-clickable text (honest).
+  route?: string | null;
 }
 
 // zh — language union extended to include Chinese (backward-compatible: extra branch).
@@ -1556,6 +1569,10 @@ function graphRagOpts() {
   };
 }
 
+// doc69 B3 (Wave 5) — shared empty instance used when the feedback-rerank flag is
+// off, so retrieveKnowledge never allocates a Map on the (default) disabled path.
+const EMPTY_FEEDBACK_MAP: ReadonlyMap<string, number> = new Map();
+
 export async function retrieveKnowledge(
   question: string,
   topK = 5,
@@ -1576,6 +1593,14 @@ export async function retrieveKnowledge(
   // but produce a CORRUPT cosine similarity, so keyword-only retrieval is safer.
   const embedModelMatches = computeEmbedModelMatches(data.corpusEmbedModel);
   const qVec = embedModelMatches ? await embedQuestion(question) : null;
+
+  // doc69 B3 (Wave 5) — feedback-derived re-ranking signal. Flag-gated + fail-safe:
+  // when disabled (default) this is a single boolean check and feedbackNetRatings
+  // stays an empty Map, so feedbackWeight below is 1 for every source — the score
+  // formula is BYTE-IDENTICAL to before this task. loadFeedbackNetRatings() itself
+  // never throws (table-absent/DB-error/no-DB all degrade to an empty map).
+  const feedbackRerankOn = isFeedbackRerankEnabled();
+  const feedbackNetRatings = feedbackRerankOn ? await loadFeedbackNetRatings() : EMPTY_FEEDBACK_MAP;
 
   const scored = data.embeddings.map((emb) => {
     const chunk = data.chunksById.get(emb.id);
@@ -1608,7 +1633,15 @@ export async function retrieveKnowledge(
       routeFeatures.length > 0 && routeFeatures.some((f) => emb.sourcePath.toLowerCase().includes(f))
         ? 1.12
         : 1.0;
-    const score = baseScore * langWeight * typeWeight * routeWeight;
+    // doc69 B3 (Wave 5) — light curation nudge from accumulated feedback votes on
+    // this exact sourcePath. computeFeedbackWeight is BOUNDED (±5%, see
+    // aiKbFeedbackSignal.ts) — deliberately smaller than the semantic weights
+    // above (±8–18%) so feedback tunes, never dominates. 1 (no-op) when the flag
+    // is off, no feedback exists for this source, or the signal failed to load.
+    const feedbackWeight = feedbackRerankOn
+      ? computeFeedbackWeight(feedbackNetRatings.get(emb.sourcePath) ?? 0)
+      : 1;
+    const score = baseScore * langWeight * typeWeight * routeWeight * feedbackWeight;
 
     return { emb, chunk, semantic, keyword, score };
   });
@@ -1723,6 +1756,11 @@ export async function retrieveKnowledge(
     title: r.emb.title,
     sourceType: r.emb.sourceType,
     score: Number(r.score.toFixed(6)),
+    // doc69 B3 (Wave 5) — deep-link route, resolved ONLY for a KNOWN operational
+    // card whose route passes the ALLOWED_CLIENT_ROUTES whitelist; null otherwise
+    // (doc/feature/domain sources have no client viewer route today — the FE
+    // renders those as plain, non-clickable text, honest about what's real).
+    route: resolveCitationRoute({ sourceType: r.emb.sourceType, sourcePath: r.emb.sourcePath }),
   }));
 
   const contexts = ranked.map((r) => (r.chunk ? r.chunk.text : ""));

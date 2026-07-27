@@ -11054,7 +11054,14 @@
     "imageTypeInvalid": "Ảnh không hợp lệ. Dùng PNG, JPG hoặc WebP.",
     "imageReadError": "Không đọc được ảnh. Vui lòng thử lại.",
     "visionReading": "Ảnh đã đọc (VL)",
-    "visionUnavailable": "Không đọc được ảnh (thị giác không khả dụng) — trả lời chỉ dựa trên văn bản."
+    "visionUnavailable": "Không đọc được ảnh (thị giác không khả dụng) — trả lời chỉ dựa trên văn bản.",
+    "openCitation": "Mở trang liên quan",
+    "walkthroughLabel": "Hướng dẫn từng bước",
+    "walkthrough": {
+      "qualityReports": "Hướng dẫn tôi cách xem báo cáo chất lượng",
+      "rootCause": "Hướng dẫn tôi cách phân tích nguyên nhân gốc rễ (RCA)",
+      "alerts": "Hướng dẫn tôi cách xử lý cảnh báo lỗi"
+    }
   },
   "aiGuided": {
     "sectionTitle": "Tác vụ kỹ thuật có hướng dẫn",

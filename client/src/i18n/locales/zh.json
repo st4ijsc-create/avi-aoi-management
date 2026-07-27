@@ -10854,7 +10854,14 @@
     "recommendationsTitle": "建议",
     "sourcesCount": "{{count}} 个来源",
     "stepsTitle": "操作步骤",
-    "streaming": "流式生成中…"
+    "streaming": "流式生成中…",
+    "openCitation": "打开相关页面",
+    "walkthroughLabel": "分步指南",
+    "walkthrough": {
+      "qualityReports": "指导我查看质量报告",
+      "rootCause": "指导我进行根本原因分析（RCA）",
+      "alerts": "指导我处理缺陷警报"
+    }
   },
   "aiGuided": {
     "sectionTitle": "引导式工程任务",

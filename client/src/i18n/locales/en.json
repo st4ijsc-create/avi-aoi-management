@@ -11071,7 +11071,14 @@
     "imageTypeInvalid": "Unsupported image. Use PNG, JPG or WebP.",
     "imageReadError": "Couldn't read the image. Please try again.",
     "visionReading": "Image read (VL)",
-    "visionUnavailable": "Couldn't read the image (vision unavailable) — answering from text only."
+    "visionUnavailable": "Couldn't read the image (vision unavailable) — answering from text only.",
+    "openCitation": "Open related page",
+    "walkthroughLabel": "Step-by-step guides",
+    "walkthrough": {
+      "qualityReports": "Walk me through viewing quality reports",
+      "rootCause": "Walk me through root-cause analysis (RCA)",
+      "alerts": "Walk me through handling defect alerts"
+    }
   },
   "aiGuided": {
     "sectionTitle": "Guided engineering tasks",

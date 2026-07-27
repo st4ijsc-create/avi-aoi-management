@@ -136,3 +136,41 @@ export function resolveOperationalNavigate(
 
   return { ...directive, suggested: true };
 }
+
+/**
+ * doc69 B3 (Wave 5, AI#2) — per-CITATION deep-link resolution.
+ *
+ * Unlike {@link resolveOperationalNavigate} (which grounds the WHOLE answer's 1-tap
+ * "Mở màn X" button on the single best how-to citation), this resolves EVERY
+ * citation independently so the FE can render a citation as clickable when — and
+ * ONLY when — it is a KNOWN operational card whose route passes the SAME
+ * ALLOWED_CLIENT_ROUTES whitelist (reused verbatim via
+ * `navigateTool.buildClientAction`, never reimplemented). Works regardless of the
+ * answer's overall intent (a citation can be a useful deep-link even inside a
+ * non-how-to answer).
+ *
+ * Returns null (non-clickable, honest) for:
+ *   - any citation whose sourceType isn't "operational" — doc/feature/domain KB
+ *     sources currently have no client-side viewer route, so they stay plain text
+ *     rather than link to a made-up target.
+ *   - an operational citation whose sourcePath isn't a known card (stale index).
+ *   - a resolved route that fails the ALLOWED_CLIENT_ROUTES whitelist.
+ */
+export function resolveCitationRoute(
+  citation: { sourceType: string; sourcePath: string },
+  opts: ResolveOperationalNavigateOptions = {},
+): string | null {
+  if (citation.sourceType !== "operational") return null;
+
+  const index = opts.cardIndex ?? loadOperationalCardIndex();
+  const card = index.get(citation.sourcePath);
+  if (!card || !card.route) return null;
+
+  const ctx: ToolExecContext = opts.execCtx ?? {
+    user: { id: 0, role: "system" },
+    lang: "vi",
+  };
+
+  const directive = navigateTool.buildClientAction?.({ route: card.route }, ctx);
+  return directive ? card.route : null;
+}

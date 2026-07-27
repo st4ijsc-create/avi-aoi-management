@@ -70,6 +70,24 @@ const SUGGESTED_PROMPTS: { emoji: string; key: string; fallback: string }[] = [
   { emoji: "🔧", key: "aiChat.suggest.pdm", fallback: "Máy nào có nguy cơ hỏng cao nhất?" },
 ];
 
+// doc69 B3 (Wave 5) — minimal "walk me through X" onboarding starters. Each is a
+// plain how-to QUESTION, not a new mechanism: it goes through the exact SAME
+// handleSend -> /api/ai/local-kb/stream pipeline as any other message, so it
+// naturally classifies as intent "how_to" (server's classifyIntent — matches
+// "hướng dẫn"/"cách"/"how"/"guide") and — once the operational-card corpus is
+// synced (doc69 G2-7/E4) — gets grounded with a 1-tap "Mở màn hình" navigate
+// button via the SAME resolveOperationalNavigate path any other how-to answer
+// uses. No new guided-tour engine: this is a prompt template that reuses
+// everything already built. Topics were picked to match real operational cards
+// (knowledge/operational-cards.json: reports/root-cause-analysis/alerts) so a
+// synced corpus is likely to ground them. Fast-follow: a topic picker sourced
+// live from the operational-card index if 3 fixed starters prove too narrow.
+const WALKTHROUGH_STARTERS: { emoji: string; key: string; fallback: string }[] = [
+  { emoji: "🧭", key: "aiChat.walkthrough.qualityReports", fallback: "Hướng dẫn tôi cách xem báo cáo chất lượng" },
+  { emoji: "🧭", key: "aiChat.walkthrough.rootCause", fallback: "Hướng dẫn tôi cách phân tích nguyên nhân gốc rễ (RCA)" },
+  { emoji: "🧭", key: "aiChat.walkthrough.alerts", fallback: "Hướng dẫn tôi cách xử lý cảnh báo lỗi" },
+];
+
 // P3/W3.1 (doc 11) — extras returned by the RAG backend for the latest assistant
 // turn. Rendered under the last assistant message (citations / tool card /
 // structured steps / follow-ups). Kept in local state (not persisted to DB).
@@ -600,13 +618,28 @@ export default function AIChatPage() {
             </button>
             {showSources && (
               <div className="space-y-1">
+                {/* doc69 B3 (Wave 5) — a citation is clickable ONLY when the server
+                    resolved a whitelisted deep-link route (c.route); otherwise it
+                    stays plain, non-clickable text (honest — never navigate to an
+                    arbitrary string). */}
                 {extras.citations.slice(0, 5).map((c: KbCitation, i: number) => (
                   <div
                     key={i}
                     className="flex items-start gap-1.5 text-xs text-muted-foreground bg-background/60 rounded p-1.5"
                   >
                     <span className="shrink-0 font-semibold text-primary">{i + 1}.</span>
-                    <span className="break-all">{c.title || c.sourcePath}</span>
+                    {c.route ? (
+                      <button
+                        type="button"
+                        onClick={() => setLocation(c.route!)}
+                        title={t("aiChat.openCitation", "Mở trang liên quan")}
+                        className="break-all text-left underline decoration-dotted underline-offset-2 hover:text-primary transition-colors"
+                      >
+                        {c.title || c.sourcePath}
+                      </button>
+                    ) : (
+                      <span className="break-all">{c.title || c.sourcePath}</span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -774,6 +807,31 @@ export default function AIChatPage() {
                           })}
                         </div>
                       </div>
+
+                      {/* doc69 B3 (Wave 5) — "walk me through X" onboarding starters:
+                          plain how-to prompts, same send pipeline, grounded via the
+                          existing operational-card system (no new mechanism). */}
+                      <div className="mb-5">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                          <ChevronRight className="h-3.5 w-3.5 text-primary" />
+                          {t("aiChat.walkthroughLabel", "Hướng dẫn từng bước")}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {WALKTHROUGH_STARTERS.map((p, i) => {
+                            const text = t(p.key, p.fallback);
+                            return (
+                              <button
+                                key={i}
+                                onClick={() => handleSend(text)}
+                                disabled={isBusy}
+                                className="text-xs px-3 py-1.5 rounded-full border bg-background hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {p.emoji} {text}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                       <AIGuidedActionCards onSend={(req) => handleSend(req)} disabled={isBusy} />
                     </div>
                   )}
@@ -911,6 +969,31 @@ export default function AIChatPage() {
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {SUGGESTED_PROMPTS.map((p, i) => {
+                      const text = t(p.key, p.fallback);
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => handleSend(text)}
+                          disabled={isBusy || createConv.isPending}
+                          className="text-xs px-3 py-1.5 rounded-full border bg-background hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {p.emoji} {text}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* doc69 B3 (Wave 5) — "walk me through X" onboarding starters (see
+                    the constant's doc comment: reuses the existing operational-card
+                    grounding, no new guided-tour engine). */}
+                <div className="mb-6">
+                  <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <ChevronRight className="h-3.5 w-3.5 text-primary" />
+                    {t("aiChat.walkthroughLabel", "Hướng dẫn từng bước")}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {WALKTHROUGH_STARTERS.map((p, i) => {
                       const text = t(p.key, p.fallback);
                       return (
                         <button

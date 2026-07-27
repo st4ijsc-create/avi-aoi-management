@@ -12,6 +12,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   resolveOperationalNavigate,
+  resolveCitationRoute,
   resetOperationalCardIndexCacheForTest,
   type OperationalCardMeta,
 } from "./aiOperationalGrounding";
@@ -183,5 +184,66 @@ describe("resolveOperationalNavigate", () => {
       { cardIndex: indexOf(c) },
     );
     expect(zh?.message).toContain("打开");
+  });
+});
+
+// doc69 B3 (Wave 5, AI#2) — per-citation deep-link resolution.
+describe("resolveCitationRoute", () => {
+  it("resolves a KNOWN operational citation to its whitelisted route", () => {
+    const c = card({ sourcePath: "knowledge/operational/reports.md", route: "/reports" });
+    expect(ALLOWED_CLIENT_ROUTES).toContain("/reports");
+    const route = resolveCitationRoute(
+      { sourceType: "operational", sourcePath: c.sourcePath },
+      { cardIndex: indexOf(c) },
+    );
+    expect(route).toBe("/reports");
+  });
+
+  it("works regardless of answer intent (unlike resolveOperationalNavigate, no intent param exists here)", () => {
+    // resolveCitationRoute has no intent gate at all — it resolves per citation,
+    // independent of whether the overall answer was classified how_to.
+    const c = card();
+    const route = resolveCitationRoute(
+      { sourceType: "operational", sourcePath: c.sourcePath },
+      { cardIndex: indexOf(c) },
+    );
+    expect(route).toBe(c.route);
+  });
+
+  it("is non-clickable (null) for a non-operational sourceType, even if the sourcePath happens to match a card", () => {
+    const c = card();
+    const route = resolveCitationRoute(
+      { sourceType: "doc", sourcePath: c.sourcePath },
+      { cardIndex: indexOf(c) },
+    );
+    expect(route).toBeNull();
+  });
+
+  it("is non-clickable (null) when the operational citation's sourcePath isn't in the index (stale/unknown card)", () => {
+    const route = resolveCitationRoute(
+      { sourceType: "operational", sourcePath: "knowledge/operational/does-not-exist.md" },
+      { cardIndex: indexOf(card()) },
+    );
+    expect(route).toBeNull();
+  });
+
+  it("is non-clickable (null) when the card's route is outside ALLOWED_CLIENT_ROUTES", () => {
+    const c = card({
+      sourcePath: "knowledge/operational/unknown-route.md",
+      route: "/totally-unknown-admin-only-route",
+    });
+    const route = resolveCitationRoute(
+      { sourceType: "operational", sourcePath: c.sourcePath },
+      { cardIndex: indexOf(c) },
+    );
+    expect(route).toBeNull();
+  });
+
+  it("is fail-safe (null, never throws) when the card index is empty", () => {
+    const route = resolveCitationRoute(
+      { sourceType: "operational", sourcePath: "knowledge/operational/production-orders.md" },
+      { cardIndex: new Map() },
+    );
+    expect(route).toBeNull();
   });
 });

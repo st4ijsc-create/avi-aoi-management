@@ -6,6 +6,11 @@
 import { router, publicProcedure, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { z } from "zod";
 import { logger } from "../logger";
+// doc69 B3 (Wave 5, AI#2) — closes the KB feedback loop: persist every vote to
+// kb_answer_feedback ALONGSIDE (not instead of) the legacy JSONL append below.
+// Additive + fail-safe (see aiKbFeedbackSignal.ts's top-of-file doc comment) — a
+// missing/unmigrated table or any DB error never blocks this mutation.
+import { recordAnswerFeedback } from "../services/aiKbFeedbackSignal";
 
 // Knowledge base endpoints configuration
 const KB_API_BASE = process.env.KB_API_BASE || "http://localhost:3000";
@@ -36,6 +41,20 @@ const FeedbackInputSchema = z.object({
   rating: z.number().int().min(-1).max(1),
   comment: z.string().optional(),
   toolName: z.string().max(64).optional().nullable(),
+  // doc69 B3 (Wave 5) — the citations shown for this answer at feedback time
+  // (chunk id + sourcePath), used ONLY to persist a per-source feedback snapshot
+  // (kb_answer_feedback.citations) for the re-ranking aggregate. Optional/absent
+  // stays backward-compatible with any older caller that doesn't send it.
+  citations: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        sourcePath: z.string().optional(),
+        title: z.string().optional(),
+      }),
+    )
+    .optional()
+    .default([]),
 });
 
 // ─── KB API response shapes ───────────────────────────────────
@@ -199,13 +218,28 @@ export const aiLocalKbRouter = router({
 
   /**
    * Submit feedback (thumbs up/down) for a KB answer
+   *
+   * doc69 B3 (Wave 5) — closes the feedback loop: persists to kb_answer_feedback
+   * (the queryable source used by the re-ranking signal) ALONGSIDE the legacy
+   * knowledge/feedback.jsonl append (kept, unchanged). The two writes are
+   * independent — a DB hiccup never blocks the JSONL log and vice versa;
+   * recordAnswerFeedback itself never throws (fail-safe on an unmigrated table
+   * or any other DB error, see aiKbFeedbackSignal.ts).
    */
-  feedback: protectedProcedure.input(FeedbackInputSchema).mutation(async ({ input }) => {
+  feedback: protectedProcedure.input(FeedbackInputSchema).mutation(async ({ input, ctx }) => {
+    const dbResult = await recordAnswerFeedback({
+      messageId: input.messageId,
+      question: input.question,
+      rating: input.rating,
+      citations: input.citations ?? [],
+      userId: ctx.user.id,
+    });
+
     try {
       const result = await fetchKbApi("/api/ai/local-kb/feedback", "POST", input);
-      return { success: true, data: result };
+      return { success: true, data: result, persisted: dbResult.persisted };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, error: error.message, persisted: dbResult.persisted };
     }
   }),
 });
