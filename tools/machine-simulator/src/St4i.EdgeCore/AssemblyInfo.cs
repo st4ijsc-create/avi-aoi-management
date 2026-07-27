@@ -1,8 +1,6 @@
-using System.Runtime.CompilerServices;
-
-// GĐ3 sub-2 SD-1 (task-1-brief.md) — lets St4i.EdgeCore.Tests reach SiteDiscovery's internal
-// `CollectFromMessages` seam, so the PTR/SRV/TXT/A correlation + dedup logic has a pure unit test that
-// feeds synthetic Makaretu.Dns records (no real multicast socket) alongside the real loopback
-// advertise->browse integration test — see SiteDiscoveryTests' own doc comment. Same "one narrow,
-// documented test seam, not a wildcard" scoping as St4i.EngineApi/AssemblyInfo.cs's own precedent.
-[assembly: InternalsVisibleTo("St4i.EdgeCore.Tests")]
+// GĐ3 closeout WI-1 Part A (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md)
+// removed this file's only InternalsVisibleTo("St4i.EdgeCore.Tests") entry: it existed solely so
+// St4i.EdgeCore.Tests could reach SiteDiscovery's internal `CollectFromMessages` seam, and SiteDiscovery
+// (plus its test) moved to St4i.EngineApi/St4i.EngineApi.Tests in this same task (see SiteDiscovery.cs's
+// own doc comment for why). No other internal member of this assembly is consumed cross-assembly by
+// St4i.EdgeCore.Tests, so this file is intentionally left with no InternalsVisibleTo at all.

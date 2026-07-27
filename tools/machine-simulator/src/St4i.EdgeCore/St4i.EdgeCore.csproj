@@ -9,17 +9,17 @@
     <Compile Include="..\..\..\..\examples\device-client\csharp\St4iDeviceClient.cs" Link="Sdk\St4iDeviceClient.cs" />
   </ItemGroup>
   <ItemGroup>
-    <!-- GĐ3 sub-2 SD-1 (mDNS join wizard, task-1-brief.md) — the ONE new NuGet this task adds:
-         Makaretu.Dns.Multicast.New 0.38.0, the jdomnitz-maintained fork of the original
-         richardschneider/net-mdns (the brief named it "Makaretu.Dns.Multicast.N" — the actual package ID
-         on nuget.org is "Makaretu.Dns.Multicast.New"; same author/fork/intent, see task-1-report.md for
-         the full de-risk-gate write-up). MIT-licensed; ships a net9.0 lib target that resolves cleanly
-         against net10.0-windows with zero NU1701 downgrade warning. Pulls in Makaretu.Dns.New 3.1.2 (MIT)
-         + Common.Logging 3.4.1 (Apache-2.0) transitively. Used by Site/SiteDiscovery.cs to browse the LAN
-         for SYNAPSE Sites (RFC 6762/6763 mDNS) — confirmed via a real loopback advertise->browse round-trip
-         (SiteDiscoveryTests.LoopbackRoundTrip_AdvertisedInstance_IsDiscovered) that this exact package
-         works end-to-end on net10.0-windows. -->
-    <PackageReference Include="Makaretu.Dns.Multicast.New" Version="0.38.0" />
+    <!-- GĐ3 closeout WI-1 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md)
+         Part A — the Makaretu.Dns.Multicast.New PackageReference that SD-1 originally added here MOVED to
+         St4i.EngineApi.csproj: Site/SiteDiscovery.cs (the only consumer) moved there with it, and
+         St4i.EngineApi is EngineApi's only consumer of ISiteDiscovery (SiteEndpoints.DiscoverAsync).
+         St4i.EdgeService/St4iMachineSimulator (the WPF exhibition app) both ONLY ProjectReference this
+         project, never EngineApi, and never touch mDNS at all — so they were carrying Makaretu's (and its
+         transitive Common.Logging's) DLLs in their own build output for no reason (NuGet's
+         ProjectReference-transitive-package-copy propagates a package to every downstream consumer's
+         output regardless of whether that consumer's own code uses it). See
+         St4i.EdgeCore.Tests.MakaretuNotShippedTests for the proof those two outputs are now clean, and the
+         task-1-report.md for the full rationale. -->
     <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
     <PackageReference Include="MQTTnet.Server" Version="5.2.0.1603" />
     <!-- G2-2 (UNS spine) — the ONE new NuGet this task adds: runtime-only, used by

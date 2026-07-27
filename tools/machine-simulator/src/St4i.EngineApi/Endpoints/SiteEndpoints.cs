@@ -6,6 +6,7 @@ using St4i.EdgeCore.Identity;
 using St4i.EdgeCore.Site;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
+using St4i.EngineApi.Site;
 
 namespace St4i.EngineApi.Endpoints;
 
@@ -50,13 +51,15 @@ namespace St4i.EngineApi.Endpoints;
 /// probe is a follow-up, not a blocker for this task.</para>
 ///
 /// <para><b>GĐ3 sub-2 SD-1</b> (<c>.superpowers/sdd/2026-07-27-giaidoan3-mdns-join-wizard-blueprint/task-1-brief.md</c>)
-/// adds <c>GET /v1/site/discover</c>: an mDNS LAN scan (<see cref="St4i.EdgeCore.Site.ISiteDiscovery"/>) so
+/// adds <c>GET /v1/site/discover</c>: an mDNS LAN scan (<see cref="St4i.EngineApi.Site.ISiteDiscovery"/>) so
 /// the web join wizard can pre-fill a Site's host/port instead of an operator hand-typing them. Engineer
 /// (an ACTIVE network scan — sends a real multicast query onto the LAN — is a step up from the read-only
 /// Operator-level <c>GET /v1/site</c>/<c>GET /v1/site/identity</c> above, but still read-only from THIS
 /// device's own state's point of view: it changes nothing, persists nothing, so no audit row). Discovery
-/// never changes trust — see <see cref="St4i.EdgeCore.Site.SiteDiscovery"/>'s own doc comment; the operator
-/// still pins the Site's certificate via the UNCHANGED <c>PUT /v1/site</c> above.</para>
+/// never changes trust — see <see cref="St4i.EngineApi.Site.SiteDiscovery"/>'s own doc comment; the operator
+/// still pins the Site's certificate via the UNCHANGED <c>PUT /v1/site</c> above. GĐ3 closeout WI-1 moved
+/// <see cref="St4i.EngineApi.Site.ISiteDiscovery"/> here from <c>St4i.EdgeCore.Site</c> (see that type's own
+/// doc comment) — this endpoint's own behavior is unchanged.</para>
 /// </summary>
 public static class SiteEndpoints
 {

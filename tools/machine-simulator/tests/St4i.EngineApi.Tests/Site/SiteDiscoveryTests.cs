@@ -1,12 +1,14 @@
 using Makaretu.Dns;
-using St4i.EdgeCore.Site;
+using St4i.EngineApi.Site;
 using Xunit;
 
-namespace St4i.EdgeCore.Tests.Site;
+namespace St4i.EngineApi.Tests.Site;
 
 /// <summary>
 /// GĐ3 sub-2 SD-1 (task-1-brief.md) — <see cref="SiteDiscovery"/>: the mDNS browse-only Site discovery
-/// this task adds.
+/// this task adds. Moved here (from <c>St4i.EdgeCore.Tests.Site</c>) by GĐ3 closeout WI-1
+/// (<c>.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md</c>) Part A, alongside
+/// the production type itself — see <see cref="SiteDiscovery"/>'s own doc comment for why.
 ///
 /// <para><b>The de-risk-gate proof</b> (<see cref="LoopbackRoundTrip_AdvertisedInstance_IsDiscovered"/>) —
 /// this is the actual "does <c>Makaretu.Dns.Multicast.New</c> 0.38.0 work on <c>net10.0-windows</c>" proof
@@ -48,7 +50,7 @@ namespace St4i.EdgeCore.Tests.Site;
 /// suite — see this class' own remarks on the loopback test above for why that independent coverage
 /// matters.</para>
 /// </summary>
-[Collection("St4i.EdgeCore.Tests.Site")]
+[Collection("St4i.EngineApi.Tests.Site")]
 public sealed class SiteDiscoveryTests
 {
     // ─────────────────────────────────────────────────────────────────────

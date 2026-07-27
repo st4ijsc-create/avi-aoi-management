@@ -1,18 +1,34 @@
 using System.Collections.Concurrent;
 using Makaretu.Dns;
 
-namespace St4i.EdgeCore.Site;
+namespace St4i.EngineApi.Site;
 
 /// <summary>
 /// GĐ3 sub-2 SD-1 (<c>.superpowers/sdd/2026-07-27-giaidoan3-mdns-join-wizard-blueprint/task-1-brief.md</c>) —
 /// mDNS browse-only discovery of SYNAPSE Sites on the LAN, so the web join wizard can PRE-FILL a
 /// <c>PUT /v1/site</c> host/port instead of an operator hand-typing them. This is purely an operator
 /// convenience: it does NOT change trust in any way — the operator still pastes/pins the Site's
-/// <see cref="PersistedSiteLink.SiteTrustPem"/> exactly as EC-3's <c>PUT /v1/site</c> already requires (see
-/// <c>SiteEndpoints.IsValidTrustPem</c>). Discovery has no opinion on trust at all; it only ever surfaces
-/// "here's what's advertising itself as a Site on this LAN segment, and here's where it says its MQTT broker
-/// is" — a Site's own SRV target could be spoofed by anything on the local network (mDNS itself has no
-/// authentication), which is exactly WHY the trust-pin step is never skipped or auto-filled.
+/// <see cref="St4i.EdgeCore.Site.PersistedSiteLink.SiteTrustPem"/> exactly as EC-3's <c>PUT /v1/site</c>
+/// already requires (see <c>SiteEndpoints.IsValidTrustPem</c>). Discovery has no opinion on trust at all; it
+/// only ever surfaces "here's what's advertising itself as a Site on this LAN segment, and here's where it
+/// says its MQTT broker is" — a Site's own SRV target could be spoofed by anything on the local network
+/// (mDNS itself has no authentication), which is exactly WHY the trust-pin step is never skipped or
+/// auto-filled.
+///
+/// <para><b>GĐ3 closeout WI-1 (<c>.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md</c>)
+/// moved this whole file here from <c>St4i.EdgeCore.Site</c></b> — the ONLY change of that move was the
+/// namespace (<c>St4i.EdgeCore.Site</c> → <c>St4i.EngineApi.Site</c>) and, with it,
+/// <c>Makaretu.Dns.Multicast.New</c>'s <c>PackageReference</c> (EdgeCore.csproj → EngineApi.csproj): the
+/// public API (type names, const values, the service-type string) is byte-identical. Reason: EngineApi is
+/// the ONLY consumer of <see cref="ISiteDiscovery"/> (<c>SiteEndpoints.DiscoverAsync</c>) — EdgeCore's own
+/// <c>St4i.EdgeService</c>/WPF build outputs were carrying Makaretu's (and its transitive
+/// <c>Common.Logging</c>'s) DLLs for no reason, since neither of those hosts ever touches mDNS at all. See
+/// <c>St4i.EdgeCore.Tests.MakaretuNotShippedTests</c> for the proof those outputs are now clean, and this
+/// task's own report for the full rationale. Everything else that lived in <c>St4i.EdgeCore.Site</c>
+/// (<see cref="St4i.EdgeCore.Site.UnsBridge"/>, <see cref="St4i.EdgeCore.Site.SiteBridgeManager"/>,
+/// <see cref="St4i.EdgeCore.Site.SiteTrustPin"/>, <see cref="St4i.EdgeCore.Site.SiteLinkStore"/>,
+/// <see cref="St4i.EdgeCore.Site.BridgeStatus"/>, <see cref="St4i.EdgeCore.Site.PersistedSiteLink"/>) STAYS
+/// in EdgeCore — <c>St4i.EdgeService</c> genuinely needs those for its own northbound Site bridge.</para>
 /// </summary>
 public sealed record DiscoveredSite(
     string InstanceName,
@@ -39,9 +55,10 @@ public interface ISiteDiscovery
 /// richardschneider/net-mdns — MIT, confirmed to build/run on <c>net10.0-windows</c> as this task's own
 /// de-risk gate; see the task-1 report for the loopback advertise→browse proof).
 ///
-/// <para><b>Per-call ephemeral, not always-on:</b> unlike <see cref="Uns.UnsBroker"/> (an always-on loopback
-/// MQTT listener) or <see cref="SiteBridgeManager"/> (a long-lived northbound bridge once a Site link is
-/// enabled), THIS class holds no state and no socket between calls. Every <see cref="DiscoverAsync"/> call
+/// <para><b>Per-call ephemeral, not always-on:</b> unlike <see cref="St4i.EdgeCore.Uns.UnsBroker"/> (an
+/// always-on loopback MQTT listener) or <see cref="St4i.EdgeCore.Site.SiteBridgeManager"/> (a long-lived
+/// northbound bridge once a Site link is enabled), THIS class holds no state and no socket between calls.
+/// Every <see cref="DiscoverAsync"/> call
 /// constructs its own <see cref="MulticastService"/> + <see cref="ServiceDiscovery"/>, starts them, sends
 /// exactly one <c>QueryServiceInstances</c> multicast query, collects whatever reply messages arrive for
 /// <paramref name="timeout"/>'s duration, then stops/disposes both — regardless of whether the call
@@ -190,7 +207,7 @@ public sealed class SiteDiscovery : ISiteDiscovery
 
     /// <summary>The pure PTR→SRV/TXT→A correlation + dedup logic <see cref="DiscoverAsync"/> runs once,
     /// after its browse window closes. <c>internal</c> (not <c>private</c>) specifically so
-    /// <c>St4i.EdgeCore.Tests</c> (see this assembly's <c>AssemblyInfo.cs</c> <c>InternalsVisibleTo</c>) can
+    /// <c>St4i.EngineApi.Tests</c> (see this assembly's <c>AssemblyInfo.cs</c> <c>InternalsVisibleTo</c>) can
     /// feed it synthetic, in-memory <see cref="Message"/>s built from hand-constructed
     /// <see cref="PTRRecord"/>/<see cref="SRVRecord"/>/<see cref="TXTRecord"/>/<see cref="AddressRecord"/>
     /// instances — a unit test of this method never opens a real socket, so it can't be flaky/unavailable

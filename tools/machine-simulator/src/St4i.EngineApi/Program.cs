@@ -495,8 +495,12 @@ builder.Services.AddSingleton(deviceIdentity);
 // minimal API's endpoint-metadata build throws at the first request touching ANY route. The singleton
 // itself holds no socket (see SiteDiscovery's own doc comment: per-call ephemeral) — this registration is
 // just wiring a real logger into its never-throws logError callback.
-builder.Services.AddSingleton<St4i.EdgeCore.Site.ISiteDiscovery>(sp =>
-    new St4i.EdgeCore.Site.SiteDiscovery(
+//
+// GĐ3 closeout WI-1 Part A (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md)
+// moved SiteDiscovery/ISiteDiscovery from St4i.EdgeCore.Site to St4i.EngineApi.Site (byte-identical
+// otherwise) — see that class' own doc comment for why.
+builder.Services.AddSingleton<St4i.EngineApi.Site.ISiteDiscovery>(sp =>
+    new St4i.EngineApi.Site.SiteDiscovery(
         logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("SiteDiscovery").LogError(ex, "{Msg}", msg)));
 
 // The Site bridge manager only makes sense when there's an actual local UNS spine to bridge (a bridge with

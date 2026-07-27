@@ -52,6 +52,13 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
+    <!-- GĐ3 closeout WI-1 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md)
+         Part A — MOVED here from St4i.EdgeCore.csproj (same exact pinned version — see that project's own
+         comment for the full de-risk-gate history/licensing write-up this repeats): Site/SiteDiscovery.cs
+         (browse) and the new Site/SiteAdvertiser.cs (Part B, advertise) both live in THIS project now, and
+         St4i.EdgeService/St4iMachineSimulator (WPF) never needed this package at all — they only
+         ProjectReference EdgeCore, never EngineApi, and never touch mDNS. -->
+    <PackageReference Include="Makaretu.Dns.Multicast.New" Version="0.38.0" />
     <PackageReference Include="PDFsharp-MigraDoc-GDI" Version="6.2.4" />
     <!-- WS-F1-T1 — Windows Service essentials: AddWindowsService's self-gating lifetime (Program.cs) and
          ServiceInstallVerbs' status verb (ServiceController), both pinned to the same 10.0.x line as
