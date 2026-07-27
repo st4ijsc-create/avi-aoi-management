@@ -69,6 +69,17 @@ function formatVectorLiteral(vec: number[]): string {
  * transaction so a mid-batch failure never leaves a half-written document (either every
  * chunk lands, or none do — the caller sees the thrown error and must not report success).
  *
+ * CLEAN-SLATE per document: before inserting, every existing row for each distinct
+ * `(corpus, sourceRef)` pair present in `chunks` is DELETEd first, inside the SAME
+ * transaction as the inserts. This guarantees a re-ingest fully REPLACES that document's
+ * chunk set — if the document shrank (fewer chunks than the previous ingest), the old rows
+ * at the now-unused higher `chunkIndex` values are removed instead of lingering with stale
+ * text and continuing to surface in `searchCorpus`. The DELETE is scoped per `sourceRef`
+ * (not the whole `corpus`), so a call that (re-)writes one document never touches any other
+ * document already stored under the same corpus namespace. Both the DELETEs and the INSERTs
+ * are inside the same `db.transaction(...)`, so a failure anywhere rolls back atomically —
+ * no half-deleted/half-written corpus.
+ *
  * Fail-safe ONLY for the "table not migrated yet" case (pg 42P01): that degrades to
  * `{tableAvailable:false, inserted:0, skipped:chunks.length}` instead of throwing. Any OTHER
  * database error (bad connection, constraint violation unrelated to the missing table, …)
@@ -81,8 +92,23 @@ export async function upsertChunks(corpus: string, chunks: KbChunkInput[]): Prom
   const trimmedCorpus = (corpus ?? "").trim();
   if (!trimmedCorpus || chunks.length === 0) return { tableAvailable: true, inserted: 0, skipped: 0 };
 
+  // Distinct sourceRefs being (re-)written by this call. A clean-slate DELETE is scoped to
+  // exactly these — never the whole corpus — so other documents already ingested into the
+  // same corpus namespace are left untouched.
+  const sourceRefs = Array.from(new Set(chunks.map((c) => c.sourceRef)));
+
   try {
     await db.transaction(async (tx) => {
+      // Clean slate: remove every existing row for each (corpus, sourceRef) pair being
+      // written BEFORE inserting the fresh set, so a re-ingest with fewer chunks than before
+      // leaves no stale rows at now-unused higher chunkIndex values. Both params are bound
+      // (never string-concatenated).
+      for (const sourceRef of sourceRefs) {
+        await tx.execute(sql`
+          DELETE FROM kb_studio_chunks WHERE "corpus" = ${trimmedCorpus} AND "sourceRef" = ${sourceRef}
+        `);
+      }
+
       for (const chunk of chunks) {
         const embStr = formatVectorLiteral(chunk.embedding);
         const rows = (await tx.execute(sql`

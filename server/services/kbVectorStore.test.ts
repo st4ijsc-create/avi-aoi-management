@@ -88,14 +88,22 @@ beforeEach(() => {
 // ─── upsertChunks ─────────────────────────────────────────────────────────
 
 describe("upsertChunks", () => {
-  it("builds the right INSERT (table/columns/values) inside a transaction", async () => {
-    executeMock.mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce(undefined); // insert, then embedding_vec update
+  it("builds the right INSERT (table/columns/values) inside a transaction, after a clean-slate DELETE", async () => {
+    executeMock
+      .mockResolvedValueOnce(undefined) // DELETE (corpus, sourceRef)
+      .mockResolvedValueOnce([{ id: 42 }]) // INSERT
+      .mockResolvedValueOnce(undefined); // embedding_vec UPDATE
     const result = await upsertChunks("vendor-x-manuals", [makeChunk()]);
 
     expect(transactionMock).toHaveBeenCalledTimes(1);
-    expect(executeMock).toHaveBeenCalledTimes(2);
+    expect(executeMock).toHaveBeenCalledTimes(3);
 
-    const insertSql = renderSql(executeMock.mock.calls[0]![0]);
+    const deleteSql = renderSql(executeMock.mock.calls[0]![0]);
+    expect(deleteSql).toContain("DELETE FROM kb_studio_chunks");
+    expect(deleteSql).toContain('"corpus" =');
+    expect(deleteSql).toContain('"sourceRef" =');
+
+    const insertSql = renderSql(executeMock.mock.calls[1]![0]);
     expect(insertSql).toContain("INSERT INTO kb_studio_chunks");
     expect(insertSql).toContain('"corpus"');
     expect(insertSql).toContain('"sourceType"');
@@ -104,7 +112,7 @@ describe("upsertChunks", () => {
     expect(insertSql).toContain('"text"');
     expect(insertSql).toContain("ON CONFLICT");
 
-    const insertParams = rawParams(executeMock.mock.calls[0]![0]);
+    const insertParams = rawParams(executeMock.mock.calls[1]![0]);
     expect(insertParams).toContain("vendor-x-manuals");
     expect(insertParams).toContain("manual.pdf");
     expect(insertParams).toContain("chunk body text");
@@ -113,28 +121,106 @@ describe("upsertChunks", () => {
   });
 
   it("writes embedding_vec as a best-effort UPDATE for 1024-dim rows", async () => {
-    executeMock.mockResolvedValueOnce([{ id: 5 }]).mockResolvedValueOnce(undefined);
+    executeMock.mockResolvedValueOnce(undefined).mockResolvedValueOnce([{ id: 5 }]).mockResolvedValueOnce(undefined);
     await upsertChunks("c1", [makeChunk()]);
 
-    const updateSql = renderSql(executeMock.mock.calls[1]![0]);
+    const updateSql = renderSql(executeMock.mock.calls[2]![0]);
     expect(updateSql).toContain("UPDATE kb_studio_chunks SET embedding_vec");
     expect(updateSql).toContain("vector(1024)");
   });
 
   it("skips the embedding_vec UPDATE for non-1024-dim embeddings", async () => {
-    executeMock.mockResolvedValueOnce([{ id: 5 }]);
+    executeMock.mockResolvedValueOnce(undefined).mockResolvedValueOnce([{ id: 5 }]);
     await upsertChunks("c1", [makeChunk({ embedding: [0.1, 0.2, 0.3] })]);
-    expect(executeMock).toHaveBeenCalledTimes(1); // only the INSERT, no vector UPDATE
+    expect(executeMock).toHaveBeenCalledTimes(2); // DELETE + INSERT, no vector UPDATE
   });
 
   it("corpus is a bound parameter, never string-concatenated into the SQL text", async () => {
-    executeMock.mockResolvedValueOnce([{ id: 1 }]).mockResolvedValueOnce(undefined);
+    executeMock.mockResolvedValueOnce(undefined).mockResolvedValueOnce([{ id: 1 }]).mockResolvedValueOnce(undefined);
     const trickyCorpus = "corpus'; DROP TABLE kb_studio_chunks; --";
     await upsertChunks(trickyCorpus, [makeChunk()]);
 
-    const insertCall = executeMock.mock.calls[0]![0];
+    const deleteCall = executeMock.mock.calls[0]![0];
+    expect(renderSql(deleteCall)).not.toContain("DROP TABLE");
+    expect(rawParams(deleteCall)).toContain(trickyCorpus);
+
+    const insertCall = executeMock.mock.calls[1]![0];
     expect(renderSql(insertCall)).not.toContain("DROP TABLE");
     expect(rawParams(insertCall)).toContain(trickyCorpus);
+  });
+
+  it("clean-slate re-ingest: DELETE for (corpus, sourceRef) is issued before the INSERTs, inside the transaction", async () => {
+    // Simulates the PREVIOUS ingest of "manual.pdf" having written 5 chunks; this call
+    // re-ingests the same (corpus, sourceRef) with only 2 chunks (the document shrank).
+    executeMock
+      .mockResolvedValueOnce(undefined) // DELETE (corpus, "manual.pdf") — wipes all 5 old rows
+      .mockResolvedValueOnce([{ id: 101 }]) // INSERT chunk 0
+      .mockResolvedValueOnce(undefined) // vector UPDATE chunk 0
+      .mockResolvedValueOnce([{ id: 102 }]) // INSERT chunk 1
+      .mockResolvedValueOnce(undefined); // vector UPDATE chunk 1
+    const chunks = [makeChunk({ index: 0 }), makeChunk({ index: 1 })];
+    const result = await upsertChunks("vendor-x-manuals", chunks);
+
+    // Only ONE DELETE (one distinct sourceRef), scoped to that sourceRef, issued first —
+    // then exactly the 2 new chunks are inserted. No attempt is made to insert/keep any
+    // stale higher-chunkIndex rows from the previous (5-chunk) ingest.
+    expect(executeMock).toHaveBeenCalledTimes(5);
+    const deleteCall = executeMock.mock.calls[0]![0];
+    expect(renderSql(deleteCall)).toContain("DELETE FROM kb_studio_chunks");
+    expect(rawParams(deleteCall)).toEqual(["vendor-x-manuals", "manual.pdf"]);
+
+    const insertCalls = [executeMock.mock.calls[1]![0], executeMock.mock.calls[3]![0]];
+    for (const c of insertCalls) {
+      expect(renderSql(c)).toContain("INSERT INTO kb_studio_chunks");
+    }
+    // The transaction ordering (DELETE at index 0, both INSERTs after it) proves the delete
+    // happens before any insert of the new set, all inside the same db.transaction() call.
+    expect(transactionMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ tableAvailable: true, inserted: 2, skipped: 0 });
+  });
+
+  it("clean-slate re-ingest with MORE chunks than before still works (full replace, not additive)", async () => {
+    executeMock
+      .mockResolvedValueOnce(undefined) // DELETE
+      .mockResolvedValueOnce([{ id: 1 }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ id: 2 }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ id: 3 }])
+      .mockResolvedValueOnce(undefined);
+    const chunks = [makeChunk({ index: 0 }), makeChunk({ index: 1 }), makeChunk({ index: 2 })];
+    const result = await upsertChunks("c1", chunks);
+    expect(executeMock).toHaveBeenCalledTimes(7); // 1 DELETE + 3×(INSERT + vector UPDATE)
+    expect(result).toEqual({ tableAvailable: true, inserted: 3, skipped: 0 });
+  });
+
+  it("scopes the DELETE per sourceRef when a call writes multiple documents — other sourceRefs in the same corpus are untouched", async () => {
+    executeMock
+      .mockResolvedValueOnce(undefined) // DELETE (corpus, "manual.pdf")
+      .mockResolvedValueOnce(undefined) // DELETE (corpus, "manual2.pdf")
+      .mockResolvedValueOnce([{ id: 1 }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ id: 2 }])
+      .mockResolvedValueOnce(undefined);
+    const chunks = [
+      makeChunk({ index: 0, sourceRef: "manual.pdf" }),
+      makeChunk({ index: 0, sourceRef: "manual2.pdf" }),
+    ];
+    await upsertChunks("vendor-x-manuals", chunks);
+
+    // Exactly 2 DELETEs — one per distinct sourceRef being written, NOT a corpus-wide wipe.
+    const deleteCalls = [executeMock.mock.calls[0]![0], executeMock.mock.calls[1]![0]];
+    const deletedRefs = deleteCalls.map((c) => rawParams(c));
+    expect(deletedRefs).toContainEqual(["vendor-x-manuals", "manual.pdf"]);
+    expect(deletedRefs).toContainEqual(["vendor-x-manuals", "manual2.pdf"]);
+    for (const c of deleteCalls) {
+      expect(renderSql(c)).not.toContain("DROP TABLE");
+    }
+    // A sourceRef NOT present in this call (e.g. a third document already in the corpus)
+    // never appears in any DELETE's bound params — the DELETE is scoped, not corpus-wide.
+    for (const c of deleteCalls) {
+      expect(rawParams(c)).not.toContain("other-document.pdf");
+    }
   });
 
   it("is a no-op (no DB call) for an empty corpus or an empty chunks array", async () => {
@@ -152,6 +238,8 @@ describe("upsertChunks", () => {
 
   it("a REAL error (not 42P01) is rethrown — no half-written corpus is reported as success", async () => {
     executeMock
+      .mockResolvedValueOnce(undefined) // DELETE (corpus, "manual.pdf") ok
+      .mockResolvedValueOnce(undefined) // DELETE (corpus, "manual2.pdf") ok
       .mockResolvedValueOnce([{ id: 1 }]) // chunk 1 insert ok
       .mockResolvedValueOnce(undefined) // chunk 1 vector update ok
       .mockRejectedValueOnce(new Error("connection reset")); // chunk 2 insert fails
