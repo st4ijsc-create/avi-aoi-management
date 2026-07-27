@@ -44,6 +44,12 @@ public sealed class PolicyEndpointGatingTests
         // SiteLinkStore to the REAL %ProgramData%\ST4I\sim\identity\ / ...\sitelink\.
         var identityDir = Directory.CreateTempSubdirectory("st4i-policy-identity-").FullName;
         var siteLinkDir = Directory.CreateTempSubdirectory("st4i-policy-sitelink-").FullName;
+        // GĐ3 sub-4 LC-1 review follow-up — isolated the same way as every other per-concern directory
+        // above. This class's own EstopThenStart_Is409SafetyBlocked_... test fires a real SAFETY_BLOCKED
+        // DENY DETERMINISTICALLY on every run — PolicyResults.DenyAsync now resolves IAlarmStore and
+        // raises an alarm on every such DENY — so without this, EVERY run of this class would write to
+        // the REAL %ProgramData%\ST4I\sim\alarms\alarms.db instead of a throwaway temp dir.
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-policy-alarms-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -53,6 +59,7 @@ public sealed class PolicyEndpointGatingTests
         var prevSettingsDir = Environment.GetEnvironmentVariable("ST4I_SETTINGS_DIR");
         var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
         var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
+        var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -63,6 +70,7 @@ public sealed class PolicyEndpointGatingTests
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", settingsDir);
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", identityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
+            Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -78,6 +86,7 @@ public sealed class PolicyEndpointGatingTests
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", prevSettingsDir);
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
+            Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }

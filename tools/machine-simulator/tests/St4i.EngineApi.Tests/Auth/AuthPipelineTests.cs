@@ -74,6 +74,11 @@ public sealed class AuthPipelineTests
         // SiteLinkStore to the REAL %ProgramData%\ST4I\sim\identity\ / ...\sitelink\.
         var identityDir = Directory.CreateTempSubdirectory("st4i-auth-pipeline-identity-").FullName;
         var siteLinkDir = Directory.CreateTempSubdirectory("st4i-auth-pipeline-sitelink-").FullName;
+        // GĐ3 sub-4 LC-1 review follow-up — isolated the same way as every other per-concern directory
+        // above: without this, a real Policy DENY occurring anywhere in this class's requests
+        // (PolicyResults.DenyAsync now resolves IAlarmStore and raises an alarm) would resolve AlarmStore
+        // against the REAL %ProgramData%\ST4I\sim\alarms\alarms.db instead of a throwaway temp dir.
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-auth-pipeline-alarms-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -83,6 +88,7 @@ public sealed class AuthPipelineTests
         var prevSettingsDir = Environment.GetEnvironmentVariable("ST4I_SETTINGS_DIR");
         var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
         var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
+        var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -99,6 +105,8 @@ public sealed class AuthPipelineTests
             // EC-3 review follow-up — same rationale, for DeviceIdentityStore/SiteLinkStore (GD3 EC-2).
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", identityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
+            // GĐ3 sub-4 LC-1 review follow-up — same rationale, for AlarmStore.
+            Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
             // See this method's doc comment — sidesteps the Static Web Assets manifest's hardcoded
             // source-tree wwwroot path, which is only ever loaded in Development.
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
@@ -116,6 +124,7 @@ public sealed class AuthPipelineTests
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", prevSettingsDir);
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
+            Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }

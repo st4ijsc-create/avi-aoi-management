@@ -46,6 +46,11 @@ public sealed class AssetEndpointsTests
         // SiteLinkStore to the REAL %ProgramData%\ST4I\sim\identity\ / ...\sitelink\.
         var identityDir = Directory.CreateTempSubdirectory("st4i-assets-ep-identity-").FullName;
         var siteLinkDir = Directory.CreateTempSubdirectory("st4i-assets-ep-sitelink-").FullName;
+        // GĐ3 sub-4 LC-1 review follow-up — isolated the same way as every other per-concern directory
+        // above: without this, a real Policy DENY occurring anywhere in this class's requests
+        // (PolicyResults.DenyAsync now resolves IAlarmStore and raises an alarm) would resolve AlarmStore
+        // against the REAL %ProgramData%\ST4I\sim\alarms\alarms.db instead of a throwaway temp dir.
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-assets-ep-alarms-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -56,6 +61,7 @@ public sealed class AssetEndpointsTests
         var prevAssetsDir = Environment.GetEnvironmentVariable("ST4I_ASSETS_DIR");
         var prevIdentityDir = Environment.GetEnvironmentVariable("ST4I_IDENTITY_DIR");
         var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
+        var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -67,6 +73,7 @@ public sealed class AssetEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_ASSETS_DIR", assetsDir);
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", identityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
+            Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -83,6 +90,7 @@ public sealed class AssetEndpointsTests
             Environment.SetEnvironmentVariable("ST4I_ASSETS_DIR", prevAssetsDir);
             Environment.SetEnvironmentVariable("ST4I_IDENTITY_DIR", prevIdentityDir);
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
+            Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }
