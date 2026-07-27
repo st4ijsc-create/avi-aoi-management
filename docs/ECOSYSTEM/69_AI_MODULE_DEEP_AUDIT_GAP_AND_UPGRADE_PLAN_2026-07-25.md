@@ -1,7 +1,7 @@
 # Doc 69 — Audit sâu, GAP & Kế hoạch nâng cấp hoàn thiện MODULE "AI"
 
-> **Trạng thái: CHỜ DUYỆT (chưa thực thi).** Đây là báo cáo hiện trạng + đánh giá + GAP + kế hoạch.
-> KHÔNG có dòng code nào bị sửa để lập bản này (audit READ-ONLY).
+> **Trạng thái: ★ ĐÃ DUYỆT + THỰC THI TOÀN BỘ 6 GIAI ĐOẠN + PUSHED (cập nhật 2026-07-27).** Xem "TRẠNG THÁI THỰC THI" ngay dưới.
+> _(Bản audit gốc 2026-07-25 là READ-ONLY — không sửa code; toàn bộ code nâng cấp được thực thi sau khi duyệt, dưới đây.)_
 >
 > Ngày: 2026-07-25 · Nhánh: `feat/hmi-dep` · Người lập: audit 6-agent song song + tổng hợp.
 > Trọng điểm theo yêu cầu: **4 AI** — (#1) phân tích dữ liệu kiểm tra + báo cáo · (#2) trợ lý hỏi-đáp
@@ -18,6 +18,43 @@
 > (4) **giao diện trực quan cho AI Agents** (tham chiếu Tencent *Marvis*: "văn phòng" agent + đồng hồ token/tiết-kiệm-local);
 > (5) **studio training AI local từ tài liệu/video/web**; (6) tái cấu trúc IA các trang AI (tách trang, đưa vào menu trái,
 > hết chật chội). Đã khảo sát bằng **3 agent bổ sung**. Kế hoạch mở rộng nằm ở **PHẦN B** (cuối doc); Phần A giữ nguyên.
+
+---
+
+## ★ TRẠNG THÁI THỰC THI (cập nhật 2026-07-27)
+
+**TOÀN BỘ lộ trình 6 giai đoạn (§B6) ĐÃ THỰC THI + PUSHED lên `feat/hmi-dep` (HEAD `3bd8f6be`).** Thực thi bằng
+subagent-driven-development: mỗi task = implementer → adversarial-review → fix → re-review; UI được kiểm chứng LIVE
+(Playwright). ~35 chu kỳ SDD. Whole-branch `tsc` sạch. Final cross-task review Wave-5 = CLEAN, không blocker.
+
+| GĐ | Nội dung | Trạng thái | Commit mốc |
+|---|---|---|---|
+| 1 | Wave 0 (correctness/security) + Wave E1 (IA/UX) | ✅ DONE | `11a9e8d3→36ffe3d9` |
+| 2 | Wave 1 (choke-point/AI-safety/quota/audit/model-resolver/persistent-server) + Wave E4 (trợ lý vận hành) | ✅ DONE | `→b91f298f` |
+| 3 | Wave 2 (AI#1 analytics: machineType/robot, RCA hội tụ, gợi-ý→hành-động, model-perf thật) + Wave 6 (MLOps: bootstrap-classifier, drift→retrain, seg/detect eval + ROC calibration + lineage) | ✅ DONE | `→47e7cea7` |
+| 4 | Wave 3 (AI#4 agent-loop THẬT observe→replan + branch; bounded-autonomy + kill-switch; governance model-cards; housekeeping/bridge/Ops-UI) + Wave E2 (Agent Command Center — **LIVE-verified**) | ✅ DONE | `→ccd0d907`, `→b4bb831b` |
+| 5 | Wave 4 (AI#3 inline copilot: ghost-text FIM, persistent-FIM-server, KB-grounding, semantic safety-linter 6-vendor) + Wave E3 (Training Studio: doc/URL/video/OCR ingest + LoRA sidecar; Studio-UI **LIVE-verified**) | ✅ DONE | `→8ff6c969` |
+| 6 | Wave 5 (AI#2: KB-autosync answer-eval-gate; hợp-nhất 1 chat-engine **LIVE-verified**; feedback→DB→re-rank + citation-deeplink; GraphRAG eval + i18n) | ✅ DONE | `→3bd8f6be` |
+
+**★ Kiểm chứng LIVE (option-A) bắt 3 bug thật mà unit-test + code-review bỏ sót:** (E2-3) card-truncation; (E3-2)
+42P01 fail-safe hỏng vì DrizzleQueryError bọc code vào `.cause` → thêm `dbErrors.isMissingTable` cause-walker; (E3-3)
+CRITICAL SSRF DNS-pin hỏng trên Node thật → thêm unmocked loopback test.
+
+**★ MIGRATIONS: ĐÃ CHẠY (owner `aoi`, 2026-07-27) — 0298…0306 (9 file, additive, tracked trong `__applied_migrations`):**
+0298 ai_gateway_quota · 0299 ai_llm_audit · 0300 ai_anomaly_calibration (calibratedThreshold/Target) · 0301
+training_datasets.contentHash · 0302 ai_agent_sessions.replanCount · 0303 ai_model_cards · 0304 kb_studio_chunks
+(pgvector) · 0305 kb_studio_registry (kb_corpora/kb_ingest_jobs) · 0306 kb_answer_feedback. *(4 migration cũ không
+thuộc doc69 — 0057/0066/0125/0234 — CỐ Ý để pending, không chạy.)*
+
+**★ CÒN LẠI (ops, không phải code):** `npm run kb:sync` (kích hoạt operational-card grounding + citation-deeplink +
+làm tươi corpus). Mọi cờ tính-năng mới **default-OFF/safe** → nhánh inert cho tới khi ops chủ động bật.
+
+**★ FAST-FOLLOW TRƯỚC-KHI-BẬT-CỜ (đã ghi nhận, sửa trước khi bật cờ tương ứng):** E3-6 `startFinetune` đồng-bộ
+→ background-job (mirror `aiTrainingPipeline.createTrainingJob`) trước khi bật `LLM_FINETUNE_CMD`; B3 feedback-citations
+derive server-side + rate-limit trước khi bật `KB_FEEDBACK_RERANK_ENABLED`; B1 restore-atomicity (best-effort, off-peak
+self-heal — cân nhắc staging+rename nếu bật `KB_AUTOSYNC_ENABLED`).
+
+**Ledger chi tiết từng task (SHA/GOTCHA/fast-follow):** `.superpowers/sdd/progress-ai-module-doc69.md`.
 
 ---
 
@@ -261,6 +298,12 @@ label queue→dataset khoá split→train Tier-1→eval→gate→activate→drif
 
 > Effort: S(≤0.5 ngày) · M(1-2 ngày) · L(≥3 ngày). Risk: rủi ro hồi quy. Tất cả default-OFF khi áp dụng được.
 
+> **★ TRẠNG THÁI (2026-07-27): TẤT CẢ nhiệm vụ dưới đây ĐÃ THỰC THI + review + PUSHED** (`feat/hmi-dep`, HEAD `3bd8f6be`).
+> Wave 0: W0-1..W0-5 ✅ (T1-T5) · Wave 1: W1-1..W1-5 ✅ (G2-1..G2-6) · Wave 2 (AI#1): A1-A4 ✅ · Wave 3 (AI#4): D1-D4 ✅
+> · Wave 4 (AI#3): C1-C4 ✅ · Wave 5 (AI#2): B1-B4 ✅ · Wave 6 (MLOps): F1-F3 ✅. Migrations 0298-0306 **đã chạy** (owner
+> `aoi`). Chi tiết SHA/GOTCHA từng task: ledger `.superpowers/sdd/progress-ai-module-doc69.md`. (Cột "Nghiệm thu" là tiêu
+> chí gốc — tất cả đã đạt qua adversarial-review + fix; UI kiểm chứng LIVE.)
+
 | ID | Wave | Nhiệm vụ | File chính | Effort | Risk | Nghiệm thu |
 |---|---|---|---|---|---|---|
 | W0-1 | 0 | Vá quoting SQL RCA/alert → drizzle + test PG thật | `aiBatchRcaScheduler.ts`, `aiRouters.ts` | M | Thấp | Insert/list/update RCA & alert lưu/đọc đúng trên PG live; test đỏ nếu regress |
@@ -470,6 +513,12 @@ Vốn từ trạng thái: `working` · `idle/standby` ("zzz") · `blocked/awaiti
 
 ### Backlog E-track
 
+> **★ TRẠNG THÁI (2026-07-27): TẤT CẢ E-track ĐÃ THỰC THI + PUSHED** (`feat/hmi-dep`, HEAD `3bd8f6be`).
+> E1-1..E1-4 ✅ (GĐ1) · E4-1/E4-2 ✅ (GĐ2, G2-7) · E2-1..E2-4 ✅ (GĐ4, Command Center — **LIVE-verified**; E2-5 floor-3D
+> hoãn theo thiết kế) · E3-1..E3-6 ✅ (GĐ5, Training Studio: doc/URL/video/OCR ingest + LoRA sidecar; Studio-UI
+> **LIVE-verified**). Migrations 0304/0305/0306 (E3) đã chạy. Fast-follow trước-khi-bật-cờ: E3-6 startFinetune
+> sync→background-job trước khi bật `LLM_FINETUNE_CMD` (xem "TRẠNG THÁI THỰC THI" đầu doc).
+
 | ID | Wave | Nhiệm vụ | File chính | Effort | Risk |
 |---|---|---|---|---|---|
 | E1-1 | E1 | Gộp AIHub+AIStudioHub → `/ai-home`; rail = taxonomy | `navigation.tsx`, `App.tsx`, `AIHome.tsx` | L | TB |
@@ -493,6 +542,9 @@ Vốn từ trạng thái: `working` · `idle/standby` ("zzz") · `blocked/awaiti
 ---
 
 ## B6. Lộ trình hợp nhất (Phần A + Phần B, "cân bằng")
+
+> **★ CẢ 6 GIAI ĐOẠN DƯỚI ĐÂY ĐÃ THỰC THI + PUSHED (2026-07-27, HEAD `3bd8f6be`)** — xem bảng chi tiết + commit mốc ở
+> mục "★ TRẠNG THÁI THỰC THI" đầu doc.
 
 | Giai đoạn | Nội dung | Mục tiêu |
 |---|---|---|
