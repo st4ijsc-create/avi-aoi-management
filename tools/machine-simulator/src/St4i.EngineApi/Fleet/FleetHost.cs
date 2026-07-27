@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers;
 using St4i.EdgeCore.Drivers.HotFolder;
+using St4i.EdgeCore.Drivers.Modbus;
 using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Engine;
 using St4i.EdgeCore.Historian;
@@ -190,6 +191,16 @@ public sealed class FleetHost
         public required string Label { get; init; }
         public required EdgePipeline Pipeline { get; init; }
         public required CancellationTokenSource Cts { get; init; }
+
+        /// <summary>G2-6 review fix — the slot's OWN driver, so whichever code path actually removes this
+        /// slot from <see cref="_slots"/> (<see cref="WaitAndDisposeOldPipeline"/> for a superseded slot, or
+        /// this slot's own fault-catch in <see cref="StartSlot"/> for a self-fault) can dispose it.
+        /// <see cref="ModbusTcpDriver"/> (G2-6) is the first driver to own a live resource (a TCP
+        /// connection) that cancelling <see cref="Cts"/> alone does not release — before this field existed,
+        /// FleetHost never called <c>DisposeAsync</c> on any slot's driver at all, so every Stop/restart/
+        /// fault-removal leaked one connection until GC finalized it.</summary>
+        public required IDeviceDriver Driver { get; init; }
+
         public Task? RunTask { get; set; }
     }
 
@@ -572,7 +583,7 @@ public sealed class FleetHost
         var pipeline = new EdgePipeline(driver, profile, _transport, _eventBus, resolver, _unsPublisher);
         pipeline.Committed += OnPipelineCommitted;
         var cts = new CancellationTokenSource();
-        var slot = new PipelineSlot { Label = label, Pipeline = pipeline, Cts = cts };
+        var slot = new PipelineSlot { Label = label, Pipeline = pipeline, Cts = cts, Driver = driver };
         _slots.Add(slot);
 
         slot.RunTask = Task.Run(async () =>
@@ -588,17 +599,42 @@ public sealed class FleetHost
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "FleetHost pipeline slot '{Slot}' faulted", label);
+
+                // G2-6 review fix — the disposes below happen OUTSIDE _gate (never dispose while holding
+                // the lock): `removed` is decided under _gate (same slot-membership identity guard as
+                // before — a superseded slot was already removed+disposed by StopLocked/
+                // WaitAndDisposeOldPipeline, so a stale/slow-to-unwind fault can't double-own teardown), but
+                // the actual driver DisposeAsync/CTS.Dispose only run when THIS catch is the one that
+                // genuinely removed the slot. Idempotent either way (DisposeAsync/CTS.Dispose tolerate a
+                // hypothetical double-call), but the guard keeps ownership unambiguous in the common case.
+                bool removed;
                 lock (_gate)
                 {
                     // Slot-membership IS the identity guard (replaces the old _cts/_currentPipeline ReferenceEquals):
                     // a superseded slot was already removed by StopLocked, so a stale/slow-to-unwind fault can't
                     // clobber a freshly-restarted fleet. Removing THIS slot isolates the fault — sibling slots stay
                     // in _slots (fleet keeps running); when the LAST slot goes, IsRunning follows to false.
-                    if (_slots.Remove(slot))
+                    removed = _slots.Remove(slot);
+                    if (removed)
                     {
                         LastError = ex;
                         pipeline.Committed -= OnPipelineCommitted;
                     }
+                }
+
+                if (removed)
+                {
+                    try
+                    {
+                        await driver.DisposeAsync().ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // best-effort — a driver whose fault already tore down its own connection must not
+                        // block this slot's teardown any further.
+                    }
+
+                    cts.Dispose();
                 }
             }
         });
@@ -634,7 +670,18 @@ public sealed class FleetHost
     /// WHILE holding the gate would deadlock against it. If an old task is still stuck past the timeout,
     /// this gives up and disposes its CTS anyway — Cancel() has already been requested, so the task will
     /// eventually unwind and its own membership guard (not this method) is what keeps a late finish from
-    /// corrupting state.</summary>
+    /// corrupting state.
+    ///
+    /// G2-6 review fix — ALSO disposes each slot's <see cref="PipelineSlot.Driver"/>, best-effort, AFTER its
+    /// run-task has exited (cancel → run-task exits on the cancellation → wait → dispose driver → dispose
+    /// cts). Cancelling a slot's <see cref="PipelineSlot.Cts"/> alone stops its poll loop but does NOT
+    /// release a driver-owned live resource (e.g. <see cref="ModbusTcpDriver"/>'s TCP
+    /// connection) — before this fix, FleetHost never called <c>DisposeAsync</c> on ANY slot's driver, so
+    /// every Stop/restart leaked one connection per real-driver slot until GC finalized it. Sync-waiting
+    /// <c>DisposeAsync</c> here (bounded by <see cref="RestartTeardownTimeout"/>, same budget the run-task
+    /// wait above already uses) is deadlock-safe: this method runs OFF <see cref="_gate"/>, and a driver's
+    /// <c>DisposeAsync</c> never calls back into <see cref="FleetHost"/> (e.g. <c>ModbusTcpDriver</c> just
+    /// cancels/closes its own <c>TcpClient</c>).</summary>
     private void WaitAndDisposeOldPipeline(PipelineHandle handle)
     {
         if (handle.OldSlots is null) return;
@@ -656,6 +703,17 @@ public sealed class FleetHost
                     // as an unhandled exception on the restart caller instead of a log line.
                     _logger?.LogDebug(ex, "FleetHost old pipeline slot teardown wait observed a faulted task");
                 }
+            }
+
+            try
+            {
+                slot.Driver.DisposeAsync().AsTask().Wait(RestartTeardownTimeout);
+            }
+            catch (Exception ex)
+            {
+                // Best-effort, same "never let teardown hang/throw on a misbehaving driver" posture as the
+                // run-task wait above.
+                _logger?.LogDebug(ex, "FleetHost old pipeline slot driver dispose observed a fault");
             }
 
             slot.Cts.Dispose();

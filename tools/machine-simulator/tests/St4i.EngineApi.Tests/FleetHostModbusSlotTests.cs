@@ -93,6 +93,13 @@ public sealed class FleetHostModbusSlotTests
         }
 
         Assert.False(host.IsRunning, "Stop() must tear down every slot, including the modbus one");
+
+        // Review fix (the driver-disposal socket leak — ModbusTcpDriver is the first slot driver that owns
+        // a live resource cancelling the slot's CTS alone doesn't release): FleetHost.Stop() is synchronous
+        // and its WaitAndDisposeOldPipeline teardown disposes each slot's driver BEFORE returning, so this
+        // needs no bounded wait — by the time Stop() has returned, the modbus slot's driver must already be
+        // disposed.
+        Assert.True(fakeDriver.Disposed, "Stop() must dispose the modbus slot's driver, not just cancel its CTS");
     }
 
     [Fact]
@@ -112,6 +119,12 @@ public sealed class FleetHostModbusSlotTests
             // in the Modbus slot must never tear down the simulated fleet.
             Assert.True(host.IsRunning, "a faulted modbus slot must not flip the aggregate IsRunning false while the sim slot is alive");
             Assert.True(host.Snapshot().Kpis.Online > 0, "the simulated slot must keep producing after the modbus slot faulted");
+
+            // Review fix — the self-faulted slot's own catch handler (StartSlot) must ALSO dispose its
+            // driver (not just remove it from _slots), same leak-closing fix as the Stop()/restart path.
+            // That dispose runs on the background fault-catch task, off-lock, AFTER LastError is observed —
+            // so this needs the bounded wait, unlike the synchronous Stop() path in the sibling test above.
+            await WaitUntilAsync(() => faultyDriver.Disposed, "the self-faulted modbus slot's own driver to be disposed by its fault-catch handler");
         }
         finally
         {
@@ -126,8 +139,13 @@ public sealed class FleetHostModbusSlotTests
     private sealed class CountingFakeModbusDriver : IDeviceDriver
     {
         private int _count;
+        private volatile bool _disposed;
 
         public int Count => Volatile.Read(ref _count);
+
+        /// <summary>Review fix — set by <see cref="DisposeAsync"/>, so a test can prove FleetHost actually
+        /// calls it (not just cancels the slot's CTS) on Stop()/restart.</summary>
+        public bool Disposed => _disposed;
 
         public string Id => "fake-modbus-test-driver";
 
@@ -152,7 +170,11 @@ public sealed class FleetHostModbusSlotTests
             }
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            _disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 
     /// <summary>Test double — yields <paramref name="faultAfter"/>-worth of Telemetry readings then throws
@@ -163,10 +185,15 @@ public sealed class FleetHostModbusSlotTests
     {
         private readonly int _faultAfter;
         private volatile bool _hasFaulted;
+        private volatile bool _disposed;
 
         public FaultingFakeModbusDriver(int faultAfter) => _faultAfter = faultAfter;
 
         public bool HasFaulted => _hasFaulted;
+
+        /// <summary>Review fix — set by <see cref="DisposeAsync"/>, so a test can prove the slot's own
+        /// fault-catch handler (not just <c>Stop()</c>/restart) disposes the driver too.</summary>
+        public bool Disposed => _disposed;
 
         public string Id => "fake-faulty-modbus-test-driver";
 
@@ -193,6 +220,10 @@ public sealed class FleetHostModbusSlotTests
             throw new InvalidOperationException("FaultingFakeModbusDriver: simulated non-cancellation fault (test double)");
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            _disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 }
