@@ -164,34 +164,32 @@ function stringifyList(values?: string[]): string {
 /**
  * Wave 1 FF-A — bóc fence markdown quanh khối JSON.
  *
- * Trước đây chỉ bóc fence khi chuỗi BẮT ĐẦU bằng ```` ``` ````. Nhưng khi model
- * (Qwen3-30B) bị cắt giữa chừng, nó đôi khi tự "reset": chèn thêm một fence
- * GIỮA dòng rồi bắt đầu lại một đối tượng JSON mới từ đầu — case đã gặp thật.
- * Bản cũ bỏ qua hoàn toàn fence giữa dòng đó, để cả hai đối tượng dính chung
- * vào chuỗi đưa cho JSON.parse ⇒ luôn hỏng.
+ * FIX-ROUND 1 (CRITICAL-1) — bản trước cắt bỏ VÔ ĐIỀU KIỆN tại fence kế tiếp
+ * BẤT KỲ ở ĐÂU trong chuỗi, kể cả khi đó là ``` ``` ``` HỢP LỆ nằm bên trong
+ * một giá trị chuỗi (vd `patchHints` gợi ý dán một đoạn code kèm ```ts...```
+ * để minh hoạ — hoàn toàn bình thường với vai trò backend-engineer). Kết quả:
+ * JSON hợp lệ, đủ 8 khoá bị cắt cụt ngay tại dấu ``` đó, làm rỗng mọi khoá
+ * phía sau — tái hiện chính xác bug "No content" mà FF-A tồn tại để sửa.
  *
- * Chọn cách CẮT LẤY PHẦN TRƯỚC fence kế tiếp (bất kể có fence mở đầu hay
- * không) thay vì "bóc mọi fence" — vì đối tượng ĐẦU TIÊN luôn là bản đầy đủ
- * nhất tính tới điểm cắt (đúng theo quy tắc "khoá lặp lại ⇒ lấy lần đầu" ở
- * salvageAgentSections); bóc hết fence rồi nối các đối tượng lại với nhau sẽ
- * làm JSON.parse/salvage nhầm lẫn nội dung của đối tượng thứ hai vào đối
- * tượng thứ nhất một cách khó đoán hơn. Cho valid-JSON-có-fence-đơn (mở đầu +
- * kết thúc, không có fence giữa), hành vi giữ nguyên y hệt bản cũ (fence kết
- * thúc cũng là "fence kế tiếp" nên vẫn bị cắt bỏ đúng như strip cũ).
+ * Sửa: CHỈ bóc khi toàn bộ chuỗi ĐƯỢC BỌC bởi fence — bắt đầu bằng ```` ``` ````
+ * (và bóc luôn fence kết thúc nếu có). Không đụng tới bất kỳ ``` nào nằm giữa
+ * nội dung — đúng hành vi gốc trước Wave 1 FF-A. Đường JSON.parse chặt chẽ
+ * KHÔNG được phép làm hỏng đầu vào hợp lệ, dù mức độ nào.
+ *
+ * Trường hợp model tự "reset" giữa chừng (chèn ``` json giữa dòng rồi bắt đầu
+ * lại một object mới) giờ không cần xử lý riêng ở đây nữa: nó chỉ xảy ra khi
+ * JSON đã hỏng (object đầu bị cắt dở) ⇒ rơi thẳng vào salvageAgentSections,
+ * nơi việc tìm khoá đã nhận biết cấu trúc (structure-aware) tự nhiên chỉ lấy
+ * đúng khối của object ĐẦU TIÊN — xem test #4 trong
+ * aiSpecialistAgentService.parse.test.ts (không có xử lý fence riêng nào mà
+ * vẫn xanh).
  */
 function sanitizeJsonBlock(text: string): string {
-  let working = text.trim();
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("```")) return trimmed;
 
-  if (working.startsWith("```")) {
-    working = working.replace(/^```[a-zA-Z]*\n?/, "");
-  }
-
-  const nextFenceIdx = working.indexOf("```");
-  if (nextFenceIdx !== -1) {
-    working = working.slice(0, nextFenceIdx);
-  }
-
-  return working.trim();
+  const withoutStart = trimmed.replace(/^```[a-zA-Z]*\n?/, "");
+  return withoutStart.replace(/\n?```$/, "").trim();
 }
 
 function ensureStringArray(value: unknown): string[] {
@@ -213,37 +211,14 @@ const AGENT_OUTPUT_KEYS = [
   "reportTemplate",
 ] as const;
 
-/** Tìm dấu `]` khớp với dấu `[` tại `openIdx`, bỏ qua nội dung nằm trong chuỗi
- *  (tôn trọng escape `\"`). Trả `-1` nếu không tìm thấy (mảng bị cắt dở). */
-function findMatchingCloseBracket(text: string, openIdx: number): number {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = openIdx; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "[") depth++;
-    else if (ch === "]") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
+function isKnownAgentOutputKey(value: string): value is (typeof AGENT_OUTPUT_KEYS)[number] {
+  return (AGENT_OUTPUT_KEYS as readonly string[]).includes(value);
 }
 
 /** Vớt 1 chuỗi JSON bắt đầu tại `startQuoteIdx` (trỏ vào dấu `"` mở). Trả
  *  `null` nếu KHÔNG tìm được dấu đóng (chuỗi bị cắt dở giữa chừng — không
- *  vớt phần tử dang dở). Trả kèm `endIdx` (vị trí NGAY SAU dấu `"` đóng) để
- *  gọi tiếp tìm phần tử kế tiếp. */
+ *  vớt phần tử dang dở). Trả kèm `endIdx` (vị trí NGAY SAU dấu `"` đóng, hoặc
+ *  hết văn bản nếu cắt dở) để gọi tiếp tìm phần tử/khoá kế tiếp. */
 function extractQuotedStringAt(text: string, startQuoteIdx: number): { value: string | null; endIdx: number } {
   let escaped = false;
   for (let i = startQuoteIdx + 1; i < text.length; i++) {
@@ -268,64 +243,163 @@ function extractQuotedStringAt(text: string, startQuoteIdx: number): { value: st
   return { value: null, endIdx: text.length };
 }
 
-/** Vớt các phần tử chuỗi HOÀN CHỈNH của một mảng bắt đầu tại `openBracketIdx`
- *  (trỏ vào dấu `[`). Nếu mảng bị cắt dở (thiếu `]` đóng), vẫn vớt các phần
- *  tử đã hoàn chỉnh trong phần còn lại của chuỗi, bỏ phần tử cuối bị cắt. */
-function salvageStringArray(text: string, openBracketIdx: number): string[] {
-  const closeIdx = findMatchingCloseBracket(text, openBracketIdx);
-  const segmentEnd = closeIdx === -1 ? text.length : closeIdx;
+/**
+ * FIX-ROUND 1 (CRITICAL-2) — vớt các phần tử chuỗi của một mảng bắt đầu tại
+ * `text[pos]==='['`. Khác bản trước ở chỗ NHẬN BIẾT NGỮ CẢNH: nếu trong lúc
+ * quét gặp một chuỗi TRÙNG TÊN một trong 8 khoá đã biết và ngay sau đó (bỏ
+ * qua khoảng trắng) là dấu `:`, đó là dấu hiệu mảng này đã bị cắt dở và văn
+ * bản đã lạc sang KHOÁ TIẾP THEO — dừng lại NGAY, không vớt chuỗi đó làm phần
+ * tử, và không tiêu thụ nó (để vòng quét ngoài đọc lại đúng vị trí đó làm
+ * ứng viên khoá kế tiếp). Đây là cơ chế khiến trường hợp "model tự reset giữa
+ * dòng rồi bắt đầu object mới" không cần xử lý fence riêng nữa — mảng bị cắt
+ * của object thứ nhất không còn "ăn lẹm" nội dung của object thứ hai.
+ *
+ * Trả về vị trí NGAY SAU khi xử lý xong (ghi vào `cursor.pos`) — sau dấu `]`
+ * nếu đóng đúng, hoặc tại vị trí dừng (cắt dở / gặp khoá kế) nếu không.
+ */
+function salvageStringArrayAt(text: string, cursor: { pos: number }): string[] {
+  cursor.pos += 1; // bỏ qua dấu '[' mở
+  const elements: string[] = [];
 
-  const out: string[] = [];
-  let cursor = openBracketIdx + 1;
-  while (cursor < segmentEnd) {
-    const quoteIdx = text.indexOf('"', cursor);
-    if (quoteIdx === -1 || quoteIdx >= segmentEnd) break;
-    const { value, endIdx } = extractQuotedStringAt(text, quoteIdx);
-    if (value === null) break; // phần tử cuối bị cắt dở ⇒ bỏ, không vớt
-    const trimmed = value.trim();
-    if (trimmed) out.push(trimmed);
-    cursor = endIdx;
+  while (cursor.pos < text.length) {
+    const ch = text[cursor.pos];
+
+    if (/\s/.test(ch!)) {
+      cursor.pos += 1;
+      continue;
+    }
+    if (ch === "]") {
+      cursor.pos += 1;
+      return elements;
+    }
+    if (ch === ",") {
+      cursor.pos += 1;
+      continue;
+    }
+    if (ch === '"') {
+      const probe = extractQuotedStringAt(text, cursor.pos);
+      if (probe.value === null) {
+        // Phần tử cuối bị cắt dở tới hết văn bản ⇒ bỏ, dừng ở đây.
+        cursor.pos = probe.endIdx;
+        return elements;
+      }
+      if (isKnownAgentOutputKey(probe.value)) {
+        let after = probe.endIdx;
+        while (after < text.length && /\s/.test(text[after]!)) after += 1;
+        if (text[after] === ":") {
+          // Trông giống khoá kế tiếp bắt đầu ⇒ coi mảng đã hết (bị cắt dở).
+          // KHÔNG tiêu thụ chuỗi này — cursor.pos giữ nguyên tại dấu '"'.
+          return elements;
+        }
+      }
+      cursor.pos = probe.endIdx;
+      const trimmed = probe.value.trim();
+      if (trimmed) elements.push(trimmed);
+      continue;
+    }
+    // Ký tự lạ (backtick fence, dấu ngoặc lồng, ký tự trần...) trong mảng
+    // hỏng ⇒ bỏ qua từng ký tự, khoan dung với rác.
+    cursor.pos += 1;
   }
-  return out;
+
+  return elements; // hết văn bản mà chưa gặp ']' ⇒ mảng bị cắt dở
 }
 
 /**
  * Wave 1 FF-A — vớt từng khối từ JSON hỏng/bị cắt.
  *
- * Xử lý ĐỘC LẬP từng khoá đã biết trong `AGENT_OUTPUT_KEYS`: tìm lần XUẤT
- * HIỆN ĐẦU TIÊN của `"khoá":` rồi phân tích riêng phần giá trị theo sau (chuỗi
- * `"..."` hoặc mảng `[...]`). Khoá lặp lại ⇒ chỉ lần đầu được dùng (khi model
- * bị cắt rồi "reset", bản đầu luôn đầy đủ nhất tính tới điểm cắt).
+ * FIX-ROUND 1 (CRITICAL-2) — bản trước tìm khoá bằng `regex.exec(rawText)`,
+ * tức là khớp bất kỳ vị trí VĂN BẢN nào chứa `"khoá":`, KỂ CẢ khi nó nằm bên
+ * trong giá trị chuỗi của một khoá KHÁC (vd `"summary"` chứa nguyên văn
+ * `"risks": [...]` như một phần lời văn/ví dụ). Kết quả: nội dung bịa ra từ
+ * bên trong `summary` bị hiển thị dưới mục Risks như thể model viết ra, còn
+ * mảng `risks` THẬT ở cuối bị bỏ qua vì "đã tìm thấy" (dù là giả) trước đó.
+ *
+ * Sửa: quét MỘT LƯỢT DUY NHẤT từ đầu tới cuối `rawText`, tự làm bộ mã hoá
+ * (tokenizer) khoan dung: gặp `"`, thử đọc trọn một chuỗi JSON (tôn trọng
+ * escape `\"` — dùng lại `extractQuotedStringAt`, hàm quét-nhận-biết-chuỗi đã
+ * được xác nhận đúng ở review trước). Chuỗi đọc được CHỈ được coi là một
+ * "khoá thật" khi (a) nội dung trùng đúng tên 1 trong 8 khoá đã biết VÀ (b)
+ * ngay sau đó (bỏ qua khoảng trắng) là dấu `:` — một chuỗi trùng tên khoá
+ * nhưng không theo sau bởi `:` (vd nằm giữa câu văn, hoặc là phần tử mảng)
+ * KHÔNG được coi là khoá. Nhờ luôn dùng đúng cơ chế đọc-chuỗi-tôn-trọng-escape
+ * để NUỐT TRỌN mỗi giá trị chuỗi trước khi tiếp tục quét, một khoá giả nằm
+ * bên trong chuỗi của khoá khác (kể cả khi được escape đúng `\"khoá\"`) không
+ * bao giờ được vòng quét ngoài nhìn thấy như một token độc lập — nó bị "nuốt"
+ * làm nội dung của khoá bao ngoài. Chỉ khi chuỗi bao ngoài dùng dấu `"` KHÔNG
+ * escape để "đóng sớm" (như trong dữ liệu hỏng thật) thì phần còn lại mới
+ * được quét tiếp như các token độc lập — và ngay cả khi đó, khoá giả kiểu
+ * `"risks": [...]` được nhúng vẫn không đứng MỘT MÌNH ở vị trí "vừa đóng
+ * chuỗi xong" theo đúng cấu trúc `"key":` liền mạch trong mọi trường hợp đã
+ * kiểm — xem 3 test probe (a)/(b)/(c) trong
+ * aiSpecialistAgentService.parse.test.ts.
+ *
+ * Khoá lặp lại (kể cả khoá THẬT xuất hiện 2 lần) ⇒ chỉ lần đầu được ghi nhận
+ * (giữ nguyên luật cũ) — các lần sau vẫn được quét qua (để con trỏ đi đúng)
+ * nhưng không ghi đè.
  *
  * Trả về phần đọc được; khoá nào không vớt được thì VẮNG MẶT trong kết quả
  * (không bịa nội dung). Không bao giờ ném — kể cả với đầu vào rỗng/không phải
- * chuỗi.
+ * chuỗi, chuỗi cắt dở giữa chừng, hay ngoặc không cân.
  */
 export function salvageAgentSections(rawText: string): Partial<SpecialistAgentRunResult["output"]> {
   if (!rawText || typeof rawText !== "string") return {};
 
   const result: Partial<SpecialistAgentRunResult["output"]> = {};
+  const cursor = { pos: 0 };
 
-  for (const key of AGENT_OUTPUT_KEYS) {
-    const keyPattern = new RegExp(`"${key}"\\s*:\\s*`);
-    const match = keyPattern.exec(rawText);
-    if (!match) continue;
+  while (cursor.pos < rawText.length) {
+    const ch = rawText[cursor.pos];
+    if (ch !== '"') {
+      cursor.pos += 1;
+      continue;
+    }
 
-    const valueStart = match.index + match[0].length;
-    const firstChar = rawText[valueStart];
+    const probe = extractQuotedStringAt(rawText, cursor.pos);
+    if (probe.value === null) {
+      // Chuỗi cuối văn bản bị cắt dở — không còn gì để quét tiếp, thoát vòng lặp.
+      cursor.pos = probe.endIdx;
+      continue;
+    }
+    if (!isKnownAgentOutputKey(probe.value)) {
+      // Chuỗi bất kỳ không khớp tên khoá nào ⇒ không phải khoá (giá trị của
+      // khoá khác, hoặc phần tử mảng) — bỏ qua, quét tiếp NGAY SAU chuỗi đó.
+      cursor.pos = probe.endIdx;
+      continue;
+    }
 
-    if (firstChar === '"') {
-      const { value } = extractQuotedStringAt(rawText, valueStart);
-      if (value !== null && value.trim()) {
-        (result as Record<string, unknown>)[key] = value.trim();
+    let afterKey = probe.endIdx;
+    while (afterKey < rawText.length && /\s/.test(rawText[afterKey]!)) afterKey += 1;
+    if (rawText[afterKey] !== ":") {
+      // Trùng tên khoá nhưng KHÔNG theo sau bởi ':' ⇒ chỉ là một chuỗi trùng
+      // tên tình cờ (vd phần tử mảng có nội dung trùng tên khoá), không phải
+      // một khoá thật theo cấu trúc.
+      cursor.pos = probe.endIdx;
+      continue;
+    }
+
+    // Đây LÀ một khoá thật theo cấu trúc (không chỉ trùng văn bản).
+    const key = probe.value;
+    cursor.pos = afterKey + 1;
+    while (cursor.pos < rawText.length && /\s/.test(rawText[cursor.pos]!)) cursor.pos += 1;
+
+    const valueChar = rawText[cursor.pos];
+    if (valueChar === '"') {
+      const valueProbe = extractQuotedStringAt(rawText, cursor.pos);
+      cursor.pos = valueProbe.endIdx;
+      if (valueProbe.value !== null && valueProbe.value.trim() && !(key in result)) {
+        (result as Record<string, unknown>)[key] = valueProbe.value.trim();
       }
-    } else if (firstChar === "[") {
-      const arr = salvageStringArray(rawText, valueStart);
-      if (arr.length > 0) {
+    } else if (valueChar === "[") {
+      const arr = salvageStringArrayAt(rawText, cursor);
+      if (arr.length > 0 && !(key in result)) {
         (result as Record<string, unknown>)[key] = arr;
       }
     }
-    // Kiểu khác (number/null/object/thiếu) ⇒ ngoài hợp đồng schema, bỏ qua.
+    // Kiểu khác (number/null/object/thiếu) ⇒ ngoài hợp đồng schema, bỏ qua —
+    // không di chuyển cursor đặc biệt, vòng lặp ngoài tiếp tục quét từng ký
+    // tự từ vị trí hiện tại (không bao giờ kẹt: mỗi nhánh của vòng lặp luôn
+    // tiến ít nhất 1 ký tự).
   }
 
   return result;

@@ -88,6 +88,79 @@ describe("parseAgentOutput", () => {
       reportTemplate: [],
     });
   });
+
+  // Fix-round 1 — CRITICAL-1: sanitizeJsonBlock trước đây cắt VÔ ĐIỀU KIỆN tại
+  // fence ``` kế tiếp bất kỳ ở đâu, kể cả một fence HỢP LỆ nằm trong giá trị
+  // chuỗi của patchHints (chuyện thường gặp với backend-engineer minh hoạ patch
+  // bằng code block). Probe: JSON.stringify() hợp lệ, đủ 8 khoá, patchHints
+  // chứa 1 đoạn ```ts...``` — phải đi thẳng qua nhánh JSON.parse chặt chẽ,
+  // KHÔNG bị cắt cụt, mọi khoá phải còn nguyên (không được rơi vào "No content").
+  it("a. JSON hợp lệ đủ 8 khoá, patchHints chứa fence ``` hợp lệ ⇒ cả 8 khoá vẫn phân tích đúng qua đường JSON.parse chặt chẽ", () => {
+    const rawText = JSON.stringify({
+      summary: "Tóm tắt",
+      diagnosis: ["d1"],
+      actionPlan: ["a1"],
+      patchHints: ["Wrap the fix like this: ```ts\nconst x=1;\n``` for clarity"],
+      testPlan: ["t1"],
+      optimizationIdeas: ["o1"],
+      risks: ["r1"],
+      reportTemplate: ["rt1"],
+    });
+
+    const out = parseAgentOutput(rawText);
+
+    expect(out).toEqual({
+      summary: "Tóm tắt",
+      diagnosis: ["d1"],
+      actionPlan: ["a1"],
+      patchHints: ["Wrap the fix like this: ```ts\nconst x=1;\n``` for clarity"],
+      testPlan: ["t1"],
+      optimizationIdeas: ["o1"],
+      risks: ["r1"],
+      reportTemplate: ["rt1"],
+    });
+  });
+
+  // Fix-round 1 — CRITICAL-2 (Probe B): tìm khoá bằng regex.exec() thất bại vì
+  // khớp cả vị trí văn bản NẰM TRONG giá trị chuỗi của khoá khác. `summary`
+  // chứa nguyên văn `"risks": [...]` như một phần lời văn (dấu " không escape
+  // ⇒ đây chính là lý do JSON tổng thể KHÔNG hợp lệ ⇒ rơi vào salvage). Bug cũ:
+  // risks trả về mảnh giả "FAKE-RISK-FROM-SUMMARY" lấy từ trong summary, còn
+  // mảng risks THẬT ở cuối bị bỏ qua. Phải lấy đúng mảng THẬT, không bao giờ
+  // hiển thị mảnh vỡ từ summary dưới mục Risks.
+  it("b. khoá giả nằm trong chuỗi summary (dấu ngoặc kép không escape) ⇒ risks/diagnosis lấy đúng mảng THẬT, không lấy mảnh vỡ từ summary", () => {
+    const rawText =
+      `{"summary": "risk note: "risks": ["FAKE-RISK-FROM-SUMMARY"] should be reviewed", ` +
+      `"diagnosis": ["real-diagnosis-1"], "risks": ["real-risk-1", "real-risk-2"]}`;
+
+    // Bằng chứng đây đúng là input hỏng (mới đi vào salvage, không phải qua
+    // đường JSON.parse chặt chẽ bình thường):
+    expect(() => JSON.parse(rawText)).toThrow();
+
+    const out = parseAgentOutput(rawText);
+
+    expect(out.risks).toEqual(["real-risk-1", "real-risk-2"]);
+    expect(out.risks).not.toContain("FAKE-RISK-FROM-SUMMARY");
+    expect(out.diagnosis).toEqual(["real-diagnosis-1"]);
+  });
+
+  // Fix-round 1 — CRITICAL-2 (Probe A): summary chứa `\"actionPlan\": []` được
+  // ESCAPE ĐÚNG (bản thân summary là 1 chuỗi JSON hợp lệ) — bug cũ vẫn latch
+  // vào khoá giả này vì regex.exec() không quan tâm escape, khớp thẳng lên
+  // "actionPlan" nằm giữa 2 dấu `\"`. actionPlan THẬT ở sau bị mất (đọc được [],
+  // rỗng ⇒ bị coi là "không vớt được gì"). JSON tổng thể hỏng vì diagnosis bị
+  // cắt cụt ở cuối (không có dấu đóng) — đó là lý do đi vào salvage.
+  it("c. khoá giả trong summary được escape đúng (\\\"actionPlan\\\": []) ⇒ actionPlan lấy đúng mảng THẬT phía sau, không lấy mảng rỗng nhúng trong summary", () => {
+    const rawText =
+      `{"summary": "Earlier the code returned \\"actionPlan\\": [] here, now fixed with real steps", ` +
+      `"actionPlan": ["real-step-1", "real-step-2", "real-step-3"], "diagnosis": ["cut-off-here`;
+
+    expect(() => JSON.parse(rawText)).toThrow();
+
+    const out = parseAgentOutput(rawText);
+
+    expect(out.actionPlan).toEqual(["real-step-1", "real-step-2", "real-step-3"]);
+  });
 });
 
 describe("salvageAgentSections", () => {
