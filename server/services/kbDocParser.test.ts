@@ -151,6 +151,60 @@ describe("parseDocument — md/txt", () => {
   });
 });
 
+// ─── md/txt binary-content guard (Task 6, Wave 2 đường B — review round 1) ──
+//
+// Closes the mirror-image hole to the image-path magic-byte check: a raw uploaded Buffer
+// claiming ".txt"/".md" whose actual bytes are binary (an image, or contain a NUL byte) used
+// to slip straight through `toText()`/`Buffer.toString("utf8")` — which never throws — and get
+// embedded as garbage text, silently. A STRING input (only ever produced by url/video's
+// trusted pass-through pipelines, never a raw operator upload) is never sniffed — see the
+// existing "extracts plain markdown text as-is" / "normalizes CRLF..." tests above, which pass
+// a raw JS string and still pass unchanged under the new guard.
+
+describe("parseDocument — md/txt binary-content guard", () => {
+  const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+
+  it("(a) a .txt Buffer containing PNG bytes is rejected, error names the format detected", async () => {
+    const { parseDocument, KbParseError } = await loadFresh();
+    const call = parseDocument(PNG_BYTES, "notes.txt");
+    await expect(call).rejects.toThrow(KbParseError);
+    await expect(call).rejects.toThrow(/PNG image/);
+  });
+
+  it("(b) a .txt Buffer containing a NUL byte is rejected", async () => {
+    const { parseDocument, KbParseError } = await loadFresh();
+    const withNul = Buffer.from("some text\x00more text", "utf8");
+    await expect(parseDocument(withNul, "notes.txt")).rejects.toThrow(KbParseError);
+    await expect(parseDocument(withNul, "notes.txt")).rejects.toThrow(/NUL byte/);
+  });
+
+  it("(c) a genuine Vietnamese multi-line .txt Buffer is NOT rejected (no false positive)", async () => {
+    const { parseDocument } = await loadFresh();
+    const vi = Buffer.from(
+      "Máy AOI trạm 3 báo lỗi thiếu linh kiện.\nVui lòng kiểm tra khay cấp phôi.\nMã lỗi: E-204.",
+      "utf8",
+    );
+    const result = await parseDocument(vi, "bao-cao-loi.txt");
+    expect(result.text).toBe(
+      "Máy AOI trạm 3 báo lỗi thiếu linh kiện.\nVui lòng kiểm tra khay cấp phôi.\nMã lỗi: E-204.",
+    );
+    expect(result.meta.sourceType).toBe("txt");
+  });
+
+  it("the SAME guard applies to .md (identical raw-Buffer-upload code shape as .txt)", async () => {
+    const { parseDocument, KbParseError } = await loadFresh();
+    await expect(parseDocument(PNG_BYTES, "notes.md")).rejects.toThrow(KbParseError);
+  });
+
+  it("a STRING input is never sniffed (url/video pass-through — no raw operator bytes to check)", async () => {
+    const { parseDocument } = await loadFresh();
+    // A string that happens to start with bytes that WOULD match the PNG signature if it were
+    // a Buffer — proves the guard only ever inspects a real Buffer, never a string.
+    const stringThatLooksBinaryIfBufferized = "\x89PNG\r\n\x1a\n rest of a normal string";
+    await expect(parseDocument(stringThatLooksBinaryIfBufferized, "txt")).resolves.toBeTruthy();
+  });
+});
+
 // ─── pdf (mocked pdf-parse) ──────────────────────────────────────────────────
 
 describe("parseDocument — pdf", () => {

@@ -31,6 +31,10 @@
  *    wrapped in a timeout, see {@link withTimeout}).
  *  - Extracted text is bounded to `KB_PARSE_MAX_CHARS` (default 2,000,000 chars ≈ 2MB) —
  *    `meta.truncated` tells the caller when a document was cut.
+ *  - Task 6 (Wave 2 đường B) review round 1: a raw uploaded `Buffer` claiming "md"/"txt" whose
+ *    content is actually binary (an image, or contains a NUL byte) throws {@link KbParseError}
+ *    instead of being silently `Buffer.toString("utf8")`'d into garbage text and embedded — see
+ *    {@link detectBinaryContentReason} / {@link toTextChecked}.
  */
 
 export type KbSourceType = "pdf" | "docx" | "md" | "txt" | "url" | "video" | "image";
@@ -152,6 +156,59 @@ export function matchesImageMagicBytes(buf: Buffer, kind: KbImageKind): boolean 
     return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
   }
   return buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP";
+}
+
+/**
+ * Review round 1 (Task 6) — closes the mirror-image hole: a file claiming a TEXT extension
+ * (md/txt) but whose actual bytes are binary/image content used to slip straight through
+ * `toText()` (`Buffer.toString("utf8")` never throws — it just produces mojibake) and get
+ * embedded into the knowledge base as garbage text, silently, with no error — and since Task 4
+ * already wired this corpus into the assistant, that garbage would then surface as a citation
+ * labeled "Tài liệu bạn nạp" in a real answer.
+ *
+ * Deliberately only TWO signals, both zero-false-positive on real text (no fuzzy "weird char
+ * ratio" heuristic — that would misfire on legitimate Vietnamese diacritics, CSV, logs, etc):
+ *  1. The content starts with one of the SAME image magic-byte signatures already defined above
+ *     for the image path (PNG/JPEG/WEBP) — reused, not reinvented.
+ *  2. The content contains a NUL byte (0x00) — never appears in valid UTF-8/ASCII text, a
+ *     reliable binary tell used by the same heuristic `file(1)`/git use to classify a blob as
+ *     binary.
+ * Returns a human-readable reason naming the format that WAS detected (e.g. "PNG image"), or
+ * `null` when the content looks like real text.
+ */
+function detectBinaryContentReason(buf: Buffer): string | null {
+  if (matchesImageMagicBytes(buf, "png")) return "a PNG image";
+  if (matchesImageMagicBytes(buf, "jpeg")) return "a JPEG image";
+  if (matchesImageMagicBytes(buf, "webp")) return "a WEBP image";
+  if (buf.includes(0x00)) return "binary data (contains a NUL byte)";
+  return null;
+}
+
+/**
+ * Same as {@link toText}, PLUS the binary-content guard above — ONLY when `input` is an actual
+ * uploaded `Buffer` (raw, untrusted bytes from `kbIngestRouter.uploadDocument` /
+ * `kbStudioRouter.ingestDocumentJob`). When `input` is already a `string`, it can only have
+ * arrived via `url`/`video`'s pass-through callers (`kbWebFetcher.ingestUrl`,
+ * `kbVideoTranscriber.ingestVideo`) or a caller supplying `text` directly — content that was
+ * already produced by a trusted extraction/transcription step, never raw operator-uploaded
+ * bytes — so there is nothing to sniff and no reason to risk a spurious rejection.
+ *
+ * Scope: applied to BOTH "md" and "txt" (not just "txt") — both accept a raw uploaded `Buffer`
+ * through the exact same code shape (`kbIngestRouter.ts`'s `allowedTypes` lists both), so the
+ * "photo.png renamed to photo.md" variant of this hole is identical and gets the identical fix.
+ * "url"/"video" are NOT touched — see above.
+ */
+function toTextChecked(input: Buffer | string, sourceType: "md" | "txt", mimeOrExt: string): string {
+  if (Buffer.isBuffer(input)) {
+    const detected = detectBinaryContentReason(input);
+    if (detected) {
+      throw new KbParseError(
+        `File "${mimeOrExt}" has a ${sourceType.toUpperCase()} (text) extension but its content is ${detected}, ` +
+          `not text — refusing to ingest binary bytes as text.`,
+      );
+    }
+  }
+  return toText(input);
 }
 
 /**
@@ -313,9 +370,9 @@ export async function parseDocument(input: Buffer | string, mimeOrExt: string): 
       case "docx":
         return await parseDocx(toBuffer(input));
       case "md":
-        return parsePlain(toText(input), "md");
+        return parsePlain(toTextChecked(input, "md", mimeOrExt), "md");
       case "txt":
-        return parsePlain(toText(input), "txt");
+        return parsePlain(toTextChecked(input, "txt", mimeOrExt), "txt");
       case "url":
         return parsePlain(toText(input), "url");
       case "video":

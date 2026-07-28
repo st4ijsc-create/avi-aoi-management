@@ -15,36 +15,26 @@
  * severity/causes vô nghĩa sẽ khiến model bịa cho đủ schema. Ở đây dùng thẳng
  * `aiProviderRouter.describeImage()` với một prompt tự do, đúng mục đích tra-cứu-kiến-thức.
  *
- * CHỮ KÝ THẬT vs. MÔ TẢ MINH HỌA TRONG BRIEF (đã kiểm `aiProviderRouter.ts:100-121,391-474`):
- *  - `DescribeImageRequest` nhận field ẢNH tên là `image` (Buffer), KHÔNG PHẢI `imageBuffer`.
- *    Brief minh họa dùng `imageBuffer` — sai tên trường, sẽ gửi `undefined` cho model thật.
- *    Code này dùng đúng `image`.
- *  - `DescribeImageResult` trả `{ text, provider, model, totalTimeMs, fallbackUsed }` — KHÔNG
- *    có field `description`. Test brief (kbImageDescriber.test.ts, mock toàn bộ module) lại
- *    cho mock trả `{ description }`. Đọc `res.text ?? res.description` để đúng với CẢ HAI: ưu
- *    tiên `text` (field thật khi chạy sống), fallback `description` (field mock dùng trong
- *    test) — không có kịch bản nào cả hai cùng thiếu mà lại có nội dung thật.
- *  - `DescribeImageRequest` KHÔNG có field `modelId`/`model` — xem ghi chú "GHIM MODEL" bên
- *    dưới.
+ * CHỮ KÝ THẬT (đã kiểm `aiProviderRouter.ts:100-121,391-474`) — `req: DescribeImageRequest` và
+ * `res: DescribeImageResult` bên dưới dùng ĐÚNG type import từ `aiProviderRouter.ts`, KHÔNG có
+ * `as any` ở đâu trên request/kết quả — để TypeScript tự bắt đúng loại lỗi sai-tên-trường mà
+ * bản minh họa gốc của brief đã mắc (`imageBuffer` thay vì field thật `image`; đọc `.description`
+ * thay vì field thật `.text`) — cả hai đã sửa và giờ được TypeScript canh gác, không phải chỉ
+ * canh bằng test/tài liệu.
  *
- * GHIM MODEL: kiến trúc vision KHÁC kiến trúc chat/text — nó không đi qua
- * `aiGgufEngine.getOrLoadModel()` (nơi Wave 1 phát hiện `getOrLoadModel(undefined)` có thể
- * rơi vào model NHÚNG đang resident). Vision luôn đi qua MỘT sidecar llama-server riêng
- * (`llamaVisionSidecar.ts`), tự nó chỉ phục vụ ĐÚNG MỘT model cố định theo
- * `GGUF_VISION_MODEL`/`GGUF_VISION_MMPROJ` — không có nhiều model resident để nhầm lẫn, nên
- * lỗi Wave 1 KHÔNG THỂ xảy ra trên đường này (`aiGgufEngine.describeImage`'s `_modelId` param
- * thậm chí có tiền tố `_` — cố tình bỏ qua, không dùng). Dù vậy, để giữ kỷ luật "ghim tường
- * minh" nhất quán toàn hệ thống và có breadcrumb kiểm toán, request vẫn gắn một field
- * `modelId` (qua `resolveLogicalModel`) — dù `describeImage()` hiện KHÔNG đọc field này (chưa
- * khai báo trong `DescribeImageRequest`), field vẫn được đính kèm cho tương lai + audit.
- * `resolveLogicalModel("vision")` KHÔNG có nhánh riêng cho "vision" (modelResolver.ts:220-249)
- * nên rơi vào nhánh passthrough-không-rõ và trả về NGUYÊN VĂN chuỗi "vision" — không phải một
- * basename thật trên đĩa. Đây là giá trị breadcrumb có chủ đích, KHÔNG được diễn giải là tên
- * file model thật (tên file thật là basename của `GGUF_VISION_MODEL`, ví dụ hiện tại
- * "Qwen3-VL-8B-Instruct-UD-Q4_K_XL" — không thể đọc ở đây vì việc đó cần gọi
- * `getVisionSidecarConfig()` từ CÙNG module `./llamaVisionSidecar`, mà test khóa mock của
- * module đó CHỈ export `isVisionSidecarAvailable` — gọi thêm hàm khác sẽ throw TypeError
- * trong mọi test "đường vui").
+ * KHÔNG GHIM `modelId` (đã sửa ở vòng review 1 — bản trước gắn một field `modelId` giả kèm
+ * `as any`, che mất đúng loại lỗi sai-tên-trường nói trên): `DescribeImageRequest` (thật) không
+ * khai báo field `modelId`/`model` nào cả. Đây KHÔNG phải thiếu sót — đường vision đi qua một
+ * SIDECAR llama-server RIÊNG, chuyên dụng (`llamaVisionSidecar.ts`), sidecar này chỉ từng phục
+ * vụ ĐÚNG MỘT model cố định, lấy từ `GGUF_VISION_MODEL`/`GGUF_VISION_MMPROJ`
+ * (`llamaVisionSidecar.ts:104-116`, `getVisionSidecarConfig()`). Nó KHÔNG đi qua
+ * `aiGgufEngine.getOrLoadModel()` dùng chung (nơi Wave 1 đo được `getOrLoadModel(undefined)` có
+ * thể rơi vào model NHÚNG đang resident khi nhiều model cùng resident) — không có nhiều model
+ * resident để nhầm lẫn trên sidecar 1-model này, nên rủi ro "sinh chữ bằng model nhúng" của
+ * Wave 1 KHÔNG áp dụng ở đây theo đúng kiến trúc hiện tại
+ * (`aiGgufEngine.describeImage`'s `_modelId` param có tiền tố `_` — cố tình khai báo nhưng
+ * không dùng, xác nhận đường này chưa từng có cơ chế chọn-model theo id). Ghi rõ điều này để
+ * người đọc sau không tưởng nhầm có một cơ chế chọn-model đang chạy ở đây.
  *
  * TRUNG THỰC: không mô tả được ⇒ ok:false kèm lý do thật. TUYỆT ĐỐI không lưu chunk rỗng rồi
  * báo thành công. Cũng coi nhánh "fallbackUsed:true" của router (nó tự trả một câu giải thích
@@ -53,7 +43,7 @@
  * `isVisionSidecarAvailable()` ở đây và lúc `describeImage()` thực sự chạy (sidecar vừa crash)
  * sẽ khiến câu giải thích lỗi bị lưu vào kho như thể là mô tả ảnh thật.
  */
-import { resolveLogicalModel } from "./ai/modelResolver";
+import type { DescribeImageRequest, DescribeImageResult } from "./aiProviderRouter";
 
 export type DescribeForKnowledgeResult =
   | { ok: true; text: string }
@@ -79,32 +69,30 @@ export async function describeImageForKnowledge(
     }
 
     const { describeImage } = await import("./aiProviderRouter");
-    // Ghim model tường minh (kỷ luật Wave 1) trên field `modelId` — xem ghi chú "GHIM MODEL" ở
-    // module doc comment cho lý do field này hiện là breadcrumb (describeImage() thật chưa
-    // đọc nó) chứ không phải một cơ chế chọn-model đang hoạt động.
-    const modelId = resolveLogicalModel("vision");
-    const res: any = await describeImage({
+    // Đúng type DescribeImageRequest thật (không `as any`) — TypeScript bắt sai tên trường
+    // ngay tại đây thay vì để lỗi lọt ra runtime (bài học vòng review 1).
+    const req: DescribeImageRequest = {
       image: imageBuffer,
       prompt: hint ? `${KNOWLEDGE_IMAGE_PROMPT}\n\nTên tệp: ${hint}` : KNOWLEDGE_IMAGE_PROMPT,
       language: "vi",
       maxTokens: 700,
       temperature: 0.2,
-      modelId,
-    } as any);
+    };
+    const res: DescribeImageResult = await describeImage(req);
 
     // Router's own honest-degrade branch — never store its "vision unavailable" explanation
     // as if it were a real description (see module doc comment).
-    if (res?.fallbackUsed) {
-      const reason = String(res?.text ?? "").trim();
+    if (res.fallbackUsed) {
+      const reason = res.text.trim();
       return { ok: false, reason: reason || "Model thị giác không sẵn sàng." };
     }
 
-    const text = String(res?.text ?? res?.description ?? "").trim();
+    const text = res.text.trim();
     if (!text) {
       return { ok: false, reason: "Model thị giác trả về mô tả rỗng." };
     }
     return { ok: true, text };
   } catch (err) {
-    return { ok: false, reason: `Mô tả ảnh thất bại: ${(err as any)?.message ?? String(err)}` };
+    return { ok: false, reason: `Mô tả ảnh thất bại: ${(err as Error)?.message ?? String(err)}` };
   }
 }
