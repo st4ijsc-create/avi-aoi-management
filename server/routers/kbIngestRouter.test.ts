@@ -140,7 +140,8 @@ describe("kbIngestRouter — admin/engineer RBAC", () => {
     const status = await callerFor("admin", true).status();
     expect(status).toMatchObject({
       enabled: true,
-      allowedTypes: ["pdf", "docx", "md", "txt"],
+      // Task 6, Wave 2 đường B: png/jpg/jpeg/webp added (VLM image-description path).
+      allowedTypes: ["pdf", "docx", "md", "txt", "png", "jpg", "jpeg", "webp"],
       webIngestEnabled: true,
       videoIngestEnabled: true,
     });

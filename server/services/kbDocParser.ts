@@ -33,12 +33,12 @@
  *    `meta.truncated` tells the caller when a document was cut.
  */
 
-export type KbSourceType = "pdf" | "docx" | "md" | "txt" | "url" | "video";
+export type KbSourceType = "pdf" | "docx" | "md" | "txt" | "url" | "video" | "image";
 
 /** Thrown when `mimeOrExt` does not resolve to a supported {@link KbSourceType}. */
 export class KbUnsupportedTypeError extends Error {
   constructor(public readonly input: string) {
-    super(`Unsupported document type: "${input}". Supported: pdf, docx, md, txt.`);
+    super(`Unsupported document type: "${input}". Supported: pdf, docx, md, txt, png, jpg, jpeg, webp.`);
     this.name = "KbUnsupportedTypeError";
   }
 }
@@ -112,6 +112,48 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
+/** Image kinds this module can verify by magic bytes (Task 6, Wave 2 đường B). */
+export type KbImageKind = "png" | "jpeg" | "webp";
+
+/**
+ * Resolve a MIME type, bare extension, or filename to the image kind it CLAIMS to be — or
+ * `null` if it doesn't look like one of the three supported image formats. Shared by
+ * `normalizeSourceType` (does the label say "image"?) and `parseImage` (does the label's
+ * CLAIMED kind match the bytes?) so the two checks can never drift apart.
+ */
+export function detectImageKindFromLabel(mimeOrExt: string): KbImageKind | null {
+  const raw = (mimeOrExt ?? "").toLowerCase().trim();
+  const extFromFilename = raw.match(/\.([a-z0-9]+)$/)?.[1];
+  const candidate = extFromFilename ?? (raw.startsWith(".") ? raw.slice(1) : raw);
+
+  if (candidate === "png" || raw.includes("image/png")) return "png";
+  if (candidate === "jpg" || candidate === "jpeg" || raw.includes("image/jpeg") || raw.includes("image/jpg")) {
+    return "jpeg";
+  }
+  if (candidate === "webp" || raw.includes("image/webp")) return "webp";
+  return null;
+}
+
+/**
+ * True when `buf` STARTS WITH the magic bytes for `kind`. Task 6, Wave 2 đường B —
+ * "chống nhầm định dạng": a claimed extension alone is operator-controlled and free to lie
+ * (e.g. a renamed/corrupt file); this is the minimum content-based check before the bytes are
+ * ever handed to the vision model or trusted as an image at all.
+ *   PNG:  89 50 4E 47 (…0D 0A 1A 0A, only the first 4 bytes are checked here — sufficient to
+ *         reject non-PNG content)
+ *   JPEG: FF D8 FF
+ *   WEBP: "RIFF" (bytes 0-3) + "WEBP" (bytes 8-11) — a RIFF container tagged WEBP
+ */
+export function matchesImageMagicBytes(buf: Buffer, kind: KbImageKind): boolean {
+  if (kind === "png") {
+    return buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+  }
+  if (kind === "jpeg") {
+    return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  }
+  return buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP";
+}
+
 /**
  * Resolve a MIME type, bare extension, or filename to a {@link KbSourceType}. Throws
  * {@link KbUnsupportedTypeError} for anything else — the caller must not attempt to parse.
@@ -133,6 +175,10 @@ export function normalizeSourceType(mimeOrExt: string): KbSourceType {
   // E3-4: kbVideoTranscriber.ts passes sourceType:"video" into ingestDocument for an
   // already-transcribed plain-text transcript — same pass-through marker convention as "url".
   if (candidate === "video" || raw === "video") return "video";
+  // Task 6, Wave 2 đường B: png/jpg/jpeg/webp → "image" (described via VLM, see kbImageDescriber.ts
+  // / parseImage below). Content-vs-label mismatch is checked in parseImage, not here — this
+  // function only classifies what the LABEL claims.
+  if (detectImageKindFromLabel(mimeOrExt)) return "image";
   throw new KbUnsupportedTypeError(mimeOrExt);
 }
 
@@ -209,6 +255,48 @@ function parsePlain(raw: string, sourceType: "md" | "txt" | "url" | "video"): Pa
 }
 
 /**
+ * Task 6, Wave 2 đường B — turn an image into knowledge-base text via the local VLM
+ * (`kbImageDescriber.describeImageForKnowledge`, which itself routes through
+ * `aiProviderRouter.describeImage()` — NOT `aiVisionLanguage.describeDefect()`, see
+ * kbImageDescriber.ts's module doc comment for why the AOI-defect prompt is the wrong tool
+ * here).
+ *
+ * `hint` is the caller-supplied `mimeOrExt` (in practice the original filename — see
+ * kbIngestRouter.ts's `uploadDocument`, which passes `mimeOrExt: file.name`) — used both for
+ * the magic-byte cross-check below and as a filename hint in the VLM prompt.
+ *
+ * Fail-safe discipline (mirrors parsePdf/parseDocx — never fabricates, never silently drops):
+ *  - Extension says image but content bytes don't match ⇒ {@link KbParseError} BEFORE the
+ *    vision model is ever invoked (chống nhầm định dạng — a renamed/corrupt file is refused,
+ *    not silently sent to the VLM as if it were real image bytes).
+ *  - VLM unavailable / throws / returns an empty description ⇒ {@link KbParseError} carrying
+ *    the VERBATIM reason from `describeImageForKnowledge` (never `KbIngestValidationError`:
+ *    that class lives in kbIngestService.ts, which itself imports FROM this file — reusing it
+ *    here would create a circular module dependency. `KbParseError` maps to the exact same
+ *    `TRPCError({code:"BAD_REQUEST"})` in both kbIngestRouter.ts and kbStudioRouter.ts, and
+ *    kbStudioService.markJobFailed only ever reads `err.message` regardless of class, so the
+ *    Jobs tab / caller-visible behavior is identical either way).
+ */
+async function parseImage(buf: Buffer, hint: string): Promise<ParsedDocument> {
+  const claimedKind = detectImageKindFromLabel(hint);
+  if (claimedKind && !matchesImageMagicBytes(buf, claimedKind)) {
+    throw new KbParseError(
+      `File "${hint}" is labeled as ${claimedKind.toUpperCase()} but its content does not start with the ` +
+        `${claimedKind.toUpperCase()} magic bytes — refusing to ingest mismatched bytes as an image.`,
+    );
+  }
+
+  const { describeImageForKnowledge } = await import("./kbImageDescriber");
+  const described = await describeImageForKnowledge(buf, hint);
+  if (!described.ok) {
+    throw new KbParseError(described.reason);
+  }
+
+  const { text, truncated } = boundText(described.text);
+  return { text, meta: { sourceType: "image", charCount: text.length, truncated } };
+}
+
+/**
  * Extract plain text from an uploaded document. `input` is a Buffer for binary formats
  * (pdf/docx) or either a Buffer/string for text formats (md/txt). `mimeOrExt` may be a MIME
  * type, a bare extension ("pdf"), a dotted extension (".pdf"), or a filename ("manual.pdf").
@@ -232,6 +320,8 @@ export async function parseDocument(input: Buffer | string, mimeOrExt: string): 
         return parsePlain(toText(input), "url");
       case "video":
         return parsePlain(toText(input), "video");
+      case "image":
+        return await parseImage(toBuffer(input), mimeOrExt);
     }
   } catch (err) {
     if (err instanceof KbParseError) throw err;

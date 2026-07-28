@@ -98,7 +98,11 @@ export const kbIngestRouter = router({
   status: kbStudioProcedure.query(() => ({
     enabled: isKbStudioEnabled(),
     maxUploadBytes: MAX_UPLOAD_BYTES,
-    allowedTypes: ["pdf", "docx", "md", "txt"] as const,
+    // Task 6, Wave 2 đường B: png/jpg/jpeg/webp added — server actually accepts these now
+    // (kbDocParser.normalizeSourceType → "image" → kbImageDescriber VLM path), so `accept`
+    // on the client's file input (SourceTab.tsx derives it straight from this array) must
+    // reflect that truthfully.
+    allowedTypes: ["pdf", "docx", "md", "txt", "png", "jpg", "jpeg", "webp"] as const,
     webIngestEnabled: isWebIngestEnabled(),
     videoIngestEnabled: isVideoIngestEnabled(),
     maxVideoUploadBytes: MAX_VIDEO_UPLOAD_BYTES,

@@ -1,11 +1,15 @@
 /**
- * doc69 Giai đoạn 5 / Wave E3 (E3-1, extended by E3-5) — kbDocParser.ts unit tests.
+ * doc69 Giai đoạn 5 / Wave E3 (E3-1, extended by E3-5; Task 6 / Wave 2 đường B adds image) —
+ * kbDocParser.ts unit tests.
  *
  * `pdf-parse` and `mammoth` are BOTH mocked — no live parser/model is ever exercised here.
  * md/txt paths need no mocking (plain string handling). E3-5 adds `./kbPdfOcr` (the scanned-PDF
  * OCR helper) to the mocks — its OWN fail-safe/injection/bounds behavior is covered in
  * kbPdfOcr.test.ts; this file only covers the WIRING (density detection → OCR path taken/not
- * taken, meta flags, and the normal-PDF path staying byte-identical).
+ * taken, meta flags, and the normal-PDF path staying byte-identical). Task 6 adds
+ * `./kbImageDescriber` to the mocks the same way — its OWN VLM-call/honest-degrade behavior is
+ * covered in kbImageDescriber.test.ts; this file only covers the WIRING (magic-byte check →
+ * describeImageForKnowledge call/not-called, meta.sourceType, error propagation).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -22,6 +26,11 @@ vi.mock("mammoth", () => ({
 const ocrScannedPdfMock = vi.fn();
 vi.mock("./kbPdfOcr", () => ({
   ocrScannedPdf: (...args: unknown[]) => ocrScannedPdfMock(...args),
+}));
+
+const describeImageForKnowledgeMock = vi.fn();
+vi.mock("./kbImageDescriber", () => ({
+  describeImageForKnowledge: (...args: unknown[]) => describeImageForKnowledgeMock(...args),
 }));
 
 async function loadFresh() {
@@ -257,6 +266,57 @@ describe("parseDocument — docx", () => {
     extractRawTextMock.mockRejectedValueOnce(new Error("Can't find end of central directory"));
     const { parseDocument, KbParseError } = await loadFresh();
     await expect(parseDocument(Buffer.from("not a zip"), "docx")).rejects.toThrow(KbParseError);
+  });
+});
+
+// ─── image (Task 6, Wave 2 đường B — VLM path, mocked kbImageDescriber) ──────
+
+describe("normalizeSourceType — image extensions", () => {
+  it("resolves png/jpg/jpeg/webp (bare, dotted, filename, MIME) to 'image'", async () => {
+    const { normalizeSourceType } = await loadFresh();
+    expect(normalizeSourceType("png")).toBe("image");
+    expect(normalizeSourceType(".jpg")).toBe("image");
+    expect(normalizeSourceType("so-do-day.jpeg")).toBe("image");
+    expect(normalizeSourceType("image/webp")).toBe("image");
+  });
+});
+
+describe("parseDocument — image", () => {
+  const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]);
+  const WEBP_BYTES = Buffer.concat([Buffer.from("RIFF"), Buffer.from([0, 0, 0, 0]), Buffer.from("WEBP")]);
+
+  it("a genuine PNG is handed to describeImageForKnowledge and its text becomes the parsed text", async () => {
+    describeImageForKnowledgeMock.mockResolvedValueOnce({ ok: true, text: "Sơ đồ đấu dây 3 khối PLC" });
+    const { parseDocument } = await loadFresh();
+    const result = await parseDocument(PNG_BYTES, "wiring-diagram.png");
+    expect(result.text).toBe("Sơ đồ đấu dây 3 khối PLC");
+    expect(result.meta.sourceType).toBe("image");
+    expect(describeImageForKnowledgeMock).toHaveBeenCalledWith(expect.any(Buffer), "wiring-diagram.png");
+  });
+
+  it("a genuine JPEG and WEBP also pass the magic-byte check", async () => {
+    describeImageForKnowledgeMock.mockResolvedValue({ ok: true, text: "ok" });
+    const { parseDocument } = await loadFresh();
+    await expect(parseDocument(JPEG_BYTES, "photo.jpg")).resolves.toMatchObject({ text: "ok" });
+    await expect(parseDocument(WEBP_BYTES, "photo.webp")).resolves.toMatchObject({ text: "ok" });
+  });
+
+  it("chống nhầm định dạng: extension says PNG but bytes don't match ⇒ KbParseError, VLM never called", async () => {
+    const { parseDocument, KbParseError } = await loadFresh();
+    await expect(parseDocument(Buffer.from("not really a png"), "diagram.png")).rejects.toThrow(KbParseError);
+    expect(describeImageForKnowledgeMock).not.toHaveBeenCalled();
+  });
+
+  it("VLM not ready/empty ⇒ KbParseError carrying the VERBATIM reason (honest degrade, never a fabricated chunk)", async () => {
+    describeImageForKnowledgeMock.mockResolvedValueOnce({
+      ok: false,
+      reason: "Model thị giác chưa sẵn sàng — chưa thể nạp ảnh (vision model unavailable).",
+    });
+    const { parseDocument, KbParseError } = await loadFresh();
+    const call = parseDocument(PNG_BYTES, "diagram.png");
+    await expect(call).rejects.toThrow(KbParseError);
+    await expect(call).rejects.toThrow("Model thị giác chưa sẵn sàng — chưa thể nạp ảnh (vision model unavailable).");
   });
 });
 
