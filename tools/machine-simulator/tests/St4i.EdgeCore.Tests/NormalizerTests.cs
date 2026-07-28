@@ -42,4 +42,16 @@ public class NormalizerTests {
     var r = new DeviceReading{ MachineCode="SCRW-01", RecipeCode="RC1", CycleCounter=1, Kind=ReadingKind.ProcessResult, SerialNumber="SN1", StepType="screw_tightening" };
     Assert.Equal("SCRW-01:RC1:000001", Normalizer.BuildIdempotencyKey(r));
   }
+  [Fact] public void Genealogy_LongValue_from_a_round_tripped_reading_passes_through_verbatim() {
+    // GP-2 (task-2-brief.md decision (a)): St4i.Connector.Abstractions.Json.ConnectorObjectConverter
+    // returns `long` for an integral Genealogy value (e.g. boardIndex) once a reading has crossed a
+    // sidecar boundary — Doc28Parser itself only ever produces `int` today, so Normalizer's per-key
+    // genealogy loop (verbatim copy for every key except "stationId") had never seen a `long` here
+    // before this task. Confirms it still just passes through untouched.
+    var r = new DeviceReading{ MachineCode="AOI-01", Kind=ReadingKind.ProcessResult, SerialNumber="SN1",
+      StepType="reflow", CycleCounter=1, Genealogy=new(){ ["boardIndex"]=5L, ["lotCode"]="LOT1" } };
+    var env = Normalizer.Normalize(r, MappingProfile.ForClass(DeviceClass.Automation));
+    Assert.Equal(5L, env.Payload["boardIndex"]);
+    Assert.Equal("LOT1", env.Payload["lotCode"]);
+  }
 }
