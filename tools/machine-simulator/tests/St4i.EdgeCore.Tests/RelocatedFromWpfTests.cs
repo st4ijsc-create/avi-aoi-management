@@ -82,7 +82,7 @@ public class ScenarioAwareDriverTests
         public FixedReadingDriver(params DeviceReading[] readings) => _readings = readings;
 
         public string Id => "fixed";
-        public DriverKind Kind => DriverKind.Simulated;
+        public string Kind => DriverKinds.Simulated;
         public DriverHealthState Health => DriverHealthState.Connected;
 
         public async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)

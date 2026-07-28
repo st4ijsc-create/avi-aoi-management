@@ -44,7 +44,7 @@ public sealed class AssetRegistryStoreTests : IDisposable
 
     private static MachineDescriptor NewDescriptor(string code, double cycleSeconds = 1.0) => new(
         code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
-        DriverKind.Simulated, "RC-TEST-A", null, cycleSeconds);
+        DriverKinds.Simulated, "RC-TEST-A", null, cycleSeconds);
 
     // ─────────────────────────────────────────────────────────────────────
     // 1. Fresh upsert: URN, lifecycle=Active, non-null checksum, created==updated.
@@ -130,6 +130,63 @@ public sealed class AssetRegistryStoreTests : IDisposable
 
         Assert.Null(await store.GetAsync("NOPE-01"));
         Assert.Null(await store.SetLifecycleAsync("NOPE-01", AssetLifecycleState.Commissioning));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GP-3 — the no-migration compatibility guarantee: a row written by the OLD code (DriverKind still
+    // a closed enum, persisted via descriptor.DriverKind.ToString()) must still read back correctly with
+    // ZERO changes, through the exact same GetAsync/ListAsync path a real upgraded install would use.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Simulated")]
+    [InlineData("HotFolderAoi")]
+    [InlineData("Mqtt")]
+    [InlineData("Modbus")]
+    [InlineData("OpcUa")]
+    public async Task GetAsync_PreGP3RowWrittenDirectlyWithTheOldEnumSpelling_StillReadsBackCorrectly(string oldEnumSpelling)
+    {
+        var store = new AssetRegistryStore(KnownAddress, NewTempDir());
+
+        // Bypasses UpsertAsync entirely — a raw INSERT using the exact schema/column shape the OLD code
+        // (DriverKind as a closed enum, written via descriptor.DriverKind.ToString()) already wrote to a
+        // real assets.db before this task. No migration touches this row; GetAsync must read the exact
+        // same TEXT value straight through, unchanged.
+        var now = DateTimeOffset.UtcNow.ToString("O");
+        await using (var connection = new SqliteConnection($"Data Source={store.DbPath}"))
+        {
+            await connection.OpenAsync();
+            var cmd = connection.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO assets (code, urn, device_class, driver_kind, machine_type, lifecycle, config_checksum, created_at, updated_at)
+                VALUES ('PRE-GP3-01', 'urn:isa95:site-x:area-x:line-x:cell-x:PRE-GP3-01', 'Automation', @driverKind, 'SCREWDRIVE', 'Active', 'chk', @now, @now);
+                """;
+            cmd.Parameters.AddWithValue("@driverKind", oldEnumSpelling);
+            cmd.Parameters.AddWithValue("@now", now);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var record = await store.GetAsync("PRE-GP3-01");
+
+        Assert.NotNull(record);
+        Assert.Equal(oldEnumSpelling, record!.DriverKind);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GP-3 — a third-party-style id round-trips through the real store exactly like a built-in one.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpsertAsync_ThenGetAsync_ThirdPartyDriverKind_RoundTripsByteForByte()
+    {
+        var store = new AssetRegistryStore(KnownAddress, NewTempDir());
+        var descriptor = NewDescriptor("VENDOR-01") with { DriverKind = "vendor.acme.weld" };
+
+        await store.UpsertAsync(descriptor);
+        var record = await store.GetAsync("VENDOR-01");
+
+        Assert.NotNull(record);
+        Assert.Equal("vendor.acme.weld", record!.DriverKind);
     }
 
     // ─────────────────────────────────────────────────────────────────────

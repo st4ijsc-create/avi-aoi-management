@@ -163,7 +163,7 @@ public sealed class FleetHostOpcUaSlotTests
 
         public string Id => "fake-opcua-test-driver";
 
-        public DriverKind Kind => DriverKind.OpcUa;
+        public string Kind => DriverKinds.OpcUa;
 
         public DriverHealthState Health => DriverHealthState.Connected;
 
@@ -210,7 +210,7 @@ public sealed class FleetHostOpcUaSlotTests
 
         public string Id => "fake-faulty-opcua-test-driver";
 
-        public DriverKind Kind => DriverKind.OpcUa;
+        public string Kind => DriverKinds.OpcUa;
 
         public DriverHealthState Health => DriverHealthState.Degraded;
 

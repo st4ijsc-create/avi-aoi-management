@@ -104,7 +104,7 @@ public sealed partial class MachineViewModel : ObservableObject
 
     public string MachineType { get; }
 
-    public DriverKind DriverKind { get; }
+    public string DriverKind { get; }
 
     public DeviceClass Class { get; }
 

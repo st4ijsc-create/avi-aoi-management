@@ -6,7 +6,7 @@ using Xunit;
 public class SimulatorFactoryTests
 {
     private static MachineDescriptor D(string machineType, DeviceClass deviceClass = DeviceClass.Automation) =>
-        new("MC-01", "SN", deviceClass, machineType, "step", DriverKind.Simulated, "RC1", null, 1.0);
+        new("MC-01", "SN", deviceClass, machineType, "step", DriverKinds.Simulated, "RC1", null, 1.0);
 
     [Theory]
     [InlineData("SCREWDRIVE", typeof(ScrewdriveSim))]
@@ -39,7 +39,7 @@ public class SimulatorFactoryTests
     [Fact]
     public void Create_falls_back_by_DeviceClass_when_MachineType_is_null()
     {
-        var d = new MachineDescriptor("MC-01", "SN", DeviceClass.Iot, null!, "step", DriverKind.Simulated, "RC1", null, 1.0);
+        var d = new MachineDescriptor("MC-01", "SN", DeviceClass.Iot, null!, "step", DriverKinds.Simulated, "RC1", null, 1.0);
         var sim = SimulatorFactory.Create(d, seed: 1);
         Assert.IsType<IotSensorSim>(sim);
     }

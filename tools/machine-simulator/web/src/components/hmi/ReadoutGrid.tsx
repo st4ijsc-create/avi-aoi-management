@@ -5,6 +5,7 @@ import { useGloss } from "@/components/hmi/bilingual"
 import { avgCycleIntervalMs, cycleRatePerMin, observedSpanLabel, parseKeyMetric } from "@/components/hmi/derive"
 import { useT } from "@/i18n"
 import type { MachineDetail as MachineDetailDto } from "@/lib/api"
+import { driverKindLabel } from "@/lib/driverKind"
 import { cn, formatMetric } from "@/lib/utils"
 
 const STATUS_KEY: Record<string, string> = {
@@ -143,7 +144,7 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
       { key: "status", value: t(statusKey), labelKey: "hmi.readout.status", tone: statusTone, valueType: "text" },
       {
         key: "driver",
-        value: t(`driverKind.${machine.driverKind}`),
+        value: driverKindLabel(t, machine.driverKind),
         labelKey: "hmi.readout.driver",
         tone: "neutral",
         valueType: "text",
@@ -266,7 +267,7 @@ export function ReadoutGrid({ machine, productLabel, configDriftState, className
       { key: "status", value: t(statusKey), labelKey: "hmi.readout.status", tone: statusTone, valueType: "text" },
       {
         key: "driver",
-        value: t(`driverKind.${machine.driverKind}`),
+        value: driverKindLabel(t, machine.driverKind),
         labelKey: "hmi.readout.driver",
         tone: "neutral",
         valueType: "text",

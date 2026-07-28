@@ -7,6 +7,7 @@ import { Link, useLocation } from "wouter"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useEcosystemConnection, useFleet, useFleetIsRunning, type DeviceClass, type FleetTile } from "@/lib/api"
+import { driverKindLabel } from "@/lib/driverKind"
 import { fadeSlideUp } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
 import { EcosystemConnectPanel } from "@/components/EcosystemConnect"
@@ -250,7 +251,7 @@ function MachineRow({ machine, isRunning, onOpen }: MachineRowProps) {
     >
       <TableCell className="font-numeric font-medium text-text-strong">{machine.code}</TableCell>
       <TableCell className="text-text-body">{t(`deviceClass.${machine.deviceClass}`)}</TableCell>
-      <TableCell className="text-text-body">{t(`driverKind.${machine.driverKind}`)}</TableCell>
+      <TableCell className="text-text-body">{driverKindLabel(t, machine.driverKind)}</TableCell>
       <TableCell>
         <StatusBadge status={statusMeta.status} pulse={isActive && statusMeta.status === "ok"}>
           {statusMeta.label}

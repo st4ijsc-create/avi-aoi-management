@@ -20,10 +20,11 @@ using Microsoft.Extensions.Logging;
 namespace St4i.EngineApi.Fleet;
 
 /// <summary>GĐ3 sub-4 LC-2 — one pipeline slot's driver health, as read by <see cref="FleetHost.GetDriverHealth"/>:
-/// the slot's label, its driver's <see cref="DriverKind"/>, and its current <see cref="DriverHealthState"/>.
-/// A top-level (not nested) type — same "small DTO sitting alongside the class it's produced by" idiom as
+/// the slot's label, its driver's <see cref="IDeviceDriver.Kind"/> (GP-3: a free-form connector id, no
+/// longer a closed enum), and its current <see cref="DriverHealthState"/>. A top-level (not nested) type
+/// — same "small DTO sitting alongside the class it's produced by" idiom as
 /// <see cref="St4i.EngineApi.Safety.SafetySnapshot"/> for <see cref="FleetHost.GetSafetyStatus"/>.</summary>
-public sealed record DriverHealthSnapshot(string SlotLabel, DriverKind Kind, DriverHealthState Health);
+public sealed record DriverHealthSnapshot(string SlotLabel, string Kind, DriverHealthState Health);
 
 /// <summary>
 /// Task 3 — the headless composition root: builds + runs the simulated fleet with NO UI, reusing
@@ -585,15 +586,15 @@ public sealed class FleetHost
         // overriding it outright. Safe to bake in at construction (not a live Func<double>, unlike
         // _configStore itself): a multiplier change ALWAYS restarts this whole pipeline (multiplierChanged
         // check in ApplyScenario/Burst), so it can never go stale for the lifetime of these sim instances.
-        // G2-6/P2-3 — a DriverKind.Modbus machine is driven by the real Modbus pipeline slot (below), NOT
+        // G2-6/P2-3 — a DriverKinds.Modbus machine is driven by the real Modbus pipeline slot (below), NOT
         // simulated. Excluding it here is what prevents it being double-driven (a simulator AND the Modbus
         // slot) once it's a roster member. Non-Modbus rosters are unaffected (the Where is a no-op), so sim
         // seeds/indices are byte-identical to before.
-        // GĐ3 sub-3 OU-2 — same reasoning, now ALSO excluding DriverKind.OpcUa: once Program.cs seeds a
+        // GĐ3 sub-3 OU-2 — same reasoning, now ALSO excluding DriverKinds.OpcUa: once Program.cs seeds a
         // roster descriptor for a configured OPC-UA machine (below), it must be driven ONLY by the real
         // OPC-UA pipeline slot, never simulated too. A roster with no Modbus/OPC-UA machines is unaffected
         // (the Where stays a no-op), so sim seeds/indices are byte-identical to before this task.
-        var simFleet = effectiveFleet.Where(d => d.DriverKind != DriverKind.Modbus && d.DriverKind != DriverKind.OpcUa).ToList();
+        var simFleet = effectiveFleet.Where(d => d.DriverKind != DriverKinds.Modbus && d.DriverKind != DriverKinds.OpcUa).ToList();
         var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
 
@@ -1096,7 +1097,7 @@ public sealed class FleetHost
         {
             var demoDescriptor = new MachineDescriptor(
                 "HOTFOLDER-DEMO", "SN-HOTFOLDER", DeviceClass.AoiAvi, "AOI", "inspection",
-                DriverKind.HotFolderAoi, "RC-HOTFOLDER-DEMO", null, CycleSeconds: 1.0);
+                DriverKinds.HotFolderAoi, "RC-HOTFOLDER-DEMO", null, CycleSeconds: 1.0);
             var sim = new AoiInspectorSim(demoDescriptor, seed: 777, pointsPerBoard: 8, ngRate: 1.0);
             var reading = sim.NextCycle(cycle: 1);
 
@@ -1267,19 +1268,27 @@ public sealed class FleetHost
     // ─────────────────────────────────────────────────────────────────────
     // FLEET ROSTER — same resolution order as the WPF app's FleetService.LoadFleet/ResolveFleetPath.
     // ─────────────────────────────────────────────────────────────────────
-    private static IReadOnlyList<MachineDescriptor> LoadFleet()
+    /// <summary>GP-3 — instance method (not static, as before) purely so a per-entry
+    /// <see cref="FleetConfig.Load"/> warning can reach <see cref="_logger"/>; called exactly once, from
+    /// the constructor, after <see cref="_logger"/> is assigned. <see cref="FleetConfigException"/> (the
+    /// file genuinely doesn't parse — bad JSON, or an empty/zero-machine result) is still the only case
+    /// that falls back to <see cref="BuildDefaultFleet"/>; a malformed INDIVIDUAL entry no longer reaches
+    /// that exception at all (see <see cref="FleetConfig.Load"/>'s own remarks) — its valid siblings load
+    /// normally and only the bad entry is missing, with a logged warning naming it.</summary>
+    private IReadOnlyList<MachineDescriptor> LoadFleet()
     {
         var path = ResolveFleetPath();
         if (path is not null)
         {
             try
             {
-                var loaded = FleetConfig.Load(path);
+                var loaded = FleetConfig.Load(path, logWarning: msg => _logger?.LogWarning("{FleetConfigWarning}", msg));
                 if (loaded.Count > 0) return loaded;
             }
-            catch (FleetConfigException)
+            catch (FleetConfigException ex)
             {
                 // Malformed fleet.json — fall through to the in-code default rather than fail startup.
+                _logger?.LogWarning(ex, "Malformed fleet.json at '{Path}' — falling back to the in-code default fleet", path);
             }
         }
 
@@ -1300,15 +1309,15 @@ public sealed class FleetHost
 
     private static IReadOnlyList<MachineDescriptor> BuildDefaultFleet() =>
     [
-        new("SCRW-01", "SN-SCRW01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC-SCRW-A", null, 0.6),
-        new("SCRW-02", "SN-SCRW02", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC-SCRW-A", null, 0.8),
-        new("DISP-01", "SN-DISP01", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC-DISP-A", null, 1.0),
-        new("WELD-01", "SN-WELD01", DeviceClass.Automation, "WELDER", "spot_weld", DriverKind.Simulated, "RC-WELD-A", null, 0.9),
-        new("ASSY-01", "SN-ASSY01", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKind.Simulated, "RC-ASSY-A", null, 0.7),
-        new("LEAK-01", "SN-LEAK01", DeviceClass.Automation, "LEAK_TEST", "leak_test", DriverKind.Simulated, "RC-LEAK-A", null, 1.2),
-        new("FCT-01", "SN-FCT01", DeviceClass.Automation, "FUNCTIONAL_TEST", "functional_test", DriverKind.Simulated, "RC-FCT-A", null, 1.1),
-        new("IOT-01", "SN-IOT01", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKind.Simulated, null, null, 0.4),
-        new("AOI-01", "SN-AOI01", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC-AOI-A", null, 1.8),
-        new("AOI-02", "SN-AOI02", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC-AOI-A", null, 2.0),
+        new("SCRW-01", "SN-SCRW01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC-SCRW-A", null, 0.6),
+        new("SCRW-02", "SN-SCRW02", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC-SCRW-A", null, 0.8),
+        new("DISP-01", "SN-DISP01", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC-DISP-A", null, 1.0),
+        new("WELD-01", "SN-WELD01", DeviceClass.Automation, "WELDER", "spot_weld", DriverKinds.Simulated, "RC-WELD-A", null, 0.9),
+        new("ASSY-01", "SN-ASSY01", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKinds.Simulated, "RC-ASSY-A", null, 0.7),
+        new("LEAK-01", "SN-LEAK01", DeviceClass.Automation, "LEAK_TEST", "leak_test", DriverKinds.Simulated, "RC-LEAK-A", null, 1.2),
+        new("FCT-01", "SN-FCT01", DeviceClass.Automation, "FUNCTIONAL_TEST", "functional_test", DriverKinds.Simulated, "RC-FCT-A", null, 1.1),
+        new("IOT-01", "SN-IOT01", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKinds.Simulated, null, null, 0.4),
+        new("AOI-01", "SN-AOI01", DeviceClass.AoiAvi, "AOI", "inspection", DriverKinds.Simulated, "RC-AOI-A", null, 1.8),
+        new("AOI-02", "SN-AOI02", DeviceClass.AoiAvi, "AOI", "inspection", DriverKinds.Simulated, "RC-AOI-A", null, 2.0),
     ];
 }

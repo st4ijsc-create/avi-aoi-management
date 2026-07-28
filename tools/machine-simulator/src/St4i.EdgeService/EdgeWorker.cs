@@ -231,7 +231,15 @@ public sealed class EdgeWorker : BackgroundService
         return !(trimmed == "0" || string.Equals(trimmed, "false", StringComparison.OrdinalIgnoreCase));
     }
 
-    private IReadOnlyList<MachineDescriptor> LoadFleet()
+    /// <summary>GP-3 — <c>internal</c> (not <c>private</c>), same "deliberately testable seam" convention
+    /// as <see cref="BuildTransport"/>/<see cref="ResolveGate"/> above: reachable from
+    /// <c>St4i.EdgeService.Tests</c> via this assembly's <c>AssemblyInfo.cs</c>
+    /// <c>InternalsVisibleTo("St4i.EdgeService.Tests")</c>, so the fix below (a missing
+    /// <c>catch (FleetConfigException)</c> — every other <see cref="FleetConfig.Load"/> caller in this
+    /// codebase already had one; this was the one loader that could still take the whole process down
+    /// over a hand-editing mistake) has a direct regression test instead of only being
+    /// integration-covered by a full process run.</summary>
+    internal IReadOnlyList<MachineDescriptor> LoadFleet()
     {
         var path = _options.FleetPath;
         if (string.IsNullOrWhiteSpace(path))
@@ -246,7 +254,24 @@ public sealed class EdgeWorker : BackgroundService
         }
 
         _logger.LogInformation("Loading fleet from {Path}", path);
-        return FleetConfig.Load(path);
+        try
+        {
+            // GP-3 fix: this catch did not exist before — every other FleetConfig.Load caller
+            // (St4i.EngineApi's FleetHost, St4iMachineSimulator's FleetService) already treats a
+            // genuinely unparseable fleet.json as "fall back to the in-code default", never an unhandled
+            // startup crash. Without it, a malformed --fleet file would throw FleetConfigException
+            // straight out of this BackgroundService's ExecuteAsync, which by default stops the whole
+            // Generic Host — the one loader of the three that could actually take the process down over
+            // a hand-editing mistake. logWarning (per-entry tolerance — a malformed INDIVIDUAL machine
+            // entry, as opposed to the whole file) is wired the same way FleetHost wires it to its own
+            // ILogger.
+            return FleetConfig.Load(path, logWarning: msg => _logger.LogWarning("{FleetConfigWarning}", msg));
+        }
+        catch (FleetConfigException ex)
+        {
+            _logger.LogWarning(ex, "Malformed fleet.json at '{Path}' — falling back to the in-code default fleet", path);
+            return BuildDefaultFleet();
+        }
     }
 
     /// <summary>The headless default roster — one machine per <see cref="IMachineSimulator"/> type
@@ -254,13 +279,13 @@ public sealed class EdgeWorker : BackgroundService
     /// <c>--smoke</c> run yet still visibly staggered when run unattended with no args.</summary>
     internal static IReadOnlyList<MachineDescriptor> BuildDefaultFleet() =>
     [
-        new("SCRW-01", "SN-SCRW01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC-SCRW-A", null, 0.3),
-        new("DISP-01", "SN-DISP01", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC-DISP-A", null, 0.35),
-        new("WELD-01", "SN-WELD01", DeviceClass.Automation, "WELDER", "spot_weld", DriverKind.Simulated, "RC-WELD-A", null, 0.32),
-        new("ASSY-01", "SN-ASSY01", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKind.Simulated, "RC-ASSY-A", null, 0.28),
-        new("LEAK-01", "SN-LEAK01", DeviceClass.Automation, "LEAK_TEST", "leak_test", DriverKind.Simulated, "RC-LEAK-A", null, 0.4),
-        new("FCT-01", "SN-FCT01", DeviceClass.Automation, "FUNCTIONAL_TEST", "functional_test", DriverKind.Simulated, "RC-FCT-A", null, 0.38),
-        new("IOT-01", "SN-IOT01", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKind.Simulated, null, null, 0.2),
-        new("AOI-01", "SN-AOI01", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC-AOI-A", null, 0.5),
+        new("SCRW-01", "SN-SCRW01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC-SCRW-A", null, 0.3),
+        new("DISP-01", "SN-DISP01", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC-DISP-A", null, 0.35),
+        new("WELD-01", "SN-WELD01", DeviceClass.Automation, "WELDER", "spot_weld", DriverKinds.Simulated, "RC-WELD-A", null, 0.32),
+        new("ASSY-01", "SN-ASSY01", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKinds.Simulated, "RC-ASSY-A", null, 0.28),
+        new("LEAK-01", "SN-LEAK01", DeviceClass.Automation, "LEAK_TEST", "leak_test", DriverKinds.Simulated, "RC-LEAK-A", null, 0.4),
+        new("FCT-01", "SN-FCT01", DeviceClass.Automation, "FUNCTIONAL_TEST", "functional_test", DriverKinds.Simulated, "RC-FCT-A", null, 0.38),
+        new("IOT-01", "SN-IOT01", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKinds.Simulated, null, null, 0.2),
+        new("AOI-01", "SN-AOI01", DeviceClass.AoiAvi, "AOI", "inspection", DriverKinds.Simulated, "RC-AOI-A", null, 0.5),
     ];
 }

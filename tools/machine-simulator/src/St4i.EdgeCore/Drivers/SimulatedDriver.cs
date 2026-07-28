@@ -42,7 +42,7 @@ public sealed class SimulatedDriver : IDeviceDriver
 
     public string Id { get; }
 
-    public DriverKind Kind => DriverKind.Simulated;
+    public string Kind => DriverKinds.Simulated;
 
     /// <summary>Always Connected — a pure in-process simulator has no external link to lose.</summary>
     public DriverHealthState Health => DriverHealthState.Connected;

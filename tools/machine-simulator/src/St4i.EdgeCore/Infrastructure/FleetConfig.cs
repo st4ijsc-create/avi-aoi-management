@@ -7,7 +7,10 @@ namespace St4i.EdgeCore.Infrastructure;
 
 /// <summary>Thrown by <see cref="FleetConfig.Load"/> when <c>fleet.json</c> exists but isn't valid
 /// JSON, or doesn't match the expected shape — always carries the offending path so the caller (WPF
-/// startup / edge service) can surface a useful message instead of a bare parser exception.</summary>
+/// startup / edge service) can surface a useful message instead of a bare parser exception. Since GP-3
+/// this is reserved for genuinely unparseable input (bad JSON syntax, or the root isn't an array) —
+/// one malformed MACHINE ENTRY inside an otherwise-valid array no longer reaches this exception at all,
+/// see <see cref="FleetConfig.Load"/>'s own remarks.</summary>
 public sealed class FleetConfigException : Exception
 {
     public string Path { get; }
@@ -25,12 +28,17 @@ public sealed class FleetConfigException : Exception
 /// </summary>
 public static class FleetConfig
 {
-    // Canonical fleet.json convention: enum VALUES (deviceClass/driverKind) are matched
-    // case-insensitively against the C# enum member names — e.g. deviceClass: automation|iot|aoiAvi
-    // (also accepts Automation/AoiAvi/AOIAVI/...); driverKind: simulated|hotFolderAoi|mqtt (also
-    // accepts Simulated/HotFolderAoi/MQTT/...). Deliberately NOT pinned to one naming policy (no
-    // JsonNamingPolicy passed to JsonStringEnumConverter) so a later task authoring fleet.json +
-    // mapping presets can pick whichever casing style it likes without silently misparsing — see
+    // Canonical fleet.json convention: deviceClass is matched case-insensitively against the C# enum
+    // member names (via JsonStringEnumConverter, still an enum) — e.g. deviceClass:
+    // automation|iot|aoiAvi (also accepts Automation/AoiAvi/AOIAVI/...). driverKind (GP-3: now a plain
+    // string, not an enum — JsonStringEnumConverter has no say in it) accepts any casing too, but for a
+    // DIFFERENT reason: Load normalizes each parsed entry's DriverKind through
+    // St4i.Connector.Abstractions.Models.DriverKinds.Normalize below, which case-insensitively folds
+    // anything matching one of the five built-in ids to its canonical spelling (e.g. "simulated" ->
+    // "Simulated") and leaves anything else (a third-party id) untouched, byte-for-byte. Deliberately
+    // NOT pinned to one naming policy for deviceClass (no JsonNamingPolicy passed to
+    // JsonStringEnumConverter) so a later task authoring fleet.json + mapping presets can pick whichever
+    // casing style it likes without silently misparsing — see
     // FleetConfigTests.Load_parses_mixed_enum_casing_case_insensitively, which locks this in against
     // three different casing styles in one file.
     private static readonly JsonSerializerOptions Options = new()
@@ -42,10 +50,27 @@ public static class FleetConfig
     /// <summary>Parses <paramref name="path"/> into a list of <see cref="MachineDescriptor"/>.
     /// Returns an empty list if the file doesn't exist (a fleet with no config file is simply an
     /// empty fleet, not an error). Throws <see cref="FleetConfigException"/> — never a raw framework
-    /// exception — if the path exists but isn't a loadable/parseable fleet file (including a path that
-    /// is actually a directory — see the guard below); see the catch-all further down for why this
-    /// matters beyond just the JSON-parsing cases.</summary>
-    public static IReadOnlyList<MachineDescriptor> Load(string path)
+    /// exception — only when the path exists but the FILE ITSELF isn't loadable (a directory, an I/O
+    /// failure, or JSON that doesn't even parse / whose root isn't an array — see the guards below).
+    ///
+    /// GP-3 fix (the "one operator typo destroys the whole fleet" bug): a per-ENTRY parse failure (e.g.
+    /// a machine object whose <c>deviceClass</c> doesn't match any enum member) no longer fails the
+    /// whole file. Each array element is parsed independently; an entry that doesn't fit
+    /// <see cref="MachineDescriptor"/>'s shape is skipped — reported to the caller via
+    /// <paramref name="logWarning"/>, naming the entry by its <c>code</c> field (or its 1-based position
+    /// if <c>code</c> itself isn't readable) — while every other, valid entry in the same file still
+    /// loads. <c>FleetHost</c>/<c>FleetService</c>/<c>EdgeWorker</c> all called this method with the SAME
+    /// "malformed file -> fall back to the in-code default fleet" contract before this fix; that
+    /// whole-file fallback is now reserved for the file genuinely not parsing at all (caught here as
+    /// <see cref="FleetConfigException"/>) — a single bad entry among otherwise-valid ones no longer
+    /// throws, so those callers' fallback is simply never reached for that case: the valid entries load,
+    /// the operator's real roster survives, and only the one malformed entry is missing.
+    /// </summary>
+    /// <param name="path">The fleet.json path.</param>
+    /// <param name="logWarning">Invoked once per malformed entry skipped, with a human-readable message
+    /// naming the entry and the reason it was skipped. Optional — a <see langword="null"/> callback just
+    /// means the warning isn't surfaced anywhere (the entry is still skipped either way).</param>
+    public static IReadOnlyList<MachineDescriptor> Load(string path, Action<string>? logWarning = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
@@ -71,8 +96,44 @@ public static class FleetConfig
         try
         {
             var json = File.ReadAllText(path);
-            var machines = JsonSerializer.Deserialize<List<MachineDescriptor>>(json, Options);
-            return (IReadOnlyList<MachineDescriptor>?)machines ?? Array.Empty<MachineDescriptor>();
+
+            using var document = JsonDocument.Parse(json);
+
+            // A literal JSON `null` root used to deserialize to a null List<MachineDescriptor>, coalesced
+            // to an empty fleet by the old single-shot JsonSerializer.Deserialize call below — preserved
+            // here rather than treated as a shape mismatch, so this edge case is byte-for-byte unchanged.
+            if (document.RootElement.ValueKind == JsonValueKind.Null) return Array.Empty<MachineDescriptor>();
+
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                throw new FleetConfigException(path, "Fleet config JSON does not match the expected machine shape");
+            }
+
+            var machines = new List<MachineDescriptor>();
+            var index = 0;
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                index++;
+                try
+                {
+                    var descriptor = element.Deserialize<MachineDescriptor>(Options);
+                    if (descriptor is null)
+                    {
+                        logWarning?.Invoke($"fleet.json entry #{index} is JSON null — skipped (path: {path})");
+                        continue;
+                    }
+
+                    // GP-3 — the one place an externally-authored driverKind is normalized against the
+                    // five built-ins (see DriverKinds.Normalize's own doc comment for the casing rule).
+                    machines.Add(descriptor with { DriverKind = DriverKinds.Normalize(descriptor.DriverKind) });
+                }
+                catch (Exception e) when (e is JsonException or NotSupportedException or FormatException)
+                {
+                    logWarning?.Invoke($"fleet.json entry #{index}{DescribeCode(element)} is malformed and was skipped: {e.Message} (path: {path})");
+                }
+            }
+
+            return machines;
         }
         catch (IOException e)
         {
@@ -82,12 +143,6 @@ public static class FleetConfig
         {
             throw new FleetConfigException(path, "Malformed fleet config JSON", e);
         }
-        catch (NotSupportedException e)
-        {
-            // Thrown by System.Text.Json when the JSON shape doesn't match MachineDescriptor's
-            // constructor (e.g. wrong types) — same "clear, path-carrying" contract as a parse error.
-            throw new FleetConfigException(path, "Fleet config JSON does not match the expected machine shape", e);
-        }
         catch (Exception e) when (e is not FleetConfigException)
         {
             // Fix-pass (post-Task-22 review): a bare catch-all, deliberately LAST — every failure mode
@@ -95,9 +150,25 @@ public static class FleetConfig
             // File.Exists but still throws UnauthorizedAccessException from File.ReadAllText; a
             // PathTooLongException; any other framework exception this method's author didn't foresee)
             // must still come out as a FleetConfigException, never a raw framework exception, because
-            // FleetService.LoadFleet's whole "a bad fleet.json must never take down the kiosk" contract
-            // is a `catch (FleetConfigException)` around this call.
+            // every caller's whole "a bad fleet.json must never take down the kiosk/service" contract is
+            // a `catch (FleetConfigException)` around this call.
             throw new FleetConfigException(path, $"Failed to load fleet config: {e.Message}", e);
         }
+    }
+
+    /// <summary>Best-effort label for a per-entry warning: the entry's own <c>code</c> field if it's
+    /// readable (the common case — most malformed entries still have an intact <c>code</c>, since the
+    /// field that actually failed to parse is usually something else, e.g. <c>deviceClass</c>), else
+    /// empty (the caller's message already names the entry by its 1-based position).</summary>
+    private static string DescribeCode(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty("code", out var codeProp) &&
+            codeProp.ValueKind == JsonValueKind.String)
+        {
+            return $" ('{codeProp.GetString()}')";
+        }
+
+        return string.Empty;
     }
 }

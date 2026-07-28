@@ -18,7 +18,7 @@ public class HistorianRecordMappingTests
     {
         var descriptor = new MachineDescriptor(
             "SCRW-01", "SN-SCRW-01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
-            DriverKind.Simulated, "RC1", null, 1.0);
+            DriverKinds.Simulated, "RC1", null, 1.0);
 
         var timestamp = new DateTimeOffset(2026, 7, 26, 10, 30, 0, TimeSpan.Zero);
         var reading = new DeviceReading
@@ -69,7 +69,7 @@ public class HistorianRecordMappingTests
     {
         var descriptor = new MachineDescriptor(
             "IOT-01", "SN-IOT-01", DeviceClass.Iot, "IOT_SENSOR", null,
-            DriverKind.Simulated, null, null, 1.0);
+            DriverKinds.Simulated, null, null, 1.0);
 
         var reading = new DeviceReading
         {
@@ -108,7 +108,7 @@ public class HistorianRecordMappingTests
     {
         var descriptor = new MachineDescriptor(
             "OPCUA-01", "SN-OPCUA-01", DeviceClass.Automation, "OPC_UA", null,
-            DriverKind.OpcUa, null, null, 1.0);
+            DriverKinds.OpcUa, null, null, 1.0);
 
         var reading = new DeviceReading
         {
@@ -142,7 +142,7 @@ public class HistorianRecordMappingTests
     {
         var descriptor = new MachineDescriptor(
             "AOI-01", "SN-AOI-01", DeviceClass.AoiAvi, "AOI", "inspection",
-            DriverKind.Simulated, "RC1", null, 1.0);
+            DriverKinds.Simulated, "RC1", null, 1.0);
 
         var measurements = new List<MeasurementResult>
         {

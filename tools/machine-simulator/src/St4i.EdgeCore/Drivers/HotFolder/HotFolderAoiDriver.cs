@@ -61,7 +61,7 @@ public sealed class HotFolderAoiDriver : IDeviceDriver
 
     public string Id { get; }
 
-    public DriverKind Kind => DriverKind.HotFolderAoi;
+    public string Kind => DriverKinds.HotFolderAoi;
 
     public DriverHealthState Health { get; private set; }
 

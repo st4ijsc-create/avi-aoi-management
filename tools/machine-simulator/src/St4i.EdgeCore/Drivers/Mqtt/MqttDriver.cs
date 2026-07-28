@@ -61,7 +61,7 @@ public sealed class MqttDriver : IDeviceDriver
 
     public string Id { get; }
 
-    public DriverKind Kind => DriverKind.Mqtt;
+    public string Kind => DriverKinds.Mqtt;
 
     public DriverHealthState Health { get; private set; }
 

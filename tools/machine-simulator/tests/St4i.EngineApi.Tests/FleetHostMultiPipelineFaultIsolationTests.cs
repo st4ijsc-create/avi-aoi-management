@@ -47,7 +47,7 @@ public sealed class FleetHostMultiPipelineFaultIsolationTests
 
     private static MachineDescriptor NewFastMachine(string code) => new(
         code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
-        DriverKind.Simulated, "RC-TEST-A", null, CycleSeconds: 0.1);
+        DriverKinds.Simulated, "RC-TEST-A", null, CycleSeconds: 0.1);
 
     private static async Task WaitUntilAsync(Func<bool> predicate, string because)
     {
@@ -177,7 +177,7 @@ public sealed class FleetHostMultiPipelineFaultIsolationTests
 
         public string Id => "healthy-counting-test-driver";
 
-        public DriverKind Kind => DriverKind.Simulated;
+        public string Kind => DriverKinds.Simulated;
 
         public DriverHealthState Health => DriverHealthState.Connected;
 
@@ -217,7 +217,7 @@ public sealed class FleetHostMultiPipelineFaultIsolationTests
 
         public string Id => "faulting-test-driver";
 
-        public DriverKind Kind => DriverKind.Simulated;
+        public string Kind => DriverKinds.Simulated;
 
         public DriverHealthState Health => DriverHealthState.Connected;
 
@@ -266,7 +266,7 @@ public sealed class FleetHostMultiPipelineFaultIsolationTests
 
         public string Id => _inner.Id;
 
-        public DriverKind Kind => _inner.Kind;
+        public string Kind => _inner.Kind;
 
         public DriverHealthState Health => _inner.Health;
 

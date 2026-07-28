@@ -17,13 +17,13 @@ namespace St4i.EngineApi.Tests;
 public sealed class ConfigSyncEngineTests
 {
     private static readonly MachineDescriptor AoiMachine = new(
-        "AOI-01", "SN-AOI01", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC-AOI-A", null, 1.8);
+        "AOI-01", "SN-AOI01", DeviceClass.AoiAvi, "AOI", "inspection", DriverKinds.Simulated, "RC-AOI-A", null, 1.8);
 
     private static readonly MachineDescriptor ScrewMachine = new(
-        "SCRW-01", "SN-SCRW01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC-SCRW-A", null, 0.8);
+        "SCRW-01", "SN-SCRW01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC-SCRW-A", null, 0.8);
 
     private static readonly MachineDescriptor IotMachine = new(
-        "IOT-01", "SN-IOT01", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKind.Simulated, null, null, 0.4);
+        "IOT-01", "SN-IOT01", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKinds.Simulated, null, null, 0.4);
 
     private static string TempDir() => Directory.CreateTempSubdirectory("st4i-config-sync-tests-").FullName;
 

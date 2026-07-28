@@ -150,7 +150,7 @@ public sealed class FleetHostModbusSlotTests
 
         public string Id => "fake-modbus-test-driver";
 
-        public DriverKind Kind => DriverKind.Modbus;
+        public string Kind => DriverKinds.Modbus;
 
         public DriverHealthState Health => DriverHealthState.Connected;
 
@@ -198,7 +198,7 @@ public sealed class FleetHostModbusSlotTests
 
         public string Id => "fake-faulty-modbus-test-driver";
 
-        public DriverKind Kind => DriverKind.Modbus;
+        public string Kind => DriverKinds.Modbus;
 
         public DriverHealthState Health => DriverHealthState.Degraded;
 

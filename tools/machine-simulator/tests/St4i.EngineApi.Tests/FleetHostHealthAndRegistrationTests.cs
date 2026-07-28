@@ -47,7 +47,7 @@ public sealed class FleetHostHealthAndRegistrationTests
     /// own machines cycle as slow as 0.8-2.0s, which would make every poll below needlessly slow.</summary>
     private static MachineDescriptor NewFastMachine(string code) => new(
         code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
-        DriverKind.Simulated, "RC-TEST-A", null, CycleSeconds: 0.1);
+        DriverKinds.Simulated, "RC-TEST-A", null, CycleSeconds: 0.1);
 
     private static async Task WaitUntilAsync(Func<bool> predicate, string because)
     {
@@ -319,7 +319,7 @@ public sealed class FleetHostHealthAndRegistrationTests
 
         public string Id => _inner.Id;
 
-        public DriverKind Kind => _inner.Kind;
+        public string Kind => _inner.Kind;
 
         public DriverHealthState Health => _inner.Health;
 

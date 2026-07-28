@@ -16,7 +16,7 @@ namespace St4i.EngineApi.Tests;
 /// configured OPC-UA (OU-1) machine becomes a first-class, UI-visible roster member instead of an
 /// invisible telemetry stream, mirroring <see cref="FleetHostModbusRosterTests"/>'s P2-3 contract
 /// exactly: (1) <see cref="FleetHost.StartLocked"/> must NOT build a simulator for a
-/// <see cref="DriverKind.OpcUa"/> roster entry (else it's driven TWICE — once by a simulator, once by
+/// <see cref="DriverKinds.OpcUa"/> roster entry (else it's driven TWICE — once by a simulator, once by
 /// the real OPC-UA pipeline slot) — proven here by registering an OPC-UA descriptor with NO
 /// <see cref="OpcUaDriverFactory"/> wired and confirming it stays idle/0-cycles forever, never picked up
 /// by <c>SimulatorFactory</c>'s <c>DeviceClass.Automation</c> fallback; (2) once a real (here: fake)
@@ -53,7 +53,7 @@ public sealed class FleetHostOpcUaRosterTests
     /// <summary>Mirrors the shape Program.cs's own seed descriptor construction builds (see the brief /
     /// Program.cs's <c>opcUaSeedDescriptor</c>) — <c>MachineType: "OPC_UA"</c>, <c>DeviceClass.Automation</c>,
     /// no StepType/RecipeCode/MappingProfile. CycleSeconds is irrelevant to the exclusion test (a
-    /// DriverKind.OpcUa descriptor is never handed to SimulatorFactory in the first place once the fix is
+    /// DriverKinds.OpcUa descriptor is never handed to SimulatorFactory in the first place once the fix is
     /// applied) but must still be a sane positive value, matching <c>Math.Max(0.1, pollMs/1000.0)</c>.</summary>
     private static MachineDescriptor NewOpcUaDescriptor(string code = OpcUaCode) => new(
         Code: code,
@@ -61,7 +61,7 @@ public sealed class FleetHostOpcUaRosterTests
         DeviceClass: DeviceClass.Automation,
         MachineType: "OPC_UA",
         StepType: null,
-        DriverKind: DriverKind.OpcUa,
+        DriverKind: DriverKinds.OpcUa,
         RecipeCode: null,
         MappingProfile: null,
         CycleSeconds: 1.0);
@@ -99,7 +99,7 @@ public sealed class FleetHostOpcUaRosterTests
             var opcUaTile = Assert.Single(snapshot.Machines, m => m.Code == OpcUaCode);
             Assert.Equal(0, opcUaTile.Cycles);
             Assert.Equal("Idle", opcUaTile.StatusText);
-            Assert.Equal(DriverKind.OpcUa, opcUaTile.DriverKind);
+            Assert.Equal(DriverKinds.OpcUa, opcUaTile.DriverKind);
 
             // Double-check after a further short wait — not a one-off race where it just hasn't cycled
             // YET, but a durable "never driven" state for as long as no opc-ua factory is wired.
@@ -169,7 +169,7 @@ public sealed class FleetHostOpcUaRosterTests
         Assert.True(added);
 
         await WaitUntilAsync(() => registry.Upserted.ContainsKey(OpcUaCode), "the OPC-UA descriptor to be upserted into the asset registry");
-        Assert.Equal(DriverKind.OpcUa, registry.Upserted[OpcUaCode].DriverKind);
+        Assert.Equal(DriverKinds.OpcUa, registry.Upserted[OpcUaCode].DriverKind);
     }
 
     /// <summary>Test double for <see cref="OpcUaDriverFactory"/> — see that class's own "Testability" doc
@@ -199,7 +199,7 @@ public sealed class FleetHostOpcUaRosterTests
 
         public string Id => "fake-roster-opcua-test-driver";
 
-        public DriverKind Kind => DriverKind.OpcUa;
+        public string Kind => DriverKinds.OpcUa;
 
         public DriverHealthState Health => DriverHealthState.Connected;
 

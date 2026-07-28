@@ -68,7 +68,7 @@ public sealed class OpcUaDriver : IDeviceDriver
 
     public string Id { get; }
 
-    public DriverKind Kind => DriverKind.OpcUa;
+    public string Kind => DriverKinds.OpcUa;
 
     public DriverHealthState Health { get; private set; }
 

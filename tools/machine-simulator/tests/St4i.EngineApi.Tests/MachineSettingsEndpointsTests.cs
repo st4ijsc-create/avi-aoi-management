@@ -95,13 +95,13 @@ public sealed class MachineSettingsEndpointsTests
     }
 
     private static readonly MachineDescriptor AoiMachine = new(
-        "TEST-AOI-XYZ", "SN-TEST-AOI-XYZ", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC-AOI-A", "aoi", 1.8);
+        "TEST-AOI-XYZ", "SN-TEST-AOI-XYZ", DeviceClass.AoiAvi, "AOI", "inspection", DriverKinds.Simulated, "RC-AOI-A", "aoi", 1.8);
 
     private static readonly MachineDescriptor IotMachine = new(
-        "TEST-IOT-XYZ", "SN-TEST-IOT-XYZ", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKind.Simulated, null, "iot-sensor", 0.8);
+        "TEST-IOT-XYZ", "SN-TEST-IOT-XYZ", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKinds.Simulated, null, "iot-sensor", 0.8);
 
     private static readonly MachineDescriptor UnsupportedMachine = new(
-        "TEST-ASSY-XYZ", "SN-TEST-ASSY-XYZ", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKind.Simulated, "RC-ASSY-A", null, 0.9);
+        "TEST-ASSY-XYZ", "SN-TEST-ASSY-XYZ", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKinds.Simulated, "RC-ASSY-A", null, 0.9);
 
     private static FleetHost NewFleetHostWithRegisteredMachines(params MachineDescriptor[] descriptors)
     {
@@ -421,7 +421,7 @@ public sealed class MachineSettingsEndpointsTests
         // (docs/plans/2026-07-21-machine-config.md Task 1's "bám đúng tên trường server" — Demo's seed
         // recipe was itself built to match). Task 7 threads it through TryFetchServerBaselineAsync.
         var screwMachine = new MachineDescriptor(
-            "TEST-SCRW-XYZ", "SN-TEST-SCRW-XYZ", DeviceClass.Automation, "SCREWDRIVE", "M4", DriverKind.Simulated, "RC-SCRW-A", "screwdrive", 0.85);
+            "TEST-SCRW-XYZ", "SN-TEST-SCRW-XYZ", DeviceClass.Automation, "SCREWDRIVE", "M4", DriverKinds.Simulated, "RC-SCRW-A", "screwdrive", 0.85);
         var fleetHost = NewFleetHostWithRegisteredMachines(screwMachine);
         var store = NewStore();
 

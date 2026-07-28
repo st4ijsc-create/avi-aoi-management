@@ -63,7 +63,7 @@ public sealed class MachineConfigDrivesFleetTests
 
         var registered = host.RegisterMachine(new MachineDescriptor(
             code, "SN-LIVE", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
-            DriverKind.Simulated, "RC-LIVE", null, CycleSeconds: 1.0));
+            DriverKinds.Simulated, "RC-LIVE", null, CycleSeconds: 1.0));
         Assert.True(registered);
 
         host.Start();
@@ -122,7 +122,7 @@ public sealed class MachineConfigDrivesFleetTests
 
         var registered = host.RegisterMachine(new MachineDescriptor(
             code, "SN-IOT-SCEN", DeviceClass.Iot, "IOT_SENSOR", "telemetry",
-            DriverKind.Simulated, null, null, CycleSeconds: 5.0)); // deliberately SLOW un-configured/un-scaled descriptor
+            DriverKinds.Simulated, null, null, CycleSeconds: 5.0)); // deliberately SLOW un-configured/un-scaled descriptor
         Assert.True(registered);
 
         // Config override: sampleRateHz=2.0Hz -> unscaled cadence = min(1/2.0, 60) = 0.5s.

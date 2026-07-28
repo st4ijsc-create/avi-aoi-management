@@ -17,7 +17,7 @@ public sealed class MappingProfileResolverTests
     private static string NewTempMappingDir() => Directory.CreateTempSubdirectory("st4i-mapping-resolver-tests-").FullName;
 
     private static MachineDescriptor NewDescriptor(string code, DeviceClass deviceClass, string? mappingProfile) =>
-        new(code, $"SN-{code}", deviceClass, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC-1", mappingProfile, CycleSeconds: 1.0);
+        new(code, $"SN-{code}", deviceClass, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC-1", mappingProfile, CycleSeconds: 1.0);
 
     [Fact]
     public void Named_profile_with_real_file_loads_that_files_unitMap_and_defaultStepType_not_the_ForClass_default()

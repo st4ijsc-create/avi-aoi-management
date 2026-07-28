@@ -691,7 +691,7 @@ public partial class App : Application
                 DeviceClass: DeviceClass.Automation,
                 MachineType: "SCREWDRIVE",
                 StepType: "screw_tightening",
-                DriverKind: DriverKind.Simulated,
+                DriverKind: DriverKinds.Simulated,
                 RecipeCode: "RC-SIMVERIFY",
                 MappingProfile: null,
                 CycleSeconds: 1.0);
@@ -739,7 +739,7 @@ public partial class App : Application
                 DeviceClass: DeviceClass.Iot,
                 MachineType: "IOT_SENSOR",
                 StepType: null,
-                DriverKind: DriverKind.Simulated,
+                DriverKind: DriverKinds.Simulated,
                 RecipeCode: null,
                 MappingProfile: null,
                 CycleSeconds: 1.0);
@@ -782,7 +782,7 @@ public partial class App : Application
                 DeviceClass: DeviceClass.AoiAvi,
                 MachineType: "AOI",
                 StepType: "inspection",
-                DriverKind: DriverKind.Simulated,
+                DriverKind: DriverKinds.Simulated,
                 RecipeCode: null,
                 MappingProfile: null,
                 CycleSeconds: 1.0);
@@ -1125,9 +1125,9 @@ public partial class App : Application
         // "SCRW-01"-style roster, even though both share the same EventBus.
         MachineDescriptor[] descriptors =
         [
-            new("INSPECT-SCRW", "SN-ISCRW", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC-ISCRW", null, 0.12),
-            new("INSPECT-AOI", "SN-IAOI", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC-IAOI", null, 0.15),
-            new("INSPECT-IOT", "SN-IIOT", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKind.Simulated, null, null, 0.10),
+            new("INSPECT-SCRW", "SN-ISCRW", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC-ISCRW", null, 0.12),
+            new("INSPECT-AOI", "SN-IAOI", DeviceClass.AoiAvi, "AOI", "inspection", DriverKinds.Simulated, "RC-IAOI", null, 0.15),
+            new("INSPECT-IOT", "SN-IIOT", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKinds.Simulated, null, null, 0.10),
         ];
         var sims = descriptors.Select((d, i) => FleetService.BuildSimulator(d, seed: 5000 + i)).ToList();
         var driver = new SimulatedDriver(sims);

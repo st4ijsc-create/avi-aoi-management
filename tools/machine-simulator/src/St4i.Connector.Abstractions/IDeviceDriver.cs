@@ -13,7 +13,11 @@ public interface IDeviceDriver : IAsyncDisposable
     /// <summary>Stable identifier for this driver instance (for logging/UI, not a machine code).</summary>
     string Id { get; }
 
-    DriverKind Kind { get; }
+    /// <summary>The connector's own id — GP-3 opened this from a closed enum into a free-form string so
+    /// a third-party driver can report its own id without touching this assembly. See
+    /// <see cref="Models.DriverKinds"/> for the five built-in ids, the casing/normalization rule, and
+    /// the recommended (not enforced) third-party naming convention.</summary>
+    string Kind { get; }
 
     /// <summary>Current connectivity/health state — surfaced by the UI (dashboard driver badges).</summary>
     DriverHealthState Health { get; }

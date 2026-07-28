@@ -100,14 +100,14 @@ public sealed class MappingPerMachineFleetTests
         // without per-machine resolution this would stay "C" for every machine regardless of fleet.json.
         var mapped = host.RegisterMachine(new MachineDescriptor(
             "DISP-MAP-01", "SN-DISP-MAP-01", DeviceClass.Automation, "DISPENSING", "glue_dispense",
-            DriverKind.Simulated, "RC-DISP-MAP", MappingProfile: "dispensing", CycleSeconds: 0.05));
+            DriverKinds.Simulated, "RC-DISP-MAP", MappingProfile: "dispensing", CycleSeconds: 0.05));
         Assert.True(mapped);
 
         // Same machine type, NO mappingProfile named -> must fall back to
         // MappingProfile.ForClass(Automation), whose UnitMap is empty, so "temperature" stays "C".
         var unmapped = host.RegisterMachine(new MachineDescriptor(
             "DISP-NOMAP-01", "SN-DISP-NOMAP-01", DeviceClass.Automation, "DISPENSING", "glue_dispense",
-            DriverKind.Simulated, "RC-DISP-NOMAP", MappingProfile: null, CycleSeconds: 0.05));
+            DriverKinds.Simulated, "RC-DISP-NOMAP", MappingProfile: null, CycleSeconds: 0.05));
         Assert.True(unmapped);
 
         host.Start();
@@ -136,7 +136,7 @@ public sealed class MappingPerMachineFleetTests
 
         var added = host.RegisterMachine(new MachineDescriptor(
             "DISP-BADMAP-01", "SN-DISP-BADMAP-01", DeviceClass.Automation, "DISPENSING", "glue_dispense",
-            DriverKind.Simulated, "RC-DISP-BADMAP", MappingProfile: "this-file-does-not-exist", CycleSeconds: 0.05));
+            DriverKinds.Simulated, "RC-DISP-BADMAP", MappingProfile: "this-file-does-not-exist", CycleSeconds: 0.05));
         Assert.True(added);
 
         host.Start();

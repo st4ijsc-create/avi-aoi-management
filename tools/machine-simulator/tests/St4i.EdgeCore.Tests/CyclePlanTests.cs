@@ -18,13 +18,13 @@ public class CyclePlanTests
     private static string TempDir(string prefix) => Directory.CreateTempSubdirectory(prefix).FullName;
 
     private static MachineDescriptor ScrewDescriptor(string code) =>
-        new(code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC1", null, 1.0);
+        new(code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC1", null, 1.0);
 
     private static MachineDescriptor AoiDescriptor(string code) =>
-        new(code, $"SN-{code}", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC1", null, 1.0);
+        new(code, $"SN-{code}", DeviceClass.AoiAvi, "AOI", "inspection", DriverKinds.Simulated, "RC1", null, 1.0);
 
     private static MachineDescriptor IotDescriptor(string code) =>
-        new(code, $"SN-{code}", DeviceClass.Iot, "IOT_SENSOR", null, DriverKind.Simulated, null, null, 1.0);
+        new(code, $"SN-{code}", DeviceClass.Iot, "IOT_SENSOR", null, DriverKinds.Simulated, null, null, 1.0);
 
     private static ProductConfigStore NewProductStore() => new(TempDir("st4i-cycleplan-products-"));
 
@@ -99,7 +99,7 @@ public class CyclePlanTests
     [Fact]
     public void Simulators_this_task_does_not_wire_a_plan_for_report_null_Plan()
     {
-        var d = new MachineDescriptor("MC-01", "SN", DeviceClass.Automation, "TYPE", "step", DriverKind.Simulated, "RC1", null, 1.0);
+        var d = new MachineDescriptor("MC-01", "SN", DeviceClass.Automation, "TYPE", "step", DriverKinds.Simulated, "RC1", null, 1.0);
         Assert.Null(new DispensingSim(d, 11).NextCycle(1).Plan);
         Assert.Null(new WelderSim(d, 11).NextCycle(1).Plan);
         Assert.Null(new AssemblySim(d, 11).NextCycle(1).Plan);

@@ -330,7 +330,7 @@ public sealed class FleetService : IDisposable
             // defect flowing through, not a coin-flip clean pass.
             var demoDescriptor = new MachineDescriptor(
                 "HOTFOLDER-DEMO", "SN-HOTFOLDER", DeviceClass.AoiAvi, "AOI", "inspection",
-                DriverKind.HotFolderAoi, "RC-HOTFOLDER-DEMO", null, CycleSeconds: 1.0);
+                DriverKinds.HotFolderAoi, "RC-HOTFOLDER-DEMO", null, CycleSeconds: 1.0);
             var sim = new AoiInspectorSim(demoDescriptor, seed: 777, pointsPerBoard: 8, ngRate: 1.0);
             var reading = sim.NextCycle(cycle: 1);
 
@@ -529,13 +529,20 @@ public sealed class FleetService : IDisposable
         {
             try
             {
-                var loaded = FleetConfig.Load(path);
+                // GP-3 — this app has no ILogger/structured-logging infra wired into this static ctor
+                // path (unlike St4i.EngineApi's FleetHost/St4i.EdgeService's EdgeWorker); Debug.WriteLine
+                // is the zero-dependency channel every other diagnostic in this class already lacks, but
+                // it is at least visible via a debugger/DebugView, which is strictly better than the
+                // warning going nowhere at all. The entry is still skipped either way; this only affects
+                // whether the skip is observable.
+                var loaded = FleetConfig.Load(path, logWarning: msg => System.Diagnostics.Debug.WriteLine(msg));
                 if (loaded.Count > 0) return loaded;
             }
-            catch (FleetConfigException)
+            catch (FleetConfigException ex)
             {
                 // Malformed fleet.json — fall through to the in-code default below rather than take
                 // the whole kiosk down over a hand-editing mistake in a packaging file.
+                System.Diagnostics.Debug.WriteLine($"Malformed fleet.json at '{path}' — falling back to the in-code default fleet: {ex.Message}");
             }
         }
 
@@ -563,15 +570,15 @@ public sealed class FleetService : IDisposable
 
     private static IReadOnlyList<MachineDescriptor> BuildDefaultFleet() =>
     [
-        new("SCRW-01", "SN-SCRW01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC-SCRW-A", null, 0.6),
-        new("SCRW-02", "SN-SCRW02", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC-SCRW-A", null, 0.8),
-        new("DISP-01", "SN-DISP01", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC-DISP-A", null, 1.0),
-        new("WELD-01", "SN-WELD01", DeviceClass.Automation, "WELDER", "spot_weld", DriverKind.Simulated, "RC-WELD-A", null, 0.9),
-        new("ASSY-01", "SN-ASSY01", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKind.Simulated, "RC-ASSY-A", null, 0.7),
-        new("LEAK-01", "SN-LEAK01", DeviceClass.Automation, "LEAK_TEST", "leak_test", DriverKind.Simulated, "RC-LEAK-A", null, 1.2),
-        new("FCT-01", "SN-FCT01", DeviceClass.Automation, "FUNCTIONAL_TEST", "functional_test", DriverKind.Simulated, "RC-FCT-A", null, 1.1),
-        new("IOT-01", "SN-IOT01", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKind.Simulated, null, null, 0.4),
-        new("AOI-01", "SN-AOI01", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC-AOI-A", null, 1.8),
-        new("AOI-02", "SN-AOI02", DeviceClass.AoiAvi, "AOI", "inspection", DriverKind.Simulated, "RC-AOI-A", null, 2.0),
+        new("SCRW-01", "SN-SCRW01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC-SCRW-A", null, 0.6),
+        new("SCRW-02", "SN-SCRW02", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC-SCRW-A", null, 0.8),
+        new("DISP-01", "SN-DISP01", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC-DISP-A", null, 1.0),
+        new("WELD-01", "SN-WELD01", DeviceClass.Automation, "WELDER", "spot_weld", DriverKinds.Simulated, "RC-WELD-A", null, 0.9),
+        new("ASSY-01", "SN-ASSY01", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKinds.Simulated, "RC-ASSY-A", null, 0.7),
+        new("LEAK-01", "SN-LEAK01", DeviceClass.Automation, "LEAK_TEST", "leak_test", DriverKinds.Simulated, "RC-LEAK-A", null, 1.2),
+        new("FCT-01", "SN-FCT01", DeviceClass.Automation, "FUNCTIONAL_TEST", "functional_test", DriverKinds.Simulated, "RC-FCT-A", null, 1.1),
+        new("IOT-01", "SN-IOT01", DeviceClass.Iot, "IOT_SENSOR", "telemetry", DriverKinds.Simulated, null, null, 0.4),
+        new("AOI-01", "SN-AOI01", DeviceClass.AoiAvi, "AOI", "inspection", DriverKinds.Simulated, "RC-AOI-A", null, 1.8),
+        new("AOI-02", "SN-AOI02", DeviceClass.AoiAvi, "AOI", "inspection", DriverKinds.Simulated, "RC-AOI-A", null, 2.0),
     ];
 }

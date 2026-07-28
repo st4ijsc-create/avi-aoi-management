@@ -258,7 +258,7 @@ public sealed class OpcUaDriverLoopbackTests
             Assert.Equal("good", status.Quality);
 
             await WaitUntilAsync(() => driver.Health == DriverHealthState.Connected, "driver Health to reach Connected after a successful poll");
-            Assert.Equal(DriverKind.OpcUa, driver.Kind);
+            Assert.Equal(DriverKinds.OpcUa, driver.Kind);
         }
         finally
         {

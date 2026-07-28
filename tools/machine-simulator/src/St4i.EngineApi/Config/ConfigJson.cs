@@ -11,9 +11,11 @@ namespace St4i.EngineApi.Config;
 /// TYPE-level <c>[JsonConverter]</c>. <c>Program.cs</c>'s <c>ConfigureHttpJsonOptions</c> (which every
 /// OTHER endpoint's <c>Results.Ok(...)</c> implicitly uses) registers a plain <c>JsonStringEnumConverter()</c>
 /// GLOBALLY. For those other endpoints' own enums (<c>TransportMode</c>, <c>DeviceClass</c>,
-/// <c>DriverKind</c>, <c>Verdict</c>, ...) — none of which carry a type-level attribute of their own —
+/// <c>Verdict</c>, ...) — none of which carry a type-level attribute of their own —
 /// that's harmless and intentional (see <c>ModeEndpoints</c>' own doc comment: plain PascalCase member
-/// names on the wire, e.g. <c>{mode:"Live"}</c>).
+/// names on the wire, e.g. <c>{mode:"Live"}</c>). <c>DriverKind</c> (GP-3) is no longer one of these —
+/// it is a plain <see langword="string"/> now, so no converter (global or otherwise) touches it at all;
+/// it always serializes as whatever string value it already holds.
 ///
 /// But every <c>St4i.EdgeCore.Config</c> enum (<c>ProductLifecycleStatus</c>/<c>MeasurementType</c>/
 /// <c>ToleranceMode</c>/<c>PointShape</c>/<c>CoordinateMode</c>/<c>RecipeStatus</c>/

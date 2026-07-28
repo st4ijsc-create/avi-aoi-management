@@ -20,7 +20,7 @@ public sealed class MachineStateAckLabelTests
 {
     private static readonly MachineDescriptor Descriptor = new(
         "SCRW-01", "SN-SCRW01", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
-        DriverKind.Simulated, "RC-SCRW-A", null, CycleSeconds: 0.6);
+        DriverKinds.Simulated, "RC-SCRW-A", null, CycleSeconds: 0.6);
 
     private static DeviceReading Reading() => new()
     {

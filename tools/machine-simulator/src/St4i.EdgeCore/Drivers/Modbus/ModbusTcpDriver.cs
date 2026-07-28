@@ -63,7 +63,7 @@ public sealed class ModbusTcpDriver : IDeviceDriver
 
     public string Id { get; }
 
-    public DriverKind Kind => DriverKind.Modbus;
+    public string Kind => DriverKinds.Modbus;
 
     public DriverHealthState Health { get; private set; }
 

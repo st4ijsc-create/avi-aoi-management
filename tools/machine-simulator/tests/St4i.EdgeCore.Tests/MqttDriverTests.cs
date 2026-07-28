@@ -28,7 +28,7 @@ public class MqttDriverTests {
     Assert.NotNull(got);
     Assert.Equal(ReadingKind.Telemetry, got!.Kind);
     Assert.Equal("ESP-01", got.SerialNumber);
-    Assert.Equal(DriverKind.Mqtt, drv.Kind);
+    Assert.Equal(DriverKinds.Mqtt, drv.Kind);
     Assert.Equal(DriverHealthState.Connected, drv.Health);
   }
 

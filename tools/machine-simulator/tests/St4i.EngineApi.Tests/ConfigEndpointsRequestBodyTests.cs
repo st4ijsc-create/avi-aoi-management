@@ -486,7 +486,7 @@ public sealed class ConfigEndpointsRequestBodyTests
     // "AOI-01", etc.) — RegisterMachine below would silently return false (no-op) on a duplicate code,
     // so these tests bring their own uniquely-named machine instead of colliding with it.
     private static readonly MachineDescriptor ScrewMachine = new(
-        "TEST-SCRW-XYZ", "SN-TEST-SCRW-XYZ", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC-SCRW-A", null, 0.8);
+        "TEST-SCRW-XYZ", "SN-TEST-SCRW-XYZ", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC-SCRW-A", null, 0.8);
 
     [Fact]
     public async Task Pull_with_no_body_at_all_is_a_valid_optional_omission_not_an_error()

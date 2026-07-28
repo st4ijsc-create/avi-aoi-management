@@ -24,7 +24,7 @@ public sealed class UnsTopicBuilderTests
 
     private static readonly MachineDescriptor Device = new(
         "EQ-1", "SN-EQ1", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
-        DriverKind.Simulated, "RC-1", null, 1.0);
+        DriverKinds.Simulated, "RC-1", null, 1.0);
 
     [Fact]
     public void BuildSparkplugDataTopic_ProducesTheExactDdataTopicString()

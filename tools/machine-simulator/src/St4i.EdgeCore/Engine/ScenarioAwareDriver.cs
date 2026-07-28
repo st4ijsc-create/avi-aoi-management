@@ -34,7 +34,7 @@ public sealed class ScenarioAwareDriver : IDeviceDriver
 
     public string Id => _inner.Id;
 
-    public DriverKind Kind => _inner.Kind;
+    public string Kind => _inner.Kind;
 
     public DriverHealthState Health => _inner.Health;
 

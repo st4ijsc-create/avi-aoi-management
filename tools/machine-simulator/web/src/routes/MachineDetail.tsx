@@ -18,6 +18,7 @@ import { Link, useParams } from "wouter"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { EngineApiError, useMachine, type DeviceClass, type MachineDetail as MachineDetailDto } from "@/lib/api"
+import { driverKindLabel } from "@/lib/driverKind"
 import { fadeSlideUp } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
 import { buttonVariants } from "@/components/ui/button"
@@ -183,7 +184,7 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
               <StatusBadge status={statusMeta.status}>{statusMeta.label}</StatusBadge>
             </div>
             <p className="hmi-micro mt-1">
-              {t(`deviceClass.${machine.class}`)} · {t(`driverKind.${machine.driverKind}`)}
+              {t(`deviceClass.${machine.class}`)} · {driverKindLabel(t, machine.driverKind)}
             </p>
           </div>
         </div>
@@ -250,7 +251,7 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
                       {t("machineDetail.overview.driver")} <span className="hmi-micro">{gloss("machineDetail.overview.driver")}</span>
                     </p>
                     <p className="font-heading mt-1 text-xl leading-none font-semibold text-text-strong">
-                      {t(`driverKind.${machine.driverKind}`)}
+                      {driverKindLabel(t, machine.driverKind)}
                     </p>
                   </div>
                   <div className="bg-surface-card p-4">

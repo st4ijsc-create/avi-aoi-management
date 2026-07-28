@@ -15,7 +15,7 @@ public sealed record HealthDto(bool Ok, TransportMode Mode);
 public sealed record FleetTileDto(
     string Code,
     DeviceClass DeviceClass,
-    DriverKind DriverKind,
+    string DriverKind,
     string StatusText,
     double PassRate,
     long Cycles,
@@ -48,7 +48,7 @@ public sealed record FleetActionResultDto(bool Running, string Mode);
 public sealed record MachineDetailDto(
     string Code,
     DeviceClass Class,
-    DriverKind DriverKind,
+    string DriverKind,
     string StatusText,
     double PassRate,
     long Cycles,

@@ -65,8 +65,8 @@ public sealed class FleetHostAlarmAccessorsTests
     public void GetDriverHealth_OneSnapshotPerSlot_ReflectingItsDriversKindAndHealth()
     {
         var host = CreateHost();
-        var degraded = new FixedHealthDriver(DriverKind.Modbus, DriverHealthState.Degraded);
-        var down = new FixedHealthDriver(DriverKind.OpcUa, DriverHealthState.Down);
+        var degraded = new FixedHealthDriver(DriverKinds.Modbus, DriverHealthState.Degraded);
+        var down = new FixedHealthDriver(DriverKinds.OpcUa, DriverHealthState.Down);
 
         host.AdditionalPipelinesForTests = () => new List<(string Label, IDeviceDriver Driver, MappingProfile Profile)>
         {
@@ -81,8 +81,8 @@ public sealed class FleetHostAlarmAccessorsTests
             // returns — no need to wait for an actual cycle to observe them here.
             var health = host.GetDriverHealth();
 
-            Assert.Contains(health, s => s.SlotLabel == "degraded-extra" && s.Kind == DriverKind.Modbus && s.Health == DriverHealthState.Degraded);
-            Assert.Contains(health, s => s.SlotLabel == "down-extra" && s.Kind == DriverKind.OpcUa && s.Health == DriverHealthState.Down);
+            Assert.Contains(health, s => s.SlotLabel == "degraded-extra" && s.Kind == DriverKinds.Modbus && s.Health == DriverHealthState.Degraded);
+            Assert.Contains(health, s => s.SlotLabel == "down-extra" && s.Kind == DriverKinds.OpcUa && s.Health == DriverHealthState.Down);
 
             // Plus the always-present simulated slot — 3 total.
             Assert.Equal(3, health.Count);
@@ -141,13 +141,13 @@ public sealed class FleetHostAlarmAccessorsTests
         }
     }
 
-    /// <summary>Test double — reports a fixed <see cref="DriverKind"/>/<see cref="DriverHealthState"/> and
+    /// <summary>Test double — reports a fixed driver kind id/<see cref="DriverHealthState"/> and
     /// never actually yields a reading (an idle, permanently-Degraded/Down driver is exactly the shape
     /// <see cref="St4i.EngineApi.Alarms.AlarmEvaluator"/>'s DriverHealth source needs to see) — it just
     /// awaits cancellation forever so its slot stays alive without ever completing/faulting.</summary>
     private sealed class FixedHealthDriver : IDeviceDriver
     {
-        public FixedHealthDriver(DriverKind kind, DriverHealthState health)
+        public FixedHealthDriver(string kind, DriverHealthState health)
         {
             Kind = kind;
             Health = health;
@@ -155,7 +155,7 @@ public sealed class FleetHostAlarmAccessorsTests
 
         public string Id => "fixed-health-test-driver";
 
-        public DriverKind Kind { get; }
+        public string Kind { get; }
 
         public DriverHealthState Health { get; }
 
@@ -182,7 +182,7 @@ public sealed class FleetHostAlarmAccessorsTests
 
         public string Id => "verdict-cycling-test-driver";
 
-        public DriverKind Kind => DriverKind.Simulated;
+        public string Kind => DriverKinds.Simulated;
 
         public DriverHealthState Health => DriverHealthState.Connected;
 

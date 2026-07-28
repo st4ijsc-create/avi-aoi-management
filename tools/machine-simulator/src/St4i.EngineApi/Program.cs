@@ -686,7 +686,7 @@ if (modbusOptions.Enabled)
             DeviceClass: St4i.Connector.Abstractions.Models.DeviceClass.Automation,
             MachineType: "MODBUS_TCP",
             StepType: null,
-            DriverKind: St4i.Connector.Abstractions.Models.DriverKind.Modbus,
+            DriverKind: St4i.Connector.Abstractions.Models.DriverKinds.Modbus,
             RecipeCode: null,
             MappingProfile: null,
             CycleSeconds: Math.Max(0.1, capturedMap.PollIntervalMs / 1000.0));
@@ -764,7 +764,7 @@ if (opcUaOptions.Enabled)
             DeviceClass: St4i.Connector.Abstractions.Models.DeviceClass.Automation,
             MachineType: "OPC_UA",
             StepType: null,
-            DriverKind: St4i.Connector.Abstractions.Models.DriverKind.OpcUa,
+            DriverKind: St4i.Connector.Abstractions.Models.DriverKinds.OpcUa,
             RecipeCode: null,
             MappingProfile: null,
             CycleSeconds: Math.Max(0.1, capturedOpcUaMap.PollIntervalMs / 1000.0));
@@ -901,7 +901,7 @@ var fleetHost = app.Services.GetRequiredService<FleetHost>();
 
 // P2-3 — register the configured Modbus machine as a first-class roster member so it gets a MachineState
 // (fleet Snapshot tile + historian) and, via the asset registry, an Asset row. Idempotent: RegisterMachine
-// returns false (benign) if it's already present. StartLocked excludes DriverKind.Modbus from simulation, so
+// returns false (benign) if it's already present. StartLocked excludes DriverKinds.Modbus from simulation, so
 // this machine is driven ONLY by the real Modbus pipeline slot, never double-driven.
 if (modbusSeedDescriptor is not null)
 {
@@ -911,7 +911,7 @@ if (modbusSeedDescriptor is not null)
 // GĐ3 sub-3 OU-2 — register the configured OPC-UA machine as a first-class roster member, mirroring the
 // Modbus P2-3 seed immediately above: it gets a MachineState (fleet Snapshot tile + historian) and, via
 // the asset registry, an Asset row. Idempotent: RegisterMachine returns false (benign) if it's already
-// present. StartLocked excludes DriverKind.OpcUa from simulation, so this machine is driven ONLY by the
+// present. StartLocked excludes DriverKinds.OpcUa from simulation, so this machine is driven ONLY by the
 // real OPC-UA pipeline slot, never double-driven.
 if (opcUaSeedDescriptor is not null)
 {

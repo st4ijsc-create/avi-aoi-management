@@ -7,6 +7,7 @@ import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
 import { useAsset, useAssets, useSetAssetLifecycle, type AssetLifecycleState, type AssetRecord } from "@/lib/api"
+import { driverKindLabel } from "@/lib/driverKind"
 import { fadeSlideUp } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
@@ -57,23 +58,21 @@ const LIFECYCLE_TONE: Record<AssetLifecycleState, "ok" | "warn" | "danger" | "in
   Decommissioned: "danger",
 }
 
-// The web app's own `DeviceClass`/`DriverKind` unions (`lib/api.ts`) don't necessarily cover every
-// value the registry can hold (P2-3 adds a `"Modbus"` driver kind later; GĐ3 sub-3 OU-2 adds `"OpcUa"`) —
-// `AssetRecord.deviceClass`/`driverKind` are plain `string` for exactly that reason. These two label
-// helpers render the resolved i18n label for a KNOWN value, falling back to the raw wire value verbatim
+// The web app's own `DeviceClass` union (`lib/api.ts`) doesn't necessarily cover every value the
+// registry can hold — `AssetRecord.deviceClass` is plain `string` for exactly that reason. This label
+// helper renders the resolved i18n label for a KNOWN value, falling back to the raw wire value verbatim
 // for anything else, rather than `t()`'s own generic "missing key" fallback (which would print the ugly
-// literal dot-path, e.g. `"driverKind.Modbus"`).
+// literal dot-path, e.g. `"deviceClass.Foo"`). `driverKindLabel` — the identical idiom for `driverKind`
+// — used to be a local copy of this exact pattern; GP-3 hoisted it into `lib/driverKind.ts` (now a
+// genuinely open id, not just "not yet in our union") so every OTHER driverKind-rendering surface
+// (`Nameplate`, `MachineCard`, `ReadoutGrid`, `MachineDetail`, `Machines`) shares the same fallback
+// instead of reinventing it — imported above, not redefined here.
 const KNOWN_DEVICE_CLASSES = new Set(["Automation", "Iot", "AoiAvi"])
-const KNOWN_DRIVER_KINDS = new Set(["Simulated", "HotFolderAoi", "Mqtt", "Modbus", "OpcUa"])
 
 type TFunc = ReturnType<typeof useT>
 
 function deviceClassLabel(t: TFunc, value: string): string {
   return KNOWN_DEVICE_CLASSES.has(value) ? t(`deviceClass.${value}`) : value
-}
-
-function driverKindLabel(t: TFunc, value: string): string {
-  return KNOWN_DRIVER_KINDS.has(value) ? t(`driverKind.${value}`) : value
 }
 
 const assetDateTimeFormatter = new Intl.DateTimeFormat(undefined, {

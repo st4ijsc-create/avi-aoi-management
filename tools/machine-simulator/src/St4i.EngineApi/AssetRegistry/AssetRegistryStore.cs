@@ -224,7 +224,9 @@ public sealed class AssetRegistryStore : IAssetRegistry
             cmd.Parameters.AddWithValue("@code", descriptor.Code);
             cmd.Parameters.AddWithValue("@urn", urn);
             cmd.Parameters.AddWithValue("@device_class", descriptor.DeviceClass.ToString());
-            cmd.Parameters.AddWithValue("@driver_kind", descriptor.DriverKind.ToString());
+            // GP-3 — descriptor.DriverKind is already a plain string (the connector's own free-form id,
+            // no longer an enum), so this is a straight column write, not a ToString() coercion.
+            cmd.Parameters.AddWithValue("@driver_kind", descriptor.DriverKind);
             cmd.Parameters.AddWithValue("@machine_type", descriptor.MachineType);
             // Only takes effect on a FRESH insert — see the ON CONFLICT clause above, which never touches
             // `lifecycle` on an existing row.

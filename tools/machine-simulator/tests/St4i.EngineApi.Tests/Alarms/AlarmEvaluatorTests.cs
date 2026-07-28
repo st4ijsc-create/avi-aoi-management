@@ -40,7 +40,7 @@ public sealed class AlarmEvaluatorTests : IDisposable
 
     private static AlarmThresholds DefaultThresholds() => new(); // NgRateThreshold=0.20, MinSample=5
 
-    private static DriverHealthSnapshot Slot(string label, DriverHealthState health, DriverKind kind = DriverKind.Modbus) =>
+    private static DriverHealthSnapshot Slot(string label, DriverHealthState health, string kind = DriverKinds.Modbus) =>
         new(label, kind, health);
 
     private static async Task<Alarm?> FindActiveAsync(IAlarmStore store, AlarmSource source, string code, string? targetId)

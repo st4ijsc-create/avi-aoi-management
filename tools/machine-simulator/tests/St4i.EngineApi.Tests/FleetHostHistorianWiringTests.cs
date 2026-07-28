@@ -152,7 +152,7 @@ public sealed class FleetHostHistorianWiringTests
             const string code = "T7-FIX-01";
             var descriptor = new MachineDescriptor(
                 code, $"SN-{code}", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening",
-                DriverKind.Simulated, "RC-TEST-A", null, CycleSeconds: 0.1);
+                DriverKinds.Simulated, "RC-TEST-A", null, CycleSeconds: 0.1);
 
             var added = host.RegisterMachine(descriptor);
             Assert.True(added);

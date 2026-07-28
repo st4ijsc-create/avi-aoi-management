@@ -7,7 +7,7 @@ using Xunit;
 public class SimulatorTests
 {
     private static MachineDescriptor D(string machineType, DeviceClass deviceClass = DeviceClass.Automation, double cycleSeconds = 1.0) =>
-        new("SCRW-01", "SN", deviceClass, machineType, "screw_tightening", DriverKind.Simulated, "RC1", null, cycleSeconds);
+        new("SCRW-01", "SN", deviceClass, machineType, "screw_tightening", DriverKinds.Simulated, "RC1", null, cycleSeconds);
 
     // ── Brief's 2 required facts (verbatim intent) ─────────────────────────
 
@@ -23,7 +23,7 @@ public class SimulatorTests
     [Fact]
     public void Aoi_produces_inspection_with_measurements()
     {
-        var d = new MachineDescriptor("AOI-01", "SN", DeviceClass.AoiAvi, "AOI", null, DriverKind.Simulated, null, null, 2.0);
+        var d = new MachineDescriptor("AOI-01", "SN", DeviceClass.AoiAvi, "AOI", null, DriverKinds.Simulated, null, null, 2.0);
         var r = new AoiInspectorSim(d, seed: 7).NextCycle(1);
         Assert.Equal(ReadingKind.Inspection, r.Kind);
         Assert.NotEmpty(r.Measurements);
@@ -69,7 +69,7 @@ public class SimulatorTests
     [Fact]
     public void Aoi_produces_unique_serial_number_per_board_cycle()
     {
-        var d = new MachineDescriptor("AOI-01", "SN", DeviceClass.AoiAvi, "AOI", null, DriverKind.Simulated, null, null, 2.0);
+        var d = new MachineDescriptor("AOI-01", "SN", DeviceClass.AoiAvi, "AOI", null, DriverKinds.Simulated, null, null, 2.0);
         var sim = new AoiInspectorSim(d, seed: 7);
         var r1 = sim.NextCycle(1);
         var r2 = sim.NextCycle(2);
@@ -79,7 +79,7 @@ public class SimulatorTests
     [Fact]
     public void Aoi_defects_carry_bbox_and_values3d_and_ipc_a610_catalog_code()
     {
-        var d = new MachineDescriptor("AOI-01", "SN", DeviceClass.AoiAvi, "AOI", null, DriverKind.Simulated, null, null, 2.0);
+        var d = new MachineDescriptor("AOI-01", "SN", DeviceClass.AoiAvi, "AOI", null, DriverKinds.Simulated, null, null, 2.0);
         // High NG-rate forces at least one defect within a small board so we can assert its shape.
         var r = new AoiInspectorSim(d, seed: 7, pointsPerBoard: 10, ngRate: 1.0).NextCycle(1);
 
@@ -97,7 +97,7 @@ public class SimulatorTests
     [Fact]
     public void Aoi_zero_ng_rate_yields_all_ok_and_pass_verdict()
     {
-        var d = new MachineDescriptor("AOI-01", "SN", DeviceClass.AoiAvi, "AOI", null, DriverKind.Simulated, null, null, 2.0);
+        var d = new MachineDescriptor("AOI-01", "SN", DeviceClass.AoiAvi, "AOI", null, DriverKinds.Simulated, null, null, 2.0);
         var r = new AoiInspectorSim(d, seed: 7, pointsPerBoard: 10, ngRate: 0.0).NextCycle(1);
 
         Assert.All(r.Measurements, m => Assert.Equal("OK", m.Result));
@@ -107,7 +107,7 @@ public class SimulatorTests
     [Fact]
     public void IotSensor_emits_telemetry_kind_with_no_verdict_semantics()
     {
-        var d = new MachineDescriptor("IOT-01", "SN", DeviceClass.Iot, "IOT_SENSOR", null, DriverKind.Simulated, null, null, 1.0);
+        var d = new MachineDescriptor("IOT-01", "SN", DeviceClass.Iot, "IOT_SENSOR", null, DriverKinds.Simulated, null, null, 1.0);
         var r = new IotSensorSim(d, seed: 3).NextCycle(1);
         Assert.Equal(ReadingKind.Telemetry, r.Kind);
         Assert.NotEmpty(r.Telemetry);
@@ -115,7 +115,7 @@ public class SimulatorTests
 
     public static IEnumerable<object[]> AllSimulators()
     {
-        var d = new MachineDescriptor("MC-01", "SN", DeviceClass.Automation, "TYPE", "step", DriverKind.Simulated, "RC1", null, 1.0);
+        var d = new MachineDescriptor("MC-01", "SN", DeviceClass.Automation, "TYPE", "step", DriverKinds.Simulated, "RC1", null, 1.0);
         yield return new object[] { new ScrewdriveSim(d, 11), ReadingKind.ProcessResult };
         yield return new object[] { new DispensingSim(d, 11), ReadingKind.ProcessResult };
         yield return new object[] { new WelderSim(d, 11), ReadingKind.ProcessResult };
@@ -139,7 +139,7 @@ public class SimulatorTests
     [Fact]
     public void Assembly_has_no_seeded_spec_so_verdict_is_warn_only()
     {
-        var d = new MachineDescriptor("ASM-01", "SN", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKind.Simulated, "RC1", null, 1.0);
+        var d = new MachineDescriptor("ASM-01", "SN", DeviceClass.Automation, "ASSEMBLY", "press_fit", DriverKinds.Simulated, "RC1", null, 1.0);
         var r = new AssemblySim(d, seed: 5).NextCycle(1);
         Assert.Equal(Verdict.Warn, r.Verdict);
     }
@@ -147,12 +147,12 @@ public class SimulatorTests
     [Fact]
     public async Task SimulatedDriver_round_robins_all_sims_at_their_own_cadence()
     {
-        var d1 = new MachineDescriptor("SCRW-01", "SN1", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC1", null, 0.02);
-        var d2 = new MachineDescriptor("WELD-01", "SN2", DeviceClass.Automation, "WELDER", "weld_spot", DriverKind.Simulated, "RC2", null, 0.02);
+        var d1 = new MachineDescriptor("SCRW-01", "SN1", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC1", null, 0.02);
+        var d2 = new MachineDescriptor("WELD-01", "SN2", DeviceClass.Automation, "WELDER", "weld_spot", DriverKinds.Simulated, "RC2", null, 0.02);
         var sims = new IMachineSimulator[] { new ScrewdriveSim(d1, 1), new WelderSim(d2, 2) };
         await using var driver = new SimulatedDriver(sims);
 
-        Assert.Equal(DriverKind.Simulated, driver.Kind);
+        Assert.Equal(DriverKinds.Simulated, driver.Kind);
         Assert.Equal(DriverHealthState.Connected, driver.Health);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));

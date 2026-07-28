@@ -48,7 +48,7 @@ public sealed class FleetHostTelemetryHardeningTests
         return new FleetHost(switchable, coordinator, eventBus);
     }
 
-    /// <summary>DriverKind.Modbus — already excluded from <c>FleetHost.StartLocked</c>'s simulated group
+    /// <summary>DriverKinds.Modbus — already excluded from <c>FleetHost.StartLocked</c>'s simulated group
     /// pre-existing this task (P2-3) — so registering this descriptor never double-drives it with a
     /// simulator; the ONLY driver that ever produces a reading for it is the fake one wired below via
     /// <see cref="FleetHost.AdditionalPipelinesForTests"/>.</summary>
@@ -58,7 +58,7 @@ public sealed class FleetHostTelemetryHardeningTests
         DeviceClass: DeviceClass.Automation,
         MachineType: "OPC_UA",
         StepType: null,
-        DriverKind: DriverKind.Modbus,
+        DriverKind: DriverKinds.Modbus,
         RecipeCode: null,
         MappingProfile: null,
         CycleSeconds: 1.0);
@@ -136,7 +136,7 @@ public sealed class FleetHostTelemetryHardeningTests
 
         public string Id => "fake-string-and-numeric-telemetry-test-driver";
 
-        public DriverKind Kind => DriverKind.Modbus;
+        public string Kind => DriverKinds.Modbus;
 
         public DriverHealthState Health => DriverHealthState.Connected;
 

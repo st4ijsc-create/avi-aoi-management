@@ -14,7 +14,7 @@ namespace St4i.EngineApi.Tests;
 /// P2-1 pass-2 task P2-3 (docs/plans .../giaidoan2-pass2-blueprint task 3) — proves a configured Modbus
 /// (G2-6) machine becomes a first-class, UI-visible roster member instead of an invisible telemetry
 /// stream: (1) <see cref="FleetHost.StartLocked"/> must NOT build a simulator for a
-/// <see cref="DriverKind.Modbus"/> roster entry (else it's driven TWICE — once by a simulator, once by the
+/// <see cref="DriverKinds.Modbus"/> roster entry (else it's driven TWICE — once by a simulator, once by the
 /// real Modbus pipeline slot) — proven here by registering a Modbus descriptor with NO modbus driver
 /// factory wired and confirming it stays idle/0-cycles forever, never picked up by
 /// <c>SimulatorFactory</c>'s <c>DeviceClass.Automation</c> fallback (which would otherwise happily
@@ -45,7 +45,7 @@ public sealed class FleetHostModbusRosterTests
     /// <summary>Mirrors the shape Program.cs's own seed descriptor construction builds (see the brief /
     /// Program.cs's <c>modbusSeedDescriptor</c>) — <c>MachineType: "MODBUS_TCP"</c>, <c>DeviceClass.Automation</c>,
     /// no StepType/RecipeCode/MappingProfile. CycleSeconds is irrelevant to the exclusion test (a
-    /// DriverKind.Modbus descriptor is never handed to SimulatorFactory in the first place once the fix is
+    /// DriverKinds.Modbus descriptor is never handed to SimulatorFactory in the first place once the fix is
     /// applied) but must still be a sane positive value, matching <c>Math.Max(0.1, pollMs/1000.0)</c>.</summary>
     private static MachineDescriptor NewModbusDescriptor(string code = ModbusCode) => new(
         Code: code,
@@ -53,7 +53,7 @@ public sealed class FleetHostModbusRosterTests
         DeviceClass: DeviceClass.Automation,
         MachineType: "MODBUS_TCP",
         StepType: null,
-        DriverKind: DriverKind.Modbus,
+        DriverKind: DriverKinds.Modbus,
         RecipeCode: null,
         MappingProfile: null,
         CycleSeconds: 1.0);
@@ -91,7 +91,7 @@ public sealed class FleetHostModbusRosterTests
             var modbusTile = Assert.Single(snapshot.Machines, m => m.Code == ModbusCode);
             Assert.Equal(0, modbusTile.Cycles);
             Assert.Equal("Idle", modbusTile.StatusText);
-            Assert.Equal(DriverKind.Modbus, modbusTile.DriverKind);
+            Assert.Equal(DriverKinds.Modbus, modbusTile.DriverKind);
 
             // Double-check after a further short wait — not a one-off race where it just hasn't cycled
             // YET, but a durable "never driven" state for as long as no modbus factory is wired.
@@ -162,7 +162,7 @@ public sealed class FleetHostModbusRosterTests
         Assert.True(added);
 
         await WaitUntilAsync(() => registry.Upserted.ContainsKey(ModbusCode), "the Modbus descriptor to be upserted into the asset registry");
-        Assert.Equal(DriverKind.Modbus, registry.Upserted[ModbusCode].DriverKind);
+        Assert.Equal(DriverKinds.Modbus, registry.Upserted[ModbusCode].DriverKind);
     }
 
     /// <summary>Test double — an <see cref="IDeviceDriver"/> that yields a Telemetry reading for
@@ -180,7 +180,7 @@ public sealed class FleetHostModbusRosterTests
 
         public string Id => "fake-roster-modbus-test-driver";
 
-        public DriverKind Kind => DriverKind.Modbus;
+        public string Kind => DriverKinds.Modbus;
 
         public DriverHealthState Health => DriverHealthState.Connected;
 

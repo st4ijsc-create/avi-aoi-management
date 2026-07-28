@@ -44,7 +44,7 @@ public class EdgePipelineTests
     [Fact]
     public async Task Pipeline_survives_throwing_and_failing_transport()
     {
-        var d = new MachineDescriptor("SCRW-03", "SN", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC1", null, 0.02);
+        var d = new MachineDescriptor("SCRW-03", "SN", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC1", null, 0.02);
         var drv = new SimulatedDriver(new[] { (IMachineSimulator)new ScrewdriveSim(d, 99) });
         int committed = 0;
         var acks = new ConcurrentBag<TransportAck>();
@@ -61,7 +61,7 @@ public class EdgePipelineTests
     [Fact]
     public async Task Pipeline_commits_readings_via_demo()
     {
-        var d = new MachineDescriptor("SCRW-01", "SN", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC1", null, 0.05);
+        var d = new MachineDescriptor("SCRW-01", "SN", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC1", null, 0.05);
         var drv = new SimulatedDriver(new[] { (IMachineSimulator)new ScrewdriveSim(d, 42) });
         int committed = 0;
         var pipe = new EdgePipeline(drv, MappingProfile.ForClass(DeviceClass.Automation), new DemoTransport(latencyMs: 0), new EventBus());
@@ -74,7 +74,7 @@ public class EdgePipelineTests
     [Fact]
     public async Task Pipeline_publishes_trace_events_to_bus()
     {
-        var d = new MachineDescriptor("SCRW-02", "SN", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKind.Simulated, "RC1", null, 0.05);
+        var d = new MachineDescriptor("SCRW-02", "SN", DeviceClass.Automation, "SCREWDRIVE", "screw_tightening", DriverKinds.Simulated, "RC1", null, 0.05);
         var drv = new SimulatedDriver(new[] { (IMachineSimulator)new ScrewdriveSim(d, 7) });
         int traced = 0;
         ApiTraceEvent? last = null;
@@ -133,7 +133,7 @@ public class EdgePipelineTests
         // DispensingSim emits a "temperature" metric with raw unit "C" — ForClass(Automation)'s UnitMap
         // is empty, so it stays unmapped either way. This locks in that passing profileResolver: null
         // explicitly (rather than omitting the parameter) changes nothing.
-        var d = new MachineDescriptor("DISP-BASE", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var d = new MachineDescriptor("DISP-BASE", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC1", null, 0.02);
         var drv = new SimulatedDriver(new[] { (IMachineSimulator)new DispensingSim(d, 55) });
         var recorder = new RecordingTransport();
         var pipe = new EdgePipeline(drv, MappingProfile.ForClass(DeviceClass.Automation), recorder, new EventBus(), profileResolver: null);
@@ -147,8 +147,8 @@ public class EdgePipelineTests
     [Fact]
     public async Task Resolver_routes_each_machine_to_its_own_profile_by_machineCode()
     {
-        var mapped = new MachineDescriptor("DISP-MAPPED", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", "custom", 0.02);
-        var unmapped = new MachineDescriptor("DISP-PLAIN", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var mapped = new MachineDescriptor("DISP-MAPPED", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC1", "custom", 0.02);
+        var unmapped = new MachineDescriptor("DISP-PLAIN", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC1", null, 0.02);
         var drv = new SimulatedDriver(new IMachineSimulator[] { new DispensingSim(mapped, 1), new DispensingSim(unmapped, 2) });
 
         var customProfile = new MappingProfile
@@ -177,7 +177,7 @@ public class EdgePipelineTests
     [Fact]
     public async Task Resolver_returning_null_for_an_unrecognized_machineCode_falls_back_to_the_shared_profile()
     {
-        var d = new MachineDescriptor("DISP-UNKNOWN", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var d = new MachineDescriptor("DISP-UNKNOWN", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC1", null, 0.02);
         var drv = new SimulatedDriver(new[] { (IMachineSimulator)new DispensingSim(d, 3) });
 
         var recorder = new RecordingTransport();
@@ -227,7 +227,7 @@ public class EdgePipelineTests
     [Fact]
     public async Task Pipeline_WithNullUnsPublisher_BehavesByteIdenticalToNoUnsParameterAtAll()
     {
-        var d = new MachineDescriptor("UNS-NULL", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var d = new MachineDescriptor("UNS-NULL", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC1", null, 0.02);
         var drv = new SimulatedDriver(new[] { (IMachineSimulator)new DispensingSim(d, 11) });
         var recorder = new RecordingTransport();
         var pipe = new EdgePipeline(drv, MappingProfile.ForClass(DeviceClass.Automation), recorder, new EventBus(), profileResolver: null, uns: null);
@@ -240,7 +240,7 @@ public class EdgePipelineTests
     [Fact]
     public async Task Pipeline_WithFakeUnsPublisher_RecordsOnePublishPerReading_AndTransportCommittedStillFire()
     {
-        var d = new MachineDescriptor("UNS-FAKE", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKind.Simulated, "RC1", null, 0.02);
+        var d = new MachineDescriptor("UNS-FAKE", "SN", DeviceClass.Automation, "DISPENSING", "glue_dispense", DriverKinds.Simulated, "RC1", null, 0.02);
         var drv = new SimulatedDriver(new[] { (IMachineSimulator)new DispensingSim(d, 12) });
         var recorder = new RecordingTransport();
         var uns = new FakeUnsPublisher();

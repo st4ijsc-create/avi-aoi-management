@@ -6,6 +6,7 @@ import { StatusLamp, type StatusLampState } from "@/components/industrial"
 import { currentShiftNumber } from "@/components/hmi/derive"
 import { useT } from "@/i18n"
 import type { DeviceClass, DriverKind } from "@/lib/api"
+import { driverKindLabel } from "@/lib/driverKind"
 import type { StreamConnectionState } from "@/lib/inspector"
 import { cn } from "@/lib/utils"
 import { ThemeQuickSwitch } from "@/theme/ThemePicker"
@@ -87,7 +88,7 @@ export function Nameplate({ code, deviceClass, driverKind, lampState, lampLabel,
             {code}
           </h1>
           <p className="hmi-micro mt-1.5">
-            {t(`deviceClass.${deviceClass}`)} · {t(`driverKind.${driverKind}`)}
+            {t(`deviceClass.${deviceClass}`)} · {driverKindLabel(t, driverKind)}
           </p>
         </div>
       </div>

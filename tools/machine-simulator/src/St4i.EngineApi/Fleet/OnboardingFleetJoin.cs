@@ -96,7 +96,7 @@ public static class OnboardingFleetJoin
             DeviceClass: profile.DeviceClass,
             MachineType: type,
             StepType: null,
-            DriverKind: DriverKind.Simulated,
+            DriverKind: DriverKinds.Simulated,
             RecipeCode: null,
             MappingProfile: null,
             CycleSeconds: profile.CycleSeconds);

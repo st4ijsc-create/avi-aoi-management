@@ -4,6 +4,7 @@ import type { VariantProps } from "class-variance-authority"
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import type { FleetTile } from "@/lib/api"
+import { driverKindLabel } from "@/lib/driverKind"
 import { useChartTokens, type ChartTokens } from "@/theme/chartTokens"
 import { staggerItem } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
@@ -128,7 +129,7 @@ export function MachineCard({ machine, isRunning, onOpen }: MachineCardProps) {
               {label}
             </StatusBadge>
             <Badge variant="outline" className="shrink-0">
-              {t(`driverKind.${machine.driverKind}`)}
+              {driverKindLabel(t, machine.driverKind)}
             </Badge>
           </div>
 

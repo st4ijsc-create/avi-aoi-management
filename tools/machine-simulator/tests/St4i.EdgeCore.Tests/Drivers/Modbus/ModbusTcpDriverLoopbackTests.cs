@@ -95,7 +95,7 @@ public class ModbusTcpDriverLoopbackTests
             Assert.Equal("bar", pressure.Unit);
 
             await WaitUntilAsync(() => driver.Health == DriverHealthState.Connected, "driver Health to reach Connected after a successful poll");
-            Assert.Equal(DriverKind.Modbus, driver.Kind);
+            Assert.Equal(DriverKinds.Modbus, driver.Kind);
         }
         finally
         {

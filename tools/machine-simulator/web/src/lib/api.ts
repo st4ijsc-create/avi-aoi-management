@@ -52,7 +52,15 @@ export const BASE_URL = (import.meta.env.VITE_ENGINE_URL as string | undefined) 
 // ─────────────────────────────────────────────────────────────────────────
 
 export type DeviceClass = "Automation" | "Iot" | "AoiAvi"
-export type DriverKind = "Simulated" | "HotFolderAoi" | "Mqtt" | "Modbus" | "OpcUa"
+/**
+ * GP-3 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-3-brief.md) — widened from
+ * a closed `"Simulated" | "HotFolderAoi" | "Mqtt" | "Modbus" | "OpcUa"` union to a plain `string`: the
+ * engine's own `DriverKind` is no longer a closed enum (a third-party connector can report any id), so
+ * the web client can no longer assume the wire value is one of a known set either. `KNOWN_DRIVER_KINDS`/
+ * `driverKindLabel` (`lib/driverKind.ts`) are what every rendering surface uses to fall back to the raw
+ * id readably for anything outside the five built-ins this app has translations for.
+ */
+export type DriverKind = string
 export type TransportMode = "Live" | "Demo" | "Auto"
 
 /**
@@ -1486,11 +1494,13 @@ export function useAuditVerify() {
  * `PUT /v1/assets/{code}/lifecycle`. */
 export type AssetLifecycleState = "Provisioned" | "Commissioning" | "Active" | "Maintenance" | "Decommissioned"
 
-/** `AssetRecord` (`AssetRegistry/AssetRecord.cs`). `deviceClass`/`driverKind` are kept as plain
- * `string` here (not narrowed to the `DeviceClass`/`DriverKind` unions above) — the registry can
- * already hold a value the web app has no case for yet (e.g. a `"Modbus"` driver, P2-3's own concern),
- * and narrowing here would make TypeScript reject a real, valid server value. `configChecksum` is
- * `null` until the asset's descriptor has synced at least once. */
+/** `AssetRecord` (`AssetRegistry/AssetRecord.cs`). `deviceClass` is kept as plain `string` here (not
+ * narrowed to the `DeviceClass` union above) — the registry can already hold a value the web app has no
+ * case for yet, and narrowing here would make TypeScript reject a real, valid server value. `driverKind`
+ * is plain `string` for the same reason `DriverKind` itself is now (GP-3): the engine's own driver kind
+ * is an open id, not a closed set — see `KNOWN_DRIVER_KINDS`/`driverKindLabel` (`lib/driverKind.ts`) for
+ * the tolerant-label fallback every rendering surface uses. `configChecksum` is `null` until the asset's
+ * descriptor has synced at least once. */
 export interface AssetRecord {
   urn: string
   code: string
