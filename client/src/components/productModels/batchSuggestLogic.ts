@@ -1,7 +1,9 @@
 /**
- * Wave 2 đường A — Task 3: chia kết quả đề xuất hàng loạt thành "gửi được" và
- * "thiếu dữ liệu", và ánh xạ MỘT kết quả recommendForPoint (thô) sang dạng
- * BatchSuggestItem mà partitionBatch hiểu.
+ * Wave 2 đường A — Task 3: chia kết quả đề xuất hàng loạt thành BA nhóm —
+ * "gửi được" / "chưa đủ dữ liệu" / "không lấy được khuyến nghị" — và ánh xạ
+ * MỘT kết quả recommendForPoint (thô) sang dạng BatchSuggestItem mà
+ * partitionBatch hiểu. Cũng chứa vòng gửi hàng loạt CÓ THỂ HUỶ
+ * (runCancellableBatchSubmit), tách khỏi React để test được thuần tuý.
  *
  * Nguyên tắc TRUNG THỰC (bắt buộc theo kế hoạch Wave 2 đường A):
  *   - Điểm không đủ mẫu (sampleSize < ngưỡng tối thiểu, mặc định 300 —
@@ -9,14 +11,17 @@
  *     vào nhóm "insufficient" kèm lý do THẬT (lấy nguyên văn `note` do server
  *     tính), TUYỆT ĐỐI không bịa proposedLsl/proposedUsl/proposedNominal cho nó.
  *   - `needsReview` (server đánh dấu dữ liệu đo lệch xa giới hạn hiện tại —
- *     khả năng sai đơn vị/cấu hình điểm đo) CŨNG bị coi là "insufficient" ở
- *     đây dù đủ mẫu: số liệu không đáng tin để tự động gửi hàng loạt mà
- *     không ai xem qua trước — cùng nguyên tắc chặn mà
- *     AIThresholdSuggestButton áp dụng cho đường đơn-điểm
- *     (`disabled={busy || needsReview}`, client/src/components/AIThresholdSuggestButton.tsx).
- *   - `disabled` (trợ lý chưa bật) hay lỗi mạng/tính toán cũng KHÔNG được
- *     lặng lẽ biến thành "không có gì để gửi" — chúng vẫn hiện tên điểm + lý
- *     do trong nhóm "insufficient" (xem BatchSuggestDialog).
+ *     khả năng sai đơn vị/cấu hình điểm đo) CŨNG ở nhóm "insufficient" dù đủ
+ *     mẫu: số liệu không đáng tin để tự động gửi hàng loạt mà không ai xem
+ *     qua trước — cùng nguyên tắc chặn mà AIThresholdSuggestButton áp dụng
+ *     cho đường đơn-điểm (`disabled={busy || needsReview}`,
+ *     client/src/components/AIThresholdSuggestButton.tsx).
+ *   - Vòng sửa 1 (review Task 3, Important #2) — lỗi HẠ TẦNG (mạng/tính toán/
+ *     điểm không tìm thấy/trợ lý chưa bật) là BẢN CHẤT KHÁC với "chưa đủ dữ
+ *     liệu thật": một cái là "chờ thêm sản phẩm để có mẫu", cái kia là "hệ
+ *     thống hỏng/tắt, thử lại đi" — người dùng cần phân biệt để biết phải làm
+ *     gì. Nhóm này tách riêng thành `failed` (field `BatchSuggestItem.failed`),
+ *     KHÔNG gộp chung vào "insufficient" nữa.
  */
 export interface BatchSuggestItem {
   pointDefId: number;
@@ -26,21 +31,33 @@ export interface BatchSuggestItem {
   proposedLsl?: number;
   proposedUsl?: number;
   proposedNominal?: number;
+  /**
+   * Chỉ có ý nghĩa khi `ok=false`. `true` ⇒ đây là lỗi HẠ TẦNG (mạng, tính
+   * toán, điểm không tìm thấy, trợ lý chưa bật) — "không lấy được khuyến
+   * nghị", KHÁC với thiếu-mẫu-thật (degraded) hay needsReview. partitionBatch
+   * dùng field này để tách nhóm `failed` khỏi `insufficient`. Không set (hoặc
+   * `false`) ⇒ về nhóm `insufficient` như trước (giữ tương thích ngược với 3
+   * ca test gốc của brief — chúng không set field này).
+   */
+  failed?: boolean;
 }
 
 export interface BatchPartition {
   ready: BatchSuggestItem[];
   insufficient: BatchSuggestItem[];
+  failed: BatchSuggestItem[];
 }
 
 export function partitionBatch(items: BatchSuggestItem[]): BatchPartition {
   const ready: BatchSuggestItem[] = [];
   const insufficient: BatchSuggestItem[] = [];
+  const failed: BatchSuggestItem[] = [];
   for (const it of items ?? []) {
     if (it.ok) ready.push(it);
+    else if (it.failed) failed.push(it);
     else insufficient.push(it);
   }
-  return { ready, insufficient };
+  return { ready, insufficient, failed };
 }
 
 /**
@@ -66,6 +83,18 @@ export interface AdvisorRecommendationLike {
  * sang BatchSuggestItem. `errorMessage` dành cho lỗi tầng gọi mạng
  * (utils.aiThresholdAdvisor.recommendForPoint.fetch bị reject) — ưu tiên cao
  * nhất vì khi đó `rec` không đáng tin (undefined/không tồn tại).
+ *
+ * Vòng sửa 1 — ba nhánh "không ready", KHÔNG còn gộp chung:
+ *   1) `failed=true` — lỗi HẠ TẦNG: gọi mạng lỗi, không có response, server trả
+ *      `ok:false` (điểm không tìm thấy / lỗi tính toán — server tự kèm "vui
+ *      lòng thử lại" trong `note`), `disabled` (trợ lý chưa bật), hoặc thiếu
+ *      hẳn `recommended` dù `ok:true` (hình dạng bất thường, không đáng tin).
+ *      ⇒ "Không lấy được khuyến nghị" — gợi ý: THỬ LẠI.
+ *   2) `failed` không set — CHƯA ĐỦ DỮ LIỆU THẬT: `degraded` (thiếu mẫu) hoặc
+ *      `needsReview` (đủ mẫu nhưng dữ liệu lệch xa giới hạn hiện tại, nghi sai
+ *      đơn vị/cấu hình) ⇒ "Chưa đủ dữ liệu" — gợi ý: CHỜ THÊM SẢN PHẨM / kỹ sư
+ *      xem lại cấu hình điểm đo (không phải lỗi hệ thống).
+ *   3) `ok=true` — sẵn sàng gửi, số liệu lấy nguyên văn từ server.
  */
 export function toBatchItem(
   pointDefId: number,
@@ -73,15 +102,15 @@ export function toBatchItem(
   errorMessage?: string,
 ): BatchSuggestItem {
   if (errorMessage) {
-    return { pointDefId, ok: false, sampleCount: 0, reason: errorMessage };
+    return { pointDefId, ok: false, failed: true, sampleCount: 0, reason: errorMessage };
   }
   if (!rec) {
-    return { pointDefId, ok: false, sampleCount: 0 };
+    return { pointDefId, ok: false, failed: true, sampleCount: 0 };
   }
-  // ok=false (điểm không tìm thấy / lỗi tính toán), disabled (trợ lý chưa
-  // bật), degraded (thiếu mẫu), hoặc needsReview (dữ liệu lệch xa giới hạn)
-  // đều là "chưa đủ dữ liệu ĐỂ TỰ ĐỘNG GỬI HÀNG LOẠT" — không bịa số đề xuất.
-  if (!rec.ok || rec.disabled || rec.degraded || rec.needsReview || !rec.recommended) {
+  if (!rec.ok || rec.disabled || !rec.recommended) {
+    return { pointDefId, ok: false, failed: true, sampleCount: rec.sampleSize ?? 0, reason: rec.note };
+  }
+  if (rec.degraded || rec.needsReview) {
     return { pointDefId, ok: false, sampleCount: rec.sampleSize ?? 0, reason: rec.note };
   }
   return {
@@ -92,4 +121,68 @@ export function toBatchItem(
     proposedUsl: rec.recommended.usl,
     proposedNominal: rec.recommended.target,
   };
+}
+
+// ─── Vòng gửi hàng loạt CÓ THỂ HUỶ (Vòng sửa 1 — review Task 3, Important #1) ──
+
+export interface SubmitOutcome {
+  pointDefId: number;
+  ok: boolean;
+  error?: string;
+}
+
+export interface RunCancellableBatchSubmitOptions<T> {
+  items: T[];
+  getId: (item: T) => number;
+  /** Gửi MỘT item. Ném lỗi ⇒ ghi nhận là outcome lỗi (không làm vòng lặp dừng). */
+  send: (item: T) => Promise<void>;
+  /** Đọc cờ huỷ tại thời điểm gọi (không phải snapshot một lần). */
+  isCancelled: () => boolean;
+  /** CHỈ được gọi khi CHƯA huỷ tại thời điểm item vừa xong — đây là nơi DUY
+   *  NHẤT hàm này "chạm" ra ngoài (component dùng nó để setState tiến độ). */
+  onProgress?: (done: number, total: number) => void;
+  fallbackErrorMessage?: string;
+}
+
+/**
+ * Gửi tuần tự từng item, CÓ THỂ HUỶ giữa chừng — tách khỏi React/trpc để test
+ * thuần tuý (không cần render component hay mock tRPC).
+ *
+ * Hợp đồng (đọc kỹ trước khi đổi — đây là chỗ sửa lỗi "kết quả lô cũ đè lên
+ * phiên mới" mà review Task 3 phát hiện):
+ *   - Kiểm tra `isCancelled()` TRƯỚC khi gửi từng item — đã huỷ thì ĐỪNG bắn
+ *     thêm request cho lô đã bị bỏ (không tạo thêm bản ghi bất ngờ trong DB
+ *     cho một phiên người dùng đã rời khỏi).
+ *   - MỘT KHI đã gọi `send(item)` — request đã bay đi, CÓ THỂ đã tạo bản ghi
+ *     thật trong DB phía server — hàm này LUÔN await cho xong và ghi nhận kết
+ *     quả vào `results`. Không "quên" một request đã thực sự xảy ra chỉ vì bị
+ *     huỷ ngay sau đó (không thể/không nên giả vờ nó chưa từng xảy ra).
+ *   - Ngược lại, `onProgress` — thứ DUY NHẤT chạm tới state/hiển thị phía gọi
+ *     — CHỈ được gọi khi CHƯA phát hiện huỷ tại đúng thời điểm đó. Người gọi
+ *     do đó không bao giờ setState cho một phiên đã bị huỷ.
+ *   - Trả về `cancelled: true` ngay khi phát hiện huỷ (trước khi gửi item kế
+ *     tiếp, hoặc ngay sau khi item hiện tại xong). `results` vẫn được trả về
+ *     ĐẦY ĐỦ dù `cancelled=true` (để log/best-effort làm mới cache), nhưng
+ *     người gọi TUYỆT ĐỐI không được khẳng định con số nào từ nó ra UI khi
+ *     `cancelled=true` (không setSubmitResults, không toast) — xem
+ *     BatchSuggestDialog.handleSubmit.
+ */
+export async function runCancellableBatchSubmit<T>(
+  opts: RunCancellableBatchSubmitOptions<T>,
+): Promise<{ cancelled: boolean; results: SubmitOutcome[] }> {
+  const { items, getId, send, isCancelled, onProgress, fallbackErrorMessage } = opts;
+  const results: SubmitOutcome[] = [];
+  for (let i = 0; i < items.length; i++) {
+    if (isCancelled()) return { cancelled: true, results };
+    const item = items[i];
+    try {
+      await send(item);
+      results.push({ pointDefId: getId(item), ok: true });
+    } catch (err: any) {
+      results.push({ pointDefId: getId(item), ok: false, error: err?.message || fallbackErrorMessage || "Gửi thất bại" });
+    }
+    if (isCancelled()) return { cancelled: true, results };
+    onProgress?.(i + 1, items.length);
+  }
+  return { cancelled: false, results };
 }

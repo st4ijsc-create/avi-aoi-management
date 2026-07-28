@@ -3544,11 +3544,12 @@ export default function ProductModels() {
         onDeleteTemplate={(id) => deleteTemplateMutation.mutate({ id })}
       />
 
-      {/* Wave 2 đường A (Task 3) — đề xuất ngưỡng hàng loạt cho N điểm đã chọn. */}
+      {/* Wave 2 đường A (Task 3) — đề xuất ngưỡng hàng loạt cho N điểm đã chọn.
+          Vòng sửa 1 (review Task 3, Minor #3) — bỏ prop currentUserId chết (dialog
+          này chỉ ĐỀ XUẤT, không DUYỆT, nên không cần biết ai đang thao tác). */}
       <BatchSuggestDialog
         open={isBatchSuggestOpen}
         pointDefIds={Array.from(selectedPointIds)}
-        currentUserId={user?.id}
         onClose={() => setIsBatchSuggestOpen(false)}
       />
     </>

@@ -4,8 +4,9 @@
  * Bối cảnh: kỹ sư sửa ngưỡng cho vài chục điểm một lúc, nhưng trước Task 3 phải
  * mở AIThresholdSuggestButton cho TỪNG điểm một. Dialog này gọi
  * `aiThresholdAdvisor.recommendForPoint` cho từng điểm đã chọn, chia kết quả
- * thành "gửi được" / "chưa đủ dữ liệu" (batchSuggestLogic.partitionBatch), cho
- * xem trước từng dòng (checkbox tích sẵn, bỏ tích được), rồi mới gửi.
+ * thành BA nhóm — "gửi được" / "chưa đủ dữ liệu" / "không lấy được khuyến nghị"
+ * (batchSuggestLogic.partitionBatch) — cho xem trước từng dòng (checkbox tích
+ * sẵn, bỏ tích được), rồi mới gửi.
  *
  * PHẠM VI CỐ Ý HẸP (YAGNI — xem task-3-brief.md):
  *   - Đây CHỈ là đề xuất hàng loạt. KHÔNG duyệt hàng loạt — duyệt hàng loạt đã
@@ -18,16 +19,20 @@
  *   - Gửi hàng loạt gọi ĐÚNG `thresholdApproval.request` (hợp đồng có sẵn) cho
  *     từng dòng đã tích — không có đường ghi mới, không bỏ SoD (approve vẫn
  *     đòi hỏi một người khác, y hệt đường đơn-điểm).
- *   - Suy giảm TRUNG THỰC: điểm không đủ mẫu / needsReview / trợ lý chưa bật /
- *     lỗi mạng đều hiện TÊN ĐIỂM + LÝ DO thật trong nhóm "Chưa đủ dữ liệu",
- *     không im lặng bỏ qua (batchSuggestLogic.toBatchItem quyết định việc này).
- *   - Tổng kết sau khi gửi TRUNG THỰC: không báo "thành công" khi có dòng lỗi.
+ *   - Suy giảm TRUNG THỰC: điểm thiếu mẫu thật/needsReview hiện trong "Chưa đủ
+ *     dữ liệu"; lỗi hạ tầng (mạng/tính toán/trợ lý tắt) hiện RIÊNG trong
+ *     "Không lấy được khuyến nghị" — hai bản chất khác nhau, không gộp
+ *     (batchSuggestLogic.toBatchItem quyết định việc này — Vòng sửa 1).
+ *   - Tổng kết sau khi gửi TRUNG THỰC: không báo "thành công" khi có dòng lỗi,
+ *     và KHÔNG khẳng định con số nào nếu phiên gửi đã bị HUỶ giữa chừng (đóng
+ *     dialog / điều hướng khỏi trang trong lúc đang gửi — xem `handleSubmit`
+ *     + `runCancellableBatchSubmit`, Vòng sửa 1).
  *
  * Advisor là THỐNG KÊ THUẦN (không gọi model GGUF — server/utils/thresholdSuggestion.ts),
  * nên gọi N điểm liên tiếp không tranh VRAM; vẫn gọi TUẦN TỰ (không Promise.all)
  * để không dội DB và để hiện tiến độ "{{done}}/{{total}}" trung thực.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Loader2, Sparkles, XCircle } from "lucide-react";
@@ -45,7 +50,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { partitionBatch, toBatchItem, type BatchSuggestItem } from "./batchSuggestLogic";
+import { partitionBatch, toBatchItem, runCancellableBatchSubmit, type BatchSuggestItem, type SubmitOutcome } from "./batchSuggestLogic";
 import type { RouterOutputs } from "./types";
 
 type PointRecommendation = RouterOutputs["aiThresholdAdvisor"]["recommendForPoint"];
@@ -53,18 +58,7 @@ type PointRecommendation = RouterOutputs["aiThresholdAdvisor"]["recommendForPoin
 interface BatchSuggestDialogProps {
   open: boolean;
   pointDefIds: number[];
-  /** Chưa dùng để quyết định gì ở dialog này (đây là ĐỀ XUẤT, không phải
-   *  DUYỆT — không cần kiểm SoD phía client cho việc submit). Giữ trong props
-   *  để khớp interface đã thống nhất ở task-3-brief.md và dễ mở rộng sau này
-   *  (vd. hiển thị "bạn đang gửi với tư cách ai"). */
-  currentUserId?: number;
   onClose: () => void;
-}
-
-interface SubmitOutcome {
-  pointDefId: number;
-  ok: boolean;
-  error?: string;
 }
 
 const DEFAULT_MIN_SAMPLES = 300; // tài liệu hoá ở aiThresholdAdvisor.ts:37-40 (AI_THRESHOLD_ADVISOR_MIN_SAMPLES)
@@ -92,11 +86,26 @@ export function BatchSuggestDialog({ open, pointDefIds, onClose }: BatchSuggestD
   const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 });
   const [submitResults, setSubmitResults] = useState<SubmitOutcome[] | null>(null);
 
+  // Vòng sửa 1 (review Task 3, Important #1) — cờ huỷ cho PHA GỬI, cùng khuôn
+  // với cờ `cancelled` cục bộ mà pha fetch đã có (không phát minh khuôn khác).
+  // Bật `true` khi: (a) dialog đóng lại (open→false) trong lúc đang gửi — dù
+  // Escape/click-outside/nút X đã bị chặn khi submitting (xem DialogContent
+  // bên dưới), ref này vẫn là lưới an toàn cuối; (b) component unmount THẬT
+  // (điều hướng khỏi trang) — (a) không cứu được trường hợp này.
+  const cancelSubmitRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      cancelSubmitRef.current = true; // unmount thật ⇒ huỷ mọi handleSubmit đang chạy dở
+    };
+  }, []);
+
   // Nạp đề xuất khi mở — TUẦN TỰ (xem chú thích đầu file: thống kê thuần,
   // không cần hàng đợi, nhưng vẫn tuần tự để không dội DB + để tiến độ có ý
   // nghĩa). Đóng dialog ⇒ dọn sạch để lần mở sau không hiện lại kết quả cũ.
   useEffect(() => {
     if (!open) {
+      cancelSubmitRef.current = true; // dialog đóng ⇒ huỷ handleSubmit đang chạy dở (nếu có)
       setFetching(false);
       setFetchProgress({ done: 0, total: 0 });
       setRecByPoint(new Map());
@@ -107,6 +116,7 @@ export function BatchSuggestDialog({ open, pointDefIds, onClose }: BatchSuggestD
       setSubmitResults(null);
       return;
     }
+    cancelSubmitRef.current = false; // phiên mở mới ⇒ chưa huỷ gì cả
     if (pointDefIds.length === 0) return;
 
     let cancelled = false;
@@ -186,14 +196,25 @@ export function BatchSuggestDialog({ open, pointDefIds, onClose }: BatchSuggestD
     const toSend = partition.ready.filter((it) => checkedIds.has(it.pointDefId));
     if (toSend.length === 0) return;
 
+    cancelSubmitRef.current = false; // phiên gửi mới bắt đầu ⇒ chưa huỷ
     setSubmitting(true);
     setSubmitProgress({ done: 0, total: toSend.length });
-    const results: SubmitOutcome[] = [];
 
-    for (let i = 0; i < toSend.length; i++) {
-      const item = toSend[i];
-      const rec = recByPoint.get(item.pointDefId);
-      try {
+    // Vòng sửa 1 (review Task 3, Important #1) — vòng gửi tách ra
+    // `runCancellableBatchSubmit` (batchSuggestLogic.ts, test thuần tuý ở
+    // batchSuggest.logic.unit.test.ts) để KHÔNG còn cảnh "kết quả lô cũ đè lên
+    // phiên mới": nếu bị huỷ giữa chừng (đóng dialog / unmount do điều hướng),
+    // `cancelled=true` và ta KHÔNG setSubmitResults/toast bên dưới. Các request
+    // ĐÃ BAY ĐI trước khi huỷ vẫn được gửi thật (không thể/không nên "undo"
+    // một bản ghi đã tạo trong DB) — chỉ phần HIỂN THỊ bị bỏ qua.
+    const { cancelled, results } = await runCancellableBatchSubmit({
+      items: toSend,
+      getId: (it) => it.pointDefId,
+      isCancelled: () => cancelSubmitRef.current,
+      onProgress: (done, total) => setSubmitProgress({ done, total }),
+      fallbackErrorMessage: t("productModels.batchSendItemError", "Gửi thất bại"),
+      send: async (item) => {
+        const rec = recByPoint.get(item.pointDefId);
         await requestMutation.mutateAsync({
           pointDefId: item.pointDefId,
           proposedLsl: item.proposedLsl!,
@@ -219,20 +240,27 @@ export function BatchSuggestDialog({ open, pointDefIds, onClose }: BatchSuggestD
           },
           comment: t("thresholdAdvisor.requestComment", "AI-suggested threshold — submitted for review"),
         });
-        results.push({ pointDefId: item.pointDefId, ok: true });
-      } catch (err: any) {
-        results.push({
-          pointDefId: item.pointDefId,
-          ok: false,
-          error: err?.message || t("productModels.batchSendItemError", "Gửi thất bại"),
-        });
-      }
-      setSubmitProgress({ done: i + 1, total: toSend.length });
+      },
+    });
+
+    // Bất kể huỷ hay không: những request ĐÃ BAY ĐI có thể đã tạo bản ghi thật
+    // trong DB — làm mới cache dùng chung LUÔN an toàn (không phải "hiển thị
+    // kết quả", chỉ là invalidate; utils.invalidate không đụng React state của
+    // component này nên gọi được cả sau khi unmount).
+    refreshSuggestionState();
+
+    if (cancelled) {
+      // TRUNG THỰC — phiên này đã bị huỷ (dialog đóng / điều hướng khỏi trang
+      // giữa chừng). KHÔNG setSubmitResults, KHÔNG toast, KHÔNG khẳng định bất
+      // kỳ con số nào: `results` có thể chứa vài request đã gửi thành công thật,
+      // nhưng phiên UI hiện tại không còn đại diện cho lô người dùng đang xem
+      // (họ đã mở dialog khác/rời trang) — hiện số ở đây sẽ là "kết quả lô cũ
+      // đè lên phiên mới", đúng lỗi mà review Task 3 phát hiện.
+      return;
     }
 
     setSubmitResults(results);
     setSubmitting(false);
-    refreshSuggestionState();
 
     const successCount = results.filter((r) => r.ok).length;
     const failCount = results.length - successCount;
@@ -255,7 +283,19 @@ export function BatchSuggestDialog({ open, pointDefIds, onClose }: BatchSuggestD
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent
+        className="max-w-3xl"
+        // Vòng sửa 1 (review Task 3, Important #1a) — trong lúc đang GỬI,
+        // request đã bay đi có thể đã tạo bản ghi thật trong DB; đóng dialog
+        // giữa chừng qua Escape/click-ra-ngoài/nút X thì KHÔNG hề dừng được
+        // các request đó, chỉ khiến người dùng mất dấu tiến độ thật (đúng lỗi
+        // review Task 3 phát hiện). Chặn cả ba đường đóng "ngầm" này khi
+        // `submitting`; nút "Hủy" tường minh đã bị khoá sẵn (disabled={submitting}
+        // ở DialogFooter bên dưới) nên không lặp lại ở đây.
+        showCloseButton={!submitting}
+        onEscapeKeyDown={(e) => { if (submitting) e.preventDefault(); }}
+        onPointerDownOutside={(e) => { if (submitting) e.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -353,6 +393,34 @@ export function BatchSuggestDialog({ open, pointDefIds, onClose }: BatchSuggestD
                         t("productModels.insufficientSamples", "Chưa đủ mẫu để đề xuất — cần tối thiểu {{min}} mẫu.", {
                           min: DEFAULT_MIN_SAMPLES,
                         })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Vòng sửa 1 (review Task 3, Important #2) — lỗi HẠ TẦNG (mạng/tính
+              toán/điểm không tìm thấy/trợ lý tắt) tách RIÊNG khỏi "Chưa đủ dữ
+              liệu": một cái là "chờ thêm sản phẩm", cái kia là "hệ thống hỏng,
+              thử lại đi" — hai việc-cần-làm khác nhau, không được gộp nhãn. */}
+          {!fetching && partition.failed.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-sm font-medium text-red-700 dark:text-red-400">
+                <XCircle className="h-4 w-4" />
+                {t("productModels.batchFailedGroup", "Không lấy được khuyến nghị ({{n}})", { n: partition.failed.length })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t("productModels.batchFailedHint", "Có thể do lỗi mạng hoặc hệ thống — hãy đóng và mở lại hộp thoại để thử lại.")}
+              </p>
+              <ul className="space-y-1.5 rounded-md border border-dashed border-red-300 bg-red-50/40 p-2.5 dark:border-red-900 dark:bg-red-950/10">
+                {partition.failed.map((item) => (
+                  <li key={item.pointDefId} className="flex flex-wrap items-start gap-2 text-xs">
+                    <Badge variant="outline" className="shrink-0 border-red-300 text-red-700 dark:border-red-800 dark:text-red-400">
+                      {pointLabel(item.pointDefId)}
+                    </Badge>
+                    <span className="text-muted-foreground">
+                      {item.reason || t("productModels.batchFetchError", "Không tính được đề xuất cho điểm này.")}
                     </span>
                   </li>
                 ))}

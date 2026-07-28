@@ -6706,6 +6706,8 @@
     "autoTuneBadge": "Auto-tuned",
     "batchColPoint": "Measurement point",
     "batchColSamples": "Samples",
+    "batchFailedGroup": "Couldn't get a recommendation ({{n}})",
+    "batchFailedHint": "Could be a network or system issue — close and reopen the dialog to retry.",
     "batchFetchError": "Could not compute a recommendation for this point.",
     "batchInsufficientHeading": "Not enough data ({{n}})",
     "batchNoPointsSelected": "No points selected to suggest for.",

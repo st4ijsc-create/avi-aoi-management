@@ -6489,6 +6489,8 @@
     "autoTuneBadge": "自动调优",
     "batchColPoint": "测量点",
     "batchColSamples": "样本数",
+    "batchFailedGroup": "未能获取建议 ({{n}})",
+    "batchFailedHint": "可能是网络或系统问题——请关闭并重新打开对话框以重试。",
     "batchFetchError": "无法计算该点的建议。",
     "batchInsufficientHeading": "数据不足 ({{n}})",
     "batchNoPointsSelected": "尚未选择要建议的点。",

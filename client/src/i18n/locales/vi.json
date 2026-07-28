@@ -6686,6 +6686,8 @@
     "autoTuneBadge": "Tự động dò",
     "batchColPoint": "Điểm đo",
     "batchColSamples": "Số mẫu",
+    "batchFailedGroup": "Không lấy được khuyến nghị ({{n}})",
+    "batchFailedHint": "Có thể do lỗi mạng hoặc hệ thống — hãy đóng và mở lại hộp thoại để thử lại.",
     "batchFetchError": "Không tính được đề xuất cho điểm này.",
     "batchInsufficientHeading": "Chưa đủ dữ liệu ({{n}})",
     "batchNoPointsSelected": "Chưa chọn điểm nào để đề xuất.",
