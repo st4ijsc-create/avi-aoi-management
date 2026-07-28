@@ -1,40 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Wave 1 FF-A fix-round 2 — `runSpecialistAgent`'s PRIMARY path is now
-// `generateJSON` (grammar-constrained), not `generateText`. Mock both (real
-// module exports both) so the primary path succeeds and these prompt-content
-// assertions exercise the actual call site instead of accidentally falling
-// through the fail-safe fallback (which would still pass today, but for the
-// wrong reason — a "No generateJSON export defined" mock error swallowed by
-// runSpecialistAgent's own catch, not a real assertion of prompt content on
-// the primary path).
+// Wave 1 FF-A fix-round 4 — `runSpecialistAgent`'s grammar-constrained
+// `generateJSON` path (round 2) was REVERTED (live measurement showed it
+// degraded output CONTENT — see the doc comment on `runSpecialistAgent` in
+// aiSpecialistAgentService.ts). The primary — and only — generation call is
+// `generateText` again, exactly as before round 2. Mock only what the
+// service module actually imports now.
 vi.mock("./aiGgufEngine", () => ({
   isGgufAvailable: vi.fn(async () => true),
-  generateJSON: vi.fn(async () => ({
-    data: {
-      summary: "s",
-      diagnosis: ["d"],
-      actionPlan: [],
-      patchHints: [],
-      testPlan: [],
-      optimizationIdeas: [],
-      risks: [],
-      reportTemplate: [],
-    },
-    raw: '{"summary":"s"}',
-    modelId: "test-model",
-    tokensGenerated: 10,
-    tokensPrompt: 20,
-    totalTimeMs: 100,
-    tokensPerSecond: 5,
-  })),
   generateText: vi.fn(async () => ({
     text: JSON.stringify({ summary: "s", diagnosis: "d", actionPlan: [], patchHints: [], testPlan: [], optimizationIdeas: [], risks: [] }),
     modelId: "test-model",
     tokensGenerated: 10, tokensPrompt: 20, totalTimeMs: 100, tokensPerSecond: 5,
   })),
 }));
-import { generateJSON, generateText } from "./aiGgufEngine";
+import { generateText } from "./aiGgufEngine";
 import { runSpecialistAgent } from "./aiSpecialistAgentService";
 
 beforeEach(() => vi.clearAllMocks());
@@ -46,12 +26,11 @@ describe("runSpecialistAgent — repoContext", () => {
       objective: "sửa lỗi X trong service",
       files: ["server/services/a.ts"],
     });
-    // generateJSON(schema, options, modelId) — prompt nằm trong options (arg thứ 2).
-    const prompt = (generateJSON as any).mock.calls[0][1].prompt as string;
+    expect(generateText).toHaveBeenCalledTimes(1);
+    const prompt = (generateText as any).mock.calls[0][0].prompt as string;
     expect(prompt).toContain("Related files:");
     expect(prompt).toContain("server/services/a.ts");
     expect(prompt).not.toContain("FILE CONTENT");
-    expect(generateText).not.toHaveBeenCalled(); // đường chính thành công ⇒ không cần lưới dự phòng
   });
 
   it("CÓ repoContext ⇒ prompt chứa nội dung file THẬT + phụ thuộc + RAG", async () => {
@@ -67,7 +46,7 @@ describe("runSpecialistAgent — repoContext", () => {
         totalBytes: 19,
       },
     });
-    const prompt = (generateJSON as any).mock.calls[0][1].prompt as string;
+    const prompt = (generateText as any).mock.calls[0][0].prompt as string;
     expect(prompt).toContain("FILE CONTENT");
     expect(prompt).toContain("export const A = 1;");
     expect(prompt).toContain("server/services/b.ts");
@@ -83,7 +62,7 @@ describe("runSpecialistAgent — repoContext", () => {
         skipped: [], dependencies: [], ragSnippets: [], totalBytes: 3,
       },
     });
-    const prompt = (generateJSON as any).mock.calls[0][1].prompt as string;
+    const prompt = (generateText as any).mock.calls[0][0].prompt as string;
     expect(prompt).toContain("truncated");
   });
 });
