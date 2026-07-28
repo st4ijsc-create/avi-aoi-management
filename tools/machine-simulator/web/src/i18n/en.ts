@@ -1820,7 +1820,7 @@ export const en: Dictionary = {
       // clients can still look connected while this is true, which is exactly why it outranks them.
       Faulted: "Faulted",
       faultedWarning:
-        "The bridge's internal spool/forward loop has stopped — production data may no longer be persisted or forwarded even though the connection itself looks fine. This does not self-heal; it requires a service restart to clear. Check the machine's logs for the underlying error.",
+        "The bridge's internal spool/forward loop has stopped — production data may no longer be persisted or forwarded even though the connection itself looks fine. This does not clear on its own: re-applying the Site link below (Save) or rotating the identity rebuilds the bridge and clears it — a service restart also works but isn't required. Check the machine's logs for the underlying error.",
       lastError: (vars: Vars) => `Last error: ${vars.error}`,
       siteVerified: (vars: Vars) => `Verified Site certificate: ${vars.fingerprint}`,
       unsDisabled: "The local UNS spine is disabled (ST4I_UNS_ENABLED=false); enable it to federate this device to a Site.",

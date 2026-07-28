@@ -301,16 +301,25 @@ topic) have both since landed — see **§18** for the full detail (env vars, en
 sources/priorities, PackML states+commands+FleetHost mapping, and the alarm→hold gate's honest
 boundary).
 
-**Genuinely still future, not touched by this build:** **mDNS *advertising* (a Site auto-discovering the
-machine)** — this device browses for Sites but does not announce itself; **EST/SCEP enrollment + a Site CA** — today the device
-identity is a bare self-signed certificate and trust is a single operator-pasted PEM, not a
-CA-issued/rotated chain; **an inbound command path (NCMD or otherwise)** — the bridge is
-outbound-telemetry-only, so a Site can observe this device but never actuate it; **certificate
-rotation** — the device identity is minted once and never auto-renewed; and **WS-B B2 (bridge
-inversion)** — flipping the UNS spine from an additive mirror into the sole source of truth with
-ST4I/historian driven asynchronously off it instead of synchronously inside `EdgePipeline` — assessed
-and **deliberately deferred to a dedicated GĐ3 pass** (high blast-radius: ~34 files touch the
-synchronous ack today; see `docs/plans/2026-07-27-ws-b-b2-bridge-inversion-assessment.md`).
+**Genuinely still future, not touched by this build:** **EST/SCEP enrollment + a Site CA** — today the
+device identity is a bare self-signed certificate, and trust (in both mDNS directions now — browsing,
+§17.4, and the machine's own advertising, §17.8) is still a single operator-pasted, manually pinned PEM,
+not a CA-issued/auto-renewed chain, with no automatic trust-on-first-discovery (§17.11); **an inbound
+command path (NCMD or otherwise)** — the bridge is outbound-telemetry-only, so a Site can observe this
+device but never actuate it; and **WS-B B2 (bridge inversion)** — flipping the UNS spine from an
+additive mirror into the sole source of truth with ST4I/historian driven asynchronously off it instead
+of synchronously inside `EdgePipeline` — assessed and **deliberately deferred to a dedicated GĐ3 pass**
+(high blast-radius: ~34 files touch the synchronous ack today; see
+`docs/plans/2026-07-27-ws-b-b2-bridge-inversion-assessment.md`).
+
+**Update (GĐ3 closeout WI-1 Part B / WI-4):** the two items this line used to list as future — **the
+machine announcing itself over mDNS** and **certificate rotation** — have both since landed.
+`SiteAdvertiser` now multicasts this device's own presence (`_st4i-machine._tcp`, on by default whenever
+the local UNS spine is enabled) so a Site's join wizard can find it without an operator hand-typing a
+host/port — see **§17.8**. `POST /v1/site/identity/rotate` mints a fresh self-signed identity on demand
+and re-keys the live bridge and mDNS advertisement in the same call — **operator-triggered only; there
+is still no automatic pre-expiry renewal** — see **§17.10** for the required two-step follow-up at the
+Site.
 
 *(VI: Vài mục P2/P3 phía trên ĐÃ giao trong Giai đoạn 2 (pass 1+2) — xem cột **Status** và **§16** để
 biết chi tiết đầy đủ (biến môi trường, endpoint, hành vi). Sparkplug B: ĐÃ GIAO qua UNS spine cục bộ
@@ -337,14 +346,21 @@ ISA-18.2 (nguồn Policy DENY / DriverHealth / NG-rate, kho SQLite tập-đang-h
 đều đã giao — xem **§18** để biết chi tiết đầy đủ (biến môi trường, endpoint, nguồn/mức ưu tiên cảnh
 báo, trạng thái+lệnh PackML+ánh xạ FleetHost, và ranh giới thật của khoá cảnh báo→hold).
 
-Vẫn CHƯA làm: **mDNS tự động dò tìm + join wizard** (hiện gia nhập hoàn toàn thủ công — sao chép
-fingerprint từ `/site`, đăng ký thủ công tại Site, dán lại chứng chỉ tin cậy của Site, §17.6);
-**EST/SCEP + Site CA** để tự động cấp/xoay chứng chỉ (hiện danh tính thiết bị chỉ là chứng chỉ tự ký,
-tin cậy chỉ là một PEM operator dán tay, không phải chuỗi CA cấp/xoay); **đường lệnh vào (NCMD hay
-khác)** — bridge CHỈ GỬI telemetry RA, Site quan sát được máy này nhưng không điều khiển được;
-**xoay vòng chứng chỉ** — danh tính thiết bị chỉ tạo một lần, không tự gia hạn; và **WS-B B2 (đảo
-chiều bridge)** — đã đánh giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (phạm vi ảnh hưởng lớn — khoảng 34
-file đang dùng ack đồng bộ).)*
+Vẫn CHƯA làm: **EST/SCEP + Site CA** để tự động cấp/xoay chứng chỉ (hiện danh tính thiết bị chỉ là chứng
+chỉ tự ký, và tin cậy — ở CẢ HAI chiều mDNS, vừa duyệt tìm §17.4 vừa tự quảng bá §17.8 — vẫn chỉ là một
+PEM operator dán tay, ghim thủ công, không phải chuỗi CA cấp/tự gia hạn, và vẫn chưa có
+trust-on-first-discovery tự động, §17.11); **đường lệnh vào (NCMD hay khác)** — bridge CHỈ GỬI telemetry
+RA, Site quan sát được máy này nhưng không điều khiển được; và **WS-B B2 (đảo chiều bridge)** — đã đánh
+giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (phạm vi ảnh hưởng lớn — khoảng 34 file đang dùng ack đồng
+bộ).
+
+**Cập nhật (GĐ3 closeout WI-1 Part B / WI-4):** hai mục mà dòng này từng liệt kê là tương lai — **máy tự
+quảng bá qua mDNS** và **xoay vòng chứng chỉ** — nay ĐÃ GIAO. `SiteAdvertiser` nay multicast sự hiện diện
+của chính thiết bị (`_st4i-machine._tcp`, MẶC ĐỊNH BẬT bất cứ khi nào UNS spine cục bộ đang bật) để join
+wizard của Site tìm ra máy này mà operator không cần gõ tay host/port — xem **§17.8**. `POST
+/v1/site/identity/rotate` tạo một danh tính tự ký mới theo yêu cầu và re-key bridge đang sống cùng quảng
+bá mDNS trong CÙNG một lần gọi — **chỉ theo yêu cầu operator; vẫn CHƯA có tự động gia hạn trước khi hết
+hạn** — xem **§17.10** để biết bước theo sau bắt buộc tại Site.)*
 
 See `docs/ECOSYSTEM/62_MACHINE_SIMULATOR_EDGE_MIDDLEWARE_DESIGN_2026-07-18.md` §11 for the full
 detail, and `docs/ECOSYSTEM/61_MACHINE_DEVELOPER_INTEGRATION_GUIDE_2026-07-18.md` for the contract
@@ -1975,8 +1991,10 @@ lại quảng bá từ danh tính mới, nên trường TXT `fp` không bao gi�
 unreachable — a Site outage meant silent, permanent data loss for the whole outage window. It now:
 
 - **Spools to SQLite on disk** (`bridge-spool.db`, a sibling of `...\sim\sitelink`/`...\sim\alarms`)
-  instead of dropping — every message the local UNS spine emits while the Site is unreachable is
-  durably queued.
+  instead of dropping — every message that actually reaches the spool writer while the Site is
+  unreachable is durably queued. That is deliberately **not** phrased as "every message the local UNS
+  spine emits" — a bounded, silent gate sits upstream of the spool and can shed messages before they
+  ever get there; see the honest-limitations block below for exactly when and how.
 - **Survives a process restart** — the spool is a real on-disk table, not an in-memory queue; a crash or
   a service restart mid-outage does not lose whatever had already been spooled.
 - **Replays in ascending sequence order** on reconnect — oldest first, never out of order.
@@ -1985,7 +2003,9 @@ unreachable — a Site outage meant silent, permanent data loss for the whole ou
   big — before the backfill itself starts arriving. Fields: `resumedAtUtc`, `backlogDepth`, `oldestUtc`,
   `firstSeq`, `lastAckedSeq`, `droppedTotal`.
 - `droppedTotal` is not a soft metric — it means **production data was permanently lost**: the spool's
-  own age/size caps below trimmed the oldest entries before the Site ever received them.
+  own age/size caps below trimmed the oldest entries before the Site ever received them. It counts
+  **only** that one cause, though — it is not a total loss counter; see below for two more loss paths it
+  never sees at all.
 
 **Env vars** (`BridgeSpoolOptions.FromEnvironment` — same "unparseable/non-positive value → keep the
 default" posture as every other `ST4I_*` options bag in this doc):
@@ -2000,7 +2020,8 @@ default" posture as every other `ST4I_*` options bag in this doc):
 **The retention trade-off, stated plainly:** these caps exist so an unattended device doesn't fill its
 disk forever during a long outage — but they mean a Site outage that outlasts either cap is
 **guaranteed** data loss, not a possibility: the oldest entries are dropped to make room, and
-`droppedTotal` is the only record it ever happened. 48h is comfortably above the product's own ≥24h
+`droppedTotal` is the only record *this specific cause* of loss ever happened — it says nothing about
+the other loss paths below. 48h is comfortably above the product's own ≥24h
 buffering requirement, but it is still a hard ceiling, not a promise of eventual delivery.
 
 **The `Faulted` bridge state — no automatic recovery, but a low-friction manual fix exists.** If the
@@ -2034,17 +2055,53 @@ build (the old behavior dropped the message outright, immediately, with nothing 
 but it is the remaining route from "the Site rejects one message" to real, eventual data loss, and there
 is no dead-letter queue or skip-and-continue path today.
 
+**Three more ways northbound data goes missing, invisibly, that this section would be dishonest to
+omit:**
+
+1. **A bounded, silent gate sits in front of the spool.** `OnLocalMessageReceivedAsync` hands every
+   locally-received message to a 10,000-item `Channel.CreateBounded` (`UnsBridge.cs`) configured
+   `BoundedChannelFullMode.DropOldest` — this sits UPSTREAM of everything described above, spool
+   included. If that channel is ever full (a slow spool writer, a burst of traffic, a long Site outage
+   with the writer loop still alive but behind), it silently drops the OLDEST buffered item to make room
+   for the newest — with **no counter anywhere**: `droppedTotal` never sees these drops, because the
+   message never reached `EnqueueAsync` in the first place. The saturation-warning log line this path is
+   supposed to emit (`Site bridge forward queue saturated…`) is, in addition, **unreachable**: it only
+   fires when `Channel.Writer.TryWrite` returns `false`, and a `DropOldest` channel's `TryWrite` is
+   documented to always return `true` (it makes room by evicting, it never rejects) — so that warning
+   can never actually print.
+2. **The spool writer got materially slower exactly when this feature needs it to be fast.** Because
+   `IBridgeSpool` has no batch-insert method, `RunSpoolWriterLoopAsync` pays one full
+   open-connection + four `PRAGMA`s + `INSERT` + `last_insert_rowid()` round trip **per message** — a
+   real throughput cost the code's own comment acknowledges — and it lands squarely during a Site
+   outage (the exact window this feature exists for), which makes the upstream channel in point 1
+   measurably easier to saturate than it would have been pre-this-build.
+3. **A spool write can itself fail — full disk, a locked file, a vanished directory — and that failure is
+   invisible everywhere an operator would look.** `BridgeSpool.EnqueueAsync` returns `-1` on any such
+   failure (never throws, by design) and the message is simply not persisted. That `-1` does **not**
+   increment `droppedTotal`, does **not** change `spoolDepth`, and does **not** flip `bridgeState` to
+   `Faulted`. `GET /v1/site` and the `/site` page can report `Connected · Depth 0 · Dropped 0` while
+   100% of northbound telemetry is being silently discarded.
+4. **The only signal for any of the above is a log line — and on the documented Windows Service install
+   shape, that log line has nowhere to go.** The composition root wires this bridge's
+   `logWarning`/`logError` straight to `Console.Error.WriteLine`; a process running as a Windows Service
+   has no attached console, and `Console.Error` routes to `Stream.Null` in that case. So despite what
+   this section says elsewhere, `Faulted` plus a log line is **not** a reliable signal on a service
+   install — there may be no signal at all.
+
 *(VI: Trước bản build này, `UnsBridge` bỏ TOÀN BỘ những gì lấy ra khỏi hàng đợi trong lúc không tới được
 Site — Site sập nghĩa là mất dữ liệu vĩnh viễn, âm thầm, suốt thời gian sập. Nay: **Spool ra SQLite trên
-đĩa** (`bridge-spool.db`) thay vì bỏ — mọi message UNS spine cục bộ phát ra lúc Site không tới được đều
-được xếp hàng bền. **Sống sót qua khởi động lại tiến trình** — spool là bảng thật trên đĩa, không phải
+đĩa** (`bridge-spool.db`) thay vì bỏ — mọi message THỰC SỰ TỚI ĐƯỢC vòng lặp writer của spool lúc Site
+không tới được đều được xếp hàng bền. CỐ Ý không nói "mọi message UNS spine cục bộ phát ra" — có một
+cổng giới hạn, âm thầm, nằm TRƯỚC spool, có thể bỏ message trước khi chúng kịp tới đó; xem khối "những gì
+CHƯA làm" bên dưới để biết chính xác khi nào và bằng cách nào. **Sống sót qua khởi động lại tiến trình** — spool là bảng thật trên đĩa, không phải
 hàng đợi trong bộ nhớ. **Phát lại theo đúng thứ tự seq tăng dần** khi kết nối lại — cũ nhất trước. **Phát
 một bản ghi đồng bộ lại (resync) RETAINED TRƯỚC KHI phát lại bất cứ gì** — lên
 `syn/{site}/{area}/{line}/{cell}/_bridge/resync`, để Site biết có khoảng trống — và trống bao nhiêu —
 TRƯỚC KHI dữ liệu bù (backfill) bắt đầu tới. Trường dữ liệu: `resumedAtUtc`, `backlogDepth`, `oldestUtc`,
 `firstSeq`, `lastAckedSeq`, `droppedTotal`. `droppedTotal` KHÔNG phải chỉ số nhẹ nhàng — nó nghĩa là DỮ
 LIỆU SẢN XUẤT ĐÃ MẤT VĨNH VIỄN: trần tuổi/dung lượng của spool (bên dưới) đã cắt bớt các mục cũ nhất
-trước khi Site kịp nhận.
+trước khi Site kịp nhận. Nó CHỈ đếm một nguyên nhân DUY NHẤT này thôi — không phải bộ đếm mất dữ liệu
+tổng; xem bên dưới để biết thêm hai đường mất dữ liệu khác mà nó không bao giờ thấy.
 
 **Biến môi trường:** **`ST4I_BRIDGE_SPOOL_ENABLED`** (`false`/`0` tắt hẳn spool bền, quay lại hành vi
 trước bản build này — bỏ hết lúc mất kết nối, không có resync — mặc định `true`); **`ST4I_BRIDGE_SPOOL_DIR`**
@@ -2055,7 +2112,8 @@ tối đa tính giờ trước khi bị cắt, mặc định `48`).
 **Đánh đổi lưu trữ, nói thẳng:** các trần này tồn tại để một thiết bị không người trông không lấp đầy đĩa
 mãi mãi trong một đợt sập dài — nhưng nghĩa là một đợt Site sập lâu hơn một trong hai trần là mất dữ liệu
 CHẮC CHẮN, không phải khả năng: các mục cũ nhất bị bỏ để lấy chỗ, và `droppedTotal` là bằng chứng DUY
-NHẤT rằng việc đó đã xảy ra. 48 giờ cao hơn thoải mái so với yêu cầu đệm ≥24 giờ của sản phẩm, nhưng vẫn
+NHẤT rằng CHÍNH NGUYÊN NHÂN NÀY đã xảy ra — nó không nói gì về các đường mất dữ liệu khác bên dưới. 48
+giờ cao hơn thoải mái so với yêu cầu đệm ≥24 giờ của sản phẩm, nhưng vẫn
 là một trần cứng, không phải lời hứa giao hàng cuối cùng.
 
 **Trạng thái bridge `Faulted` — không tự động hồi phục, nhưng có cách sửa tay ít tốn công.** Nếu vòng lặp
@@ -2085,7 +2143,40 @@ message đó chặn đứng toàn bộ phần còn lại phía sau nó — vòng
 cuối cùng thành công, hoặc bị cắt khỏi spool do quá tuổi. Đây KHÔNG phải một thoái lui so với trước bản
 build này (hành vi cũ bỏ message đó ngay lập tức, không chặn gì phía sau) — nhưng đây vẫn là con đường
 còn lại từ "Site từ chối một message" tới mất dữ liệu thật, cuối cùng, và hiện chưa có hàng đợi
-dead-letter hay đường bỏ-qua-và-tiếp-tục nào.)*
+dead-letter hay đường bỏ-qua-và-tiếp-tục nào.
+
+**Ba đường mất dữ liệu khác, âm thầm, mà phần này sẽ là không trung thực nếu bỏ qua:**
+
+1. **Có một cổng giới hạn, âm thầm, nằm TRƯỚC spool.** `OnLocalMessageReceivedAsync` đưa mọi message
+   nhận được cục bộ vào một `Channel.CreateBounded` 10.000 phần tử (`UnsBridge.cs`) cấu hình
+   `BoundedChannelFullMode.DropOldest` — kênh này nằm TRƯỚC mọi thứ mô tả ở trên, kể cả spool. Nếu kênh
+   này đầy (writer chậm, traffic dồn cục, hoặc một đợt Site sập dài trong khi vòng lặp writer vẫn sống
+   nhưng chạy chậm hơn), nó âm thầm bỏ phần tử CŨ NHẤT để lấy chỗ cho phần tử mới — **không có bộ đếm
+   nào ghi lại việc này**: `droppedTotal` không bao giờ thấy các lượt bỏ này, vì message chưa bao giờ
+   tới được `EnqueueAsync`. Dòng log cảnh báo bão hoà lẽ ra phải phát ra ở đường này (`Site bridge
+   forward queue saturated…`) thêm nữa còn là **code không thể chạm tới**: nó chỉ chạy khi
+   `Channel.Writer.TryWrite` trả về `false`, mà `TryWrite` của một kênh `DropOldest` theo tài liệu LUÔN
+   trả về `true` (nó nhường chỗ bằng cách đuổi phần tử cũ, không bao giờ từ chối) — nên cảnh báo đó
+   không bao giờ thực sự in ra được.
+2. **Vòng lặp writer của spool trở nên chậm hơn rõ rệt đúng vào lúc tính năng này cần nó nhanh.** Vì
+   `IBridgeSpool` không có phương thức insert theo lô, `RunSpoolWriterLoopAsync` phải trả giá một vòng
+   mở-kết-nối + bốn `PRAGMA` + `INSERT` + `last_insert_rowid()` đầy đủ **cho MỖI message** — một chi phí
+   thông lượng thật mà chính comment của code thừa nhận — và chi phí này rơi đúng vào lúc Site đang sập
+   (đúng khoảng thời gian tính năng này tồn tại để phục vụ), khiến kênh giới hạn ở mục 1 dễ bị đầy hơn
+   hẳn so với trước bản build này.
+3. **Bản thân một lượt ghi spool có thể thất bại — hết đĩa, file bị khoá, thư mục biến mất — và lỗi đó vô
+   hình ở mọi nơi operator có thể nhìn vào.** `BridgeSpool.EnqueueAsync` trả về `-1` khi gặp bất kỳ lỗi
+   nào như vậy (không bao giờ throw, có chủ ý) và message đơn giản là không được lưu. `-1` đó **không**
+   làm tăng `droppedTotal`, **không** đổi `spoolDepth`, và **không** chuyển `bridgeState` sang `Faulted`.
+   `GET /v1/site` và trang `/site` có thể báo `Connected · Depth 0 · Dropped 0` trong khi 100% telemetry
+   hướng bắc đang âm thầm bị mất.
+4. **Tín hiệu duy nhất cho tất cả những điều trên chỉ là một dòng log — và trên hình thái cài đặt Windows
+   Service đã được tài liệu hoá, dòng log đó không có nơi nào để đi.** Nơi khởi tạo hệ thống nối thẳng
+   `logWarning`/`logError` của bridge này vào `Console.Error.WriteLine`; một tiến trình chạy dưới dạng
+   Windows Service không có console gắn kèm, và `Console.Error` được định tuyến sang `Stream.Null` trong
+   trường hợp đó. Vậy nên, trái với những gì phần này nói ở nơi khác, `Faulted` cộng với một dòng log
+   **không phải** là một tín hiệu đáng tin cậy trên một bản cài dạng service — có thể sẽ KHÔNG có tín
+   hiệu nào cả.)*
 
 ### 17.10 Certificate rotation, expiry visibility, and the `Identity` alarm (GĐ3 closeout WI-4) / Xoay vòng chứng chỉ, hiển thị hạn dùng, và cảnh báo `Identity`
 

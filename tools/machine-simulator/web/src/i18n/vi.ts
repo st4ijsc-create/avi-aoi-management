@@ -1888,7 +1888,7 @@ export const vi = {
       // này được ưu tiên cao hơn tất cả các trạng thái khác.
       Faulted: "Gặp lỗi",
       faultedWarning:
-        "Vòng lặp lưu đệm (spool)/chuyển tiếp nội bộ của cầu nối đã dừng — dữ liệu sản xuất có thể không còn được lưu hoặc chuyển tiếp dù bản thân kết nối trông vẫn bình thường. Lỗi này không tự phục hồi; cần khởi động lại dịch vụ để khắc phục. Hãy kiểm tra nhật ký (log) của máy để tìm nguyên nhân.",
+        "Vòng lặp lưu đệm (spool)/chuyển tiếp nội bộ của cầu nối đã dừng — dữ liệu sản xuất có thể không còn được lưu hoặc chuyển tiếp dù bản thân kết nối trông vẫn bình thường. Lỗi này không tự khắc phục: áp lại Site link ở bên dưới (nút Lưu) hoặc xoay vòng danh tính sẽ dựng lại cầu nối và gỡ lỗi này — khởi động lại dịch vụ cũng được nhưng không bắt buộc. Hãy kiểm tra nhật ký (log) của máy để tìm nguyên nhân.",
       lastError: (vars: Vars) => `Lỗi gần nhất: ${vars.error}`,
       siteVerified: (vars: Vars) => `Đã xác thực chứng chỉ Site: ${vars.fingerprint}`,
       unsDisabled:

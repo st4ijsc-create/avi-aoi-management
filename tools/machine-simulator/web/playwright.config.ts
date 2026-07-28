@@ -111,7 +111,12 @@ export default defineConfig({
       // DemoModeGate reads it at startup and BOTH starts the engine directly in Demo mode (the same
       // "exhibition packaging" contract §2.5 describes for a real `.exe`) AND permits `PUT /v1/mode`
       // to switch there, so nothing downstream of this webServer needs its own mode-switch step.
-      env: { ST4I_DEMO_ENABLED: "true" },
+      // GĐ3 closeout WI-1 — this device now advertises itself over mDNS by default whenever the UNS
+      // spine is enabled (§17.8), and Demo mode still runs a real UNS spine. Left on, this webServer
+      // would multicast `_st4i-machine._tcp` onto whatever LAN the dev/CI machine is attached to on
+      // every `npm run test:e2e`/`npm run dev`. That default-on decision was signed off for installs,
+      // not test runs — this suite has no business touching the network at all, so keep it silent.
+      env: { ST4I_DEMO_ENABLED: "true", ST4I_MDNS_ADVERTISE: "0" },
     },
   ],
 })
