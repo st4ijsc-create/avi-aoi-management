@@ -94,7 +94,18 @@ Mỗi mục dưới đây đều được ghi rõ trong ledger/blueprint hoặc 
 | Alarm/Line | Tự động HOLD fleet **đang chạy** khi có Critical mới; hold theo từng máy; shelving/rationalization; trạng thái PackML chuyển tiếp đầy đủ |
 | Đóng gói | Ký số MSI (cần chứng thư OV/EV); smoke cài/gỡ trên VM sạch + đo mốc ≤30 phút; MSIX |
 | Dữ liệu/Báo cáo | `run_events` theo từng máy (OEE Availability đa line); PdfSharp-GDI ⇒ chỉ chạy Windows; telemetry chưa có idempotency-key (rủi ro trùng khi replay WAL) |
-| Kỹ thuật vặt | WPF `MachineViewModel` chưa chắn `IConvertible→ToDouble` (hiện chưa với tới); `remove-data.ps1` khớp xslt mong manh; `--install` + MSI feature đăng ký trùng chưa có chắn |
+
+*(Hàng "Kỹ thuật vặt" trước đây liệt kê ở đây đã được xử lý hết bởi **Task WI-6**
+(`.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-6-brief.md`), nên đã bỏ khỏi bảng
+backlog — không phải nợ ẩn, mà là backlog đã đóng: (1) WPF `MachineViewModel` nay dùng
+`TelemetryNumeric.TryGet` giống 3 điểm gọi sẵn có, không còn `IConvertible→ToDouble` không chắn; (2)
+**đính chính**: khoản nợ "khớp xslt mong manh" trước đây bị gán nhầm cho `remove-data.ps1` —
+`packaging/remove-data.ps1` **không chứa xslt nào cả** (tra cứu chính xác theo tên service +
+`%ProgramData%` cố định); khớp mờ thật sự nằm ở `packaging/installer/exclude-shell-and-engine-exe.xslt`
+(`contains()` thay vì khớp đuôi chính xác) — nay đã sửa thành khớp hậu tố có phân cách đường dẫn, MSI đã
+dựng lại và xác minh; (3) `--install` nay có bước kiểm tra trước, báo lỗi rõ ràng + mã thoát riêng nếu
+service đã đăng ký (thay vì gọi `sc.exe create` trực tiếp), không còn xung đột âm thầm với tính năng
+`ServiceFeature` của MSI.)*
 
 ---
 

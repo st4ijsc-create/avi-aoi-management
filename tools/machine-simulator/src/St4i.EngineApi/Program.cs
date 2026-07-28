@@ -493,16 +493,24 @@ builder.Services.AddSingleton<St4i.EngineApi.Line.LineController>(sp =>
 // per EC-1/EC-2 — so this happens unconditionally, unlike the Site bridge manager below.
 //
 // GĐ3 closeout WI-4 — deviceIdentityStore is kept around (not just the DeviceIdentity it produced) so
-// DeviceIdentityProvider can re-mint through the SAME store/directory on a later rotation. deviceIdentity
-// itself is still registered as a plain singleton (kept for the odd direct-construction consumer like
-// SiteAdvertiser below, which captures it once at startup — a rotation isn't expected to update mDNS TXT
-// records live) — but SiteEndpoints/SiteBridgeManager now resolve DeviceIdentityProvider instead, so a
-// rotation is actually visible to them (see DeviceIdentityProvider's own doc comment for why the plain
-// singleton alone can't do this).
+// DeviceIdentityProvider can re-mint through the SAME store/directory on a later rotation.
+//
+// GĐ3 closeout WI-6 (task-6-brief.md item 5) — corrected the paragraph that used to live here: it claimed
+// deviceIdentity itself was "still registered as a plain singleton (kept for the odd direct-construction
+// consumer like SiteAdvertiser below, which captures it once at startup — a rotation isn't expected to
+// update mDNS TXT records live)". Both halves of that were already false by the time this task found it:
+// SiteAdvertiser (below) is constructed with deviceIdentityProvider, not a captured DeviceIdentity
+// snapshot; and a rotation DOES update the live mDNS TXT records — POST /v1/site/identity/rotate
+// (SiteEndpoints.RotateIdentityAsync) explicitly calls ISiteAdvertiser.RestartAsync() for exactly that
+// reason. Every real consumer (SiteEndpoints, SiteBridgeManager, SiteAdvertiser) resolves
+// DeviceIdentityProvider, never a bare DeviceIdentity — so the plain-singleton registration this comment
+// used to justify was verified dead (repo-wide search, src/ and tests/, for anything resolving a bare
+// DeviceIdentity from DI: zero hits) and removed. deviceIdentity itself is still a local value here —
+// it's what LoadOrCreate returns and what seeds the DeviceIdentityProvider constructed right below — it
+// just no longer needs its own separate DI registration since nothing ever asked the container for it.
 var deviceIdentityStore = new St4i.EdgeCore.Identity.DeviceIdentityStore(
     logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"));
 var deviceIdentity = deviceIdentityStore.LoadOrCreate(unsOptions.Cell);
-builder.Services.AddSingleton(deviceIdentity);
 var deviceIdentityProvider = new St4i.EdgeCore.Identity.DeviceIdentityProvider(deviceIdentityStore, deviceIdentity);
 builder.Services.AddSingleton(deviceIdentityProvider);
 

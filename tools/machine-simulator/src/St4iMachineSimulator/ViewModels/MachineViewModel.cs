@@ -257,9 +257,13 @@ public sealed partial class MachineViewModel : ObservableObject
             RecomputeSpcReferenceLines();
         }
 
-        if (reading.Telemetry.Count > 0 && reading.Telemetry[0].Value is IConvertible telemetryValue)
+        // GĐ3 WI-6 item 1 — same TelemetryNumeric hardening as HistorianModels.cs/MachineState.cs: a
+        // non-numeric first telemetry sample (e.g. an OPC-UA "status"="RUNNING" tag) must be silently
+        // skipped here, never thrown — `value is IConvertible` is true for string too, so the old
+        // unguarded `.ToDouble(null)` would have crashed this binding path on exactly that input.
+        if (reading.Telemetry.Count > 0 && TelemetryNumeric.TryGet(reading.Telemetry[0].Value, out var telemetryNumber))
         {
-            TelemetryValues.Add(telemetryValue.ToDouble(null));
+            TelemetryValues.Add(telemetryNumber);
             while (TelemetryValues.Count > MaxChartPoints) TelemetryValues.RemoveAt(0);
         }
 
@@ -320,7 +324,11 @@ public sealed partial class MachineViewModel : ObservableObject
     private static double SparkValue(DeviceReading reading)
     {
         if (reading.Metrics.Count > 0) return reading.Metrics[0].Value;
-        if (reading.Telemetry.Count > 0 && reading.Telemetry[0].Value is IConvertible c) return c.ToDouble(null);
+
+        // GĐ3 WI-6 item 1 — same TelemetryNumeric hardening as the block above: a non-numeric first
+        // telemetry sample must fall through to the pass/fail step below, never throw.
+        if (reading.Telemetry.Count > 0 && TelemetryNumeric.TryGet(reading.Telemetry[0].Value, out var number)) return number;
+
         return reading.Verdict == Verdict.Fail ? 0.0 : 1.0;
     }
 

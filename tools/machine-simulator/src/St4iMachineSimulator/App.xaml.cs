@@ -1305,6 +1305,43 @@ public partial class App : Application
         if (iotMachine.TelemetryValues.Count == 0)
             throw new InvalidOperationException($"selftest: {iotMachine.Code}'s TelemetryValues is empty after {iotMachine.Cycles} cycles — telemetry series did not populate");
 
+        // GĐ3 WI-6 item 1 regression guard — there is no xunit project for WPF view models (only this
+        // headless --selftest harness), so this is the closest testable seam for
+        // MachineViewModel.ApplyReading/SparkValue's TelemetryNumeric fix. Before that fix, a non-numeric
+        // first telemetry sample (e.g. an OPC-UA "status"="RUNNING" tag) made `value is IConvertible` +
+        // unconditional `.ToDouble(null)` throw a FormatException straight out of this binding path —
+        // the identical bug class that killed the OPC-UA driver slot earlier in this project.
+        // DemoTransport/SimulatedDriver (what this selftest's fleet run above actually uses) never emit a
+        // non-numeric telemetry value on their own, so feed the IoT tile one synthetic reading directly.
+        var telemetryCountBeforeNonNumericProbe = iotMachine.TelemetryValues.Count;
+        var nonNumericTelemetryReading = new DeviceReading
+        {
+            MachineCode = iotMachine.Code,
+            Kind = ReadingKind.Telemetry,
+            SerialNumber = "SELFTEST-NONNUMERIC",
+            Verdict = Verdict.Skip,
+            Telemetry = new List<TelemetrySample> { new("status", "RUNNING") },
+            CycleCounter = iotMachine.Cycles + 1,
+            Timestamp = DateTimeOffset.UtcNow,
+        };
+        try
+        {
+            iotMachine.ApplyReading(nonNumericTelemetryReading, new TransportAck(true));
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"selftest: {iotMachine.Code}'s ApplyReading THREW on a non-numeric telemetry value (\"RUNNING\") — the WI-6 item 1 TelemetryNumeric regression guard failed: {ex}");
+        }
+        if (iotMachine.TelemetryValues.Count != telemetryCountBeforeNonNumericProbe)
+            throw new InvalidOperationException(
+                $"selftest: {iotMachine.Code}'s TelemetryValues grew from a non-numeric telemetry sample (was {telemetryCountBeforeNonNumericProbe}, now {iotMachine.TelemetryValues.Count}) — it should have been skipped, not added");
+        if (iotMachine.Spark.Count == 0 || iotMachine.Spark[^1] != 1.0)
+            throw new InvalidOperationException(
+                $"selftest: {iotMachine.Code}'s Spark's last entry after the non-numeric probe was {(iotMachine.Spark.Count == 0 ? "<empty>" : iotMachine.Spark[^1].ToString())}, expected 1.0 (SparkValue's non-numeric-telemetry pass/fail fallback for a non-Fail verdict)");
+        Console.WriteLine(
+            $"SELFTEST non-numeric telemetry guard: {iotMachine.Code}.ApplyReading(\"RUNNING\") did not throw; TelemetryValues unchanged at {telemetryCountBeforeNonNumericProbe}, Spark fell back to 1.0");
+
         var aoiMachine = fleetVm.Machines.FirstOrDefault(m => m.Class == DeviceClass.AoiAvi && m.Cycles > 0)
             ?? throw new InvalidOperationException("selftest: no AOI machine tile reported a cycle — cannot verify BoardPoints");
         if (aoiMachine.BoardPoints.Count == 0)

@@ -3,11 +3,13 @@ using Xunit;
 
 namespace St4i.EngineApi.Tests.ServiceHost;
 
-/// <summary>WS-F1-T1 — <see cref="ServiceInstallVerbs"/>'s PURE arg-vector builders. Only
-/// <see cref="ServiceInstallVerbs.BuildScCreateArgs"/>/<see cref="ServiceInstallVerbs.BuildScDeleteArgs"/>
-/// (and <see cref="ServiceInstallVerbs.TryHandle"/>'s no-verb-present short-circuit, which also does zero
-/// I/O) are unit-tested here — the actual `sc.exe` process invocation (`--install`/`--uninstall`) and the
-/// `ServiceController` status query (`--status`) need either elevation or a real installed service, so
+/// <summary>WS-F1-T1 — <see cref="ServiceInstallVerbs"/>'s PURE arg-vector builders.
+/// <see cref="ServiceInstallVerbs.BuildScCreateArgs"/>/<see cref="ServiceInstallVerbs.BuildScDeleteArgs"/>,
+/// <see cref="ServiceInstallVerbs.TryHandle"/>'s no-verb-present short-circuit (zero I/O), and — WI-6 item
+/// 3 — <see cref="ServiceInstallVerbs.BuildAlreadyRegisteredOutcome"/> (the "service already registered ⇒
+/// which exit code + message" decision <c>Install</c>'s pre-check reports) are unit-tested here — the
+/// actual `sc.exe` process invocation (`--install`/`--uninstall`) and the real `ServiceController` SCM
+/// query (the pre-check's/`--status`'s I/O half) need either elevation or a real installed service, so
 /// those are manual/doc-verified only (see task-1-report.md), not exercised by this suite.</summary>
 public sealed class ServiceInstallVerbsTests
 {
@@ -78,5 +80,48 @@ public sealed class ServiceInstallVerbsTests
 
         Assert.False(handled);
         Assert.Equal(0, exitCode);
+    }
+
+    // ── WI-6 item 3 — `--install`'s "already registered" pre-check decision ────────────────────────
+    // BuildAlreadyRegisteredOutcome is the PURE (no I/O) half of the fix: given that the service is
+    // already registered, what exit code + message does --install report, without ever touching the
+    // real Service Control Manager or launching sc.exe. The I/O half (actually querying the SCM via
+    // TryGetServiceStatus, private) needs either a real installed service or admin rights that CI/a
+    // plain dev box doesn't have — same "manual, not unit-tested" carve-out this file's own class doc
+    // comment already applies to Install/Uninstall/Status's sc.exe/ServiceController calls.
+
+    [Fact]
+    public void BuildAlreadyRegisteredOutcome_ReturnsTheRealServiceExistsWin32Code_NonZero_AndDistinctFromAccessDenied()
+    {
+        var (exitCode, _) = ServiceInstallVerbs.BuildAlreadyRegisteredOutcome(ServiceHostConstants.ServiceName);
+
+        Assert.Equal(1073, exitCode); // ERROR_SERVICE_EXISTS — exactly what sc.exe create itself would return
+        Assert.NotEqual(0, exitCode);
+        Assert.NotEqual(5, exitCode); // must stay distinguishable from ReportScFailure's access-denied code
+    }
+
+    [Fact]
+    public void BuildAlreadyRegisteredOutcome_UsesTheGivenServiceNameArgument_NotAHardcodedLiteral()
+    {
+        // A deliberately-different name than ServiceHostConstants.ServiceName, so a passing test can only
+        // mean the message is genuinely parameterized on the argument — Install() itself is required to
+        // always pass ServiceHostConstants.ServiceName (see its own source), but this function's OWN
+        // contract must not silently hardcode that literal internally.
+        const string fakeServiceName = "SomeOtherServiceNameEntirely";
+
+        var (_, message) = ServiceInstallVerbs.BuildAlreadyRegisteredOutcome(fakeServiceName);
+
+        Assert.Contains(fakeServiceName, message);
+        Assert.DoesNotContain(ServiceHostConstants.ServiceName, message);
+    }
+
+    [Fact]
+    public void BuildAlreadyRegisteredOutcome_NamesTheMsiFeatureAsTheLikelyCause_AndSaysPickOneMechanism()
+    {
+        var (_, message) = ServiceInstallVerbs.BuildAlreadyRegisteredOutcome(ServiceHostConstants.ServiceName);
+
+        Assert.Contains("MSI", message);
+        Assert.Contains("ServiceFeature", message);
+        Assert.Contains("pick ONE", message, StringComparison.OrdinalIgnoreCase);
     }
 }

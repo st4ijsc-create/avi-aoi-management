@@ -86,6 +86,59 @@ public static class ServiceInstallVerbs
         return false;
     }
 
+    /// <summary>WI-6 item 3 — the distinct, non-zero exit code <see cref="Install"/> returns when its
+    /// pre-check finds <see cref="ServiceHostConstants.ServiceName"/> already registered, so `sc.exe
+    /// create` is never even attempted. Deliberately the real Win32 <c>ERROR_SERVICE_EXISTS</c> code
+    /// (winerror.h 1073) rather than an invented one: it's exactly what `sc.exe create` itself would have
+    /// returned had this pre-check not short-circuited the call, so a caller/script that already checks
+    /// for this exit code sees no behavioral change — only a clearer message up front, and no longer an
+    /// actual (harmless but pointless) `sc.exe create` process launch against a service that was always
+    /// going to be rejected.</summary>
+    internal const int ServiceAlreadyExistsExitCode = 1073; // ERROR_SERVICE_EXISTS
+
+    /// <summary>PURE (no I/O) — the message + exit code <see cref="Install"/> reports when
+    /// <paramref name="serviceName"/> is already registered with the SCM. Factored out from
+    /// <see cref="Install"/> specifically so this decision (what to say and what to return) is
+    /// unit-testable without touching the real Service Control Manager — see
+    /// <c>ServiceInstallVerbsTests</c>. Names the likely cause explicitly: <c>Package.wxs</c>'s optional
+    /// <c>ServiceFeature</c> registers this exact same service name via its own native
+    /// <c>&lt;ServiceInstall&gt;</c>, and <c>Package.wxs</c>'s own comment already documents "pick ONE
+    /// mechanism" as a convention with no enforcement — this is that enforcement, on the console-verb
+    /// side. Always uses <paramref name="serviceName"/> (never a literal), matching <see cref="Install"/>'s
+    /// own contract of always passing <see cref="ServiceHostConstants.ServiceName"/>.</summary>
+    internal static (int ExitCode, string Message) BuildAlreadyRegisteredOutcome(string serviceName) =>
+    (
+        ServiceAlreadyExistsExitCode,
+        $"--install: service '{serviceName}' is already registered with the Service Control Manager. " +
+        "This is most likely because the MSI's optional \"background service\" feature already " +
+        "registered it (Package.wxs's ServiceFeature) — pick ONE registration mechanism (the MSI " +
+        "feature OR this --install verb), never both. Run --status to check its current state, or " +
+        "--uninstall first if you need to re-register it via this verb instead."
+    );
+
+    /// <summary>Queries the SCM for <paramref name="serviceName"/> without throwing — <see langword="true"/>
+    /// + its current <paramref name="status"/> if the service is registered, <see langword="false"/> if
+    /// it isn't (or the SCM itself couldn't be reached; <see cref="ServiceController"/> doesn't distinguish
+    /// those two cases in its exception type, only in message text — see <see cref="Status"/>'s own
+    /// remarks). Shared by <see cref="Status"/> and <see cref="Install"/>'s pre-check so both verbs agree
+    /// on exactly what "the service exists" means.</summary>
+    private static bool TryGetServiceStatus(string serviceName, out ServiceControllerStatus status)
+    {
+        try
+        {
+            using var controller = new ServiceController(serviceName);
+            // Touch .Status now (not deferred) so a service name the SCM doesn't recognize throws HERE,
+            // inside this try, rather than propagating out as an unhandled InvalidOperationException.
+            status = controller.Status;
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            status = default;
+            return false;
+        }
+    }
+
     private static int Install()
     {
         var exePath = Environment.ProcessPath;
@@ -93,6 +146,18 @@ public static class ServiceInstallVerbs
         {
             Console.Error.WriteLine("--install: could not determine this process's own executable path (Environment.ProcessPath was null).");
             return 1;
+        }
+
+        // WI-6 item 3 — pre-check BEFORE ever calling `sc.exe create`: Package.wxs:90-97 documents "pick
+        // ONE mechanism" (this verb vs. the MSI's ServiceFeature) as an unenforced convention only: if the
+        // MSI feature already registered ServiceHostConstants.ServiceName, an unconditional `sc.exe
+        // create` here would hand the operator a raw sc.exe error with no hint at the actual cause. Query
+        // first; if it's already there, report why and bail — never call create against it.
+        if (TryGetServiceStatus(ServiceHostConstants.ServiceName, out _))
+        {
+            var (exitCode, message) = BuildAlreadyRegisteredOutcome(ServiceHostConstants.ServiceName);
+            Console.Error.WriteLine(message);
+            return exitCode;
         }
 
         var createArgs = BuildScCreateArgs(exePath, ServiceHostConstants.ServiceName, DefaultAccount, DefaultStartType);
@@ -134,23 +199,18 @@ public static class ServiceInstallVerbs
 
     private static int Status()
     {
-        try
+        // ServiceController's underlying exception (InvalidOperationException wrapping a Win32Exception)
+        // fires both when the service was never installed AND, distinctly, when the SCM itself can't be
+        // reached — TryGetServiceStatus collapses both to "false" here exactly as this verb always has;
+        // the message below still names both possibilities rather than picking one guess.
+        if (TryGetServiceStatus(ServiceHostConstants.ServiceName, out var status))
         {
-            using var controller = new ServiceController(ServiceHostConstants.ServiceName);
-            // Touch .Status now (not deferred) so a service name the SCM doesn't recognize throws HERE,
-            // inside this try, rather than propagating out as an unhandled InvalidOperationException.
-            var status = controller.Status;
             Console.WriteLine($"{ServiceHostConstants.ServiceName}: {status}");
             return 0;
         }
-        catch (InvalidOperationException)
-        {
-            // ServiceController throws this (wrapping a Win32Exception) both when the service was never
-            // installed AND, distinctly, when the SCM itself can't be reached — the message text differs
-            // between those two, so surface it verbatim instead of collapsing to one guess.
-            Console.WriteLine($"{ServiceHostConstants.ServiceName}: not installed (or the Service Control Manager could not be queried).");
-            return 1;
-        }
+
+        Console.WriteLine($"{ServiceHostConstants.ServiceName}: not installed (or the Service Control Manager could not be queried).");
+        return 1;
     }
 
     /// <summary>Launches `sc.exe` with <paramref name="scArgs"/> via <see cref="ProcessStartInfo.ArgumentList"/>
