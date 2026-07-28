@@ -39,6 +39,8 @@ import { CentroidImportDialog } from "@/components/products/CentroidImportDialog
 import { EditProductDialog } from "@/components/products/EditProductDialog";
 import { CloneProductDialog } from "@/components/products/CloneProductDialog";
 import { PointTemplateDialog } from "@/components/products/PointTemplateDialog";
+// Wave 2 đường A (Task 3) — đề xuất ngưỡng hàng loạt cho N điểm đã chọn (xem trước, không duyệt hàng loạt).
+import { BatchSuggestDialog } from "@/components/productModels/BatchSuggestDialog";
 // Doc 31 MP6 (decision #2) — pass/fail criteria + per-point lighting recipe editors.
 import { PointCriteriaEditor, type PointCriteriaItem } from "@/components/products/PointCriteriaEditor";
 import { PointLightingEditor } from "@/components/products/PointLightingEditor";
@@ -467,7 +469,9 @@ export default function ProductModels() {
   // Batch selection states
   const [selectedPointIds, setSelectedPointIds] = useState<Set<number>>(new Set());
   const [isBatchMode, setIsBatchMode] = useState(false);
-  
+  // Wave 2 đường A (Task 3) — đề xuất ngưỡng hàng loạt cho selectedPointIds.
+  const [isBatchSuggestOpen, setIsBatchSuggestOpen] = useState(false);
+
   // Validation errors
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
@@ -2896,9 +2900,9 @@ export default function ProductModels() {
                         <Square className="h-3 w-3" />
                         {t("common.deselectAll")}
                       </Button>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={handleBatchExport}
                         disabled={selectedPointIds.size === 0}
                         className="gap-1"
@@ -2906,9 +2910,21 @@ export default function ProductModels() {
                         <Download className="h-3 w-3" />
                         {t("history.exportCsv")}
                       </Button>
-                      <Button 
-                        size="sm" 
-                        variant="destructive" 
+                      {/* Wave 2 đường A (Task 3) — ĐỀ XUẤT hàng loạt (xem trước, không duyệt
+                          hàng loạt — duyệt hàng loạt đã có riêng ở /threshold-approvals). */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsBatchSuggestOpen(true)}
+                        disabled={selectedPointIds.size === 0}
+                        className="gap-1"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        {t("productModels.batchSuggestButton", "AI đề xuất cho {{n}} điểm", { n: selectedPointIds.size })}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
                         onClick={handleBatchDelete}
                         disabled={selectedPointIds.size === 0}
                         className="gap-1"
@@ -3526,6 +3542,14 @@ export default function ProductModels() {
         onSaveAsTemplate={handleSaveAsTemplate}
         onApplyTemplate={handleApplyTemplate}
         onDeleteTemplate={(id) => deleteTemplateMutation.mutate({ id })}
+      />
+
+      {/* Wave 2 đường A (Task 3) — đề xuất ngưỡng hàng loạt cho N điểm đã chọn. */}
+      <BatchSuggestDialog
+        open={isBatchSuggestOpen}
+        pointDefIds={Array.from(selectedPointIds)}
+        currentUserId={user?.id}
+        onClose={() => setIsBatchSuggestOpen(false)}
       />
     </>
   );
