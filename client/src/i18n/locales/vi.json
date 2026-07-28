@@ -13920,6 +13920,8 @@
       "uploading": "Đang nạp…",
       "uploadSuccess": "Đã nạp \"{{sourceRef}}\" — thêm {{chunksAdded}} đoạn (chunk).",
       "uploadSummary": "Xong {{done}}/{{total}}, lỗi {{failed}}.",
+      "uploadSummarySkipped": "Xong {{done}}/{{total}}, lỗi {{failed}}, đã huỷ {{skipped}}.",
+      "uploadAllCancelled": "Đã huỷ toàn bộ {{skipped}} tệp trước khi gửi — chưa gửi tệp nào.",
       "uploadError": "Nạp dữ liệu thất bại.",
       "urlTitle": "Nạp một trang web",
       "urlDesc": "Tải trang dưới lớp chắn SSRF của server, trích xuất văn bản, rồi nạp giống như một tài liệu.",

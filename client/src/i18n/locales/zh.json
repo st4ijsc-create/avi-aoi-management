@@ -14494,6 +14494,8 @@
       "uploading": "正在导入…",
       "uploadSuccess": "已导入「{{sourceRef}}」— 新增 {{chunksAdded}} 个片段。",
       "uploadSummary": "完成 {{done}}/{{total}}，失败 {{failed}}。",
+      "uploadSummarySkipped": "完成 {{done}}/{{total}}，失败 {{failed}}，已取消 {{skipped}}。",
+      "uploadAllCancelled": "已在发送前取消全部 {{skipped}} 个文件 — 未上传任何内容。",
       "uploadError": "导入失败。",
       "urlTitle": "导入网页",
       "urlDesc": "在服务器 SSRF 防护下抓取网页、提取文本，并按文档同样的方式导入。",

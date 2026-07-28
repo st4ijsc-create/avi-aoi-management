@@ -13937,6 +13937,8 @@
       "uploading": "Ingesting…",
       "uploadSuccess": "Ingested \"{{sourceRef}}\" — {{chunksAdded}} chunk(s) added.",
       "uploadSummary": "Done {{done}}/{{total}}, {{failed}} failed.",
+      "uploadSummarySkipped": "Done {{done}}/{{total}}, {{failed}} failed, {{skipped}} cancelled.",
+      "uploadAllCancelled": "Cancelled all {{skipped}} file(s) before sending — nothing was uploaded.",
       "uploadError": "Ingest failed.",
       "urlTitle": "Ingest a web page",
       "urlDesc": "Fetches the page under the server's SSRF guard, extracts text, and ingests it the same way as a document.",

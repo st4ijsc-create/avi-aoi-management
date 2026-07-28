@@ -18,7 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { filesFromInput, filesFromDrop } from "./sourceTabLogic";
+import { mapTrpcError } from "@/lib/trpcErrors";
+import { filesFromInput, filesFromDrop, isQueuedFileStillPending } from "./sourceTabLogic";
 
 export interface SourceTabProps {
   enabled: boolean;
@@ -60,11 +61,21 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
   const corporaQuery = trpc.kbStudio.listCorpora.useQuery();
 
   const [corpus, setCorpus] = useState("");
-  const [queuedFiles, setQueuedFiles] = useState<QueuedFile[]>([]);
+  const [queuedFiles, setQueuedFilesState] = useState<QueuedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [url, setUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Vòng sửa 1 (review) — `queuedFilesRef` là hàng đợi SỐNG: cập nhật ĐỒNG BỘ ngay tại thời
+  // điểm gọi (không đợi React render). `handleUpload`'s loop đọc từ ref này ngay trước khi gửi
+  // từng file — KHÔNG dùng snapshot `queuedFiles` chụp lúc bấm nút — nên nó luôn thấy được một
+  // file vừa bị xoá và bỏ qua thật, thay vì vẫn gửi một file đã "biến mất" khỏi màn hình.
+  const queuedFilesRef = useRef<QueuedFile[]>([]);
+  const applyQueue = (next: QueuedFile[]) => {
+    queuedFilesRef.current = next;
+    setQueuedFilesState(next);
+  };
 
   const invalidateAfterIngest = () => {
     void utils.kbStudio.listJobs.invalidate();
@@ -73,11 +84,20 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
 
   const addFiles = (files: File[]) => {
     if (files.length === 0) return;
-    setQueuedFiles((prev) => [...prev, ...files.map((file) => ({ id: newFileId(), file, status: "waiting" as const }))]);
+    applyQueue([
+      ...queuedFilesRef.current,
+      ...files.map((file) => ({ id: newFileId(), file, status: "waiting" as const })),
+    ]);
   };
 
+  // Vòng sửa 1 — xoá CHỈ được phép khi file vẫn "waiting". Đây là lớp phòng thủ thứ hai (lớp
+  // thứ nhất là nút X chỉ vẽ ra khi status === "waiting", xem JSX bên dưới): nếu người dùng
+  // bấm X đúng lúc `handleUpload` vừa chuyển file đó sang "running" (đồng bộ, trước bất kỳ
+  // `await` nào — xem comment trong `handleUpload`) nhưng UI khung hình trước đó vẫn còn vẽ nút
+  // X, filter dưới đây đọc lại trạng thái SỐNG và sẽ KHÔNG xoá — file đã "running" thì không
+  // còn cách nào rút lại được nữa (đã tính là đang gửi).
   const removeQueuedFile = (id: string) => {
-    setQueuedFiles((prev) => prev.filter((qf) => qf.id !== id));
+    applyQueue(queuedFilesRef.current.filter((qf) => !(qf.id === id && qf.status === "waiting")));
   };
 
   // No onSuccess/onError here: Task 5 ingests one file per job in a loop (see handleUpload)
@@ -100,16 +120,35 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
 
   /** Task 5: one `ingestDocumentJob` call PER queued file, sequentially — each file is its own
    * independent job. A rejection on one file (bad type/too large/decode error, all surfaced by
-   * the server as a real error message) is recorded against THAT file and the loop continues;
-   * it never silently drops the file or masks the failure as a success. The closing toast is a
-   * truthful "done N/M, failed K" summary — never reported as a plain success when K > 0. */
+   * the server as a real error message via `mapTrpcError` — see vòng sửa 1 note below) is
+   * recorded against THAT file and the loop continues; it never silently drops the file or
+   * masks the failure as a success. The closing toast is a truthful "done N/M, failed K"
+   * summary — never reported as a plain success when K > 0.
+   *
+   * Vòng sửa 1 (review) — `initialQueue` below fixes the ORDER we walk (a stable snapshot at
+   * click-time is fine for iteration order), but before SENDING each file we re-check
+   * `isQueuedFileStillPending` against `queuedFilesRef.current` (the LIVE queue, mutated by
+   * `removeQueuedFile` on every click) — not the snapshot. A file removed by the user before
+   * its turn is skipped entirely: no API call, not counted in done/failed, only in `skipped`.
+   * The "is it still pending?" check and the synchronous `applyQueue(...status: "running")`
+   * that follows run back-to-back with NO `await` between them, so there is no interleaving
+   * window where a file could be both removed and claimed-as-running at once (see
+   * `removeQueuedFile`'s own status==="waiting" guard for the other half of this argument). */
   const handleUpload = async () => {
-    if (queuedFiles.length === 0 || !trimmedCorpus) return;
+    const initialQueue = queuedFilesRef.current;
+    if (initialQueue.length === 0 || !trimmedCorpus) return;
     setIsUploading(true);
     let done = 0;
     let failed = 0;
-    for (const qf of queuedFiles) {
-      setQueuedFiles((prev) => prev.map((x) => (x.id === qf.id ? { ...x, status: "running" } : x)));
+    let skipped = 0;
+    for (const qf of initialQueue) {
+      if (!isQueuedFileStillPending(qf.id, queuedFilesRef.current)) {
+        // Người dùng đã xoá file này khỏi hàng đợi trước khi tới lượt gửi — tôn trọng thao tác
+        // huỷ THẬT: không gọi ingestDocumentJob, không tính vào done/failed.
+        skipped += 1;
+        continue;
+      }
+      applyQueue(queuedFilesRef.current.map((x) => (x.id === qf.id ? { ...x, status: "running" } : x)));
       try {
         const base64 = await fileToBase64(qf.file);
         const result = await uploadMutation.mutateAsync({
@@ -119,18 +158,35 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
           base64,
         });
         done += 1;
-        setQueuedFiles((prev) =>
-          prev.map((x) => (x.id === qf.id ? { ...x, status: "done", chunksAdded: result.chunksAdded } : x)),
+        applyQueue(
+          queuedFilesRef.current.map((x) =>
+            x.id === qf.id ? { ...x, status: "done", chunksAdded: result.chunksAdded } : x,
+          ),
         );
       } catch (err) {
         failed += 1;
-        const message = err instanceof Error ? err.message : t("kbStudio.source.uploadError", "Ingest failed.");
-        setQueuedFiles((prev) => (prev.map((x) => (x.id === qf.id ? { ...x, status: "error", error: message } : x))));
+        // Vòng sửa 1 — dùng bộ dịch lỗi tRPC dùng chung (client/src/lib/trpcErrors.ts) thay vì
+        // `err.message` thô: nó GIỮ NGUYÊN lý do thật từ server (vd. "Unsupported document
+        // type…" cho sai định dạng, "Document exceeds N bytes" cho quá lớn, thông điệp fetch
+        // gốc cho lỗi mạng — ba câu khác nhau, không câu nào bị gộp chung), đồng thời chặn rò
+        // rỉ SQL/nội bộ và cắt bớt chuỗi quá dài — không tự bịa thêm nhãn phân loại nào cả.
+        const message = mapTrpcError(err);
+        applyQueue(
+          queuedFilesRef.current.map((x) => (x.id === qf.id ? { ...x, status: "error", error: message } : x)),
+        );
       }
     }
     setIsUploading(false);
     invalidateAfterIngest();
-    const summary = t("kbStudio.source.uploadSummary", { done, total: queuedFiles.length, failed });
+    const attempted = done + failed;
+    if (attempted === 0 && skipped > 0) {
+      toast.warning(t("kbStudio.source.uploadAllCancelled", { skipped }));
+      return;
+    }
+    const summary =
+      skipped > 0
+        ? t("kbStudio.source.uploadSummarySkipped", { done, total: attempted, failed, skipped })
+        : t("kbStudio.source.uploadSummary", { done, total: attempted, failed });
     if (failed === 0) toast.success(summary);
     else toast.error(summary);
   };
