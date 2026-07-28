@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Sockets;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -12,8 +13,9 @@ using Xunit;
 namespace St4i.EngineApi.Tests.ServiceHost;
 
 /// <summary>
-/// Task WI-5 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-5-brief.md) —
-/// <see cref="AdminRecoveryVerbs"/>, the out-of-band <c>--reset-admin-password</c> lock-out-recovery verb.
+/// Task WI-5 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-5-brief.md, fix round 1
+/// per review) — <see cref="AdminRecoveryVerbs"/>, the out-of-band <c>--reset-admin-password</c>
+/// lock-out-recovery verb.
 ///
 /// Pure argument-parsing/no-I/O cases (mirroring <c>ServiceInstallVerbsTests</c>) need no directory at all.
 /// Every other case that touches <c>security.db</c> points <c>ST4I_SECURITY_DIR</c> at a FRESH temp
@@ -129,6 +131,30 @@ public sealed class AdminRecoveryVerbsTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Fix-round I2/I4/M2 — a --password FLAG that IS present but unusable (missing value, blank value, too
+    // short, or a value that itself looks like another flag) is a usage ERROR, exactly like a missing
+    // username already is: non-zero exit, a clear message, and zero DB mutation. Falling back to silent
+    // generation here would be the automation trap the fix-round review called out (I4) — a caller who
+    // explicitly asked for a KNOWN password must get an error, not an unknown, only-ever-printed-once one.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(new object[] { new[] { "--reset-admin-password", "bob", "--password" } })] // value missing entirely
+    [InlineData(new object[] { new[] { "--reset-admin-password", "bob", "--password", "   " } })] // blank value
+    [InlineData(new object[] { new[] { "--reset-admin-password", "bob", "--password", "--force" } })] // value looks like another flag (M2)
+    [InlineData(new object[] { new[] { "--reset-admin-password", "bob", "--password", "short7" } })] // below the 8-char floor (I2)
+    public async Task TryHandle_UnusablePasswordFlag_ReturnsNonZeroExit_PrintsUsage_AndNeverTouchesTheDb(string[] args)
+    {
+        var securityDir = NewTempDir();
+
+        var (exitCode, _, stderr) = await RunVerbCapturingConsoleAsync(securityDir, args);
+
+        Assert.NotEqual(0, exitCode);
+        Assert.Contains(AdminRecoveryVerbs.VerbName, stderr, StringComparison.Ordinal);
+        Assert.Empty(Directory.GetFileSystemEntries(securityDir));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Unknown username -> a brand-new Admin account, audited.
     // ─────────────────────────────────────────────────────────────────────
 
@@ -166,6 +192,45 @@ public sealed class AdminRecoveryVerbsTests
         Assert.Null(row.ClientIp);
         Assert.DoesNotContain("Str0ngP@ssw0rd", row.NewValueJson, StringComparison.Ordinal);
         Assert.Contains("\"created\":true", row.NewValueJson, StringComparison.Ordinal);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix-round I1 (the most serious finding) — the FIRST-EVER invocation against a directory that has
+    // never existed before (no host has ever started here) must still lock the ACL down before anything is
+    // written into it, exactly like Program.cs/CredentialStore/DeviceIdentityStore already do for every
+    // OTHER creator of a security-sensitive directory under %ProgramData%\ST4I\sim\*. Same assertion shape
+    // as SecurityDirAclTests.Apply_OnFreshDirectory_..., but exercised end-to-end through the verb itself
+    // rather than by calling SecurityDirAcl.Apply directly.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TryHandle_OnANeverBeforeSeenDirectory_LocksDownTheAclBeforeCreatingSecurityDb()
+    {
+        // A path that does NOT exist yet (Directory.CreateTempSubdirectory would create it) — the verb
+        // itself must be the one to create it AND apply the ACL, mirroring a genuinely fresh deployment
+        // where this verb runs before the host has ever started.
+        var securityDir = Path.Combine(Path.GetTempPath(), "st4i-adminrecovery-acl-test-" + Guid.NewGuid().ToString("N"));
+        Assert.False(Directory.Exists(securityDir));
+
+        var exitCode = await RunVerbAsync(securityDir, "--reset-admin-password", "acl-test-admin", "--password", "Str0ngP@ssw0rd!1");
+        Assert.Equal(0, exitCode);
+
+        Assert.True(Directory.Exists(securityDir));
+        var acl = new DirectoryInfo(securityDir).GetAccessControl(AccessControlSections.Access);
+
+        // Inheritance disabled — %ProgramData%'s (or, here, temp's) default/parent ACL no longer applies.
+        Assert.True(acl.AreAccessRulesProtected);
+
+        var grantedTo = acl
+            .GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>()
+            .Select(rule => (SecurityIdentifier)rule.IdentityReference)
+            .ToArray();
+
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, domainSid: null);
+        var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, domainSid: null);
+        Assert.Contains(grantedTo, sid => sid.Equals(system));
+        Assert.Contains(grantedTo, sid => sid.Equals(administrators));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -229,7 +294,10 @@ public sealed class AdminRecoveryVerbsTests
 
     // ─────────────────────────────────────────────────────────────────────
     // Generated-password path — strong, printed exactly once, and (proven via a real store lookup) actually
-    // the password that got hashed in.
+    // the password that got hashed in. Coverage note (fix-round precision, per review): this proves the
+    // generated password round-trips through PasswordHasher.VerifyHashedPassword against the persisted
+    // hash — it does NOT exercise a real HTTP login with it (that's covered, for an EXPLICIT --password,
+    // by the WebApplicationFactory<Program> test further down). Accepted as-is per review.
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -243,11 +311,16 @@ public sealed class AdminRecoveryVerbsTests
         var lines = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var generatedPassword = lines[^1];
 
-        Assert.True(generatedPassword.Length >= 20, $"expected a long generated password, got length {generatedPassword.Length}: '{generatedPassword}'");
-        Assert.True(generatedPassword.Any(char.IsUpper));
-        Assert.True(generatedPassword.Any(char.IsLower));
-        Assert.True(generatedPassword.Any(char.IsDigit));
-        Assert.True(generatedPassword.Any(c => !char.IsLetterOrDigit(c)));
+        // Fix-round I3 — deterministic properties ONLY: exact length, and every character drawn from the
+        // documented alphabet. The generator draws each character independently/uniformly with no
+        // class-composition guarantee (upper/lower/digit/punctuation each individually has a small but
+        // real chance of being entirely absent from any one 24-character draw — e.g. P(no digit) ≈ 3.1%),
+        // and the product has no class-composition password policy to justify asserting one — a previous
+        // version of this test asserted class presence and was consequently flaky (~4.5% failure rate per
+        // run). Length + alphabet membership is what's actually guaranteed by construction.
+        Assert.Equal(24, generatedPassword.Length);
+        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*-_=+";
+        Assert.All(generatedPassword, c => Assert.Contains(c, alphabet));
 
         var userStore = new SqliteUserStore(securityDir);
         var user = await userStore.GetByUsernameAsync("generated-pw-user");
@@ -279,37 +352,67 @@ public sealed class AdminRecoveryVerbsTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Never builds a web host — the observable consequence: the fixed default port (5199, Program.cs) is
-    // still completely free immediately after the verb returns.
+    // Never builds a web host — fix-round M5: the observable consequence is now checked deterministically
+    // (Program.cs unconditionally creates securityDir\keys\ for the DataProtection key ring the moment the
+    // real host builds — see Program.cs:112-113) rather than by binding the fixed default port 5199, which
+    // would spuriously fail on a developer machine that happens to have the real app already running.
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task TryHandle_DoesNotBuildAWebHost_TheFixedDefaultPortStaysFree()
+    public async Task TryHandle_DoesNotBuildAWebHost_NeverCreatesTheDataProtectionKeysDirectory()
     {
         var securityDir = NewTempDir();
 
         var exitCode = await RunVerbAsync(securityDir, "--reset-admin-password", "someone", "--password", "Str0ngP@ssw0rd!1");
         Assert.Equal(0, exitCode);
 
-        // Program.cs's fixed default port for the REAL web host is 5199 (builder.WebHost.UseUrls(...)) — if
-        // AdminRecoveryVerbs had gone on to call WebApplication.CreateBuilder/Kestrel, binding our OWN
-        // listener to the same port right after would fail with "address already in use". Successfully
-        // starting (and immediately stopping) our own listener here is the observable proof that no such
-        // host was ever built.
-        TcpListener? listener = null;
-        try
+        // Program.cs (only reachable once WebApplication.CreateBuilder + the composition root below it
+        // run) unconditionally creates this exact subdirectory for the DataProtection key ring. Its
+        // continued absence after a successful verb run is a direct, deterministic proof that no such host
+        // was ever built — unlike a port-binding probe, this can't spuriously fail because of an unrelated
+        // process already running on the developer's machine.
+        Assert.False(Directory.Exists(Path.Combine(securityDir, "keys")));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix-round M1 — the audit-append retry. AppendAuditRowAsync is `internal` specifically as a test seam
+    // (see its own doc comment) so this test can simulate N SEPARATE processes/hosts racing the SAME
+    // security.db file directly: each task below constructs its OWN SqliteAuditStore instance (an
+    // in-process append lock only ever serializes calls made through the SAME instance — see
+    // SqliteAuditStore's own doc comment), then all fire concurrently via Task.WhenAll. Without the bounded
+    // retry, some of these calls would lose a genuine UNIQUE-constraint race on the explicit `id` and
+    // silently swallow/log a lost row (AppendAuditRowAsync never rethrows) — this test would then legitimately
+    // fail with page.Total < n, catching a retry regression.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AppendAuditRowAsync_ConcurrentInvocationsAcrossSeparateStoreInstances_AllPersist_ChainStaysValid()
+    {
+        var securityDir = NewTempDir();
+        const int n = 8;
+
+        var tasks = new Task[n];
+        for (var i = 0; i < n; i++)
         {
-            listener = new TcpListener(IPAddress.Loopback, 5199);
-            listener.Start();
+            var idx = i;
+            tasks[idx] = AdminRecoveryVerbs.AppendAuditRowAsync(
+                new SqliteAuditStore(securityDir), // a SEPARATE instance per "process" — see this test's own comment.
+                username: $"concurrent-user-{idx}",
+                userId: idx,
+                created: true,
+                promoted: true,
+                reEnabled: false,
+                previousRole: "(none — new account)");
         }
-        catch (SocketException ex)
-        {
-            Assert.Fail($"Port 5199 was not free after AdminRecoveryVerbs.TryHandle returned — a web host may have been built: {ex.Message}");
-        }
-        finally
-        {
-            listener?.Stop();
-        }
+
+        await Task.WhenAll(tasks);
+
+        var auditStore = new SqliteAuditStore(securityDir);
+        var chain = await auditStore.VerifyChainAsync(CancellationToken.None);
+        Assert.True(chain.Ok, chain.Detail);
+
+        var page = await auditStore.QueryAsync(null, null, null, AdminRecoveryVerbs.AuditAction, null, 200, 0, CancellationToken.None);
+        Assert.Equal(n, page.Total);
     }
 
     // ─────────────────────────────────────────────────────────────────────
