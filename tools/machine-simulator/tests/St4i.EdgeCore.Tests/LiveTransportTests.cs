@@ -33,6 +33,39 @@ public class LiveTransportTests
         Assert.Contains("/api/v1/ingest/process-result", h.LastRequest!.RequestUri!.ToString());
     }
 
+    // GP-2 review round 1: a genealogy value that has crossed a sidecar boundary through
+    // St4i.Connector.Abstractions.Json.ConnectorObjectConverter comes back typed `long`, not `int`
+    // (decision (a)) — this proves that value survives the REMAINING hop, all the way through
+    // LiveTransport.ReadExtra and the vendored St4iDeviceClient SDK's own JSON serialization, onto the
+    // actual outbound wire body. Source-reading alone (LiveTransport.GetDouble's switch already lists
+    // `long`) doesn't cover this hop, because ReadExtra never calls GetDouble at all — it copies genealogy
+    // values into the SDK's `extra` bag completely verbatim, so the risk here is really "does the SDK's
+    // own serializer choke on a boxed long", which only an actual send-and-inspect-the-body test answers.
+    [Fact]
+    public async Task ProcessResult_send_with_long_genealogy_value_reaches_the_wire_body_unharmed()
+    {
+        var h = new CapturingHandler
+        {
+            Responder = (_, __) => (System.Net.HttpStatusCode.Created,
+                "{\"ok\":true,\"data\":{\"success\":true,\"processResultId\":1}}"),
+        };
+        var live = LiveTransport.ForMachine("http://x", "mk_test", "AOI-01", null, true, h);
+        var env = new CanonicalEnvelope(ReadingKind.ProcessResult, "AOI-01", "/api/v1/ingest/process-result",
+            new()
+            {
+                ["serialNumber"] = "SN1",
+                ["stepType"] = "reflow",
+                ["result"] = "pass",
+                ["idempotencyKey"] = "AOI-01:reflow:000001",
+                ["boardIndex"] = 5L, // the exact CLR type ConnectorObjectConverter.Read produces.
+            }, "AOI-01:reflow:000001");
+
+        var ack = await live.SendAsync(env, default);
+
+        Assert.True(ack.Success);
+        Assert.Contains("\"boardIndex\":5", h.LastBody);
+    }
+
     // Regression: an OK measurement point has no defect — the Normalizer leaves defectSeverity/
     // defectCatalogCode null. LiveTransport used to coerce that to "" via `?? ""`, which serialized as
     // `"defectSeverity":""` on the wire. The live server schema is

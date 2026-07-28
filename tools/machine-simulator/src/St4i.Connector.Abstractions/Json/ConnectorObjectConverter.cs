@@ -30,11 +30,25 @@ namespace St4i.Connector.Abstractions.Json;
 /// <see cref="DeviceReading.Genealogy"/> values are <c>string | int | double</c>
 /// (<c>Doc28Parser.Parse</c>: <c>lotCode</c>/<c>panelId</c>/<c>operatorId</c> → string,
 /// <c>boardIndex</c> → int, <c>cycleTimeSec</c> → double). This converter's accepted CLR write-domain is
-/// exactly <c>null | bool | string | int | long | double</c> — <see cref="long"/> is included alongside
-/// <see cref="int"/> not because any driver produces one today, but because THIS converter's own
-/// decision (a) below returns <see cref="long"/> from <c>Read</c>, and a value it already produced must
-/// remain writable (a relay/proxy sidecar re-serializing a reading it only just deserialized is a real,
-/// if currently unbuilt, scenario — round-tripping twice must be idempotent).</para>
+/// WIDER than that documented minimum, though: <c>null | bool | string</c>, every standard CLR
+/// integral-numeric primitive (<see cref="sbyte"/>/<see cref="byte"/>/<see cref="short"/>/
+/// <see cref="ushort"/>/<see cref="int"/>/<see cref="uint"/>/<see cref="long"/>/<see cref="ulong"/> — all
+/// widen losslessly to <see cref="long"/>, EXCEPT a <see cref="ulong"/> exceeding
+/// <see cref="long.MaxValue"/>, which is rejected — see <c>WriteIntegral</c>), and both
+/// <see cref="float"/> and <see cref="double"/> (a <see cref="float"/> widens losslessly to
+/// <see cref="double"/> — every 32-bit float value has an exact 64-bit double representation). Review
+/// round 1 (task-2-report.md "Fix round 1"): the FIRST version of this converter only accepted exactly
+/// <c>int | long | double</c> and rejected e.g. a <see cref="float"/> telemetry value with the SAME
+/// <see cref="JsonException"/> a genuinely out-of-domain <see cref="DateTime"/> gets — but
+/// <see cref="TelemetryNumeric.TryGet"/>, <c>Normalizer.CoerceToNumber</c>, and
+/// <c>LiveTransport.GetDouble</c> all ALREADY accept <see cref="float"/>/<see cref="short"/>/etc.
+/// in-process today, so the narrower domain would have handed the first third-party driver author who
+/// wrote <c>Value = someFloatSensorReading</c> a hard failure at the sidecar boundary for a value that
+/// works everywhere else — exactly the kind of surprise decision (b) exists to prevent, not enable.
+/// <see cref="decimal"/> is the one CLR numeric primitive still explicitly rejected — widening it to
+/// <see cref="double"/> IS genuinely lossy (decimal keeps ~28-29 significant digits; double keeps
+/// ~15-17), so it gets its own named <c>case decimal</c> arm with a message explaining why, rather than
+/// silently falling into the generic "unknown type" default arm below.</para>
 ///
 /// <para><b>Decision (a) — integral numbers.</b> JSON text cannot distinguish the abstract values <c>5</c>
 /// and <c>5.0</c>, but a JSON NUMBER TOKEN'S OWN LEXICAL SHAPE can: <see cref="Utf8JsonReader.TryGetInt64"/>
@@ -75,11 +89,24 @@ namespace St4i.Connector.Abstractions.Json;
 /// <see cref="string"/>) is exactly the kind of silent, type-changing surprise at a process boundary this
 /// whole task exists to close off — a receiving sidecar would have no way to tell "this was always a
 /// string" from "this used to be something else and got coerced". So: <c>Write</c> throws
-/// <see cref="JsonException"/> for any CLR value outside <c>null | bool | string | int | long | double</c>
+/// <see cref="JsonException"/> for any CLR value outside the widened numeric domain described above
 /// (including non-finite <see cref="double"/>s — <see cref="double.NaN"/>/±<see cref="double.PositiveInfinity"/>
-/// are not valid JSON at all), and <c>Read</c> throws <see cref="JsonException"/> for a JSON array/object
+/// are not valid JSON at all, and <see cref="decimal"/>/an overflowing <see cref="ulong"/>, both genuinely
+/// lossy to widen), and <c>Read</c> throws <see cref="JsonException"/> for a JSON array/object
 /// token, or for a number token so large it can only be represented as a non-finite <see cref="double"/>
 /// (symmetric with the WRITE-side NaN/Infinity rejection).</para>
+///
+/// <para><b>Decision (b)'s blast radius (review round 1 — read this before building the sidecar host):</b>
+/// throwing from <c>Write</c> aborts serialization of the ENTIRE <see cref="DeviceReading"/> being
+/// serialized, not just the one offending value — <see cref="JsonSerializer.Serialize{TValue}(TValue, JsonSerializerOptions)"/>
+/// has no "skip this one field and continue" mode once a converter throws partway through an object
+/// graph. That is a deliberate escalation from today's IN-PROCESS behaviour, where
+/// <see cref="TelemetryNumeric.TryGet"/> merely skips a value it cannot convert and every other value in
+/// the same reading is unaffected. At a process boundary that escalation is the right call — see this
+/// class doc's opening paragraphs on why silent coercion is worse — but it means whoever builds the
+/// sidecar host MUST wrap each reading's serialize call in its own try/catch and quarantine (log +
+/// drop/dead-letter) the ONE bad reading, or a single buggy third-party driver emitting one out-of-domain
+/// value kills its entire reading stream, not just that one sample.</para>
 /// </summary>
 public sealed class ConnectorObjectConverter : JsonConverter<object?>
 {
@@ -161,17 +188,38 @@ public sealed class ConnectorObjectConverter : JsonConverter<object?>
                 writer.WriteStringValue(s);
                 return;
 
-            case int i:
-                writer.WriteNumberValue((long)i);
+            // Review round 1: widened from the original "exactly int|long" to every standard CLR
+            // integral-numeric primitive — a float/short/byte/etc. telemetry value already works
+            // in-process (TelemetryNumeric.TryGet/Normalizer.CoerceToNumber/LiveTransport.GetDouble all
+            // already accept it), so rejecting it only at the sidecar boundary would be exactly the
+            // surprise decision (b) exists to prevent, not cause. All of these widen to long losslessly
+            // (ulong is the one exception — handled, not silently truncated, inside WriteIntegral).
+            case sbyte or byte or short or ushort or int or uint or long or ulong:
+                WriteIntegral(writer, value);
                 return;
 
-            case long l:
-                writer.WriteNumberValue(l);
+            // float widens to double losslessly (every 32-bit float value has an exact 64-bit double
+            // representation) — same WriteFloating path double itself uses, including the forced
+            // decimal-point marker (decision (a)) and the NaN/Infinity rejection.
+            case float f:
+                WriteFloating(writer, f);
                 return;
 
             case double d:
                 WriteFloating(writer, d);
                 return;
+
+            case decimal:
+                // The one CLR numeric primitive still explicitly rejected, not merely uncovered: unlike
+                // every arm above, there is no lossless path to this converter's one floating-point wire
+                // representation (double) — decimal keeps ~28-29 significant digits, double keeps
+                // ~15-17. Named explicitly (its own case, its own message) rather than left to fall into
+                // the generic "unknown type" default below, per review round 1.
+                throw new JsonException(
+                    $"Value of type {value.GetType()} (decimal) is explicitly rejected: widening it to " +
+                    "double would silently lose precision (decimal keeps ~28-29 significant digits, " +
+                    "double keeps ~15-17). Rejecting loudly rather than silently coercing — see " +
+                    "ConnectorObjectConverter's class doc comment, decision (b).");
 
             default:
                 // Decision (b): reject loudly. A DateTime/Guid/array/List<T>/nested POCO/JsonElement/etc.
@@ -181,9 +229,31 @@ public sealed class ConnectorObjectConverter : JsonConverter<object?>
                 // task exists to close off.
                 throw new JsonException(
                     $"Value of type {value.GetType()} is outside the connector wire contract's documented " +
-                    "object? domain (null|bool|string|int|long|double). Rejecting loudly rather than " +
-                    "silently coercing — see ConnectorObjectConverter's class doc comment, decision (b).");
+                    "object? domain (null|bool|string|any integral CLR numeric primitive|float|double). " +
+                    "Rejecting loudly rather than silently coercing — see ConnectorObjectConverter's class " +
+                    "doc comment, decision (b).");
         }
+    }
+
+    private static void WriteIntegral(Utf8JsonWriter writer, object value)
+    {
+        long asLong;
+        try
+        {
+            asLong = Convert.ToInt64(value, CultureInfo.InvariantCulture);
+        }
+        catch (OverflowException)
+        {
+            // Only reachable for a ulong greater than long.MaxValue. Widening THAT to double would be
+            // genuinely lossy (double cannot exactly represent every 64-bit integer) — the same reason
+            // `decimal` is rejected above rather than silently coerced, not a special case of its own.
+            throw new JsonException(
+                $"Value {value} ({value.GetType()}) exceeds long.MaxValue and cannot be represented on " +
+                "the wire without lossy widening to double — rejecting loudly rather than silently " +
+                "losing precision, see ConnectorObjectConverter's class doc comment, decision (b).");
+        }
+
+        writer.WriteNumberValue(asLong);
     }
 
     private static void WriteFloating(Utf8JsonWriter writer, double d)
