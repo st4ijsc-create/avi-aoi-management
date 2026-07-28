@@ -108,7 +108,9 @@ export const runRcaAnalysisTool: Tool<RunRcaAnalysisParams, { rcaId: number | nu
   preview: previewRunRca,
   execute: async (p, ctx) => {
     const { runRca, persistRca } = await import("../../aiRcaCopilot");
-    const result = await runRca({ machineId: p.machineId, defectType: p.defectType, lang: ctx.lang });
+    // Final-fix round, Task 6 (SECURITY) — real RBAC role (ToolExecContext.user.role, the
+    // authenticated session) for the Studio-corpus gate — see RunRcaInput.callerRole.
+    const result = await runRca({ machineId: p.machineId, defectType: p.defectType, lang: ctx.lang, callerRole: ctx.user.role });
     const rcaId = result.ok
       ? await persistRca({ result, requestedBy: ctx.user.id, requestedByName: ctx.user.name ?? null })
       : null;

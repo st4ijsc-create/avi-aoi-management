@@ -148,7 +148,11 @@ export async function runSpecialistSessionInBackground(args: {
   sessionId: number;
   userId: number;
   runInput: Parameters<typeof runSpecialistAgent>[0];
-  gatherContext: { files?: string[]; objective: string } | null;
+  // Final-fix round, Task 6 (SECURITY) — `callerRole` threads the REAL RBAC role (already
+  // guaranteed admin/engineer here — this whole router sits behind `specialistProcedure`) into
+  // gatherRepoContext → retrieveKnowledge's Studio-corpus gate. Without it, the gate's
+  // fail-closed default would silently starve this ALREADY-entitled surface of Studio citations.
+  gatherContext: { files?: string[]; objective: string; callerRole?: string } | null;
 }): Promise<void> {
   const { sessionId, userId, runInput, gatherContext } = args;
   // I-5 — dù `runInput` theo hợp đồng mới không còn được kỳ vọng chứa
@@ -202,7 +206,8 @@ export async function runSpecialistWorkflowSessionInBackground(args: {
   sessionId: number;
   userId: number;
   workflowInput: Parameters<typeof runSpecialistWorkflowChain>[0];
-  gatherContext: { files?: string[]; objective: string } | null;
+  // Final-fix round, Task 6 (SECURITY) — see runSpecialistSessionInBackground's identical note.
+  gatherContext: { files?: string[]; objective: string; callerRole?: string } | null;
   mode: "workflow" | "module-audit";
   presetMeta?: { id: string; label: string };
 }): Promise<void> {
@@ -296,7 +301,7 @@ export const aiSpecialistAgentRouter = router({
       const gatherContext =
         includeRepoContext === false
           ? null
-          : { files: runInput.files, objective: runInput.objective };
+          : { files: runInput.files, objective: runInput.objective, callerRole: String(ctx.user.role) };
 
       // Fire-and-forget: KHÔNG await — trả sessionId ngay để FE poll.
       void runSpecialistSessionInBackground({
@@ -330,7 +335,7 @@ export const aiSpecialistAgentRouter = router({
       const gatherContext =
         includeRepoContext === false
           ? null
-          : { files: workflowInput.files, objective: workflowInput.objective };
+          : { files: workflowInput.files, objective: workflowInput.objective, callerRole: String(ctx.user.role) };
 
       // Fire-and-forget: KHÔNG await — trả sessionId ngay để FE poll.
       void runSpecialistWorkflowSessionInBackground({
@@ -435,7 +440,7 @@ export const aiSpecialistAgentRouter = router({
           language,
           modelId: input.modelId,
         },
-        gatherContext: { files: preset.files, objective },
+        gatherContext: { files: preset.files, objective, callerRole: String(ctx.user.role) },
         mode: "module-audit",
         presetMeta: { id: preset.id, label: preset.label },
       });

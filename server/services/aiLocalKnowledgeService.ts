@@ -37,6 +37,11 @@ import { getLastAutosyncEvalGate } from "./kbSyncScheduler";
 // pre-existing pure-semantic scoring below. This is a SEPARATE, independently
 // flagged signal from the aiReranker.ts LLM/gguf semantic reranker imported above.
 import { isFeedbackRerankEnabled, computeFeedbackWeight, loadFeedbackNetRatings } from "./aiKbFeedbackSignal";
+// Final-fix round, Task 6 (SECURITY) — role gate for Training Studio corpus content. See
+// kbStudioAccess.ts's header for the full "why" (pre-Wave-2 access level was
+// roleProcedure("admin","engineer").use(require2FA); Wave 2's gatherStudioHits wiring had no
+// role check at all).
+import { canAccessStudioCorpus } from "./ai/kbStudioAccess";
 
 export type KbIntent =
   | "how_to"
@@ -107,6 +112,16 @@ export interface KbQueryContext {
   selectedProductCode?: string;
   selectedProductModelId?: number;
   selectedLot?: string;
+  /**
+   * Final-fix round, Task 6 (SECURITY) — the REAL authenticated RBAC role (server/db/auth.ts's
+   * UserRole, e.g. "admin"/"engineer"/"operator" — NOT this file's own `UserRole` "tone" type,
+   * see kbStudioAccess.ts's header), used ONLY to gate Training Studio corpus merging
+   * (canAccessStudioCorpus, in retrieveKnowledge below). MUST be populated SERVER-SIDE from the
+   * authenticated session by the caller — NEVER from request body (aiLocalKnowledgeApi.ts's
+   * parseContext() intentionally does NOT whitelist this field, so a client can never set it via
+   * `POST .../ask`'s `context` param). Absent/unrecognized ⇒ fail-closed (no Studio content).
+   */
+  callerRole?: string;
 }
 
 export interface KbStructuredResponse {
@@ -1779,7 +1794,15 @@ export async function retrieveKnowledge(
   // Chỉ chạy khi qVec khác null — nếu embed-model của corpus lệch (guard
   // computeEmbedModelMatches ở trên đã từ chối vector), không có cách so khớp hợp lệ
   // với kho Studio nên bỏ qua nhánh này, KHÔNG nhúng lại (embedQuestion) lần hai.
-  if (qVec) {
+  //
+  // Final-fix round, Task 6 (SECURITY) — gate ĐẶT NGAY TẠI CHỖ MỘT (retrieveKnowledge là
+  // choke-point DUY NHẤT gọi gatherStudioHits — xem kbStudioAccess.ts's header), thay vì lặp
+  // lại kiểm quyền ở từng caller (answerQuestion/streamAnswer/API endpoint/RCA copilot/
+  // repoContextService…). `canAccessStudioCorpus` fail-closed: role thiếu/không nhận diện được
+  // ⇒ điều kiện `if` dưới đây SAI ⇒ toàn bộ khối trộn bị bỏ qua HỆT như khi kho Studio rỗng —
+  // citations/contexts/confidence giữ nguyên kết quả nguồn hệ thống, không có cách nào phân
+  // biệt "bị chặn quyền" với "kho rỗng" từ output (KHÔNG rò rỉ sự tồn tại — yêu cầu sản phẩm).
+  if (qVec && canAccessStudioCorpus(context?.callerRole)) {
     try {
       const { gatherStudioHits } = await import("./aiLocalKnowledgeStudio");
       const studioHits = await gatherStudioHits(qVec, topK);
@@ -1862,8 +1885,21 @@ export async function retrieveKnowledge(
   };
 }
 
-function getCacheKey(question: string, topK: number, userRole: UserRole = "engineer"): string {
-  return `${userRole}|${normalizeText(question)}|k=${topK}`;
+// Final-fix round, Task 6 (SECURITY) — `studioEligible` added to the cache key. WHY: this cache
+// is keyed on `userRole`, the "tone" role (worker/engineer/manager/it_admin — see this file's
+// own `UserRole`, NOT the RBAC role), and MULTIPLE distinct real RBAC roles collapse onto the
+// SAME tone value (mapAppRoleToAiRole in aiChatRouter.ts: "quality_inspector" AND "maintenance"
+// AND "engineer" all map to tone "engineer"). Without this, a Studio-ineligible caller
+// (e.g. real role "maintenance") could receive a CACHED KbAnswerResult that an eligible caller
+// (real role "engineer", same tone "engineer", same question) produced moments earlier WITH
+// Studio citations baked into `answer`/`citations`/`contexts` — bypassing the gate entirely via
+// the cache, independent of and in addition to the retrieveKnowledge()-level fix. Incorporating
+// eligibility into the key means an ineligible and an eligible caller can never share a cache
+// entry, regardless of tone-role collisions.
+// Exported for direct unit testing of the collision fix above (kept internal-use elsewhere —
+// answerQuestion/streamAnswer are this module's only real callers).
+export function getCacheKey(question: string, topK: number, userRole: UserRole = "engineer", studioEligible = false): string {
+  return `${userRole}|${normalizeText(question)}|k=${topK}|studio=${studioEligible ? 1 : 0}`;
 }
 
 export async function answerQuestion(
@@ -1875,7 +1911,17 @@ export async function answerQuestion(
   execCtx?: ToolExecContext,
 ): Promise<KbAnswerResult> {
   const userLevel = rolToUserLevel(userRole);
-  const key = getCacheKey(question, topK, userRole);
+  // Final-fix round, Task 6 (SECURITY) — `kbContext` carries the REAL RBAC role
+  // (execCtx.user.role, the authenticated session — never the `userRole` "tone" param above,
+  // which is spoofable on POST .../ask) into every retrieveKnowledge() call below, so the
+  // Studio-corpus gate (canAccessStudioCorpus, inside retrieveKnowledge) sees who's actually
+  // asking. Deliberately a SEPARATE variable from `context`: `context` still goes to
+  // tryExecuteTool() unchanged (read-tool routing has nothing to do with this gate).
+  const kbContext: KbQueryContext | undefined = execCtx?.user?.role
+    ? { ...context, callerRole: execCtx.user.role }
+    : context;
+  const studioEligible = canAccessStudioCorpus(execCtx?.user?.role);
+  const key = getCacheKey(question, topK, userRole, studioEligible);
   const now = Date.now();
 
   // Step 1 — Try a real-time tool first. Tool answers must NOT be cached
@@ -1887,7 +1933,7 @@ export async function answerQuestion(
   // GĐ2 — write-tool matched: short-circuit with the confirm card (propose) or
   // a localized RBAC refusal. No LLM, no cache.
   if (toolExec.pendingAction || toolExec.denied) {
-    const retrieve = await retrieveKnowledge(question, topK, context);
+    const retrieve = await retrieveKnowledge(question, topK, kbContext);
     const message = toolExec.denied
       ? toolExec.denied.message
       : toolExec.pendingAction!.summary;
@@ -1908,7 +1954,7 @@ export async function answerQuestion(
   // immediately without invoking the LLM. This avoids hallucinated answers
   // for questions like "lô của tôi sao rồi?" that lack a concrete identifier.
   if (!toolResult && clarifyMessage) {
-    const retrieve = await retrieveKnowledge(question, topK, context);
+    const retrieve = await retrieveKnowledge(question, topK, kbContext);
     const followUpSuggestions = buildFollowUpSuggestions(retrieve.intent, retrieve.language);
     return {
       ...retrieve,
@@ -1930,7 +1976,7 @@ export async function answerQuestion(
     }
   }
 
-  const retrieve = await retrieveKnowledge(question, topK, context);
+  const retrieve = await retrieveKnowledge(question, topK, kbContext);
 
   let provider: "ollama" | "extractive" | "tool" = "extractive";
   let answer = buildExtractiveAnswer(question, retrieve);
@@ -2073,7 +2119,14 @@ export async function* streamAnswer(
   execCtx?: ToolExecContext,
 ): AsyncGenerator<StreamEvent> {
   const userLevel = rolToUserLevel(userRole);
-  const key = getCacheKey(question, topK, userRole);
+  // Final-fix round, Task 6 (SECURITY) — same reasoning as answerQuestion() above: `kbContext`
+  // carries the REAL RBAC role into retrieveKnowledge()'s Studio gate; `context` (unchanged)
+  // still drives tryExecuteTool().
+  const kbContext: KbQueryContext | undefined = execCtx?.user?.role
+    ? { ...context, callerRole: execCtx.user.role }
+    : context;
+  const studioEligible = canAccessStudioCorpus(execCtx?.user?.role);
+  const key = getCacheKey(question, topK, userRole, studioEligible);
   const now = Date.now();
 
   // Real-time tool first (live DB state — must NOT be cached).
@@ -2084,7 +2137,7 @@ export async function* streamAnswer(
   // GĐ2/GĐ3a — write-tool, client-tool, or refusal matched: emit meta +
   // (pending_action | client_action | refusal token) + done.
   if (toolExec.pendingAction || toolExec.clientAction || toolExec.denied) {
-    const retrieve = await retrieveKnowledge(question, topK, context);
+    const retrieve = await retrieveKnowledge(question, topK, kbContext);
     yield {
       type: "meta",
       intent: retrieve.intent,
@@ -2117,7 +2170,7 @@ export async function* streamAnswer(
 
   // Short-circuit clarification (mirrors answerQuestion).
   if (!toolResult && clarifyMessage) {
-    const retrieve = await retrieveKnowledge(question, topK, context);
+    const retrieve = await retrieveKnowledge(question, topK, kbContext);
     yield {
       type: "meta",
       intent: retrieve.intent,
@@ -2168,7 +2221,7 @@ export async function* streamAnswer(
     }
   }
 
-  const retrieve = await retrieveKnowledge(question, topK, context);
+  const retrieve = await retrieveKnowledge(question, topK, kbContext);
 
   yield {
     type: "meta",

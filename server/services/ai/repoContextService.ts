@@ -90,6 +90,12 @@ export interface GatherRepoContextInput {
   repoRoot?: string;
   /** Test seam — mặc định <repoRoot>/knowledge/code-graph.json. */
   codeGraphPath?: string;
+  /**
+   * Final-fix round, Task 6 (SECURITY) — the REAL authenticated RBAC role of whoever triggered
+   * this repo-context gather, forwarded into retrieveKnowledge()'s Studio-corpus gate (see
+   * kbStudioAccess.ts). Caller-populated only — this module has no auth awareness of its own.
+   */
+  callerRole?: string;
 }
 
 export const DEFAULT_MAX_FILE_BYTES = 65_536;
@@ -190,7 +196,14 @@ export async function gatherRepoContext(input: GatherRepoContextInput): Promise<
   if (wantRag && input.objective) {
     try {
       const { retrieveKnowledge } = await import("../aiLocalKnowledgeService");
-      const kb = await retrieveKnowledge(input.objective, input.ragTopK ?? 5);
+      // Final-fix round, Task 6 (SECURITY) — thread the REAL RBAC role through so
+      // retrieveKnowledge's Studio-corpus gate sees who's asking. Today every caller of
+      // gatherRepoContext (aiSpecialistAgentRouter.ts's run/runWorkflowChain/runModuleAudit) is
+      // already behind `roleProcedure("admin","engineer")`, so `input.callerRole` is always
+      // "admin"/"engineer" in practice — this is defense-in-depth (and keeps the gate from
+      // silently starving the Specialist Studio of legitimate Studio citations by defaulting
+      // to fail-closed when no role is threaded at all).
+      const kb = await retrieveKnowledge(input.objective, input.ragTopK ?? 5, { callerRole: input.callerRole });
       ragSnippets = (kb.contexts ?? []).map((text, i) => ({
         sourcePath: (kb.citations?.[i] as any)?.sourcePath ?? "(unknown)",
         text,

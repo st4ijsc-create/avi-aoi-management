@@ -397,9 +397,13 @@ describe("aiSpecialistAgentRouter — Wave 1 FF-B: request path không chờ gat
     expect(res).toEqual({ sessionId: 42, started: true });
     // "vô điều kiện" — được GỌI (chỉ là không được AWAIT ở request path), không có
     // công tắc includeRepoContext trong input schema của runModuleAudit.
+    // Task 6 (SECURITY, final-fix round) — `callerRole` now threads ctx.user.role through so
+    // retrieveKnowledge's Studio-corpus gate sees the (already admin/engineer-only, via
+    // specialistProcedure) caller.
     expect(gatherRepoContextMock).toHaveBeenCalledWith({
       files: ["server/routers/aiChatRouter.ts"],
       objective: "Audit module AI Chat",
+      callerRole: "engineer",
     });
   });
 });

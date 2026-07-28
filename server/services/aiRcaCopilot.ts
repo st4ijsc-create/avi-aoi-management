@@ -92,6 +92,15 @@ export interface RunRcaInput {
   defectType?: string;
   incidentId?: number;
   lang?: ToolLang;
+  /**
+   * Final-fix round, Task 6 (SECURITY) — the REAL authenticated RBAC role of whoever triggered
+   * this RCA run, forwarded into gatherEvidence()'s two retrieveKnowledge() calls (similar-
+   * incidents RAG + causal-graph hybrid context) so their Studio-corpus citations obey the same
+   * admin/engineer gate as every other consumer (see kbStudioAccess.ts). Absent for
+   * system-triggered runs (aiBatchRcaScheduler.ts's cron job has no human user) — that's the
+   * correct fail-closed default, not an oversight.
+   */
+  callerRole?: string;
 }
 
 // ─── Empty / degrade helpers ───────────────────────────────────────────────────
@@ -168,7 +177,8 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
     (async () => {
       const { retrieveKnowledge } = await import("./aiLocalKnowledgeService");
       const q = [input.defectType, input.machineId ? `machine ${input.machineId}` : ""].filter(Boolean).join(" ") || "defect root cause";
-      const r = await retrieveKnowledge(q, 5);
+      // Final-fix round, Task 6 (SECURITY) — see RunRcaInput.callerRole's doc comment.
+      const r = await retrieveKnowledge(q, 5, { callerRole: input.callerRole });
       return (r.citations ?? []).map((c: any) => ({ title: c.title, sourcePath: c.sourcePath, score: c.score }));
     })(),
     // (g) V20 — recent operator corrections (W7-B's measurement_corrections; fail-open []).
@@ -180,7 +190,7 @@ async function gatherEvidence(input: RunRcaInput, lang: ToolLang): Promise<Evide
       const defectText = input.defectType ?? "defect";
       const machineText = input.machineId != null ? `machine ${input.machineId}` : null;
       const ctx = await hybridDefectContext(defectText, machineText, async (query) => {
-        const r = await retrieveKnowledge(query, 5);
+        const r = await retrieveKnowledge(query, 5, { callerRole: input.callerRole });
         return (r.citations ?? []).map((c: any) => ({ id: String(c.id), title: c.title, sourcePath: c.sourcePath, score: c.score, text: c.title }));
       });
       return ctx.causalText;

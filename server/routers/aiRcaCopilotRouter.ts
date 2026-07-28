@@ -42,6 +42,12 @@ export const aiRcaCopilotRouter = router({
         defectType: input.defectType,
         incidentId: input.incidentId,
         lang,
+        // Final-fix round, Task 6 (SECURITY) — real RBAC role for the Studio-corpus gate
+        // (kbStudioAccess.ts), forwarded through gatherEvidence's RAG/causal retrieveKnowledge
+        // calls. `diagnose` is a `protectedProcedure` (any authenticated role), unlike the
+        // Specialist Studio's admin/engineer-only gate — this is where the RBAC gate actually
+        // does real gating work for a non-admin/engineer caller (e.g. operator).
+        callerRole: String(user.role),
       });
       const rcaId = result.ok && result.hypotheses.length > 0
         ? await persistRca({ result, requestedBy: user.id, requestedByName: user.name ?? null })

@@ -81,7 +81,7 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
       { id: 101, text: "STUDIO_TEXT_HIGH", sourceRef: "studio-high.pdf", score: 0.97, corpus: "manuals" },
       { id: 102, text: "STUDIO_TEXT_LOW", sourceRef: "studio-low.pdf", score: 0.3, corpus: "manuals" },
     ]);
-    const res = await retrieveKnowledge("hỏi về AOI", 5);
+    const res = await retrieveKnowledge("hỏi về AOI", 5, { callerRole: "engineer" });
 
     expect(res.citations.length).toBe(res.contexts.length);
     const expectedTextById: Record<string, string> = {
@@ -103,7 +103,7 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
     gatherStudioHitsMock.mockResolvedValue([
       { id: 201, text: "STUDIO_TEXT", sourceRef: "studio.pdf", score: 0.5, corpus: "manuals" },
     ]);
-    const res = await retrieveKnowledge("hỏi về AOI", 5);
+    const res = await retrieveKnowledge("hỏi về AOI", 5, { callerRole: "engineer" });
     const ids = res.citations.map((c) => c.id);
     expect(ids).toContain("c1");
     expect(ids).toContain("c2");
@@ -116,7 +116,7 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
     gatherStudioHitsMock.mockResolvedValue([
       { id: 301, text: "STUDIO_TOP", sourceRef: "studio-top.pdf", score: 0.99, corpus: "manuals" },
     ]);
-    const res = await retrieveKnowledge("hỏi về AOI", 5);
+    const res = await retrieveKnowledge("hỏi về AOI", 5, { callerRole: "engineer" });
 
     expect(res.citations.length).toBeLessThanOrEqual(5);
     const scores = res.citations.map((c) => c.score);
@@ -131,7 +131,7 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
 
   it("(d) gatherStudioHits ném lỗi ⇒ vẫn trả về đủ kết quả hệ thống, không hỏng cả lượt", async () => {
     gatherStudioHitsMock.mockRejectedValue(new Error("studio branch down"));
-    const res = await retrieveKnowledge("hỏi về AOI", 5);
+    const res = await retrieveKnowledge("hỏi về AOI", 5, { callerRole: "engineer" });
     const ids = res.citations.map((c) => c.id);
     expect(ids).toEqual(expect.arrayContaining(["c1", "c2"]));
     expect(res.citations.every((c) => c.origin !== "studio")).toBe(true);
@@ -142,7 +142,7 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
     gatherStudioHitsMock.mockResolvedValue([
       { id: 401, text: "STUDIO_WEAK", sourceRef: "studio-weak.pdf", score: 0.05, corpus: "manuals" },
     ]);
-    const res = await retrieveKnowledge("hỏi về AOI", 5);
+    const res = await retrieveKnowledge("hỏi về AOI", 5, { callerRole: "engineer" });
     expect(res.citations.some((c) => c.id === "studio:manuals:401")).toBe(false);
     expect(res.contexts).not.toContain("STUDIO_WEAK");
   });
@@ -158,7 +158,7 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
     gatherStudioHitsMock.mockResolvedValue([
       { id: 101, text: "STUDIO_TEXT_HIGH", sourceRef: "studio-high.pdf", score: 0.9, corpus: "manuals" },
     ]);
-    const res = await retrieveKnowledge("xyzzy plugh unrelated nonsense query", 5);
+    const res = await retrieveKnowledge("xyzzy plugh unrelated nonsense query", 5, { callerRole: "engineer" });
 
     // Citations đã trộn+sắp đúng (Task 4 / vòng sửa 1, KHÔNG phải phần hỏng ở đây).
     expect(res.citations[0]?.id).toBe("studio:manuals:101");
@@ -171,6 +171,17 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
   });
 
   it("kho Studio rỗng ([]) ⇒ kết quả y hệt trước Task 4 (không có citation origin=studio)", async () => {
+    gatherStudioHitsMock.mockResolvedValue([]);
+    const res = await retrieveKnowledge("hỏi về AOI", 5, { callerRole: "engineer" });
+    const ids = res.citations.map((c) => c.id);
+    expect(ids).toEqual(expect.arrayContaining(["c1", "c2"]));
+    expect(res.citations.every((c) => c.origin === undefined)).toBe(true);
+  });
+
+  it("Task 6 — bất biến GỐC vẫn đúng nguyên văn: kho Studio rỗng + KHÔNG truyền role nào (context undefined) ⇒ y hệt trước Wave 2", async () => {
+    // Bất biến gốc (đã kiểm chứng ở các vòng trước) không nói gì về role — nó phải đúng độc
+    // lập với role. Test này giữ nguyên hình dạng gọi gốc (không context) để không đánh mất
+    // vùng phủ đó khi Task 6 thêm role gate.
     gatherStudioHitsMock.mockResolvedValue([]);
     const res = await retrieveKnowledge("hỏi về AOI", 5);
     const ids = res.citations.map((c) => c.id);

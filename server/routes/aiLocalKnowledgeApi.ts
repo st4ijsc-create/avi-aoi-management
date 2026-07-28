@@ -317,7 +317,11 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
         return;
       }
 
-      const data = await retrieveKnowledge(question, topK);
+      // Final-fix round, Task 6 (SECURITY) — this endpoint used to call retrieveKnowledge()
+      // with NO context at all, discarding the just-authenticated `user.role` entirely. That's
+      // exactly the gap the Studio-corpus role gate (canAccessStudioCorpus, inside
+      // retrieveKnowledge) closes: `callerRole` here is the REAL DB role, never client-supplied.
+      const data = await retrieveKnowledge(question, topK, { callerRole: String((user as any).role) });
       res.json({ success: true, data });
     } catch (error: any) {
       res.status(500).json({
