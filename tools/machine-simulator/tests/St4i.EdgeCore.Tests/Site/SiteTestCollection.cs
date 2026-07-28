@@ -16,8 +16,20 @@ namespace St4i.EdgeCore.Tests.Site;
 /// socket/TLS/thread-pool load was enough to occasionally flip a PRE-EXISTING, otherwise-reliable test
 /// (<c>DeviceIdentityStoreTests.Certificate_LoadedFromStore_CanCompleteARealMutualTlsHandshake</c>) from
 /// "always green" to "flakes under load" — confirmed via repeated isolated vs. full-suite runs before this
-/// collection was added. Serializing just THIS task's own 4 test classes against each other removes a
+/// collection was added. Serializing just THIS task's own test classes against each other removes a
 /// meaningful chunk of that added peak load with zero change to any pre-existing file.</para>
+///
+/// <para><b>WI-3 review fix round 2 (cheap hardening 3):</b> <c>BridgeSpoolTests</c> joined this collection
+/// too — it mutates the SAME process-wide <c>ST4I_BRIDGE_SPOOL_DIR</c>/<c>ST4I_BRIDGE_SPOOL_ENABLED</c>
+/// environment variables <c>UnsBridgeSpoolTests</c> holds for the several seconds a broker-boot-and-reconnect
+/// test takes, and was NOT in this collection despite that overlap — a real (not theoretical) interleaving
+/// hazard this collection's own <c>DisableParallelization</c> does nothing to prevent for a class sitting
+/// OUTSIDE it. <b>This is the actual guarantee to understand:</b> <c>DisableParallelization = true</c> only
+/// serializes test classes that are THEMSELVES tagged into this same collection against each other — it has
+/// no effect whatsoever on any other collection (including every unmarked/default-collection class in this
+/// assembly), which keeps running fully in parallel with this one. Any future test class that reads or
+/// writes an environment variable another class in THIS collection also touches needs to join this same
+/// collection, or the same class of race recurs silently.</para>
 /// </summary>
 [CollectionDefinition("St4i.EdgeCore.Tests.Site", DisableParallelization = true)]
 public sealed class SiteTestCollection

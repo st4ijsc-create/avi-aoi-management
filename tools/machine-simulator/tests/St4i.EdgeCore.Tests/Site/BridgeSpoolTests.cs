@@ -17,7 +17,21 @@ namespace St4i.EdgeCore.Tests.Site;
 /// byte-for-byte binary fidelity for a Sparkplug-B-protobuf-shaped payload (0x00 bytes + high bytes),
 /// never-throws on a directory that vanishes out from under the store, and no duplicate seq values under
 /// concurrent enqueues.
+///
+/// <para>WI-3 review fix round 2 (cheap hardening 3) — tagged into the SAME <c>"St4i.EdgeCore.Tests.Site"</c>
+/// collection as <c>UnsBridgeSpoolTests</c>/<c>UnsBridgeTests</c>/<c>SiteBridgeManagerTests</c>/
+/// <c>SiteLinkStoreTests</c>/<c>SiteTrustPinTests</c> (see <see cref="SiteTestCollection"/>'s own doc
+/// comment for why that collection serializes its members against each other). This class's
+/// <c>ResolveRoot_EnvOverride_ReturnsConfiguredDirectory</c>/<c>BridgeSpoolOptions_FromEnvironment_*</c> tests
+/// mutate the SAME <c>ST4I_BRIDGE_SPOOL_DIR</c>/<c>ST4I_BRIDGE_SPOOL_ENABLED</c> process-wide environment
+/// variables <c>UnsBridgeSpoolTests</c> holds for the several seconds it takes to boot two brokers and
+/// reconnect — left in its own (unmarked, therefore concurrently-scheduled) collection, xunit could
+/// legitimately interleave the two, flipping the env var out from under a bridge mid-test. Being in the SAME
+/// collection is what actually prevents that (<c>SiteTestCollection</c>'s own <c>DisableParallelization</c>
+/// only serializes MEMBERS of one collection against each other — it does nothing for a class sitting in a
+/// different, unmarked collection, which is exactly the gap this closes).</para>
 /// </summary>
+[Collection("St4i.EdgeCore.Tests.Site")]
 public sealed class BridgeSpoolTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();
