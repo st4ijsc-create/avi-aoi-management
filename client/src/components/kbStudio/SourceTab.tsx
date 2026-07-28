@@ -8,16 +8,17 @@
  * `trpc.kbStudio.ingestUrlJob`, wrapping E3-3's `kbIngest.ingestUrl`). No parse/chunk/embed
  * logic lives here — this is a thin upload UI.
  */
-import { useRef, useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Upload, Link as LinkIcon, Loader2 } from "lucide-react";
+import { Upload, Link as LinkIcon, Loader2, X, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { filesFromInput, filesFromDrop } from "./sourceTabLogic";
 
 export interface SourceTabProps {
   enabled: boolean;
@@ -35,13 +36,33 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/** Per-file ingest lifecycle — Task 5: each queued file gets its OWN `ingestDocumentJob`
+ * call, so one file's rejection (bad type/too large/parse error) never blocks the rest. */
+type FileIngestStatus = "waiting" | "running" | "done" | "error";
+
+interface QueuedFile {
+  id: string;
+  file: File;
+  status: FileIngestStatus;
+  error?: string;
+  chunksAdded?: number;
+}
+
+function newFileId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTypes }: SourceTabProps) {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
   const corporaQuery = trpc.kbStudio.listCorpora.useQuery();
 
   const [corpus, setCorpus] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [queuedFiles, setQueuedFiles] = useState<QueuedFile[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [url, setUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -50,15 +71,19 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
     void utils.kbStudio.listCorpora.invalidate();
   };
 
-  const uploadMutation = trpc.kbStudio.ingestDocumentJob.useMutation({
-    onSuccess: (data) => {
-      toast.success(t("kbStudio.source.uploadSuccess", { sourceRef: data.sourceRef, chunksAdded: data.chunksAdded }));
-      setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      invalidateAfterIngest();
-    },
-    onError: (err) => toast.error(err.message || t("kbStudio.source.uploadError", "Ingest failed.")),
-  });
+  const addFiles = (files: File[]) => {
+    if (files.length === 0) return;
+    setQueuedFiles((prev) => [...prev, ...files.map((file) => ({ id: newFileId(), file, status: "waiting" as const }))]);
+  };
+
+  const removeQueuedFile = (id: string) => {
+    setQueuedFiles((prev) => prev.filter((qf) => qf.id !== id));
+  };
+
+  // No onSuccess/onError here: Task 5 ingests one file per job in a loop (see handleUpload)
+  // and tracks per-file status locally, so a single shared toast per mutation call would be
+  // noisy/misleading — the batch summary toast at the end of the loop is the honest signal.
+  const uploadMutation = trpc.kbStudio.ingestDocumentJob.useMutation();
 
   const urlMutation = trpc.kbStudio.ingestUrlJob.useMutation({
     onSuccess: (data) => {
@@ -73,14 +98,53 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
   const maxMb = Math.max(1, Math.round(maxUploadBytes / (1024 * 1024)));
   const acceptAttr = allowedTypes.map((ext) => `.${ext}`).join(",");
 
+  /** Task 5: one `ingestDocumentJob` call PER queued file, sequentially — each file is its own
+   * independent job. A rejection on one file (bad type/too large/decode error, all surfaced by
+   * the server as a real error message) is recorded against THAT file and the loop continues;
+   * it never silently drops the file or masks the failure as a success. The closing toast is a
+   * truthful "done N/M, failed K" summary — never reported as a plain success when K > 0. */
   const handleUpload = async () => {
-    if (!file || !trimmedCorpus) return;
-    try {
-      const base64 = await fileToBase64(file);
-      uploadMutation.mutate({ corpus: trimmedCorpus, sourceRef: file.name, mimeOrExt: file.name, base64 });
-    } catch {
-      toast.error(t("kbStudio.source.uploadError", "Ingest failed."));
+    if (queuedFiles.length === 0 || !trimmedCorpus) return;
+    setIsUploading(true);
+    let done = 0;
+    let failed = 0;
+    for (const qf of queuedFiles) {
+      setQueuedFiles((prev) => prev.map((x) => (x.id === qf.id ? { ...x, status: "running" } : x)));
+      try {
+        const base64 = await fileToBase64(qf.file);
+        const result = await uploadMutation.mutateAsync({
+          corpus: trimmedCorpus,
+          sourceRef: qf.file.name,
+          mimeOrExt: qf.file.name,
+          base64,
+        });
+        done += 1;
+        setQueuedFiles((prev) =>
+          prev.map((x) => (x.id === qf.id ? { ...x, status: "done", chunksAdded: result.chunksAdded } : x)),
+        );
+      } catch (err) {
+        failed += 1;
+        const message = err instanceof Error ? err.message : t("kbStudio.source.uploadError", "Ingest failed.");
+        setQueuedFiles((prev) => (prev.map((x) => (x.id === qf.id ? { ...x, status: "error", error: message } : x))));
+      }
     }
+    setIsUploading(false);
+    invalidateAfterIngest();
+    const summary = t("kbStudio.source.uploadSummary", { done, total: queuedFiles.length, failed });
+    if (failed === 0) toast.success(summary);
+    else toast.error(summary);
+  };
+
+  const handleFilesPicked = (picked: File[]) => {
+    if (picked.length === 0) return;
+    addFiles(picked);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    handleFilesPicked(filesFromDrop(e.dataTransfer));
   };
 
   const handleUrlIngest = () => {
@@ -133,33 +197,96 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
               role="button"
               tabIndex={0}
               aria-label={t("kbStudio.source.dropzoneAria")}
-              className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                isDragOver ? "border-primary bg-primary/5" : "hover:border-primary/50"
+              }`}
               onClick={() => fileInputRef.current?.click()}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click();
               }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={handleDrop}
             >
               <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
-              {file ? (
-                <p className="text-sm font-medium">{file.name}</p>
-              ) : (
-                <p className="text-sm text-muted-foreground">{t("kbStudio.source.dropzone")}</p>
-              )}
+              <p className="text-sm text-muted-foreground">{t("kbStudio.source.dropzone")}</p>
             </div>
             <input
               ref={fileInputRef}
               type="file"
+              multiple
               className="hidden"
               accept={acceptAttr}
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => handleFilesPicked(filesFromInput(e.target.files))}
             />
+            {queuedFiles.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {t("kbStudio.source.selectedFilesLabel", { count: queuedFiles.length })}
+                </p>
+                <ul className="space-y-1 max-h-48 overflow-y-auto">
+                  {queuedFiles.map((qf) => (
+                    <li
+                      key={qf.id}
+                      className="flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-xs"
+                    >
+                      <span className="truncate flex-1 text-left" title={qf.file.name}>
+                        {qf.file.name}
+                      </span>
+                      <span className="flex items-center gap-1 shrink-0 text-muted-foreground">
+                        {qf.status === "waiting" && (
+                          <>
+                            <Clock className="h-3.5 w-3.5" />
+                            {t("kbStudio.source.fileStatusWaiting")}
+                          </>
+                        )}
+                        {qf.status === "running" && (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            {t("kbStudio.source.fileStatusRunning")}
+                          </>
+                        )}
+                        {qf.status === "done" && (
+                          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {t("kbStudio.source.fileStatusDone", { chunksAdded: qf.chunksAdded ?? 0 })}
+                          </span>
+                        )}
+                        {qf.status === "error" && (
+                          <span
+                            className="flex items-center gap-1 text-destructive"
+                            title={qf.error}
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            {t("kbStudio.source.fileStatusError", { error: qf.error })}
+                          </span>
+                        )}
+                      </span>
+                      {qf.status === "waiting" && (
+                        <button
+                          type="button"
+                          aria-label={t("kbStudio.source.removeFileAria", { name: qf.file.name })}
+                          className="shrink-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => removeQueuedFile(qf.id)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <Button
               onClick={handleUpload}
-              disabled={!enabled || !file || !trimmedCorpus || uploadMutation.isPending}
+              disabled={!enabled || queuedFiles.length === 0 || !trimmedCorpus || isUploading}
               className="w-full"
             >
-              {uploadMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              {uploadMutation.isPending ? t("kbStudio.source.uploading") : t("kbStudio.source.uploadButton")}
+              {isUploading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {isUploading ? t("kbStudio.source.uploading") : t("kbStudio.source.uploadButton")}
             </Button>
             {!trimmedCorpus && <p className="text-xs text-muted-foreground">{t("kbStudio.source.corpusRequired")}</p>}
           </CardContent>
