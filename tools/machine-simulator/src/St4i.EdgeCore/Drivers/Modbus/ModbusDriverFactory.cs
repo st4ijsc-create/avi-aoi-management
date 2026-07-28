@@ -1,3 +1,5 @@
+using St4i.Connector.Abstractions;
+
 namespace St4i.EdgeCore.Drivers.Modbus;
 
 /// <summary>

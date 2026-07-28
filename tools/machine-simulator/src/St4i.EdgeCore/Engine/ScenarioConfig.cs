@@ -17,7 +17,7 @@ namespace St4i.EdgeCore.Engine;
 /// </param>
 /// <param name="ExtraDefectRate">
 /// Extra probability [0,1], on top of whatever a sim's own physics already produces, that
-/// <see cref="ScenarioAwareDriver"/> flips a reading to <see cref="St4i.EdgeCore.Models.Verdict.Fail"/>
+/// <see cref="ScenarioAwareDriver"/> flips a reading to <see cref="St4i.Connector.Abstractions.Models.Verdict.Fail"/>
 /// (and, for AOI/Inspection readings, marks one measurement NG) — sim-agnostic post-processing, not a
 /// per-simulator parameter, so it works identically across every
 /// <see cref="St4i.EdgeCore.Drivers.Simulators.IMachineSimulator"/> type in the fleet.

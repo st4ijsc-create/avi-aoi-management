@@ -1,5 +1,4 @@
 using System.Text.Json;
-using St4i.EdgeCore.Models;
 
 namespace St4i.EdgeCore.Mapping;
 
@@ -24,24 +23,24 @@ public class MappingProfile
         return profile ?? new MappingProfile();
     }
 
-    public static MappingProfile ForClass(Models.DeviceClass c) => c switch
+    public static MappingProfile ForClass(St4i.Connector.Abstractions.Models.DeviceClass c) => c switch
     {
-        Models.DeviceClass.Automation => new MappingProfile
+        St4i.Connector.Abstractions.Models.DeviceClass.Automation => new MappingProfile
         {
             Name = "automation-default",
-            DeviceClass = nameof(Models.DeviceClass.Automation),
+            DeviceClass = nameof(St4i.Connector.Abstractions.Models.DeviceClass.Automation),
             DefaultStepType = "process",
         },
-        Models.DeviceClass.AoiAvi => new MappingProfile
+        St4i.Connector.Abstractions.Models.DeviceClass.AoiAvi => new MappingProfile
         {
             Name = "aoi-avi-default",
-            DeviceClass = nameof(Models.DeviceClass.AoiAvi),
+            DeviceClass = nameof(St4i.Connector.Abstractions.Models.DeviceClass.AoiAvi),
             DefaultStepType = "inspection",
         },
-        Models.DeviceClass.Iot => new MappingProfile
+        St4i.Connector.Abstractions.Models.DeviceClass.Iot => new MappingProfile
         {
             Name = "iot-default",
-            DeviceClass = nameof(Models.DeviceClass.Iot),
+            DeviceClass = nameof(St4i.Connector.Abstractions.Models.DeviceClass.Iot),
             DefaultStepType = "telemetry",
         },
         _ => new MappingProfile { Name = "default", DeviceClass = c.ToString() },

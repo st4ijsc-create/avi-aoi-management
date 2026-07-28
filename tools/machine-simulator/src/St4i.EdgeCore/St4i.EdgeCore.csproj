@@ -9,6 +9,13 @@
     <Compile Include="..\..\..\..\examples\device-client\csharp\St4iDeviceClient.cs" Link="Sdk\St4iDeviceClient.cs" />
   </ItemGroup>
   <ItemGroup>
+    <!-- GP-1 — the driver contract (IDeviceDriver, DeviceReading, CyclePlan, TelemetryNumeric, and the
+         contract enums) now lives in this plain-net10.0, zero-dependency project so a third party can
+         compile a driver against it without pulling in EdgeCore's Windows-only DPAPI/vendored-SDK
+         surface. See task-1-report.md for the full rationale. -->
+    <ProjectReference Include="..\St4i.Connector.Abstractions\St4i.Connector.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- GĐ3 closeout WI-1 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-1-brief.md)
          Part A — the Makaretu.Dns.Multicast.New PackageReference that SD-1 originally added here MOVED to
          St4i.EngineApi.csproj: Site/SiteDiscovery.cs (the only consumer) moved there with it, and

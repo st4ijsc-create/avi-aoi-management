@@ -1,4 +1,4 @@
-using St4i.EdgeCore.Models; using St4i.EdgeCore.Drivers.HotFolder; using Xunit;
+using St4i.Connector.Abstractions.Models; using St4i.EdgeCore.Drivers.HotFolder; using Xunit;
 public class Doc28ParserTests {
   const string OkJson = @"{""spec_version"":1,""header"":{""machine_code"":""AOI-01"",""serial_number"":""SN-1"",""program_name"":""MB-X1"",""started_at"":""2026-07-18T08:30:00+07:00"",""finished_at"":""2026-07-18T08:30:12+07:00"",""result"":""NG""},""measurements"":[{""point_name"":""R12"",""result"":""NG"",""defect_code"":""BRIDGING""}]}";
   [Fact] public void Parses_valid_json() {

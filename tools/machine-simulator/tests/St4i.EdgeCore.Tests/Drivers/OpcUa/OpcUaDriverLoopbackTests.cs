@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using Opc.Ua;
 using Opc.Ua.Server;
 using St4i.EdgeCore.Drivers.OpcUa;
-using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using Xunit;
 using Session = Opc.Ua.Client.Session;
 

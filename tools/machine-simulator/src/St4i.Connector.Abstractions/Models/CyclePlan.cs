@@ -1,4 +1,4 @@
-namespace St4i.EdgeCore.Models;
+namespace St4i.Connector.Abstractions.Models;
 
 /// <summary>
 /// WS3-T1 (docs/PRODUCTION_UI_DESIGN.md §3.2) — one ordered step within a single cycle's

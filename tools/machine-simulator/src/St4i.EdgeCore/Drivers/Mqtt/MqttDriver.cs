@@ -2,7 +2,8 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using MQTTnet;
 using MQTTnet.Protocol;
-using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions;
+using St4i.Connector.Abstractions.Models;
 
 namespace St4i.EdgeCore.Drivers.Mqtt;
 

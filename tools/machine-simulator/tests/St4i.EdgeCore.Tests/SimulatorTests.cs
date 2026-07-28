@@ -1,6 +1,7 @@
 using St4i.EdgeCore.Drivers;
 using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using Xunit;
 
 public class SimulatorTests

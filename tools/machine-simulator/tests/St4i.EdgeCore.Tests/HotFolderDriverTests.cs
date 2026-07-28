@@ -1,4 +1,4 @@
-using St4i.EdgeCore.Models; using St4i.EdgeCore.Drivers.HotFolder; using Xunit;
+using St4i.Connector.Abstractions.Models; using St4i.EdgeCore.Drivers.HotFolder; using Xunit;
 
 public class HotFolderDriverTests {
   [Fact] public async Task Picks_up_written_file_and_archives() {

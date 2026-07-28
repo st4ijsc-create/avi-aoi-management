@@ -1,4 +1,5 @@
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EdgeCore.Tests.Fakes;
 using Xunit;

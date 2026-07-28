@@ -1,4 +1,4 @@
-using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using Xunit;
 
 namespace St4i.EdgeCore.Tests;

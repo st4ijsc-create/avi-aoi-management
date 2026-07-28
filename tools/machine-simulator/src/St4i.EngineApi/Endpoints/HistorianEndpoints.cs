@@ -5,6 +5,7 @@ using MigraDoc.Rendering;
 using St4i.EdgeCore.Historian;
 using St4i.EdgeCore.Metrics;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Auth;
 using St4i.EngineApi.Fleet;
 

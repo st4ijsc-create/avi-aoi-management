@@ -1,5 +1,5 @@
 using St4i.EdgeCore.Infrastructure;
-using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using Xunit;
 
 public class FleetConfigTests

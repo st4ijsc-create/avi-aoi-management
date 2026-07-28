@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi.Config;
 using St4i.EngineApi.Endpoints;

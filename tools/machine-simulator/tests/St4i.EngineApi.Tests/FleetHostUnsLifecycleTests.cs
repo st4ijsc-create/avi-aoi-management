@@ -1,5 +1,6 @@
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EdgeCore.Uns;
 using St4i.EngineApi.Fleet;

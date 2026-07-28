@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using MQTTnet;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Uns.Sparkplug;
 
 namespace St4i.EdgeCore.Uns;

@@ -1,4 +1,4 @@
-using St4i.EdgeCore.Models; using St4i.EdgeCore.Mapping; using Xunit;
+using St4i.Connector.Abstractions.Models; using St4i.EdgeCore.Mapping; using Xunit;
 public class NormalizerTests {
   [Fact] public void IdempotencyKey_is_stable_and_min_8() {
     var r = new DeviceReading{ MachineCode="SCRW-01", RecipeCode="RC1", CycleCounter=1, Kind=ReadingKind.ProcessResult, SerialNumber="SN1", StepType="screw_tightening" };

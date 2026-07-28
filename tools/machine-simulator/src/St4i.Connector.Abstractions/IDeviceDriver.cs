@@ -1,9 +1,9 @@
-using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 
-namespace St4i.EdgeCore.Drivers;
+namespace St4i.Connector.Abstractions;
 
 /// <summary>
-/// The single seam every reading SOURCE implements — whether it's <see cref="SimulatedDriver"/>
+/// The single seam every reading SOURCE implements — whether it's <c>SimulatedDriver</c>
 /// (this task), a hot-folder AOI watcher (Task 11), or an MQTT subscriber (Task 12). Everything
 /// downstream (Task 13's pipeline, Normalizer, Transport) only ever talks to this interface, so
 /// P3-P5 drivers (Modbus/OPC-UA/SECS-GEM — doc-62 §11) slot in later without touching the pipeline.

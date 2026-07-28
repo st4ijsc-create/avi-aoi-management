@@ -9,6 +9,7 @@ using Microsoft.Extensions.FileProviders;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EngineApi;
 using St4i.EngineApi.Auth;
@@ -666,7 +667,7 @@ if (modbusOptions.Enabled)
     if (modbusMap is not null)
     {
         var capturedMap = modbusMap;
-        builder.Services.AddSingleton<Func<St4i.EdgeCore.Drivers.IDeviceDriver>>(sp =>
+        builder.Services.AddSingleton<Func<St4i.Connector.Abstractions.IDeviceDriver>>(sp =>
         {
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Modbus");
             var factory = new St4i.EdgeCore.Drivers.Modbus.ModbusDriverFactory(
@@ -682,10 +683,10 @@ if (modbusOptions.Enabled)
         modbusSeedDescriptor = new St4i.EdgeCore.Models.MachineDescriptor(
             Code: capturedMap.MachineCode,
             SerialSeed: $"SN-{capturedMap.MachineCode}",
-            DeviceClass: St4i.EdgeCore.Models.DeviceClass.Automation,
+            DeviceClass: St4i.Connector.Abstractions.Models.DeviceClass.Automation,
             MachineType: "MODBUS_TCP",
             StepType: null,
-            DriverKind: St4i.EdgeCore.Models.DriverKind.Modbus,
+            DriverKind: St4i.Connector.Abstractions.Models.DriverKind.Modbus,
             RecipeCode: null,
             MappingProfile: null,
             CycleSeconds: Math.Max(0.1, capturedMap.PollIntervalMs / 1000.0));
@@ -760,10 +761,10 @@ if (opcUaOptions.Enabled)
         opcUaSeedDescriptor = new St4i.EdgeCore.Models.MachineDescriptor(
             Code: capturedOpcUaMap.MachineCode,
             SerialSeed: $"SN-{capturedOpcUaMap.MachineCode}",
-            DeviceClass: St4i.EdgeCore.Models.DeviceClass.Automation,
+            DeviceClass: St4i.Connector.Abstractions.Models.DeviceClass.Automation,
             MachineType: "OPC_UA",
             StepType: null,
-            DriverKind: St4i.EdgeCore.Models.DriverKind.OpcUa,
+            DriverKind: St4i.Connector.Abstractions.Models.DriverKind.OpcUa,
             RecipeCode: null,
             MappingProfile: null,
             CycleSeconds: Math.Max(0.1, capturedOpcUaMap.PollIntervalMs / 1000.0));

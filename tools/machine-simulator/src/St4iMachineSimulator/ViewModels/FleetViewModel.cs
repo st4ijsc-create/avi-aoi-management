@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4iMachineSimulator.Infrastructure;
 using St4iMachineSimulator.Services;
 

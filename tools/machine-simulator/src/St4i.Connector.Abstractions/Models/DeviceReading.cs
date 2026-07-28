@@ -1,4 +1,4 @@
-namespace St4i.EdgeCore.Models;
+namespace St4i.Connector.Abstractions.Models;
 
 public record MetricSample(string Name, double Value, string? Unit = null, double? Lsl = null, double? Usl = null, double? Nominal = null);
 

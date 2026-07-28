@@ -1,7 +1,7 @@
 using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Mapping;
-using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using Xunit;
 
 /// <summary>

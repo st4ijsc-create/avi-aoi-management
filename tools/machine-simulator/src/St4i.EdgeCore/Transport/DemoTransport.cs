@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Text;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 
 namespace St4i.EdgeCore.Transport;
 

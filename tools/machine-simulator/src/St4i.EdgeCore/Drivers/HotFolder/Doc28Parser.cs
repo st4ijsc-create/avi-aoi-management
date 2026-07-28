@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
-using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 
 namespace St4i.EdgeCore.Drivers.HotFolder;
 

@@ -1,7 +1,8 @@
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using NModbus;
-using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions;
+using St4i.Connector.Abstractions.Models;
 
 namespace St4i.EdgeCore.Drivers.Modbus;
 

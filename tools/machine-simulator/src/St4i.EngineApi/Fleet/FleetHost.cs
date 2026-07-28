@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers;
+using St4i.Connector.Abstractions;
 using St4i.EdgeCore.Drivers.HotFolder;
 using St4i.EdgeCore.Drivers.Modbus;
 using St4i.EdgeCore.Drivers.OpcUa;
@@ -10,6 +11,7 @@ using St4i.EdgeCore.Historian;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Mapping;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Transport;
 using St4i.EdgeCore.Uns;
 using St4i.EngineApi.AssetRegistry;

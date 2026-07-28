@@ -1,4 +1,4 @@
-using St4i.EdgeCore.Models; using Xunit;
+using St4i.Connector.Abstractions.Models; using Xunit;
 public class ModelsTests {
   [Fact] public void Can_build_a_process_reading() {
     var r = new DeviceReading { MachineCode="SCRW-01", Kind=ReadingKind.ProcessResult,

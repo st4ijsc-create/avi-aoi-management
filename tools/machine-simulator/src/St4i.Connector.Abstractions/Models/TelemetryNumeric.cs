@@ -1,10 +1,10 @@
-namespace St4i.EdgeCore.Models;
+namespace St4i.Connector.Abstractions.Models;
 
 /// <summary>
 /// GĐ3 sub-3 OU-2 PART A (docs/plans/2026-07-27-giaidoan3-opcua-driver-blueprint.md task 2) — the ONE
 /// shared helper every numeric-telemetry aggregation site in this app now goes through, replacing the
 /// THREE independently-hand-rolled <c>value is IConvertible c ? ... : continue</c> patterns that used to
-/// live in <see cref="St4i.EdgeCore.Historian.HistorianResultRecord.From"/>,
+/// live in <c>St4i.EdgeCore.Historian.HistorianResultRecord.From</c>,
 /// <c>St4i.EngineApi.Fleet.MachineState.ApplyReading</c>'s per-metric telemetry series, and
 /// <c>St4i.EngineApi.Fleet.MachineState.SparkValue</c>'s spark-value pick.
 ///
@@ -36,8 +36,8 @@ namespace St4i.EdgeCore.Models;
 public static class TelemetryNumeric
 {
     /// <summary>Attempts to resolve <paramref name="value"/> (typically a
-    /// <see cref="St4i.EdgeCore.Models.TelemetrySample.Value"/> or a
-    /// <see cref="St4i.EdgeCore.Models.MetricSample.Value"/>) to a numeric <see cref="double"/>. See the
+    /// <see cref="TelemetrySample.Value"/> or a
+    /// <see cref="MetricSample.Value"/>) to a numeric <see cref="double"/>. See the
     /// class doc comment for the full contract — in short: numeric in, numeric out; anything
     /// non-numeric (most notably a status-style string) is skipped, never thrown.</summary>
     public static bool TryGet(object? value, out double number)

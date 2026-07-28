@@ -4,6 +4,7 @@ using System.Text.Json;
 using MQTTnet;
 using St4i.EdgeCore.Mapping;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Uns;
 using St4i.EdgeCore.Uns.Sparkplug;
 using Xunit;

@@ -1,4 +1,4 @@
-using St4i.EdgeCore.Models; using St4i.EdgeCore.Drivers.Mqtt; using MQTTnet; using Xunit;
+using St4i.Connector.Abstractions.Models; using St4i.EdgeCore.Drivers.Mqtt; using MQTTnet; using Xunit;
 
 public class MqttDriverTests {
   [Fact] public async Task Broker_publish_reaches_driver() {

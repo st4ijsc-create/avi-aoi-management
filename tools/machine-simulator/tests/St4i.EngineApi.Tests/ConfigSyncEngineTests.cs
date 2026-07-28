@@ -1,5 +1,6 @@
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Config;
 using Xunit;
 

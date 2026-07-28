@@ -1,5 +1,6 @@
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 
 namespace St4i.EdgeCore.Drivers.Simulators;
 

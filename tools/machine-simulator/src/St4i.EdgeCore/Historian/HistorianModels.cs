@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace St4i.EdgeCore.Historian;
 
 /// <summary>
-/// WS-A-T1 — the flat, storage-ready projection of one <see cref="St4i.EdgeCore.Models.DeviceReading"/> +
+/// WS-A-T1 — the flat, storage-ready projection of one <see cref="St4i.Connector.Abstractions.Models.DeviceReading"/> +
 /// its <see cref="St4i.EdgeCore.Models.TransportAck"/>. Every scalar is carried over untouched (raw
 /// <c>CycleCounter</c>, no offset-adjustment — that belongs to a caller like <c>MachineState</c>, not the
 /// historian); the metric/telemetry/measurement collections are reduced the SAME way the rest of the app
@@ -24,7 +24,7 @@ public sealed record HistorianResultRecord(
 
     public static HistorianResultRecord From(
         St4i.EdgeCore.Models.MachineDescriptor descriptor,
-        St4i.EdgeCore.Models.DeviceReading reading,
+        St4i.Connector.Abstractions.Models.DeviceReading reading,
         St4i.EdgeCore.Models.TransportAck ack,
         DateTimeOffset ingestedAtUtc)
     {
@@ -39,12 +39,12 @@ public sealed record HistorianResultRecord(
         foreach (var sample in reading.Telemetry)
         {
             // GĐ3 sub-3 OU-2 PART A — mirrors MachineState.cs's numeric-telemetry filter EXACTLY via the
-            // ONE shared St4i.EdgeCore.Models.TelemetryNumeric helper: a genuinely-numeric value (doubles,
+            // ONE shared St4i.Connector.Abstractions.Models.TelemetryNumeric helper: a genuinely-numeric value (doubles,
             // ints, a numeric string like "42.5") is kept; anything else (null, a non-numeric string like
             // an OPC-UA "status"="RUNNING" tag) is silently skipped — NEVER throws (see TelemetryNumeric's
             // own class doc comment for why the old `is IConvertible ... ToDouble(null)` pattern this
             // replaced was unsafe: string IS IConvertible, so Convert.ToDouble("RUNNING") used to throw).
-            if (!St4i.EdgeCore.Models.TelemetryNumeric.TryGet(sample.Value, out var numeric)) continue;
+            if (!St4i.Connector.Abstractions.Models.TelemetryNumeric.TryGet(sample.Value, out var numeric)) continue;
 
             telemetrySamples.Add(new TelemetrySampleRecord(sample.Metric, numeric, sample.Unit, sample.Quality));
         }

@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using St4i.Connector.Abstractions;
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Models;
 

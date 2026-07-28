@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
+using St4i.Connector.Abstractions.Models;
 
 namespace St4i.EngineApi.Config;
 
