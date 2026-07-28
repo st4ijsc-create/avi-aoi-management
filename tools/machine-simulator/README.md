@@ -1005,7 +1005,9 @@ there's no shell/user session to export them from.)*
 full table: `ST4I_UNS_ENABLED`/`ST4I_UNS_SITE`/`_AREA`/`_LINE`/`_CELL`/`_PORT` (§16.1, the local UNS
 spine), `ST4I_MODBUS_ENABLED`/`_HOST`/`_PORT`/`_MAP` (§16.4, the Modbus TCP driver),
 `ST4I_OPCUA_ENABLED`/`_ENDPOINT`/`_MAP`/`_PKI_DIR` (§16.6, the OPC-UA client driver), `ST4I_ASSETS_DIR`
-(§16.5, the Asset Registry's `assets.db` location) — and see §17.3 for the full Ecosystem Connect table:
+(§16.5, the Asset Registry's `assets.db` location), `connectors.json` (§16.7, GP-5's additive file-based
+alternative to the two connectors' env vars, with `GET /v1/connectors` surfacing a configured-but-not-
+started one) — and see §17.3 for the full Ecosystem Connect table:
 `ST4I_IDENTITY_DIR`/`ST4I_SITELINK_DIR`/`ST4I_SITE_SERVICE_TYPE` (device identity + Site link + Site
 discovery), plus GĐ3 closeout WI-1/WI-2/WI-3's new `ST4I_MDNS_ADVERTISE`/`ST4I_MDNS_SERVICE_TYPE`
 (§17.8, mDNS advertise — **new outbound network behavior, on by default whenever UNS is enabled**) and
@@ -1669,6 +1671,65 @@ Khi OPC-UA bật và node map nạp thành công, máy OPC-UA trở thành thàn
 historian, asset) chứ không chỉ là luồng telemetry vô hình. **Những gì CHƯA làm:** OPC-UA subscription
 (hiện chỉ poll — một lệnh `Read` theo lô mỗi chu kỳ), giải mã kiểu phức hợp/cấu trúc (giá trị lạ rơi về
 `ToString()`), chế độ bảo mật Sign/SignAndEncrypt, driver Siemens S7/EtherNet-IP.)*
+
+### 16.7 `connectors.json` — file-based connector config / Cấu hình connector qua file (GP-5)
+
+**EN** — `connectors.json` (repo root of this tool, same shipping convention as `fleet.json` — a loose
+file next to the built/published exe, hand-editable post-publish) is an **additive** config source
+alongside the `ST4I_MODBUS_*`/`ST4I_OPCUA_*` env vars above: a JSON array of `{ id, kind, settings }`
+entries. **Absent (or an empty array, which is what ships by default) ⇒ byte-identical to before this
+file existed** — an existing install driven purely by env vars is unaffected.
+
+```json
+[
+  { "id": "line1-modbus", "kind": "Modbus", "settings": { "machineCode": "PLC-01", "unitId": 1,
+      "pollIntervalMs": 500, "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16",
+      "scale": 1.0, "metric": "temperature", "unit": "C" } ] } }
+]
+```
+
+- `id` — a label for this entry (used in log messages naming a malformed/conflicting/skipped entry);
+  defaults to `kind` if omitted.
+- `kind` — which connector kind to build. **Today this build only knows how to construct the two
+  built-in kinds, `Modbus`/`OpcUa`** (matched case-insensitively, same rule as `driverKind` everywhere
+  else in this codebase) — there is no dynamic third-party plugin-loading mechanism yet (a documented,
+  non-blocking follow-up: the eventual out-of-process sidecar isolation model). A `kind` this build
+  can't construct is skipped with a named warning, not silently ignored.
+- `settings` — **inline JSON**, not a path to a second file: for `Modbus`/`OpcUa` it is exactly the same
+  shape as the `ST4I_MODBUS_MAP`/`ST4I_OPCUA_MAP` register-/node-map file's own contents (§16.4/§16.6),
+  embedded directly instead of referenced by path — forwarded to the connector factory byte-for-byte,
+  never re-interpreted by this loader. An operator who prefers a separate map file can keep using the
+  env-var route unchanged; this is an additional way to configure the same two kinds, not a replacement.
+  (Host/port for Modbus, and the PKI directory for OPC-UA, still come from their existing env vars —
+  `connectors.json` only replaces the "enabled + map" half of that story.)
+- **One malformed entry never discards the whole file** (the same lesson already applied to `fleet.json`):
+  a `connectors.json` entry missing a non-blank `kind` or a `settings` value is skipped with a warning
+  naming it (by `id`, or its 1-based position); every other valid entry still loads. Only genuinely
+  unparseable JSON (bad syntax, or a non-array root) falls back to "no connectors.json entries" wholesale.
+- **Precedence when both an env var and a `connectors.json` entry configure the same kind: the env var
+  always wins**, and the conflicting `connectors.json` entry is skipped with a logged warning naming the
+  conflict — this is what keeps "an existing install with only the four env vars set behaves
+  byte-identically" true even after that install later gains an unrelated `connectors.json`. Two
+  `connectors.json` entries for the same kind are similarly de-duplicated (first one in the file wins,
+  the rest are skipped with a warning), since the registry itself only ever holds one factory per kind.
+
+**`GET /v1/connectors`** (Operator role) surfaces every currently-configured connector whose most recent
+start attempt failed — an operator-visible answer to "my connector just isn't there," instead of only a
+log line. Deliberately **never flips `GET /v1/health` unhealthy** — a bad/misconfigured optional
+connector is informational, not a fault, the same judgment call this codebase already makes for a
+malformed Modbus/OPC-UA map.
+
+*(VI: `connectors.json` (gốc thư mục công cụ này, cùng quy ước đóng gói như `fleet.json`) là nguồn cấu
+hình BỔ SUNG bên cạnh các biến môi trường `ST4I_MODBUS_*`/`ST4I_OPCUA_*` — một mảng JSON gồm các mục
+`{ id, kind, settings }`. **Không có file (hoặc mảng rỗng, giá trị mặc định khi đóng gói) ⇒ giống hệt
+trước khi file này tồn tại.** `kind` hiện chỉ hỗ trợ hai loại có sẵn `Modbus`/`OpcUa` (chưa có cơ chế
+nạp plugin bên thứ ba); `settings` là JSON NHÚNG TRỰC TIẾP (không phải đường dẫn file khác) — với
+Modbus/OPC-UA đúng bằng nội dung file register-/node-map hiện có, chuyển nguyên văn cho connector, không
+diễn giải lại. Một mục lỗi (thiếu `kind`/`settings`) chỉ bị bỏ qua kèm cảnh báo nêu tên, không huỷ cả
+file — cùng bài học đã áp dụng cho `fleet.json`. Khi biến môi trường VÀ một mục `connectors.json` cùng
+cấu hình một `kind`: **biến môi trường luôn thắng**, mục xung đột bị bỏ qua kèm cảnh báo nêu rõ xung đột.
+`GET /v1/connectors` (vai trò Operator) hiển thị mọi connector đã cấu hình nhưng lần khởi động gần nhất
+thất bại — KHÔNG BAO GIỜ làm `GET /v1/health` báo unhealthy.)*
 
 ---
 

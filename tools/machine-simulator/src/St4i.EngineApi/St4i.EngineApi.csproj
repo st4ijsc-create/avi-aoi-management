@@ -25,6 +25,11 @@
          AppContext.BaseDirectory lookup (mirrors FleetService.ResolveFleetPath) finds them with no
          extra configuration. -->
     <None Include="..\..\fleet.json" CopyToOutputDirectory="PreserveNewest" Link="fleet.json" />
+    <!-- GP-5 (task-5-brief.md item 2) — same shipping convention as fleet.json above: a loose,
+         hand-editable-post-publish file next to the exe. Ships as an empty array so its mere presence is
+         byte-identical to "connectors.json absent" (ConnectorsConfig.Load returns an empty list either
+         way) — an operator adds entries to it, this repo does not ship any by default. -->
+    <None Include="..\..\connectors.json" CopyToOutputDirectory="PreserveNewest" Link="connectors.json" />
     <None Include="..\..\mapping\*.json" CopyToOutputDirectory="PreserveNewest" Link="mapping\%(Filename)%(Extension)" />
     <!-- H4 job 1 — reference board images (ProductConfigStore.SeedModelA/B's "assets/products/model-a
          -board.png"/"model-b-board.png"). Copied straight from the web project's public/ folder into

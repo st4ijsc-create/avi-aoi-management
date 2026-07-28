@@ -199,6 +199,8 @@ public sealed class RbacPolicyTests
         new("/v1/alarms/{id}/ack", new[] { "POST" }, Policies.Operator),
         new("/v1/line", new[] { "GET" }, Policies.Operator),
         new("/v1/line/{command}", new[] { "POST" }, Policies.Operator),
+        // GP-5 (task-5-brief.md item 3) — configured-but-not-started connector visibility.
+        new("/v1/connectors", new[] { "GET" }, Policies.Operator),
 
         // Engineer
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),

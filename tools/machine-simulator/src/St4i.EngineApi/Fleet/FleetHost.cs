@@ -163,6 +163,19 @@ public sealed class FleetHost
     /// <see cref="ConnectorRegistry.Register"/> call, zero changes to this class.</summary>
     private readonly ConnectorRegistry? _connectorRegistry;
 
+    /// <summary>GP-5 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-5-brief.md item
+    /// 3, carried from the GP-4 review) — every currently-registered connector id that FAILED to start on
+    /// its most recent <see cref="StartLocked"/> attempt, keyed by connector id, valued by the operator-
+    /// readable error <see cref="ConnectorRegistry.TryCreateDriver"/> (or this class's own defensive catch)
+    /// produced. Mutated only inside <see cref="StartLocked"/> (assumes the caller holds <see cref="_gate"/>,
+    /// same as every other <see cref="StartLocked"/>-owned mutation) — a <see cref="ConcurrentDictionary{TKey,TValue}"/>
+    /// purely so <see cref="GetConfiguredConnectorIssues"/> (a hot GET-style read, like
+    /// <see cref="GetDriverHealth"/>) never needs to take <see cref="_gate"/> itself. An entry is added the
+    /// first time its connector fails to build a driver, and removed the next time that SAME connector id
+    /// succeeds (see the connector loop in <see cref="StartLocked"/>) — so this reflects the LATEST attempt
+    /// only, never a permanently-stuck "once failed, always failed" state.</summary>
+    private readonly ConcurrentDictionary<string, string> _connectorStartIssues = new(StringComparer.Ordinal);
+
     /// <summary>P2-1 (WS-J Asset Registry) — optional (defaults null, same "every pre-existing test that
     /// constructs <see cref="FleetHost"/> directly without one keeps compiling/behaving byte-for-byte
     /// unchanged" contract as every other optional dependency above) durable canonical asset registry.
@@ -394,6 +407,25 @@ public sealed class FleetHost
             return _slots.Select(s => new DriverHealthSnapshot(s.Label, s.Driver.Kind, s.Driver.Health)).ToList();
         }
     }
+
+    /// <summary>GP-5 (task-5-brief.md item 3, carried from the GP-4 review) — every currently-registered
+    /// connector id that is configured but NOT currently running, because its most recent start attempt
+    /// failed (a bad/malformed <c>connectors.json</c>/env-var configuration, or a third-party factory that
+    /// rejected/threw — see <see cref="StartLocked"/>'s connector loop). Before this method existed, that
+    /// failure produced exactly one startup <c>LogWarning</c> and nothing else: no <see cref="GetDriverHealth"/>
+    /// entry (no slot was ever created for it), no alarm, no health signal — on an edge box, a
+    /// <c>connectors.json</c> typo presented to an operator as "my connector just isn't there," discoverable
+    /// only by reading the log file.
+    ///
+    /// <para>Deliberately informational, not a fault: this is surfaced through its own projection
+    /// (<c>GET /v1/connectors</c>), never through <see cref="LastError"/>/<c>GET /v1/health</c> — the GP-4
+    /// review specifically judged that an optional peripheral's bad config must not flip the whole host
+    /// unhealthy, and this method changes nothing about that. Empty (never <see langword="null"/>) whenever
+    /// no connector is currently failing to start — including the ordinary case where
+    /// <see cref="_connectorRegistry"/> is null/empty, or the fleet has never been started at all (no
+    /// <see cref="StartLocked"/> attempt has run yet, so nothing has had a chance to fail).</para></summary>
+    public IReadOnlyList<ConnectorStatusDto> GetConfiguredConnectorIssues() =>
+        _connectorStartIssues.Select(kv => new ConnectorStatusDto(kv.Key, kv.Value)).ToList();
 
     /// <summary>GĐ3 sub-4 LC-2 — the raw cumulative fleet-wide KPI counters (added for
     /// <see cref="Alarms.AlarmEvaluator"/>'s windowed NG-rate source, which diffs successive calls to
@@ -631,14 +663,57 @@ public sealed class FleetHost
         // roster descriptor for a configured OPC-UA machine (below), it must be driven ONLY by the real
         // OPC-UA pipeline slot, never simulated too. A roster with no Modbus/OPC-UA machines is unaffected
         // (the Where stays a no-op), so sim seeds/indices are byte-identical to before this task.
-        // GP-4 note: this exclusion deliberately stays a literal comparison against the two built-in ids,
-        // NOT a generalized "exclude anything the connector registry knows about" check — it is a
-        // roster/simulation concern (which MachineDescriptors SimulatorFactory should build a sim for),
-        // orthogonal to which connector factories exist, and both literal ids remain valid regardless of
-        // how their drivers are now wired up. Generalizing it would require a roster/MachineDescriptor
-        // story for third-party connectors that does not exist yet (GP-5's connectors.json is the earliest
-        // that could apply), so it is left exactly as it was rather than speculatively widened.
-        var simFleet = effectiveFleet.Where(d => d.DriverKind != DriverKinds.Modbus && d.DriverKind != DriverKinds.OpcUa).ToList();
+        //
+        // GP-5 (task-5-brief.md item 1) — the GP-4 review's own note here ("generalizing [this] would
+        // require a roster/MachineDescriptor story for third-party connectors that does not exist yet")
+        // is exactly what GP-5's connectors.json supplies, so the exclusion is now a UNION, never a
+        // substitution: BOTH built-in literals stay (Modbus/OPC-UA are excluded unconditionally, whether or
+        // not a connector for them is currently registered — FleetHostModbusRosterTests.
+        // ModbusRosterMember_NoModbusConnector_ExcludedFromSimulation_StaysIdle_SimFleetUnaffected pins this;
+        // replacing the two literals with "any registered connector id" would silently re-simulate an
+        // unregistered Modbus/OPC-UA roster member, which is the exact regression that test guards against)
+        // PLUS a third, registry-driven clause for every other (third-party) DriverKind: once an operator
+        // registers a real IConnectorFactory for some id, e.g. "vendor.acme.widget" (GP-5's whole point —
+        // connectors.json makes this reachable, where before only Program.cs code could), a roster entry for
+        // that same id must ALSO stop being simulated — otherwise the simulator's CycleCounter and the real
+        // connector's CycleCounter both write the SAME MachineState (Cycles derives from CycleCounter),
+        // corrupting per-machine cycles and therefore fleet KPI/OEE/FPY. Silently. See
+        // FleetHostThirdPartyRosterTests for both directions of this third clause.
+        //
+        // DriverKinds.Normalize(d.DriverKind) here (not a raw d.DriverKind lookup) is required because
+        // ConnectorRegistry.RegisteredIds is always normalized (Register/TryCreateDriver both fold through
+        // DriverKinds.Normalize), while a MachineDescriptor's own DriverKind is normalized at FleetConfig.Load
+        // (fleet.json entries) but NOT at RegisterMachine (see that method's own fix, this same task) prior
+        // to this fix — normalizing on both sides here is defense in depth even after that RegisterMachine
+        // fix, since _fleet can also be seeded in-process (BuildDefaultFleet, test doubles) without ever
+        // passing through either normalization point.
+        //
+        // Null-guarded: _connectorRegistry is an optional ctor parameter (every pre-existing test/call site
+        // that constructs FleetHost without one, e.g. FleetHostHealthAndRegistrationTests, must keep
+        // compiling/behaving byte-for-byte unchanged) — a null registry simply contributes nothing to the
+        // union, same as an empty one would.
+        //
+        // TDD note (caught by running FleetHostConnectorRegistryTests against the first draft of this
+        // fix): `d.DriverKind == DriverKinds.Simulated` is carved out of the third clause ON PURPOSE, not an
+        // oversight. Every roster machine built by BuildDefaultFleet/the shipped fleet.json carries
+        // DriverKind=DriverKinds.Simulated — that is what "simulate this machine" MEANS, a completely
+        // different concept from "a real connector drives this machine" (Modbus/OPC-UA/third-party).
+        // ConnectorRegisteredWithKindSimulated_GetsDistinctSlotLabel_FromTheBuiltInSimSlot legitimately
+        // registers a connector under Kind=DriverKinds.Simulated (item 4's own decision: the built-in sim
+        // group is NOT itself registry-driven, so a THIRD PARTY choosing that same id registers a genuinely
+        // separate, additional slot, never a substitute for it). Without this carve-out, that one
+        // registration would make `registeredConnectorIds.Contains("Simulated")` true, and the third clause
+        // would then exclude EVERY roster machine (all of them DriverKind=Simulated) from simFleet —
+        // emptying it entirely and crashing SimulatedDriver's ctor ("at least one simulator is required").
+        // The first draft of this fix did exactly that; this carve-out is what closes it.
+        var registeredConnectorIds = _connectorRegistry?.RegisteredIds;
+        var simFleet = effectiveFleet.Where(d =>
+            d.DriverKind != DriverKinds.Modbus
+            && d.DriverKind != DriverKinds.OpcUa
+            && (d.DriverKind == DriverKinds.Simulated
+                || registeredConnectorIds is null
+                || !registeredConnectorIds.Contains(DriverKinds.Normalize(d.DriverKind))))
+            .ToList();
         var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
 
@@ -668,6 +743,39 @@ public sealed class FleetHost
         // (byte-identical to the old single pipeline). The test seam appends extra groups; a future
         // task (Modbus, G2-6) will add real per-driver groups here. A group = (label, driver, fallback
         // profile, per-reading resolver).
+        // GP-5 (task-5-brief.md item 4) — deliberately NOT built through ConnectorRegistry, unlike every
+        // registry-driven connector below. Two concrete, evidence-based reasons, not a convenience shortcut:
+        //
+        // (1) COLLISION: the registry stores at most ONE factory per normalized id (Register's own doc
+        // comment: "re-registering the same id replaces the previous entry"). FleetHostConnectorRegistryTests.
+        // ConnectorRegisteredWithKindSimulated_GetsDistinctSlotLabel_FromTheBuiltInSimSlot already pins that a
+        // THIRD-PARTY connector registered with Kind=DriverKinds.Simulated must coexist as a slot SEPARATE
+        // from this always-present sim group (2 distinct "Simulated"-kind slots, 2 distinct labels). Moving
+        // this group's own driver into the SAME registry, under the SAME normalized "Simulated" key, would
+        // make that coexistence impossible by construction — whichever of the two Register calls ran last
+        // would silently replace the other in the dictionary. That is exactly the id-collision hazard GP-4's
+        // review fix round 1 already fought to eliminate; reintroducing it here would be a regression, not a
+        // simplification.
+        //
+        // (2) SHAPE MISMATCH: IConnectorFactory.TryCreate(string config) is one opaque, forwarded-verbatim
+        // config string producing ONE driver — a shape built for a THIRD PARTY's own configuration, which
+        // this codebase never inspects. This group's driver is the opposite: ONE SimulatedDriver built from
+        // MANY simulators (`sims` above), one per roster machine currently in `_fleet` (minus the exclusions
+        // just above), re-derived from mutable FleetHost-owned state on every single restart — `_fleet`
+        // itself (mutated by RegisterMachine), `_configStore`/CurrentProductFor/`_productConfigStore` (live
+        // config, re-resolved per cycle), and `multiplier` (the active scenario). There is no "opaque config
+        // string" that stands in for "the entire current roster plus three FleetHost service references" —
+        // forcing this through IConnectorFactory would mean either inventing a FleetHost-specific side
+        // channel a factory reaches through (defeating "config is opaque, host doesn't understand it", the
+        // exact property GP-4 built this contract around) or serializing the whole roster to a string every
+        // restart for a factory that could only ever have ONE real implementation (FleetHost's own) — pure
+        // ceremony, no third party ever plugs in here.
+        //
+        // Net: the built-in sim group stays exactly as special-cased as it already was before this task —
+        // hardcoded label "simulated" (pinned by this same collision test above and by
+        // ConnectorRegisteredWithKindSimulated_GetsDistinctSlotLabel_FromTheBuiltInSimSlot), built directly
+        // here, never asked of `_connectorRegistry`. This is the ONE remaining special case in StartLocked;
+        // everything else (Modbus, OPC-UA, any third-party id) goes through the registry uniformly.
         var groups = new List<(string Label, IDeviceDriver Driver, MappingProfile Profile, Func<string, MappingProfile?>? Resolver)>
         {
             ("simulated", driver, profile, mappingResolver.Resolve),
@@ -732,6 +840,13 @@ public sealed class FleetHost
 
                 if (built && connectorDriver is not null)
                 {
+                    // GP-5 (task-5-brief.md item 3) — a connector that just successfully started is, by
+                    // definition, no longer "configured but not started"; clear any issue a PREVIOUS
+                    // StartLocked call recorded for this same id (e.g. an operator fixed a typo'd
+                    // connectors.json entry and restarted the fleet) so GetConfiguredConnectorIssues never
+                    // reports a stale failure once the connector is actually running.
+                    _connectorStartIssues.TryRemove(connectorId, out _);
+
                     // No per-machine MappingProfile override exists for a registry-driven connector (same
                     // as pre-GP-4 Modbus/OPC-UA), so this uses a plain Automation-class fallback profile,
                     // same shape as `profile` above.
@@ -741,10 +856,20 @@ public sealed class FleetHost
                     continue;
                 }
 
+                var resolvedConnectorError = connectorError ?? "factory returned no driver and no error (contract violation)";
                 _logger?.LogWarning(
                     "Connector '{ConnectorId}' could not be started: {ConnectorError}",
                     connectorId,
-                    connectorError ?? "factory returned no driver and no error (contract violation)");
+                    resolvedConnectorError);
+
+                // GP-4 review carry-over, closed by GP-5 (task-5-brief.md item 3) — before this, a
+                // configured-but-failed-to-start connector produced this one LogWarning and NOTHING else:
+                // no GetDriverHealth() entry (no slot was ever created), no alarm, no health signal — an
+                // operator had no way to discover a connectors.json typo except by reading the log file.
+                // Deliberately NOT surfaced through LastError/`/v1/health` (see the big comment above this
+                // loop) — this is purely an informational projection an operator can poll
+                // (GetConfiguredConnectorIssues, GET /v1/connectors), never a fault signal.
+                _connectorStartIssues[connectorId] = resolvedConnectorError;
 
                 if (connectorDriver is not null)
                 {
@@ -1059,6 +1184,17 @@ public sealed class FleetHost
         {
             throw new ArgumentException("MachineDescriptor.Code must not be null/blank.", nameof(descriptor));
         }
+
+        // GP-5 (task-5-brief.md item 1) — FleetConfig.Load already normalizes a fleet.json entry's
+        // DriverKind through DriverKinds.Normalize (so "modbus"/"MODBUS"/"Modbus" all land on the exact
+        // canonical spelling); a descriptor arriving through THIS method (Program.cs's Modbus/OPC-UA seed
+        // descriptors, OnboardingFleetJoin, or any future caller) never went through that same fold. Every
+        // built-in seed descriptor in this codebase already passes a canonical DriverKinds constant
+        // directly, so this is a no-op for them — it matters for a caller that hands in some OTHER casing
+        // of a built-in id, or a third-party id whose exact-spelling storage here is what StartLocked's own
+        // union filter (and every other DriverKind-literal comparison in this class) relies on comparing
+        // correctly against DriverKinds.Modbus/OpcUa/registry ids.
+        descriptor = descriptor with { DriverKind = DriverKinds.Normalize(descriptor.DriverKind) };
 
         PipelineHandle restartHandle = default;
         var restarting = false;

@@ -771,6 +771,30 @@ if (opcUaOptions.Enabled)
     }
 }
 
+// GP-5 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-5-brief.md item 2) —
+// connectors.json: the config source that makes "configuring a connector is configuration, not a code
+// change" actually true, alongside the four ST4I_MODBUS_*/ST4I_OPCUA_* env vars above (which keep working
+// completely unchanged — see ConnectorsConfig's own doc comment for the full settings-representation
+// write-up). Same shipping convention as fleet.json: a loose file next to the exe, hand-editable
+// post-publish. Loaded here (hoisted, same "no app.Logger yet this early" reasoning as modbusMapJson/
+// opcUaMapJson above) so a genuinely unparseable file logs a warning and falls back to "no connectors.json
+// entries" (Console.Error, same posture as every other startup-time config failure above) rather than
+// crashing startup — absent file ⇒ empty list ⇒ byte-identical to today, by construction.
+var connectorsConfigPath = Path.Combine(AppContext.BaseDirectory, "connectors.json");
+IReadOnlyList<St4i.EngineApi.Config.ConnectorConfigEntry> connectorConfigEntries;
+try
+{
+    connectorConfigEntries = St4i.EngineApi.Config.ConnectorsConfig.Load(
+        connectorsConfigPath,
+        logWarning: msg => Console.Error.WriteLine($"[startup] {msg}"));
+}
+catch (St4i.EngineApi.Config.ConnectorsConfigException ex)
+{
+    Console.Error.WriteLine(
+        $"[startup] Malformed connectors.json at '{connectorsConfigPath}' — no connectors.json entries will be configured for this run: {ex.Message}");
+    connectorConfigEntries = Array.Empty<St4i.EngineApi.Config.ConnectorConfigEntry>();
+}
+
 // GP-4 — the ONE DI singleton both connector kinds resolve through now, replacing the two separate
 // registrations above (a bare `Func<IDeviceDriver>` for Modbus, `OpcUaDriverFactory` itself for OPC-UA).
 // Lazily built (same "needs `ILoggerFactory` from `sp`, so it can't be a plain pre-`Build()` local" reason
@@ -811,6 +835,57 @@ builder.Services.AddSingleton(sp =>
             opcUaMapJson))
         {
             logger.LogWarning("OPC-UA connector factory failed to register (unexpected — its Kind getter threw or was blank)");
+        }
+    }
+
+    // GP-5 (task-5-brief.md item 2) — connectors.json wiring, layered on TOP of the two env-var
+    // registrations just above: `alreadyConfiguredKinds` is exactly the set of kinds this run already
+    // wired via env vars (`modbusMapJson`/`opcUaMapJson` non-null — i.e. the env var was enabled AND its
+    // map actually loaded), so ConnectorsConfig.ResolveEntries can enforce "env var wins any conflict"
+    // (see that method's own doc comment for why) BEFORE any connectors.json entry is dispatched.
+    var connectorsLogger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Connectors");
+    var alreadyConfiguredKinds = new HashSet<string>(StringComparer.Ordinal);
+    if (modbusMapJson is not null) alreadyConfiguredKinds.Add(St4i.Connector.Abstractions.Models.DriverKinds.Modbus);
+    if (opcUaMapJson is not null) alreadyConfiguredKinds.Add(St4i.Connector.Abstractions.Models.DriverKinds.OpcUa);
+
+    var resolvedConnectorEntries = St4i.EngineApi.Config.ConnectorsConfig.ResolveEntries(
+        connectorConfigEntries,
+        alreadyConfiguredKinds,
+        logWarning: msg => connectorsLogger.LogWarning("{ConnectorsConfigMsg}", msg));
+
+    foreach (var entry in resolvedConnectorEntries)
+    {
+        // Dispatch by (normalized) kind to whichever built-in factory type this build knows how to
+        // construct. Third-party kinds aren't dispatchable here YET — there is no in-process
+        // plugin-loading mechanism in this build (that is future work, the eventual out-of-process
+        // sidecar isolation model) — a `connectors.json` entry for one is skipped with a named warning
+        // rather than silently ignored, same "visible, never silent" posture as every other skip above.
+        St4i.Connector.Abstractions.IConnectorFactory? factory = entry.Kind switch
+        {
+            St4i.Connector.Abstractions.Models.DriverKinds.Modbus => new St4i.EdgeCore.Drivers.Modbus.ModbusConnectorFactory(
+                modbusOptions,
+                logWarning: msg => connectorsLogger.LogWarning("{ConnectorsConfigModbusMsg}", msg),
+                logError: (ex, msg) => connectorsLogger.LogError(ex, "{ConnectorsConfigModbusMsg}", msg)),
+            St4i.Connector.Abstractions.Models.DriverKinds.OpcUa => new St4i.EdgeCore.Drivers.OpcUa.OpcUaConnectorFactory(
+                pkiDir: opcUaOptions.PkiDir,
+                logWarning: msg => connectorsLogger.LogWarning("{ConnectorsConfigOpcUaMsg}", msg),
+                logError: (ex, msg) => connectorsLogger.LogError(ex, "{ConnectorsConfigOpcUaMsg}", msg)),
+            _ => null,
+        };
+
+        if (factory is null)
+        {
+            connectorsLogger.LogWarning(
+                "connectors.json entry '{ConnectorId}': no in-process factory constructor is available for kind '{ConnectorKind}' — skipped.",
+                entry.Id, entry.Kind);
+            continue;
+        }
+
+        if (!registry.Register(factory, entry.SettingsJson))
+        {
+            connectorsLogger.LogWarning(
+                "connectors.json entry '{ConnectorId}' (kind '{ConnectorKind}') failed to register (its Kind getter threw or was blank).",
+                entry.Id, entry.Kind);
         }
     }
 
@@ -925,6 +1000,8 @@ app.MapHistorianEndpoints();
 app.MapAuditEndpoints();
 app.MapUserEndpoints();
 app.MapAssetEndpoints();
+// GP-5 (task-5-brief.md item 3) — GET /v1/connectors: visibility for a configured-but-not-started connector.
+app.MapConnectorEndpoints();
 // GĐ3 sub-4 LC-1 — the alarm HTTP surface (GET /v1/alarms(+/history), POST /v1/alarms/{id}/ack).
 app.MapAlarmEndpoints();
 // GĐ3 sub-4 LC-3 — the LineController HTTP surface (GET /v1/line, POST /v1/line/{command}).

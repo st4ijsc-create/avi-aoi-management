@@ -159,3 +159,12 @@ public sealed record OnboardingStepResult(string Step, string? MachineCode, stri
 public sealed record SyncConfigResponse(string Code, bool Changed, string? Version, string? DriftState, bool Applied, string DriftStateText);
 
 public sealed record ApiErrorDto(string Error);
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /v1/connectors — GP-5 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/
+// task-5-brief.md item 3): visibility for a connector that is CONFIGURED (registered into
+// ConnectorRegistry) but not currently running because its last start attempt failed. See
+// FleetHost.GetConfiguredConnectorIssues's own doc comment for why this is deliberately informational,
+// never a /v1/health fault.
+// ─────────────────────────────────────────────────────────────────────────
+public sealed record ConnectorStatusDto(string Id, string Error);
