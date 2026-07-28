@@ -1,4 +1,4 @@
-import { generateText, isGgufAvailable, type GgufGenerateResult } from "./aiGgufEngine";
+import { generateText, generateJSON, isGgufAvailable, type GgufGenerateResult } from "./aiGgufEngine";
 // doc69 Giai đoạn 4/Wave 3 D4 — specialist→action HITL bridge allow-list (see the
 // block near the end of this file for the full rationale).
 import { RCA_SUGGESTED_ACTION_TOOLS, ensureRcaToolsRegistered } from "./ai/rcaActionSuggester";
@@ -156,6 +156,51 @@ const JSON_OUTPUT_SCHEMA = `{
   "reportTemplate": ["string"]
 }`;
 
+/**
+ * Wave 1 FF-A fix-round 2 — JSON Schema THẬT (không phải chuỗi mô tả trong
+ * prompt như `JSON_OUTPUT_SCHEMA` ở trên) dùng cho `generateJSON` (grammar-
+ * constrained decoding qua `llama.createGrammarForJsonSchema`/
+ * `LlamaJsonSchemaGrammar` — xem server/services/aiGgufEngine.ts:939).
+ *
+ * Vì sao cần: `jsonMode` cũ (dùng với `generateText`) KHÔNG ràng buộc gì cả —
+ * nó chỉ chèn thêm câu "Respond with valid JSON only..." vào cuối prompt,
+ * model vẫn hoàn toàn tự do sinh ra bất cứ thứ gì. Đo được thật trên live:
+ * sau khi nâng `maxTokens` 1400→3000 (fix-round 1), model sinh đủ 3000 token
+ * nhưng KHÔNG PHẢI JSON bị cắt — mà là văn bản THOÁI HOÁ (lặp từ, trộn ngôn
+ * ngữ: "quality control quality控制代码ba…"), 7/7 mảng rỗng, summary dài 12139
+ * ký tự rác. Không có "ngữ pháp" nào ràng buộc thì nới `maxTokens` chỉ cho
+ * model thêm chỗ để lan man, không giải quyết gốc rễ.
+ *
+ * `generateJSON` buộc bộ giải mã CHỈ được sinh token khớp với ngữ pháp GBNF
+ * dịch ra từ schema này — không thể lạc đề, không thể sinh văn xuôi, không
+ * thể tạo JSON cú pháp sai. Đánh dấu CẢ 8 khoá là `required` chính là thứ ép
+ * model phải đóng đủ khối 1 → 2 → ... → 8 theo đúng cấu trúc thay vì dừng lại
+ * (hay lan man) ở khối đầu tiên.
+ */
+const SPECIALIST_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    diagnosis: { type: "array", items: { type: "string" } },
+    actionPlan: { type: "array", items: { type: "string" } },
+    patchHints: { type: "array", items: { type: "string" } },
+    testPlan: { type: "array", items: { type: "string" } },
+    optimizationIdeas: { type: "array", items: { type: "string" } },
+    risks: { type: "array", items: { type: "string" } },
+    reportTemplate: { type: "array", items: { type: "string" } },
+  },
+  required: [
+    "summary",
+    "diagnosis",
+    "actionPlan",
+    "patchHints",
+    "testPlan",
+    "optimizationIdeas",
+    "risks",
+    "reportTemplate",
+  ],
+} as const;
+
 function stringifyList(values?: string[]): string {
   if (!values || values.length === 0) return "(none)";
   return values.map((item, index) => `${index + 1}. ${item}`).join("\n");
@@ -198,6 +243,36 @@ function ensureStringArray(value: unknown): string[] {
     .filter((item) => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+/**
+ * Wave 1 FF-A fix-round 2 — chuẩn hoá một object JSON đã phân tích (dù đến từ
+ * `JSON.parse` chặt chẽ hay từ `generateJSON`'s `data`) thành đúng hình dạng
+ * `SpecialistAgentRunResult["output"]`. DÙNG CHUNG cho cả 2 đường: (1)
+ * `parseAgentOutput`'s nhánh JSON.parse chặt chẽ, (2) đường `generateJSON`
+ * (grammar-constrained) mới trong `runSpecialistAgent` — đúng yêu cầu "chạy
+ * `data` qua ĐÚNG phép chuẩn hoá mà đường chặt chẽ đang dùng hôm nay" của
+ * round này, thực thi bằng cách CHIA SẺ NGUYÊN HÀM thay vì chép lại logic.
+ *
+ * `rawFallbackSummary` chỉ được dùng khi `summary` không phải chuỗi (trên lý
+ * thuyết không xảy ra với đường `generateJSON` vì `summary` nằm trong
+ * `required`, nhưng vẫn phòng hờ — không bao giờ ném vì một khoá thiếu).
+ */
+function normalizeAgentOutput(
+  parsed: unknown,
+  rawFallbackSummary: string,
+): SpecialistAgentRunResult["output"] {
+  const obj = parsed as Record<string, unknown> | null | undefined;
+  return {
+    summary: typeof obj?.summary === "string" ? obj.summary.trim() : rawFallbackSummary,
+    diagnosis: ensureStringArray(obj?.diagnosis),
+    actionPlan: ensureStringArray(obj?.actionPlan),
+    patchHints: ensureStringArray(obj?.patchHints),
+    testPlan: ensureStringArray(obj?.testPlan),
+    optimizationIdeas: ensureStringArray(obj?.optimizationIdeas),
+    risks: ensureStringArray(obj?.risks),
+    reportTemplate: ensureStringArray(obj?.reportTemplate),
+  };
 }
 
 const AGENT_OUTPUT_KEYS = [
@@ -405,8 +480,32 @@ export function salvageAgentSections(rawText: string): Partial<SpecialistAgentRu
   return result;
 }
 
-/** Wave 1 FF-A — 1400 token không đủ cho 8 khối đầu ra ⇒ model bị cắt giữa
- *  chừng, JSON hỏng. Cho phép cấu hình qua env, mặc định nâng lên 3000. */
+/**
+ * Wave 1 FF-A — 1400 token không đủ cho 8 khối đầu ra ⇒ model bị cắt giữa
+ * chừng, JSON hỏng. Cho phép cấu hình qua env.
+ *
+ * FIX-ROUND 2 — giữ nguyên mặc định 3000 (không đổi so với round 1), nhưng
+ * nay có lý do khác hẳn: round 1 nâng lên 3000 để "cho model thêm chỗ", round
+ * đó chính là nguyên nhân model có ĐỦ CHỖ ĐỂ THOÁI HOÁ (12139 ký tự rác lặp
+ * từ) mà không hề bị chặn — `maxTokens` cao không phải là thứ gây thoái hoá,
+ * nhưng cũng không NGĂN được nó khi không có ngữ pháp ràng buộc.
+ *
+ * Nay với `generateJSON` (grammar-constrained — xem SPECIALIST_JSON_SCHEMA),
+ * bộ giải mã không còn tự do lan man ngoài cấu trúc JSON, nên số token cần
+ * cho MỘT LƯỢT CHẠY BÌNH THƯỜNG (không thoái hoá) ước tính lại từ ngân sách
+ * thật của schema: summary ~60-100 từ tiếng Việt (~150-250 token, tiếng Việt
+ * có dấu tốn token hơn tiếng Anh) + 7 mảng × ~5 mục/mảng (ước tính gốc của
+ * hợp đồng đầu ra) × ~40 token/mục (10-25 từ + overhead dấu ngoặc/nháy JSON)
+ * ≈ 1400 token cho riêng phần mảng + ~50 token cho cấu trúc JSON (khoá, dấu
+ * phẩy) ⇒ tổng ước tính ~1700 token cho một lượt "điển hình, không thoái
+ * hoá". 3000 giữ biên an toàn ~1.75× con số đó — đủ rộng cho câu trả lời dài
+ * hơn trung bình, nhưng không lãng phí tới mức phải nâng thêm. Vì grammar chỉ
+ * ép CẤU TRÚC (không có `minItems`/`maxLength` trong schema — cố ý bám sát
+ * đúng hình dạng schema được yêu cầu, không thêm ràng buộc ngoài phạm vi),
+ * một agent không cần dùng tới một khối (vd `patchHints` với data-analyst)
+ * vẫn có thể trả mảng RỖNG hợp lệ — không buộc phải "bịa" nội dung cho đủ 8
+ * khoá, chỉ buộc phải CÓ MẶT khoá đó.
+ */
 export function specialistMaxTokens(): number {
   const raw = Number(process.env.AI_SPECIALIST_MAX_TOKENS);
   return Number.isFinite(raw) && raw > 0 ? raw : 3000;
@@ -435,16 +534,7 @@ export function parseAgentOutput(rawText: string): SpecialistAgentRunResult["out
 
   try {
     const parsed = JSON.parse(sanitizeJsonBlock(rawText));
-    return {
-      summary: typeof parsed?.summary === "string" ? parsed.summary.trim() : fallback.summary,
-      diagnosis: ensureStringArray(parsed?.diagnosis),
-      actionPlan: ensureStringArray(parsed?.actionPlan),
-      patchHints: ensureStringArray(parsed?.patchHints),
-      testPlan: ensureStringArray(parsed?.testPlan),
-      optimizationIdeas: ensureStringArray(parsed?.optimizationIdeas),
-      risks: ensureStringArray(parsed?.risks),
-      reportTemplate: ensureStringArray(parsed?.reportTemplate),
-    };
+    return normalizeAgentOutput(parsed, fallback.summary);
   } catch {
     const salvaged = salvageAgentSections(sanitizeJsonBlock(rawText));
     const hasSalvagedArray = (
@@ -617,6 +707,21 @@ export async function runSpecialistWorkflowChain(
   };
 }
 
+/**
+ * Wave 1 FF-A fix-round 2 — đường CHÍNH nay là `generateJSON` (grammar-
+ * constrained decoding, xem `SPECIALIST_JSON_SCHEMA`) thay vì `generateText`
+ * với `jsonMode` (chỉ chèn câu chữ vào prompt, KHÔNG ràng buộc gì — nguyên
+ * nhân thật của bug thoái hoá đo được trên live, xem doc comment của
+ * `SPECIALIST_JSON_SCHEMA`).
+ *
+ * LƯỚI DỰ PHÒNG: `generateJSON` có thể ném (API ngữ pháp không sẵn có trên
+ * môi trường này, "Grammar produced invalid JSON" khi hết `maxTokens` giữa
+ * cấu trúc, llama-server lỗi, v.v.) — khi đó KHÔNG để cả lượt chạy thất bại,
+ * rơi về đúng đường CŨ (`generateText` + hậu tố `jsonMode` + `parseAgentOutput`,
+ * vẫn có `salvageAgentSections` làm lưới an toàn thứ hai bên trong). Lỗi được
+ * ghi log trung thực (`console.warn`) để biết lượt nào phải dùng lưới dự
+ * phòng — không âm thầm nuốt.
+ */
 export async function runSpecialistAgent(input: RunSpecialistAgentInput): Promise<SpecialistAgentRunResult> {
   const available = await isGgufAvailable();
   if (!available) {
@@ -628,32 +733,69 @@ export async function runSpecialistAgent(input: RunSpecialistAgentInput): Promis
     throw new Error(`Unknown specialist agent: ${input.agentId}`);
   }
 
-  const result = await generateText(
-    {
-      systemPrompt: buildSystemPrompt(agent, input.language ?? "vi"),
-      prompt: buildUserPrompt(input),
-      maxTokens: specialistMaxTokens(),
-      temperature: 0.25,
-      topP: 0.9,
-      repeatPenalty: 1.1,
-      jsonMode: true,
-      language: input.language ?? "vi",
-    },
-    input.modelId,
-  );
+  const systemPrompt = buildSystemPrompt(agent, input.language ?? "vi");
+  const prompt = buildUserPrompt(input);
+  const maxTokens = specialistMaxTokens();
 
-  return {
-    agent,
-    modelId: result.modelId,
-    output: parseAgentOutput(result.text),
-    rawText: result.text,
-    metrics: {
-      tokensGenerated: result.tokensGenerated,
-      tokensPrompt: result.tokensPrompt,
-      totalTimeMs: result.totalTimeMs,
-      tokensPerSecond: result.tokensPerSecond,
-    },
-  };
+  try {
+    const jsonResult = await generateJSON<Record<string, unknown>>(
+      SPECIALIST_JSON_SCHEMA,
+      {
+        systemPrompt,
+        prompt,
+        maxTokens,
+        temperature: 0.25,
+        topP: 0.9,
+        repeatPenalty: 1.1,
+        language: input.language ?? "vi",
+      },
+      input.modelId,
+    );
+
+    return {
+      agent,
+      modelId: jsonResult.modelId,
+      output: normalizeAgentOutput(jsonResult.data, jsonResult.raw.trim()),
+      rawText: jsonResult.raw,
+      metrics: {
+        tokensGenerated: jsonResult.tokensGenerated,
+        tokensPrompt: jsonResult.tokensPrompt,
+        totalTimeMs: jsonResult.totalTimeMs,
+        tokensPerSecond: jsonResult.tokensPerSecond,
+      },
+    };
+  } catch (err: any) {
+    console.warn(
+      `[aiSpecialistAgentService] generateJSON thất bại cho agent=${input.agentId}, rơi về generateText+parseAgentOutput: ${err?.message ?? err}`,
+    );
+
+    const result = await generateText(
+      {
+        systemPrompt,
+        prompt,
+        maxTokens,
+        temperature: 0.25,
+        topP: 0.9,
+        repeatPenalty: 1.1,
+        jsonMode: true,
+        language: input.language ?? "vi",
+      },
+      input.modelId,
+    );
+
+    return {
+      agent,
+      modelId: result.modelId,
+      output: parseAgentOutput(result.text),
+      rawText: result.text,
+      metrics: {
+        tokensGenerated: result.tokensGenerated,
+        tokensPrompt: result.tokensPrompt,
+        totalTimeMs: result.totalTimeMs,
+        tokensPerSecond: result.tokensPerSecond,
+      },
+    };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
