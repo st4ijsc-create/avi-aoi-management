@@ -758,8 +758,10 @@ St4i.EngineApi.exe --reset-admin-password <username> [--password <newPassword>]
   wasn't already, and it is **re-enabled** if it was disabled — a locked-out operator's last remaining
   account could plausibly be non-Admin, disabled, or both, and a "recovery" that left any of those
   blocking login wouldn't actually recover anything. If `<username>` doesn't exist, a brand-new **Admin**
-  account is created. Either way, every other outstanding session cookie for that account is invalidated
-  (the security stamp is bumped) on its very next use.
+  account is created — there were no prior sessions to invalidate. For an **existing** account, every
+  other outstanding session cookie for it is invalidated (the security stamp is bumped) on its very next
+  use; the audit row's own `sessionsInvalidated` field records exactly this distinction (`false` for a
+  newly-created account, `true` otherwise).
 - **Audited:** every run appends exactly one row to the SAME hash-chained `audit_log` (§14.3) the running
   host writes to — actor `console-recovery`, action `console.reset_admin_password` — so a completed
   recovery is never invisible, even though it happened outside any authenticated session.
@@ -816,8 +818,10 @@ dụng cho mọi lần đặt mật khẩu trong ứng dụng — cũng bị t�
 tới `security.db`. **Hành vi:** nếu `<username>` đã tồn tại — reset mật khẩu, thăng lên **Admin** nếu
 chưa phải, **bật lại** nếu đang bị vô hiệu hoá (một tài khoản Admin cuối cùng bị khoá có thể vừa không
 phải Admin vừa bị vô hiệu hoá, và một lần "khôi phục" bỏ sót một trong hai thì chưa thực sự khôi phục
-được gì); nếu `<username>` chưa tồn tại — tạo mới thành tài khoản **Admin**. Dù theo hướng nào, mọi phiên
-đăng nhập cũ của tài khoản đó đều bị vô hiệu hoá (bump security stamp) ngay lần dùng tiếp theo. **Có
+được gì); nếu `<username>` chưa tồn tại — tạo mới thành tài khoản **Admin** — tài khoản mới thì không có
+phiên cũ nào để vô hiệu hoá. Với tài khoản ĐÃ TỒN TẠI, mọi phiên đăng nhập cũ của nó đều bị vô hiệu hoá
+(bump security stamp) ngay lần dùng tiếp theo; dòng audit tự ghi đúng phân biệt này qua trường
+`sessionsInvalidated` (`false` cho tài khoản mới tạo, `true` cho trường hợp còn lại). **Có
 audit:** mỗi lần chạy ghi đúng một dòng vào CHÍNH `audit_log` dạng chuỗi hash (§14.3) mà host đang chạy
 cũng ghi vào — actor `console-recovery`, action `console.reset_admin_password`. **Tôn trọng
 `ST4I_SECURITY_DIR`** — mở đúng `security.db`, đúng thư mục đã phân giải, áp đúng khoá ACL (bên dưới) mà
@@ -1741,8 +1745,8 @@ clients up) · `Degraded` (was connected at least once, remote currently down �
 local pipeline is unaffected) · `Down` (the LOCAL client can't reach this device's own UNS spine) ·
 `Faulted` (GĐ3 closeout WI-3 — the durable spool's writer and/or forward loop crashed; takes priority
 over every other state above because the MQTT connections can look healthy while forwarding has
-actually stopped — see §17.9 for what causes it, and that it is **terminal until the process
-restarts**).
+actually stopped — see §17.9 for what causes it, and for the low-friction fix: **re-applying the Site
+link (`PUT /v1/site`) rebuilds the bridge and clears it — a process/service restart is not required**).
 
 *(VI: `St4i.EdgeCore.Site` lưu một **Site link** (`site-link.json`, thư mục mặc định
 `%ProgramData%\ST4I\sim\sitelink`, dời chỗ qua **`ST4I_SITELINK_DIR`**) gồm đúng
@@ -1764,8 +1768,8 @@ vẫn hoạt động độc lập. **6 trạng thái bridge** (`bridgeState` c�
 `Connecting` · `Connected` · `Degraded` (Site sập, cục bộ không ảnh hưởng) · `Down` (client cục bộ
 không tới được UNS spine của chính máy này) · `Faulted` (WI-3 GĐ3 closeout — vòng lặp writer/forward
 của spool bền đã chết; ưu tiên cao hơn mọi trạng thái khác vì kết nối MQTT có thể vẫn trông khoẻ trong
-khi việc forward đã thực sự dừng — xem §17.9, trạng thái này KẾT THÚC (terminal) cho tới khi khởi động
-lại tiến trình).)*
+khi việc forward đã thực sự dừng — xem §17.9; cách sửa ít tốn công nhất: **áp lại Site link (`PUT
+/v1/site`) sẽ dựng lại bridge và gỡ lỗi này — KHÔNG cần khởi động lại tiến trình/service**).)*
 
 ### 17.3 Env vars / Biến môi trường
 
@@ -1999,18 +2003,27 @@ disk forever during a long outage — but they mean a Site outage that outlasts 
 `droppedTotal` is the only record it ever happened. 48h is comfortably above the product's own ≥24h
 buffering requirement, but it is still a hard ceiling, not a promise of eventual delivery.
 
-**The `Faulted` bridge state — terminal, not self-healing.** If the spool's writer loop (drains the
-local channel into the spool) or its forward loop (replays + acks against the Site) terminates from an
-unexpected exception — never this bridge's own shutdown — `GET /v1/site`'s `bridgeState` reports
-**`Faulted`** (§17.2), which outranks `Connected`/`Degraded`/`Connecting`: the MQTT connections can look
-perfectly healthy while messages have quietly stopped being persisted or replayed — a worse, more
-surprising failure than a known Site outage. **There is no supervised restart of these loops.** Once
-`Faulted`, it stays `Faulted` until the whole `St4i.EngineApi` process is restarted (a service restart,
-or `sc stop`/`sc start`, §15.1). Meanwhile the spool keeps accepting/growing (whichever loop is still
-alive) until the size/age caps above start trimming it — i.e. the exact same real, eventual data loss
-described above, just reached sooner, and signalled only by the `Faulted` flag and a log line, not by
-anything that pages an operator. **What to do:** treat `Faulted` as an incident, not a transient blip —
-restart the process/service, then check the logs for what actually killed the loop.
+**The `Faulted` bridge state — no automatic recovery, but a low-friction manual fix exists.** If the
+spool's writer loop (drains the local channel into the spool) or its forward loop (replays + acks
+against the Site) terminates from an unexpected exception — never this bridge's own shutdown —
+`GET /v1/site`'s `bridgeState` reports **`Faulted`** (§17.2), which outranks
+`Connected`/`Degraded`/`Connecting`: the MQTT connections can look perfectly healthy while messages have
+quietly stopped being persisted or replayed — a worse, more surprising failure than a known Site outage.
+**There is no *automatic/supervised* restart of these loops** — nothing watches for a faulted bridge and
+rebuilds it on its own. But an operator does **not** need to restart the whole process:
+`SiteBridgeManager.ApplyAsync` unconditionally tears down whatever bridge is currently running (whatever
+its state) and builds a fresh one, so **re-applying the Site link — `PUT /v1/site` with the same fields
+(the same action §17.6 already documents for the join flow), or the equivalent action on the `/site`
+page — rebuilds the bridge and clears the fault**, no process/service restart required. A certificate
+rotation (§17.10) does the same, through that identical `ApplyAsync` call. Restarting the
+`St4i.EngineApi` process/service (§15.1) also clears it, but that is a heavier-handed fix than necessary,
+not the only one. **Until something intervenes** (either path above), the spool keeps accepting/growing
+(whichever loop is still alive) until the size/age caps above start trimming it — i.e. the exact same
+real, eventual data loss described above, just reached sooner, and signalled only by the `Faulted` flag
+and a log line, not by anything that pages an operator. **What to do:** treat `Faulted` as an incident,
+not a transient blip — re-apply the Site link (or rotate the identity) to rebuild the bridge, then check
+the logs for what actually killed the loop; a full process/service restart works too if that's more
+convenient, but is not required.
 
 **Head-of-line blocking — no dead-letter path.** If the Site permanently rejects one specific message
 (e.g. a topic-ACL denial that will never succeed no matter how many times it's retried), that ONE
@@ -2045,18 +2058,25 @@ CHẮC CHẮN, không phải khả năng: các mục cũ nhất bị bỏ để 
 NHẤT rằng việc đó đã xảy ra. 48 giờ cao hơn thoải mái so với yêu cầu đệm ≥24 giờ của sản phẩm, nhưng vẫn
 là một trần cứng, không phải lời hứa giao hàng cuối cùng.
 
-**Trạng thái bridge `Faulted` — KẾT THÚC, không tự hồi phục.** Nếu vòng lặp writer của spool (dồn kênh
-cục bộ vào spool) hoặc vòng lặp forward (phát lại + ack với Site) chết vì một exception bất ngờ — không
-phải do chính bridge tự tắt — thì `bridgeState` của `GET /v1/site` báo **`Faulted`** (§17.2), được ưu
-tiên hơn `Connected`/`Degraded`/`Connecting`: kết nối MQTT có thể vẫn trông khoẻ trong khi message đã âm
-thầm ngừng được lưu hoặc phát lại — một lỗi tệ hơn, bất ngờ hơn một đợt Site sập bình thường. **KHÔNG có
-cơ chế tự khởi động lại các vòng lặp này.** Một khi `Faulted`, nó CỨ THẾ cho tới khi toàn bộ tiến trình
-`St4i.EngineApi` được khởi động lại (restart service, hoặc `sc stop`/`sc start`, §15.1). Trong lúc đó
-spool vẫn tiếp tục nhận/phình to (nếu vòng lặp còn lại vẫn sống) cho tới khi trần dung lượng/tuổi ở trên
-bắt đầu cắt bớt — tức là ĐÚNG loại mất dữ liệu thật, cuối cùng, y như mô tả ở trên, chỉ là đến sớm hơn, và
-chỉ được báo hiệu bằng cờ `Faulted` cùng một dòng log, không có gì báo động cho operator. **Phải làm gì:**
-coi `Faulted` là một sự cố thật, không phải trục trặc thoáng qua — khởi động lại tiến trình/service, rồi
-kiểm tra log xem cái gì thực sự giết vòng lặp.
+**Trạng thái bridge `Faulted` — không tự động hồi phục, nhưng có cách sửa tay ít tốn công.** Nếu vòng lặp
+writer của spool (dồn kênh cục bộ vào spool) hoặc vòng lặp forward (phát lại + ack với Site) chết vì một
+exception bất ngờ — không phải do chính bridge tự tắt — thì `bridgeState` của `GET /v1/site` báo
+**`Faulted`** (§17.2), được ưu tiên hơn `Connected`/`Degraded`/`Connecting`: kết nối MQTT có thể vẫn
+trông khoẻ trong khi message đã âm thầm ngừng được lưu hoặc phát lại — một lỗi tệ hơn, bất ngờ hơn một
+đợt Site sập bình thường. **KHÔNG có cơ chế TỰ ĐỘNG/được giám sát để khởi động lại các vòng lặp này** —
+không có gì theo dõi một bridge bị Faulted rồi tự dựng lại. Nhưng operator KHÔNG cần khởi động lại cả
+tiến trình: `SiteBridgeManager.ApplyAsync` LUÔN dừng bridge đang chạy (bất kể trạng thái gì) rồi dựng
+bridge mới, nên **áp lại Site link — gọi `PUT /v1/site` với đúng các trường hiện có (đúng thao tác §17.6
+đã ghi cho luồng gia nhập), hoặc thao tác tương đương trên trang `/site` — sẽ dựng lại bridge và gỡ lỗi
+này, KHÔNG cần khởi động lại tiến trình/service**. Xoay vòng chứng chỉ (§17.10) cũng làm y vậy, qua cùng
+lệnh `ApplyAsync`. Khởi động lại tiến trình/service `St4i.EngineApi` (§15.1) cũng gỡ được lỗi, nhưng đó
+là cách nặng tay hơn mức cần thiết, không phải cách DUY NHẤT. **Cho tới khi có ai đó can thiệp** (một
+trong hai cách trên), spool vẫn tiếp tục nhận/phình to (nếu vòng lặp còn lại vẫn sống) cho tới khi trần
+dung lượng/tuổi ở trên bắt đầu cắt bớt — tức là ĐÚNG loại mất dữ liệu thật, cuối cùng, y như mô tả ở
+trên, chỉ là đến sớm hơn, và chỉ được báo hiệu bằng cờ `Faulted` cùng một dòng log, không có gì báo động
+cho operator. **Phải làm gì:** coi `Faulted` là một sự cố thật, không phải trục trặc thoáng qua — áp lại
+Site link (hoặc xoay vòng danh tính) để dựng lại bridge, rồi kiểm tra log xem cái gì thực sự giết vòng
+lặp; khởi động lại tiến trình/service cũng được nếu tiện hơn, nhưng không bắt buộc.
 
 **Chặn đầu hàng đợi (head-of-line blocking) — không có đường dead-letter.** Nếu Site từ chối VĨNH VIỄN
 một message cụ thể (ví dụ bị chặn ACL theo topic, không bao giờ thành công dù thử lại bao nhiêu lần), MỘT
@@ -2160,8 +2180,11 @@ bị sắp hết hạn không bao giờ được phép dừng sản xuất — c
   scheduled job; an operator (or a future automation) must call `POST /v1/site/identity/rotate`
   themselves, and must immediately follow up at the Site (§17.10's two-step flow) or the uplink stays
   down.
-- **The durable bridge spool's `Faulted` state is terminal** (§17.9) — there is no supervised restart of
-  the spool's writer/forward loops; recovering from `Faulted` means restarting the whole process.
+- **No automatic/supervised restart of the durable bridge spool's writer/forward loops** (§17.9) —
+  nothing watches for a `Faulted` bridge and rebuilds it on its own. An operator does have a
+  low-friction manual fix (re-applying the Site link, or rotating the identity, both rebuild the bridge
+  without a process restart) — but until someone does, the spool keeps growing until the size/age caps
+  trim the oldest entries, i.e. eventual real data loss, signalled only by a status flag and a log line.
 - **No dead-letter path for a permanently-rejected message** (§17.9) — head-of-line blocking behind one
   bad message is the remaining route to real data loss, even with the durable spool in place.
 - **Outbound telemetry only** — no inbound command path (NCMD or otherwise); the Site can observe this
@@ -2182,8 +2205,12 @@ bảo mật thật sự, không phải tiện lợi. **Chỉ danh tính tự ký
 có Site CA, chưa ký chéo tự động. **Xoay vòng chứng chỉ chỉ thủ công/theo yêu cầu** (§17.10) — chưa tự
 động xoay trước khi hết hạn, chưa có job định kỳ; operator (hay một tự động hoá tương lai) phải tự gọi
 `POST /v1/site/identity/rotate`, và phải cập nhật Site NGAY SAU ĐÓ (luồng 2 bước ở §17.10) nếu không kết
-nối sẽ đứng im. **Trạng thái `Faulted` của spool bền là KẾT THÚC** (§17.9) — không có cơ chế tự khởi
-động lại vòng lặp writer/forward; muốn hồi phục phải khởi động lại toàn bộ tiến trình. **Chưa có đường
+nối sẽ đứng im. **Chưa có cơ chế TỰ ĐỘNG/được giám sát khởi động lại vòng lặp writer/forward của spool
+bền** (§17.9) — không có gì theo dõi một bridge bị `Faulted` rồi tự dựng lại. Operator có cách sửa tay ít
+tốn công (áp lại Site link, hoặc xoay vòng danh tính, cả hai đều dựng lại bridge mà không cần khởi động
+lại tiến trình) — nhưng cho tới khi có ai làm vậy, spool cứ phình to cho tới khi trần dung lượng/tuổi cắt
+bớt các mục cũ nhất, tức là mất dữ liệu thật, cuối cùng, chỉ được báo hiệu bằng một cờ trạng thái và một
+dòng log. **Chưa có đường
 dead-letter cho message bị từ chối vĩnh viễn** (§17.9) — chặn đầu hàng đợi vì một message xấu vẫn là con
 đường còn lại dẫn tới mất dữ liệu thật, dù đã có spool bền. **Chỉ gửi telemetry ra ngoài** — chưa có
 đường lệnh vào (NCMD hay khác), Site quan sát được nhưng không điều khiển được máy. **Chưa có probe kết

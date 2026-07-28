@@ -94,7 +94,7 @@ Mỗi mục dưới đây đều được ghi rõ trong ledger/blueprint hoặc 
 
 | Nhóm | Mục treo |
 |---|---|
-| Join/UNS | `WS-B B2` đảo chiều bridge (~34 file, rủi ro cao — đã đánh giá riêng); mDNS **auto-provision/trust-on-first-discovery** (discover + advertise chỉ điền sẵn host/port, tin cậy vẫn dán tay PEM); NCMD lệnh vào từ Site; bridge `Faulted` chưa tự khởi động lại (phải restart tiến trình); head-of-line blocking khi Site từ chối vĩnh viễn 1 message (chưa có dead-letter) |
+| Join/UNS | `WS-B B2` đảo chiều bridge (~34 file, rủi ro cao — đã đánh giá riêng); mDNS **auto-provision/trust-on-first-discovery** (discover + advertise chỉ điền sẵn host/port, tin cậy vẫn dán tay PEM); NCMD lệnh vào từ Site; bridge `Faulted` chưa có cơ chế TỰ ĐỘNG khởi động lại vòng lặp (áp lại Site link qua `PUT /v1/site`, hoặc xoay vòng danh tính, đều dựng lại bridge và gỡ lỗi ngay — KHÔNG cần restart tiến trình; chỉ thiếu phần TỰ ĐỘNG/giám sát); head-of-line blocking khi Site từ chối vĩnh viễn 1 message (chưa có dead-letter) |
 | Bảo mật | EST/SCEP + Site CA; xoay vòng chứng thư CHỈ thủ công/theo yêu cầu (chưa tự động trước hạn); HMAC-khoá + neo audit ra ngoài (WORM); **D6 ký số MSI + SBOM + quét CVE** |
 | Giao thức | Modbus 32-bit/float + gộp block + **RTU**; OPC-UA **subscriptions** + xác thực bằng cert + duyệt address-space; Serial RS-485; S7/EtherNet-IP; SECS/GEM |
 | Alarm/Line | Tự động HOLD fleet **đang chạy** khi có Critical mới; hold theo từng máy; shelving/rationalization; trạng thái PackML chuyển tiếp đầy đủ |
