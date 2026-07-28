@@ -6501,6 +6501,7 @@
     "openTemplates": "打开测量点模板",
     "packageHint": "导出/导入产品包 (JSON)，以在系统间迁移。",
     "panelDefHint": "定义多板拼板 (N-up) 及其布局。",
+    "pendingSuggestions": "{{n}} 条AI建议",
     "pointGroupBadge": "分组",
     "pointNo": "序号",
     "preferredInstrument": "首选量具",

@@ -6698,6 +6698,7 @@
     "openTemplates": "Mở mẫu điểm đo",
     "packageHint": "Xuất/nhập gói sản phẩm (JSON) để chuyển giữa các hệ thống.",
     "panelDefHint": "Định nghĩa panel nhiều board (N-up) và bố cục ghép.",
+    "pendingSuggestions": "{{n}} đề xuất AI",
     "pointGroupBadge": "Nhóm",
     "pointNo": "STT",
     "preferredInstrument": "Thiết bị đo ưu tiên",

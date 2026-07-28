@@ -299,6 +299,14 @@ export const thresholdApprovalRouter = router({
       return updated;
     }),
 
+  /** Wave 2 đường A — số đề xuất ĐANG CHỜ theo từng điểm đo, để gắn badge ngay trên /products. */
+  countPendingByProduct: protectedProcedure
+    .input(z.object({ productModelId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const { countPendingByPoint } = await import("../services/thresholdApprovalCount");
+      return countPendingByPoint(input.productModelId);
+    }),
+
   // OP8 — list now resolves point + product metadata so the reviewer sees
   // pointCode / pointName / productCode / productName instead of just MP-{id}.
   list: protectedProcedure

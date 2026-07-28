@@ -561,6 +561,14 @@ export default function ProductModels() {
     { productModelId: selectedProduct?.id || 0 },
     { enabled: !!selectedProduct }
   );
+  // Wave 2 đường A — số đề xuất ngưỡng AI đang chờ theo điểm đo, để gắn badge ngay
+  // trên bảng điểm đo (150 đề xuất trước đây vô hình vì chỉ hiện ở /threshold-approvals,
+  // một trang khác với nơi kỹ sư thực sự chỉnh điểm đo). Lỗi/rỗng ⇒ không hiện gì,
+  // KHÔNG chặn màn hình chính (đây là chỉ báo phụ).
+  const { data: pendingThresholdCounts } = trpc.thresholdApproval.countPendingByProduct.useQuery(
+    { productModelId: selectedProduct?.id ?? 0 },
+    { enabled: !!selectedProduct?.id }
+  );
   const { data: measurementInstruments, refetch: refetchMeasurementInstruments } = trpc.measurementInstrument.list.useQuery(
     undefined,
     { enabled: !!selectedProduct }
@@ -3167,11 +3175,26 @@ export default function ProductModels() {
                           {
                             id: "threshold",
                             header: t("products.thresholdSummary", "Ngưỡng"),
-                            cell: (p) => (
-                              <span className="tabular-nums text-xs text-muted-foreground">
-                                {thresholdSummaryOf(p)}
-                              </span>
-                            ),
+                            cell: (p) => {
+                              // Wave 2 đường A — badge chỉ báo có đề xuất ngưỡng AI đang chờ
+                              // tại điểm đo này (150 đề xuất trước đây vô hình vì chỉ hiện ở
+                              // /threshold-approvals). Chỉ là chỉ báo — click hàng (đã có
+                              // onRowClick ở trên) mở form chi tiết điểm đó.
+                              const pendingCount = p.id != null ? (pendingThresholdCounts?.byPoint?.[p.id] ?? 0) : 0;
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="tabular-nums text-xs text-muted-foreground">
+                                    {thresholdSummaryOf(p)}
+                                  </span>
+                                  {pendingCount > 0 && (
+                                    <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0 shrink-0">
+                                      <Sparkles className="h-3 w-3" />
+                                      {t("products.pendingSuggestions", "{{n}} đề xuất AI", { n: pendingCount })}
+                                    </Badge>
+                                  )}
+                                </div>
+                              );
+                            },
                           },
                         ]}
                       />

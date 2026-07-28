@@ -6718,6 +6718,7 @@
     "openTemplates": "Open point templates",
     "packageHint": "Export/import the product package (JSON) to move between systems.",
     "panelDefHint": "Define a multi-board panel (N-up) and its layout.",
+    "pendingSuggestions": "{{n}} AI suggestion(s)",
     "pointGroupBadge": "Group",
     "pointNo": "No.",
     "preferredInstrument": "Preferred instrument",
