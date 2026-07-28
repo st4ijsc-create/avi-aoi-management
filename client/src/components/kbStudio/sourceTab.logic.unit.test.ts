@@ -6,7 +6,13 @@
  * `client/src/**`; tên khác sẽ không bao giờ được chạy (đỏ giả vĩnh viễn).
  */
 import { describe, it, expect } from "vitest";
-import { filesFromInput, filesFromDrop, isQueuedFileStillPending } from "./sourceTabLogic";
+import {
+  filesFromInput,
+  filesFromDrop,
+  isQueuedFileStillPending,
+  formatAllowedTypesLabel,
+  acceptsImageUploads,
+} from "./sourceTabLogic";
 
 const f = (name: string) => ({ name }) as File;
 
@@ -51,5 +57,36 @@ describe("isQueuedFileStillPending", () => {
   });
   it("hàng đợi rỗng ⇒ false", () => {
     expect(isQueuedFileStillPending("a", [])).toBe(false);
+  });
+});
+
+// ─── Vòng sửa 2 (review) — nhãn định dạng trên thẻ Upload phải khớp `accept` thật ────
+// Bug: nhãn "pdf, docx, md hoặc txt" bị gõ tay, không cập nhật khi Task 6 thêm png/jpg/jpeg/
+// webp vào `allowedTypes` thật — server nhận ảnh nhưng nhãn không nói ai biết. Hai hàm dưới
+// đây lấy dòng chữ + quyết định "có nên nói về ảnh không" TRỰC TIẾP từ `allowedTypes` (cùng
+// mảng dùng để build `accept`), nên không thể lệch nhau lần nữa.
+describe("formatAllowedTypesLabel", () => {
+  it("nối đúng TOÀN BỘ allowedTypes thật (kể cả ảnh), không rút gọn/gõ tay lại", () => {
+    expect(formatAllowedTypesLabel(["pdf", "docx", "md", "txt", "png", "jpg", "jpeg", "webp"])).toBe(
+      "pdf, docx, md, txt, png, jpg, jpeg, webp",
+    );
+  });
+  it("mảng rỗng ⇒ chuỗi rỗng (không ném, không bịa)", () => {
+    expect(formatAllowedTypesLabel([])).toBe("");
+  });
+});
+
+describe("acceptsImageUploads", () => {
+  it("allowedTypes thật hiện tại (có png/jpg/jpeg/webp) ⇒ true", () => {
+    expect(acceptsImageUploads(["pdf", "docx", "md", "txt", "png", "jpg", "jpeg", "webp"])).toBe(true);
+  });
+  it("chỉ một đuôi ảnh cũng đủ ⇒ true", () => {
+    expect(acceptsImageUploads(["pdf", "png"])).toBe(true);
+  });
+  it("không có đuôi ảnh nào ⇒ false (không hiện gợi ý AI-mô-tả-ảnh khi server chưa thật sự nhận ảnh)", () => {
+    expect(acceptsImageUploads(["pdf", "docx", "md", "txt"])).toBe(false);
+  });
+  it("mảng rỗng ⇒ false", () => {
+    expect(acceptsImageUploads([])).toBe(false);
   });
 });

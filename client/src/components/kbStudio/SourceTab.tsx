@@ -19,7 +19,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { mapTrpcError } from "@/lib/trpcErrors";
-import { filesFromInput, filesFromDrop, isQueuedFileStillPending } from "./sourceTabLogic";
+import {
+  filesFromInput,
+  filesFromDrop,
+  isQueuedFileStillPending,
+  formatAllowedTypesLabel,
+  acceptsImageUploads,
+} from "./sourceTabLogic";
 
 export interface SourceTabProps {
   enabled: boolean;
@@ -117,6 +123,10 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
   const trimmedCorpus = corpus.trim();
   const maxMb = Math.max(1, Math.round(maxUploadBytes / (1024 * 1024)));
   const acceptAttr = allowedTypes.map((ext) => `.${ext}`).join(",");
+  // Vòng sửa 2 (review) — nhãn hiển thị lấy TRỰC TIẾP từ `allowedTypes` (cùng mảng đã dùng để
+  // build `acceptAttr` ở trên), không gõ tay lại danh sách định dạng — xem sourceTabLogic.ts.
+  const formatsLabel = formatAllowedTypesLabel(allowedTypes);
+  const showImageHint = acceptsImageUploads(allowedTypes);
 
   /** Task 5: one `ingestDocumentJob` call PER queued file, sequentially — each file is its own
    * independent job. A rejection on one file (bad type/too large/decode error, all surfaced by
@@ -246,7 +256,10 @@ export function SourceTab({ enabled, webIngestEnabled, maxUploadBytes, allowedTy
               <Upload className="h-4 w-4" />
               {t("kbStudio.source.uploadTitle")}
             </CardTitle>
-            <CardDescription>{t("kbStudio.source.uploadDesc", { maxMb })}</CardDescription>
+            <CardDescription>{t("kbStudio.source.uploadDesc", { formats: formatsLabel, maxMb })}</CardDescription>
+            {showImageHint && (
+              <p className="text-xs text-muted-foreground">{t("kbStudio.source.uploadImageHint")}</p>
+            )}
           </CardHeader>
           <CardContent className="space-y-3">
             <div
