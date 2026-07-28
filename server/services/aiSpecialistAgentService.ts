@@ -161,12 +161,37 @@ function stringifyList(values?: string[]): string {
   return values.map((item, index) => `${index + 1}. ${item}`).join("\n");
 }
 
+/**
+ * Wave 1 FF-A — bóc fence markdown quanh khối JSON.
+ *
+ * Trước đây chỉ bóc fence khi chuỗi BẮT ĐẦU bằng ```` ``` ````. Nhưng khi model
+ * (Qwen3-30B) bị cắt giữa chừng, nó đôi khi tự "reset": chèn thêm một fence
+ * GIỮA dòng rồi bắt đầu lại một đối tượng JSON mới từ đầu — case đã gặp thật.
+ * Bản cũ bỏ qua hoàn toàn fence giữa dòng đó, để cả hai đối tượng dính chung
+ * vào chuỗi đưa cho JSON.parse ⇒ luôn hỏng.
+ *
+ * Chọn cách CẮT LẤY PHẦN TRƯỚC fence kế tiếp (bất kể có fence mở đầu hay
+ * không) thay vì "bóc mọi fence" — vì đối tượng ĐẦU TIÊN luôn là bản đầy đủ
+ * nhất tính tới điểm cắt (đúng theo quy tắc "khoá lặp lại ⇒ lấy lần đầu" ở
+ * salvageAgentSections); bóc hết fence rồi nối các đối tượng lại với nhau sẽ
+ * làm JSON.parse/salvage nhầm lẫn nội dung của đối tượng thứ hai vào đối
+ * tượng thứ nhất một cách khó đoán hơn. Cho valid-JSON-có-fence-đơn (mở đầu +
+ * kết thúc, không có fence giữa), hành vi giữ nguyên y hệt bản cũ (fence kết
+ * thúc cũng là "fence kế tiếp" nên vẫn bị cắt bỏ đúng như strip cũ).
+ */
 function sanitizeJsonBlock(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("```") ) return trimmed;
+  let working = text.trim();
 
-  const withoutStart = trimmed.replace(/^```[a-zA-Z]*\n?/, "");
-  return withoutStart.replace(/\n?```$/, "").trim();
+  if (working.startsWith("```")) {
+    working = working.replace(/^```[a-zA-Z]*\n?/, "");
+  }
+
+  const nextFenceIdx = working.indexOf("```");
+  if (nextFenceIdx !== -1) {
+    working = working.slice(0, nextFenceIdx);
+  }
+
+  return working.trim();
 }
 
 function ensureStringArray(value: unknown): string[] {
@@ -177,7 +202,152 @@ function ensureStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function parseAgentOutput(rawText: string): SpecialistAgentRunResult["output"] {
+const AGENT_OUTPUT_KEYS = [
+  "summary",
+  "diagnosis",
+  "actionPlan",
+  "patchHints",
+  "testPlan",
+  "optimizationIdeas",
+  "risks",
+  "reportTemplate",
+] as const;
+
+/** Tìm dấu `]` khớp với dấu `[` tại `openIdx`, bỏ qua nội dung nằm trong chuỗi
+ *  (tôn trọng escape `\"`). Trả `-1` nếu không tìm thấy (mảng bị cắt dở). */
+function findMatchingCloseBracket(text: string, openIdx: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = openIdx; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "[") depth++;
+    else if (ch === "]") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Vớt 1 chuỗi JSON bắt đầu tại `startQuoteIdx` (trỏ vào dấu `"` mở). Trả
+ *  `null` nếu KHÔNG tìm được dấu đóng (chuỗi bị cắt dở giữa chừng — không
+ *  vớt phần tử dang dở). Trả kèm `endIdx` (vị trí NGAY SAU dấu `"` đóng) để
+ *  gọi tiếp tìm phần tử kế tiếp. */
+function extractQuotedStringAt(text: string, startQuoteIdx: number): { value: string | null; endIdx: number } {
+  let escaped = false;
+  for (let i = startQuoteIdx + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      const raw = text.slice(startQuoteIdx, i + 1);
+      try {
+        return { value: JSON.parse(raw) as string, endIdx: i + 1 };
+      } catch {
+        return { value: text.slice(startQuoteIdx + 1, i), endIdx: i + 1 };
+      }
+    }
+  }
+  return { value: null, endIdx: text.length };
+}
+
+/** Vớt các phần tử chuỗi HOÀN CHỈNH của một mảng bắt đầu tại `openBracketIdx`
+ *  (trỏ vào dấu `[`). Nếu mảng bị cắt dở (thiếu `]` đóng), vẫn vớt các phần
+ *  tử đã hoàn chỉnh trong phần còn lại của chuỗi, bỏ phần tử cuối bị cắt. */
+function salvageStringArray(text: string, openBracketIdx: number): string[] {
+  const closeIdx = findMatchingCloseBracket(text, openBracketIdx);
+  const segmentEnd = closeIdx === -1 ? text.length : closeIdx;
+
+  const out: string[] = [];
+  let cursor = openBracketIdx + 1;
+  while (cursor < segmentEnd) {
+    const quoteIdx = text.indexOf('"', cursor);
+    if (quoteIdx === -1 || quoteIdx >= segmentEnd) break;
+    const { value, endIdx } = extractQuotedStringAt(text, quoteIdx);
+    if (value === null) break; // phần tử cuối bị cắt dở ⇒ bỏ, không vớt
+    const trimmed = value.trim();
+    if (trimmed) out.push(trimmed);
+    cursor = endIdx;
+  }
+  return out;
+}
+
+/**
+ * Wave 1 FF-A — vớt từng khối từ JSON hỏng/bị cắt.
+ *
+ * Xử lý ĐỘC LẬP từng khoá đã biết trong `AGENT_OUTPUT_KEYS`: tìm lần XUẤT
+ * HIỆN ĐẦU TIÊN của `"khoá":` rồi phân tích riêng phần giá trị theo sau (chuỗi
+ * `"..."` hoặc mảng `[...]`). Khoá lặp lại ⇒ chỉ lần đầu được dùng (khi model
+ * bị cắt rồi "reset", bản đầu luôn đầy đủ nhất tính tới điểm cắt).
+ *
+ * Trả về phần đọc được; khoá nào không vớt được thì VẮNG MẶT trong kết quả
+ * (không bịa nội dung). Không bao giờ ném — kể cả với đầu vào rỗng/không phải
+ * chuỗi.
+ */
+export function salvageAgentSections(rawText: string): Partial<SpecialistAgentRunResult["output"]> {
+  if (!rawText || typeof rawText !== "string") return {};
+
+  const result: Partial<SpecialistAgentRunResult["output"]> = {};
+
+  for (const key of AGENT_OUTPUT_KEYS) {
+    const keyPattern = new RegExp(`"${key}"\\s*:\\s*`);
+    const match = keyPattern.exec(rawText);
+    if (!match) continue;
+
+    const valueStart = match.index + match[0].length;
+    const firstChar = rawText[valueStart];
+
+    if (firstChar === '"') {
+      const { value } = extractQuotedStringAt(rawText, valueStart);
+      if (value !== null && value.trim()) {
+        (result as Record<string, unknown>)[key] = value.trim();
+      }
+    } else if (firstChar === "[") {
+      const arr = salvageStringArray(rawText, valueStart);
+      if (arr.length > 0) {
+        (result as Record<string, unknown>)[key] = arr;
+      }
+    }
+    // Kiểu khác (number/null/object/thiếu) ⇒ ngoài hợp đồng schema, bỏ qua.
+  }
+
+  return result;
+}
+
+/** Wave 1 FF-A — 1400 token không đủ cho 8 khối đầu ra ⇒ model bị cắt giữa
+ *  chừng, JSON hỏng. Cho phép cấu hình qua env, mặc định nâng lên 3000. */
+export function specialistMaxTokens(): number {
+  const raw = Number(process.env.AI_SPECIALIST_MAX_TOKENS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 3000;
+}
+
+/**
+ * Ưu tiên: (1) JSON.parse chặt chẽ thành công ⇒ dùng nguyên như cũ (hành vi
+ * giữ nguyên byte-for-byte cho đầu vào hợp lệ). (2) Thất bại ⇒ vớt bằng
+ * `salvageAgentSections`; nếu vớt được ít nhất một khối MẢNG không rỗng, dùng
+ * kết quả vớt (summary lấy từ khoá `summary` vớt được, nếu không có thì mới
+ * dùng rawText thô). (3) Vớt cũng không ra khối mảng nào ⇒ giữ đúng fallback
+ * cũ (summary = rawText thô, mọi mảng rỗng) — không dùng một mình summary đã
+ * vớt (chưa đủ "vớt được gì" theo đúng nghĩa của bug này).
+ */
+export function parseAgentOutput(rawText: string): SpecialistAgentRunResult["output"] {
   const fallback = {
     summary: rawText.trim(),
     diagnosis: [],
@@ -202,7 +372,31 @@ function parseAgentOutput(rawText: string): SpecialistAgentRunResult["output"] {
       reportTemplate: ensureStringArray(parsed?.reportTemplate),
     };
   } catch {
-    return fallback;
+    const salvaged = salvageAgentSections(sanitizeJsonBlock(rawText));
+    const hasSalvagedArray = (
+      [
+        "diagnosis",
+        "actionPlan",
+        "patchHints",
+        "testPlan",
+        "optimizationIdeas",
+        "risks",
+        "reportTemplate",
+      ] as const
+    ).some((key) => Array.isArray(salvaged[key]) && (salvaged[key] as string[]).length > 0);
+
+    if (!hasSalvagedArray) return fallback;
+
+    return {
+      summary: salvaged.summary ?? fallback.summary,
+      diagnosis: salvaged.diagnosis ?? [],
+      actionPlan: salvaged.actionPlan ?? [],
+      patchHints: salvaged.patchHints ?? [],
+      testPlan: salvaged.testPlan ?? [],
+      optimizationIdeas: salvaged.optimizationIdeas ?? [],
+      risks: salvaged.risks ?? [],
+      reportTemplate: salvaged.reportTemplate ?? [],
+    };
   }
 }
 
@@ -364,7 +558,7 @@ export async function runSpecialistAgent(input: RunSpecialistAgentInput): Promis
     {
       systemPrompt: buildSystemPrompt(agent, input.language ?? "vi"),
       prompt: buildUserPrompt(input),
-      maxTokens: 1400,
+      maxTokens: specialistMaxTokens(),
       temperature: 0.25,
       topP: 0.9,
       repeatPenalty: 1.1,

@@ -136,17 +136,30 @@ export function deriveFeedbackFacts(session: {
  * KHÔNG BAO GIỜ ném: mọi lỗi được ghi vào phiên dưới dạng status "failed", vì
  * hàm này chạy fire-and-forget (không ai await) — một promise reject không bắt
  * sẽ làm sập tiến trình Node.
+ *
+ * Wave 1 FF-B — `gatherContext` mô tả YÊU CẦU nạp ngữ cảnh (`null` = tắt mắt),
+ * KHÔNG còn là kết quả đã nạp sẵn. `gatherRepoContext` (nạp model embedding cho
+ * RAG) chạy Ở ĐÂY, sau khi sessionId đã được trả về trình duyệt — trước bản
+ * này, `aiSpecialistAgentRouter.run` `await gatherRepoContext(...)` TRƯỚC khi
+ * trả sessionId, khiến POST treo ~100 giây và nút "Giao việc" đứng im vì FE
+ * không nhận được sessionId để chuyển sang trạng thái "đang chạy".
  */
 export async function runSpecialistSessionInBackground(args: {
   sessionId: number;
   userId: number;
   runInput: Parameters<typeof runSpecialistAgent>[0];
+  gatherContext: { files?: string[]; objective: string } | null;
 }): Promise<void> {
-  const { sessionId, userId, runInput } = args;
-  // I-5 — khối ngữ cảnh vẫn đi vào model (runInput), nhưng KHÔNG đi vào DB.
-  const { repoContext, ...slimInput } = runInput;
+  const { sessionId, userId, runInput, gatherContext } = args;
+  // I-5 — dù `runInput` theo hợp đồng mới không còn được kỳ vọng chứa
+  // `repoContext` (nguồn giờ là `gatherContext`), vẫn tước phòng hờ trước khi
+  // lưu DB — không để lọt khối ngữ cảnh vào inputPayload.
+  const { repoContext: _ignoredRepoContext, ...slimInput } = runInput as typeof runInput & {
+    repoContext?: unknown;
+  };
   try {
-    const result = await runSpecialistAgent(runInput);
+    const repoContext = gatherContext ? await gatherRepoContext(gatherContext) : undefined;
+    const result = await runSpecialistAgent({ ...runInput, repoContext });
     await appendAiSpecialistSessionStep({
       sessionId,
       stepOrder: 1,
@@ -178,21 +191,29 @@ export async function runSpecialistSessionInBackground(args: {
  * Wave 1 — cùng khuôn "không bao giờ ném" như `runSpecialistSessionInBackground`,
  * nhưng cho chuỗi nhiều agent (`runWorkflowChain` / `runModuleAudit`). Giữ nguyên
  * per-step persistence mà 2 luồng đó đã có trước đây — chỉ dời ra khỏi request path.
+ *
+ * Wave 1 FF-B — cùng đổi chỗ như `runSpecialistSessionInBackground`: `gatherContext`
+ * là YÊU CẦU nạp (`null` = tắt mắt), nạp thật diễn ra BÊN TRONG khối try, sau khi
+ * sessionId đã được trả về. `runModuleAudit` không có công tắc includeRepoContext
+ * trong input — nó LUÔN truyền một `gatherContext` khác null (giữ nguyên ý nghĩa
+ * "luôn bật mắt" trước đây, chỉ dời thời điểm NẠP).
  */
 export async function runSpecialistWorkflowSessionInBackground(args: {
   sessionId: number;
   userId: number;
   workflowInput: Parameters<typeof runSpecialistWorkflowChain>[0];
+  gatherContext: { files?: string[]; objective: string } | null;
   mode: "workflow" | "module-audit";
   presetMeta?: { id: string; label: string };
 }): Promise<void> {
-  const { sessionId, userId, workflowInput, mode, presetMeta } = args;
-  // I-4 — nhánh này vốn đã lưu gọn; nay thêm bản tóm tắt ngữ cảnh để
-  // `deriveFeedbackFacts` suy được `repoContextUsed` cho CẢ phiên workflow/audit
-  // (trước đây client hardcode `true` cho mọi phiên audit, kể cả khi đọc 0 file).
-  const repoContextSummary = summarizeRepoContext(workflowInput.repoContext);
+  const { sessionId, userId, workflowInput, gatherContext, mode, presetMeta } = args;
   try {
-    const workflow = await runSpecialistWorkflowChain(workflowInput);
+    const repoContext = gatherContext ? await gatherRepoContext(gatherContext) : undefined;
+    // I-4 — nhánh này vốn đã lưu gọn; nay thêm bản tóm tắt ngữ cảnh để
+    // `deriveFeedbackFacts` suy được `repoContextUsed` cho CẢ phiên workflow/audit
+    // (trước đây client hardcode `true` cho mọi phiên audit, kể cả khi đọc 0 file).
+    const repoContextSummary = summarizeRepoContext(repoContext);
+    const workflow = await runSpecialistWorkflowChain({ ...workflowInput, repoContext });
 
     for (const step of workflow.steps) {
       await appendAiSpecialistSessionStep({
@@ -268,16 +289,21 @@ export const aiSpecialistAgentRouter = router({
         status: "running",
       });
 
-      const repoContext =
+      // Wave 1 FF-B — KHÔNG await gatherRepoContext ở request path (nó nạp
+      // model embedding cho RAG, đo được ~100 giây thật) — chỉ truyền YÊU CẦU
+      // nạp xuống tiến trình nền, việc nạp thật diễn ra SAU KHI sessionId đã
+      // được trả về. `null` = tắt mắt (includeRepoContext === false).
+      const gatherContext =
         includeRepoContext === false
-          ? undefined
-          : await gatherRepoContext({ files: runInput.files, objective: runInput.objective });
+          ? null
+          : { files: runInput.files, objective: runInput.objective };
 
       // Fire-and-forget: KHÔNG await — trả sessionId ngay để FE poll.
       void runSpecialistSessionInBackground({
         sessionId: created.id,
         userId: ctx.user.id,
-        runInput: { ...runInput, repoContext },
+        runInput,
+        gatherContext,
       });
 
       return { sessionId: created.id, started: true as const };
@@ -299,16 +325,19 @@ export const aiSpecialistAgentRouter = router({
         status: "running",
       });
 
-      const repoContext =
+      // Wave 1 FF-B — KHÔNG await gatherRepoContext ở request path — xem chú
+      // thích tương tự ở `run` phía trên.
+      const gatherContext =
         includeRepoContext === false
-          ? undefined
-          : await gatherRepoContext({ files: workflowInput.files, objective: workflowInput.objective });
+          ? null
+          : { files: workflowInput.files, objective: workflowInput.objective };
 
       // Fire-and-forget: KHÔNG await — trả sessionId ngay để FE poll.
       void runSpecialistWorkflowSessionInBackground({
         sessionId: created.id,
         userId: ctx.user.id,
-        workflowInput: { ...workflowInput, repoContext },
+        workflowInput,
+        gatherContext,
         mode: "workflow",
       });
 
@@ -387,9 +416,10 @@ export const aiSpecialistAgentRouter = router({
         status: "running",
       });
 
-      const repoContext = await gatherRepoContext({ files: preset.files, objective });
-
-      // Fire-and-forget: KHÔNG await — trả sessionId ngay để FE poll.
+      // Wave 1 FF-B — `runModuleAudit` không có công tắc includeRepoContext
+      // (nạp ngữ cảnh vô điều kiện — preset tự chọn files cố định), giữ
+      // NGUYÊN ý nghĩa "luôn bật mắt" đó; chỉ dời thời điểm NẠP THẬT vào tiến
+      // trình nền (KHÔNG await ở đây nữa) — xem chú thích ở `run` phía trên.
       void runSpecialistWorkflowSessionInBackground({
         sessionId: created.id,
         userId: ctx.user.id,
@@ -404,8 +434,8 @@ export const aiSpecialistAgentRouter = router({
           includeQa: preset.includeQa,
           language,
           modelId: input.modelId,
-          repoContext,
         },
+        gatherContext: { files: preset.files, objective },
         mode: "module-audit",
         presetMeta: { id: preset.id, label: preset.label },
       });

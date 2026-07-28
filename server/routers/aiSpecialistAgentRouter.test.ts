@@ -34,18 +34,24 @@ vi.mock("../db/aiSpecialist", () => ({
 }));
 
 const runAgentMock = vi.fn();
+const runWorkflowChainMock = vi.fn();
+const getModuleAuditPresetMock = vi.fn();
 vi.mock("../services/aiSpecialistAgentService", () => ({
   runSpecialistAgent: (...a: any[]) => runAgentMock(...a),
-  runSpecialistWorkflowChain: vi.fn(),
+  runSpecialistWorkflowChain: (...a: any[]) => runWorkflowChainMock(...a),
   listSpecialistAgents: vi.fn(() => []),
   buildWorkflowAgentOrder: vi.fn(() => ["backend-engineer"]),
   listModuleAuditPresets: vi.fn(() => []),
-  getModuleAuditPreset: vi.fn(),
+  getModuleAuditPreset: (...a: any[]) => getModuleAuditPresetMock(...a),
   SPECIALIST_BRIDGE_TOOLS: [],
   ensureSpecialistBridgeToolsRegistered: vi.fn(),
 }));
+// Wave 1 FF-B — `gatherRepoContextMock` is a named outer const (not inlined in the
+// factory) so individual tests can override its behaviour (never-resolving promise,
+// reject, custom resolved value) to prove the request path never awaits it.
+const gatherRepoContextMock = vi.fn(async () => ({ files: [], skipped: [], dependencies: [], ragSnippets: [], totalBytes: 0 }));
 vi.mock("../services/ai/repoContextService", () => ({
-  gatherRepoContext: vi.fn(async () => ({ files: [], skipped: [], dependencies: [], ragSnippets: [], totalBytes: 0 })),
+  gatherRepoContext: (...a: any[]) => gatherRepoContextMock(...a),
 }));
 
 const ENGINEER = { id: 7, role: "engineer", name: "Eng", twoFactorEnabled: true };
@@ -58,6 +64,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   getSessionDetailMock.mockResolvedValue({ id: 42 });
   upsertFeedbackMock.mockResolvedValue({ ok: true });
+  // Fresh default per test — some tests below override this via mockReturnValueOnce/
+  // mockRejectedValueOnce, which `clearAllMocks()` (mockClear, NOT mockReset) does not
+  // drain from the once-queue. Re-asserting the plain resolved default here keeps any
+  // earlier test's *Once queue from leaking into a later test that expects the default.
+  gatherRepoContextMock.mockReset();
+  gatherRepoContextMock.mockImplementation(async () => ({ files: [], skipped: [], dependencies: [], ragSnippets: [], totalBytes: 0 }));
 });
 
 describe("runSpecialistSessionInBackground", () => {
@@ -68,6 +80,7 @@ describe("runSpecialistSessionInBackground", () => {
       runSpecialistSessionInBackground({
         sessionId: 42, userId: 1,
         runInput: { agentId: "backend-engineer", objective: "x".repeat(20) },
+        gatherContext: null,
       }),
     ).resolves.toBeUndefined();
     expect(completeMock).toHaveBeenCalledWith(42, 1, expect.objectContaining({ status: "failed" }));
@@ -84,6 +97,7 @@ describe("runSpecialistSessionInBackground", () => {
     await runSpecialistSessionInBackground({
       sessionId: 42, userId: 1,
       runInput: { agentId: "backend-engineer", objective: "x".repeat(20) },
+      gatherContext: null,
     });
     expect(appendMock).toHaveBeenCalled();
     expect(completeMock).toHaveBeenCalledWith(42, 1, expect.objectContaining({ status: "completed" }));
@@ -215,10 +229,79 @@ describe("deriveFeedbackFacts (hàm thuần — máy chủ là nguồn sự th�
 });
 
 // I-5 — 256KB mã nguồn + mảnh RAG KHÔNG được nằm trong inputPayload lưu xuống DB
-// (getSessionDetail đẩy nguyên khối đó về trình duyệt mỗi 2s khi poll).
-describe("runSpecialistSessionInBackground — không lưu nguyên khối ngữ cảnh (I-5)", () => {
-  it("inputPayload lưu bản TÓM TẮT, không có repoContext", async () => {
+// (getSessionDetail đẩy nguyên khối đó về trình duyệt mỗi 2s khi poll). Wave 1
+// FF-B đổi chỗ NẠP ngữ cảnh (nay xảy ra BÊN TRONG hàm nền, qua `gatherContext`
+// thay vì `runInput.repoContext` đã nạp sẵn) — các test dưới đây được viết lại
+// theo chữ ký mới, nhưng vẫn khẳng định đúng bất biến I-5 cũ.
+describe("runSpecialistSessionInBackground — Wave 1 FF-B (nạp ngữ cảnh trong nền, brief test #2-#5)", () => {
+  it("2. gatherContext khác null ⇒ gatherRepoContext được gọi ĐÚNG 1 LẦN, runSpecialistAgent nhận repoContext đã nạp", async () => {
+    const loaded = {
+      files: [{ path: "a.ts", content: "export const A = 1;", bytes: 20, truncated: false, redacted: false }],
+      skipped: [], dependencies: [], ragSnippets: [], totalBytes: 20,
+    };
+    gatherRepoContextMock.mockResolvedValueOnce(loaded);
+    runAgentMock.mockResolvedValue({
+      agent: { id: "backend-engineer" }, modelId: "m", output: { summary: "ok" },
+      metrics: { tokensPrompt: 1, tokensGenerated: 2, totalTimeMs: 3, tokensPerSecond: 4 },
+    });
+
     const { runSpecialistSessionInBackground } = await import("./aiSpecialistAgentRouter");
+    await runSpecialistSessionInBackground({
+      sessionId: 42, userId: 1,
+      runInput: { agentId: "backend-engineer", objective: "x".repeat(20) },
+      gatherContext: { files: ["a.ts"], objective: "x".repeat(20) },
+    });
+
+    expect(gatherRepoContextMock).toHaveBeenCalledTimes(1);
+    expect(gatherRepoContextMock).toHaveBeenCalledWith({ files: ["a.ts"], objective: "x".repeat(20) });
+    expect(runAgentMock.mock.calls[0]![0].repoContext).toEqual(loaded);
+  });
+
+  it("3. gatherContext: null (tắt mắt) ⇒ gatherRepoContext KHÔNG được gọi; runSpecialistAgent nhận repoContext=undefined", async () => {
+    runAgentMock.mockResolvedValue({
+      agent: { id: "backend-engineer" }, modelId: "m", output: { summary: "ok" },
+      metrics: { tokensPrompt: 1, tokensGenerated: 2, totalTimeMs: 3, tokensPerSecond: 4 },
+    });
+
+    const { runSpecialistSessionInBackground } = await import("./aiSpecialistAgentRouter");
+    await runSpecialistSessionInBackground({
+      sessionId: 42, userId: 1,
+      runInput: { agentId: "backend-engineer", objective: "x".repeat(20) },
+      gatherContext: null,
+    });
+
+    expect(gatherRepoContextMock).not.toHaveBeenCalled();
+    expect(runAgentMock.mock.calls[0]![0].repoContext).toBeUndefined();
+  });
+
+  it("4. gatherRepoContext bị lỗi ⇒ phiên vẫn kết thúc failed, hàm nền KHÔNG ném (fire-and-forget sống còn)", async () => {
+    gatherRepoContextMock.mockRejectedValueOnce(new Error("rag boom"));
+
+    const { runSpecialistSessionInBackground } = await import("./aiSpecialistAgentRouter");
+    await expect(
+      runSpecialistSessionInBackground({
+        sessionId: 42, userId: 1,
+        runInput: { agentId: "backend-engineer", objective: "x".repeat(20) },
+        gatherContext: { files: [], objective: "x".repeat(20) },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(completeMock).toHaveBeenCalledWith(42, 1, expect.objectContaining({ status: "failed" }));
+    // Không tới được bước gọi model — lỗi xảy ra trước đó, ở bước nạp ngữ cảnh.
+    expect(runAgentMock).not.toHaveBeenCalled();
+  });
+
+  it("5a. inputPayload lưu bản TÓM TẮT repoContextSummary, KHÔNG chứa nội dung file (chống hồi quy I-5)", async () => {
+    gatherRepoContextMock.mockResolvedValueOnce({
+      files: [
+        { path: "a.ts", content: "MÃ-NGUỒN-KHỔNG-LỒ", bytes: 10, truncated: true, redacted: false },
+        { path: "b.ts", content: "y", bytes: 1, truncated: false, redacted: false },
+      ],
+      skipped: [{ path: "c.py", reason: "DENIED_EXT" }],
+      dependencies: [],
+      ragSnippets: [],
+      totalBytes: 11,
+    });
     runAgentMock.mockResolvedValue({
       agent: { id: "backend-engineer" },
       modelId: "m",
@@ -226,23 +309,12 @@ describe("runSpecialistSessionInBackground — không lưu nguyên khối ngữ 
       metrics: { tokensPrompt: 1, tokensGenerated: 2, totalTimeMs: 3, tokensPerSecond: 4 },
     });
 
+    const { runSpecialistSessionInBackground } = await import("./aiSpecialistAgentRouter");
     await runSpecialistSessionInBackground({
       sessionId: 42,
       userId: 1,
-      runInput: {
-        agentId: "backend-engineer",
-        objective: "x".repeat(20),
-        repoContext: {
-          files: [
-            { path: "a.ts", content: "MÃ-NGUỒN-KHỔNG-LỒ", bytes: 10, truncated: true, redacted: false },
-            { path: "b.ts", content: "y", bytes: 1, truncated: false, redacted: false },
-          ],
-          skipped: [{ path: "c.py", reason: "DENIED_EXT" }],
-          dependencies: [],
-          ragSnippets: [],
-          totalBytes: 11,
-        },
-      } as any,
+      runInput: { agentId: "backend-engineer", objective: "x".repeat(20) },
+      gatherContext: { files: ["a.ts", "b.ts"], objective: "x".repeat(20) },
     });
 
     // Model vẫn nhận đủ ngữ cảnh…
@@ -256,8 +328,7 @@ describe("runSpecialistSessionInBackground — không lưu nguyên khối ngữ 
     });
   });
 
-  it("tắt mắt (không có repoContext) ⇒ tóm tắt toàn 0", async () => {
-    const { runSpecialistSessionInBackground } = await import("./aiSpecialistAgentRouter");
+  it("5b. tắt mắt (gatherContext: null) ⇒ tóm tắt toàn 0", async () => {
     runAgentMock.mockResolvedValue({
       agent: { id: "backend-engineer" },
       modelId: "m",
@@ -265,13 +336,70 @@ describe("runSpecialistSessionInBackground — không lưu nguyên khối ngữ 
       metrics: { tokensPrompt: 1, tokensGenerated: 2, totalTimeMs: 3, tokensPerSecond: 4 },
     });
 
+    const { runSpecialistSessionInBackground } = await import("./aiSpecialistAgentRouter");
     await runSpecialistSessionInBackground({
       sessionId: 42, userId: 1,
       runInput: { agentId: "backend-engineer", objective: "x".repeat(20) },
+      gatherContext: null,
     });
 
     expect((appendMock.mock.calls[0]![0] as any).inputPayload.repoContextSummary).toEqual({
       filesRead: 0, skipped: 0, truncated: 0, totalBytes: 0,
+    });
+  });
+});
+
+// Wave 1 FF-B — brief test #1: request path (procedure `run`) must NEVER await
+// gatherRepoContext. Proven by making it a promise that NEVER resolves — if `run`
+// still awaited it directly (the pre-fix bug), this test would hang/timeout instead
+// of resolving with {sessionId, started:true}.
+describe("aiSpecialistAgentRouter — Wave 1 FF-B: request path không chờ gatherRepoContext", () => {
+  it("1. run() vẫn trả {sessionId,started:true} ngay cả khi gatherRepoContext KHÔNG BAO GIỜ resolve", async () => {
+    gatherRepoContextMock.mockReturnValueOnce(new Promise(() => { /* không bao giờ resolve */ }));
+    const { aiSpecialistAgentRouter } = await import("./aiSpecialistAgentRouter");
+    const caller = aiSpecialistAgentRouter.createCaller(ctx());
+
+    const res = await caller.run({ agentId: "backend-engineer", objective: "x".repeat(20) });
+
+    expect(res).toEqual({ sessionId: 42, started: true });
+  });
+
+  it("runWorkflowChain() vẫn trả {sessionId,started:true} ngay cả khi gatherRepoContext KHÔNG BAO GIỜ resolve", async () => {
+    gatherRepoContextMock.mockReturnValueOnce(new Promise(() => { /* không bao giờ resolve */ }));
+    const { aiSpecialistAgentRouter } = await import("./aiSpecialistAgentRouter");
+    const caller = aiSpecialistAgentRouter.createCaller(ctx());
+
+    const res = await caller.runWorkflowChain({ objective: "x".repeat(20) });
+
+    expect(res).toEqual({ sessionId: 42, started: true });
+  });
+
+  it("runModuleAudit() vẫn trả {sessionId,started:true} ngay cả khi gatherRepoContext KHÔNG BAO GIỜ resolve (module-audit nạp ngữ cảnh vô điều kiện)", async () => {
+    getModuleAuditPresetMock.mockReturnValueOnce({
+      id: "ai-chat",
+      label: "AI Chat Module",
+      description: "d",
+      moduleName: "ai-chat",
+      files: ["server/routers/aiChatRouter.ts"],
+      techStack: ["tRPC"],
+      objective: "Audit module AI Chat",
+      constraints: [],
+      includeBackend: true,
+      includeFrontend: true,
+      includeQa: true,
+    });
+    gatherRepoContextMock.mockReturnValueOnce(new Promise(() => { /* không bao giờ resolve */ }));
+    const { aiSpecialistAgentRouter } = await import("./aiSpecialistAgentRouter");
+    const caller = aiSpecialistAgentRouter.createCaller(ctx());
+
+    const res = await caller.runModuleAudit({ presetId: "ai-chat" });
+
+    expect(res).toEqual({ sessionId: 42, started: true });
+    // "vô điều kiện" — được GỌI (chỉ là không được AWAIT ở request path), không có
+    // công tắc includeRepoContext trong input schema của runModuleAudit.
+    expect(gatherRepoContextMock).toHaveBeenCalledWith({
+      files: ["server/routers/aiChatRouter.ts"],
+      objective: "Audit module AI Chat",
     });
   });
 });
