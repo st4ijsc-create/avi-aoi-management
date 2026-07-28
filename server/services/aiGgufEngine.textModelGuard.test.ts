@@ -109,6 +109,11 @@ const EMBED_FILE = "Qwen3-Embedding-0.6B-f16.gguf";
 const EMBED_BASE = "Qwen3-Embedding-0.6B-f16";
 const FAST_FILE = "Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf";
 const FAST_BASE = "Qwen3-4B-Instruct-2507-UD-Q4_K_XL";
+// Real files that live in this deployment's GGUF_MODELS_DIR and are NOT text generators.
+const RERANK_FILE = "bge-reranker-v2-m3-Q8_0.gguf"; // cross-encoder ranking model
+const RERANK_BASE = "bge-reranker-v2-m3-Q8_0";
+const MMPROJ_FILE = "Qwen3-VL-8B-mmproj-F16.gguf"; // vision projector, not a chat model
+const MMPROJ_BASE = "Qwen3-VL-8B-mmproj-F16";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -205,6 +210,103 @@ describe("getOrLoadModel(undefined) — text generation must never land on the e
 
     expect(seen).not.toContain(EMBED_BASE);
     expect(seen).toContain(DEFAULT_BASE);
+  });
+});
+
+/**
+ * FIX ROUND 1 — the same bug class, reachable through a single `.env` typo instead of through
+ * load order. `.env` carries BOTH `GGUF_EMBEDDING_MODEL=` (unused) and `GGUF_EMBED_MODEL=`, so
+ * pointing `GGUF_DEFAULT_MODEL` at the embedder is a realistic mistake. Steps 1-2 of the ladder
+ * used to return it with no warning and no throw.
+ */
+describe("GGUF_DEFAULT_MODEL misconfigured to a NON-generative model", () => {
+  it("13. GGUF_DEFAULT_MODEL == the embedder, another text model resident ⇒ uses the text model and never loads the embedder as 'default'", async () => {
+    process.env.GGUF_DEFAULT_MODEL = EMBED_FILE; // the config typo
+    const eng = await freshEngine();
+
+    await eng.loadGgufModel({ modelPath: FAST_FILE });
+    const loadsAfterWarm = fakeLlama.loadModel.mock.calls.length;
+
+    const result = await eng.generateText({ prompt: "hi" });
+
+    expect(result.modelId).toBe(FAST_BASE);
+    expect(result.modelId).not.toBe(EMBED_BASE);
+    // It must not have tried to LOAD the embedder as the "default chat model" either.
+    expect(fakeLlama.loadModel.mock.calls.length).toBe(loadsAfterWarm);
+  });
+
+  it("14. GGUF_DEFAULT_MODEL == the embedder AND the embedder is the only resident/on-disk model ⇒ throws, naming the misconfiguration", async () => {
+    process.env.GGUF_DEFAULT_MODEL = EMBED_FILE;
+    dirFiles = [EMBED_FILE];
+    const eng = await freshEngine();
+
+    await eng.loadGgufModel({ modelPath: EMBED_FILE }); // resident — must still be refused
+
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      /No text-generation model available/i,
+    );
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      /GGUF_DEFAULT_MODEL[\s\S]*non-generative/i,
+    );
+  });
+
+  it("15. GGUF_DEFAULT_MODEL == the RERANKER (declared via GGUF_RERANKER_MODEL) ⇒ also refused, not just the embedder", async () => {
+    process.env.GGUF_DEFAULT_MODEL = RERANK_FILE;
+    process.env.GGUF_RERANKER_MODEL = RERANK_FILE;
+    dirFiles = [RERANK_FILE, EMBED_FILE];
+    const eng = await freshEngine();
+
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      /No text-generation model available/i,
+    );
+    expect(fakeLlama.loadModel).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * FIX ROUND 1 — the blind disk fallback (step 4) only skipped embedders. GGUF_MODELS_DIR also
+ * holds a cross-encoder reranker and a vision projector; readdir order could hand either to a
+ * generation request — the same garbage class, one rung further down the degradation ladder.
+ */
+describe("disk fallback (step 4) must skip every non-generative .gguf, not just embedders", () => {
+  it("16. reranker + projector listed BEFORE the chat model ⇒ still picks the chat model", async () => {
+    delete process.env.GGUF_DEFAULT_MODEL; // force the blind disk scan
+    delete process.env.GGUF_RERANKER_MODEL; // prove the NAME heuristic, not an env exact-match
+    delete process.env.GGUF_VISION_MMPROJ;
+    dirFiles = [RERANK_FILE, MMPROJ_FILE, EMBED_FILE, DEFAULT_FILE];
+    const eng = await freshEngine();
+
+    const result = await eng.generateText({ prompt: "hi" });
+
+    expect(result.modelId).toBe(DEFAULT_BASE);
+    expect(result.modelId).not.toBe(RERANK_BASE);
+    expect(result.modelId).not.toBe(MMPROJ_BASE);
+  });
+
+  it("17. ONLY non-generative .gguf files on disk ⇒ throws instead of 'generating' with a reranker/projector", async () => {
+    delete process.env.GGUF_DEFAULT_MODEL;
+    delete process.env.GGUF_RERANKER_MODEL;
+    delete process.env.GGUF_VISION_MMPROJ;
+    dirFiles = [RERANK_FILE, MMPROJ_FILE, EMBED_FILE];
+    const eng = await freshEngine();
+
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      /No text-generation model available/i,
+    );
+    expect(fakeLlama.loadModel).not.toHaveBeenCalled();
+  });
+
+  it("18. a resident projector is not used for generation either (step 3 degradation path)", async () => {
+    delete process.env.GGUF_DEFAULT_MODEL;
+    delete process.env.GGUF_VISION_MMPROJ;
+    dirFiles = []; // nothing on disk to fall through to
+    const eng = await freshEngine();
+
+    await eng.loadGgufModel({ modelPath: MMPROJ_FILE });
+
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      /No text-generation model available/i,
+    );
   });
 });
 

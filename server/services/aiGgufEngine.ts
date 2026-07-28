@@ -724,10 +724,12 @@ function releaseModel(loaded: LoadedModel | undefined): void {
  *                it EXPLICITLY, so they never reach the no-modelId branch unless GGUF_EMBED_MODEL
  *                is unset; the legacy resolution is preserved verbatim for them so the RAG path
  *                cannot regress.
- *   "tokenize" — countTokens(). Touches only `model.tokenize`, never a generation head, and is
- *                called on hot paths purely to size prompts; forcing a ~16.7 GB deep-model load
- *                just to count tokens would be a real regression, so it keeps the legacy
- *                reuse-whatever-is-resident behavior too.
+ *   "tokenize" — countTokens(). Touches only `model.tokenize`, never a generation head. It has a
+ *                single production caller — the tRPC `aiGgufRouter.tokenCount` query, which lets
+ *                the caller pass its own `modelId` — so forcing a ~16.7 GB deep-model load just to
+ *                answer "how many tokens is this string?" would be pure waste. It therefore keeps
+ *                the legacy reuse-whatever-is-resident behavior. (Token COUNTS are not affected:
+ *                every Qwen3 GGUF in this deployment shares one tokenizer.)
  *
  * The intent is an explicit PARAMETER rather than something inferred from the arguments: inferring
  * it is exactly the kind of guess that produced the original bug.
@@ -745,6 +747,50 @@ function isEmbeddingModelId(id: string): boolean {
   const embed = resolveEmbedModelBasename();
   if (!embed) return false;
   return toBasename(id).toLowerCase() === toBasename(embed).toLowerCase();
+}
+
+/**
+ * doc69 W1 modelfix, FIX ROUND 1 — basenames this deployment has EXPLICITLY DECLARED (via env) to
+ * play a non-generative role. Same class of hazard as the embedder: a cross-encoder reranker and a
+ * vision projector have no text-generation head either, so "generating" with one yields the same
+ * repetition garbage. Env-driven, never hard-coded filenames.
+ *
+ * `GGUF_EMBEDDING_MODEL` is included deliberately: `.env` carries it alongside `GGUF_EMBED_MODEL`
+ * and nothing reads it, which is exactly the sort of near-duplicate that invites a copy/paste
+ * mistake into `GGUF_DEFAULT_MODEL`.
+ */
+function configuredNonGenerativeBasenames(): string[] {
+  return [
+    process.env.GGUF_EMBED_MODEL,
+    process.env.GGUF_EMBEDDING_MODEL, // legacy alias present in .env, read by nothing else
+    process.env.GGUF_RERANKER_MODEL,
+    process.env.GGUF_VISION_MMPROJ,
+  ]
+    .map((v) => toBasename(v).toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * STRICT check for a model the operator CHOSE (i.e. GGUF_DEFAULT_MODEL, or one a caller loaded
+ * explicitly): is that exact file also declared as the embedder / reranker / projector? Identity
+ * comparison only — no name guessing — so an operator whose legitimate chat model merely happens to
+ * contain "embed" in its filename is never blocked by this.
+ */
+function isConfiguredNonGenerativeModelId(id: string): boolean {
+  const base = toBasename(id).toLowerCase();
+  if (!base) return false;
+  return configuredNonGenerativeBasenames().includes(base);
+}
+
+/**
+ * HEURISTIC check, used ONLY on the blind degradation rungs (steps 3-4 below) where nobody chose
+ * the model for generation and we are guessing anyway. On those rungs the asymmetry is clear:
+ * wrongly skipping a usable model costs an honest error message, wrongly ACCEPTING a reranker or a
+ * projector costs the user a page of plausible-looking garbage. So it errs toward skipping.
+ */
+function isLikelyNonGenerativeModelId(id: string): boolean {
+  if (isEmbeddingModelId(id) || isConfiguredNonGenerativeModelId(id)) return true;
+  return /embed|rerank|mmproj|projector/i.test(toBasename(id));
 }
 
 /** Take an already-resident model: bump LRU/usage counters and acquire an in-flight reference. */
@@ -767,18 +813,36 @@ function takeLoadedModel(modelId: string): { modelId: string; loaded: LoadedMode
  * showed to a factory engineer as an answer.
  *
  * PRIORITY (deliberately inverted vs. the old code):
+ *   0. reject a MISCONFIGURED default              — GGUF_DEFAULT_MODEL pointing at the embedder /
+ *                                                    reranker / projector is the same bug via a
+ *                                                    typo; drop it and keep descending.
  *   1. GGUF_DEFAULT_MODEL if already resident      — the configured chat model, zero load cost.
  *   2. GGUF_DEFAULT_MODEL, loading it              — configuration beats load-order. Never
  *                                                    silently downgrade to a smaller model.
- *   3. any OTHER resident NON-embedding model      — honest degradation when (2) fails (VRAM/OOM):
+ *   3. any OTHER resident GENERATIVE model         — honest degradation when (2) fails (VRAM/OOM):
  *                                                    still a real text model, just not the deep one.
- *   4. first NON-embedding .gguf in the models dir — last resort for an unconfigured install.
+ *   4. first GENERATIVE .gguf in the models dir    — last resort for an unconfigured install.
  *   5. THROW                                       — no text model ⇒ say so. Returning the embedder
  *                                                    "so something comes back" IS the bug.
  */
 async function getGenerationModel(contextSize?: number): Promise<{ modelId: string; loaded: LoadedModel }> {
-  const defaultId = resolveDefaultModelBasename();
+  let defaultId = resolveDefaultModelBasename();
   const why: string[] = [];
+
+  // 0 — FIX ROUND 1: refuse a MISCONFIGURED default before steps 1-2 can hand it back. Pointing
+  // GGUF_DEFAULT_MODEL at the embedder (or the reranker/projector) would otherwise restore the
+  // exact bug this whole guard exists to kill — via one `.env` typo instead of load order. Rejecting
+  // it here covers BOTH the "already resident" and the "load it" branch in one place, and lets the
+  // ladder fall through to a genuine text model rather than failing outright.
+  if (defaultId && isConfiguredNonGenerativeModelId(defaultId)) {
+    const msg =
+      `GGUF_DEFAULT_MODEL "${defaultId}" is configured as a NON-generative model ` +
+      "(it matches GGUF_EMBED_MODEL / GGUF_EMBEDDING_MODEL / GGUF_RERANKER_MODEL / " +
+      "GGUF_VISION_MMPROJ) — refusing to generate text with it";
+    why.push(msg);
+    console.error(`[aiGgufEngine] ${msg}. Point GGUF_DEFAULT_MODEL at a chat model.`);
+    defaultId = undefined;
+  }
 
   // 1 — configured chat model already resident.
   if (defaultId) {
@@ -803,9 +867,9 @@ async function getGenerationModel(contextSize?: number): Promise<{ modelId: stri
     why.push("GGUF_DEFAULT_MODEL is not set");
   }
 
-  // 3 — honest degradation: any OTHER resident model that is not the embedder.
+  // 3 — honest degradation: any OTHER resident model that can actually generate text.
   for (const id of loadedModels.keys()) {
-    if (isEmbeddingModelId(id)) continue;
+    if (isLikelyNonGenerativeModelId(id)) continue;
     const got = takeLoadedModel(id);
     if (got) {
       console.warn(
@@ -815,14 +879,16 @@ async function getGenerationModel(contextSize?: number): Promise<{ modelId: stri
     }
   }
 
-  // 4 — last resort: first non-embedding .gguf on disk (mirrors isGgufModelLoadable's skip rules).
+  // 4 — last resort: first GENERATIVE .gguf on disk. FIX ROUND 1 — readdir order is arbitrary and
+  // GGUF_MODELS_DIR also holds a cross-encoder reranker and a vision projector, so skipping only
+  // embedders (as isGgufModelLoadable does) left two more ways to "generate" with a model that has
+  // no generation head. isLikelyNonGenerativeModelId covers all three by role AND by name.
   try {
     ensureModelsDir();
     const files = fs.readdirSync(GGUF_MODELS_DIR).filter((f) => f.endsWith(".gguf"));
     for (const f of files) {
       const base = toBasename(f);
-      if (isEmbeddingModelId(base)) continue;
-      if (/embed/i.test(base)) continue; // heuristic: an obvious embedder with no GGUF_EMBED_MODEL set
+      if (isLikelyNonGenerativeModelId(base)) continue;
       try {
         const id = await loadGgufModel({ modelPath: f, contextSize });
         const got = takeLoadedModel(id);
