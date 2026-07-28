@@ -1781,7 +1781,16 @@ export async function retrieveKnowledge(
     try {
       const { gatherStudioHits } = await import("./aiLocalKnowledgeStudio");
       const studioHits = await gatherStudioHits(qVec, topK);
+      // Vòng sửa 1 (review) — cùng ngưỡng lọc nhiễu MIN_CITATION_SCORE áp dụng cho nguồn
+      // hệ thống (khai báo ở trên, KHÔNG khai hằng số thứ hai) cũng phải áp cho nguồn
+      // Studio: nếu không, chỉ cần kho có BẤT KỲ tài liệu nào, cái khớp-nhất-trong-đám-tệ
+      // vẫn được nêu như trích dẫn hợp lệ (nhãn "Tài liệu bạn nạp") và nhồi vào prompt LLM
+      // — nhiễu trình bày như nguồn tin, đúng kiểu suy-giảm-không-trung-thực wave này sinh
+      // ra để chữa. Không áp luật "giữ top-1 dù yếu" cho Studio: nguồn hệ thống đã đảm bảo
+      // câu trả lời không bao giờ trống trích dẫn, Studio chỉ nên góp mặt khi thật sự đạt.
+      let mergedStudioCount = 0;
       for (const h of studioHits) {
+        if (!(h.score >= MIN_CITATION_SCORE)) continue;
         citations.push({
           id: `studio:${h.corpus}:${h.id}`,
           sourcePath: h.sourceRef,
@@ -1791,12 +1800,19 @@ export async function retrieveKnowledge(
           origin: "studio",
         });
         contexts.push(h.text);
+        mergedStudioCount++;
       }
-      // citations/contexts stay index-paired (each push above is 1:1). retrieveKnowledge
-      // has no further topK slice downstream of this point, so re-sort the COMBINED list
-      // by score and cut to finalK here — otherwise a corpus with many Studio hits could
-      // push every system source out of the citations the caller/LLM actually sees.
-      if (studioHits.length > 0 && citations.length > finalK) {
+      // Vòng sửa 1 (review) — LUÔN sắp lại theo điểm giảm dần khi có ít nhất 1 hit Studio
+      // được trộn vào, KHÔNG CHỈ khi tổng số vượt finalK. Bug trước đó: nối-đuôi Studio sau
+      // nguồn hệ thống khi KHÔNG vượt finalK (trường hợp phổ biến nhất) phá bất biến
+      // "citations đã sắp best-first" (aiOperationalGrounding.ts:117) và khiến
+      // buildExtractiveAnswer(:773) — vốn chỉ đọc citations[0]?.score để so
+      // STRONG_MATCH_FLOOR — không bao giờ thấy một tài liệu Studio điểm cao nằm phía sau,
+      // nên câu trả lời bị từ chối oan "không tìm thấy thông tin".
+      // GIỮ ĐÚNG CẶP citations[i]<->contexts[i]: ghép (zip) citation với context CÙNG INDEX
+      // thành 1 cặp TRƯỚC khi sort, sort nguyên cặp theo score, rồi tách (unzip) lại theo
+      // ĐÚNG THỨ TỰ sau sort — không bao giờ sort 2 mảng song song một cách rời rạc.
+      if (mergedStudioCount > 0) {
         const paired = citations.map((c, i) => ({ c, ctx: contexts[i] ?? "" }));
         paired.sort((a, b) => b.c.score - a.c.score);
         const trimmed = paired.slice(0, finalK);
