@@ -81,6 +81,14 @@ public sealed class OpcUaDriver : IDeviceDriver
     {
         while (!ct.IsCancellationRequested)
         {
+            // GP-6b (task-6b-report.md) — same reasoning as ModbusTcpDriver.ReadAsync's own guard: a
+            // post-dispose iteration must not rebuild a fresh Session on a driver DisposeAsync has already
+            // torn down; the enumeration is over the moment dispose has run.
+            if (_disposed)
+            {
+                yield break;
+            }
+
             DeviceReading? reading = null;
             try
             {
@@ -135,23 +143,61 @@ public sealed class OpcUaDriver : IDeviceDriver
         _clientConfig ??= await BuildClientConfigAsync(ct).ConfigureAwait(false);
         var config = _clientConfig;
 
-        // CoreClientUtils.SelectEndpoint (sync overload) is the exact call the de-risk gate proved works
-        // end-to-end against a real loopback server (task-1-report.md) — the *Async replacement exists
-        // (SelectEndpointAsync) but wasn't part of that verified round-trip, so this deliberately keeps the
-        // PROVEN overload rather than swapping to an unverified one under time pressure. Same reasoning
-        // applies to the obsolete Session.Create overload below.
-#pragma warning disable CS0618 // proven overloads — see remark above.
-        var selected = CoreClientUtils.SelectEndpoint(config, _map.EndpointUrl, useSecurity: false);
+        // GP-6b (task-6b-report.md) — CoreClientUtils.SelectEndpoint (the sync overload this used to call)
+        // is a SYNCHRONOUS call on this async path that also pins a thread-pool thread and — confirmed by
+        // elimination against every OTHER step on this path already taking `ct`
+        // (CheckApplicationInstanceCertificatesAsync / Session.Create / session.ReadAsync) — blocks for
+        // exactly this driver's own configured TransportQuotas.OperationTimeout (15s) regardless of the
+        // caller's token: 5x FleetHost's 3-second teardown budget, and completely uncancellable while in
+        // flight. SelectEndpointAsync fixes exactly that — confirmed PRESENT in the installed 1.5.378.156
+        // package via reflection against the actual assembly (not inference), with the
+        // (config, url, useSecurity, discoverTimeout, ct) shape used below. Reusing
+        // config.TransportQuotas.OperationTimeout as discoverTimeout keeps the NON-cancelled bound
+        // numerically IDENTICAL to today's behaviour — a genuinely slow-but-healthy endpoint negotiation is
+        // unaffected — the fix is purely that it can now also be interrupted via `ct`.
+        //
+        // Still needs CS0618, contrary to what this fix was expected going in to allow (see
+        // task-6b-report.md): this specific overload is ALSO [Obsolete] in 1.5.378.156 (in favour of an
+        // ITelemetryContext-taking sibling this codebase does not thread anywhere), and Session.Create below
+        // has NO non-obsolete overload in this package version at all — every one points callers at
+        // ISessionFactory.CreateAsync, a materially larger client-API migration out of this defect's scope.
+#pragma warning disable CS0618 // SelectEndpointAsync (no ITelemetryContext overload) / Session.Create — see remark above.
+        var selected = await CoreClientUtils.SelectEndpointAsync(
+            config, _map.EndpointUrl, useSecurity: false, config.TransportQuotas.OperationTimeout, ct).ConfigureAwait(false);
         var endpoint = new ConfiguredEndpoint(null, selected, EndpointConfiguration.Create(config));
 
         var identity = string.IsNullOrEmpty(_map.Username)
             ? new UserIdentity()
             : new UserIdentity(_map.Username, Encoding.UTF8.GetBytes(_map.Password ?? string.Empty));
 
-        _session = await Session.Create(
+        var newSession = await Session.Create(
             config, endpoint, updateBeforeConnect: false, sessionName: $"St4i-OpcUaDriver-{_map.MachineCode}",
             sessionTimeout: 60000, identity: identity, preferredLocales: null, ct).ConfigureAwait(false);
 #pragma warning restore CS0618
+
+        // GP-6b — Session.Create above already takes `ct`, but DisposeAsync could still have run to
+        // completion WHILE it was in flight (there is no lock spanning both), landing a live Session on an
+        // already-disposed driver that will never call DisposeSessionAsync again. Close it here instead of
+        // leaking it.
+        if (_disposed)
+        {
+            try
+            {
+                await newSession.CloseAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // best-effort — same reasoning as DisposeSessionAsync's own catch below.
+            }
+            finally
+            {
+                newSession.Dispose();
+            }
+
+            throw new OperationCanceledException("OpcUaDriver was disposed while establishing a session.", ct);
+        }
+
+        _session = newSession;
     }
 
     /// <summary>Builds the ONE-TIME client <see cref="ApplicationConfiguration"/>: app-instance cert (an

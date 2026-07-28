@@ -76,11 +76,18 @@ public sealed class ModbusTcpDriver : IDeviceDriver
     {
         while (!ct.IsCancellationRequested)
         {
+            // GP-6b (task-6b-report.md) — a post-dispose iteration must not rebuild a fresh TcpClient on a
+            // driver DisposeAsync has already torn down: the enumeration is over the moment dispose has run.
+            if (_disposed)
+            {
+                yield break;
+            }
+
             DeviceReading? reading = null;
             try
             {
                 await EnsureConnectedAsync(ct).ConfigureAwait(false);
-                reading = await PollOnceAsync().ConfigureAwait(false);
+                reading = await PollOnceAsync(ct).ConfigureAwait(false);
                 Health = DriverHealthState.Connected;
             }
             catch (OperationCanceledException)
@@ -127,23 +134,77 @@ public sealed class ModbusTcpDriver : IDeviceDriver
 
         var tcp = new TcpClient();
         await tcp.ConnectAsync(_host, _port, ct).ConfigureAwait(false);
+
+        var master = Factory.CreateMaster(tcp);
+
+        // GP-6b (task-6b-report.md) — the actual production defect this closes, verified against the
+        // installed NModbus 3.0.83 via a standalone probe (not inference): every IModbusMaster.Read*Async
+        // overload takes NO CancellationToken, is sync-over-threadpool underneath (not a real async state
+        // machine), and master.Transport.ReadTimeout/WriteTimeout default to -1 (infinite) — so does the
+        // underlying NetworkStream.ReadTimeout. A device that accepts the TCP handshake but goes silent at
+        // the protocol level (a stateful firewall timing out an idle polled flow, a PLC whose Modbus task
+        // hung while its TCP stack stayed up, a device reset behind a switch that holds link — TCP keepalive
+        // is off by default) used to pin a thread-pool thread FOREVER: Health stayed frozen at whatever it
+        // last reported (Connected, for a device that HAD been talking), so AlarmEvaluator never raised
+        // Degraded/Down and the operator saw a "green" connector that had silently stopped producing — see
+        // this class's own doc comment. Bounding both timeouts here fixes that in NORMAL operation (no
+        // cancellation involved at all — proven in ModbusTcpDriverLoopbackTests' health-freeze test);
+        // PollOnceAsync's own ct.Register(DisposeConnection) (see its doc comment) separately makes an
+        // in-flight read promptly CANCELLABLE, which is a distinct concern from bounding it.
+        //
+        // Math.Max(1000, PollIntervalMs * 4): generous enough that a genuinely healthy device polled quickly
+        // (ModbusTcpDriverLoopbackTests' 50ms interval, the conformance suite's 20ms one) never has a real,
+        // succeeding read torn down mid-flight — floored at a flat 1 second so a fast poll cadence can't
+        // produce an unreasonably tight bound — while keeping the worst-case stall a small, fixed multiple of
+        // how often this driver expects to hear back from the device at all.
+        var timeoutMs = Math.Max(1000, _map.PollIntervalMs * 4);
+        master.Transport.ReadTimeout = timeoutMs;
+        master.Transport.WriteTimeout = timeoutMs;
+
+        // NModbus retries a failed read/write up to Transport.Retries (default 3) times, waiting
+        // Transport.WaitToRetryMilliseconds (default 250ms, left as-is) between attempts — worst case ~4x
+        // ReadTimeout PER REGISTER before NModbus itself gives up and throws. This driver already reconnects
+        // from scratch on ANY poll failure (see class doc comment's resilience model), so NModbus-level
+        // retries only multiply the stall for no benefit — one attempt is enough.
+        master.Transport.Retries = 1;
+
         _tcpClient = tcp;
-        _master = Factory.CreateMaster(tcp);
+        _master = master;
     }
 
     /// <summary>Reads every configured register ONE AT A TIME (block-batching is a documented follow-up —
     /// see the class doc comment) and decodes+scales each into a <see cref="TelemetrySample"/>, bundled
     /// into a single <see cref="DeviceReading"/> for this poll.</summary>
-    private async Task<DeviceReading> PollOnceAsync()
+    private async Task<DeviceReading> PollOnceAsync(CancellationToken ct)
     {
         var master = _master ?? throw new InvalidOperationException("Modbus master not connected.");
         var samples = new List<TelemetrySample>(_map.Registers.Count);
 
+        // GP-6b (task-6b-report.md) — NModbus's Read*Async overloads take no CancellationToken at all
+        // (verified via a standalone probe against the installed 3.0.83 package), so this is the ONLY way to
+        // interrupt an in-flight call: disposing the master/TcpClient unblocks a pending read almost
+        // immediately (measured ~2ms in the probe) with an IOException, which the catch below translates
+        // into the documented cancellation contract. EnsureConnectedAsync's Transport.ReadTimeout/Retries
+        // bound the NON-cancelled case (the health-freeze fix); this registration is what makes an in-flight
+        // read promptly cancellable on TOP of that bound, rather than only after it elapses.
+        using var registration = ct.Register(DisposeConnection);
+
         foreach (var reg in _map.Registers)
         {
-            var raw = reg.Type == ModbusRegisterType.Holding
-                ? await master.ReadHoldingRegistersAsync(_map.UnitId, reg.Address, 1).ConfigureAwait(false)
-                : await master.ReadInputRegistersAsync(_map.UnitId, reg.Address, 1).ConfigureAwait(false);
+            ushort[] raw;
+            try
+            {
+                raw = reg.Type == ModbusRegisterType.Holding
+                    ? await master.ReadHoldingRegistersAsync(_map.UnitId, reg.Address, 1).ConfigureAwait(false)
+                    : await master.ReadInputRegistersAsync(_map.UnitId, reg.Address, 1).ConfigureAwait(false);
+            }
+            catch (Exception) when (ct.IsCancellationRequested)
+            {
+                // The read above was unblocked by this method's own ct.Register(DisposeConnection) callback,
+                // not a genuine protocol/timeout failure — surface it as cancellation, not a driver error, so
+                // ReadAsync's own catch (OperationCanceledException) handles it without logging/degrading.
+                throw new OperationCanceledException("Modbus read interrupted by cancellation.", ct);
+            }
 
             // UInt16 keeps the raw 16-bit word as-is; Int16 reinterprets the SAME bits as two's-complement
             // signed (e.g. raw 0xFFFF -> -1) BEFORE Scale is applied — see ModbusDataType's doc comment.

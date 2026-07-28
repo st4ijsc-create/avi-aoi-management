@@ -10,15 +10,16 @@ namespace St4i.EdgeCore.Tests.Drivers.OpcUa;
 
 /// <summary>
 /// GP-6 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-6-brief.md) — runs the shared
-/// <see cref="DeviceDriverConformanceSuite"/> against the real <see cref="OpcUaDriver"/>. See
-/// task-6-report.md for the one real finding this surfaced: against a target that accepts the TCP
-/// connection but never responds at the OPC-UA protocol level, <c>ReadAsync</c> does NOT honour
-/// cancellation within a realistic budget — the underlying session/endpoint-selection call blocks for
-/// this driver's own configured <c>TransportQuotas.OperationTimeout</c> (15 seconds, empirically confirmed)
-/// regardless of the caller's token, which is 5x <c>FleetHost</c>'s 3-second teardown budget. That ONE check
-/// is therefore NOT wired up as a passing <c>[Fact]</c> here — see
-/// <see cref="KnownGap_ReadAsync_DoesNotHonourCancellation_AgainstAProtocolSilentPeer"/>, which pins the
-/// actual observed behaviour instead of silently passing or silently omitting it. Every other check passes.
+/// <see cref="DeviceDriverConformanceSuite"/> against the real <see cref="OpcUaDriver"/>. GP-6 originally
+/// found that against a target that accepts the TCP connection but never responds at the OPC-UA protocol
+/// level, <c>ReadAsync</c> did NOT honour cancellation within a realistic budget — the underlying
+/// session/endpoint-selection call blocked for this driver's own configured
+/// <c>TransportQuotas.OperationTimeout</c> (15 seconds, empirically confirmed) regardless of the caller's
+/// token, 5x <c>FleetHost</c>'s 3-second teardown budget — see task-6-report.md for the original finding.
+/// GP-6b (task-6b-report.md) fixed the root cause in <see cref="OpcUaDriver"/> itself (swapped the
+/// blocking, uncancellable <c>CoreClientUtils.SelectEndpoint</c> for the token-accepting
+/// <c>SelectEndpointAsync</c> overload), so every check — including cancellation — now passes as a normal
+/// <c>[Fact]</c> with no acknowledged gaps.
 ///
 /// <para>Serialized (via <see cref="OpcUaTestCollection"/>) against this task's sibling OPC-UA test classes,
 /// same reasoning as <see cref="OpcUaDriverLoopbackTests"/>.</para>
@@ -26,14 +27,6 @@ namespace St4i.EdgeCore.Tests.Drivers.OpcUa;
 [Collection("St4i.EdgeCore.Tests.OpcUa")]
 public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
 {
-    /// <summary>Declares the ONE check this class deliberately does not wire as a passing <c>[Fact]</c> —
-    /// see <see cref="KnownGap_ReadAsync_DoesNotHonourCancellation_AgainstAProtocolSilentPeer"/> and this
-    /// class's own doc comment. Required since GP-6 "Fix round 1" (IMPORTANT 3): without this,
-    /// <see cref="DeviceDriverConformanceSuite.EveryCheckIsWiredOrAcknowledged"/> would flag the omission as
-    /// silent/undeclared instead of a reported finding.</summary>
-    protected override ISet<string> AcknowledgedGaps { get; } =
-        new HashSet<string> { "ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable" };
-
     /// <summary>A definitely-closed loopback port, computed ONCE (not inside <see cref="CreateDriver"/>).
     /// Connecting here fails FAST, unlike <see cref="CreateUnresponsiveDeviceAsync"/>'s target below.</summary>
     private static readonly int ClosedPort = FindAndReleaseFreePort();
@@ -131,56 +124,12 @@ public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
     [Fact]
     public Task Telemetry_RoundTripsLosslesslyThroughConnectorJson() => Check_Telemetry_RoundTripsLosslesslyThroughConnectorJson();
 
-    // Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable is deliberately NOT wired up here as a
-    // passing [Fact] — see this class's own doc comment and the KNOWN GAP test below.
-
-    /// <summary>
-    /// KNOWN GAP (task-6-report.md) — pins the CURRENT, observed-broken behaviour rather than silently
-    /// passing or silently omitting it: against a real, portable, loopback-only peer that accepts the TCP
-    /// connection but never sends a single byte back, <see cref="OpcUaDriver.ReadAsync"/> does NOT end
-    /// within <see cref="DeviceDriverConformanceSuite.CancellationBudget"/> of the token being cancelled.
-    /// Empirically measured (task-6-report.md): the session/endpoint-selection path blocks for this driver's
-    /// own configured 15-second <c>TransportQuotas.OperationTimeout</c> regardless of cancellation — bounded,
-    /// unlike Modbus's finding, but still 5x <c>FleetHost</c>'s 3-second teardown budget. This test goes red
-    /// the moment that changes — either regressing further, or (hopefully) getting fixed, at which point
-    /// promote OpcUaDriver onto the strict
-    /// <see cref="DeviceDriverConformanceSuite.Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable"/>
-    /// check like the other two drivers.
-    /// </summary>
+    /// <summary>GP-6b (task-6b-report.md) — GP-6's KnownGap pin promoted to the real, strict check now that
+    /// <see cref="OpcUaDriver"/> is fixed: against a real, portable, loopback-only peer that accepts the TCP
+    /// connection but never sends a single byte back, <c>ReadAsync</c> now ends within
+    /// <see cref="DeviceDriverConformanceSuite.CancellationBudget"/> of the token being cancelled — swapping
+    /// the blocking, uncancellable <c>CoreClientUtils.SelectEndpoint</c> sync call for the token-accepting
+    /// <c>SelectEndpointAsync</c> overload closes the gap GP-6 originally pinned as broken.</summary>
     [Fact]
-    public async Task KnownGap_ReadAsync_DoesNotHonourCancellation_AgainstAProtocolSilentPeer()
-    {
-        var session = await CreateUnresponsiveDeviceAsync();
-        try
-        {
-            using var cts = new CancellationTokenSource();
-            var runTask = DriveAsync(session.Driver, cts.Token);
-
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
-            cts.Cancel();
-
-            var finishedInTime = await Task.WhenAny(runTask, Task.Delay(CancellationBudget)) == runTask;
-
-            Assert.False(
-                finishedInTime,
-                $"OpcUaDriver.ReadAsync ended within {CancellationBudget} of cancellation against a " +
-                "protocol-silent peer — this contradicts task-6-report.md's finding. If this is now " +
-                "genuinely fixed, promote OpcUaDriver onto the strict shared cancellation check and delete " +
-                "this pinning test.");
-        }
-        finally
-        {
-            await session.ForceUnstickAsync();
-            await session.Driver.DisposeAsync();
-        }
-    }
-
-    private static async Task DriveAsync(IDeviceDriver driver, CancellationToken ct)
-    {
-        try
-        {
-            await foreach (var _ in driver.ReadAsync(ct)) { }
-        }
-        catch (OperationCanceledException) { }
-    }
+    public Task ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable() => Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable();
 }
