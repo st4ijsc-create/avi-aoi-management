@@ -114,6 +114,11 @@ const RERANK_FILE = "bge-reranker-v2-m3-Q8_0.gguf"; // cross-encoder ranking mod
 const RERANK_BASE = "bge-reranker-v2-m3-Q8_0";
 const MMPROJ_FILE = "Qwen3-VL-8B-mmproj-F16.gguf"; // vision projector, not a chat model
 const MMPROJ_BASE = "Qwen3-VL-8B-mmproj-F16";
+// FIX ROUND 2 — a SECOND embedder that is NOT registered in ANY of GGUF_EMBED_MODEL /
+// GGUF_EMBEDDING_MODEL / GGUF_RERANKER_MODEL / GGUF_VISION_MMPROJ. Exact-identity matching alone
+// cannot see it, which is the hole the re-review reproduced empirically.
+const UNTRACKED_EMBED_FILE = "custom-embedding-index-Q8_0.gguf";
+const UNTRACKED_EMBED_BASE = "custom-embedding-index-Q8_0";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -260,6 +265,108 @@ describe("GGUF_DEFAULT_MODEL misconfigured to a NON-generative model", () => {
       /No text-generation model available/i,
     );
     expect(fakeLlama.loadModel).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * FIX ROUND 2 — the hole the re-review reproduced empirically: exact-identity matching only sees a
+ * non-generative model if that exact file is ALSO assigned to one of the four env vars. An embedder
+ * that nobody registered (a second index model, a leftover download) sailed through steps 0-2 and
+ * was returned for generation — both when resident and when loaded on demand.
+ *
+ * Tests 13-15 could never catch it: they always set the file simultaneously as its tracked env var,
+ * which masks the gap. These set GGUF_EMBED_MODEL to the REAL tracked embedder and point
+ * GGUF_DEFAULT_MODEL at a DIFFERENT, unregistered one.
+ */
+describe("GGUF_DEFAULT_MODEL is an UNREGISTERED non-generative model (fix round 2)", () => {
+  it("19. unregistered embedder as default, ALREADY RESIDENT ⇒ refused; falls through to a real text model", async () => {
+    process.env.GGUF_EMBED_MODEL = EMBED_FILE; // the tracked embedder — a DIFFERENT file
+    process.env.GGUF_DEFAULT_MODEL = UNTRACKED_EMBED_FILE; // registered nowhere
+    const eng = await freshEngine();
+
+    await eng.loadGgufModel({ modelPath: UNTRACKED_EMBED_FILE }); // step-1 path: already resident
+    await eng.loadGgufModel({ modelPath: FAST_FILE });
+
+    const result = await eng.generateText({ prompt: "hi" });
+
+    expect(result.modelId).not.toBe(UNTRACKED_EMBED_BASE);
+    expect(result.modelId).toBe(FAST_BASE);
+  });
+
+  it("20. unregistered embedder as default, MUST LOAD ⇒ never loaded; falls through to the on-disk chat model", async () => {
+    process.env.GGUF_EMBED_MODEL = EMBED_FILE;
+    process.env.GGUF_DEFAULT_MODEL = UNTRACKED_EMBED_FILE;
+    dirFiles = [UNTRACKED_EMBED_FILE, DEFAULT_FILE];
+    const eng = await freshEngine();
+
+    const result = await eng.generateText({ prompt: "hi" });
+
+    expect(result.modelId).not.toBe(UNTRACKED_EMBED_BASE);
+    expect(result.modelId).toBe(DEFAULT_BASE);
+    // It must never even attempt to LOAD the unregistered embedder.
+    const paths = fakeLlama.loadModel.mock.calls.map((c: any[]) => String(c[0]?.modelPath ?? ""));
+    expect(paths.some((p) => p.includes(UNTRACKED_EMBED_BASE))).toBe(false);
+  });
+
+  it("21. unregistered embedder as default with NO alternative ⇒ throws, naming the value, the reason and the override", async () => {
+    process.env.GGUF_EMBED_MODEL = EMBED_FILE;
+    process.env.GGUF_DEFAULT_MODEL = UNTRACKED_EMBED_FILE;
+    dirFiles = [UNTRACKED_EMBED_FILE];
+    const eng = await freshEngine();
+
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      /No text-generation model available/i,
+    );
+    // Actionable: names the offending value …
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      new RegExp(UNTRACKED_EMBED_BASE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+    );
+    // … and tells the operator how to override if it really IS a chat model.
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      /GGUF_ALLOW_NONGENERATIVE_DEFAULT/,
+    );
+  });
+
+  it("22. escape hatch: GGUF_ALLOW_NONGENERATIVE_DEFAULT=true lets a legitimately-named chat model through", async () => {
+    process.env.GGUF_EMBED_MODEL = EMBED_FILE;
+    process.env.GGUF_DEFAULT_MODEL = UNTRACKED_EMBED_FILE;
+    process.env.GGUF_ALLOW_NONGENERATIVE_DEFAULT = "true";
+    dirFiles = [UNTRACKED_EMBED_FILE];
+    const eng = await freshEngine();
+
+    const result = await eng.generateText({ prompt: "hi" });
+
+    expect(result.modelId).toBe(UNTRACKED_EMBED_BASE);
+  });
+
+  it("23. the escape hatch does NOT override the self-contradictory case (default === the DECLARED embedder)", async () => {
+    process.env.GGUF_EMBED_MODEL = EMBED_FILE;
+    process.env.GGUF_DEFAULT_MODEL = EMBED_FILE; // same file declared as the embedder
+    process.env.GGUF_ALLOW_NONGENERATIVE_DEFAULT = "true";
+    dirFiles = [EMBED_FILE];
+    const eng = await freshEngine();
+
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      /No text-generation model available/i,
+    );
+  });
+
+  it("24. the escape hatch defaults OFF (absent env var behaves exactly like test 21)", async () => {
+    process.env.GGUF_EMBED_MODEL = EMBED_FILE;
+    process.env.GGUF_DEFAULT_MODEL = UNTRACKED_EMBED_FILE;
+    delete process.env.GGUF_ALLOW_NONGENERATIVE_DEFAULT;
+    dirFiles = [UNTRACKED_EMBED_FILE];
+    const eng = await freshEngine();
+
+    await expect(eng.generateText({ prompt: "hi" })).rejects.toThrow(
+      /No text-generation model available/i,
+    );
+  });
+
+  it("25. a normal chat model is NOT tripped by the heuristic (no false positive on the real default)", async () => {
+    const eng = await freshEngine();
+    const result = await eng.generateText({ prompt: "hi" });
+    expect(result.modelId).toBe(DEFAULT_BASE);
   });
 });
 

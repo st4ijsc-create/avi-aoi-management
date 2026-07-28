@@ -783,14 +783,33 @@ function isConfiguredNonGenerativeModelId(id: string): boolean {
 }
 
 /**
- * HEURISTIC check, used ONLY on the blind degradation rungs (steps 3-4 below) where nobody chose
+ * The name heuristic, as ONE constant so the refusal message can quote the exact pattern the
+ * operator's filename tripped — "matches /embed|rerank|mmproj|projector/i" is actionable,
+ * "looks wrong" is not.
+ */
+const NON_GENERATIVE_NAME_RE = /embed|rerank|mmproj|projector/i;
+
+/**
+ * HEURISTIC check. Used on the blind degradation rungs (steps 3-4 below) where nobody chose
  * the model for generation and we are guessing anyway. On those rungs the asymmetry is clear:
  * wrongly skipping a usable model costs an honest error message, wrongly ACCEPTING a reranker or a
  * projector costs the user a page of plausible-looking garbage. So it errs toward skipping.
  */
 function isLikelyNonGenerativeModelId(id: string): boolean {
   if (isEmbeddingModelId(id) || isConfiguredNonGenerativeModelId(id)) return true;
-  return /embed|rerank|mmproj|projector/i.test(toBasename(id));
+  return NON_GENERATIVE_NAME_RE.test(toBasename(id));
+}
+
+/**
+ * doc69 W1 modelfix, FIX ROUND 2 — escape hatch for the ONE legitimate false positive: a real chat
+ * model whose filename happens to trip the name heuristic. That is not hypothetical in this product
+ * (a fine-tune for *embedded* systems / PLC work would match `/embed/`), so the override exists —
+ * but it DEFAULTS OFF, it is named in the refusal message, and it deliberately does NOT override the
+ * self-contradictory case (a default that IS the declared embedder/reranker/projector).
+ */
+function allowNonGenerativeDefault(): boolean {
+  const v = (process.env.GGUF_ALLOW_NONGENERATIVE_DEFAULT || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
 /** Take an already-resident model: bump LRU/usage counters and acquire an in-flight reference. */
@@ -813,9 +832,13 @@ function takeLoadedModel(modelId: string): { modelId: string; loaded: LoadedMode
  * showed to a factory engineer as an answer.
  *
  * PRIORITY (deliberately inverted vs. the old code):
- *   0. reject a MISCONFIGURED default              — GGUF_DEFAULT_MODEL pointing at the embedder /
+ *   0. reject a MISCONFIGURED default              — GGUF_DEFAULT_MODEL pointing at an embedder /
  *                                                    reranker / projector is the same bug via a
- *                                                    typo; drop it and keep descending.
+ *                                                    typo; drop it and keep descending. Checked by
+ *                                                    DECLARED role (no override) AND by name
+ *                                                    (override: GGUF_ALLOW_NONGENERATIVE_DEFAULT),
+ *                                                    because an UNREGISTERED embedder is invisible
+ *                                                    to identity matching alone.
  *   1. GGUF_DEFAULT_MODEL if already resident      — the configured chat model, zero load cost.
  *   2. GGUF_DEFAULT_MODEL, loading it              — configuration beats load-order. Never
  *                                                    silently downgrade to a smaller model.
@@ -829,19 +852,46 @@ async function getGenerationModel(contextSize?: number): Promise<{ modelId: stri
   let defaultId = resolveDefaultModelBasename();
   const why: string[] = [];
 
-  // 0 — FIX ROUND 1: refuse a MISCONFIGURED default before steps 1-2 can hand it back. Pointing
-  // GGUF_DEFAULT_MODEL at the embedder (or the reranker/projector) would otherwise restore the
-  // exact bug this whole guard exists to kill — via one `.env` typo instead of load order. Rejecting
-  // it here covers BOTH the "already resident" and the "load it" branch in one place, and lets the
-  // ladder fall through to a genuine text model rather than failing outright.
-  if (defaultId && isConfiguredNonGenerativeModelId(defaultId)) {
-    const msg =
-      `GGUF_DEFAULT_MODEL "${defaultId}" is configured as a NON-generative model ` +
-      "(it matches GGUF_EMBED_MODEL / GGUF_EMBEDDING_MODEL / GGUF_RERANKER_MODEL / " +
-      "GGUF_VISION_MMPROJ) — refusing to generate text with it";
-    why.push(msg);
-    console.error(`[aiGgufEngine] ${msg}. Point GGUF_DEFAULT_MODEL at a chat model.`);
-    defaultId = undefined;
+  // 0 — FIX ROUND 1+2: refuse a MISCONFIGURED default before steps 1-2 can hand it back. Pointing
+  // GGUF_DEFAULT_MODEL at an embedder (or a reranker/projector) restores the exact bug this whole
+  // guard exists to kill — via one `.env` typo instead of load order. Rejecting it HERE covers BOTH
+  // the "already resident" and the "load it" branch in one place, and lets the ladder fall through
+  // to a genuine text model rather than failing outright.
+  //
+  // TWO tiers, deliberately (round 2 — the re-review reproduced a real hole in exact-matching only):
+  //   (a) DECLARED role — the same file is also assigned to GGUF_EMBED_MODEL / GGUF_EMBEDDING_MODEL /
+  //       GGUF_RERANKER_MODEL / GGUF_VISION_MMPROJ. Self-contradictory config; NO override.
+  //   (b) NAME heuristic — an UNREGISTERED embedder (a second index model, a leftover download) that
+  //       exact matching cannot see at all. Refused by default; overridable via
+  //       GGUF_ALLOW_NONGENERATIVE_DEFAULT for the rare legitimately-named chat model.
+  // Cost asymmetry decides (b): a false positive costs the operator one clear error message; a false
+  // negative costs every user a page of convincing-looking garbage, silently.
+  if (defaultId) {
+    const declaredRole = isConfiguredNonGenerativeModelId(defaultId);
+    const trippedNameHeuristic = !declaredRole && isLikelyNonGenerativeModelId(defaultId);
+    const overridden = trippedNameHeuristic && allowNonGenerativeDefault();
+
+    if (declaredRole || (trippedNameHeuristic && !overridden)) {
+      const reason = declaredRole
+        ? "it is ALSO assigned to GGUF_EMBED_MODEL / GGUF_EMBEDDING_MODEL / GGUF_RERANKER_MODEL / " +
+          "GGUF_VISION_MMPROJ, which is a self-contradictory configuration (no override available)"
+        : `its basename matches the non-generative name pattern ${NON_GENERATIVE_NAME_RE} — if this ` +
+          "really IS a chat model, set GGUF_ALLOW_NONGENERATIVE_DEFAULT=true to override this refusal";
+      const msg =
+        `GGUF_DEFAULT_MODEL "${defaultId}" was REFUSED as a NON-GENERATIVE model because ${reason}. ` +
+        "Embedding/reranker/projector models have no text-generation head: forced to generate they " +
+        "emit token-repetition garbage that reads like a real answer. FIX: point GGUF_DEFAULT_MODEL " +
+        "at a chat model (e.g. Qwen3-30B-A3B-Instruct)";
+      why.push(msg);
+      console.error(`[aiGgufEngine] ${msg}`);
+      defaultId = undefined;
+    } else if (overridden) {
+      console.warn(
+        `[aiGgufEngine] GGUF_DEFAULT_MODEL "${defaultId}" matches the non-generative name pattern ` +
+          `${NON_GENERATIVE_NAME_RE} but GGUF_ALLOW_NONGENERATIVE_DEFAULT is set — using it for text ` +
+          "generation anyway. If answers come back as repeated tokens, this override is why.",
+      );
+    }
   }
 
   // 1 — configured chat model already resident.
