@@ -31,36 +31,22 @@ public class ModbusTcpDriverLoopbackTests
         Assert.True(predicate(), $"timed out after {PollTimeout} waiting for: {because}");
     }
 
-    private static ModbusRegisterMap BuildMap(string machineCode, int pollIntervalMs = 50) => new()
-    {
-        MachineCode = machineCode,
-        UnitId = 1,
-        PollIntervalMs = pollIntervalMs,
-        Registers = new List<ModbusRegister>
-        {
-            new(Address: 0, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16, Scale: 1.0, Metric: "temperature", Unit: "C"),
-            new(Address: 1, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.Int16, Scale: 0.1, Metric: "pressure", Unit: "bar"),
-        },
-    };
+    // GP-6 (task-6-report.md): BuildMap/the "stand up a real slave" setup moved to ModbusLoopbackHarness
+    // (unchanged in behavior — a mechanical extraction) so ModbusTcpDriverConformanceTests can reuse the
+    // exact same real-server harness rather than hand-rolling a second one.
 
     [Fact]
     public async Task ReadAsync_AgainstLoopbackSlave_YieldsDecodedTelemetry_HealthConnected()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-
-        var factory = new ModbusFactory();
-        var network = factory.CreateSlaveNetwork(listener);
-        var slave = factory.CreateSlave(unitId: 1);
         // raw 235 decoded UInt16 * scale 1.0 -> 235.0 ; raw 0xFFFF decoded Int16 (-1) * scale 0.1 -> -0.1
-        slave.DataStore.HoldingRegisters.WritePoints(0, new ushort[] { 235, 0xFFFF });
-        network.AddSlave(slave);
+        var slave = ModbusLoopbackHarness.Start(235, 0xFFFF);
+        var listener = slave.Listener;
+        var network = slave.Network;
+        var networkCts = slave.ListenCts;
+        var listenTask = slave.ListenTask;
+        var port = slave.Port;
 
-        using var networkCts = new CancellationTokenSource();
-        var listenTask = network.ListenAsync(networkCts.Token);
-
-        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildMap("PLC-LOOPBACK"));
+        await using var driver = new ModbusTcpDriver("127.0.0.1", port, ModbusLoopbackHarness.BuildMap("PLC-LOOPBACK"));
 
         using var readCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         DeviceReading? firstReading = null;
@@ -109,6 +95,7 @@ public class ModbusTcpDriverLoopbackTests
 
             try { network.Dispose(); } catch { /* best-effort teardown */ }
             try { listener.Stop(); } catch { /* best-effort teardown */ }
+            networkCts.Dispose();
         }
     }
 
@@ -122,20 +109,14 @@ public class ModbusTcpDriverLoopbackTests
     [Fact]
     public async Task ReadAsync_SlaveGoesAway_HealthDegrades_AndIteratorKeepsRunning_NoThrow()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var slave = ModbusLoopbackHarness.Start(1, 2);
+        var listener = slave.Listener;
+        var network = slave.Network;
+        var networkCts = slave.ListenCts;
+        var listenTask = slave.ListenTask;
+        var port = slave.Port;
 
-        var factory = new ModbusFactory();
-        var network = factory.CreateSlaveNetwork(listener);
-        var slave = factory.CreateSlave(unitId: 1);
-        slave.DataStore.HoldingRegisters.WritePoints(0, new ushort[] { 1, 2 });
-        network.AddSlave(slave);
-
-        using var networkCts = new CancellationTokenSource();
-        var listenTask = network.ListenAsync(networkCts.Token);
-
-        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildMap("PLC-FAULT"));
+        await using var driver = new ModbusTcpDriver("127.0.0.1", port, ModbusLoopbackHarness.BuildMap("PLC-FAULT"));
 
         using var readCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         var readingCount = 0;
@@ -173,6 +154,7 @@ public class ModbusTcpDriverLoopbackTests
         {
             readCts.Cancel();
             try { await readTask; } catch (OperationCanceledException) { }
+            networkCts.Dispose();
         }
     }
 }

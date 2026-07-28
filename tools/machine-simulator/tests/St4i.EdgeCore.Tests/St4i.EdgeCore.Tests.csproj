@@ -18,5 +18,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\St4i.EdgeCore\St4i.EdgeCore.csproj" />
+    <!-- GP-6 — the shared conformance suite, applied to SimulatedDriver/ModbusTcpDriver/OpcUaDriver below
+         (see Drivers/*ConformanceTests.cs). -->
+    <ProjectReference Include="..\..\src\St4i.Connector.Conformance\St4i.Connector.Conformance.csproj" />
   </ItemGroup>
 </Project>
