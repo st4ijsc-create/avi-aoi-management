@@ -30,6 +30,16 @@ if (ServiceInstallVerbs.TryHandle(args, out var serviceVerbExitCode))
     return serviceVerbExitCode;
 }
 
+// Task WI-5 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-5-brief.md) — the
+// out-of-band Admin-account-recovery verb (--reset-admin-password) is handled here too, for the exact same
+// reason as ServiceInstallVerbs.TryHandle immediately above: it must never spin up Kestrel/DataProtection/
+// the rest of the composition root below. See AdminRecoveryVerbs' own doc comment for the full rationale,
+// including the honest threat-model write-up (task-5-report.md carries the complete version).
+if (AdminRecoveryVerbs.TryHandle(args, out var adminRecoveryExitCode))
+{
+    return adminRecoveryExitCode;
+}
+
 // Task 3 — St4i.EngineApi: a thin ASP.NET host wrapping the SAME EdgeCore engine the WPF exhibition
 // app drives (SimulatedDriver/ScenarioAwareDriver/EdgePipeline/SwitchableTransport/TransportCoordinator
 // — the 4 WPF-independent classes this task relocated INTO EdgeCore so both apps share them
