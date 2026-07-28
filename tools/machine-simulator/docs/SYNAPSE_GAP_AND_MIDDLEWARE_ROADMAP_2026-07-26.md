@@ -7,8 +7,8 @@
 | Đối tượng rà soát | `tools/machine-simulator` (bộ `St4i.*`, .NET 10) — "St4i Machine Simulator" đang tiến hoá thành edge middleware |
 | Tài liệu đối chiếu | Kế hoạch & thiết kế **SYNAPSE** tại `D:\SOURCES\SYNAPSE` (SYN-RAOE-SDD-001 v1.0 + KE-HOACH-PHAT-TRIEN + 5 tầng) |
 | Phương pháp | 3 AI Agent rà soát song song: (1) chuẩn hoá 97 yêu cầu SYNAPSE, (2) kiểm kê hiện trạng theo mã nguồn, (3) phân tích contract + thương mại hoá |
-| Trạng thái | **ĐANG THỰC HIỆN** — GĐ1 xong; GĐ2 xong (trừ B2); GĐ3 mới xong phần "Join" (WS-I). Xem **§0-bis Tiến độ** (cập nhật 28/07/2026) |
-| Cập nhật gần nhất | **28/07/2026** — nhánh `feat/machine-simulator` @ `669eba86` (đã push `fresh`) |
+| Trạng thái | **ĐANG THỰC HIỆN** — GĐ1 xong; GĐ2 xong (trừ B2); GĐ3 phần "Join" (WS-I) nay đã đóng advertise + reconciliation + xoay vòng chứng thư + lệnh khôi phục admin — chỉ còn auto-provision/trust-on-first-discovery. Xem **§0-bis Tiến độ** (cập nhật 28/07/2026) |
+| Cập nhật gần nhất | **28/07/2026** — nhánh `feat/machine-simulator`, đợt **WS-I closeout** đóng tại `09253325` (mDNS advertise, spool bền + reconciliation, xoay vòng chứng thư + cảnh báo `Identity`, `--reset-admin-password`, trả nợ kỹ thuật WI-6; xem `.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/`) |
 
 ---
 
@@ -31,7 +31,12 @@
 
 ## 0-bis. TIẾN ĐỘ THỰC HIỆN *(cập nhật 28/07/2026)*
 
-> Nhánh `feat/machine-simulator` @ `669eba86` (đã push remote `fresh`). Mỗi workstream đóng bằng một **whole-branch review** (agent `opus` cho phần an toàn/mật mã/đồng thời) với kết luận MERGE-READY, không còn Critical/Important. Bộ test: EngineApi 472 · EdgeCore 426 · EdgeService 28 · web build sạch · Playwright visual/a11y 44/44.
+> Nhánh `feat/machine-simulator`, tính tới đợt **WS-I closeout** @ `09253325` (đã có `669eba86` trong lịch
+> sử, chưa push remote `fresh` tại thời điểm đóng đợt này). Mỗi workstream đóng bằng một **whole-branch
+> review** (agent `opus` cho phần an toàn/mật mã/đồng thời) với kết luận MERGE-READY, không còn
+> Critical/Important. Bộ test SAU WS-I closeout (theo `task-6-report.md`, lần chạy sạch cuối cùng):
+> EngineApi 538 · EdgeCore 463 · EdgeService 28 (tổng 1029) · web build sạch · Playwright 171/171 (gồm
+> visual/a11y 44/44, không đổi).
 
 ### 0-bis.1 Đã giao
 
@@ -51,6 +56,7 @@
 | **WS-I / SD** mDNS join | 3 | `SiteDiscovery` (Makaretu, MIT) **browse-only** + `GET /v1/site/discover` + nút "Discover Sites" điền sẵn host/port | *(sub-2)* | §17.4–17.5 |
 | **WS-H1b** OPC-UA | 3 | `OpcUaDriver` (OPC Foundation, **relicense MIT 04/12/2025**, pin 1.5.378.156) poll-only, slot cách ly, hiện trong roster/web | `d637c320` | §16.6 |
 | **WS-G-core+** Alarm + Line | 3 | **ISA-18.2 AlarmEngine** (3 nguồn: Policy-DENY / DriverHealth / NG-rate, SQLite `alarms.db`, evaluator định kỳ) + **LineController PackML/ISA-88** trên FleetHost + `/v1/alarms` `/v1/line` + UNS `_line/state` + khoá alarm→Held + màn `/alarms` `/line` | `669eba86` | §18 |
+| **WS-I closeout** | 3 | mDNS **advertise** (`_st4i-machine._tcp`, mặc định BẬT khi UNS bật) + **spool bền SQLite cho bridge** (`bridge-spool.db`) với **reconciliation** (resync record retained trước khi phát lại, seq tăng dần) + **xoay vòng chứng thư thiết bị** theo yêu cầu (`POST /v1/site/identity/rotate`, Admin-only) + hiển thị hạn dùng chứng thư + cảnh báo nguồn **`Identity`** (High, không bao giờ Critical) + verb khôi phục **`--reset-admin-password`** (ngoài băng, có audit) + trả hết nợ kỹ thuật WI-6 (WPF `IConvertible→ToDouble`, xslt khớp đuôi, `--install` pre-check) | `09253325` | §14.7, §17.8–§17.11, §18.1–§18.2 |
 
 ### 0-bis.2 Đính chính cách đánh số giai đoạn
 
@@ -62,7 +68,7 @@ Trình tự **thi công** khác trình tự **§6**. Cụ thể: bốn đợt đ
 
 | WS-GĐ3 (§6) | Trạng thái | Còn thiếu |
 |---|---|---|
-| **WS-I** Join | **PARTIAL** | mDNS **advertise** (Site tự thấy máy), auto-provision/trust-on-first-discovery, **reconciliation seq-number** + backfill khi nối lại |
+| **WS-I** Join | **PARTIAL** — mDNS advertise ✅ xong, reconciliation seq-number + backfill ✅ xong (WS-I closeout) | auto-provision/trust-on-first-discovery (discover + advertise chỉ điền sẵn host/port; tin cậy vẫn phải dán tay PEM) |
 | **WS-E-full** License/Edition | **CHƯA BẮT ĐẦU** | Toàn bộ (Ed25519, fingerprint, offline activation, feature-flags theo edition, grace 30 ngày, license-credit nâng cấp) |
 | **WS-F4** Auto-update + LTS | **CHƯA BẮT ĐẦU** | Chỉ có nền (`Directory.Build.props`, `capabilities.version`); chưa có cơ chế phát hành/cập nhật, chưa có nhánh LTS |
 | **WS-G-plugin** Connector SDK | **CHƯA BẮT ĐẦU** | Driver hiện là in-process trực tiếp trên `IDeviceDriver`; chưa có `plugin.yaml`/apiVersion, sidecar DLL hãng, conformance suite, ký số |
@@ -75,8 +81,8 @@ Trình tự **thi công** khác trình tự **§6**. Cụ thể: bốn đợt đ
 |---|---|
 | **A** Dữ liệu bền & báo cáo | **DONE** (giữ 3 nhóm tổn thất thay vì six-big-losses — cố ý, trung thực) |
 | **B** Xương sống middleware | **PARTIAL** — B1 ✅ · B2 ✅ · B3 ✅ · B5 ✅ · **B4 dở** (Modbus/OPC-UA cơ bản; Serial/SECS chưa) |
-| **C** Cơ chế JOIN | **PARTIAL** — bridge ✅, định danh vị trí ✅, dual-connector ✅; **mDNS advertise + reconciliation seq chưa** |
-| **D** Bảo mật & an toàn | **PARTIAL** — D1–D3 ✅ · D4 ✅ (nhưng **chưa xoay vòng cert**, chưa EST/SCEP/Site-CA) · D5 ✅ · **D6 (ký số + SBOM + quét CVE) chưa** |
+| **C** Cơ chế JOIN | **PARTIAL** — bridge ✅, định danh vị trí ✅, dual-connector ✅, **mDNS advertise ✅**, **reconciliation seq + resync record ✅**; **auto-provision/trust-on-first-discovery chưa** |
+| **D** Bảo mật & an toàn | **PARTIAL** — D1–D3 ✅ · D4 ✅ (**xoay vòng cert thủ công/theo yêu cầu ✅ qua `POST /v1/site/identity/rotate`** — nhưng vẫn CHƯA EST/SCEP, CHƯA Site-CA, chưa tự động xoay trước hạn) · D5 ✅ · `--reset-admin-password` (khôi phục Admin ngoài băng) ✅ · **D6 (ký số + SBOM + quét CVE) chưa** |
 | **E** Điều phối/Guardrail | **DONE** — E1 Policy ✅ · E2 LineController ✅ · E3 ISA-18.2 Alarm ✅ |
 | **F** Thương mại hoá | **PARTIAL** — F2 ✅ · F3 ✅; **F1 license chưa** · **F4 auto-update/LTS chưa** · F5 HA thật chưa |
 | **G** Plugin/SDK | **CHƯA BẮT ĐẦU** |
@@ -88,8 +94,8 @@ Mỗi mục dưới đây đều được ghi rõ trong ledger/blueprint hoặc 
 
 | Nhóm | Mục treo |
 |---|---|
-| Join/UNS | `WS-B B2` đảo chiều bridge (~34 file, rủi ro cao — đã đánh giá riêng); mDNS **advertise**; reconciliation seq-number/backfill; NCMD lệnh vào từ Site; chuyển `SiteDiscovery` sang EngineApi (gọn binary) |
-| Bảo mật | Xoay vòng chứng thư; EST/SCEP + Site CA; `--reset-admin-password`; HMAC-khoá + neo audit ra ngoài (WORM); **D6 ký số MSI + SBOM + quét CVE** |
+| Join/UNS | `WS-B B2` đảo chiều bridge (~34 file, rủi ro cao — đã đánh giá riêng); mDNS **auto-provision/trust-on-first-discovery** (discover + advertise chỉ điền sẵn host/port, tin cậy vẫn dán tay PEM); NCMD lệnh vào từ Site; bridge `Faulted` chưa tự khởi động lại (phải restart tiến trình); head-of-line blocking khi Site từ chối vĩnh viễn 1 message (chưa có dead-letter) |
+| Bảo mật | EST/SCEP + Site CA; xoay vòng chứng thư CHỈ thủ công/theo yêu cầu (chưa tự động trước hạn); HMAC-khoá + neo audit ra ngoài (WORM); **D6 ký số MSI + SBOM + quét CVE** |
 | Giao thức | Modbus 32-bit/float + gộp block + **RTU**; OPC-UA **subscriptions** + xác thực bằng cert + duyệt address-space; Serial RS-485; S7/EtherNet-IP; SECS/GEM |
 | Alarm/Line | Tự động HOLD fleet **đang chạy** khi có Critical mới; hold theo từng máy; shelving/rationalization; trạng thái PackML chuyển tiếp đầy đủ |
 | Đóng gói | Ký số MSI (cần chứng thư OV/EV); smoke cài/gỡ trên VM sạch + đo mốc ≤30 phút; MSIX |

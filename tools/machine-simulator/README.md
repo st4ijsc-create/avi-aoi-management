@@ -736,25 +736,125 @@ account, never stored/logged in the clear. On a **product** build (`ST4I_DEMO_EN
 default since WS2-T1) this middleware is a complete no-op and the normal bootstrap/login flow (§14.1)
 applies from the very first run — no backdoor exists on a real customer deployment.
 
-### 14.7 Lock-out recovery
+### 14.7 Lock-out recovery — `--reset-admin-password`
 
-There is **no** offline `--reset-admin-password` (or any other) CLI recovery verb in this build —
-`St4i.EngineApi`'s `Program.cs` takes no command-line arguments at all today. Recovery instead relies
-on always having **at least one other enabled Admin**: any Admin can reset any user's password
-(`POST /v1/users/{id}/reset-password`) or re-enable/re-promote another account from the `/users`
-screen. The server-enforced, race-proof "last enabled Admin" guard (`UserEndpoints.IsLastEnabledAdmin`
-— refuses to disable or demote-away-from-Admin the sole remaining enabled Admin, even under concurrent
-requests) exists specifically to keep this recovery path from ever locking itself out through the
-UI/API.
+**EN** — GĐ3 closeout WI-5 added a genuine offline, out-of-band CLI recovery verb. `St4i.EngineApi`'s
+`Program.cs` does take command-line arguments today — it already did before this verb existed
+(`ServiceInstallVerbs`' `--install`/`--uninstall`/`--status`, §15.1):
 
-**Operational recommendation:** bootstrap/create **at least 2** Admin accounts on any real deployment.
-If every Admin account's password is genuinely forgotten with no other recovery path, the only
-remaining option is direct SQLite surgery on `security.db` (e.g. clearing the `users` table to
-re-trigger `bootstrap-status: needsBootstrap=true`) — not a supported or scripted path in this build.
+```
+St4i.EngineApi.exe --reset-admin-password <username> [--password <newPassword>]
+```
 
-*(VI: KHÔNG có lệnh dòng lệnh `--reset-admin-password` để khôi phục ngoại tuyến. Cách khôi phục là luôn
-giữ ≥2 tài khoản Admin đang bật — một Admin có thể reset mật khẩu Admin khác qua màn `/users`. Nếu MẤT
-hết Admin, chỉ còn cách can thiệp trực tiếp vào file `security.db`, không có kịch bản hỗ trợ sẵn.)*
+- **Omitting `--password`** generates a strong random password (24 characters drawn from a ~74-symbol
+  alphabet via `RandomNumberGenerator`, ~149 bits of entropy) and prints it to stdout **exactly once** —
+  never logged or stored anywhere else.
+- **An explicit `--password` with no usable value** — missing entirely, blank, or a value that itself
+  looks like another flag (e.g. `--password --force`) — is a **usage error** (exit code `1`); it never
+  silently falls back to generating one instead. An explicit password under **8 characters** — the same
+  floor `AuthEndpoints`/`UserEndpoints` already enforce for every in-app password set — is rejected the
+  same way. Neither failure mode touches `security.db` at all.
+- **Behavior:** if `<username>` already exists, its password is reset, it is promoted to **Admin** if it
+  wasn't already, and it is **re-enabled** if it was disabled — a locked-out operator's last remaining
+  account could plausibly be non-Admin, disabled, or both, and a "recovery" that left any of those
+  blocking login wouldn't actually recover anything. If `<username>` doesn't exist, a brand-new **Admin**
+  account is created. Either way, every other outstanding session cookie for that account is invalidated
+  (the security stamp is bumped) on its very next use.
+- **Audited:** every run appends exactly one row to the SAME hash-chained `audit_log` (§14.3) the running
+  host writes to — actor `console-recovery`, action `console.reset_admin_password` — so a completed
+  recovery is never invisible, even though it happened outside any authenticated session.
+- **Honors `ST4I_SECURITY_DIR`** — opens the exact same `security.db`, at the exact same resolved
+  directory, applying the exact same ACL lock-down (below) the running host would.
+- Handled strictly before `WebApplication.CreateBuilder`, exactly like `--install`/`--uninstall`/
+  `--status` (§15.1) — a recovery invocation never spins up Kestrel, DataProtection, the UNS broker, or
+  the mDNS advertiser (§17.8).
+
+> **The threat model, stated plainly, not softened.** `--reset-admin-password` intentionally bypasses
+> this product's own authentication. **Anyone who can execute this exe on this machine can take over the
+> application** — mint a brand-new Admin account, or reset/promote an existing one, with no login and no
+> existing session required. That is the deliberate, intended design of an out-of-band recovery tool, not
+> an oversight: every in-app password-change path requires an already-authenticated Admin, and losing
+> every Admin account would otherwise be unrecoverable. The real security boundary here is **not** the
+> application's cookie/RBAC layer — it is the **OS-level ACL on `%ProgramData%\ST4I\sim\security`**
+> (`SecurityDirAcl`, §15.1) plus ordinary Windows login rights to this machine.
+>
+> Be precise about what that ACL actually grants: **FullControl to `NT AUTHORITY\SYSTEM`,
+> `BUILTIN\Administrators`, and the security directory's current owner** — nobody else, not even
+> `Authenticated Users`. On an interactive install (`St4i.DesktopShell` spawning the engine under the
+> logged-on user), that owner is normally an **ordinary, non-elevated** user account — so on that install
+> shape this verb needs **no elevation at all** to succeed, by design, not by accident. The OS only
+> actually blocks a non-elevated attempt on the OTHER install shape — a `LocalSystem`-owned Windows
+> Service (§15.1) — where an interactive, non-elevated console typically lacks write access to a
+> directory SYSTEM owns. Do **not** assume the OS "generally" stops a non-elevated run here; whether it
+> does depends entirely on which of the two install shapes is on this machine.
+>
+> **Elevation is deliberately not required.** A hard UAC gate on top of the ACL above would break the
+> common interactive/desktop shape (where the security directory's owner already IS the ordinary
+> logged-on user — elevation would buy nothing but friction) and would fail unhelpfully on a fresh dev
+> box. The ACL is the real gate; a failure to write `security.db` (most likely permission-denied, from
+> running non-elevated against a service-owned directory) still surfaces as a clear, actionable message —
+> never a raw stack trace.
+
+**Operational recommendation, unchanged:** still bootstrap/keep **at least 2** enabled Admin accounts on
+any real deployment — the server-enforced, race-proof "last enabled Admin" guard
+(`UserEndpoints.IsLastEnabledAdmin`) exists specifically so the in-app `/users` recovery path (any Admin
+resets/re-enables another) never locks itself out. `--reset-admin-password` is the fallback for when
+that guard was somehow defeated anyway (e.g. every Admin account's password is genuinely forgotten) — it
+is not a replacement for keeping a second Admin.
+
+*(VI: WI-5 GĐ3 closeout đã thêm một lệnh khôi phục CLI ngoại tuyến THẬT SỰ.
+`St4i.EngineApi.exe --reset-admin-password <username> [--password <mật khẩu mới>]` — `Program.cs` của
+`St4i.EngineApi` CÓ nhận tham số dòng lệnh (đã có từ trước lệnh này, qua `--install`/`--uninstall`/
+`--status` của `ServiceInstallVerbs`, §15.1).
+
+**Bỏ trống `--password`** thì tự sinh một mật khẩu mạnh (24 ký tự từ bảng ~74 ký tự, ~149 bit entropy,
+qua `RandomNumberGenerator`) và IN RA màn hình đúng MỘT LẦN — không log hay lưu ở đâu khác.
+**`--password` có mặt nhưng giá trị không dùng được** (thiếu, rỗng, hoặc trông giống một cờ khác, ví dụ
+`--password --force`) là LỖI CÚ PHÁP (exit code `1`) — KHÔNG bao giờ tự động quay về sinh mật khẩu thay
+thế. Mật khẩu tường minh dưới **8 ký tự** — đúng ngưỡng tối thiểu `AuthEndpoints`/`UserEndpoints` đã áp
+dụng cho mọi lần đặt mật khẩu trong ứng dụng — cũng bị từ chối như vậy; cả hai lỗi trên đều KHÔNG đụng gì
+tới `security.db`. **Hành vi:** nếu `<username>` đã tồn tại — reset mật khẩu, thăng lên **Admin** nếu
+chưa phải, **bật lại** nếu đang bị vô hiệu hoá (một tài khoản Admin cuối cùng bị khoá có thể vừa không
+phải Admin vừa bị vô hiệu hoá, và một lần "khôi phục" bỏ sót một trong hai thì chưa thực sự khôi phục
+được gì); nếu `<username>` chưa tồn tại — tạo mới thành tài khoản **Admin**. Dù theo hướng nào, mọi phiên
+đăng nhập cũ của tài khoản đó đều bị vô hiệu hoá (bump security stamp) ngay lần dùng tiếp theo. **Có
+audit:** mỗi lần chạy ghi đúng một dòng vào CHÍNH `audit_log` dạng chuỗi hash (§14.3) mà host đang chạy
+cũng ghi vào — actor `console-recovery`, action `console.reset_admin_password`. **Tôn trọng
+`ST4I_SECURITY_DIR`** — mở đúng `security.db`, đúng thư mục đã phân giải, áp đúng khoá ACL (bên dưới) mà
+host thật sẽ dùng. Được xử lý TRƯỚC `WebApplication.CreateBuilder`, giống hệt `--install`/`--uninstall`/
+`--status` — một lần gọi khôi phục không bao giờ khởi động Kestrel, DataProtection, UNS broker, hay mDNS
+advertiser (§17.8).
+
+**Mô hình đe doạ, nói thẳng, không giảm nhẹ.** `--reset-admin-password` CHỦ Ý bỏ qua toàn bộ lớp xác thực
+của sản phẩm. **Bất kỳ ai chạy được exe này trên máy đều chiếm được ứng dụng** — tạo tài khoản Admin mới,
+hoặc reset/thăng cấp tài khoản có sẵn, không cần đăng nhập, không cần phiên có sẵn. Đây là thiết kế CHỦ Ý
+của một công cụ khôi phục ngoài băng, không phải sơ suất — vì mọi đường đổi mật khẩu trong ứng dụng đều
+cần một Admin ĐÃ đăng nhập, và mất hết Admin thì không còn đường nào khác. Ranh giới bảo mật thật ở đây
+KHÔNG PHẢI lớp cookie/RBAC của ứng dụng — mà là **ACL cấp hệ điều hành trên
+`%ProgramData%\ST4I\sim\security`** (`SecurityDirAcl`, §15.1) cộng với quyền đăng nhập Windows thông
+thường vào máy này.
+
+Phải nói chính xác ACL đó cấp gì: **FullControl cho `NT AUTHORITY\SYSTEM`, `BUILTIN\Administrators`, và
+chủ sở hữu hiện tại của thư mục security** — không ai khác, kể cả `Authenticated Users`. Trên bản cài
+tương tác (do `St4i.DesktopShell` sinh tiến trình dưới người dùng đang đăng nhập), chủ sở hữu đó thường
+là một tài khoản người dùng THƯỜNG, KHÔNG NÂNG QUYỀN — nên ở hình thức cài này, lệnh KHÔNG CẦN nâng
+quyền để chạy được, đây là CHỦ Ý, không phải tình cờ. Hệ điều hành chỉ thực sự chặn một lần chạy không
+nâng quyền ở hình thức cài KIA — Windows Service chạy dưới `LocalSystem` (§15.1) — nơi một console tương
+tác không nâng quyền thường không có quyền ghi vào thư mục do SYSTEM sở hữu. ĐỪNG giả định hệ điều hành
+"nói chung" chặn được việc chạy không nâng quyền ở đây — điều đó phụ thuộc hoàn toàn vào hình thức cài
+nào đang chạy trên máy.
+
+**Cố ý KHÔNG yêu cầu nâng quyền (UAC).** Thêm một cổng UAC cứng lên trên ACL ở trên sẽ phá hình thức cài
+tương tác/desktop phổ biến (nơi chủ sở hữu thư mục security ĐÃ LÀ người dùng thường đang đăng nhập — nâng
+quyền chỉ thêm phiền phức) và gây lỗi khó hiểu trên một máy dev mới. ACL mới là cổng thật; một lỗi ghi
+`security.db` (nhiều khả năng là permission-denied khi chạy không nâng quyền trên thư mục do service sở
+hữu) vẫn hiện thông báo rõ ràng, không bao giờ là stack trace thô.
+
+**Khuyến nghị vận hành, không đổi:** vẫn nên bootstrap/giữ ÍT NHẤT 2 tài khoản Admin đang bật trên mọi
+triển khai thật — cơ chế chặn "Admin cuối cùng" (`UserEndpoints.IsLastEnabledAdmin`) tồn tại chính là để
+đường khôi phục trong ứng dụng (`/users`, một Admin reset/bật lại Admin khác) không bao giờ tự khoá mình.
+`--reset-admin-password` là phương án dự phòng cho khi cơ chế đó vẫn bị vượt qua (ví dụ quên hết mật khẩu
+Admin) — không thay thế việc giữ một Admin thứ hai.)*
 
 ### 14.8 Dev Vite `/v1` proxy — same-origin cookies
 
@@ -885,7 +985,12 @@ there's no shell/user session to export them from.)*
 full table: `ST4I_UNS_ENABLED`/`ST4I_UNS_SITE`/`_AREA`/`_LINE`/`_CELL`/`_PORT` (§16.1, the local UNS
 spine), `ST4I_MODBUS_ENABLED`/`_HOST`/`_PORT`/`_MAP` (§16.4, the Modbus TCP driver),
 `ST4I_OPCUA_ENABLED`/`_ENDPOINT`/`_MAP`/`_PKI_DIR` (§16.6, the OPC-UA client driver), `ST4I_ASSETS_DIR`
-(§16.5, the Asset Registry's `assets.db` location).)*
+(§16.5, the Asset Registry's `assets.db` location) — and see §17.3 for the full Ecosystem Connect table:
+`ST4I_IDENTITY_DIR`/`ST4I_SITELINK_DIR`/`ST4I_SITE_SERVICE_TYPE` (device identity + Site link + Site
+discovery), plus GĐ3 closeout WI-1/WI-2/WI-3's new `ST4I_MDNS_ADVERTISE`/`ST4I_MDNS_SERVICE_TYPE`
+(§17.8, mDNS advertise — **new outbound network behavior, on by default whenever UNS is enabled**) and
+`ST4I_BRIDGE_SPOOL_ENABLED`/`_DIR`/`_MAX_BYTES`/`_MAX_AGE_HOURS` (§17.9, the durable bridge spool), and
+§18.2 for `ST4I_IDENTITY_EXPIRY_WARN_DAYS` (§17.10, the `Identity` alarm).)*
 
 *(WS-F1 final-review fix F1 — `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/`ST4I_VERIFY_TLS` are read ONCE at
 process start and applied via `FleetHost.UpdateSettings` — the exact same code path a runtime
@@ -1146,6 +1251,23 @@ minimum, so every project in the solution (via `St4i.EdgeCore`) gets the patched
 no `Microsoft.Data.Sqlite` version change and no `<NoWarn>` suppression needed. The full historian/WAL
 SQLite test suites were re-run against this pin and are green.
 
+**(d) The `--install` pre-check's SCM query path is manually verified only (GĐ3 closeout WI-6).**
+`ServiceInstallVerbs.Install()` (§15.1) now checks whether `St4iEngineApi` is already registered with
+the SCM before ever calling `sc.exe create` — but exercising that check against a REAL already-registered
+service (needing either the MSI's `ServiceFeature` installed, or a manually `sc create`d service, on a
+real Windows box with the SCM reachable) has only been done manually. Only the pure decision logic
+downstream of the query (`BuildAlreadyRegisteredOutcome` — the exit code, the message naming the MSI's
+`ServiceFeature`) is unit-tested; the SCM query itself is not, by design (this repo's test suites don't
+install real Windows services).
+
+**(e) The WPF telemetry regression guard lives in `--selftest`, not any CI gate (GĐ3 closeout WI-6).**
+`MachineViewModel`'s non-numeric-telemetry handling (the same `TelemetryNumeric.TryGet` guard used
+elsewhere in this codebase, replacing an unguarded `IConvertible.ToDouble` that used to throw on a value
+like `"RUNNING"`) is covered by a check inside the WPF app's own `--selftest` harness (§11) — a real,
+automatically-run-on-demand regression check that fails loudly if the bug is reintroduced. But
+`--selftest` itself is a separate, manual/documented smoke run (there is no xUnit test project for the
+WPF app) — it is **not wired into `dotnet test` or any CI gate**.
+
 *(VI: (a) Sửa WS-F1 final-review F1 THU HẸP khoảng trống này, KHÔNG xoá hẳn: đổi `serverUrl`/
 `machineCode`/`verifyTls` qua `PUT /v1/settings` lúc đang chạy vẫn CHỈ ở bộ nhớ, mất khi service khởi
 động lại. Cái đã sửa: `St4i.EngineApi` giờ đọc `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/`ST4I_VERIFY_TLS`
@@ -1167,7 +1289,15 @@ thuộc ASP.NET) và cho `CredentialStore.Save` tự áp dụng khoá SYSTEM/Adm
 lần lưu khoá — mọi host dùng `CredentialStore` (EngineApi, EdgeService, WPF) đều được khoá tự động, không
 cần host nào tự nhớ gọi riêng. (c) NU1903 (SQLitePCLRaw/CVE-2025-6965) —
 ĐÃ GIẢI QUYẾT bằng cách ghim phiên bản vá `SQLitePCLRaw.bundle_e_sqlite3 2.1.12` (đã xác minh SQLite bên
-trong là 3.53.3, qua ngưỡng vá 3.50.2), KHÔNG dùng `<NoWarn>` để ẩn cảnh báo.)*
+trong là 3.53.3, qua ngưỡng vá 3.50.2), KHÔNG dùng `<NoWarn>` để ẩn cảnh báo. (d) Bước kiểm tra trước của
+`--install` (GĐ3 closeout WI-6, §15.1) — CHỈ xác minh THỦ CÔNG qua đường truy vấn SCM thật (cần service đã
+đăng ký thật trên máy Windows thật); chỉ logic quyết định thuần (`BuildAlreadyRegisteredOutcome`) có unit
+test, bản thân truy vấn SCM thì KHÔNG (bộ test của repo này không cài service Windows thật). (e) Bộ chắn
+hồi quy telemetry của WPF (GĐ3 closeout WI-6, `MachineViewModel` dùng lại `TelemetryNumeric.TryGet` thay
+vì `IConvertible.ToDouble` không chắn, vốn từng crash trên giá trị như `"RUNNING"`) nằm trong harness
+`--selftest` (§11) — chạy thật, tự động khi được gọi, báo lỗi rõ nếu bug tái xuất hiện — nhưng
+`--selftest` là một lượt smoke thủ công/có tài liệu riêng, KHÔNG nằm trong `dotnet test` hay bất kỳ cổng
+CI nào.)*
 
 ---
 
@@ -1556,6 +1686,10 @@ mutual TLS when the bridge below federates to a Site. The private key never leav
   segment (`ST4I_UNS_CELL`, §16.1) — sanitized so an unusual value can never corrupt the X.500 subject.
 - Exposes a **SHA-256 fingerprint** and the **public certificate PEM** (never the private key) via
   `GET /v1/site/identity` (§17.4) — this is what an operator hands to the Site to register the device.
+- GĐ3 closeout WI-4 added on-demand **rotation** — see §17.10 for the endpoint, the two-step operator
+  flow it forces, and the alarm that warns before a certificate lapses. Rotating mints an entirely new
+  self-signed certificate (same ECDSA P-256, same 10-year validity, same NodeId) — it doesn't change how
+  or where the identity is stored, only which bytes are currently in `device-identity.bin`.
 
 *(VI: `DeviceIdentityStore` tạo (một lần duy nhất) và nạp một chứng chỉ X.509 tự ký **ECDSA P-256** —
 danh tính bền vững của thiết bị, dùng làm chứng chỉ client cho mutual TLS khi bridge bên dưới liên kết
@@ -1565,7 +1699,10 @@ tới Site. Khoá riêng KHÔNG BAO GIỜ rời khỏi máy: PFX được mã ho
 (`LoadOrCreate`) — blob hỏng/không đọc được bị coi là "chưa có danh tính" và tự tạo lại, không bao giờ
 crash. `CN` chứng chỉ lấy từ đoạn Cell ISA-95 (`ST4I_UNS_CELL`, §16.1), đã làm sạch an toàn. Fingerprint
 SHA-256 + chứng chỉ công khai (PEM) được lộ qua `GET /v1/site/identity` (§17.4) — đây là thứ operator
-đưa cho Site để đăng ký thiết bị.)*
+đưa cho Site để đăng ký thiết bị. WI-4 GĐ3 closeout thêm khả năng **xoay vòng (rotate) theo yêu cầu** —
+xem §17.10 để biết endpoint, luồng thao tác 2 bước, và cảnh báo trước khi chứng chỉ hết hạn. Xoay vòng
+tạo một chứng chỉ tự ký HOÀN TOÀN MỚI (vẫn ECDSA P-256, vẫn hiệu lực 10 năm, vẫn cùng NodeId) — không đổi
+cách/nơi lưu danh tính, chỉ đổi nội dung byte trong `device-identity.bin`.)*
 
 ### 17.2 Site link + northbound bridge (EC-2) / Liên kết Site + bridge hướng lên
 
@@ -1601,7 +1738,11 @@ byte-for-byte (retained for `syn/*`, matching §16.1's own retain policy), up to
 **Bridge states** (`GET /v1/site`'s `bridgeState`): `Disabled` (no link, or link saved disabled) ·
 `Connecting` (link enabled, no successful remote connect yet) · `Connected` (both local + remote
 clients up) · `Degraded` (was connected at least once, remote currently down — a **Site outage**; the
-local pipeline is unaffected) · `Down` (the LOCAL client can't reach this device's own UNS spine).
+local pipeline is unaffected) · `Down` (the LOCAL client can't reach this device's own UNS spine) ·
+`Faulted` (GĐ3 closeout WI-3 — the durable spool's writer and/or forward loop crashed; takes priority
+over every other state above because the MQTT connections can look healthy while forwarding has
+actually stopped — see §17.9 for what causes it, and that it is **terminal until the process
+restarts**).
 
 *(VI: `St4i.EdgeCore.Site` lưu một **Site link** (`site-link.json`, thư mục mặc định
 `%ProgramData%\ST4I\sim\sitelink`, dời chỗ qua **`ST4I_SITELINK_DIR`**) gồm đúng
@@ -1619,9 +1760,12 @@ tăng dần có trần 10s, hàng đợi forward có giới hạn/drop-oldest n�
 pipeline cục bộ); **MẶC ĐỊNH TẮT** (chưa cấu hình hoặc `enabled:false` → không mở socket nào; broker
 cục bộ (`UnsBroker`, §16.1) luôn chỉ loopback bất kể tính năng này); chỉ được tạo khi UNS spine cục bộ
 đang bật (`ST4I_UNS_ENABLED`, §16.1) — tắt UNS thì chỉ còn singleton danh tính (§17.1), `/v1/site/identity`
-vẫn hoạt động độc lập. **5 trạng thái bridge** (`bridgeState` của `GET /v1/site`): `Disabled` ·
+vẫn hoạt động độc lập. **6 trạng thái bridge** (`bridgeState` của `GET /v1/site`): `Disabled` ·
 `Connecting` · `Connected` · `Degraded` (Site sập, cục bộ không ảnh hưởng) · `Down` (client cục bộ
-không tới được UNS spine của chính máy này).)*
+không tới được UNS spine của chính máy này) · `Faulted` (WI-3 GĐ3 closeout — vòng lặp writer/forward
+của spool bền đã chết; ưu tiên cao hơn mọi trạng thái khác vì kết nối MQTT có thể vẫn trông khoẻ trong
+khi việc forward đã thực sự dừng — xem §17.9, trạng thái này KẾT THÚC (terminal) cho tới khi khởi động
+lại tiến trình).)*
 
 ### 17.3 Env vars / Biến môi trường
 
@@ -1634,51 +1778,76 @@ rather than erroring:
 |---|---|---|
 | `ST4I_IDENTITY_DIR` | Relocates the device-identity store (`device-identity.bin` + `device-node.txt`, §17.1) | `%ProgramData%\ST4I\sim\identity` |
 | `ST4I_SITELINK_DIR` | Relocates the Site-link store (`site-link.json`, §17.2) | `%ProgramData%\ST4I\sim\sitelink` |
-| `ST4I_SITE_SERVICE_TYPE` | The mDNS service type the "Discover Sites" browse (§17.4, `GET /v1/site/discover`) queries for | `_synapse-site._tcp` |
+| `ST4I_SITE_SERVICE_TYPE` | The mDNS service type the "Discover Sites" browse (§17.4, `GET /v1/site/discover`) queries for — this device is the BROWSER here | `_synapse-site._tcp` |
+| `ST4I_MDNS_ADVERTISE` | GĐ3 closeout WI-1 (§17.8) — `0`/`false` (case-insensitive) stops this device from advertising ITSELF over mDNS, independently of the UNS gate below | unset → advertises whenever `ST4I_UNS_ENABLED` is on |
+| `ST4I_MDNS_SERVICE_TYPE` | The mDNS service type this device advertises itself under (§17.8) — deliberately different from `ST4I_SITE_SERVICE_TYPE` above | `_st4i-machine._tcp` |
+| `ST4I_BRIDGE_SPOOL_ENABLED` | GĐ3 closeout WI-2/WI-3 (§17.9) — `0`/`false` disables the durable northbound spool, reverting to drop-everything-while-disconnected | `true` |
+| `ST4I_BRIDGE_SPOOL_DIR` | Relocates the spool database (`bridge-spool.db`, §17.9) | `%ProgramData%\ST4I\sim\bridge-spool` |
+| `ST4I_BRIDGE_SPOOL_MAX_BYTES` | Total spool size cap in bytes — a drop-oldest trim once exceeded (§17.9) | `67108864` (64 MiB) |
+| `ST4I_BRIDGE_SPOOL_MAX_AGE_HOURS` | Maximum age, in hours, a spooled item is kept before being trimmed (§17.9) | `48` |
 
-Neither feature introduces a new *enable* flag of its own — the Site bridge's on/off switch is the
-persisted link's own `enabled` field (set via `PUT /v1/site`, §17.4), not an environment variable. It
-does, however, depend on the **pre-existing** `ST4I_UNS_*` family (§16.1): `SiteBridgeManager` is only
-ever registered when `ST4I_UNS_ENABLED` is on (the default), the bridge's local client dials
-`ST4I_UNS_PORT` on loopback, and the device identity's `CN`/SAN is derived from `ST4I_UNS_CELL`.
+Neither the Site-link nor the discovery feature introduces a new *enable* flag of its own — the Site
+bridge's on/off switch is the persisted link's own `enabled` field (set via `PUT /v1/site`, §17.4), not
+an environment variable. It does, however, depend on the **pre-existing** `ST4I_UNS_*` family (§16.1):
+`SiteBridgeManager` is only ever registered when `ST4I_UNS_ENABLED` is on (the default), the bridge's
+local client dials `ST4I_UNS_PORT` on loopback, and the device identity's `CN`/SAN is derived from
+`ST4I_UNS_CELL`. GĐ3 closeout WI-1/WI-2/WI-3 add three MORE independent knobs, each env-var-only (no UI
+toggle exists for any of them): mDNS **advertise** defaults ON whenever `ST4I_UNS_ENABLED` is (§16.1 —
+itself on by default), independently disable-able via `ST4I_MDNS_ADVERTISE=0`; the bridge's durable
+**spool** defaults ON (`ST4I_BRIDGE_SPOOL_ENABLED`) whenever a Site link is enabled. See §17.8/§17.9 for
+the full behavioral write-up of each.
 
 *(VI: Cả hai store đều theo đúng thứ tự phân giải "đường dẫn tường minh (test) → biến môi trường →
 mặc định `%ProgramData%`" đã dùng ở nơi khác trong tài liệu này (§15.2, §16.5) — biến trống/chưa đặt
 thì dùng mặc định, không báo lỗi. **`ST4I_IDENTITY_DIR`** dời thư mục danh tính thiết bị (mặc định
 `%ProgramData%\ST4I\sim\identity`). **`ST4I_SITELINK_DIR`** dời thư mục Site-link (mặc định
-`%ProgramData%\ST4I\sim\sitelink`). Không có cờ bật/tắt riêng — công tắc bật bridge chính là trường
-`enabled` của link (đặt qua `PUT /v1/site`). Tính năng phụ thuộc vào các biến `ST4I_UNS_*` CÓ SẴN
-(§16.1): `SiteBridgeManager` chỉ đăng ký khi `ST4I_UNS_ENABLED` bật (mặc định), client cục bộ của bridge
-quay số `ST4I_UNS_PORT` trên loopback, và `CN` của danh tính thiết bị lấy từ `ST4I_UNS_CELL`.)*
+`%ProgramData%\ST4I\sim\sitelink`). **`ST4I_SITE_SERVICE_TYPE`** là loại dịch vụ mDNS mà thiết bị này
+BROWSE để tìm Site (§17.4). Ba biến MỚI của WI-1/WI-2/WI-3 GĐ3 closeout: **`ST4I_MDNS_ADVERTISE`**
+(`0`/`false` tắt việc tự quảng bá qua mDNS, độc lập với cổng UNS, §17.8), **`ST4I_MDNS_SERVICE_TYPE`**
+(loại dịch vụ mDNS thiết bị này TỰ quảng bá, mặc định `_st4i-machine._tcp`, khác với
+`ST4I_SITE_SERVICE_TYPE`, §17.8), và bốn biến **`ST4I_BRIDGE_SPOOL_*`** (`ENABLED`/`DIR`/`MAX_BYTES`/
+`MAX_AGE_HOURS`, §17.9) cho spool bền của bridge. Không có cờ bật/tắt riêng cho BẢN THÂN Site link —
+công tắc bật bridge chính là trường `enabled` của link (đặt qua `PUT /v1/site`). Tính năng phụ thuộc vào
+các biến `ST4I_UNS_*` CÓ SẴN (§16.1): `SiteBridgeManager` chỉ đăng ký khi `ST4I_UNS_ENABLED` bật (mặc
+định), client cục bộ của bridge quay số `ST4I_UNS_PORT` trên loopback, và `CN` của danh tính thiết bị lấy
+từ `ST4I_UNS_CELL`. mDNS advertise MẶC ĐỊNH BẬT bất cứ khi nào `ST4I_UNS_ENABLED` bật (mà biến đó tự nó
+mặc định bật) — tắt riêng qua `ST4I_MDNS_ADVERTISE=0`; spool bền của bridge MẶC ĐỊNH BẬT bất cứ khi nào
+Site link đang bật.)*
 
 ### 17.4 Endpoints (EC-3) / Endpoint
 
-**EN** — `St4i.EngineApi.Endpoints.SiteEndpoints` exposes four routes:
+**EN** — `St4i.EngineApi.Endpoints.SiteEndpoints` exposes five routes:
 
 | Path | Verb | Role | Behavior |
 |---|---|---|---|
-| `/v1/site` | GET | Operator | Status + config: `{enabled, host, port, bridgeState, lastError, siteFingerprint, deviceFingerprint, unsEnabled}`. With the local UNS spine disabled, returns a fixed `Disabled`/`unsEnabled:false` view that still reports the real `deviceFingerprint` (a device has an identity whether or not anything is federated). |
+| `/v1/site` | GET | Operator | Status + config: `{enabled, host, port, bridgeState, lastError, siteFingerprint, deviceFingerprint, unsEnabled, spoolDepth, lastAckedSeq, droppedTotal}`. With the local UNS spine disabled, returns a fixed `Disabled`/`unsEnabled:false` view that still reports the real `deviceFingerprint` (a device has an identity whether or not anything is federated); `spoolDepth`/`lastAckedSeq`/`droppedTotal` (GĐ3 closeout WI-3, §17.9) are always a real `0` — never garbage — when there is no durable spool at all. |
 | `/v1/site` | PUT | Engineer, audited `site.link.set` | Body `{enabled, host, port, siteTrustPem}` — a **full replace** of the persisted link (an omitted field applies its own default, not "leave unchanged"). Drives `SiteBridgeManager.ApplyAsync` — stops the old bridge, persists, starts a fresh one if `enabled`. `400` if enabling with a missing host, an out-of-range port (must be 1–65535), or a `siteTrustPem` that doesn't parse to at least one certificate; `409` if the local UNS spine is disabled (nothing to bridge). The audit row never logs the raw PEM — only its length + a SHA-256 fingerprint of the PEM text itself. |
-| `/v1/site/identity` | GET | Operator | `{deviceFingerprint, deviceCertPem}` — this device's own public identity (§17.1), to register at a Site. |
-| `/v1/site/discover` | GET | Engineer | **(GĐ3 sub-2, mDNS join wizard)** A bounded (~4s) mDNS browse of the LAN for the `ST4I_SITE_SERVICE_TYPE` service (§17.3, default `_synapse-site._tcp`) → `DiscoveredSite[] {instanceName, host, port, addresses[], txt{}}`. Read-only network scan (no audit); per-call ephemeral (opens no always-on multicast socket); never throws — an empty array means "no Sites found", not an error. Discovery only *pre-fills* the form host/port; it never sets the trust PEM or enables the link. |
+| `/v1/site/identity` | GET | Operator | `{deviceFingerprint, deviceCertPem, notAfterUtc, daysToExpiry}` — this device's own public identity (§17.1), plus its certificate's expiry (GĐ3 closeout WI-4, §17.10), to register at a Site and to know when it needs rotating. |
+| `/v1/site/identity/rotate` | POST | **Admin**, audited `site.identity.rotate` | GĐ3 closeout WI-4 (§17.10 for the full write-up) — mints+persists a brand-new device identity and re-keys everything presenting the old one (the live Site bridge, the mDNS advertisement). Body `{currentFingerprint}` must echo what `GET /v1/site/identity` currently reports — `400` if missing/blank, `409` if it doesn't match. **Deliberately breaks the Site uplink** until the new fingerprint is pasted at the Site. |
+| `/v1/site/discover` | GET | Engineer | **(GĐ3 sub-2, mDNS join wizard)** A bounded (~4s) mDNS browse of the LAN for the `ST4I_SITE_SERVICE_TYPE` service (§17.3, default `_synapse-site._tcp`) → `DiscoveredSite[] {instanceName, host, port, addresses[], txt{}}`. Read-only network scan (no audit); per-call ephemeral (opens no always-on multicast socket); never throws — an empty array means "no Sites found", not an error. Discovery only *pre-fills* the form host/port; it never sets the trust PEM or enables the link. The mirror image of this — the machine ADVERTISING itself so a Site can find it — is §17.8, not an HTTP endpoint. |
 
 **Deferred:** a pre-save `POST /v1/site/test` connectivity probe (from the original blueprint) was not
 built — the live `bridgeState` badge `GET /v1/site` already exposes (`Connecting` → `Connected`/
 `Degraded` + `lastError`) is the operator's connection feedback once a link is saved, so a dedicated
 pre-save probe is a follow-up, not a blocker.
 
-*(VI: `SiteEndpoints` có 3 route: **`GET /v1/site`** (Operator) — trạng thái + cấu hình (enabled, host,
-port, bridgeState, lastError, siteFingerprint, deviceFingerprint, unsEnabled); UNS tắt thì trả về view
-cố định `Disabled` nhưng vẫn có `deviceFingerprint` thật. **`PUT /v1/site`** (Engineer, có audit
-`site.link.set`) — body `{enabled, host, port, siteTrustPem}`, **THAY THẾ TOÀN BỘ** link đã lưu (trường
-bỏ trống áp giá trị mặc định của nó, KHÔNG phải "giữ nguyên"); gọi `SiteBridgeManager.ApplyAsync` — dừng
-bridge cũ, lưu, khởi động bridge mới nếu `enabled`. Trả `400` nếu bật mà thiếu host/port sai khoảng
-(1–65535)/PEM không hợp lệ; trả `409` nếu UNS spine cục bộ đang tắt. Dòng audit KHÔNG BAO GIỜ ghi PEM
-thô — chỉ độ dài + fingerprint SHA-256 của chính văn bản PEM. **`GET /v1/site/identity`** (Operator) —
-`{deviceFingerprint, deviceCertPem}`, danh tính công khai của thiết bị để đăng ký tại Site. **Việc CHƯA
-làm:** `POST /v1/site/test` (probe kết nối trước khi lưu) chưa xây — badge `bridgeState` sống động của
-`GET /v1/site` đã là phản hồi kết nối cho operator sau khi lưu, nên probe riêng là việc làm tiếp theo,
-không phải điều kiện chặn.)*
+*(VI: `SiteEndpoints` có 5 route: **`GET /v1/site`** (Operator) — trạng thái + cấu hình (enabled, host,
+port, bridgeState, lastError, siteFingerprint, deviceFingerprint, unsEnabled, spoolDepth, lastAckedSeq,
+droppedTotal); UNS tắt thì trả về view cố định `Disabled` nhưng vẫn có `deviceFingerprint` thật; ba
+trường spool (§17.9) luôn là số `0` THẬT — không bao giờ là rác — khi không có spool bền nào. **`PUT
+/v1/site`** (Engineer, có audit `site.link.set`) — body `{enabled, host, port, siteTrustPem}`, **THAY
+THẾ TOÀN BỘ** link đã lưu (trường bỏ trống áp giá trị mặc định của nó, KHÔNG phải "giữ nguyên"); gọi
+`SiteBridgeManager.ApplyAsync` — dừng bridge cũ, lưu, khởi động bridge mới nếu `enabled`. Trả `400` nếu
+bật mà thiếu host/port sai khoảng (1–65535)/PEM không hợp lệ; trả `409` nếu UNS spine cục bộ đang tắt.
+Dòng audit KHÔNG BAO GIỜ ghi PEM thô — chỉ độ dài + fingerprint SHA-256 của chính văn bản PEM. **`GET
+/v1/site/identity`** (Operator) — `{deviceFingerprint, deviceCertPem, notAfterUtc, daysToExpiry}`, danh
+tính công khai của thiết bị kèm hạn dùng chứng chỉ (WI-4, §17.10). **`POST
+/v1/site/identity/rotate`** (**Admin**, có audit `site.identity.rotate`) — tạo+lưu danh tính mới, re-key
+cả bridge Site đang sống lẫn quảng bá mDNS; body `{currentFingerprint}` phải khớp giá trị `GET
+/v1/site/identity` đang trả — `400` nếu thiếu/rỗng, `409` nếu không khớp; CỐ Ý làm đứt kết nối Site cho
+tới khi dán fingerprint mới tại Site (xem §17.10). **Việc CHƯA làm:** `POST /v1/site/test` (probe kết
+nối trước khi lưu) chưa xây — badge `bridgeState` sống động của `GET /v1/site` đã là phản hồi kết nối
+cho operator sau khi lưu, nên probe riêng là việc làm tiếp theo, không phải điều kiện chặn.)*
 
 ### 17.5 Web UI — the `/site` page (EC-4) / Trang web `/site`
 
@@ -1748,16 +1917,253 @@ audit). **CHỈ GỬI RA, MẶC ĐỊNH TẮT:** bridge chỉ quay số ra ngoà
 Site; chưa bật Site link thì thiết bị giống hệt bản build trước khi có tính năng này. Broker UNS cục bộ
 luôn chỉ loopback bất kể liên kết — liên kết hệ sinh thái không bao giờ mở nó ra LAN.)*
 
-### 17.8 Honest deferrals / Những gì CHƯA làm
+### 17.8 mDNS advertise — the machine announces itself (GĐ3 closeout WI-1 Part B) / Tự quảng bá qua mDNS
+
+**EN**
+
+> **New outbound network behavior — on by default.** Starting with this build, the machine actively
+> **multicasts its own presence on the LAN** whenever the local UNS spine is enabled
+> (`ST4I_UNS_ENABLED`, §16.1 — **on by default**, even standalone/offline) — every existing install
+> begins doing this the moment it upgrades to this build, whether or not it has ever linked to a Site.
+> This is a deliberate product decision (a SYNAPSE Site's own join wizard can find the machine without an
+> operator hand-typing a host/port) — but an operator should learn about it from this paragraph, not
+> from a packet capture.
+
+`St4i.EngineApi.Site.SiteAdvertiser` is the mirror image of §17.4's `GET /v1/site/discover` (which
+*browses* the LAN for a Site): this advertises the MACHINE itself.
+
+- **Service type:** `_st4i-machine._tcp` (`ST4I_MDNS_SERVICE_TYPE` to override, §17.3) — deliberately
+  DIFFERENT from `_synapse-site._tcp` (the type this device browses FOR); a Site advertises the Site
+  type, a machine advertises the machine type, never the same one.
+- **Instance name:** the sanitized device NodeId (§17.1) — `[A-Za-z0-9._-]` kept, everything else
+  replaced with `_`, falling back to `st4i-machine` if that leaves nothing at all.
+- **Port:** read from Kestrel's own actually-bound listen address at runtime — never hard-coded `5199`.
+- **TXT records:** `node` (NodeId) · `fp` (this device's identity fingerprint, §17.1) · `site`/`area`/
+  `line`/`cell` (the ISA-95 address, §16.1) · `v` (the assembly's informational version).
+- **Disable switch:** `ST4I_MDNS_ADVERTISE=0` (or `false`) turns advertising off independently of the
+  UNS gate — the rest of the engine is completely unaffected either way.
+- **Never crashes the host:** a machine with no multicast-capable NIC, or a firewall silently dropping
+  the traffic, simply never manages to advertise — same never-fails discipline as every other optional
+  subsystem in this build.
+- A rotation (§17.10) tears the advertisement down and rebuilds it from the new identity, so the `fp`
+  TXT field never keeps broadcasting a stale fingerprint.
+
+*(VI: **Hành vi mạng ra ngoài MỚI — MẶC ĐỊNH BẬT.** Từ bản build này, máy CHỦ ĐỘNG multicast sự hiện diện
+của chính nó lên LAN bất cứ khi nào UNS spine cục bộ đang bật (`ST4I_UNS_ENABLED`, §16.1 — MẶC ĐỊNH BẬT,
+kể cả khi chạy độc lập/ngoại tuyến) — mọi bản cài CÓ SẴN đều bắt đầu làm việc này ngay khi nâng cấp lên
+bản build này, dù đã liên kết Site hay chưa. Đây là quyết định sản phẩm CÓ CHỦ Ý (join wizard của Site
+tìm được máy mà operator không cần gõ tay host/port) — nhưng operator phải biết điều này từ đoạn văn
+này, không phải từ việc bắt gói tin.
+
+`SiteAdvertiser` là ảnh gương của `GET /v1/site/discover` ở §17.4 (thứ BROWSE LAN để tìm Site) — đây
+QUẢNG BÁ chính MÁY này. **Loại dịch vụ:** `_st4i-machine._tcp` (ghi đè qua `ST4I_MDNS_SERVICE_TYPE`,
+§17.3) — CỐ Ý khác với `_synapse-site._tcp` (loại máy này browse để tìm); Site quảng bá loại Site, máy
+quảng bá loại máy, không bao giờ trùng. **Tên instance:** NodeId đã làm sạch (§17.1). **Cổng:** đọc từ
+địa chỉ Kestrel THẬT SỰ đã bind lúc chạy — không hard-code `5199`. **TXT record:** `node`/`fp`/`site`/
+`area`/`line`/`cell`/`v`. **Công tắc tắt:** `ST4I_MDNS_ADVERTISE=0` tắt quảng bá độc lập với cổng UNS.
+**Không bao giờ làm sập host:** máy không có NIC hỗ trợ multicast, hay firewall âm thầm chặn traffic,
+chỉ đơn giản là không quảng bá được — không bao giờ crash. Xoay vòng chứng chỉ (§17.10) sẽ dừng rồi dựng
+lại quảng bá từ danh tính mới, nên trường TXT `fp` không bao giờ tiếp tục phát fingerprint cũ.)*
+
+### 17.9 Durable bridge spool + reconciliation (GĐ3 closeout WI-2/WI-3) / Spool bền cho bridge + đồng bộ lại
+
+**EN** — Before this build, `UnsBridge` dropped **everything** it dequeued while the Site was
+unreachable — a Site outage meant silent, permanent data loss for the whole outage window. It now:
+
+- **Spools to SQLite on disk** (`bridge-spool.db`, a sibling of `...\sim\sitelink`/`...\sim\alarms`)
+  instead of dropping — every message the local UNS spine emits while the Site is unreachable is
+  durably queued.
+- **Survives a process restart** — the spool is a real on-disk table, not an in-memory queue; a crash or
+  a service restart mid-outage does not lose whatever had already been spooled.
+- **Replays in ascending sequence order** on reconnect — oldest first, never out of order.
+- **Publishes a retained resync record BEFORE replaying anything** — RETAINED, to
+  `syn/{site}/{area}/{line}/{cell}/_bridge/resync`, so the Site learns a gap exists — and exactly how
+  big — before the backfill itself starts arriving. Fields: `resumedAtUtc`, `backlogDepth`, `oldestUtc`,
+  `firstSeq`, `lastAckedSeq`, `droppedTotal`.
+- `droppedTotal` is not a soft metric — it means **production data was permanently lost**: the spool's
+  own age/size caps below trimmed the oldest entries before the Site ever received them.
+
+**Env vars** (`BridgeSpoolOptions.FromEnvironment` — same "unparseable/non-positive value → keep the
+default" posture as every other `ST4I_*` options bag in this doc):
+
+| Var | What it does | Default |
+|---|---|---|
+| `ST4I_BRIDGE_SPOOL_ENABLED` | `false`/`0` disables the durable spool entirely — reverts to the pre-this-build behavior (drop everything while disconnected, no resync record) | `true` |
+| `ST4I_BRIDGE_SPOOL_DIR` | Relocates the spool database | `%ProgramData%\ST4I\sim\bridge-spool` |
+| `ST4I_BRIDGE_SPOOL_MAX_BYTES` | Total spool size cap, in bytes — a drop-oldest trim once exceeded | `67108864` (64 MiB) |
+| `ST4I_BRIDGE_SPOOL_MAX_AGE_HOURS` | Maximum age, in hours, a spooled item is kept before being trimmed | `48` |
+
+**The retention trade-off, stated plainly:** these caps exist so an unattended device doesn't fill its
+disk forever during a long outage — but they mean a Site outage that outlasts either cap is
+**guaranteed** data loss, not a possibility: the oldest entries are dropped to make room, and
+`droppedTotal` is the only record it ever happened. 48h is comfortably above the product's own ≥24h
+buffering requirement, but it is still a hard ceiling, not a promise of eventual delivery.
+
+**The `Faulted` bridge state — terminal, not self-healing.** If the spool's writer loop (drains the
+local channel into the spool) or its forward loop (replays + acks against the Site) terminates from an
+unexpected exception — never this bridge's own shutdown — `GET /v1/site`'s `bridgeState` reports
+**`Faulted`** (§17.2), which outranks `Connected`/`Degraded`/`Connecting`: the MQTT connections can look
+perfectly healthy while messages have quietly stopped being persisted or replayed — a worse, more
+surprising failure than a known Site outage. **There is no supervised restart of these loops.** Once
+`Faulted`, it stays `Faulted` until the whole `St4i.EngineApi` process is restarted (a service restart,
+or `sc stop`/`sc start`, §15.1). Meanwhile the spool keeps accepting/growing (whichever loop is still
+alive) until the size/age caps above start trimming it — i.e. the exact same real, eventual data loss
+described above, just reached sooner, and signalled only by the `Faulted` flag and a log line, not by
+anything that pages an operator. **What to do:** treat `Faulted` as an incident, not a transient blip —
+restart the process/service, then check the logs for what actually killed the loop.
+
+**Head-of-line blocking — no dead-letter path.** If the Site permanently rejects one specific message
+(e.g. a topic-ACL denial that will never succeed no matter how many times it's retried), that ONE
+message blocks the entire backlog behind it — the forward loop retries it with escalating backoff
+(500ms, doubling, capped at 30s) forever, and nothing behind it in sequence order can be delivered until
+it either eventually succeeds or ages out of the spool. This is **not a regression** from before this
+build (the old behavior dropped the message outright, immediately, with nothing behind it blocked) —
+but it is the remaining route from "the Site rejects one message" to real, eventual data loss, and there
+is no dead-letter queue or skip-and-continue path today.
+
+*(VI: Trước bản build này, `UnsBridge` bỏ TOÀN BỘ những gì lấy ra khỏi hàng đợi trong lúc không tới được
+Site — Site sập nghĩa là mất dữ liệu vĩnh viễn, âm thầm, suốt thời gian sập. Nay: **Spool ra SQLite trên
+đĩa** (`bridge-spool.db`) thay vì bỏ — mọi message UNS spine cục bộ phát ra lúc Site không tới được đều
+được xếp hàng bền. **Sống sót qua khởi động lại tiến trình** — spool là bảng thật trên đĩa, không phải
+hàng đợi trong bộ nhớ. **Phát lại theo đúng thứ tự seq tăng dần** khi kết nối lại — cũ nhất trước. **Phát
+một bản ghi đồng bộ lại (resync) RETAINED TRƯỚC KHI phát lại bất cứ gì** — lên
+`syn/{site}/{area}/{line}/{cell}/_bridge/resync`, để Site biết có khoảng trống — và trống bao nhiêu —
+TRƯỚC KHI dữ liệu bù (backfill) bắt đầu tới. Trường dữ liệu: `resumedAtUtc`, `backlogDepth`, `oldestUtc`,
+`firstSeq`, `lastAckedSeq`, `droppedTotal`. `droppedTotal` KHÔNG phải chỉ số nhẹ nhàng — nó nghĩa là DỮ
+LIỆU SẢN XUẤT ĐÃ MẤT VĨNH VIỄN: trần tuổi/dung lượng của spool (bên dưới) đã cắt bớt các mục cũ nhất
+trước khi Site kịp nhận.
+
+**Biến môi trường:** **`ST4I_BRIDGE_SPOOL_ENABLED`** (`false`/`0` tắt hẳn spool bền, quay lại hành vi
+trước bản build này — bỏ hết lúc mất kết nối, không có resync — mặc định `true`); **`ST4I_BRIDGE_SPOOL_DIR`**
+(dời CSDL spool, mặc định `%ProgramData%\ST4I\sim\bridge-spool`); **`ST4I_BRIDGE_SPOOL_MAX_BYTES`** (trần
+dung lượng spool tính byte, mặc định `67108864` = 64 MiB); **`ST4I_BRIDGE_SPOOL_MAX_AGE_HOURS`** (tuổi
+tối đa tính giờ trước khi bị cắt, mặc định `48`).
+
+**Đánh đổi lưu trữ, nói thẳng:** các trần này tồn tại để một thiết bị không người trông không lấp đầy đĩa
+mãi mãi trong một đợt sập dài — nhưng nghĩa là một đợt Site sập lâu hơn một trong hai trần là mất dữ liệu
+CHẮC CHẮN, không phải khả năng: các mục cũ nhất bị bỏ để lấy chỗ, và `droppedTotal` là bằng chứng DUY
+NHẤT rằng việc đó đã xảy ra. 48 giờ cao hơn thoải mái so với yêu cầu đệm ≥24 giờ của sản phẩm, nhưng vẫn
+là một trần cứng, không phải lời hứa giao hàng cuối cùng.
+
+**Trạng thái bridge `Faulted` — KẾT THÚC, không tự hồi phục.** Nếu vòng lặp writer của spool (dồn kênh
+cục bộ vào spool) hoặc vòng lặp forward (phát lại + ack với Site) chết vì một exception bất ngờ — không
+phải do chính bridge tự tắt — thì `bridgeState` của `GET /v1/site` báo **`Faulted`** (§17.2), được ưu
+tiên hơn `Connected`/`Degraded`/`Connecting`: kết nối MQTT có thể vẫn trông khoẻ trong khi message đã âm
+thầm ngừng được lưu hoặc phát lại — một lỗi tệ hơn, bất ngờ hơn một đợt Site sập bình thường. **KHÔNG có
+cơ chế tự khởi động lại các vòng lặp này.** Một khi `Faulted`, nó CỨ THẾ cho tới khi toàn bộ tiến trình
+`St4i.EngineApi` được khởi động lại (restart service, hoặc `sc stop`/`sc start`, §15.1). Trong lúc đó
+spool vẫn tiếp tục nhận/phình to (nếu vòng lặp còn lại vẫn sống) cho tới khi trần dung lượng/tuổi ở trên
+bắt đầu cắt bớt — tức là ĐÚNG loại mất dữ liệu thật, cuối cùng, y như mô tả ở trên, chỉ là đến sớm hơn, và
+chỉ được báo hiệu bằng cờ `Faulted` cùng một dòng log, không có gì báo động cho operator. **Phải làm gì:**
+coi `Faulted` là một sự cố thật, không phải trục trặc thoáng qua — khởi động lại tiến trình/service, rồi
+kiểm tra log xem cái gì thực sự giết vòng lặp.
+
+**Chặn đầu hàng đợi (head-of-line blocking) — không có đường dead-letter.** Nếu Site từ chối VĨNH VIỄN
+một message cụ thể (ví dụ bị chặn ACL theo topic, không bao giờ thành công dù thử lại bao nhiêu lần), MỘT
+message đó chặn đứng toàn bộ phần còn lại phía sau nó — vòng lặp forward thử lại với backoff tăng dần
+(500ms, nhân đôi, trần 30s) MÃI MÃI, và không gì phía sau theo thứ tự seq được gửi cho tới khi nó hoặc
+cuối cùng thành công, hoặc bị cắt khỏi spool do quá tuổi. Đây KHÔNG phải một thoái lui so với trước bản
+build này (hành vi cũ bỏ message đó ngay lập tức, không chặn gì phía sau) — nhưng đây vẫn là con đường
+còn lại từ "Site từ chối một message" tới mất dữ liệu thật, cuối cùng, và hiện chưa có hàng đợi
+dead-letter hay đường bỏ-qua-và-tiếp-tục nào.)*
+
+### 17.10 Certificate rotation, expiry visibility, and the `Identity` alarm (GĐ3 closeout WI-4) / Xoay vòng chứng chỉ, hiển thị hạn dùng, và cảnh báo `Identity`
+
+**EN**
+
+- `GET /v1/site/identity` (§17.4) now also returns `notAfterUtc` and `daysToExpiry` — an operator (or a
+  script) can see how much runway is left on this device's identity without decoding the certificate
+  PEM by hand.
+- `POST /v1/site/identity/rotate` (§17.4) mints and persists a brand-new self-signed identity (same
+  ECDSA P-256, same NodeId, same 10-year validity — §17.1) — **Admin-only**, audited
+  (`site.identity.rotate`, recording both the OLD and NEW fingerprint, never the private key or the raw
+  PEM), and requires the request body to echo the device's CURRENT fingerprint
+  (`{"currentFingerprint": "..."}`) — `400` if it's missing/blank, `409` if it doesn't match what
+  `GET /v1/site/identity` currently reports (someone else may have already rotated it, or the caller is
+  working from a stale read). This forces whoever calls it to have actually read the current fingerprint
+  first, rather than a bare `POST` re-keying the device with no confirmation of what's being replaced.
+- Rotating also **re-keys everything already presenting the old identity**, in the same call: the live
+  Site bridge is torn down and rebuilt from the new certificate (`SiteBridgeManager.ReapplyCurrentAsync`),
+  and the mDNS advertisement (§17.8) is restarted so its `fp` TXT field stops broadcasting the stale
+  fingerprint.
+
+> **The two-step operator flow — read this before rotating a device that's linked to a Site.** Rotating
+> **breaks the Site uplink**. The Site's own trust store pins THIS device's *old* fingerprint (§17.2/
+> §17.7 — that pin is exactly why federation is fail-closed); the moment the identity rotates, the Site
+> rejects the new certificate and the bridge's mTLS handshake keeps failing until an operator manually
+> pastes the NEW fingerprint into that Site's own trust configuration. That is not a bug to route around
+> — it's why the rotate response returns the new fingerprint as the first field of its body, and why the
+> audit row records both fingerprints: there is always a paper trail of exactly what changed and what an
+> operator must now go do at the Site. **Only rotate when you're ready to immediately update the Site to
+> match.**
+
+**The `Identity` alarm source.** The same periodic evaluator that runs DriverHealth/NgRate (§18.2) now
+also watches this device's own certificate expiry:
+
+- Source `AlarmSource.Identity`, threshold **`ST4I_IDENTITY_EXPIRY_WARN_DAYS`** (default **30**) —
+  raises once `daysToExpiry` falls to or below that many days (an already-expired certificate, i.e. a
+  negative day count, still raises — it is never treated as "too late to warn"). Clears automatically
+  once a rotation pushes the expiry back out; an operator's Ack only silences it in the meantime (a
+  CONDITION alarm, same as DriverHealth/NgRate, §18.1).
+- **Capped at `AlarmPriority.High` — deliberately, never `Critical`.** A `Critical` alarm feeds
+  `LineController`'s alarm→hold gate (§18.7): it blocks `line.start`/`line.unhold` and shows as `Held`
+  on every `GET /v1/line` poll. An expiring device certificate must never be able to stop production —
+  the alarm exists to get an operator's attention well before expiry (30 days of runway by default), not
+  to halt the line.
+
+*(VI: `GET /v1/site/identity` (§17.4) nay trả thêm `notAfterUtc` và `daysToExpiry` — operator (hay một
+script) xem được còn bao lâu nữa danh tính thiết bị hết hạn mà không cần tự giải mã PEM. `POST
+/v1/site/identity/rotate` (§17.4) tạo+lưu một danh tính tự ký HOÀN TOÀN MỚI (vẫn ECDSA P-256, vẫn cùng
+NodeId, vẫn hiệu lực 10 năm — §17.1) — CHỈ Admin, có audit (`site.identity.rotate`, ghi cả fingerprint
+CŨ lẫn MỚI, không bao giờ ghi khoá riêng hay PEM thô), và bắt body phải khớp lại fingerprint HIỆN TẠI của
+thiết bị (`{"currentFingerprint": "..."}`) — `400` nếu thiếu/rỗng, `409` nếu không khớp với `GET
+/v1/site/identity` đang trả (có thể ai đó đã xoay vòng trước, hoặc caller đang dùng dữ liệu cũ). Việc này
+buộc bên gọi phải THỰC SỰ đọc fingerprint hiện tại trước, thay vì một `POST` trần trụi re-key thiết bị mà
+không xác nhận đang thay thế cái gì. Xoay vòng cũng **re-key mọi thứ đang trình diện danh tính cũ** trong
+CÙNG một lần gọi: bridge Site đang sống bị dừng rồi dựng lại từ chứng chỉ mới
+(`SiteBridgeManager.ReapplyCurrentAsync`), và quảng bá mDNS (§17.8) được khởi động lại để trường TXT `fp`
+không tiếp tục phát fingerprint cũ.
+
+**Luồng thao tác 2 bước — đọc trước khi xoay vòng một thiết bị đang liên kết Site.** Xoay vòng LÀM ĐỨT
+kết nối lên Site. Kho tin cậy của Site ghim fingerprint CŨ của chính thiết bị này (§17.2/§17.7 — chính
+cái ghim đó là lý do liên kết thất-bại-thì-đóng); ngay khi danh tính xoay vòng, Site từ chối chứng chỉ
+mới và bắt tay mTLS của bridge cứ lỗi cho tới khi operator dán TAY fingerprint MỚI vào cấu hình tin cậy
+của Site đó. Đây không phải lỗi cần né tránh — đó là lý do phản hồi của rotate trả fingerprint mới làm
+TRƯỜNG ĐẦU TIÊN, và dòng audit ghi cả hai fingerprint: luôn có một dấu vết giấy tờ chính xác những gì đã
+đổi và operator giờ phải làm gì tại Site. **Chỉ xoay vòng khi đã sẵn sàng cập nhật Site ngay sau đó.**
+
+**Nguồn cảnh báo `Identity`.** Cùng bộ đánh giá định kỳ chạy DriverHealth/NgRate (§18.2) nay cũng theo
+dõi hạn dùng chứng chỉ của chính thiết bị: nguồn `AlarmSource.Identity`, ngưỡng
+**`ST4I_IDENTITY_EXPIRY_WARN_DAYS`** (mặc định **30**) — cảnh báo khi `daysToExpiry` còn bằng hoặc dưới
+số ngày đó (chứng chỉ ĐÃ hết hạn, tức số ngày âm, vẫn cảnh báo — không bao giờ coi là "quá muộn để cảnh
+báo"). Tự xoá khi một lần xoay vòng đẩy hạn dùng ra xa; Ack của operator chỉ tạm im lặng trong lúc đó
+(cảnh báo ĐIỀU KIỆN, giống DriverHealth/NgRate, §18.1). **Giới hạn ở `AlarmPriority.High` — CÓ CHỦ Ý,
+không bao giờ `Critical`.** Một cảnh báo Critical sẽ nạp vào khoá cảnh báo→hold của `LineController`
+(§18.7): chặn `line.start`/`line.unhold` và hiện `Held` ở mọi lần đọc `GET /v1/line`. Một chứng chỉ thiết
+bị sắp hết hạn không bao giờ được phép dừng sản xuất — cảnh báo này tồn tại để operator chú ý sớm (mặc
+định còn 30 ngày), không phải để dừng line.)*
+
+### 17.11 Honest deferrals / Những gì CHƯA làm
 
 **EN** — Documented here, not silently missing:
 
-- **Manual join only** — no mDNS auto-discovery, no join wizard; today's flow is the copy/paste in
-  §17.6.
+- **mDNS auto-provision / trust-on-first-discovery is still not implemented.** Discovery
+  (`GET /v1/site/discover`, §17.4) pre-fills the host/port form fields; advertising (§17.8) lets a Site
+  find this machine the same way. **Neither one automates trust** — the Site's trust PEM pinned here
+  (§17.2) and this device's identity registered at the Site are both still a manually pasted step
+  (§17.6). There is no automatic "first discovery wins" provisioning path, by design: trusting whatever
+  answers first on an unauthenticated LAN broadcast would be a real security regression, not a
+  convenience.
 - **Self-signed identity + pinned trust only** — no EST/SCEP enrollment, no Site CA, no automated
   cross-signing; a device's identity and a Site's trust are both provisioned by hand.
-- **No certificate rotation** — the device identity is minted once (§17.1) and never auto-renewed or
-  re-issued.
+- **Certificate rotation is manual/on-demand only** (§17.10) — no automatic pre-expiry rotation, no
+  scheduled job; an operator (or a future automation) must call `POST /v1/site/identity/rotate`
+  themselves, and must immediately follow up at the Site (§17.10's two-step flow) or the uplink stays
+  down.
+- **The durable bridge spool's `Faulted` state is terminal** (§17.9) — there is no supervised restart of
+  the spool's writer/forward loops; recovering from `Faulted` means restarting the whole process.
+- **No dead-letter path for a permanently-rejected message** (§17.9) — head-of-line blocking behind one
+  bad message is the remaining route to real data loss, even with the durable spool in place.
 - **Outbound telemetry only** — no inbound command path (NCMD or otherwise); the Site can observe this
   device but never actuate it.
 - **No pre-save connectivity probe** (`POST /v1/site/test`) — see §17.4.
@@ -1767,14 +2173,24 @@ luôn chỉ loopback bất kể liên kết — liên kết hệ sinh thái khô
   `--update-snapshots` pass — not yet done as of this doc update (same outstanding item §16.5 already
   flagged for `/assets`).
 
-*(VI: Ghi rõ ở đây, không giấu: **Chỉ gia nhập thủ công** — chưa có mDNS tự dò, chưa có join wizard.
-**Chỉ danh tính tự ký + tin cậy ghim tay** — chưa có EST/SCEP, chưa có Site CA, chưa ký chéo tự động.
-**Chưa xoay vòng chứng chỉ** — danh tính thiết bị tạo một lần, không tự gia hạn/cấp lại. **Chỉ gửi
-telemetry ra ngoài** — chưa có đường lệnh vào (NCMD hay khác), Site quan sát được nhưng không điều
-khiển được máy. **Chưa có probe kết nối trước khi lưu** (`POST /v1/site/test`). **WS-B B2 (đảo chiều
-bridge)** — một hạng mục lớn riêng, đã đánh giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (§12). Mục điều
-hướng `/site` mới cần chạy lại baseline visual-regression CI (`--update-snapshots`) — chưa làm tại thời
-điểm cập nhật tài liệu này (giống hạng mục còn treo mà §16.5 đã nêu cho `/assets`).)*
+*(VI: Ghi rõ ở đây, không giấu: **mDNS auto-provision/trust-on-first-discovery vẫn CHƯA làm.** Duyệt tìm
+(`GET /v1/site/discover`, §17.4) điền sẵn host/port; quảng bá (§17.8) giúp Site tìm ra máy này theo chiều
+ngược lại. KHÔNG CÁI NÀO tự động hoá được TIN CẬY — PEM tin cậy của Site ghim ở đây (§17.2) và danh tính
+thiết bị đăng ký tại Site vẫn phải dán tay (§17.6). Chưa có đường tự động "ai lên tiếng trước thì được
+tin" theo CHỦ Ý — tin ngay thứ trả lời đầu tiên trên một broadcast LAN không xác thực sẽ là một thoái lui
+bảo mật thật sự, không phải tiện lợi. **Chỉ danh tính tự ký + tin cậy ghim tay** — chưa có EST/SCEP, chưa
+có Site CA, chưa ký chéo tự động. **Xoay vòng chứng chỉ chỉ thủ công/theo yêu cầu** (§17.10) — chưa tự
+động xoay trước khi hết hạn, chưa có job định kỳ; operator (hay một tự động hoá tương lai) phải tự gọi
+`POST /v1/site/identity/rotate`, và phải cập nhật Site NGAY SAU ĐÓ (luồng 2 bước ở §17.10) nếu không kết
+nối sẽ đứng im. **Trạng thái `Faulted` của spool bền là KẾT THÚC** (§17.9) — không có cơ chế tự khởi
+động lại vòng lặp writer/forward; muốn hồi phục phải khởi động lại toàn bộ tiến trình. **Chưa có đường
+dead-letter cho message bị từ chối vĩnh viễn** (§17.9) — chặn đầu hàng đợi vì một message xấu vẫn là con
+đường còn lại dẫn tới mất dữ liệu thật, dù đã có spool bền. **Chỉ gửi telemetry ra ngoài** — chưa có
+đường lệnh vào (NCMD hay khác), Site quan sát được nhưng không điều khiển được máy. **Chưa có probe kết
+nối trước khi lưu** (`POST /v1/site/test`). **WS-B B2 (đảo chiều bridge)** — một hạng mục lớn riêng, đã
+đánh giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (§12). Mục điều hướng `/site` mới cần chạy lại baseline
+visual-regression CI (`--update-snapshots`) — chưa làm tại thời điểm cập nhật tài liệu này (giống hạng
+mục còn treo mà §16.5 đã nêu cho `/assets`).)*
 
 ---
 
@@ -1800,7 +2216,9 @@ hai lớp này lại: một cảnh báo Critical đang hoạt động sẽ chặ
 (`AlarmRaise.Key`): a re-raise of the same key UPDATEs `Count`/`LastRaisedUtc` while PRESERVING
 `FirstRaisedUtc` and any existing ack state — never resets a re-raised alarm back to "freshly raised".
 
-- **`AlarmSource`** — `Policy` | `DriverHealth` | `NgRate` (§18.2 below for the two automatic sources).
+- **`AlarmSource`** — `Policy` | `DriverHealth` | `NgRate` (§18.2 below for these two automatic sources)
+  | `Identity` (GĐ3 closeout WI-4 — §17.10; the SAME periodic evaluator additionally watches this
+  device's own certificate expiry).
 - **`AlarmPriority`** — `Critical` | `High` | `Medium` | `Low`, most-severe first (the same order
   `GET /v1/alarms` sorts by).
 - **`AlarmState`** — `Active` | `Acked` | `Cleared` (`Cleared` is transient — a cleared alarm is already
@@ -1828,10 +2246,11 @@ hai lớp này lại: một cảnh báo Critical đang hoạt động sẽ chặ
 | **Policy DENY** | `PolicyResults.DenyAsync` — every policy denial across the policy-gated fleet/scenario/line mutation routes (`FleetEndpoints`, `ScenarioEndpoints`, `LineEndpoints`) | `Critical` for `SAFETY_BLOCKED` (the E-STOP guard); `High` for every other denial reason | `true` (EVENT) | The operator's own Ack (both acks and clears it in one step) |
 | **DriverHealth** | `AlarmEvaluator`'s periodic per-slot health pass (`FleetHost.GetDriverHealth`) | `High` for `Degraded`; `Critical` for `Down` | `false` (CONDITION) | The evaluator sees the slot `Connected` again, or the slot is removed from the fleet |
 | **NG-rate** | `AlarmEvaluator`'s periodic windowed fleet-wide NG-rate pass (`FleetHost.GetKpiCounters`) | `High` | `false` (CONDITION) | The evaluator's next windowed rate falls back at/under the threshold |
+| **Identity** (GĐ3 closeout WI-4, §17.10) | `AlarmEvaluator`'s periodic check of this device's own certificate `NotAfter` (`DeviceIdentityProvider.Current`) | **`High` only — capped, never `Critical`** (a `Critical` alarm feeds the alarm→hold gate, §18.7; an expiring credential must never stop production) | `false` (CONDITION) | A rotation (§17.10) pushes the expiry back out past the warn threshold |
 
 Only the Policy source carries a **`Runbook`** hint: `SAFETY_BLOCKED` gets an E-STOP-specific one ("...
 reset the E-STOP latch (`POST /v1/fleet/estop/reset`) before starting"); every other denial reason gets
-a generic one. DriverHealth/NgRate alarms carry no runbook.
+a generic one. DriverHealth/NgRate/Identity alarms carry no runbook.
 
 The NG-rate source is a **windowed DELTA since the evaluator's last pass**, never a lifetime-cumulative
 rate: if the judged-unit delta since the last pass is below **`ST4I_ALARM_NGRATE_MINSAMPLE`**, the
@@ -1840,29 +2259,33 @@ sample); a cumulative counter that goes backwards (e.g. a fleet reset) also just
 and skips the pass, rather than computing a nonsense negative rate.
 
 *(VI: `Alarm` là một điều kiện cảnh báo, khoá trùng lặp theo `Source:Code:TargetId` — raise lại cùng
-khoá CHỈ cập nhật `Count`/`LastRaisedUtc`, GIỮ NGUYÊN `FirstRaisedUtc` và trạng thái ack đã có. Ba enum:
-`AlarmSource` (Policy/DriverHealth/NgRate), `AlarmPriority` (Critical/High/Medium/Low, nghiêm trọng nhất
-trước), `AlarmState` (Active/Acked/Cleared — Cleared chỉ là trạng thái tức thời, alarm đã bị XOÁ khỏi
-tập sống). Phân biệt cốt lõi **SỰ KIỆN vs. ĐIỀU KIỆN** (`ClearOnAck`): `true` (sự kiện — hiện chỉ Policy
-DENY) — Ack vừa ghi nhận vừa XOÁ luôn trong một bước; `false` (điều kiện — DriverHealth/NgRate) — Ack
-chỉ im lặng nó (Active→Acked), CHỈ bộ đánh giá định kỳ mới thực sự xoá khi điều kiện tự hết. Kho lưu
-`AlarmStore` là file SQLite riêng `alarms.db`, mặc định `%ProgramData%\ST4I\sim\alarms`, dời chỗ qua
+khoá CHỈ cập nhật `Count`/`LastRaisedUtc`, GIỮ NGUYÊN `FirstRaisedUtc` và trạng thái ack đã có. Ba+một
+enum: `AlarmSource` (Policy/DriverHealth/NgRate/Identity — Identity là WI-4 GĐ3 closeout, §17.10),
+`AlarmPriority` (Critical/High/Medium/Low, nghiêm trọng nhất trước), `AlarmState`
+(Active/Acked/Cleared — Cleared chỉ là trạng thái tức thời, alarm đã bị XOÁ khỏi tập sống). Phân biệt
+cốt lõi **SỰ KIỆN vs. ĐIỀU KIỆN** (`ClearOnAck`): `true` (sự kiện — hiện chỉ Policy DENY) — Ack vừa ghi
+nhận vừa XOÁ luôn trong một bước; `false` (điều kiện — DriverHealth/NgRate/Identity) — Ack chỉ im lặng
+nó (Active→Acked), CHỈ bộ đánh giá định kỳ mới thực sự xoá khi điều kiện tự hết. Kho lưu `AlarmStore` là
+file SQLite riêng `alarms.db`, mặc định `%ProgramData%\ST4I\sim\alarms`, dời chỗ qua
 **`ST4I_ALARMS_DIR`**. Hai bảng: `active_alarms` (tập sống) và `alarm_history` (log chỉ-ghi-thêm).
-`RaiseAsync`/`ClearAsync` KHÔNG BAO GIỜ throw. Ba nguồn: **Policy DENY** (mọi lần từ chối policy trên
+`RaiseAsync`/`ClearAsync` KHÔNG BAO GIỜ throw. Bốn nguồn: **Policy DENY** (mọi lần từ chối policy trên
 các route fleet/scenario/line — `SAFETY_BLOCKED` = Critical + runbook E-STOP, còn lại = High + runbook
 chung; sự kiện, Ack tự xoá); **DriverHealth** (đánh giá định kỳ theo từng slot — Degraded=High,
 Down=Critical; tự xoá khi slot Connected lại hoặc bị gỡ khỏi fleet); **NG-rate** (đánh giá NG-rate CỬA
 SỔ theo delta kể từ lần trước, không phải tỷ lệ cộng dồn trọn đời — dưới `ST4I_ALARM_NGRATE_MINSAMPLE`
-thì bỏ qua hẳn lượt này để tránh nhấp nháy). Chỉ nguồn Policy có `Runbook`.)*
+thì bỏ qua hẳn lượt này để tránh nhấp nháy); **Identity** (WI-4 GĐ3 closeout, §17.10 — theo dõi hạn dùng
+chứng chỉ thiết bị, GIỚI HẠN ở High, KHÔNG BAO GIỜ Critical vì Critical sẽ nạp vào khoá cảnh báo→hold,
+§18.7). Chỉ nguồn Policy có `Runbook`.)*
 
 ### 18.2 The periodic evaluator (env vars) / Bộ đánh giá định kỳ (biến môi trường)
 
-**EN** — `AlarmEvaluator` is the pure, directly-testable evaluation core for the two automatic sources
-(no timer of its own — each of DriverHealth/NG-rate runs inside its own try/catch, and `EvaluateAsync`
-itself never throws). `AlarmEvaluatorService` is the **first `IHostedService`** registered in
-`St4i.EngineApi`: a thin `PeriodicTimer` loop that, every tick, reads a fresh driver-health snapshot +
-KPI-counter pair and hands them to the evaluator — wrapped in its own try/catch too (defense in depth),
-so a bad tick is logged and the loop simply continues, never taking the host down.
+**EN** — `AlarmEvaluator` is the pure, directly-testable evaluation core for the three automatic sources
+(no timer of its own — each of DriverHealth/NG-rate/Identity runs inside its own try/catch, and
+`EvaluateAsync` itself never throws). `AlarmEvaluatorService` is the **first `IHostedService`**
+registered in `St4i.EngineApi`: a thin `PeriodicTimer` loop that, every tick, reads a fresh
+driver-health snapshot + KPI-counter pair + this device's own certificate expiry (§17.10) and hands them
+to the evaluator — wrapped in its own try/catch too (defense in depth), so a bad tick is logged and the
+loop simply continues, never taking the host down.
 
 | Var | What it does | Default |
 |---|---|---|
@@ -1870,18 +2293,22 @@ so a bad tick is logged and the loop simply continues, never taking the host dow
 | `ST4I_ALARM_NGRATE_THRESHOLD` | The NG-rate fraction (0.0-1.0) above which the fleet-wide NG-rate alarm raises | `0.20` (20%) |
 | `ST4I_ALARM_NGRATE_MINSAMPLE` | The minimum judged-unit delta a window must accumulate before the NG-rate source evaluates at all | `5` |
 | `ST4I_ALARM_EVAL_INTERVAL_MS` | `AlarmEvaluatorService`'s `PeriodicTimer` period, in milliseconds | `5000` (5s) |
+| `ST4I_IDENTITY_EXPIRY_WARN_DAYS` | GĐ3 closeout WI-4 (§17.10) — how many days before this device's identity certificate's `NotAfter` the `Identity` source starts warning | `30` |
 
 An unset or unparseable value keeps its built-in default rather than crashing startup — same posture
 `WalOptions.FromEnvironment` already uses.
 
-*(VI: `AlarmEvaluator` là lõi đánh giá thuần, test được trực tiếp, cho hai nguồn tự động (không có timer
+*(VI: `AlarmEvaluator` là lõi đánh giá thuần, test được trực tiếp, cho ba nguồn tự động (không có timer
 riêng — không bao giờ throw). `AlarmEvaluatorService` là `IHostedService` ĐẦU TIÊN của
-`St4i.EngineApi` — vòng lặp `PeriodicTimer` mỗi tick đọc health/KPI mới rồi đưa cho evaluator, tự bọc
-try/catch riêng để một tick lỗi không bao giờ làm sập host. Bốn biến môi trường: **`ST4I_ALARMS_DIR`**
+`St4i.EngineApi` — vòng lặp `PeriodicTimer` mỗi tick đọc health/KPI mới + hạn dùng chứng chỉ thiết bị
+(§17.10) rồi đưa cho evaluator, tự bọc try/catch riêng để một tick lỗi không bao giờ làm sập host. Năm
+biến môi trường: **`ST4I_ALARMS_DIR`**
 (thư mục `alarms.db`, mặc định `%ProgramData%\ST4I\sim\alarms`); **`ST4I_ALARM_NGRATE_THRESHOLD`**
 (ngưỡng tỷ lệ NG kích hoạt cảnh báo, mặc định `0.20` = 20%); **`ST4I_ALARM_NGRATE_MINSAMPLE`** (số mẫu
 tối thiểu để đánh giá, mặc định `5`); **`ST4I_ALARM_EVAL_INTERVAL_MS`** (chu kỳ đánh giá, mặc định
-`5000` ms = 5s). Giá trị trống/không đọc được thì giữ mặc định, không crash lúc khởi động.)*
+`5000` ms = 5s); **`ST4I_IDENTITY_EXPIRY_WARN_DAYS`** (WI-4 GĐ3 closeout, §17.10 — số ngày trước khi
+chứng chỉ danh tính thiết bị hết hạn thì nguồn `Identity` bắt đầu cảnh báo, mặc định `30`). Giá trị
+trống/không đọc được thì giữ mặc định, không crash lúc khởi động.)*
 
 ### 18.3 Alarm endpoints / Endpoint cảnh báo
 
