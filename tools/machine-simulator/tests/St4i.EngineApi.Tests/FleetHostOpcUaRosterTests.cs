@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using St4i.Connector.Abstractions;
 using St4i.EdgeCore.Infrastructure;
@@ -180,7 +181,7 @@ public sealed class FleetHostOpcUaRosterTests
 
         public string Kind => DriverKinds.OpcUa;
 
-        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
         {
             driver = _build();
             error = null;

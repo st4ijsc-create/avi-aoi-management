@@ -544,6 +544,39 @@ public sealed class FleetHost
         _ = _historianWriter?.RecordRunEventFireAndForget("EstopReset");
     }
 
+    /// <summary>Review fix round 1 — the ONLY two connector ids whose pipeline slot label must reproduce a
+    /// pre-existing (pre-GP-4) literal spelling that differs from the id itself: <c>"modbus"</c>/<c>"opcua"</c>
+    /// (lowercase), not <see cref="DriverKinds.Modbus"/>/<see cref="DriverKinds.OpcUa"/> (the canonical,
+    /// PascalCase spelling). Every OTHER connector id — built-in or third-party — uses the id ITSELF,
+    /// verbatim, as its slot label; see <see cref="ResolveConnectorSlotLabel"/>'s own remarks for why that
+    /// (not a general lowercasing rule) is what actually prevents a label collision.</summary>
+    private static readonly IReadOnlyDictionary<string, string> LegacyConnectorSlotLabels =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [DriverKinds.Modbus] = "modbus",
+            [DriverKinds.OpcUa] = "opcua",
+        };
+
+    /// <summary>Review fix round 1 — the pipeline slot label for a registry-driven connector. Originally
+    /// <c>connectorId.ToLowerInvariant()</c>, which reproduced <c>"modbus"</c>/<c>"opcua"</c> correctly but
+    /// was NOT collision-free: <see cref="DriverKinds"/>' own casing rule deliberately keeps a THIRD-PARTY
+    /// id case-SENSITIVE (so <c>"Vendor.Acme.Weld"</c> and <c>"vendor.acme.weld"</c> are two distinct,
+    /// simultaneously-registrable connectors), and lowercasing both would have produced the SAME slot label
+    /// for two genuinely different connectors — <see cref="Alarms.AlarmEvaluator"/> keys its degraded/down
+    /// alarms on exactly this label (<c>DegradedKey</c>/<c>DownKey</c>, <c>TargetId: slot.SlotLabel</c>), so
+    /// one connector's alarms would silently clobber the other's. Same hazard for a connector registered
+    /// with <c>Kind="Simulated"</c>: lowercased, that collided with the always-present sim group's own
+    /// hardcoded <c>"simulated"</c> label below.
+    ///
+    /// Fixed by using the (already-normalized) connector id VERBATIM as the label for everything except the
+    /// two built-ins that need a literal pre-existing spelling (<see cref="LegacyConnectorSlotLabels"/>) —
+    /// this is what is actually collision-free: every <see cref="ConnectorRegistry.RegisteredIds"/> entry is
+    /// already guaranteed unique (it is a dictionary key), so two DIFFERENT registered ids can never produce
+    /// the SAME label under this rule, and <c>"Simulated"</c> (PascalCase, the canonical built-in spelling)
+    /// no longer collides with the sim group's own lowercase <c>"simulated"</c> literal.</summary>
+    private static string ResolveConnectorSlotLabel(string connectorId) =>
+        LegacyConnectorSlotLabels.TryGetValue(connectorId, out var legacyLabel) ? legacyLabel : connectorId;
+
     private void StartLocked()
     {
         // Defense in depth: the client already disables START while latched, but the engine itself
@@ -649,41 +682,68 @@ public sealed class FleetHost
         {
             foreach (var connectorId in _connectorRegistry.RegisteredIds)
             {
-                IDeviceDriver? connectorDriver;
-                string? connectorError;
+                IDeviceDriver? connectorDriver = null;
+                string? connectorError = null;
+                var built = false;
                 try
                 {
-                    if (!_connectorRegistry.TryCreateDriver(connectorId, out connectorDriver, out connectorError))
-                    {
-                        connectorDriver = null;
-                    }
+                    built = _connectorRegistry.TryCreateDriver(connectorId, out connectorDriver, out connectorError);
                 }
                 catch (Exception ex)
                 {
                     // Defense in depth: IConnectorFactory.TryCreate's contract says "never throw for bad
                     // config," but a third-party factory is not this codebase's own code to trust blindly.
-                    // Catching here — BEFORE any slot exists for this connector — is what keeps a rogue
-                    // factory from taking down the simulated fleet and every sibling connector along with
-                    // it, not just disabling itself; a fault AFTER a slot exists is already isolated by
-                    // StartSlot's own per-slot catch below.
-                    connectorDriver = null;
+                    // ConnectorRegistry.TryCreateDriver ALSO guards against this now (review fix round 1) —
+                    // this catch is deliberately doubled, not redundant to trim, because this is the ONE
+                    // place third-party code runs while _gate is held (see IConnectorFactory.TryCreate's
+                    // own "MUST return promptly" remarks) and Estop() takes the same lock. Catching here —
+                    // BEFORE any slot exists for this connector — is what keeps a rogue factory from taking
+                    // down the simulated fleet and every sibling connector along with it, not just disabling
+                    // itself; a fault AFTER a slot exists is already isolated by StartSlot's own per-slot
+                    // catch below. `built` stays false; `connectorDriver` may or may not have been assigned
+                    // before the throw (an `out` parameter write is visible to the caller even if the
+                    // callee then throws) — handled uniformly below, same as a contract-violating `false`
+                    // return that still hands back a non-null driver.
                     connectorError = ex.Message;
                 }
 
-                if (connectorDriver is not null)
+                if (built && connectorDriver is not null)
                 {
                     // No per-machine MappingProfile override exists for a registry-driven connector (same
                     // as pre-GP-4 Modbus/OPC-UA), so this uses a plain Automation-class fallback profile,
-                    // same shape as `profile` above. The slot label is the connector id lowercased —
-                    // deliberately reproducing today's exact "modbus"/"opcua" literals byte-for-byte (see
-                    // ConnectorRegistry's own remarks), not a new naming scheme.
-                    var connectorLabel = connectorId.ToLowerInvariant();
+                    // same shape as `profile` above.
+                    var connectorLabel = ResolveConnectorSlotLabel(connectorId);
                     var connectorProfile = new MappingProfile { Name = connectorLabel, DeviceClass = "Automation" };
                     groups.Add((connectorLabel, connectorDriver, connectorProfile, null));
+                    continue;
                 }
-                else
+
+                _logger?.LogWarning(
+                    "Connector '{ConnectorId}' could not be started: {ConnectorError}",
+                    connectorId,
+                    connectorError ?? "factory returned no driver and no error (contract violation)");
+
+                if (connectorDriver is not null)
                 {
-                    _logger?.LogWarning("Connector '{ConnectorId}' could not be started: {ConnectorError}", connectorId, connectorError);
+                    // Review fix round 1 — a contract-violating factory can return false (or throw AFTER
+                    // already assigning its `out` driver parameter) while still handing back a real,
+                    // non-null driver instance; ModbusTcpDriver is exactly the class of driver that owns a
+                    // live socket a silently-discarded reference would leak. Best-effort, BOUNDED dispose
+                    // (same RestartTeardownTimeout budget WaitAndDisposeOldPipeline already uses below) —
+                    // this runs INSIDE _gate (every StartLocked caller holds it, same as this whole
+                    // connector loop), so an unbounded await here would itself become the exact
+                    // E-STOP-blocking hazard IConnectorFactory.TryCreate's doc comment now warns against.
+                    // Safe from the deadlock WaitAndDisposeOldPipeline's own remarks describe for ITSELF:
+                    // this driver was never wired into a running slot/run-task, so no other thread can be
+                    // blocked re-acquiring _gate waiting on it the way a genuine restart teardown can be.
+                    try
+                    {
+                        connectorDriver.DisposeAsync().AsTask().Wait(RestartTeardownTimeout);
+                    }
+                    catch
+                    {
+                        // best-effort only — never let a misbehaving driver's teardown propagate from here.
+                    }
                 }
             }
         }

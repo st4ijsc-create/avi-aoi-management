@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace St4i.Connector.Abstractions;
 
 /// <summary>
@@ -30,13 +32,26 @@ public interface IConnectorFactory
     /// <summary>
     /// Attempts to build a fresh <see cref="IDeviceDriver"/> instance from <paramref name="config"/>.
     ///
+    /// <para><b>MUST return promptly and MUST NOT perform I/O</b> — no network probe, no filesystem read
+    /// beyond what <paramref name="config"/> already handed you, no blocking wait of any kind. Review
+    /// finding (fix round 1): a host's connector registry is looked up from inside the SAME lock its
+    /// emergency-stop path acquires (<c>FleetHost.StartLocked</c>/<c>Estop</c> both take <c>_gate</c>), so a
+    /// slow <see cref="TryCreate"/> call holds that lock for its full duration — <b>blocking E-STOP</b> for
+    /// as long as this call takes. This is the ONE place third-party code runs while that lock is held. Any
+    /// connection/session establishment — the part of "getting online" that can genuinely take time or fail
+    /// on a live network — belongs entirely in <see cref="IDeviceDriver.ReadAsync"/>, never here; this is
+    /// exactly how both built-in factories (Modbus, OPC-UA) already behave: their <c>TryCreate</c> only
+    /// parses a small in-memory configuration blob and constructs a driver object, never opens a socket or
+    /// a session (that happens lazily, the first time <see cref="IDeviceDriver.ReadAsync"/> is enumerated).
+    /// Re-parsing <paramref name="config"/> on every call (see below) is fine — that is bounded, in-memory
+    /// work, not I/O.</para>
+    ///
     /// <para><b>Called anew every time a driver instance is needed</b> — a host never reuses a driver
     /// instance across a Stop/restart, because a driver may own a live resource (a TCP socket, a session
     /// handle) that only a brand-new instance can re-acquire (this is exactly why
     /// <c>ModbusTcpDriver</c>/<c>OpcUaDriver</c> already ship their own <c>Create()</c>-per-restart
-    /// factory types, which this interface is designed to sit alongside, not replace). A factory is free
-    /// to do real work on every call (re-parse <paramref name="config"/>, etc.) — this is deliberately not
-    /// a "validate once, cache forever" contract.</para>
+    /// factory types, which this interface is designed to sit alongside, not replace). This is deliberately
+    /// not a "validate once, cache forever" contract — subject to the promptness rule immediately above.</para>
     ///
     /// <para><b><paramref name="config"/> is completely opaque</b> to any caller of this method: a
     /// registry that calls this never parses or inspects it, only stores and forwards it — a Modbus
@@ -44,11 +59,15 @@ public interface IConnectorFactory
     /// configuration can look like anything at all. It is a plain <see langword="string"/> (not, say, a
     /// <see cref="System.Text.Json.JsonElement"/> or a settings dictionary) specifically because a plain
     /// string is (1) exactly what an operator-authored config file already is on disk — every existing
-    /// map-loading call site already starts from <c>File.ReadAllText</c> — and (2) the one representation
-    /// that survives an IPC/process boundary with zero adaptation once a connector becomes an
-    /// out-of-process sidecar, with no assumption baked in about what serializer either side uses. A
-    /// factory that wants JSON is free to parse <paramref name="config"/> as JSON itself (as every
-    /// built-in factory in this codebase does); this interface does not require that.</para>
+    /// map-loading call site already starts from <c>File.ReadAllText</c> — and (2), once a connector kind
+    /// becomes an out-of-process sidecar, the CONFIGURATION is what has to cross that process boundary
+    /// (alongside every <see cref="Models.DeviceReading"/> the resulting driver produces) — a plain string is the
+    /// representation that crosses unchanged, with no assumption baked in about what serializer either side
+    /// uses. (<see cref="TryCreate"/> itself never crosses a process boundary — in that model
+    /// <see cref="IConnectorFactory"/> lives entirely inside the sidecar; it is the config string, and the
+    /// readings the built driver produces, that travel.) A factory that wants JSON is free to parse
+    /// <paramref name="config"/> as JSON itself (as every built-in factory in this codebase does); this
+    /// interface does not require that.</para>
     ///
     /// <para><b>MUST NOT throw for a bad/malformed <paramref name="config"/>.</b> A third-party driver
     /// must never be able to take down a host that controls machinery with an E-STOP merely because its
@@ -65,5 +84,5 @@ public interface IConnectorFactory
     /// <param name="error">An operator-readable explanation on failure; <see langword="null"/> on success.</param>
     /// <returns><see langword="true"/> if <paramref name="driver"/> was built; <see langword="false"/> if
     /// <paramref name="config"/> could not be used to build one.</returns>
-    bool TryCreate(string config, out IDeviceDriver? driver, out string? error);
+    bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error);
 }

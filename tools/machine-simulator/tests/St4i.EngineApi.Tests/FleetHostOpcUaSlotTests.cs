@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using St4i.Connector.Abstractions;
 using St4i.EdgeCore.Drivers.OpcUa;
@@ -176,7 +177,7 @@ public sealed class FleetHostOpcUaSlotTests
 
         public string Kind => DriverKinds.OpcUa;
 
-        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
         {
             driver = _build();
             error = null;
@@ -195,7 +196,7 @@ public sealed class FleetHostOpcUaSlotTests
 
         public string Kind { get; }
 
-        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
         {
             driver = null;
             error = $"RejectingConnectorFactory: '{config}' is not a valid configuration (test double).";

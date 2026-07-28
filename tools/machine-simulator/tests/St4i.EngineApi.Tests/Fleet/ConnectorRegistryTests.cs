@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Fleet;
@@ -33,7 +34,7 @@ public sealed class ConnectorRegistryTests
 
         public int CallCount { get; private set; }
 
-        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
         {
             CallCount++;
             LastConfigSeen = config;
@@ -219,8 +220,21 @@ public sealed class ConnectorRegistryTests
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public void Register_ValidFactory_ReturnsTrue()
+    {
+        var registry = new ConnectorRegistry();
+        var ok = registry.Register(new FakeFactory("vendor.acme.widget", _ => (true, new FakeDriver(), null)), "{}");
+
+        Assert.True(ok);
+        Assert.Contains("vendor.acme.widget", registry.RegisteredIds);
+    }
+
+    [Fact]
     public void Register_NullFactory_Throws()
     {
+        // Distinct from a bad Kind getter below: this is the HOST's own code passing a literal null — an
+        // ordinary local-caller bug, not something a vendor's IConnectorFactory implementation can trigger
+        // — so it still throws, same as any other .NET API's ArgumentNullException.ThrowIfNull.
         var registry = new ConnectorRegistry();
         Assert.Throws<ArgumentNullException>(() => registry.Register(null!, "{}"));
     }
@@ -228,10 +242,57 @@ public sealed class ConnectorRegistryTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void Register_BlankKind_Throws(string blankKind)
+    public void Register_BlankKind_ReturnsFalse_DoesNotRegisterAnything_DoesNotThrow(string blankKind)
     {
+        // Review finding (fix round 1): Register used to throw ArgumentException here — reading a
+        // vendor-implemented Kind getter's RESULT and rejecting it is still fine to report loudly, but the
+        // shape must be non-throwing (a bool return), because this method is called from inside
+        // Program.cs's DI singleton lambda: an uncaught exception here would fault
+        // GetRequiredService<FleetHost>() into a startup crash, not a disabled connector.
         var registry = new ConnectorRegistry();
         var factory = new FakeFactory(blankKind, _ => (true, new FakeDriver(), null));
-        Assert.Throws<ArgumentException>(() => registry.Register(factory, "{}"));
+
+        var exception = Record.Exception(() =>
+        {
+            var ok = registry.Register(factory, "{}");
+            Assert.False(ok);
+        });
+
+        Assert.Null(exception);
+        Assert.Empty(registry.RegisteredIds);
+    }
+
+    [Fact]
+    public void Register_KindGetterThrows_ReturnsFalse_DoesNotRegisterAnything_DoesNotPropagate()
+    {
+        // The load-bearing case: Kind is a vendor-implemented property getter, read here with no guard in
+        // the original version of this method. A throwing Kind getter must not propagate out of Register —
+        // production calls this from inside a DI singleton lambda, so an uncaught exception here would
+        // fault GetRequiredService<FleetHost>() into a startup crash. Not reachable via env vars today
+        // (both built-in factories' Kind getters are trivial constant returns), but GP-5's connectors.json
+        // makes a vendor-supplied factory reachable here.
+        var registry = new ConnectorRegistry();
+        var factory = new ThrowingKindFactory();
+
+        var exception = Record.Exception(() =>
+        {
+            var ok = registry.Register(factory, "{}");
+            Assert.False(ok);
+        });
+
+        Assert.Null(exception);
+        Assert.Empty(registry.RegisteredIds);
+    }
+
+    private sealed class ThrowingKindFactory : IConnectorFactory
+    {
+        public string Kind => throw new InvalidOperationException("ThrowingKindFactory: simulated vendor bug (test double) — Kind must never do this.");
+
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
+        {
+            driver = null;
+            error = "unreachable — Kind already threw";
+            return false;
+        }
     }
 }

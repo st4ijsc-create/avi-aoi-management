@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
 
@@ -50,8 +51,14 @@ public sealed class OpcUaConnectorFactory : IConnectorFactory
     /// parsed fresh on every call via <see cref="OpcUaNodeMap.FromJson"/>, whose exceptions are caught here
     /// and translated into the non-throwing <see cref="IConnectorFactory.TryCreate"/> contract: today's
     /// exact "a malformed node map file disables OPC-UA for this run without crashing the host" behavior,
-    /// now expressed structurally instead of via an ad hoc try/catch at the call site.</summary>
-    public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+    /// now expressed structurally instead of via an ad hoc try/catch at the call site.
+    ///
+    /// <para>Review note (fix round 1): this method only ever parses a small in-memory JSON blob and
+    /// constructs a driver object (never opens the OPC-UA session itself — that happens lazily inside
+    /// <c>OpcUaDriver.ReadAsync</c>), so it already satisfies <see cref="IConnectorFactory.TryCreate"/>'s
+    /// "MUST return promptly and MUST NOT perform I/O" contract without any change here.</para>
+    /// </summary>
+    public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
     {
         try
         {

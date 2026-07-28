@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Models;
 
@@ -64,17 +65,49 @@ public sealed class ConnectorRegistry
     /// <paramref name="config"/> is stored verbatim and opaque — this method never parses it, only hands it
     /// back to <paramref name="factory"/> unchanged on every future <see cref="TryCreateDriver"/> call for
     /// this id. Re-registering the same id replaces the previous entry (last write wins) rather than
-    /// throwing — a host is free to reconfigure a connector and register again.</summary>
-    public void Register(IConnectorFactory factory, string config)
+    /// throwing — a host is free to reconfigure a connector and register again.
+    ///
+    /// <para><b>Review finding (fix round 1) — this is the one unguarded third-party entry point.</b>
+    /// <paramref name="factory"/>'s <see cref="IConnectorFactory.Kind"/> getter is vendor-implemented code,
+    /// read here with no try/catch in the original version of this method: a throwing or blank
+    /// <c>Kind</c> getter would have propagated straight out of this call. Production calls this from
+    /// inside a DI singleton factory lambda (<c>Program.cs</c>), so an uncaught exception here would have
+    /// faulted <c>GetRequiredService&lt;FleetHost&gt;()</c> — a full STARTUP CRASH, not a disabled-for-this-
+    /// run connector. Not reachable today (env vars are the only config source, and both shipped factories'
+    /// <c>Kind</c> getters are trivial constant returns), but GP-5's <c>connectors.json</c> makes a
+    /// vendor-supplied factory reachable here, so the guard belongs with the registry — the first point of
+    /// contact with third-party code — rather than with whichever future caller loads that config. Returns
+    /// <see langword="false"/> (never throws) for a <c>Kind</c> getter that throws OR returns
+    /// null/blank/whitespace; <paramref name="factory"/> itself being <see langword="null"/> is a distinct,
+    /// ordinary local-caller bug (this codebase's own code passing a literal <see langword="null"/>, not
+    /// something a vendor's <see cref="IConnectorFactory"/> implementation can trigger) and still
+    /// throws <see cref="ArgumentNullException"/>, same as any other .NET API.</para>
+    /// </summary>
+    /// <returns><see langword="true"/> if <paramref name="factory"/> was registered; <see langword="false"/>
+    /// if its <see cref="IConnectorFactory.Kind"/> getter threw or returned null/blank/whitespace.</returns>
+    public bool Register(IConnectorFactory factory, string config)
     {
         ArgumentNullException.ThrowIfNull(factory);
-        var id = DriverKinds.Normalize(factory.Kind);
+
+        string id;
+        try
+        {
+            id = DriverKinds.Normalize(factory.Kind);
+        }
+        catch
+        {
+            // A vendor-implemented property getter throwing is exactly the class of third-party
+            // misbehavior IConnectorFactory.TryCreate is guarded against — Kind gets the same guard.
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(id))
         {
-            throw new ArgumentException("IConnectorFactory.Kind must not be null/blank.", nameof(factory));
+            return false;
         }
 
         _entries[id] = new Entry(factory, config ?? string.Empty);
+        return true;
     }
 
     /// <summary>Every currently-registered connector id, normalized. A point-in-time snapshot — safe to
@@ -90,8 +123,25 @@ public sealed class ConnectorRegistry
     /// registered factory rejecting its own configuration is (see the class doc comment's "Unknown-id
     /// behavior" section) — <see langword="false"/> plus a descriptive <paramref name="error"/>, never an
     /// exception, and never a silent no-op.
+    ///
+    /// <para>Review note (fix round 1): "never throws" is enforced HERE, not left as something the caller
+    /// has to also guard against — <see cref="IConnectorFactory.TryCreate"/>'s own contract says a factory
+    /// must not throw, but this method's doc comment promises the same thing unconditionally, so a
+    /// misbehaving factory's exception is caught right here rather than relying on
+    /// <see cref="FleetHost.StartLocked"/>'s OWN defensive catch to be the only thing standing between a
+    /// rogue factory and a propagated exception. <see cref="FleetHost"/> still keeps its own catch around
+    /// this call too — deliberate, doubled defense in depth for the one place third-party code runs while
+    /// <c>_gate</c> is held, not redundancy to be trimmed.</para>
+    ///
+    /// <para><b>Catching here must not re-introduce the leak this whole seam guards against.</b> A factory
+    /// that assigns its <c>out driver</c> parameter and THEN throws (instead of returning) has already made
+    /// that assignment visible through the reference — an <see langword="out"/> parameter is pass-by-
+    /// reference, so the write survives the throw. The catch below therefore does NOT reset the built
+    /// driver to <see langword="null"/> — it forwards whatever was assigned (a real instance, or
+    /// <see langword="null"/> if the factory never got that far) unchanged, so <see cref="FleetHost"/> can
+    /// still see and dispose an orphaned driver rather than the reference silently vanishing here.</para>
     /// </summary>
-    public bool TryCreateDriver(string id, out IDeviceDriver? driver, out string? error)
+    public bool TryCreateDriver(string id, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
     {
         var normalized = DriverKinds.Normalize(id);
         if (!_entries.TryGetValue(normalized, out var entry))
@@ -101,6 +151,26 @@ public sealed class ConnectorRegistry
             return false;
         }
 
-        return entry.Factory.TryCreate(entry.Config, out driver, out error);
+        // builtDriver/builtError (plain locals, pre-initialized) rather than writing straight into the
+        // `out` parameters from inside the try: if entry.Factory.TryCreate assigns its own out parameter
+        // and THEN throws, that assignment is already visible here (out is pass-by-reference) — the catch
+        // below must forward it, not overwrite it back to null, or the leak-prevention this method exists
+        // to support would defeat itself.
+        IDeviceDriver? builtDriver = null;
+        string? builtError = null;
+        bool ok;
+        try
+        {
+            ok = entry.Factory.TryCreate(entry.Config, out builtDriver, out builtError);
+        }
+        catch (Exception ex)
+        {
+            ok = false;
+            builtError = ex.Message;
+        }
+
+        driver = builtDriver;
+        error = builtError;
+        return ok;
     }
 }

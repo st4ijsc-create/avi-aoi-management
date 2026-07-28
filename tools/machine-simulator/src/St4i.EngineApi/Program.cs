@@ -785,23 +785,33 @@ builder.Services.AddSingleton(sp =>
     if (modbusMapJson is not null)
     {
         var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Modbus");
-        registry.Register(
+        // GP-4 fix round 1 (review) — Register now returns false (never throws) instead of crashing
+        // GetRequiredService<FleetHost>() if a vendor-implemented Kind getter misbehaves; not reachable
+        // for this built-in factory (Kind is a trivial constant return), but checked here anyway so a
+        // future regression is visible rather than silently swallowed.
+        if (!registry.Register(
             new St4i.EdgeCore.Drivers.Modbus.ModbusConnectorFactory(
                 modbusOptions,
                 logWarning: msg => logger.LogWarning("{ModbusMsg}", msg),
                 logError: (ex, msg) => logger.LogError(ex, "{ModbusMsg}", msg)),
-            modbusMapJson);
+            modbusMapJson))
+        {
+            logger.LogWarning("Modbus connector factory failed to register (unexpected — its Kind getter threw or was blank)");
+        }
     }
 
     if (opcUaMapJson is not null)
     {
         var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("OpcUa");
-        registry.Register(
+        if (!registry.Register(
             new St4i.EdgeCore.Drivers.OpcUa.OpcUaConnectorFactory(
                 pkiDir: opcUaOptions.PkiDir,
                 logWarning: msg => logger.LogWarning("{OpcUaMsg}", msg),
                 logError: (ex, msg) => logger.LogError(ex, "{OpcUaMsg}", msg)),
-            opcUaMapJson);
+            opcUaMapJson))
+        {
+            logger.LogWarning("OPC-UA connector factory failed to register (unexpected — its Kind getter threw or was blank)");
+        }
     }
 
     return registry;

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using St4i.Connector.Abstractions;
 using St4i.EdgeCore.Infrastructure;
@@ -230,6 +231,118 @@ public sealed class FleetHostConnectorRegistryTests
         }
     }
 
+    [Fact]
+    public async Task TwoThirdPartyConnectors_DifferingOnlyByCase_GetDistinctSlotLabels_NoCollision()
+    {
+        // Review finding (fix round 1): the original slot-label rule (connectorId.ToLowerInvariant())
+        // was NOT collision-free — DriverKinds' own casing rule deliberately keeps a third-party id
+        // case-SENSITIVE, so "Vendor.Acme.Weld" and "vendor.acme.weld" are two distinct, simultaneously
+        // registrable connectors that would have produced the SAME lowercased slot label.
+        // AlarmEvaluator keys its degraded/down alarms on exactly that label, so this would have let one
+        // connector's alarms silently clobber the other's.
+        var driverLower = new CountingDriver("vendor.acme.weld", "WELD-LOWER");
+        var driverTitled = new CountingDriver("Vendor.Acme.Weld", "WELD-TITLED");
+        var registry = new ConnectorRegistry();
+        registry.Register(new FakeConnectorFactory("vendor.acme.weld", () => driverLower), config: "a");
+        registry.Register(new FakeConnectorFactory("Vendor.Acme.Weld", () => driverTitled), config: "b");
+        var host = CreateHost(registry);
+
+        host.Start();
+        try
+        {
+            await WaitUntilAsync(() => driverLower.Count > 0, "the lowercase-id connector's slot to run");
+            await WaitUntilAsync(() => driverTitled.Count > 0, "the titlecase-id connector's slot to run");
+
+            var health = host.GetDriverHealth();
+            var labels = health.Select(s => s.SlotLabel).ToList();
+            Assert.Equal(labels.Count, labels.Distinct(StringComparer.Ordinal).Count());
+            Assert.Contains(health, s => s.SlotLabel == "vendor.acme.weld");
+            Assert.Contains(health, s => s.SlotLabel == "Vendor.Acme.Weld");
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task ConnectorRegisteredWithKindSimulated_GetsDistinctSlotLabel_FromTheBuiltInSimSlot()
+    {
+        // The other collision the original lowercasing rule allowed: a connector registered with
+        // Kind="Simulated" (the canonical built-in spelling) lowercased to "simulated" — an EXACT match
+        // for the always-present sim group's own hardcoded literal label.
+        var fakeDriver = new CountingDriver(DriverKinds.Simulated, "FAKE-SIM-KIND");
+        var registry = new ConnectorRegistry();
+        registry.Register(new FakeConnectorFactory(DriverKinds.Simulated, () => fakeDriver), config: "x");
+        var host = CreateHost(registry);
+
+        host.Start();
+        try
+        {
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "the real simulated fleet online");
+            await WaitUntilAsync(() => fakeDriver.Count > 0, "the fake connector registered with Kind=Simulated to run in its own slot");
+
+            var simKindSlots = host.GetDriverHealth().Where(s => s.Kind == DriverKinds.Simulated).ToList();
+            Assert.Equal(2, simKindSlots.Count); // the real sim group + this connector's own slot.
+            Assert.Contains(simKindSlots, s => s.SlotLabel == "simulated"); // the built-in group's literal label, untouched.
+            Assert.Contains(simKindSlots, s => s.SlotLabel == DriverKinds.Simulated); // this connector's own, verbatim, distinct label.
+            Assert.Equal(2, simKindSlots.Select(s => s.SlotLabel).Distinct(StringComparer.Ordinal).Count());
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task ConnectorFactory_RejectsButStillReturnsADriver_TheOrphanedDriverIsDisposed_NotLeaked()
+    {
+        // Review finding (fix round 1): a contract-violating factory can return false (rejecting its own
+        // config) while still handing back a non-null driver. StartLocked used to just discard the
+        // reference — ModbusTcpDriver is exactly the class of driver that owns a live socket a discarded
+        // reference would leak.
+        var leaked = new LeakDetectingDriver("vendor.acme.leaky");
+        var registry = new ConnectorRegistry();
+        registry.Register(new RejectsButReturnsDriverFactory("vendor.acme.leaky", leaked), config: "x");
+        var host = CreateHost(registry);
+
+        host.Start();
+        try
+        {
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "simulated slot online despite the contract-violating rejection");
+            Assert.DoesNotContain(host.GetDriverHealth(), s => s.Kind == "vendor.acme.leaky");
+            await WaitUntilAsync(() => leaked.Disposed, "the orphaned driver (rejected, never given a slot) to be disposed, not leaked");
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task ConnectorFactory_ThrowsAfterAssigningADriver_TheOrphanedDriverIsStillDisposed_NotLeaked()
+    {
+        // Same leak, reached via the OTHER path: a factory that assigns its out `driver` parameter and
+        // THEN throws instead of returning — the assignment is already visible to the caller (an `out`
+        // parameter is pass-by-reference) by the time FleetHost's defensive catch runs.
+        var leaked = new LeakDetectingDriver("vendor.acme.leaky2");
+        var registry = new ConnectorRegistry();
+        registry.Register(new ThrowsAfterAssigningDriverFactory("vendor.acme.leaky2", leaked), config: "x");
+        var host = CreateHost(registry);
+
+        host.Start();
+        try
+        {
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "simulated slot online despite the rogue factory throwing after assigning a driver");
+            Assert.DoesNotContain(host.GetDriverHealth(), s => s.Kind == "vendor.acme.leaky2");
+            await WaitUntilAsync(() => leaked.Disposed, "the orphaned driver (assigned then abandoned by a throw) to be disposed, not leaked");
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
+
     private sealed class FakeConnectorFactory : IConnectorFactory
     {
         private readonly Func<IDeviceDriver> _build;
@@ -242,7 +355,7 @@ public sealed class FleetHostConnectorRegistryTests
 
         public string Kind { get; }
 
-        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
         {
             driver = _build();
             error = null;
@@ -256,7 +369,7 @@ public sealed class FleetHostConnectorRegistryTests
 
         public string Kind { get; }
 
-        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
         {
             driver = null;
             error = $"RejectingConnectorFactory: '{config}' rejected (test double).";
@@ -270,8 +383,79 @@ public sealed class FleetHostConnectorRegistryTests
 
         public string Kind { get; }
 
-        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error) =>
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error) =>
             throw new InvalidOperationException("ThrowingConnectorFactory: simulated contract violation (test double) — a real IConnectorFactory must never do this.");
+    }
+
+    /// <summary>Test double for the review's leak finding (fix round 1) — reports <see langword="false"/>
+    /// (a rejected configuration) while STILL handing back a non-null driver, the exact contract violation
+    /// <see cref="FleetHost.StartLocked"/>'s defensive dispose now guards against.</summary>
+    private sealed class RejectsButReturnsDriverFactory : IConnectorFactory
+    {
+        private readonly IDeviceDriver _driver;
+
+        public RejectsButReturnsDriverFactory(string kind, IDeviceDriver driver)
+        {
+            Kind = kind;
+            _driver = driver;
+        }
+
+        public string Kind { get; }
+
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
+        {
+            driver = _driver; // contract violation: assigned even though this call reports failure.
+            error = "RejectsButReturnsDriverFactory: rejected, but (contract violation) still handing back a driver.";
+            return false;
+        }
+    }
+
+    /// <summary>Test double for the review's leak finding (fix round 1) — assigns its <c>out driver</c>
+    /// parameter and THEN throws instead of returning, the other way a contract-violating factory can hand
+    /// back a live driver instance FleetHost never asked to run.</summary>
+    private sealed class ThrowsAfterAssigningDriverFactory : IConnectorFactory
+    {
+        private readonly IDeviceDriver _driver;
+
+        public ThrowsAfterAssigningDriverFactory(string kind, IDeviceDriver driver)
+        {
+            Kind = kind;
+            _driver = driver;
+        }
+
+        public string Kind { get; }
+
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
+        {
+            driver = _driver;
+            error = null;
+            throw new InvalidOperationException(
+                "ThrowsAfterAssigningDriverFactory: simulated contract violation (test double) — assigns driver, then throws anyway.");
+        }
+    }
+
+    /// <summary>Test double — never started (rejected/abandoned before <c>StartSlot</c> ever runs), so its
+    /// only job is to prove <see cref="DisposeAsync"/> actually gets called on it rather than the reference
+    /// being silently discarded.</summary>
+    private sealed class LeakDetectingDriver : IDeviceDriver
+    {
+        private volatile bool _disposed;
+
+        public LeakDetectingDriver(string kind) => Kind = kind;
+
+        public bool Disposed => _disposed;
+        public string Id => $"leak-detecting-{Kind}-driver";
+        public string Kind { get; }
+        public DriverHealthState Health => DriverHealthState.Down;
+
+        public IAsyncEnumerable<DeviceReading> ReadAsync(CancellationToken ct) =>
+            throw new NotSupportedException("test double — never started, rejected/abandoned before StartSlot ever runs");
+
+        public ValueTask DisposeAsync()
+        {
+            _disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CountingDriver : IDeviceDriver

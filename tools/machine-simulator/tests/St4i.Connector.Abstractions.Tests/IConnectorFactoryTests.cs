@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using St4i.Connector.Abstractions.Models;
 using Xunit;
@@ -82,7 +83,7 @@ public class IConnectorFactoryTests
     {
         public string Kind => "vendor.acme.widget";
 
-        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        public bool TryCreate(string config, [NotNullWhen(true)] out IDeviceDriver? driver, [NotNullWhen(false)] out string? error)
         {
             if (!config.StartsWith("widget-address=", StringComparison.Ordinal))
             {
