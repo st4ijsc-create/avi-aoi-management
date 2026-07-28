@@ -168,6 +168,23 @@ public sealed class ModbusTcpDriver : IDeviceDriver
         // retries only multiply the stall for no benefit — one attempt is enough.
         master.Transport.Retries = 1;
 
+        // GP-6b (Fix round 1, task-6b-report.md) — tcp.ConnectAsync above already takes `ct`, but
+        // DisposeAsync could still have run to completion WHILE it was in flight
+        // (FleetHost.WaitDisposeOldPipeline cancels the token, waits a BOUNDED 3s for the run task, then
+        // calls DisposeAsync regardless of whether that wait succeeded — there is no lock spanning both),
+        // landing a live TcpClient/IModbusMaster on an already-disposed driver that would otherwise never be
+        // explicitly closed again. Dispose it here instead of leaking it — same shape as
+        // OpcUaDriver.EnsureSessionAsync's equivalent guard around its own Session.Create. Not airtight
+        // either (a narrow CPU-only window between this check and the field assignment below remains,
+        // closeable only with a lock neither driver takes anywhere else) — deliberately left as-is rather
+        // than over-engineered with one.
+        if (_disposed)
+        {
+            try { master.Dispose(); } catch { /* best-effort — see DisposeConnection's own reasoning */ }
+            try { tcp.Dispose(); } catch { /* best-effort — same reasoning */ }
+            throw new OperationCanceledException("ModbusTcpDriver was disposed while connecting.", ct);
+        }
+
         _tcpClient = tcp;
         _master = master;
     }
