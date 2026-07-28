@@ -228,7 +228,7 @@ git commit -m "feat(ai/w2-A1): đếm đề xuất ngưỡng chờ theo điểm 
 
 **Interfaces:**
 - Consumes: `trpc.thresholdApproval.list` (đã có, `:304`), `trpc.thresholdApproval.approve` / `.reject` (đã có, `qualityProcedure` ở `:184`/`:247`), `countPendingByProduct` (Task 1).
-- Produces: `canDecide(approval, currentUserId): { allowed: boolean; reason?: "own-request" }` — hàm thuần, Task 3 dùng lại cho batch.
+- Produces: `canDecide(approval, currentUserId): { allowed: boolean; reason?: "own-request" | "unknown-user" }` — hàm thuần, Task 3 dùng lại cho batch.
 
 - [ ] **Step 1: Viết test đỏ cho luật SoD (hàm thuần)**
 
@@ -251,8 +251,8 @@ describe("canDecide — Segregation of Duties", () => {
     expect(canDecide({ requestedBy: 1 }, 42)).toEqual({ allowed: true });
   });
 
-  it("không biết user hiện tại ⇒ KHÔNG được (fail-closed)", () => {
-    expect(canDecide({ requestedBy: 7 }, undefined)).toEqual({ allowed: false, reason: "own-request" });
+  it("không biết user hiện tại ⇒ KHÔNG được, lý do phải là 'unknown-user' KHÔNG phải 'own-request'", () => {
+    expect(canDecide({ requestedBy: 7 }, undefined)).toEqual({ allowed: false, reason: "unknown-user" });
   });
 });
 ```
@@ -281,11 +281,13 @@ export interface DecideGateInput {
 
 export interface DecideGateResult {
   allowed: boolean;
-  reason?: "own-request";
+  reason?: "own-request" | "unknown-user";
 }
 
 export function canDecide(approval: DecideGateInput, currentUserId: number | undefined): DecideGateResult {
-  if (currentUserId == null) return { allowed: false, reason: "own-request" };
+  // Fail-closed, nhưng LÝ DO PHẢI TRUNG THỰC: không biết user KHÁC với tự-duyệt.
+  // Nói sai lý do chính là cái bệnh mà cả Wave 2 sinh ra để chữa.
+  if (currentUserId == null) return { allowed: false, reason: "unknown-user" };
   if (approval.requestedBy === currentUserId) return { allowed: false, reason: "own-request" };
   return { allowed: true };
 }
@@ -303,7 +305,9 @@ Tạo `client/src/components/productModels/PendingSuggestionCard.tsx`. Yêu cầ
 - Lấy dữ liệu: `trpc.thresholdApproval.list.useQuery({ status: "requested", pointDefId })` (dùng đúng bộ lọc mà `list` đã hỗ trợ; nếu `list` chưa nhận `pointDefId` thì lọc phía client trên kết quả của sản phẩm hiện tại — **không** đổi hợp đồng `list`).
 - Với mỗi đề xuất hiện: **giá trị hiện tại → giá trị đề xuất** (`currentLsl/Usl/Nominal` → `proposedLsl/Usl/Nominal`), và **bằng chứng đã có sẵn** trong cột `suggestion` (jsonb): số mẫu, Cpk, `proposedBy` (`"ai_autotune"` ⇒ nhãn "Tự động dò"), ảnh NG nếu có.
 - Nút **Duyệt** / **Từ chối** gọi `trpc.thresholdApproval.approve` / `.reject` (mutation **đã có**, không tạo đường ghi mới).
-- Khi `canDecide(...).allowed === false`: nút **khoá** + hiện câu giải thích qua `t("productModels.ownRequestBlocked", "Bạn là người tạo đề xuất này — cần người khác duyệt.")`. **Không ẩn im lặng.**
+- Khi `canDecide(...).allowed === false`: nút **khoá** + hiện câu giải thích **đúng theo `reason`**, hai câu KHÁC NHAU, **không ẩn im lặng**:
+  - `"own-request"` ⇒ `t("productModels.ownRequestBlocked", "Bạn là người tạo đề xuất này — cần người khác duyệt.")`
+  - `"unknown-user"` ⇒ `t("productModels.unknownUserBlocked", "Chưa xác định được tài khoản của bạn — hãy đăng nhập lại để duyệt.")`
 - Sau khi quyết định: gọi `onDecided()` để cha invalidate cả `list` lẫn `countPendingByProduct`.
 - Không có đề xuất ⇒ **không render gì** (không chiếm chỗ trong form).
 
@@ -321,7 +325,9 @@ const gate = canDecide({ requestedBy: approval.requestedBy }, currentUserId);
 
 {!gate.allowed && (
   <p className="text-sm text-muted-foreground">
-    {t("productModels.ownRequestBlocked", "Bạn là người tạo đề xuất này — cần người khác duyệt.")}
+    {gate.reason === "unknown-user"
+      ? t("productModels.unknownUserBlocked", "Chưa xác định được tài khoản của bạn — hãy đăng nhập lại để duyệt.")
+      : t("productModels.ownRequestBlocked", "Bạn là người tạo đề xuất này — cần người khác duyệt.")}
   </p>
 )}
 ```
