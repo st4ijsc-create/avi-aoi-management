@@ -237,6 +237,9 @@ public sealed class RbacPolicyTests
         new("/v1/audit", new[] { "GET" }, Policies.Admin),
         new("/v1/audit/verify", new[] { "GET" }, Policies.Admin),
 
+        // Admin — GĐ3 closeout WI-4 (device-identity rotation — see SiteEndpoints.RotateIdentityAsync)
+        new("/v1/site/identity/rotate", new[] { "POST" }, Policies.Admin),
+
         // Admin — WS-D-D7 user management (UserEndpoints.cs)
         new("/v1/users", new[] { "GET" }, Policies.Admin),
         new("/v1/users", new[] { "POST" }, Policies.Admin),

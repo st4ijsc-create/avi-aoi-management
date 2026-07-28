@@ -24,9 +24,15 @@ public sealed class AlarmThresholds
     /// <see cref="PeriodicTimer"/> period.</summary>
     public const string EnvVarEvalIntervalMs = "ST4I_ALARM_EVAL_INTERVAL_MS";
 
+    /// <summary>GĐ3 closeout WI-4 — overrides <see cref="IdentityExpiryWarnDays"/>: how many days before
+    /// the device identity certificate's <c>NotAfter</c> the <see cref="AlarmSource.Identity"/> alarm
+    /// starts warning.</summary>
+    public const string EnvVarIdentityExpiryWarnDays = "ST4I_IDENTITY_EXPIRY_WARN_DAYS";
+
     private const double DefaultNgRateThreshold = 0.20;
     private const long DefaultNgRateMinSample = 5;
     private const int DefaultEvalIntervalMs = 5000;
+    private const int DefaultIdentityExpiryWarnDays = 30;
 
     /// <summary>NG-rate fraction (0.0-1.0) above which the fleet-wide <c>NgRate:HIGH:fleet</c> alarm
     /// raises. Defaults to 0.20 (20%).</summary>
@@ -39,6 +45,10 @@ public sealed class AlarmThresholds
     /// <summary><see cref="AlarmEvaluatorService"/>'s poll period, in milliseconds. Defaults to 5000
     /// (5s).</summary>
     public int EvalIntervalMs { get; init; } = DefaultEvalIntervalMs;
+
+    /// <summary>GĐ3 closeout WI-4 — how many days before the device identity certificate's <c>NotAfter</c>
+    /// the <see cref="AlarmSource.Identity"/> <c>EXPIRING</c> alarm raises. Defaults to 30.</summary>
+    public int IdentityExpiryWarnDays { get; init; } = DefaultIdentityExpiryWarnDays;
 
     /// <summary>
     /// Builds <see cref="AlarmThresholds"/> from the <c>ST4I_ALARM_*</c> environment variables, same
@@ -71,11 +81,20 @@ public sealed class AlarmThresholds
             evalIntervalMs = parsedIntervalMs;
         }
 
+        var identityExpiryWarnDays = DefaultIdentityExpiryWarnDays;
+        var identityExpiryWarnDaysRaw = Environment.GetEnvironmentVariable(EnvVarIdentityExpiryWarnDays);
+        if (!string.IsNullOrWhiteSpace(identityExpiryWarnDaysRaw) &&
+            int.TryParse(identityExpiryWarnDaysRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedWarnDays))
+        {
+            identityExpiryWarnDays = parsedWarnDays;
+        }
+
         return new AlarmThresholds
         {
             NgRateThreshold = ngRateThreshold,
             NgRateMinSample = ngRateMinSample,
             EvalIntervalMs = evalIntervalMs,
+            IdentityExpiryWarnDays = identityExpiryWarnDays,
         };
     }
 }

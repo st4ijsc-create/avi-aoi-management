@@ -258,6 +258,68 @@ public sealed class DeviceIdentityStoreTests : IDisposable
         Assert.True(serverSawClientCert, "server did not receive a client certificate during the handshake");
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // GĐ3 closeout WI-4 — Rotate: mints+persists a fresh identity, replacing the old one.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Rotate_YieldsADifferentFingerprint_AndTheNewIdentityLoadsBackFromDisk()
+    {
+        var dir = NewTempDir();
+        var store = new DeviceIdentityStore(dir);
+        var original = store.LoadOrCreate("NODE-1");
+
+        var rotated = store.Rotate("NODE-1");
+
+        Assert.NotEqual(original.Fingerprint, rotated.Fingerprint);
+        Assert.True(rotated.Certificate.HasPrivateKey);
+
+        // The old one is gone — a fresh load off the SAME directory sees only the rotated identity.
+        var reloaded = new DeviceIdentityStore(dir).TryLoad();
+        Assert.NotNull(reloaded);
+        Assert.Equal(rotated.Fingerprint, reloaded!.Fingerprint);
+        Assert.NotEqual(original.Fingerprint, reloaded.Fingerprint);
+    }
+
+    [Fact]
+    public void Rotate_PreservesTheNodeId()
+    {
+        var dir = NewTempDir();
+        var store = new DeviceIdentityStore(dir);
+        store.LoadOrCreate("NODE-PRESERVE");
+
+        var rotated = store.Rotate("NODE-PRESERVE");
+
+        Assert.Equal("NODE-PRESERVE", rotated.NodeId);
+        Assert.Contains("NODE-PRESERVE", rotated.Certificate.Subject);
+    }
+
+    // GĐ3 closeout WI-4 — a rotation is an explicit operator action: unlike LoadOrCreate/Create, a
+    // persistence failure must propagate (not degrade to an unpersisted in-memory identity) AND must not
+    // leave a half-written identity on disk. Simulated here by holding an exclusive (no-share) read handle
+    // on the CURRENT device-identity.bin, so Persist's atomic File.Move(overwrite:true) — which must
+    // replace that exact file — fails partway through Rotate, before anything is actually replaced.
+    [Fact]
+    public void Rotate_FailureMidRotation_PropagatesAndLeavesThePreviousIdentityLoadable()
+    {
+        var dir = NewTempDir();
+        var store = new DeviceIdentityStore(dir);
+        var original = store.LoadOrCreate("NODE-1");
+
+        var pfxPath = Path.Combine(dir, "device-identity.bin");
+        Exception? thrown;
+        using (new FileStream(pfxPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            thrown = Record.Exception(() => store.Rotate("NODE-1"));
+        }
+
+        Assert.NotNull(thrown);
+
+        var stillThere = new DeviceIdentityStore(dir).TryLoad();
+        Assert.NotNull(stillThere);
+        Assert.Equal(original.Fingerprint, stillThere!.Fingerprint);
+    }
+
     // EC-1 review M-1 — nodeId is interpolated into an X.500 "CN=<nodeId>" DN string; raw DN
     // metacharacters (',', '=', '"') or a whitespace-only nodeId must not throw out of Create (breaking
     // LoadOrCreate's never-throw promise) or silently corrupt the subject into extra bogus RDNs.

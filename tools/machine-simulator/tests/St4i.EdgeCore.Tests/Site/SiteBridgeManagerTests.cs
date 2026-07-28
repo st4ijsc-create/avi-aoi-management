@@ -37,7 +37,12 @@ public sealed class SiteBridgeManagerTests : IDisposable
         return dir;
     }
 
-    private DeviceIdentity NewIdentity() => new DeviceIdentityStore(NewTempDir()).LoadOrCreate("NODE-MANAGER-TEST");
+    private DeviceIdentityProvider NewIdentityProvider()
+    {
+        var store = new DeviceIdentityStore(NewTempDir());
+        var identity = store.LoadOrCreate("NODE-MANAGER-TEST");
+        return new DeviceIdentityProvider(store, identity);
+    }
 
     private static PersistedSiteLink EnabledLink() => new()
     {
@@ -50,9 +55,9 @@ public sealed class SiteBridgeManagerTests : IDisposable
     [Fact]
     public async Task ApplyAsync_EnabledLink_StartsABridge_StatusIsNotDisabled()
     {
-        var identity = NewIdentity();
+        var identityProvider = NewIdentityProvider();
         var store = new SiteLinkStore(NewTempDir());
-        await using var manager = new SiteBridgeManager(new UnsOptions(), identity, store);
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
 
         await manager.ApplyAsync(EnabledLink());
 
@@ -62,9 +67,9 @@ public sealed class SiteBridgeManagerTests : IDisposable
     [Fact]
     public async Task ApplyAsync_DisabledLink_StopsTheBridge_StatusIsDisabled()
     {
-        var identity = NewIdentity();
+        var identityProvider = NewIdentityProvider();
         var store = new SiteLinkStore(NewTempDir());
-        await using var manager = new SiteBridgeManager(new UnsOptions(), identity, store);
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
         await manager.ApplyAsync(EnabledLink());
         Assert.NotEqual(BridgeState.Disabled, manager.Status().State);
 
@@ -76,9 +81,9 @@ public sealed class SiteBridgeManagerTests : IDisposable
     [Fact]
     public async Task ApplyAsync_DefaultConstructedManager_StartsWithStatusDisabled()
     {
-        var identity = NewIdentity();
+        var identityProvider = NewIdentityProvider();
         var store = new SiteLinkStore(NewTempDir());
-        await using var manager = new SiteBridgeManager(new UnsOptions(), identity, store);
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
 
         Assert.Equal(BridgeState.Disabled, manager.Status().State);
         Assert.False(manager.Current.Enabled);
@@ -87,9 +92,9 @@ public sealed class SiteBridgeManagerTests : IDisposable
     [Fact]
     public async Task ApplyAsync_SetsCurrent_ToTheAppliedLink()
     {
-        var identity = NewIdentity();
+        var identityProvider = NewIdentityProvider();
         var store = new SiteLinkStore(NewTempDir());
-        await using var manager = new SiteBridgeManager(new UnsOptions(), identity, store);
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
         var link = EnabledLink();
 
         await manager.ApplyAsync(link);
@@ -102,11 +107,11 @@ public sealed class SiteBridgeManagerTests : IDisposable
     [Fact]
     public async Task ApplyAsync_Persists_ANewManagerReadingTheSameStoreSeesTheAppliedLink()
     {
-        var identity = NewIdentity();
+        var identityProvider = NewIdentityProvider();
         var storeDir = NewTempDir();
         var link = EnabledLink();
 
-        await using (var manager1 = new SiteBridgeManager(new UnsOptions(), identity, new SiteLinkStore(storeDir)))
+        await using (var manager1 = new SiteBridgeManager(new UnsOptions(), identityProvider, new SiteLinkStore(storeDir)))
         {
             await manager1.ApplyAsync(link);
         }
@@ -119,7 +124,7 @@ public sealed class SiteBridgeManagerTests : IDisposable
         Assert.Equal(link.Host, persisted.Host);
         Assert.Equal(link.Port, persisted.Port);
 
-        await using var manager2 = new SiteBridgeManager(new UnsOptions(), identity, reopenedStore);
+        await using var manager2 = new SiteBridgeManager(new UnsOptions(), identityProvider, reopenedStore);
         await manager2.ApplyAsync(persisted);
 
         Assert.NotEqual(BridgeState.Disabled, manager2.Status().State);
@@ -129,9 +134,9 @@ public sealed class SiteBridgeManagerTests : IDisposable
     [Fact]
     public async Task ApplyAsync_TwiceWithEnabledLinks_TheOldBridgeIsStoppedBeforeTheNewOneStarts()
     {
-        var identity = NewIdentity();
+        var identityProvider = NewIdentityProvider();
         var store = new SiteLinkStore(NewTempDir());
-        await using var manager = new SiteBridgeManager(new UnsOptions(), identity, store);
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
 
         await manager.ApplyAsync(EnabledLink());
         var firstStatus = manager.Status();
@@ -148,9 +153,9 @@ public sealed class SiteBridgeManagerTests : IDisposable
     [Fact]
     public async Task DisposeAsync_IsIdempotent_AndLeavesStatusDisabled()
     {
-        var identity = NewIdentity();
+        var identityProvider = NewIdentityProvider();
         var store = new SiteLinkStore(NewTempDir());
-        var manager = new SiteBridgeManager(new UnsOptions(), identity, store);
+        var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
         await manager.ApplyAsync(EnabledLink());
 
         await manager.DisposeAsync();
@@ -163,9 +168,9 @@ public sealed class SiteBridgeManagerTests : IDisposable
     [Fact]
     public async Task ApplyAsync_AfterDispose_DoesNotThrow_AndDoesNotResurrectABridge()
     {
-        var identity = NewIdentity();
+        var identityProvider = NewIdentityProvider();
         var store = new SiteLinkStore(NewTempDir());
-        var manager = new SiteBridgeManager(new UnsOptions(), identity, store);
+        var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
         await manager.DisposeAsync();
 
         var exception = await Record.ExceptionAsync(() => manager.ApplyAsync(EnabledLink()));
@@ -183,16 +188,67 @@ public sealed class SiteBridgeManagerTests : IDisposable
     [Fact]
     public async Task ApplyAsync_PassesTheSpoolThroughToTheBridge_StatusReportsItsDepth()
     {
-        var identity = NewIdentity();
+        var identityProvider = NewIdentityProvider();
         var store = new SiteLinkStore(NewTempDir());
         var spool = new FakeBridgeSpool();
         await spool.EnqueueAsync("t/manager-wiring", new byte[] { 1 }, retain: false);
 
-        await using var manager = new SiteBridgeManager(new UnsOptions(), identity, store, spool: spool);
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store, spool: spool);
         await manager.ApplyAsync(EnabledLink());
 
         await WaitUntilAsync(() => manager.Status().SpoolDepth > 0,
             "the manager-supplied spool's depth to surface through the live bridge's own Status()");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GĐ3 closeout WI-4 — DeviceIdentityProvider.Rotate() must actually re-key the LIVE bridge, not just
+    // update an in-memory pointer nobody reads. Status().DeviceFingerprint is UnsBridge's own echo of
+    // whatever certificate/fingerprint it was constructed with (see BridgeStatusSnapshot/UnsBridge's own
+    // doc comments) — a cheap, reliable proxy for "which certificate is this bridge presenting" that
+    // doesn't require a real mTLS handshake to observe.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ProviderRotate_Alone_DoesNotChangeTheAlreadyRunningBridge_UntilReapplyCurrentAsync()
+    {
+        var identityProvider = NewIdentityProvider();
+        var originalFingerprint = identityProvider.Current.Fingerprint;
+        var store = new SiteLinkStore(NewTempDir());
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
+
+        await manager.ApplyAsync(EnabledLink());
+        Assert.Equal(originalFingerprint, manager.Status().DeviceFingerprint);
+
+        var rotated = identityProvider.Rotate();
+        Assert.NotEqual(originalFingerprint, rotated.Fingerprint);
+
+        // The provider itself already reports the new identity...
+        Assert.Equal(rotated.Fingerprint, identityProvider.Current.Fingerprint);
+
+        // ...but the ALREADY-RUNNING bridge, built before the rotation, still presents the OLD one — this
+        // is exactly the trap DeviceIdentityProvider's own doc comment warns about: swapping Current alone
+        // does nothing to a live bridge.
+        Assert.Equal(originalFingerprint, manager.Status().DeviceFingerprint);
+
+        await manager.ReapplyCurrentAsync();
+
+        // Re-applying the SAME (unchanged) link tears down and rebuilds the bridge, which now reads the
+        // provider's (rotated) Current — the bridge presents the NEW certificate, not the old one.
+        Assert.Equal(rotated.Fingerprint, manager.Status().DeviceFingerprint);
+        Assert.NotEqual(originalFingerprint, manager.Status().DeviceFingerprint);
+    }
+
+    [Fact]
+    public async Task ReapplyCurrentAsync_WithNoBridgeRunning_IsANoOp_StatusStaysDisabled()
+    {
+        var identityProvider = NewIdentityProvider();
+        var store = new SiteLinkStore(NewTempDir());
+        await using var manager = new SiteBridgeManager(new UnsOptions(), identityProvider, store);
+
+        var exception = await Record.ExceptionAsync(() => manager.ReapplyCurrentAsync());
+
+        Assert.Null(exception);
+        Assert.Equal(BridgeState.Disabled, manager.Status().State);
     }
 
     private static async Task WaitUntilAsync(Func<bool> predicate, string because)

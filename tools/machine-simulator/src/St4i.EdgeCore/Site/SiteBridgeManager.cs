@@ -22,7 +22,7 @@ namespace St4i.EdgeCore.Site;
 public sealed class SiteBridgeManager : IAsyncDisposable
 {
     private readonly UnsOptions _localUns;
-    private readonly DeviceIdentity _identity;
+    private readonly DeviceIdentityProvider _identityProvider;
     private readonly SiteLinkStore _store;
     private readonly Action<string>? _logWarning;
     private readonly Action<Exception, string>? _logError;
@@ -34,7 +34,11 @@ public sealed class SiteBridgeManager : IAsyncDisposable
     private volatile bool _disposed;
 
     /// <param name="localUns">See <see cref="UnsBridge"/>'s own ctor doc comment.</param>
-    /// <param name="identity">This device's own identity (certificate + fingerprint).</param>
+    /// <param name="identityProvider">GĐ3 closeout WI-4 — this device's identity, read through the
+    /// provider (not a captured <see cref="DeviceIdentity"/> snapshot) so a rotation is actually visible:
+    /// every <see cref="ApplyAsync"/> call builds its <see cref="UnsBridge"/> off
+    /// <see cref="DeviceIdentityProvider.Current"/> AS OF THAT CALL — see <see cref="ReapplyCurrentAsync"/>
+    /// for how a rotation that happens AFTER a bridge is already running gets picked up.</param>
     /// <param name="store">Where the applied <see cref="PersistedSiteLink"/> is persisted.</param>
     /// <param name="logWarning">Optional recoverable-condition logger.</param>
     /// <param name="logError">Optional fault logger.</param>
@@ -48,14 +52,14 @@ public sealed class SiteBridgeManager : IAsyncDisposable
     /// must outlive any single bridge/TCP-connection lifecycle, which is the entire point of WI-2/WI-3.</param>
     public SiteBridgeManager(
         UnsOptions localUns,
-        DeviceIdentity identity,
+        DeviceIdentityProvider identityProvider,
         SiteLinkStore store,
         Action<string>? logWarning = null,
         Action<Exception, string>? logError = null,
         IBridgeSpool? spool = null)
     {
         _localUns = localUns ?? throw new ArgumentNullException(nameof(localUns));
-        _identity = identity ?? throw new ArgumentNullException(nameof(identity));
+        _identityProvider = identityProvider ?? throw new ArgumentNullException(nameof(identityProvider));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _logWarning = logWarning;
         _logError = logError;
@@ -118,7 +122,10 @@ public sealed class SiteBridgeManager : IAsyncDisposable
             {
                 try
                 {
-                    _bridge = new UnsBridge(_localUns, link, _identity.Certificate, _identity.Fingerprint, _logWarning, _logError, _spool);
+                    // Read Current AS OF THIS CALL — not a captured field — so a rotation that already
+                    // happened (via ReapplyCurrentAsync, below) is honored by the bridge this builds.
+                    var identity = _identityProvider.Current;
+                    _bridge = new UnsBridge(_localUns, link, identity.Certificate, identity.Fingerprint, _logWarning, _logError, _spool);
                 }
                 catch (Exception ex)
                 {
@@ -135,9 +142,25 @@ public sealed class SiteBridgeManager : IAsyncDisposable
 
     /// <summary><see cref="BridgeState.Disabled"/> if no bridge is currently running (either never
     /// configured, or the last-applied link had <see cref="PersistedSiteLink.Enabled"/> = <see
-    /// langword="false"/>), else the live bridge's own <see cref="UnsBridge.Snapshot"/>.</summary>
+    /// langword="false"/>), else the live bridge's own <see cref="UnsBridge.Snapshot"/>. Note the disabled
+    /// branch's <c>DeviceFingerprint</c> reads <see cref="DeviceIdentityProvider.Current"/> live (not a
+    /// stale capture) — a rotation is visible here even with no bridge running at all.</summary>
     public BridgeStatusSnapshot Status() =>
-        _bridge?.Snapshot() ?? new BridgeStatusSnapshot(BridgeState.Disabled, null, null, _identity.Fingerprint, 0, 0, 0);
+        _bridge?.Snapshot() ?? new BridgeStatusSnapshot(BridgeState.Disabled, null, null, _identityProvider.Current.Fingerprint, 0, 0, 0);
+
+    /// <summary>GĐ3 closeout WI-4 — re-applies whatever Site link is <see cref="Current"/> RIGHT NOW,
+    /// unchanged, purely so a freshly-rotated <see cref="DeviceIdentityProvider.Current"/> actually reaches
+    /// a LIVE bridge. Swapping the provider's <c>Current</c> pointer alone does nothing to an
+    /// already-running <see cref="UnsBridge"/> — it captured the OLD certificate object at its own
+    /// construction time (see <see cref="ApplyAsync"/>) — so the only way to re-key it is to tear it down
+    /// and rebuild it, exactly like any other <see cref="ApplyAsync"/> call, just with the SAME link
+    /// instead of a changed one. The caller (the <c>POST /v1/site/identity/rotate</c> handler) MUST call
+    /// this immediately after <see cref="DeviceIdentityProvider.Rotate"/> succeeds — skipping it leaves the
+    /// bridge silently presenting the pre-rotation certificate forever, which is exactly the bug this
+    /// method exists to prevent. A no-op (bridge stays <see cref="BridgeState.Disabled"/>) if the current
+    /// link isn't <see cref="PersistedSiteLink.Enabled"/> — nothing to re-key when there's no bridge.
+    /// Same never-throws contract as <see cref="ApplyAsync"/> itself (this literally IS that call).</summary>
+    public Task ReapplyCurrentAsync() => ApplyAsync(_current);
 
     /// <summary>Idempotent. Tears down the currently-running bridge (if any) — DI disposes this manager on
     /// host shutdown since it's registered as an <see cref="IAsyncDisposable"/> singleton.</summary>

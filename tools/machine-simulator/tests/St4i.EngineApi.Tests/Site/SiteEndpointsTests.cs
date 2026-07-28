@@ -181,6 +181,11 @@ public sealed class SiteEndpointsTests
         Assert.Contains("-----BEGIN CERTIFICATE-----", identity!.DeviceCertPem);
         Assert.False(string.IsNullOrWhiteSpace(identity.DeviceFingerprint));
 
+        // GĐ3 closeout WI-4 — a freshly-minted identity (LoadOrCreate, ~10-year validity) is FAR outside
+        // the default 30-day expiry-warn window: NotAfterUtc years out, DaysToExpiry a large positive number.
+        Assert.True(identity.NotAfterUtc > DateTimeOffset.UtcNow.AddYears(5));
+        Assert.True(identity.DaysToExpiry > 3000);
+
         using var siteResp = await operatorClient.GetAsync("/v1/site");
         var status = await siteResp.Content.ReadFromJsonAsync<SiteStatusDto>(JsonOptions);
         Assert.Equal(status!.DeviceFingerprint, identity.DeviceFingerprint);
@@ -387,5 +392,97 @@ public sealed class SiteEndpointsTests
         using var put = await engineerClient.PutAsJsonAsync(
             "/v1/site", new { enabled = true, host = "127.0.0.1", port = 18884, siteTrustPem = NewValidTrustPem() }, JsonOptions);
         Assert.Equal(HttpStatusCode.Conflict, put.StatusCode);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // POST /v1/site/identity/rotate — GĐ3 closeout WI-4. Admin only; 200 + a new fingerprint + an audited
+    // "site.identity.rotate" row for Admin; works even with UNS disabled (nothing to re-apply, but the
+    // identity itself still rotates — see RotateIdentityAsync's own doc comment).
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Operator_PostsRotate_Gets403()
+    {
+        await using var factory = await CreateFactoryAsync();
+        await BootstrapAdminAsync(factory, "site-admin-15", "AdminPass123!");
+        await CreateUserAsync(factory, "site-operator-15", "OperatorPass123!", Roles.Operator);
+
+        using var operatorClient = await LoginAsAsync(factory, "site-operator-15", "OperatorPass123!");
+
+        using var rotate = await operatorClient.PostAsync("/v1/site/identity/rotate", null);
+        Assert.Equal(HttpStatusCode.Forbidden, rotate.StatusCode);
+    }
+
+    [Fact]
+    public async Task Engineer_PostsRotate_Gets403()
+    {
+        await using var factory = await CreateFactoryAsync();
+        await BootstrapAdminAsync(factory, "site-admin-16", "AdminPass123!");
+        await CreateUserAsync(factory, "site-engineer-16", "EngineerPass123!", Roles.Engineer);
+
+        using var engineerClient = await LoginAsAsync(factory, "site-engineer-16", "EngineerPass123!");
+
+        using var rotate = await engineerClient.PostAsync("/v1/site/identity/rotate", null);
+        Assert.Equal(HttpStatusCode.Forbidden, rotate.StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_PostsRotate_Gets200_NewFingerprint_AuditRow_AndGetSiteReflectsIt()
+    {
+        await using var factory = await CreateFactoryAsync();
+        await BootstrapAdminAsync(factory, "site-admin-17", "AdminPass123!");
+        using var adminClient = await LoginAsAsync(factory, "site-admin-17", "AdminPass123!");
+
+        using var beforeResp = await adminClient.GetAsync("/v1/site/identity");
+        var before = await beforeResp.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
+        Assert.NotNull(before);
+
+        using var rotate = await adminClient.PostAsync("/v1/site/identity/rotate", null);
+        Assert.Equal(HttpStatusCode.OK, rotate.StatusCode);
+        var after = await rotate.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
+        Assert.NotNull(after);
+        Assert.False(string.IsNullOrWhiteSpace(after!.DeviceFingerprint));
+        Assert.NotEqual(before!.DeviceFingerprint, after.DeviceFingerprint);
+        Assert.Contains("-----BEGIN CERTIFICATE-----", after.DeviceCertPem);
+
+        // A follow-up GET /v1/site/identity sees the SAME rotated fingerprint (not the pre-rotation one) —
+        // proves GetIdentityAsync reads through DeviceIdentityProvider.Current, not a stale capture.
+        using var afterGet = await adminClient.GetAsync("/v1/site/identity");
+        var afterGetDto = await afterGet.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
+        Assert.Equal(after.DeviceFingerprint, afterGetDto!.DeviceFingerprint);
+
+        // GetSiteAsync's DeviceFingerprint also reflects the rotation (same provider, different handler).
+        using var getSite = await adminClient.GetAsync("/v1/site");
+        var status = await getSite.Content.ReadFromJsonAsync<SiteStatusDto>(JsonOptions);
+        Assert.Equal(after.DeviceFingerprint, status!.DeviceFingerprint);
+
+        using var audit = await adminClient.GetAsync("/v1/audit?action=site.identity.rotate");
+        Assert.Equal(HttpStatusCode.OK, audit.StatusCode);
+        var page = await audit.Content.ReadFromJsonAsync<AuditPageDto>(JsonOptions);
+        Assert.NotNull(page);
+        Assert.True(page!.Total >= 1);
+        var row = page.Items[0];
+        Assert.Equal("site.identity.rotate", row.Action);
+        Assert.Equal(after.DeviceFingerprint, row.TargetId);
+        Assert.Contains(after.DeviceFingerprint, row.NewValueJson ?? "");
+        Assert.Contains(before.DeviceFingerprint, row.OldValueJson ?? "");
+    }
+
+    [Fact]
+    public async Task UnsDisabled_AdminPostsRotate_StillRotatesTheIdentity_Gets200()
+    {
+        await using var factory = await CreateFactoryAsync(unsEnabled: false);
+        await BootstrapAdminAsync(factory, "site-admin-18", "AdminPass123!");
+        using var adminClient = await LoginAsAsync(factory, "site-admin-18", "AdminPass123!");
+
+        using var beforeResp = await adminClient.GetAsync("/v1/site/identity");
+        var before = await beforeResp.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
+
+        using var rotate = await adminClient.PostAsync("/v1/site/identity/rotate", null);
+
+        Assert.Equal(HttpStatusCode.OK, rotate.StatusCode);
+        var after = await rotate.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
+        Assert.NotNull(after);
+        Assert.NotEqual(before!.DeviceFingerprint, after!.DeviceFingerprint);
     }
 }

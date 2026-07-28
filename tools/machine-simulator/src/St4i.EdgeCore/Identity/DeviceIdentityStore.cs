@@ -158,16 +158,53 @@ public sealed class DeviceIdentityStore
         }
     }
 
+    /// <summary>GĐ3 closeout WI-4 — mints a brand-new self-signed identity (same algorithm/validity window
+    /// as <see cref="Create"/> — ECDSA P-256, SHA-256, 10-year validity, same <c>PersistKeySet</c> load
+    /// flag) and persists it atomically, REPLACING whatever identity was there before — an explicit,
+    /// operator-triggered re-key (<c>POST /v1/site/identity/rotate</c>), not the "first run" path.
+    ///
+    /// <para><b>Unlike <see cref="LoadOrCreate"/>, this does NOT swallow a persistence failure into a
+    /// degraded in-memory-only fallback</b> — a rotation is a deliberate operator action; silently handing
+    /// back an identity that was never actually written to disk (so it vanishes on the next restart) would
+    /// be worse than a loud failure the caller (the rotate endpoint) can report. Whatever
+    /// <see cref="Persist"/> throws propagates unchanged.</para>
+    ///
+    /// <para><b>Never leaves a half-written identity on disk</b> — <see cref="Persist"/> already writes
+    /// both <c>device-identity.bin</c>/<c>device-node.txt</c> via a temp-file-then-<see
+    /// cref="File.Move(string, string, bool)"/> atomic rename (see that method's own doc comment). The
+    /// PREVIOUS files are therefore only ever touched by the FINAL, atomic rename — a failure anywhere
+    /// before that (minting, DPAPI-protecting, or writing the temp file) never touches the existing
+    /// <c>device-identity.bin</c>/<c>device-node.txt</c> at all, so <see cref="TryLoad"/> keeps returning
+    /// the pre-rotation identity exactly as it did before this call was ever made.</para></summary>
+    public DeviceIdentity Rotate(string nodeId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(nodeId);
+
+        var pfxBytes = MintPfxBytes(nodeId);
+
+        // NOT wrapped in a try/catch (unlike Create) — see this method's own doc comment: a rotation
+        // failure must propagate to the caller, not degrade to an unpersisted in-memory identity.
+        Persist(pfxBytes, nodeId);
+
+        return TryLoad() ?? throw new InvalidOperationException(
+            "DeviceIdentityStore.Rotate: the newly persisted identity was written but could not be reloaded from disk.");
+    }
+
+    /// <summary>Shared by <see cref="Create"/> and <see cref="Rotate"/> — the ECDSA P-256/SHA-256 mint
+    /// step, factored out so both paths use the EXACT same algorithm/validity window/<c>PersistKeySet</c>
+    /// posture (see this class's own doc comment for why <c>PersistKeySet</c> is non-negotiable).</summary>
+    private static byte[] MintPfxBytes(string nodeId)
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = BuildRequest(nodeId, ecdsa);
+        using var cert = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(10));
+        return cert.Export(X509ContentType.Pfx, PfxPassword);
+    }
+
     private DeviceIdentity Create(string nodeId)
     {
-        byte[] pfxBytes;
-        using (var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256))
-        {
-            var request = BuildRequest(nodeId, ecdsa);
-            using var cert = request.CreateSelfSigned(
-                DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(10));
-            pfxBytes = cert.Export(X509ContentType.Pfx, PfxPassword);
-        }
+        var pfxBytes = MintPfxBytes(nodeId);
 
         try
         {

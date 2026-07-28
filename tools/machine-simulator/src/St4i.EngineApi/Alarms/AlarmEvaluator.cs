@@ -4,25 +4,28 @@ using St4i.EngineApi.Fleet;
 namespace St4i.EngineApi.Alarms;
 
 /// <summary>
-/// GĐ3 sub-4 LC-2 — the PURE evaluation core for the two automatic (condition-based) alarm sources:
-/// per-slot driver health (<see cref="FleetHost.GetDriverHealth"/>) and a windowed fleet-wide NG-rate
-/// (<see cref="FleetHost.GetKpiCounters"/>). Deliberately holds NO timer/real-time dependency of its own
-/// — <see cref="EvaluateAsync"/> is a single, directly-testable evaluation pass a caller invokes however
-/// often it likes (in production, <see cref="AlarmEvaluatorService"/>'s <see cref="PeriodicTimer"/> loop;
-/// in tests, directly and deterministically, with synthetic snapshots/KPI counters — never the wall clock).
+/// GĐ3 sub-4 LC-2 (+ GĐ3 closeout WI-4) — the PURE evaluation core for the automatic (condition-based)
+/// alarm sources: per-slot driver health (<see cref="FleetHost.GetDriverHealth"/>), a windowed fleet-wide
+/// NG-rate (<see cref="FleetHost.GetKpiCounters"/>), and (WI-4) the device identity certificate's own
+/// expiry (<see cref="St4i.EdgeCore.Identity.DeviceIdentityStore"/>). Deliberately holds NO timer/real-time
+/// dependency of its own — <see cref="EvaluateAsync"/> is a single, directly-testable evaluation pass a
+/// caller invokes however often it likes (in production, <see cref="AlarmEvaluatorService"/>'s
+/// <see cref="PeriodicTimer"/> loop; in tests, directly and deterministically, with synthetic snapshots/KPI
+/// counters/expiry timestamps — never the wall clock, except where computing a days-to-expiry delta
+/// against "now" is literally the point of the Identity source).
 ///
-/// Both sources raise/clear CONDITION alarms (<see cref="AlarmRaise.ClearOnAck"/> == <see langword="false"/>)
+/// Every source raises/clears CONDITION alarms (<see cref="AlarmRaise.ClearOnAck"/> == <see langword="false"/>)
 /// through the same <see cref="IAlarmStore"/> LC-1 built: this evaluator is the only thing that ever calls
-/// <see cref="IAlarmStore.ClearAsync"/> for a <see cref="AlarmSource.DriverHealth"/>/<see cref="AlarmSource.NgRate"/>
-/// key — an operator's Ack only silences it (see <see cref="Alarm"/>'s own doc comment), never clears it.
+/// <see cref="IAlarmStore.ClearAsync"/> for a <see cref="AlarmSource.DriverHealth"/>/<see cref="AlarmSource.NgRate"/>/
+/// <see cref="AlarmSource.Identity"/> key — an operator's Ack only silences it (see <see cref="Alarm"/>'s own
+/// doc comment), never clears it.
 ///
-/// Each source (driver health, NG-rate) is evaluated inside its OWN try/catch — a fault in one (e.g. a
-/// throwing <see cref="IAlarmStore"/> test double, or a future third source that pushes bad data into the
-/// health snapshot) never prevents the other from running, and <see cref="EvaluateAsync"/> itself NEVER
-/// throws into its caller — the same "additive, never-crashes-the-host" contract <see cref="IAlarmStore"/>
-/// itself already carries, extended one layer up so <see cref="AlarmEvaluatorService"/>'s timer loop never
-/// needs its own inner try/catch around the sources individually (it still wraps the call for defense in
-/// depth — see that class's own doc comment).
+/// Each source (driver health, NG-rate, identity expiry) is evaluated inside its OWN try/catch — a fault in
+/// one (e.g. a throwing <see cref="IAlarmStore"/> test double) never prevents the others from running, and
+/// <see cref="EvaluateAsync"/> itself NEVER throws into its caller — the same "additive, never-crashes-the-host"
+/// contract <see cref="IAlarmStore"/> itself already carries, extended one layer up so
+/// <see cref="AlarmEvaluatorService"/>'s timer loop never needs its own inner try/catch around the sources
+/// individually (it still wraps the call for defense in depth — see that class's own doc comment).
 /// </summary>
 public sealed class AlarmEvaluator
 {
@@ -54,12 +57,25 @@ public sealed class AlarmEvaluator
     /// last call. Idempotent (calling it twice with the same inputs is a no-op the second time, since
     /// raising/clearing an already-raised/already-clear alarm is itself a no-op — see
     /// <see cref="IAlarmStore"/>) and NEVER throws. Call once per tick from
-    /// <see cref="AlarmEvaluatorService"/>, or directly (and only ever this way) from a test.</summary>
+    /// <see cref="AlarmEvaluatorService"/>, or directly (and only ever this way) from a test.
+    ///
+    /// <para><paramref name="identityNotAfterUtc"/> (GĐ3 closeout WI-4) is deliberately the LAST parameter,
+    /// AFTER <paramref name="ct"/> rather than before it — this method predates the Identity source, and
+    /// every pre-existing caller (this whole file's own tests, <see cref="AlarmEvaluatorService"/>) invokes
+    /// it positionally as <c>(health, kpi, ct)</c>; inserting a new parameter ahead of <paramref name="ct"/>
+    /// would silently break every one of those call sites' argument-to-parameter binding. Optional +
+    /// trailing keeps them all compiling unchanged; a caller that has an identity to evaluate passes it by
+    /// name (<c>identityNotAfterUtc: ...</c>), same as <see cref="AlarmEvaluatorService"/> does.
+    /// <see langword="null"/> (the default) means "no identity to evaluate this pass" — raises/clears
+    /// nothing for <see cref="AlarmSource.Identity"/>, rather than treating a missing value as an
+    /// already-expired certificate.</para></summary>
     public async Task EvaluateAsync(
-        IReadOnlyList<DriverHealthSnapshot> health, (long TotalPass, long TotalJudged) kpi, CancellationToken ct = default)
+        IReadOnlyList<DriverHealthSnapshot> health, (long TotalPass, long TotalJudged) kpi,
+        CancellationToken ct = default, DateTimeOffset? identityNotAfterUtc = null)
     {
         await EvaluateDriverHealthAsync(health, ct).ConfigureAwait(false);
         await EvaluateNgRateAsync(kpi, ct).ConfigureAwait(false);
+        await EvaluateIdentityExpiryAsync(identityNotAfterUtc, ct).ConfigureAwait(false);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -198,6 +214,61 @@ public sealed class AlarmEvaluator
         catch (Exception ex)
         {
             _logError?.Invoke(ex, "AlarmEvaluator: the NG-rate source failed this pass — its alarm was left as it was.");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Identity-expiry source (GĐ3 closeout WI-4) — condition alarm (ClearOnAck: false), same as
+    // DriverHealth/NG-rate above: an operator's Ack silences it, but only THIS evaluator noticing the
+    // condition has ended (the cert's NotAfter is now further than the warn window away — in practice,
+    // after a rotation mints a fresh ~10-year cert) actually clears it.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private const string IdentityExpiryKey = $"{nameof(AlarmSource.Identity)}:EXPIRING:device";
+
+    private async Task EvaluateIdentityExpiryAsync(DateTimeOffset? notAfterUtc, CancellationToken ct)
+    {
+        try
+        {
+            if (notAfterUtc is null)
+            {
+                // No identity to evaluate this pass (a caller/test that doesn't supply one) — do nothing,
+                // rather than treating "unknown" as "already expired" and raising a bogus alarm.
+                return;
+            }
+
+            var daysToExpiry = (notAfterUtc.Value - DateTimeOffset.UtcNow).TotalDays;
+
+            if (daysToExpiry <= _thresholds.IdentityExpiryWarnDays)
+            {
+                await _alarms.RaiseAsync(
+                    new AlarmRaise(
+                        AlarmSource.Identity,
+                        "EXPIRING",
+                        // 🔴 Priority ceiling — High, NEVER Critical. This is a deliberate product decision,
+                        // not an oversight (GĐ3 closeout WI-4 brief). A Critical alarm feeds LineController's
+                        // alarm→hold gate (LC-3 — see LineController.cs), which blocks line.start/
+                        // line.unhold. An expiring device certificate must NEVER stop production — the same
+                        // "không bao giờ dừng sản xuất vì license" principle the roadmap states for
+                        // licensing: there is no safety justification for halting a line over a credential
+                        // nearing end-of-life. Do NOT "upgrade" this to Critical — AlarmEvaluatorTests has a
+                        // regression test asserting exactly this.
+                        AlarmPriority.High,
+                        $"Device identity certificate expires in {Math.Floor(daysToExpiry):0} day(s) " +
+                        $"(NotAfter {notAfterUtc.Value:O}) — rotate it via POST /v1/site/identity/rotate " +
+                        "before it lapses.",
+                        TargetId: "device",
+                        ClearOnAck: false),
+                    ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await _alarms.ClearAsync(IdentityExpiryKey, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logError?.Invoke(ex, "AlarmEvaluator: the Identity source failed this pass — its alarm was left as it was.");
         }
     }
 }

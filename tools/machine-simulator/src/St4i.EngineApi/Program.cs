@@ -481,10 +481,20 @@ builder.Services.AddSingleton<St4i.EngineApi.Line.LineController>(sp =>
 // this must NEVER be called again per-request/per-call. A standalone box that never configures a Site link
 // still legitimately gets a device identity (one keystore entry, once, at startup) — accepted/documented
 // per EC-1/EC-2 — so this happens unconditionally, unlike the Site bridge manager below.
-var deviceIdentity = new St4i.EdgeCore.Identity.DeviceIdentityStore(
-        logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"))
-    .LoadOrCreate(unsOptions.Cell);
+//
+// GĐ3 closeout WI-4 — deviceIdentityStore is kept around (not just the DeviceIdentity it produced) so
+// DeviceIdentityProvider can re-mint through the SAME store/directory on a later rotation. deviceIdentity
+// itself is still registered as a plain singleton (kept for the odd direct-construction consumer like
+// SiteAdvertiser below, which captures it once at startup — a rotation isn't expected to update mDNS TXT
+// records live) — but SiteEndpoints/SiteBridgeManager now resolve DeviceIdentityProvider instead, so a
+// rotation is actually visible to them (see DeviceIdentityProvider's own doc comment for why the plain
+// singleton alone can't do this).
+var deviceIdentityStore = new St4i.EdgeCore.Identity.DeviceIdentityStore(
+    logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"));
+var deviceIdentity = deviceIdentityStore.LoadOrCreate(unsOptions.Cell);
 builder.Services.AddSingleton(deviceIdentity);
+var deviceIdentityProvider = new St4i.EdgeCore.Identity.DeviceIdentityProvider(deviceIdentityStore, deviceIdentity);
+builder.Services.AddSingleton(deviceIdentityProvider);
 
 // GĐ3 sub-2 SD-1 (.superpowers/sdd/2026-07-27-giaidoan3-mdns-join-wizard-blueprint/task-1-brief.md) — the
 // mDNS Site-discovery singleton backing GET /v1/site/discover. Registered UNCONDITIONALLY (unlike the
@@ -568,7 +578,7 @@ if (unsOptions.Enabled)
     var siteStore = new St4i.EdgeCore.Site.SiteLinkStore();
     var siteBridgeManager = new St4i.EdgeCore.Site.SiteBridgeManager(
         unsOptions,
-        deviceIdentity,
+        deviceIdentityProvider,
         siteStore,
         logWarning: msg => Console.Error.WriteLine($"[startup] {msg}"),
         logError: (ex, msg) => Console.Error.WriteLine($"[startup] {msg}: {ex.GetType().Name}: {ex.Message}"),

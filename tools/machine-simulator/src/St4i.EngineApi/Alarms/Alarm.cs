@@ -3,8 +3,12 @@ namespace St4i.EngineApi.Alarms;
 /// <summary>Where this alarm condition originates. <see cref="Policy"/> is LC-1 (this task) — every
 /// <c>PolicyResults.DenyAsync</c> denial; <see cref="DriverHealth"/>/<see cref="NgRate"/> are LC-2 (the
 /// periodic health/NG-rate evaluator) — reserved here so <see cref="Alarm.Key"/> stays stable once LC-2
-/// lands, not retrofitted later.</summary>
-public enum AlarmSource { Policy, DriverHealth, NgRate }
+/// lands, not retrofitted later. <see cref="Identity"/> is GĐ3 closeout WI-4 — the SAME periodic evaluator
+/// (<see cref="AlarmEvaluator"/>) additionally warns before the device's own X.509 identity certificate
+/// lapses (see <see cref="St4i.EdgeCore.Identity.DeviceIdentityStore"/>). Capped at
+/// <see cref="AlarmPriority.High"/>, NEVER <see cref="AlarmPriority.Critical"/> — see
+/// <see cref="AlarmEvaluator"/>'s own Identity-source comment for why.</summary>
+public enum AlarmSource { Policy, DriverHealth, NgRate, Identity }
 
 /// <summary>ISA-18.2 alarm priority, most-severe first (the same ordering <see cref="AlarmStore.ListActiveAsync"/>
 /// sorts by).</summary>

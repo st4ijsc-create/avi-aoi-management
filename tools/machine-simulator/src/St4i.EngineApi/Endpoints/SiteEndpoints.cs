@@ -23,8 +23,12 @@ namespace St4i.EngineApi.Endpoints;
 /// local spine has nothing to bridge. Every handler below therefore takes <c>SiteBridgeManager?</c>
 /// (nullable): <c>GetSiteAsync</c> degrades to a fixed "disabled, no bridge" view that still reports the
 /// device's own identity fingerprint (a device has an identity whether or not anything is federated), and
-/// <c>PutSiteAsync</c> 409s (there is nothing to apply a Site link TO). <see cref="DeviceIdentity"/> is
-/// always registered (EC-1/EC-2), so it's a plain non-nullable dependency here.
+/// <c>PutSiteAsync</c>/<c>RotateIdentityAsync</c> react differently to a missing manager (409 vs. "just
+/// skip the re-apply step" — see <c>RotateIdentityAsync</c>'s own doc comment).
+/// <see cref="DeviceIdentityProvider"/> is always registered (EC-1/EC-2), so it's a plain non-nullable
+/// dependency here — GĐ3 closeout WI-4 switched every handler from a captured <see cref="DeviceIdentity"/>
+/// singleton to reading THROUGH the provider, so a rotation (<c>POST /v1/site/identity/rotate</c>) is
+/// immediately visible to <c>GET /v1/site</c>/<c>GET /v1/site/identity</c> on the very next request.
 ///
 /// <para><b>Why <c>[FromServices]</c> on <c>mgr</c>, explicitly:</b> minimal APIs only auto-infer a complex
 /// parameter as service-sourced when that TYPE is actually registered in the container at endpoint-metadata
@@ -69,12 +73,16 @@ public static class SiteEndpoints
         app.MapPut("/v1/site", PutSiteAsync).RequireAuthorization(Policies.Engineer);
         app.MapGet("/v1/site/identity", GetIdentityAsync).RequireAuthorization(Policies.Operator);
         app.MapGet("/v1/site/discover", DiscoverAsync).RequireAuthorization(Policies.Engineer);
+        // GĐ3 closeout WI-4 — Admin only (stricter than every other route in this file): rotating the
+        // device's own mTLS identity is a destructive, trust-breaking action (see RotateIdentityAsync's
+        // own doc comment), not a routine config change.
+        app.MapPost("/v1/site/identity/rotate", RotateIdentityAsync).RequireAuthorization(Policies.Admin);
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // GET /v1/site
     // ─────────────────────────────────────────────────────────────────────
-    internal static IResult GetSiteAsync([FromServices] SiteBridgeManager? mgr, DeviceIdentity identity)
+    internal static IResult GetSiteAsync([FromServices] SiteBridgeManager? mgr, DeviceIdentityProvider identityProvider)
     {
         if (mgr is null)
         {
@@ -82,7 +90,7 @@ public static class SiteEndpoints
             // device's identity is unconditional (EC-1), independent of whether a Site link exists.
             return Results.Ok(new SiteStatusDto(
                 Enabled: false, Host: "", Port: 0, BridgeState: nameof(BridgeState.Disabled),
-                LastError: null, SiteFingerprint: null, DeviceFingerprint: identity.Fingerprint, UnsEnabled: false,
+                LastError: null, SiteFingerprint: null, DeviceFingerprint: identityProvider.Current.Fingerprint, UnsEnabled: false,
                 SpoolDepth: 0, LastAckedSeq: 0, DroppedTotal: 0));
         }
 
@@ -98,7 +106,7 @@ public static class SiteEndpoints
     // PUT /v1/site {enabled,host,port,siteTrustPem}
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> PutSiteAsync(
-        SiteLinkRequest body, [FromServices] SiteBridgeManager? mgr, DeviceIdentity identity, HttpContext ctx, AuditRecorder recorder, CancellationToken ct)
+        SiteLinkRequest body, [FromServices] SiteBridgeManager? mgr, DeviceIdentityProvider identityProvider, HttpContext ctx, AuditRecorder recorder, CancellationToken ct)
     {
         if (mgr is null)
         {
@@ -155,14 +163,14 @@ public static class SiteEndpoints
             new { link.Enabled, link.Host, link.Port, pemLen = link.SiteTrustPem.Length, pemFingerprint = PemFingerprint(link.SiteTrustPem) },
             ct).ConfigureAwait(false);
 
-        return GetSiteAsync(mgr, identity);
+        return GetSiteAsync(mgr, identityProvider);
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // GET /v1/site/identity
     // ─────────────────────────────────────────────────────────────────────
-    internal static IResult GetIdentityAsync(DeviceIdentity identity) =>
-        Results.Ok(new SiteIdentityDto(identity.Fingerprint, identity.CertificatePem));
+    internal static IResult GetIdentityAsync(DeviceIdentityProvider identityProvider) =>
+        Results.Ok(ToIdentityDto(identityProvider.Current));
 
     // ─────────────────────────────────────────────────────────────────────
     // GET /v1/site/discover — mDNS LAN browse (SD-1). Bounded ~4s; empty array is a legitimate result
@@ -172,6 +180,72 @@ public static class SiteEndpoints
     {
         var sites = await discovery.DiscoverAsync(TimeSpan.FromSeconds(4), ct).ConfigureAwait(false);
         return Results.Ok(sites);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // POST /v1/site/identity/rotate — GĐ3 closeout WI-4
+    // ─────────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Mints+persists a brand-new device identity (<see cref="DeviceIdentityProvider.Rotate"/>) and, if a
+    /// Site bridge is configured, re-applies the currently-persisted Site link so the LIVE bridge actually
+    /// starts presenting the new certificate (<see cref="SiteBridgeManager.ReapplyCurrentAsync"/>) —
+    /// skipping that step would rotate the identity while the bridge silently keeps using the old one
+    /// forever, which defeats the entire feature.
+    ///
+    /// <para><b>This deliberately breaks the Site connection.</b> The Site pins THIS device's OLD
+    /// fingerprint (<see cref="St4i.EdgeCore.Site.SiteTrustPin"/> is the mirror image, on the OTHER side —
+    /// the Site's own trust store keyed on what this device presented at pairing time); after rotating,
+    /// the bridge's mTLS handshake will keep failing until an operator pastes the NEW fingerprint into the
+    /// Site. That is NOT a bug to swallow — it's why the response below returns the new fingerprint as the
+    /// FIRST field of <see cref="SiteIdentityDto"/> (same shape <c>GET /v1/site/identity</c> already
+    /// returns), and why the audit row records both the old and new fingerprint, so there is always a
+    /// paper trail explaining exactly what broke and what the operator must now do at the Site. The web
+    /// confirmation dialog warning the operator BEFORE they click is WI-7's job, not this endpoint's — this
+    /// endpoint's job is to make the consequence impossible to miss in the response/audit trail once it
+    /// has already happened.</para>
+    ///
+    /// <para><b>Admin only</b> — one step up from every other route in this file (Operator/Engineer) — a
+    /// destructive action that can sever the device's own uplink deserves the highest bar this app has.
+    /// Works even with the local UNS spine disabled (<paramref name="mgr"/> <see langword="null"/>) — the
+    /// device identity exists independent of whether anything is federated (same rationale
+    /// <see cref="GetSiteAsync"/> already documents for <c>DeviceFingerprint</c>); there's simply nothing
+    /// to re-apply in that case.</para>
+    ///
+    /// <para>A minting/persistence failure (<see cref="DeviceIdentityProvider.Rotate"/> propagates it,
+    /// deliberately NOT swallowed — see <see cref="St4i.EdgeCore.Identity.DeviceIdentityStore.Rotate"/>'s
+    /// own doc comment) is left to the framework's default error response — no audit row is written for a
+    /// mutation that never actually happened, same WS-D-D4 ordering rule every other handler in this file
+    /// follows.</para>
+    /// </summary>
+    internal static async Task<IResult> RotateIdentityAsync(
+        [FromServices] SiteBridgeManager? mgr, DeviceIdentityProvider identityProvider, HttpContext ctx, AuditRecorder recorder, CancellationToken ct)
+    {
+        var before = identityProvider.Current;
+
+        var rotated = identityProvider.Rotate();
+
+        // Re-key the LIVE bridge — see this method's own doc comment for why this is not optional.
+        if (mgr is not null)
+        {
+            await mgr.ReapplyCurrentAsync().ConfigureAwait(false);
+        }
+
+        await recorder.RecordAsync(
+            ctx, "site.identity.rotate", "site", rotated.Fingerprint,
+            new { before.Fingerprint },
+            new { rotated.Fingerprint, notAfterUtc = rotated.Certificate.NotAfter.ToUniversalTime() },
+            ct).ConfigureAwait(false);
+
+        return Results.Ok(ToIdentityDto(rotated));
+    }
+
+    private static SiteIdentityDto ToIdentityDto(DeviceIdentity identity)
+    {
+        // X509Certificate2.NotAfter is documented as LOCAL time — normalize before exposing it over the
+        // wire so "NotAfterUtc" actually is UTC (see AlarmEvaluatorService's own comment for the same point).
+        var notAfterUtc = new DateTimeOffset(identity.Certificate.NotAfter.ToUniversalTime());
+        var daysToExpiry = (int)Math.Floor((notAfterUtc - DateTimeOffset.UtcNow).TotalDays);
+        return new SiteIdentityDto(identity.Fingerprint, identity.CertificatePem, notAfterUtc, daysToExpiry);
     }
 
     /// <summary>Fail-closed, same intent as <see cref="SiteTrustPin.IsTrusted"/>: a blank/missing PEM, or
@@ -228,5 +302,8 @@ public sealed record SiteStatusDto(
 public sealed record SiteLinkRequest(bool Enabled, string? Host, int? Port, string? SiteTrustPem);
 
 /// <summary>This device's own public identity, for an operator (or an automated pairing flow) to register
-/// at a SYNAPSE Site.</summary>
-public sealed record SiteIdentityDto(string DeviceFingerprint, string DeviceCertPem);
+/// at a SYNAPSE Site. <see cref="NotAfterUtc"/>/<see cref="DaysToExpiry"/> (GĐ3 closeout WI-4) make the
+/// certificate's expiry visible over the API for the first time — <see cref="DaysToExpiry"/> can be
+/// negative for an already-expired certificate (floor of the day delta, computed at response time — not
+/// stored), which the operator UI should treat as "rotate NOW", not clamp away.</summary>
+public sealed record SiteIdentityDto(string DeviceFingerprint, string DeviceCertPem, DateTimeOffset NotAfterUtc, int DaysToExpiry);

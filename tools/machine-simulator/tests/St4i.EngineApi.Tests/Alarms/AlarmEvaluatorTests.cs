@@ -229,6 +229,128 @@ public sealed class AlarmEvaluatorTests : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Identity-expiry source (GĐ3 closeout WI-4) — DateTimeOffset in, no real X.509 cert/DeviceIdentity
+    // needed: the evaluator only ever needs the NotAfter timestamp, passed exactly like the DriverHealth
+    // snapshot / KPI counters above — never the live identity object itself.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task IdentityExpiry_WithinWarnWindow_RaisesHighAlarm_NeverCritical()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, DefaultThresholds()); // IdentityExpiryWarnDays=30
+
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(10));
+
+        var alarm = await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device");
+        Assert.NotNull(alarm);
+        Assert.Equal(AlarmPriority.High, alarm!.Priority);
+        // The regression guard for the deliberate "never Critical" product decision (GĐ3 closeout WI-4
+        // brief) — a Critical alarm feeds LineController's alarm→hold gate and would block line.start/
+        // line.unhold; an expiring certificate must never stop production.
+        Assert.NotEqual(AlarmPriority.Critical, alarm.Priority);
+        Assert.False(alarm.ClearOnAck);
+    }
+
+    [Fact]
+    public async Task IdentityExpiry_ExactlyAtTheWarnBoundary_Raises()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, DefaultThresholds());
+
+        // Boundary: NotAfter exactly IdentityExpiryWarnDays away — "<=" in the evaluator means this DOES raise.
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(30));
+
+        Assert.NotNull(await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device"));
+    }
+
+    [Fact]
+    public async Task IdentityExpiry_AlreadyExpiredCertificate_StillRaises_NegativeDaysToExpiry()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, DefaultThresholds());
+
+        // An already-expired cert (NotAfter in the past) is well inside the warn window too — must raise,
+        // not be skipped just because the delta is negative.
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(-5));
+
+        var alarm = await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device");
+        Assert.NotNull(alarm);
+        Assert.Equal(AlarmPriority.High, alarm!.Priority);
+    }
+
+    [Fact]
+    public async Task IdentityExpiry_OutsideWarnWindow_RaisesNothing()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, DefaultThresholds());
+
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(400));
+
+        Assert.Null(await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device"));
+    }
+
+    [Fact]
+    public async Task IdentityExpiry_NullNotAfter_NeverRaisesOrThrows()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, DefaultThresholds());
+
+        var exception = await Record.ExceptionAsync(() =>
+            evaluator.EvaluateAsync(Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None));
+
+        Assert.Null(exception);
+        Assert.Null(await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device"));
+    }
+
+    [Fact]
+    public async Task IdentityExpiry_AfterRotationPushesExpiryOut_TheAlarmClears()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, DefaultThresholds());
+
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(10));
+        Assert.NotNull(await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device"));
+
+        // Simulates a rotation: the freshly-minted cert's NotAfter is a full ~10-year validity window away
+        // again — the evaluator (not an operator Ack) is what clears a condition alarm once it ends.
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddYears(10));
+
+        Assert.Null(await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device"));
+    }
+
+    [Fact]
+    public async Task IdentityExpiry_CustomWarnDaysThreshold_IsHonored()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, new AlarmThresholds { IdentityExpiryWarnDays = 5 });
+
+        // 10 days out is OUTSIDE a 5-day warn window — must not raise under the tighter threshold.
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(10));
+        Assert.Null(await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device"));
+
+        // 3 days out IS inside a 5-day warn window.
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(3));
+        Assert.NotNull(await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Never-throws — even when the store itself violates IAlarmStore's contract.
     // ─────────────────────────────────────────────────────────────────────
 
@@ -237,11 +359,13 @@ public sealed class AlarmEvaluatorTests : IDisposable
     {
         var evaluator = new AlarmEvaluator(new ThrowingAlarmStore(), DefaultThresholds());
 
-        // Must complete without throwing — both a Degraded slot (DriverHealth source) and a
-        // threshold-busting delta (NG-rate source) attempt a RaiseAsync against a store whose
-        // RaiseAsync/ClearAsync always throw.
+        // Must complete without throwing — a Degraded slot (DriverHealth source), a threshold-busting
+        // delta (NG-rate source), AND an inside-the-window expiry (Identity source) each attempt a
+        // RaiseAsync against a store whose RaiseAsync/ClearAsync always throw.
         await evaluator.EvaluateAsync(new[] { Slot("AOI-01", DriverHealthState.Degraded) }, (0, 0), CancellationToken.None);
-        await evaluator.EvaluateAsync(new[] { Slot("AOI-01", DriverHealthState.Degraded) }, (5, 10), CancellationToken.None);
+        await evaluator.EvaluateAsync(
+            new[] { Slot("AOI-01", DriverHealthState.Degraded) }, (5, 10), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(10));
     }
 
     /// <summary>Test double — deliberately VIOLATES <see cref="IAlarmStore"/>'s own never-throw contract,
