@@ -44,14 +44,43 @@ namespace St4i.EngineApi.Tests.Site;
 /// comment). Only the loopback round-trip test below asserts genuine delivery, with its own soft-skip.</para>
 /// </summary>
 [Collection("St4i.EngineApi.Tests.Site")]
-public sealed class SiteAdvertiserTests
+public sealed class SiteAdvertiserTests : IDisposable
 {
+    private readonly List<string> _tempDirs = new();
+
+    public void Dispose()
+    {
+        foreach (var dir in _tempDirs)
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* best-effort cleanup */ }
+        }
+    }
+
+    private string NewTempDir()
+    {
+        var dir = Directory.CreateTempSubdirectory("st4i-siteadvertiser-tests-").FullName;
+        _tempDirs.Add(dir);
+        return dir;
+    }
+
     private static DeviceIdentity NewIdentity(string nodeId, string fingerprint)
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest($"CN={nodeId}", ecdsa, HashAlgorithmName.SHA256);
         var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
         return new DeviceIdentity(cert, cert.ExportCertificatePem(), fingerprint, nodeId);
+    }
+
+    /// <summary>GĐ3 closeout WI-4 fix round 1 — <see cref="SiteAdvertiser"/> now takes a
+    /// <see cref="DeviceIdentityProvider"/> instead of a plain <see cref="DeviceIdentity"/>. The wrapping
+    /// <see cref="DeviceIdentityStore"/> here is only ever used to satisfy the provider's constructor — none
+    /// of these tests call <see cref="DeviceIdentityProvider.Rotate"/>, so it never touches the throwaway
+    /// temp directory beyond the ACL/directory-creation the store's own ctor always does.</summary>
+    private DeviceIdentityProvider NewIdentityProvider(string nodeId, string fingerprint)
+    {
+        var identity = NewIdentity(nodeId, fingerprint);
+        var store = new DeviceIdentityStore(NewTempDir());
+        return new DeviceIdentityProvider(store, identity);
     }
 
     private static Func<IReadOnlyCollection<string>?> Bound(params string[] addresses) => () => addresses;
@@ -109,10 +138,10 @@ public sealed class SiteAdvertiserTests
         {
             Environment.SetEnvironmentVariable(SiteAdvertiser.EnvVarAdvertise, "0");
 
-            var identity = NewIdentity("node-disabled-test", "FP1");
+            var identityProvider = NewIdentityProvider("node-disabled-test", "FP1");
             var unsOptions = new UnsOptions();
             await using var advertiser = new SiteAdvertiser(
-                unsOptions, identity, Bound("http://localhost:25201"), serviceType: UniqueServiceType("disabled"));
+                unsOptions, identityProvider, Bound("http://localhost:25201"), serviceType: UniqueServiceType("disabled"));
 
             advertiser.Start();
 
@@ -127,10 +156,10 @@ public sealed class SiteAdvertiserTests
     [Fact]
     public async Task Start_WhenUnsOptionsDisabled_NeverAdvertises()
     {
-        var identity = NewIdentity("node-uns-disabled", "FP2");
+        var identityProvider = NewIdentityProvider("node-uns-disabled", "FP2");
         var unsOptions = new UnsOptions { Enabled = false };
         await using var advertiser = new SiteAdvertiser(
-            unsOptions, identity, Bound("http://localhost:25202"), serviceType: UniqueServiceType("uns-off"));
+            unsOptions, identityProvider, Bound("http://localhost:25202"), serviceType: UniqueServiceType("uns-off"));
 
         advertiser.Start();
 
@@ -144,10 +173,10 @@ public sealed class SiteAdvertiserTests
     [Fact]
     public async Task Start_NoBoundAddressesYet_DoesNotThrow_AndIsAdvertisingStaysFalse()
     {
-        var identity = NewIdentity("node-nofail", "FP3");
+        var identityProvider = NewIdentityProvider("node-nofail", "FP3");
         var unsOptions = new UnsOptions();
         await using var advertiser = new SiteAdvertiser(
-            unsOptions, identity, Unbound(), serviceType: UniqueServiceType("noaddr"));
+            unsOptions, identityProvider, Unbound(), serviceType: UniqueServiceType("noaddr"));
 
         var ex = Record.Exception(() => advertiser.Start());
 
@@ -158,10 +187,10 @@ public sealed class SiteAdvertiserTests
     [Fact]
     public async Task Start_CalledTwice_IsHarmlessAndIdempotent()
     {
-        var identity = NewIdentity("node-twice", "FP4");
+        var identityProvider = NewIdentityProvider("node-twice", "FP4");
         var unsOptions = new UnsOptions();
         await using var advertiser = new SiteAdvertiser(
-            unsOptions, identity, Bound("http://localhost:25204"), serviceType: UniqueServiceType("twice"));
+            unsOptions, identityProvider, Bound("http://localhost:25204"), serviceType: UniqueServiceType("twice"));
 
         var firstEx = Record.Exception(() => advertiser.Start());
         Assert.Null(firstEx);
@@ -179,10 +208,10 @@ public sealed class SiteAdvertiserTests
     [Fact]
     public async Task DisposeAsync_CalledTwice_IsCleanAndIdempotent()
     {
-        var identity = NewIdentity("node-dispose", "FP5");
+        var identityProvider = NewIdentityProvider("node-dispose", "FP5");
         var unsOptions = new UnsOptions();
         var advertiser = new SiteAdvertiser(
-            unsOptions, identity, Bound("http://localhost:25205"), serviceType: UniqueServiceType("dispose"));
+            unsOptions, identityProvider, Bound("http://localhost:25205"), serviceType: UniqueServiceType("dispose"));
 
         advertiser.Start();
 
@@ -199,10 +228,10 @@ public sealed class SiteAdvertiserTests
     [Fact]
     public async Task StopAsync_CalledTwice_IsCleanAndIdempotent()
     {
-        var identity = NewIdentity("node-stop", "FP6");
+        var identityProvider = NewIdentityProvider("node-stop", "FP6");
         var unsOptions = new UnsOptions();
         await using var advertiser = new SiteAdvertiser(
-            unsOptions, identity, Bound("http://localhost:25206"), serviceType: UniqueServiceType("stop"));
+            unsOptions, identityProvider, Bound("http://localhost:25206"), serviceType: UniqueServiceType("stop"));
 
         advertiser.Start();
 
@@ -256,11 +285,11 @@ public sealed class SiteAdvertiserTests
         try
         {
             var serviceType = UniqueServiceType("rt");
-            var identity = NewIdentity("rt-node-1", "RTFINGERPRINT");
+            var identityProvider = NewIdentityProvider("rt-node-1", "RTFINGERPRINT");
             var unsOptions = new UnsOptions { Site = "rtsite", Area = "rtarea", Line = "rtline", Cell = "rtcell" };
             const int port = 25299;
 
-            var advertiser = new SiteAdvertiser(unsOptions, identity, Bound($"http://localhost:{port}"), serviceType: serviceType);
+            var advertiser = new SiteAdvertiser(unsOptions, identityProvider, Bound($"http://localhost:{port}"), serviceType: serviceType);
             try
             {
                 advertiser.Start();
@@ -285,6 +314,88 @@ public sealed class SiteAdvertiserTests
                 Assert.Equal("rtarea", found.Txt["area"]);
                 Assert.Equal("rtline", found.Txt["line"]);
                 Assert.Equal("rtcell", found.Txt["cell"]);
+            }
+            finally
+            {
+                await advertiser.DisposeAsync();
+            }
+        }
+        finally
+        {
+            MulticastService.IncludeLoopbackInterfaces = previousIncludeLoopback;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GĐ3 closeout WI-4 fix round 1 (Important #2) — a device-identity rotation must actually reach a LIVE
+    // mDNS advertisement, not just the in-memory DeviceIdentityProvider.Current pointer.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RestartAsync_NeverThrows_AndLeavesConsistentState()
+    {
+        var identityProvider = NewIdentityProvider("node-restart", "FP7");
+        var unsOptions = new UnsOptions();
+        await using var advertiser = new SiteAdvertiser(
+            unsOptions, identityProvider, Bound("http://localhost:25207"), serviceType: UniqueServiceType("restart"));
+
+        advertiser.Start();
+        var stateAfterStart = advertiser.IsAdvertising;
+
+        identityProvider.Rotate();
+
+        var ex = await Record.ExceptionAsync(() => advertiser.RestartAsync());
+
+        Assert.Null(ex);
+        // Same environment-independent tolerance as Start_CalledTwice_IsHarmlessAndIdempotent above:
+        // RestartAsync must never throw and must leave IsAdvertising in the SAME state a fresh Start()
+        // would produce in whatever sandbox/CI runner this executes in — not necessarily true.
+        Assert.Equal(stateAfterStart, advertiser.IsAdvertising);
+    }
+
+    [Fact]
+    [Trait("Category", "RequiresMulticast")]
+    public async Task RestartAsync_AfterRotation_ReAdvertisesWithTheNewFingerprint()
+    {
+        var previousIncludeLoopback = MulticastService.IncludeLoopbackInterfaces;
+        MulticastService.IncludeLoopbackInterfaces = true;
+        try
+        {
+            var serviceType = UniqueServiceType("rot");
+            var identityProvider = NewIdentityProvider("rot-node-1", "OLD-FINGERPRINT");
+            var unsOptions = new UnsOptions { Site = "rotsite", Area = "rotarea", Line = "rotline", Cell = "rotcell" };
+            const int port = 25298;
+
+            var advertiser = new SiteAdvertiser(unsOptions, identityProvider, Bound($"http://localhost:{port}"), serviceType: serviceType);
+            try
+            {
+                advertiser.Start();
+                Assert.True(advertiser.IsAdvertising,
+                    "SiteAdvertiser.Start() did not begin advertising — no usable multicast-capable NIC " +
+                    "in this environment? (see [Trait(\"Category\",\"RequiresMulticast\")] to exclude this " +
+                    "test in a known NIC-less CI runner instead of silently skipping in-test).");
+
+                // A real rotation — mints+persists a brand-new identity through the SAME DeviceIdentityStore
+                // NewIdentityProvider wired up, exactly like the real POST /v1/site/identity/rotate handler.
+                var rotated = identityProvider.Rotate();
+                Assert.NotEqual("OLD-FINGERPRINT", rotated.Fingerprint);
+
+                // Merely rotating the provider does nothing to the advertisement already live above — see
+                // ISiteAdvertiser.RestartAsync's own doc comment. RestartAsync is what actually re-keys it.
+                await advertiser.RestartAsync();
+                Assert.True(advertiser.IsAdvertising, "RestartAsync did not resume advertising.");
+
+                var discovery = new SiteDiscovery(serviceType);
+                var sites = await discovery.DiscoverAsync(TimeSpan.FromSeconds(4));
+
+                Assert.True(sites.Count > 0,
+                    "Advertised successfully after RestartAsync but nothing round-tripped within the 4s " +
+                    "browse window — multicast delivery itself did not work in this environment.");
+
+                var found = Assert.Single(sites);
+                Assert.Equal(port, found.Port);
+                Assert.Equal(rotated.Fingerprint, found.Txt["fp"]);
+                Assert.NotEqual("OLD-FINGERPRINT", found.Txt["fp"]);
             }
             finally
             {

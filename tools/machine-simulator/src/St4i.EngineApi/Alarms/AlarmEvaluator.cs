@@ -45,6 +45,13 @@ public sealed class AlarmEvaluator
     private long? _lastPass;
     private long? _lastJudged;
 
+    /// <summary>The Identity source's own dedup state (GĐ3 closeout WI-4 fix round 1, Important #1) — the
+    /// whole-day <c>daysToExpiry</c> value that was ACTUALLY raised last, or <see langword="null"/> when
+    /// the condition isn't currently raised (never entered the warn window yet this run, or a previous
+    /// pass cleared it). See <see cref="EvaluateIdentityExpiryAsync"/>'s own comment for why this field
+    /// exists at all: without it, every tick re-raises unconditionally.</summary>
+    private int? _lastRaisedIdentityDaysToExpiry;
+
     public AlarmEvaluator(IAlarmStore alarms, AlarmThresholds thresholds, Action<Exception, string>? logError = null)
     {
         _alarms = alarms ?? throw new ArgumentNullException(nameof(alarms));
@@ -62,11 +69,14 @@ public sealed class AlarmEvaluator
     /// <para><paramref name="identityNotAfterUtc"/> (GĐ3 closeout WI-4) is deliberately the LAST parameter,
     /// AFTER <paramref name="ct"/> rather than before it — this method predates the Identity source, and
     /// every pre-existing caller (this whole file's own tests, <see cref="AlarmEvaluatorService"/>) invokes
-    /// it positionally as <c>(health, kpi, ct)</c>; inserting a new parameter ahead of <paramref name="ct"/>
-    /// would silently break every one of those call sites' argument-to-parameter binding. Optional +
-    /// trailing keeps them all compiling unchanged; a caller that has an identity to evaluate passes it by
-    /// name (<c>identityNotAfterUtc: ...</c>), same as <see cref="AlarmEvaluatorService"/> does.
-    /// <see langword="null"/> (the default) means "no identity to evaluate this pass" — raises/clears
+    /// it positionally as <c>(health, kpi, ct)</c>, with <see cref="CancellationToken"/> as the third
+    /// argument. Inserting a new <see cref="DateTimeOffset"/>? parameter AHEAD of <paramref name="ct"/>
+    /// would have turned every one of those pre-existing positional call sites into a COMPILE ERROR (CS1503
+    /// — <c>CancellationToken</c> is not implicitly convertible to <c>DateTimeOffset?</c>), forcing every
+    /// caller to be touched just to keep building. Optional + trailing avoids that churn entirely: all
+    /// pre-existing call sites keep compiling completely unchanged, and a caller that has an identity to
+    /// evaluate passes it by name (<c>identityNotAfterUtc: ...</c>), same as <see cref="AlarmEvaluatorService"/>
+    /// does. <see langword="null"/> (the default) means "no identity to evaluate this pass" — raises/clears
     /// nothing for <see cref="AlarmSource.Identity"/>, rather than treating a missing value as an
     /// already-expired certificate.</para></summary>
     public async Task EvaluateAsync(
@@ -222,6 +232,19 @@ public sealed class AlarmEvaluator
     // DriverHealth/NG-rate above: an operator's Ack silences it, but only THIS evaluator noticing the
     // condition has ended (the cert's NotAfter is now further than the warn window away — in practice,
     // after a rotation mints a fresh ~10-year cert) actually clears it.
+    //
+    // GĐ3 closeout WI-4 fix round 1, Important #1 — UNLIKE DriverHealth/NgRate above, this source does NOT
+    // re-raise unconditionally on every tick. AlarmStore.RaiseAsync appends an alarm_history row (and never
+    // prunes it — nothing in this codebase does) on EVERY call, and this evaluator ticks every
+    // AlarmThresholds.EvalIntervalMs (5s by default). DriverHealth/NgRate re-raising every tick is a
+    // pre-existing, accepted shape because THEIR conditions are transient-ish in practice; Identity is the
+    // first source guaranteed BY DESIGN to hold true continuously for the entire warn window (30 days by
+    // default) on every device that hasn't rotated — unconditional re-raise at 5s granularity would be
+    // ~518,000 history rows per window, and unboundedly more (~6.3M/year) if an operator never rotates at
+    // all. An expiry check only needs daily granularity, not the tick rate — see
+    // _lastRaisedIdentityDaysToExpiry's own doc comment: raising only when the whole-day remaining-days
+    // value actually CHANGES (first entry into the window, then at most once per calendar day thereafter)
+    // reduces that to on the order of tens of rows per window.
     // ─────────────────────────────────────────────────────────────────────
 
     private const string IdentityExpiryKey = $"{nameof(AlarmSource.Identity)}:EXPIRING:device";
@@ -237,33 +260,52 @@ public sealed class AlarmEvaluator
                 return;
             }
 
-            var daysToExpiry = (notAfterUtc.Value - DateTimeOffset.UtcNow).TotalDays;
+            var daysToExpiry = (int)Math.Floor((notAfterUtc.Value - DateTimeOffset.UtcNow).TotalDays);
 
             if (daysToExpiry <= _thresholds.IdentityExpiryWarnDays)
             {
-                await _alarms.RaiseAsync(
-                    new AlarmRaise(
-                        AlarmSource.Identity,
-                        "EXPIRING",
-                        // 🔴 Priority ceiling — High, NEVER Critical. This is a deliberate product decision,
-                        // not an oversight (GĐ3 closeout WI-4 brief). A Critical alarm feeds LineController's
-                        // alarm→hold gate (LC-3 — see LineController.cs), which blocks line.start/
-                        // line.unhold. An expiring device certificate must NEVER stop production — the same
-                        // "không bao giờ dừng sản xuất vì license" principle the roadmap states for
-                        // licensing: there is no safety justification for halting a line over a credential
-                        // nearing end-of-life. Do NOT "upgrade" this to Critical — AlarmEvaluatorTests has a
-                        // regression test asserting exactly this.
-                        AlarmPriority.High,
-                        $"Device identity certificate expires in {Math.Floor(daysToExpiry):0} day(s) " +
-                        $"(NotAfter {notAfterUtc.Value:O}) — rotate it via POST /v1/site/identity/rotate " +
-                        "before it lapses.",
-                        TargetId: "device",
-                        ClearOnAck: false),
-                    ct).ConfigureAwait(false);
+                // Only re-raise when the value actually changed since the last raise (see
+                // _lastRaisedIdentityDaysToExpiry's own doc comment) — an unchanged value this tick is a
+                // deliberate no-op, not a missed update: RaiseAsync would only re-UPSERT the identical
+                // active-alarm row and append a redundant "raised" history line, at 5s intervals, for the
+                // entire remainder of the warn window.
+                if (_lastRaisedIdentityDaysToExpiry != daysToExpiry)
+                {
+                    await _alarms.RaiseAsync(
+                        new AlarmRaise(
+                            AlarmSource.Identity,
+                            "EXPIRING",
+                            // 🔴 Priority ceiling — High, NEVER Critical. This is a deliberate product decision,
+                            // not an oversight (GĐ3 closeout WI-4 brief). A Critical alarm feeds LineController's
+                            // alarm→hold gate (LC-3 — see LineController.cs), which blocks line.start/
+                            // line.unhold. An expiring device certificate must NEVER stop production — the same
+                            // "không bao giờ dừng sản xuất vì license" principle the roadmap states for
+                            // licensing: there is no safety justification for halting a line over a credential
+                            // nearing end-of-life. Do NOT "upgrade" this to Critical — AlarmEvaluatorTests has a
+                            // regression test asserting exactly this.
+                            AlarmPriority.High,
+                            $"Device identity certificate expires in {daysToExpiry} day(s) " +
+                            $"(NotAfter {notAfterUtc.Value:O}) — rotate it via POST /v1/site/identity/rotate " +
+                            "before it lapses.",
+                            TargetId: "device",
+                            ClearOnAck: false),
+                        ct).ConfigureAwait(false);
+
+                    // Only recorded on a SUCCESSFUL await — if RaiseAsync throws (a throwing IAlarmStore
+                    // test double, or a genuine transient store failure), control jumps straight to the
+                    // catch below and this line never runs, so the NEXT tick retries the raise instead of
+                    // wrongly assuming it already went through.
+                    _lastRaisedIdentityDaysToExpiry = daysToExpiry;
+                }
             }
-            else
+            else if (_lastRaisedIdentityDaysToExpiry is not null)
             {
+                // Only clear when this source itself previously raised — ClearAsync is already a cheap
+                // no-op when nothing active carries the key (see AlarmStore.ClearAsync's own doc comment),
+                // but skipping the call entirely on every one of the (vast majority of) ticks where the
+                // certificate isn't anywhere near expiring avoids the DB round-trip altogether.
                 await _alarms.ClearAsync(IdentityExpiryKey, ct).ConfigureAwait(false);
+                _lastRaisedIdentityDaysToExpiry = null;
             }
         }
         catch (Exception ex)

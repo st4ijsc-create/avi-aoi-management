@@ -12,14 +12,21 @@ namespace St4i.EdgeCore.Identity;
 /// certificate for the rest of the process's life. This class is the single, thread-safe source of truth
 /// for "the CURRENT identity" that every consumer reads through instead of capturing a copy.</para>
 ///
-/// <para><b>Thread-safety:</b> <see cref="Current"/> and <see cref="Rotate"/> both take a private lock
-/// around the single field swap — <see cref="Current"/> never observes a torn/partially-updated identity,
-/// and two concurrent <see cref="Rotate"/> calls (e.g. a double-submit of <c>POST
-/// /v1/site/identity/rotate</c>) never interleave their reads/writes of the in-memory pointer. The
-/// underlying <see cref="DeviceIdentityStore.Rotate"/> disk write is NOT additionally serialized here —
-/// concurrent rotations racing the file system is an accepted, deliberately out-of-scope edge case (an
-/// operator invoking a destructive identity rotation twice at once is not a scenario this class needs to
-/// make safe beyond "the process doesn't corrupt its own in-memory state").</para>
+/// <para><b>Thread-safety (GĐ3 closeout WI-4 fix round 1 — Important #3/concurrency Minor):</b>
+/// <see cref="Rotate"/> holds the SAME private lock across its ENTIRE body — the <see cref="DeviceIdentityStore.Rotate"/>
+/// disk write (mint + DPAPI-protect + atomic file replace) included, not just the final in-memory swap.
+/// Fix round 1 review caught the earlier (lock-only-around-the-swap) version as genuinely unsafe: two
+/// concurrent <see cref="Rotate"/> calls (a double-submit of <c>POST /v1/site/identity/rotate</c>) could
+/// both read the SAME pre-rotation <see cref="DeviceIdentity.NodeId"/>, then race
+/// <see cref="DeviceIdentityStore.Rotate"/>'s own file replace against each other — whichever caller's
+/// mint finished LAST would win on disk, but the OTHER caller's already-returned response (the fingerprint
+/// an operator would go paste into the Site) could disagree with what's actually persisted, permanently
+/// breaking the uplink after a restart. Fully serializing <see cref="Rotate"/> removes that race by
+/// construction: only one rotation can ever be in flight at a time, and every caller's returned
+/// <see cref="DeviceIdentity"/> is guaranteed to be exactly what's on disk when it returns. A rotation is
+/// an explicit, infrequent operator action, not a latency-sensitive hot path — holding the lock for the
+/// full mint+persist duration (also blocking concurrent <see cref="Current"/> reads for that same brief
+/// window) has no meaningful downside.</para>
 ///
 /// <para><b>Rotation keeps the current NodeId</b> — <see cref="Rotate"/> re-mints under
 /// <see cref="DeviceIdentity.NodeId"/> as it stands at the moment of the call (not whatever nodeId the
@@ -61,19 +68,20 @@ public sealed class DeviceIdentityProvider
     }
 
     /// <summary>Mints+persists a brand-new identity (<see cref="DeviceIdentityStore.Rotate"/>, under the
-    /// CURRENT <see cref="DeviceIdentity.NodeId"/>) and swaps <see cref="Current"/> to it. Does NOT catch
-    /// — a minting/persistence failure propagates to the caller unchanged (same "explicit operator action,
-    /// must not swallow a failure" contract <see cref="DeviceIdentityStore.Rotate"/> itself documents); on
-    /// failure, <see cref="Current"/> is left completely unchanged (the store never got as far as replacing
-    /// anything on disk — see that method's own doc comment).</summary>
+    /// CURRENT <see cref="DeviceIdentity.NodeId"/>) and swaps <see cref="Current"/> to it — the READ of the
+    /// current NodeId, the disk mint/persist, and the swap are all under ONE lock acquisition (see this
+    /// class' own doc comment for why). Does NOT catch — a minting/persistence failure propagates to the
+    /// caller unchanged (same "explicit operator action, must not swallow a failure" contract
+    /// <see cref="DeviceIdentityStore.Rotate"/> itself documents); on failure, <see cref="Current"/> is left
+    /// completely unchanged (the store never got as far as replacing anything on disk — see that method's
+    /// own doc comment), and the lock is released (a normal exception unwind, not a held/abandoned lock).</summary>
     public DeviceIdentity Rotate()
     {
-        string nodeId;
-        lock (_gate) { nodeId = _current.NodeId; }
-
-        var rotated = _store.Rotate(nodeId);
-
-        lock (_gate) { _current = rotated; }
-        return rotated;
+        lock (_gate)
+        {
+            var rotated = _store.Rotate(_current.NodeId);
+            _current = rotated;
+            return rotated;
+        }
     }
 }

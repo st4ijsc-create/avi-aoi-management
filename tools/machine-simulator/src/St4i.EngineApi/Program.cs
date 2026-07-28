@@ -533,7 +533,7 @@ builder.Services.AddSingleton<St4i.EngineApi.Site.ISiteDiscovery>(sp =>
 builder.Services.AddSingleton<St4i.EngineApi.Site.SiteAdvertiser>(sp =>
     new St4i.EngineApi.Site.SiteAdvertiser(
         unsOptions,
-        deviceIdentity,
+        deviceIdentityProvider,
         () => sp.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses as IReadOnlyCollection<string>,
         sp.GetRequiredService<IHostApplicationLifetime>(),
         logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("SiteAdvertiser").LogError(ex, "{Msg}", msg)));

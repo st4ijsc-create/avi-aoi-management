@@ -186,11 +186,28 @@ public static class SiteEndpoints
     // POST /v1/site/identity/rotate — GĐ3 closeout WI-4
     // ─────────────────────────────────────────────────────────────────────
     /// <summary>
-    /// Mints+persists a brand-new device identity (<see cref="DeviceIdentityProvider.Rotate"/>) and, if a
-    /// Site bridge is configured, re-applies the currently-persisted Site link so the LIVE bridge actually
-    /// starts presenting the new certificate (<see cref="SiteBridgeManager.ReapplyCurrentAsync"/>) —
-    /// skipping that step would rotate the identity while the bridge silently keeps using the old one
-    /// forever, which defeats the entire feature.
+    /// Mints+persists a brand-new device identity (<see cref="DeviceIdentityProvider.Rotate"/>) and
+    /// re-keys everything that presents/advertises the OLD one: if a Site bridge is configured, re-applies
+    /// the currently-persisted Site link so the LIVE bridge actually starts presenting the new certificate
+    /// (<see cref="SiteBridgeManager.ReapplyCurrentAsync"/>); and restarts the mDNS advertisement so its
+    /// <c>fp</c> TXT record stops broadcasting the stale fingerprint
+    /// (<see cref="ISiteAdvertiser.RestartAsync"/>). Skipping either step would rotate the identity while
+    /// that consumer silently keeps using the old one — the bridge forever (no restart to self-heal it),
+    /// the mDNS broadcast until the next process restart — either of which defeats the point of rotating
+    /// at all.
+    ///
+    /// <para><b>Requires <see cref="RotateIdentityRequest.CurrentFingerprint"/> to match
+    /// <see cref="DeviceIdentityProvider.Current"/> (GĐ3 closeout WI-4 fix round 1, Important #3) — 400 if
+    /// missing/blank, 409 on a mismatch.</b> A bare, bodyless <c>POST</c> from any Admin session used to
+    /// re-key the device immediately and irreversibly with no confirmation of what was actually being
+    /// rotated — everything this endpoint does to surface the consequence (the fingerprint in the
+    /// response, the audit row) only fires AFTER the fact. Requiring the caller to echo the CURRENT
+    /// fingerprint forces whoever calls this to have actually read it first (making the action deliberate
+    /// at the API level, not just a reachable route), and rejects a submission that raced a rotation that
+    /// already happened out from under it. See <see cref="St4i.EdgeCore.Identity.DeviceIdentityProvider.Rotate"/>'s
+    /// own doc comment for the other half of the concurrency fix — the provider now holds its lock across
+    /// the ENTIRE rotation (not just the in-memory swap), so even two requests that both raced past THIS
+    /// check with the same (still-current) fingerprint can't interleave the underlying mint+persist+swap.</para>
     ///
     /// <para><b>This deliberately breaks the Site connection.</b> The Site pins THIS device's OLD
     /// fingerprint (<see cref="St4i.EdgeCore.Site.SiteTrustPin"/> is the mirror image, on the OTHER side —
@@ -209,7 +226,9 @@ public static class SiteEndpoints
     /// Works even with the local UNS spine disabled (<paramref name="mgr"/> <see langword="null"/>) — the
     /// device identity exists independent of whether anything is federated (same rationale
     /// <see cref="GetSiteAsync"/> already documents for <c>DeviceFingerprint</c>); there's simply nothing
-    /// to re-apply in that case.</para>
+    /// to re-apply in that case (the mDNS restart still happens either way — <see cref="ISiteAdvertiser"/>
+    /// is registered unconditionally, same as <see cref="DeviceIdentityProvider"/>, and no-ops internally
+    /// when advertising itself is disabled).</para>
     ///
     /// <para>A minting/persistence failure (<see cref="DeviceIdentityProvider.Rotate"/> propagates it,
     /// deliberately NOT swallowed — see <see cref="St4i.EdgeCore.Identity.DeviceIdentityStore.Rotate"/>'s
@@ -218,9 +237,25 @@ public static class SiteEndpoints
     /// follows.</para>
     /// </summary>
     internal static async Task<IResult> RotateIdentityAsync(
-        [FromServices] SiteBridgeManager? mgr, DeviceIdentityProvider identityProvider, HttpContext ctx, AuditRecorder recorder, CancellationToken ct)
+        RotateIdentityRequest? body, [FromServices] SiteBridgeManager? mgr, ISiteAdvertiser advertiser,
+        DeviceIdentityProvider identityProvider, HttpContext ctx, AuditRecorder recorder, CancellationToken ct)
     {
         var before = identityProvider.Current;
+
+        if (string.IsNullOrWhiteSpace(body?.CurrentFingerprint))
+        {
+            return Results.BadRequest(new ApiErrorDto(
+                "currentFingerprint is required — echo the value GET /v1/site/identity currently reports, " +
+                "so a rotation is a deliberate, confirmed action rather than a bare POST."));
+        }
+
+        if (!string.Equals(body.CurrentFingerprint, before.Fingerprint, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Conflict(new ApiErrorDto(
+                "currentFingerprint does not match the device's CURRENT fingerprint — it may already have " +
+                "been rotated since you last read it (by a concurrent request or another operator). " +
+                "Refresh GET /v1/site/identity and confirm the new value before retrying."));
+        }
 
         var rotated = identityProvider.Rotate();
 
@@ -229,6 +264,10 @@ public static class SiteEndpoints
         {
             await mgr.ReapplyCurrentAsync().ConfigureAwait(false);
         }
+
+        // Re-advertise so the mDNS broadcast's "fp" TXT field reflects the NEW fingerprint immediately —
+        // see ISiteAdvertiser.RestartAsync's own doc comment for why this is not optional either.
+        await advertiser.RestartAsync().ConfigureAwait(false);
 
         await recorder.RecordAsync(
             ctx, "site.identity.rotate", "site", rotated.Fingerprint,
@@ -307,3 +346,12 @@ public sealed record SiteLinkRequest(bool Enabled, string? Host, int? Port, stri
 /// negative for an already-expired certificate (floor of the day delta, computed at response time — not
 /// stored), which the operator UI should treat as "rotate NOW", not clamp away.</summary>
 public sealed record SiteIdentityDto(string DeviceFingerprint, string DeviceCertPem, DateTimeOffset NotAfterUtc, int DaysToExpiry);
+
+/// <summary>The <c>POST /v1/site/identity/rotate</c> request body (GĐ3 closeout WI-4 fix round 1,
+/// Important #3 — a NEW field this task adds; there was no request body for this route before). See
+/// <see cref="SiteEndpoints.RotateIdentityAsync"/>'s own doc comment for the full rationale:
+/// <see cref="CurrentFingerprint"/> must match the value <c>GET /v1/site/identity</c>'s own
+/// <c>DeviceFingerprint</c> (or <c>GET /v1/site</c>'s own field of the same name) currently reports —
+/// blank/missing is a 400, a mismatch is a 409 — so the caller must have actually read the CURRENT
+/// fingerprint before rotating, and a stale/racing submission is rejected rather than silently applied.</summary>
+public sealed record RotateIdentityRequest(string? CurrentFingerprint);

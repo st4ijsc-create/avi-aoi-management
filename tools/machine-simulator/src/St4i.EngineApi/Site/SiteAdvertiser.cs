@@ -38,6 +38,16 @@ public interface ISiteAdvertiser : IAsyncDisposable
     /// leaves <see cref="IsAdvertising"/> <see langword="false"/>. Idempotent and clean to call more than
     /// once, or when never actually started.</summary>
     Task StopAsync();
+
+    /// <summary>GĐ3 closeout WI-4 fix round 1 (Important — device-identity rotation) — <see cref="StopAsync"/>
+    /// then <see cref="Start"/> as one call. Exists because <see cref="Start"/>'s own no-op-if-already-advertising
+    /// guard means calling <see cref="Start"/> again after a rotation would do NOTHING at all (the OLD
+    /// <see cref="ServiceProfile"/>, built from the pre-rotation fingerprint, is already live) — the fix
+    /// for a stale mDNS-advertised fingerprint is to tear the advertisement down and rebuild it from
+    /// scratch, exactly like <see cref="St4i.EdgeCore.Site.SiteBridgeManager.ReapplyCurrentAsync"/> does for
+    /// the Site bridge. Safe to call unconditionally (advertising disabled, or never started, both no-op
+    /// through the same paths <see cref="StopAsync"/>/<see cref="Start"/> already handle on their own).</summary>
+    Task RestartAsync();
 }
 
 /// <summary>
@@ -99,7 +109,7 @@ public sealed class SiteAdvertiser : ISiteAdvertiser, IHostedService
     public const string EnvVarAdvertise = "ST4I_MDNS_ADVERTISE";
 
     private readonly UnsOptions _unsOptions;
-    private readonly DeviceIdentity _identity;
+    private readonly DeviceIdentityProvider _identityProvider;
     private readonly Func<IReadOnlyCollection<string>?> _resolveBoundAddresses;
     private readonly IHostApplicationLifetime? _lifetime;
     private readonly string _serviceType;
@@ -121,9 +131,14 @@ public sealed class SiteAdvertiser : ISiteAdvertiser, IHostedService
     /// <param name="unsOptions">Supplies the ISA-95 address (<see cref="UnsOptions.Site"/>/<see cref="UnsOptions.Area"/>/
     /// <see cref="UnsOptions.Line"/>/<see cref="UnsOptions.Cell"/>) for the TXT records, and
     /// <see cref="UnsOptions.Enabled"/> gates advertising on/off alongside <see cref="EnvVarAdvertise"/>.</param>
-    /// <param name="identity">This device's own identity — <see cref="DeviceIdentity.NodeId"/> (sanitized)
-    /// becomes the mDNS instance name; <see cref="DeviceIdentity.NodeId"/>/<see cref="DeviceIdentity.Fingerprint"/>
-    /// both also go into the TXT records.</param>
+    /// <param name="identityProvider">GĐ3 closeout WI-4 fix round 1 — this device's identity, read through
+    /// the provider (not a captured <see cref="DeviceIdentity"/> snapshot), so a rotation is actually
+    /// visible: <see cref="Start"/> reads <see cref="DeviceIdentityProvider.Current"/> fresh every time it
+    /// builds a <see cref="ServiceProfile"/>. <see cref="DeviceIdentity.NodeId"/> (sanitized) becomes the
+    /// mDNS instance name; <see cref="DeviceIdentity.NodeId"/>/<see cref="DeviceIdentity.Fingerprint"/> both
+    /// also go into the TXT records. Merely swapping <see cref="DeviceIdentityProvider.Current"/> does
+    /// NOTHING to an already-advertising instance on its own — see <see cref="RestartAsync"/> for how a
+    /// rotation actually reaches a LIVE advertisement.</param>
     /// <param name="resolveBoundAddresses">Returns the host's currently-bound listen addresses (e.g.
     /// <c>["http://localhost:5199"]</c>), or <see langword="null"/>/empty if the server hasn't started
     /// listening yet — see this class' own doc comment for why this is a plain delegate, not a direct
@@ -138,14 +153,14 @@ public sealed class SiteAdvertiser : ISiteAdvertiser, IHostedService
     /// internally.</param>
     public SiteAdvertiser(
         UnsOptions unsOptions,
-        DeviceIdentity identity,
+        DeviceIdentityProvider identityProvider,
         Func<IReadOnlyCollection<string>?> resolveBoundAddresses,
         IHostApplicationLifetime? lifetime = null,
         string? serviceType = null,
         Action<Exception, string>? logError = null)
     {
         _unsOptions = unsOptions ?? throw new ArgumentNullException(nameof(unsOptions));
-        _identity = identity ?? throw new ArgumentNullException(nameof(identity));
+        _identityProvider = identityProvider ?? throw new ArgumentNullException(nameof(identityProvider));
         _resolveBoundAddresses = resolveBoundAddresses ?? throw new ArgumentNullException(nameof(resolveBoundAddresses));
         _lifetime = lifetime;
         _serviceType = ResolveServiceType(serviceType);
@@ -224,13 +239,16 @@ public sealed class SiteAdvertiser : ISiteAdvertiser, IHostedService
             ServiceDiscovery? sd = null;
             try
             {
+                // Read Current AS OF THIS CALL — not a captured field — so a rotation that already
+                // happened (via RestartAsync, below) is honored by the ServiceProfile this builds.
+                var identity = _identityProvider.Current;
                 var port = ResolvePort(_resolveBoundAddresses());
-                var instanceName = SanitizeInstanceName(_identity.NodeId);
+                var instanceName = SanitizeInstanceName(identity.NodeId);
 
                 mdns = new MulticastService();
                 sd = new ServiceDiscovery(mdns);
                 var profile = new ServiceProfile(instanceName, _serviceType, (ushort)port);
-                foreach (var kv in BuildTxtRecords(_unsOptions, _identity))
+                foreach (var kv in BuildTxtRecords(_unsOptions, identity))
                 {
                     profile.AddProperty(kv.Key, kv.Value);
                 }
@@ -287,6 +305,13 @@ public sealed class SiteAdvertiser : ISiteAdvertiser, IHostedService
         try { mdns?.Dispose(); } catch { /* best-effort cleanup */ }
 
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public async Task RestartAsync()
+    {
+        await StopAsync().ConfigureAwait(false);
+        Start();
     }
 
     /// <inheritdoc/>

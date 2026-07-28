@@ -351,6 +351,88 @@ public sealed class AlarmEvaluatorTests : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, Important #1 — the Identity source must NOT re-raise (and so must NOT append a fresh
+    // alarm_history row) on every tick while the whole-day remaining-value hasn't changed. Without this,
+    // the 5s-default eval interval would produce ~518k history rows over one 30-day warn window (and
+    // unboundedly more if an operator never rotates) — alarm_history has no pruning anywhere in this
+    // codebase. Alarm.Count is the observable proxy: RaiseAsync's own UPSERT increments it on every ACTUAL
+    // call (see AlarmStore.RaiseAsync), so Count staying at 1 across repeated ticks proves no redundant
+    // RaiseAsync call — and therefore no redundant history row — was made.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task IdentityExpiry_RepeatedTicksAtTheSameDayGranularity_DoesNotReRaise_CountStaysOne()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, DefaultThresholds());
+        var notAfter = DateTimeOffset.UtcNow.AddDays(10);
+
+        // Same target instant across three "ticks" — simulates the evaluator polling every 5s while the
+        // remaining-days value (a whole-day count) hasn't crossed a day boundary yet.
+        await evaluator.EvaluateAsync(Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None, identityNotAfterUtc: notAfter);
+        await evaluator.EvaluateAsync(Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None, identityNotAfterUtc: notAfter);
+        await evaluator.EvaluateAsync(Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None, identityNotAfterUtc: notAfter);
+
+        var alarm = await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device");
+        Assert.NotNull(alarm);
+        Assert.Equal(1, alarm!.Count); // never re-raised across the repeated same-day-value ticks.
+    }
+
+    [Fact]
+    public async Task IdentityExpiry_DaysToExpiryValueChanges_DoesReRaise_CountIncrements()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, DefaultThresholds());
+
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(10));
+        var first = await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device");
+        Assert.NotNull(first);
+        Assert.Equal(1, first!.Count);
+
+        // A day boundary crossed (the evaluator has no timer/wall-clock dependency of its own — see this
+        // class's own doc comment — so a "day later" pass is simulated directly): the remaining-days value
+        // actually changed, so THIS re-raise must go through (bumping Count), unlike the same-value case
+        // in IdentityExpiry_RepeatedTicksAtTheSameDayGranularity_DoesNotReRaise_CountStaysOne above.
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(9));
+        var second = await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device");
+        Assert.NotNull(second);
+        Assert.Equal(2, second!.Count);
+    }
+
+    [Fact]
+    public async Task IdentityExpiry_ClearedThenReEntersWindow_RaisesAgain_NotSuppressedForever()
+    {
+        var store = NewStore();
+        var evaluator = new AlarmEvaluator(store, DefaultThresholds());
+
+        // Raise (enters the window)...
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(10));
+        Assert.NotNull(await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device"));
+
+        // ...clears (a rotation pushes the expiry back out)...
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddYears(10));
+        Assert.Null(await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device"));
+
+        // ...and if it later re-enters the SAME warn window again (e.g. years pass with no further
+        // rotation), the dedup state must not have permanently latched "already raised" — this must raise
+        // again, a fresh Count of 1, not stay silently suppressed forever.
+        await evaluator.EvaluateAsync(
+            Array.Empty<DriverHealthSnapshot>(), (0, 0), CancellationToken.None,
+            identityNotAfterUtc: DateTimeOffset.UtcNow.AddDays(10));
+        var reRaised = await FindActiveAsync(store, AlarmSource.Identity, "EXPIRING", "device");
+        Assert.NotNull(reRaised);
+        Assert.Equal(1, reRaised!.Count);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Never-throws — even when the store itself violates IAlarmStore's contract.
     // ─────────────────────────────────────────────────────────────────────
 

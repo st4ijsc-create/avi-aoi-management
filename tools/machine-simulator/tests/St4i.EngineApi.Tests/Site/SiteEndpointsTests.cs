@@ -395,9 +395,12 @@ public sealed class SiteEndpointsTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // POST /v1/site/identity/rotate — GĐ3 closeout WI-4. Admin only; 200 + a new fingerprint + an audited
-    // "site.identity.rotate" row for Admin; works even with UNS disabled (nothing to re-apply, but the
-    // identity itself still rotates — see RotateIdentityAsync's own doc comment).
+    // POST /v1/site/identity/rotate — GĐ3 closeout WI-4 (+ fix round 1, Important #3). Admin only; 200 + a
+    // new fingerprint + an audited "site.identity.rotate" row for Admin; works even with UNS disabled
+    // (nothing to re-apply, but the identity itself still rotates — see RotateIdentityAsync's own doc
+    // comment). Fix round 1 changed the request contract: the caller must now echo the device's CURRENT
+    // fingerprint as { currentFingerprint } — 400 if missing/blank, 409 on a mismatch (see
+    // RotateIdentityRequest's own doc comment for why).
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -409,6 +412,8 @@ public sealed class SiteEndpointsTests
 
         using var operatorClient = await LoginAsAsync(factory, "site-operator-15", "OperatorPass123!");
 
+        // 403 happens in the authorization middleware, BEFORE the handler ever parses a body — an empty
+        // body is fine here; a non-Admin is rejected regardless of what (if anything) it would have sent.
         using var rotate = await operatorClient.PostAsync("/v1/site/identity/rotate", null);
         Assert.Equal(HttpStatusCode.Forbidden, rotate.StatusCode);
     }
@@ -427,6 +432,45 @@ public sealed class SiteEndpointsTests
     }
 
     [Fact]
+    public async Task Admin_PostsRotate_MissingOrBlankCurrentFingerprint_Gets400()
+    {
+        await using var factory = await CreateFactoryAsync();
+        await BootstrapAdminAsync(factory, "site-admin-19", "AdminPass123!");
+        using var adminClient = await LoginAsAsync(factory, "site-admin-19", "AdminPass123!");
+
+        using var noBody = await adminClient.PostAsync("/v1/site/identity/rotate", null);
+        Assert.Equal(HttpStatusCode.BadRequest, noBody.StatusCode);
+
+        using var nullField = await adminClient.PostAsJsonAsync(
+            "/v1/site/identity/rotate", new { currentFingerprint = (string?)null }, JsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, nullField.StatusCode);
+
+        using var blankField = await adminClient.PostAsJsonAsync(
+            "/v1/site/identity/rotate", new { currentFingerprint = "   " }, JsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, blankField.StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_PostsRotate_MismatchedCurrentFingerprint_Gets409_AndDoesNotRotate()
+    {
+        await using var factory = await CreateFactoryAsync();
+        await BootstrapAdminAsync(factory, "site-admin-20", "AdminPass123!");
+        using var adminClient = await LoginAsAsync(factory, "site-admin-20", "AdminPass123!");
+
+        using var beforeResp = await adminClient.GetAsync("/v1/site/identity");
+        var before = await beforeResp.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
+
+        using var rotate = await adminClient.PostAsJsonAsync(
+            "/v1/site/identity/rotate", new { currentFingerprint = "NOT-THE-REAL-FINGERPRINT" }, JsonOptions);
+        Assert.Equal(HttpStatusCode.Conflict, rotate.StatusCode);
+
+        // The rejected mismatch must not have rotated anything — the identity is unchanged.
+        using var afterResp = await adminClient.GetAsync("/v1/site/identity");
+        var after = await afterResp.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
+        Assert.Equal(before!.DeviceFingerprint, after!.DeviceFingerprint);
+    }
+
+    [Fact]
     public async Task Admin_PostsRotate_Gets200_NewFingerprint_AuditRow_AndGetSiteReflectsIt()
     {
         await using var factory = await CreateFactoryAsync();
@@ -437,12 +481,13 @@ public sealed class SiteEndpointsTests
         var before = await beforeResp.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
         Assert.NotNull(before);
 
-        using var rotate = await adminClient.PostAsync("/v1/site/identity/rotate", null);
+        using var rotate = await adminClient.PostAsJsonAsync(
+            "/v1/site/identity/rotate", new { currentFingerprint = before!.DeviceFingerprint }, JsonOptions);
         Assert.Equal(HttpStatusCode.OK, rotate.StatusCode);
         var after = await rotate.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
         Assert.NotNull(after);
         Assert.False(string.IsNullOrWhiteSpace(after!.DeviceFingerprint));
-        Assert.NotEqual(before!.DeviceFingerprint, after.DeviceFingerprint);
+        Assert.NotEqual(before.DeviceFingerprint, after.DeviceFingerprint);
         Assert.Contains("-----BEGIN CERTIFICATE-----", after.DeviceCertPem);
 
         // A follow-up GET /v1/site/identity sees the SAME rotated fingerprint (not the pre-rotation one) —
@@ -478,11 +523,56 @@ public sealed class SiteEndpointsTests
         using var beforeResp = await adminClient.GetAsync("/v1/site/identity");
         var before = await beforeResp.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
 
-        using var rotate = await adminClient.PostAsync("/v1/site/identity/rotate", null);
+        using var rotate = await adminClient.PostAsJsonAsync(
+            "/v1/site/identity/rotate", new { currentFingerprint = before!.DeviceFingerprint }, JsonOptions);
 
         Assert.Equal(HttpStatusCode.OK, rotate.StatusCode);
         var after = await rotate.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
         Assert.NotNull(after);
         Assert.NotEqual(before!.DeviceFingerprint, after!.DeviceFingerprint);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1 (M-3a) — the seam the earlier rotate tests above didn't cover: they all run with NO
+    // enabled Site link, so mgr.Status() takes the DISABLED branch (reads the provider directly) and never
+    // actually exercises the LIVE UnsBridge's own Status()/Snapshot(). This test enables a real Site link
+    // FIRST (so a genuine bridge is running, BridgeState != Disabled) and only THEN rotates — proving the
+    // endpoint's ReapplyCurrentAsync call reaches the BRIDGE, not just the in-memory provider.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Admin_RotatesWhileASiteLinkIsEnabled_TheLiveBridgeReflectsTheNewFingerprint()
+    {
+        await using var factory = await CreateFactoryAsync();
+        await BootstrapAdminAsync(factory, "site-admin-22", "AdminPass123!");
+        await CreateUserAsync(factory, "site-engineer-22", "EngineerPass123!", Roles.Engineer);
+
+        using (var engineerClient = await LoginAsAsync(factory, "site-engineer-22", "EngineerPass123!"))
+        using (var put = await engineerClient.PutAsJsonAsync(
+                   "/v1/site", new { enabled = true, host = "127.0.0.1", port = 18886, siteTrustPem = NewValidTrustPem() }, JsonOptions))
+        {
+            Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+            var putStatus = await put.Content.ReadFromJsonAsync<SiteStatusDto>(JsonOptions);
+            Assert.NotEqual("Disabled", putStatus!.BridgeState); // a genuine bridge is now running.
+        }
+
+        using var adminClient = await LoginAsAsync(factory, "site-admin-22", "AdminPass123!");
+
+        using var beforeResp = await adminClient.GetAsync("/v1/site/identity");
+        var before = await beforeResp.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
+
+        using var rotate = await adminClient.PostAsJsonAsync(
+            "/v1/site/identity/rotate", new { currentFingerprint = before!.DeviceFingerprint }, JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, rotate.StatusCode);
+        var rotated = await rotate.Content.ReadFromJsonAsync<SiteIdentityDto>(JsonOptions);
+        Assert.NotEqual(before.DeviceFingerprint, rotated!.DeviceFingerprint);
+
+        using var getSite = await adminClient.GetAsync("/v1/site");
+        var status = await getSite.Content.ReadFromJsonAsync<SiteStatusDto>(JsonOptions);
+        // Still a live bridge (ReapplyCurrentAsync rebuilds it, doesn't just tear it down) — its own
+        // Status()/Snapshot() is what DeviceFingerprint below actually comes from, not the disabled fallback.
+        Assert.NotEqual("Disabled", status!.BridgeState);
+        Assert.Equal(rotated.DeviceFingerprint, status.DeviceFingerprint);
+        Assert.NotEqual(before.DeviceFingerprint, status.DeviceFingerprint);
     }
 }
