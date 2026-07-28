@@ -9,7 +9,7 @@ using St4i.EngineApi.Auth;
 namespace St4i.EngineApi.ServiceHost;
 
 /// <summary>
-/// Task WI-5 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-5-brief.md, fix round 1
+/// Task WI-5 (.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-5-brief.md, fix rounds 1-2
 /// per review) — the out-of-band Admin-account recovery verb: <c>St4i.EngineApi.exe
 /// --reset-admin-password &lt;username&gt; [--password &lt;pw&gt;]</c>. Exists because EVERY
 /// password-change path this product ships today (<c>AuthEndpoints.change-password</c>,
@@ -35,9 +35,11 @@ namespace St4i.EngineApi.ServiceHost;
 /// <c>prev_hash</c> under their OWN in-process lock only (<c>SqliteAuditStore</c>'s own doc comment is
 /// explicit that its lock is in-process, not cross-process) — running this verb against a file a live host
 /// is ALSO actively writing to can, rarely, race two processes onto the same next <c>id</c>; the loser gets
-/// a UNIQUE-constraint <see cref="SqliteException"/> from SQLite. <see cref="AppendAuditRowAsync"/> retries
-/// a bounded number of times specifically for that case (a retry re-reads the now-advanced last row and
-/// computes a fresh id) before giving up and swallowing/logging — see that method's own doc comment.
+/// a PRIMARYKEY/UNIQUE-constraint <see cref="SqliteException"/> from SQLite (see
+/// <see cref="IsAppendIdCollision"/> for exactly which extended error codes that is, and why a NOT NULL
+/// violation is deliberately excluded). <see cref="AppendAuditRowAsync"/> retries a bounded number of times
+/// specifically for that case (a retry re-reads the now-advanced last row and computes a fresh id) before
+/// giving up and swallowing/logging — see that method's own doc comment.
 ///
 /// <b>THREAT MODEL — read this before treating the verb as "just another CLI flag" (task-5-report.md
 /// carries the full write-up, including the fix-round corrections; WI-7's README is meant to lift that
@@ -291,13 +293,15 @@ public static class AdminRecoveryVerbs
     }
 
     /// <summary>Appends one audit row, retrying up to <see cref="MaxAuditAppendAttempts"/> times if (and
-    /// only if) the failure is specifically a SQLite UNIQUE-constraint violation on the explicit <c>id</c>
-    /// <see cref="SqliteAuditStore.AppendAsync"/> computes — see this class' own doc comment for why that's
-    /// possible at all (a live host writing the SAME file concurrently, racing this verb's own in-process
-    /// lock, which by definition can't serialize against a SEPARATE process). A retry re-reads the
-    /// now-advanced last row and recomputes a fresh id/prev_hash, so it either succeeds or, in the
-    /// pathological case of a genuinely hot-contended file, eventually gives up. Any OTHER exception (and a
-    /// UNIQUE-constraint failure that persists through every retry) is logged to stderr and swallowed —
+    /// only if) the failure is specifically an explicit-<c>id</c> collision (<see cref="IsAppendIdCollision"/>
+    /// — a PRIMARYKEY or UNIQUE constraint violation, NEVER a NOT NULL one; see that method's own doc
+    /// comment for why the distinction matters) on the <c>id</c> <see cref="SqliteAuditStore.AppendAsync"/>
+    /// computes — see this class' own doc comment for why that's possible at all (a live host writing the
+    /// SAME file concurrently, racing this verb's own in-process lock, which by definition can't serialize
+    /// against a SEPARATE process). A retry re-reads the now-advanced last row and recomputes a fresh
+    /// id/prev_hash, so it either succeeds or, in the pathological case of a genuinely hot-contended file,
+    /// eventually gives up. Any OTHER exception (and an id collision that persists through every retry) is
+    /// logged to stderr and swallowed —
     /// same "never let the audit subsystem undo/block an already-committed real mutation" policy
     /// <see cref="Auth.AuditRecorder.RecordAsync"/> applies for every HTTP path — because by the time this
     /// runs, the password reset/promotion has ALREADY committed and already been printed; losing this one
@@ -337,7 +341,7 @@ public static class AdminRecoveryVerbs
                 await auditStore.AppendAsync(entry, CancellationToken.None).ConfigureAwait(false);
                 return;
             }
-            catch (SqliteException ex) when (IsUniqueConstraintViolation(ex) && attempt < MaxAuditAppendAttempts)
+            catch (SqliteException ex) when (IsAppendIdCollision(ex) && attempt < MaxAuditAppendAttempts)
             {
                 // Fix-round M1 — another writer (a live host sharing this file) won the race for the same
                 // explicit id between our read-last-row and our insert; retry re-reads the now-advanced
@@ -351,8 +355,24 @@ public static class AdminRecoveryVerbs
         }
     }
 
-    private static bool IsUniqueConstraintViolation(SqliteException ex) =>
-        ex.SqliteErrorCode == 19; // SQLITE_CONSTRAINT (covers SQLITE_CONSTRAINT_PRIMARYKEY/UNIQUE alike).
+    /// <summary>Fix-round 2 (Minor) — narrowed to the TWO extended codes an explicit-id collision on
+    /// <c>audit_log</c>'s <c>id INTEGER PRIMARY KEY AUTOINCREMENT</c> column can actually raise
+    /// (<c>SqliteErrorCode == 19</c> / <c>SQLITE_CONSTRAINT</c> alone is NOT specific enough — verified
+    /// against this exact <c>Microsoft.Data.Sqlite 10.0.10</c> package that a NOT NULL violation
+    /// (<c>SQLITE_CONSTRAINT_NOTNULL</c>, extended code 1299) reports the SAME base code 19, so checking
+    /// only the base code would have silently retried — and eventually swallowed — a genuine NOT NULL
+    /// failure as if it were a harmless id race). <c>1555</c> is <c>SQLITE_CONSTRAINT_PRIMARYKEY</c> (the
+    /// code SQLite actually raises for a duplicate value on an <c>INTEGER PRIMARY KEY</c> column, which is
+    /// what this table's explicit-id insert collides on); <c>2067</c> is <c>SQLITE_CONSTRAINT_UNIQUE</c>,
+    /// kept as a defensive alternate in case a future schema/SQLite version reports the same collision
+    /// differently. A genuine NOT NULL failure (1299) is NOT retried here — this store's own
+    /// <see cref="AuditAppend"/> construction above always supplies every NOT NULL column, so seeing that
+    /// code here would mean an actual bug, not a race, and should fall through to the general catch below
+    /// instead of burning retries on something retrying can never fix.</summary>
+    private static bool IsAppendIdCollision(SqliteException ex) =>
+        ex.SqliteErrorCode == 19 // SQLITE_CONSTRAINT
+        && (ex.SqliteExtendedErrorCode == 1555 // SQLITE_CONSTRAINT_PRIMARYKEY
+            || ex.SqliteExtendedErrorCode == 2067); // SQLITE_CONSTRAINT_UNIQUE
 
     private static string GenerateStrongPassword()
     {

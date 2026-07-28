@@ -375,14 +375,26 @@ public sealed class AdminRecoveryVerbsTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Fix-round M1 — the audit-append retry. AppendAuditRowAsync is `internal` specifically as a test seam
-    // (see its own doc comment) so this test can simulate N SEPARATE processes/hosts racing the SAME
-    // security.db file directly: each task below constructs its OWN SqliteAuditStore instance (an
-    // in-process append lock only ever serializes calls made through the SAME instance — see
-    // SqliteAuditStore's own doc comment), then all fire concurrently via Task.WhenAll. Without the bounded
-    // retry, some of these calls would lose a genuine UNIQUE-constraint race on the explicit `id` and
-    // silently swallow/log a lost row (AppendAuditRowAsync never rethrows) — this test would then legitimately
-    // fail with page.Total < n, catching a retry regression.
+    // Fix-round M1 (fix-round 2 review correction) — the audit-append retry. AppendAuditRowAsync is
+    // `internal` specifically as a test seam (see its own doc comment) so this test can simulate N SEPARATE
+    // processes/hosts racing the SAME security.db file directly: each task below constructs its OWN
+    // SqliteAuditStore instance (an in-process append lock only ever serializes calls made through the SAME
+    // instance — see SqliteAuditStore's own doc comment).
+    //
+    // Task.Run below is LOAD-BEARING, not stylistic. A fix-round-1 version of this test assigned
+    // `tasks[idx] = AdminRecoveryVerbs.AppendAuditRowAsync(...)` directly (no Task.Run) — review (standalone
+    // probes against this exact Microsoft.Data.Sqlite 10.0.10 package) established that this looked
+    // concurrent but was NOT: those async APIs (OpenAsync/ExecuteReaderAsync/ReadAsync/
+    // ExecuteNonQueryAsync/...) complete synchronously inline whenever no real OS-level wait is needed,
+    // which is always true for a small local WAL-mode SQLite file — so every `await` inside
+    // AppendAuditRowAsync resolved without ever yielding, meaning each bare async-method call ran to FULL
+    // completion, one at a time, on the calling thread, before Task.WhenAll below was even reached. No race
+    // was ever created and the retry path was never exercised. Wrapping each call in Task.Run forces it onto
+    // its own thread-pool thread instead, so the 8 appends genuinely interleave at the OS level — personally
+    // verified for THIS version of the test: with the retry temporarily forced off
+    // (MaxAuditAppendAttempts = 1, local-only, never committed) this test FAILED 5/5 runs (only ~2 of 8 rows
+    // persisted each time); restored to 8, it PASSED 8/8 runs. See task-5-report.md's "Fix round 2" section
+    // for the exact observation.
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -395,14 +407,16 @@ public sealed class AdminRecoveryVerbsTests
         for (var i = 0; i < n; i++)
         {
             var idx = i;
-            tasks[idx] = AdminRecoveryVerbs.AppendAuditRowAsync(
+            // Task.Run — see this test's own comment above for why a bare (non-Task.Run) async call here
+            // would silently NOT exercise the race this test exists to cover.
+            tasks[idx] = Task.Run(() => AdminRecoveryVerbs.AppendAuditRowAsync(
                 new SqliteAuditStore(securityDir), // a SEPARATE instance per "process" — see this test's own comment.
                 username: $"concurrent-user-{idx}",
                 userId: idx,
                 created: true,
                 promoted: true,
                 reEnabled: false,
-                previousRole: "(none — new account)");
+                previousRole: "(none — new account)"));
         }
 
         await Task.WhenAll(tasks);
