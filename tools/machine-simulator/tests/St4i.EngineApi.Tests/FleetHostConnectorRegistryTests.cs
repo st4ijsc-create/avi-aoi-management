@@ -343,6 +343,46 @@ public sealed class FleetHostConnectorRegistryTests
         }
     }
 
+    [Fact]
+    public async Task OrphanedConnectorDriverDisposal_RunsOffTheGate_EstopStaysResponsiveWhileDisposalIsInFlight()
+    {
+        // Review finding (fix round 2): fix round 1's leak fix disposed an orphaned connector driver
+        // INSIDE StartLocked, which every caller (Start/RegisterMachine/ApplyScenario) invokes with _gate
+        // held — a slow/hung third-party DisposeAsync would then delay Estop() (which takes the SAME lock)
+        // for up to RestartTeardownTimeout. Asserting only "Disposed == true" (as the two tests above do)
+        // would pass whether disposal ran on- or off-lock, since a completed dispose looks identical
+        // either way once it's done. This test instead catches the disposal WHILE it is still in flight
+        // and proves _gate is already free at that moment: a concurrent Estop() call — which also needs
+        // _gate — must complete promptly rather than blocking for as long as the slow disposal takes. If
+        // disposal were still running inside _gate, Estop() would be stuck behind it for the whole
+        // RestartTeardownTimeout window.
+        var slowDriver = new SlowDisposeDriver("vendor.acme.slow");
+        var registry = new ConnectorRegistry();
+        registry.Register(new RejectsButReturnsDriverFactory("vendor.acme.slow", slowDriver), config: "x");
+        var host = CreateHost(registry);
+
+        var startTask = Task.Run(() => host.Start());
+        await WaitUntilAsync(() => slowDriver.DisposeStarted, "the orphaned driver's DisposeAsync to begin");
+
+        // At this instant, per the fix, StartLocked has already RETURNED and _gate has already been
+        // released — DisposeOrphanedConnectorDrivers (currently blocked on slowDriver.DisposeAsync, since
+        // we haven't released it yet) runs entirely off that lock. Time a concurrent Estop() call: it must
+        // not be stuck waiting for _gate.
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        host.Estop();
+        stopwatch.Stop();
+
+        // Let the in-flight disposal (and Start()'s blocked Wait on it) finish, then make sure Start()
+        // itself actually returns — cleanup happens regardless of the assertion outcome below.
+        slowDriver.ReleaseDispose();
+        await startTask;
+
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(1),
+            $"Estop() took {stopwatch.Elapsed} while the orphaned connector driver's disposal was still in flight — " +
+            "_gate must be free during that disposal (off-lock), not held for its duration.");
+    }
+
     private sealed class FakeConnectorFactory : IConnectorFactory
     {
         private readonly Func<IDeviceDriver> _build;
@@ -455,6 +495,40 @@ public sealed class FleetHostConnectorRegistryTests
         {
             _disposed = true;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>Test double for the round-2 "disposal must run off _gate" regression test — like
+    /// <see cref="LeakDetectingDriver"/> (never started, only ever an orphan handed back by a rejecting
+    /// factory), but its <see cref="DisposeAsync"/> blocks until the test explicitly
+    /// <see cref="ReleaseDispose"/>s it, so a test can deterministically observe "disposal has started but
+    /// not finished yet" without depending on wall-clock timing to hit that window.</summary>
+    private sealed class SlowDisposeDriver : IDeviceDriver
+    {
+        private readonly TaskCompletionSource _disposeGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private volatile bool _disposeStarted;
+
+        public SlowDisposeDriver(string kind) => Kind = kind;
+
+        /// <summary>Flips <see langword="true"/> the instant <see cref="DisposeAsync"/> is entered — a test
+        /// polls this to know the disposal is genuinely in flight (not merely "about to be called").</summary>
+        public bool DisposeStarted => _disposeStarted;
+
+        /// <summary>Lets <see cref="DisposeAsync"/>'s awaited task complete — call this only after the test
+        /// has already observed whatever it needed to observe while the disposal was still pending.</summary>
+        public void ReleaseDispose() => _disposeGate.TrySetResult();
+
+        public string Id => $"slow-dispose-{Kind}-driver";
+        public string Kind { get; }
+        public DriverHealthState Health => DriverHealthState.Down;
+
+        public IAsyncEnumerable<DeviceReading> ReadAsync(CancellationToken ct) =>
+            throw new NotSupportedException("test double — never started, rejected/abandoned before StartSlot ever runs");
+
+        public async ValueTask DisposeAsync()
+        {
+            _disposeStarted = true;
+            await _disposeGate.Task.ConfigureAwait(false);
         }
     }
 

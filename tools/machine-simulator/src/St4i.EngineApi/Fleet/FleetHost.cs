@@ -440,10 +440,11 @@ public sealed class FleetHost
     public void Start()
     {
         bool started;
+        List<IDeviceDriver> orphanedConnectorDrivers;
         lock (_gate)
         {
             var wasRunning = IsRunning;
-            StartLocked();
+            orphanedConnectorDrivers = StartLocked();
             started = !wasRunning && IsRunning;
 
             // Review fix (Important) — the NBIRTH call is made HERE, still inside _gate, deliberately: two
@@ -461,6 +462,10 @@ public sealed class FleetHost
                 _unsPublisher?.PublishNodeBirth();
             }
         }
+
+        // Review fix round 2 — off-lock, same as WaitAndDisposeOldPipeline below; see
+        // DisposeOrphanedConnectorDrivers' own doc comment for why this must never run inside _gate.
+        DisposeOrphanedConnectorDrivers(orphanedConnectorDrivers);
 
         if (started)
         {
@@ -577,12 +582,24 @@ public sealed class FleetHost
     private static string ResolveConnectorSlotLabel(string connectorId) =>
         LegacyConnectorSlotLabels.TryGetValue(connectorId, out var legacyLabel) ? legacyLabel : connectorId;
 
-    private void StartLocked()
+    /// <summary>Review fix round 2 — <see cref="StartLocked"/> USED to dispose an orphaned connector
+    /// driver (see the connector loop below) inline, synchronously, while <see cref="_gate"/> was held by
+    /// every one of its callers. That is a hazard this class's own review has already named twice: a
+    /// slow/hung third-party <see cref="IDeviceDriver.DisposeAsync"/> would delay <see cref="Estop"/> — the
+    /// exact "blocks E-STOP" class of bug <see cref="IConnectorFactory.TryCreate"/>'s own doc comment warns
+    /// against for <c>TryCreate</c> itself. <see cref="StartLocked"/> now only COLLECTS orphaned drivers
+    /// into the returned list — every caller disposes them via <see cref="DisposeOrphanedConnectorDrivers"/>
+    /// AFTER releasing <see cref="_gate"/>, the same "wait/dispose must happen OUTSIDE _gate" discipline
+    /// <see cref="WaitAndDisposeOldPipeline"/> already documents for the restart-teardown path. An empty
+    /// list (never <see langword="null"/>) is returned on every early-return/no-op path below, so a caller
+    /// can unconditionally hand the result to <see cref="DisposeOrphanedConnectorDrivers"/> with no null
+    /// check.</summary>
+    private List<IDeviceDriver> StartLocked()
     {
         // Defense in depth: the client already disables START while latched, but the engine itself
         // must refuse too — a stale client, a second panel, or a direct API call must never be able to
         // restart a machine that's still emergency-stopped.
-        if (IsRunning || _estopEngaged) return;
+        if (IsRunning || _estopEngaged) return new List<IDeviceDriver>();
         LastError = null;
 
         // Assumes the caller already holds _gate (Start()/ApplyScenario()/RegisterMachine() all do) —
@@ -678,6 +695,12 @@ public sealed class FleetHost
         // GET /v1/health unhealthy merely because an optional peripheral's config is bad, which is not
         // today's behavior and is not this task's to change) — only a log warning, so the failure is
         // visible without being mistaken for the whole fleet's health.
+        //
+        // Review fix round 2 — `orphanedConnectorDrivers` COLLECTS (never disposes inline) any driver a
+        // rejected/faulted connector still handed back; disposal happens in the caller, off `_gate`, via
+        // `DisposeOrphanedConnectorDrivers` (see that method's own doc comment for why round 1's inline,
+        // in-lock dispose was itself the hazard this round closes).
+        var orphanedConnectorDrivers = new List<IDeviceDriver>();
         if (_connectorRegistry is not null)
         {
             foreach (var connectorId in _connectorRegistry.RegisteredIds)
@@ -728,22 +751,17 @@ public sealed class FleetHost
                     // Review fix round 1 — a contract-violating factory can return false (or throw AFTER
                     // already assigning its `out` driver parameter) while still handing back a real,
                     // non-null driver instance; ModbusTcpDriver is exactly the class of driver that owns a
-                    // live socket a silently-discarded reference would leak. Best-effort, BOUNDED dispose
-                    // (same RestartTeardownTimeout budget WaitAndDisposeOldPipeline already uses below) —
-                    // this runs INSIDE _gate (every StartLocked caller holds it, same as this whole
-                    // connector loop), so an unbounded await here would itself become the exact
-                    // E-STOP-blocking hazard IConnectorFactory.TryCreate's doc comment now warns against.
-                    // Safe from the deadlock WaitAndDisposeOldPipeline's own remarks describe for ITSELF:
-                    // this driver was never wired into a running slot/run-task, so no other thread can be
-                    // blocked re-acquiring _gate waiting on it the way a genuine restart teardown can be.
-                    try
-                    {
-                        connectorDriver.DisposeAsync().AsTask().Wait(RestartTeardownTimeout);
-                    }
-                    catch
-                    {
-                        // best-effort only — never let a misbehaving driver's teardown propagate from here.
-                    }
+                    // live socket a silently-discarded reference would leak.
+                    //
+                    // Review fix round 2 — round 1 disposed this HERE, synchronously, inside StartLocked —
+                    // which every caller invokes with `_gate` held. A slow/hung third-party DisposeAsync
+                    // would then delay Estop() (which takes the same lock) for up to RestartTeardownTimeout
+                    // — precisely the "blocks E-STOP" hazard class IConnectorFactory.TryCreate's own doc
+                    // comment warns against for TryCreate itself, reopened by round 1's own leak fix. Fixed
+                    // by only COLLECTING the orphan here — the actual bounded dispose now happens in
+                    // DisposeOrphanedConnectorDrivers, called by every StartLocked caller AFTER _gate is
+                    // released, the same "off-lock" discipline WaitAndDisposeOldPipeline already follows.
+                    orphanedConnectorDrivers.Add(connectorDriver);
                 }
             }
         }
@@ -751,6 +769,33 @@ public sealed class FleetHost
         foreach (var g in groups)
         {
             StartSlot(g.Label, g.Driver, g.Profile, g.Resolver);
+        }
+
+        return orphanedConnectorDrivers;
+    }
+
+    /// <summary>Review fix round 2 — the off-lock counterpart to <see cref="StartLocked"/>'s orphan
+    /// collection: every <see cref="StartLocked"/> caller invokes this AFTER releasing <see cref="_gate"/>,
+    /// mirroring <see cref="WaitAndDisposeOldPipeline"/>'s own "wait/dispose must happen OUTSIDE _gate"
+    /// discipline exactly (same reasoning: <see cref="Estop"/> takes <see cref="_gate"/> too, and a
+    /// slow/hung third-party <see cref="IDeviceDriver.DisposeAsync"/> must never delay an emergency stop).
+    /// Best-effort and per-driver BOUNDED (<see cref="RestartTeardownTimeout"/>, same budget
+    /// <see cref="WaitAndDisposeOldPipeline"/> uses) — a driver whose <c>DisposeAsync</c> throws or hangs
+    /// past that bound cannot wedge this method or any other orphan's own disposal.</summary>
+    private void DisposeOrphanedConnectorDrivers(IReadOnlyList<IDeviceDriver> orphans)
+    {
+        foreach (var orphan in orphans)
+        {
+            try
+            {
+                orphan.DisposeAsync().AsTask().Wait(RestartTeardownTimeout);
+            }
+            catch (Exception ex)
+            {
+                // Best-effort, same "never let teardown hang/throw on a misbehaving driver" posture as
+                // WaitAndDisposeOldPipeline's own dispose calls.
+                _logger?.LogDebug(ex, "FleetHost orphaned connector driver dispose observed a fault");
+            }
         }
     }
 
@@ -993,7 +1038,9 @@ public sealed class FleetHost
     /// by <see cref="RestartTeardownTimeout"/>, required — the old task's own catch re-acquires
     /// <see cref="_gate"/>, so waiting for it while still holding the gate would deadlock), and only THEN
     /// does a fresh <c>lock (_gate) StartLocked()</c> rebuild the pipeline from the current roster
-    /// (including whatever was just added). There's a narrow window between those two locked sections
+    /// (including whatever was just added) — any connector driver <see cref="StartLocked"/> collects as
+    /// orphaned (review fix round 2) is likewise disposed OFF this same lock, via
+    /// <see cref="DisposeOrphanedConnectorDrivers"/>. There's a narrow window between those two locked sections
     /// where another thread could itself call <see cref="Stop"/>/<see cref="Start"/> and observe/flip
     /// <see cref="IsRunning"/> — accepted the same way the pre-existing restart-under-one-lock code
     /// accepted "last writer wins" for concurrent scenario/registration calls; this is a single-operator
@@ -1047,7 +1094,10 @@ public sealed class FleetHost
         if (restarting)
         {
             WaitAndDisposeOldPipeline(restartHandle);
-            lock (_gate) StartLocked();
+            List<IDeviceDriver> orphanedConnectorDrivers;
+            lock (_gate) { orphanedConnectorDrivers = StartLocked(); }
+            // Review fix round 2 — off-lock, same reasoning as WaitAndDisposeOldPipeline just above.
+            DisposeOrphanedConnectorDrivers(orphanedConnectorDrivers);
         }
 
         return true;
@@ -1084,7 +1134,10 @@ public sealed class FleetHost
         if (restarting)
         {
             WaitAndDisposeOldPipeline(restartHandle);
-            lock (_gate) StartLocked();
+            List<IDeviceDriver> orphanedConnectorDrivers;
+            lock (_gate) { orphanedConnectorDrivers = StartLocked(); }
+            // Review fix round 2 — off-lock, same reasoning as WaitAndDisposeOldPipeline just above.
+            DisposeOrphanedConnectorDrivers(orphanedConnectorDrivers);
         }
 
         return ScenarioDto.From(_scenario, _activePresetName);
