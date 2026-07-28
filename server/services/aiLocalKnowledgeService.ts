@@ -1866,7 +1866,19 @@ export async function retrieveKnowledge(
         // trước Task 4" test below.
         top1 = citations[0]?.score ?? top1;
         top2 = citations[Math.min(1, citations.length - 1)]?.score ?? top2;
-        confidence = clamp01((top1 + top2) / 1.6);
+        // Chốt cuối (post-Task-6 re-review), mục 1 — trộn thêm một nguồn KHÔNG ĐƯỢC làm
+        // confidence TỆ ĐI. Bug: khi CHỈ 1 citation hệ thống sống sót, công thức TRƯỚC khi
+        // trộn nhân đôi nó làm top2 (`ranked[Math.min(1,0)] === ranked[0]` ở :1786-1787 phía
+        // trên). Sau khi trộn, top2 ở đây đổi thành điểm Studio THẬT — thường THẤP HƠN điểm hệ
+        // thống duy nhất đó (nếu cao hơn, nó đã chiếm vị trí top1) — nên công thức tính lại
+        // một mình cho ra số THẤP HƠN giá trị nhân-đôi cũ dù vừa có THÊM một nguồn hợp lệ.
+        // Đo được: 1 citation hệ thống 0.25 (không trộn: (0.25+0.25)/1.6=0.3125 ≥ 0.30) + hit
+        // Studio 0.18 (không trộn công thức lại: (0.25+0.18)/1.6=0.26875 < 0.30) — bổ sung
+        // MỘT NGUỒN HỢP LỆ lại tắt luôn LLM. `Math.max` với confidence TRƯỚC khi trộn (biến
+        // `confidence` đã có sẵn từ dòng 1786-1788) đảm bảo chỉ NÂNG, không bao giờ HẠ — khi
+        // Studio thực sự tốt hơn (điểm cao hơn công thức nhân-đôi cũ), giá trị THẬT vẫn thắng
+        // (Math.max chọn số lớn hơn, không phải "giữ nguyên số cũ vô điều kiện").
+        confidence = Math.max(confidence, clamp01((top1 + top2) / 1.6));
       }
     } catch {
       // Nhánh Studio hỏng KHÔNG được làm hỏng trợ lý đang chạy — citations/contexts
