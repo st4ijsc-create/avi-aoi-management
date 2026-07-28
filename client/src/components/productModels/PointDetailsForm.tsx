@@ -9,6 +9,7 @@ import type { Dispatch, SetStateAction, ChangeEvent } from "react";
 import { type RouterOutputs, mapCatalogCategoryToLegacyType, type MaterialCondition, type MeasurementPoint, type ToleranceMode } from "./types";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
+import { PendingSuggestionCard } from "./PendingSuggestionCard";
 import { ValidationMessage } from "@/components/ValidationMessage";
 import { PointCriteriaEditor, type PointCriteriaItem } from "@/components/products/PointCriteriaEditor";
 import { PointLightingEditor } from "@/components/products/PointLightingEditor";
@@ -149,6 +150,17 @@ interface PointDetailsFormProps {
 export function PointDetailsForm(props: PointDetailsFormProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const utils = trpc.useUtils();
+
+  // PHỤ LỤC (Task 2 review của Task 1) — nộp-mới (AIThresholdSuggestButton.onSubmitted)
+  // và quyết-định (PendingSuggestionCard.onDecided) đều dẫn tới CÙNG một trạng thái
+  // cần làm mới: badge "N đề xuất AI" trên bảng điểm đo (countPendingByProduct) và
+  // danh sách đề xuất mà PendingSuggestionCard đọc (list). Gom vào MỘT hàm để hai
+  // đường không lệch nhau (đó chính là lỗ hổng mà bản review Task 1 phát hiện).
+  const refreshSuggestionState = () => {
+    void utils.thresholdApproval.countPendingByProduct.invalidate();
+    void utils.thresholdApproval.list.invalidate();
+  };
   const {
     confirmDeletePoint, handleDuplicatePoint, handlePointImageUpload, handleSavePoint,
     imageSourceMode, isEditMode, isSavingPoint, measurementInstruments,
@@ -393,18 +405,27 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
                                     <ValidationMessage error={pointValidation.getFieldError("upperLimit")} />
                                   </div>
                                 </div>
-                                {/* AI Threshold Advisor — only for a persisted point in edit mode */}
+                                {/* AI Threshold Advisor — only for a persisted point in edit mode.
+                                    Wave 2 đường A (Task 2): đề xuất ĐANG CHỜ hiện NGAY ở đây (PendingSuggestionCard)
+                                    — cạnh nút "xin đề xuất mới" — thay vì chỉ hiện ở /threshold-approvals. */}
                                 {isEditMode && selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
-                                  <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
-                                    <span className="text-xs text-muted-foreground">
-                                      {t("thresholdAdvisor.pointHint", "Để AI tính LSL/USL/mục tiêu từ dữ liệu đo gần đây")}
-                                    </span>
-                                    <AIThresholdSuggestButton
-                                      target={{ kind: "point", measurementPointId: measurementPoints[selectedPointIndex]!.id! }}
-                                      onApplied={() => refetchPoints()}
-                                      onSubmitted={() => refetchPoints()}
+                                  <>
+                                    <PendingSuggestionCard
+                                      pointDefId={measurementPoints[selectedPointIndex]!.id as number}
+                                      currentUserId={user?.id}
+                                      onDecided={refreshSuggestionState}
                                     />
-                                  </div>
+                                    <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
+                                      <span className="text-xs text-muted-foreground">
+                                        {t("thresholdAdvisor.pointHint", "Để AI tính LSL/USL/mục tiêu từ dữ liệu đo gần đây")}
+                                      </span>
+                                      <AIThresholdSuggestButton
+                                        target={{ kind: "point", measurementPointId: measurementPoints[selectedPointIndex]!.id! }}
+                                        onApplied={() => refetchPoints()}
+                                        onSubmitted={() => { refetchPoints(); refreshSuggestionState(); }}
+                                      />
+                                    </div>
+                                  </>
                                 ) : null}
                                 <div className="space-y-2">
                                   <Label htmlFor="pointNominalValue">{t("products.nominalValue")}</Label>

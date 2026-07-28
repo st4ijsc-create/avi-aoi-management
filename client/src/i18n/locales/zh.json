@@ -6481,6 +6481,24 @@
     "editOrder": "编辑工单",
     "deleteOrder": "删除工单"
   },
+  "productModels": {
+    "approveFailed": "批准失败",
+    "approveSuccess": "建议已批准",
+    "approveSuggestion": "批准",
+    "autoTuneBadge": "自动调优",
+    "cancelReject": "取消",
+    "ownRequestBlocked": "此建议由你本人提交——需要另一位审核人决定。",
+    "pendingHeading": "{{n}} 条待审核建议",
+    "pendingLoadError": "无法加载待处理的建议。",
+    "pendingLoading": "正在加载待处理的建议...",
+    "pendingRetry": "重试",
+    "rejectCommentPlaceholder": "拒绝原因（必填）",
+    "rejectConfirm": "确认拒绝",
+    "rejectFailed": "拒绝失败",
+    "rejectSuccess": "建议已拒绝",
+    "rejectSuggestion": "拒绝",
+    "unknownUserBlocked": "无法确认您的账户身份——请重新登录后再进行审批。"
+  },
   "products": {
     "advGroupBatch": "批量",
     "advGroupExchange": "数据交换",

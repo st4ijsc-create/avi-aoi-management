@@ -6698,6 +6698,24 @@
     "editOrder": "Edit order",
     "deleteOrder": "Delete order"
   },
+  "productModels": {
+    "approveFailed": "Approve failed",
+    "approveSuccess": "Suggestion approved",
+    "approveSuggestion": "Approve",
+    "autoTuneBadge": "Auto-tuned",
+    "cancelReject": "Cancel",
+    "ownRequestBlocked": "You created this suggestion — a different reviewer must decide.",
+    "pendingHeading": "{{n}} suggestion(s) awaiting review",
+    "pendingLoadError": "Could not load pending suggestions.",
+    "pendingLoading": "Loading pending suggestions...",
+    "pendingRetry": "Retry",
+    "rejectCommentPlaceholder": "Reason for rejection (required)",
+    "rejectConfirm": "Confirm rejection",
+    "rejectFailed": "Reject failed",
+    "rejectSuccess": "Suggestion rejected",
+    "rejectSuggestion": "Reject",
+    "unknownUserBlocked": "Your account could not be identified — please sign in again to decide."
+  },
   "products": {
     "advGroupBatch": "Batch",
     "advGroupExchange": "Data exchange",
