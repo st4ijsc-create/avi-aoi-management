@@ -117,6 +117,18 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[BackupScheduler] init failed:", (err as any)?.message || err);
   }
 
+  // doc69 W1 "modelfix" — WARM THE DEEP (text-generation) MODEL FIRST. node-llama-cpp fragments
+  // VRAM when the 30B loads AFTER a small model, and RAG pulls in the 0.6B embedder on the first
+  // retrieval; `warmModel()` was written for exactly this and was never called from production
+  // code. Best-effort: initDeepModelWarmup never throws, uses an unref'd timer and self-gates on
+  // GGUF_WARM_DEEP_MODEL_ON_BOOT=false.
+  try {
+    const { initDeepModelWarmup } = await import("../services/aiGgufEngine");
+    initDeepModelWarmup();
+  } catch (err) {
+    console.error("[aiGgufEngine] deep-model warm init failed:", (err as any)?.message || err);
+  }
+
   // S3.4 — AI batch RCA cron (daily 02:00 by default).
   try {
     const { initBatchRcaScheduler } = await import("../services/aiBatchRcaScheduler");

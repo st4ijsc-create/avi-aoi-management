@@ -1,4 +1,7 @@
 import { generateText, isGgufAvailable, type GgufGenerateResult } from "./aiGgufEngine";
+// doc69 W1 "modelfix" — the specialist agents produce long, user-facing analysis; they must PIN the
+// chat model instead of letting the engine pick. Shared env→basename resolver (never a filename).
+import { resolveLogicalModel } from "./ai/modelResolver";
 // doc69 Giai đoạn 4/Wave 3 D4 — specialist→action HITL bridge allow-list (see the
 // block near the end of this file for the full rationale).
 import { RCA_SUGGESTED_ACTION_TOOLS, ensureRcaToolsRegistered } from "./ai/rcaActionSuggester";
@@ -719,7 +722,10 @@ export async function runSpecialistAgent(input: RunSpecialistAgentInput): Promis
       jsonMode: true,
       language: input.language ?? "vi",
     },
-    input.modelId,
+    // doc69 W1 "modelfix" — `input.modelId` is normally undefined, which used to make the engine
+    // reuse "whatever loaded first" (the 0.6B RAG embedder in production ⇒ repetition garbage).
+    // Fall back to the CHAT tier explicitly; a caller-supplied id still wins.
+    input.modelId ?? resolveLogicalModel("chat"),
   );
 
   return {

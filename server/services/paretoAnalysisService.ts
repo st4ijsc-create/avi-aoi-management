@@ -5,6 +5,9 @@
 
 import { getDb } from "../db/connection";
 import { sql } from "drizzle-orm";
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the improvement recommendations must PIN
+// a text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
+import { resolveLogicalModel } from "./ai/modelResolver";
 
 export interface ParetoItem {
   category: string;
@@ -300,7 +303,7 @@ Generate improvement recommendations for the categories contributing to 80% of d
       maxTokens: 512,
       temperature: 0.3,
       jsonMode: true,
-    });
+    }, resolveLogicalModel("chat"));
 
     const parsed = JSON.parse(response.text);
     if (Array.isArray(parsed.recommendations)) {

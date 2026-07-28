@@ -9,6 +9,9 @@ import { eq, and, gte, sql, inArray, lt, isNull } from "drizzle-orm";
 import { sendAlertNotification } from "./notificationService";
 import { sendAlertEmail } from "./emailService";
 import { redisService } from "./redisService";
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the AI routing rationale below must PIN
+// a text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
+import { resolveLogicalModel } from "./ai/modelResolver";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -659,7 +662,7 @@ Analyze this alert and respond in JSON format:
       maxTokens: 256,
       temperature: 0.3,
       jsonMode: true,
-    });
+    }, resolveLogicalModel("chat"));
 
     const jsonMatch = result.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;

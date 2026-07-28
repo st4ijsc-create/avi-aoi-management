@@ -27,10 +27,15 @@ import { observeInference } from "./aiMetrics";
 // doc69 W1-4 review fix — also import embedModelBasename(): the shared, suffix-safe resolver for
 // GGUF_EMBED_MODEL (see the FIX comment at generateEmbedding/generateEmbeddings below for the
 // live ".gguf.gguf" bug this closes).
+// doc69 W1 "modelfix" — also import defaultModelBasename()/toBasename(): getOrLoadModel now has to
+// tell a TEXT-GENERATION model from the EMBEDDING model, and it must do so by comparing against the
+// SAME resolver every other call site uses (never a hard-coded ".gguf" filename).
 import {
   codeModelBasename as resolveCodeModelBasename,
   fimModelBasename as resolveFimModelBasename,
   embedModelBasename as resolveEmbedModelBasename,
+  defaultModelBasename as resolveDefaultModelBasename,
+  toBasename,
 } from "./ai/modelResolver";
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -705,9 +710,156 @@ function releaseModel(loaded: LoadedModel | undefined): void {
 }
 
 /**
- * Get or load a model — loads from default path if not already in memory
+ * doc69 W1 "modelfix" — CALLER INTENT for `getOrLoadModel`.
+ *
+ * The same function serves three very different needs, and before this fix it treated them
+ * identically ("reuse whatever is resident"), which is precisely what let an EMBEDDING model be
+ * handed to a text-generation request:
+ *
+ *   "generate" — text generation (generateText / chatCompletion / generateJSON / the streaming
+ *                variants / native FIM). MUST have a real text-generation head. An embedding model
+ *                here produces token-repetition garbage that LOOKS like an answer — the exact
+ *                dishonest-degradation failure this platform must never have. Guarded below.
+ *   "embed"    — generateEmbedding(s). These already resolve GGUF_EMBED_MODEL themselves and pass
+ *                it EXPLICITLY, so they never reach the no-modelId branch unless GGUF_EMBED_MODEL
+ *                is unset; the legacy resolution is preserved verbatim for them so the RAG path
+ *                cannot regress.
+ *   "tokenize" — countTokens(). Touches only `model.tokenize`, never a generation head, and is
+ *                called on hot paths purely to size prompts; forcing a ~16.7 GB deep-model load
+ *                just to count tokens would be a real regression, so it keeps the legacy
+ *                reuse-whatever-is-resident behavior too.
+ *
+ * The intent is an explicit PARAMETER rather than something inferred from the arguments: inferring
+ * it is exactly the kind of guess that produced the original bug.
  */
-async function getOrLoadModel(modelId?: string, contextSize?: number): Promise<{ modelId: string; loaded: LoadedModel }> {
+type ModelPurpose = "generate" | "embed" | "tokenize";
+
+/**
+ * Is `id` the configured EMBEDDING model? Compared through the shared, suffix-safe
+ * `toBasename()`/`embedModelBasename()` resolvers — never a hard-coded filename, so changing
+ * GGUF_EMBED_MODEL in `.env` keeps the guard correct with no code change. Returns false when
+ * GGUF_EMBED_MODEL is unset (nothing to exclude — the strict text-model preference below still
+ * applies).
+ */
+function isEmbeddingModelId(id: string): boolean {
+  const embed = resolveEmbedModelBasename();
+  if (!embed) return false;
+  return toBasename(id).toLowerCase() === toBasename(embed).toLowerCase();
+}
+
+/** Take an already-resident model: bump LRU/usage counters and acquire an in-flight reference. */
+function takeLoadedModel(modelId: string): { modelId: string; loaded: LoadedModel } | null {
+  const loaded = loadedModels.get(modelId);
+  if (!loaded) return null;
+  loaded.lastUsedAt = new Date();
+  loaded.useCount++;
+  loaded.refCount++;
+  return { modelId, loaded };
+}
+
+/**
+ * doc69 W1 "modelfix" — resolve a model for TEXT GENERATION when the caller pinned nothing.
+ *
+ * THE BUG THIS REPLACES (measured live, 6 runs, modelId read back from the DB): the old code took
+ * `loadedModels.entries().next()` — "whatever loaded first" — BEFORE it ever looked at
+ * GGUF_DEFAULT_MODEL. RAG's `retrieveKnowledge()` loads the 0.6B embedder first, so it won, and
+ * every un-pinned generation call produced `"result result result…"` garbage that the UI then
+ * showed to a factory engineer as an answer.
+ *
+ * PRIORITY (deliberately inverted vs. the old code):
+ *   1. GGUF_DEFAULT_MODEL if already resident      — the configured chat model, zero load cost.
+ *   2. GGUF_DEFAULT_MODEL, loading it              — configuration beats load-order. Never
+ *                                                    silently downgrade to a smaller model.
+ *   3. any OTHER resident NON-embedding model      — honest degradation when (2) fails (VRAM/OOM):
+ *                                                    still a real text model, just not the deep one.
+ *   4. first NON-embedding .gguf in the models dir — last resort for an unconfigured install.
+ *   5. THROW                                       — no text model ⇒ say so. Returning the embedder
+ *                                                    "so something comes back" IS the bug.
+ */
+async function getGenerationModel(contextSize?: number): Promise<{ modelId: string; loaded: LoadedModel }> {
+  const defaultId = resolveDefaultModelBasename();
+  const why: string[] = [];
+
+  // 1 — configured chat model already resident.
+  if (defaultId) {
+    const hot = takeLoadedModel(defaultId);
+    if (hot) return hot;
+  }
+
+  // 2 — load the configured chat model. Configuration wins over "whatever is hot".
+  if (defaultId) {
+    try {
+      // B0.2 — forward the per-task contextSize hint on first load (KV-cache sizing).
+      const id = await loadGgufModel({ modelPath: `${defaultId}.gguf`, contextSize });
+      const got = takeLoadedModel(id);
+      if (got) return got;
+      why.push(`GGUF_DEFAULT_MODEL "${defaultId}" reported loaded but is not resident`);
+    } catch (err) {
+      const msg = (err as any)?.message ?? String(err);
+      why.push(`GGUF_DEFAULT_MODEL "${defaultId}" failed to load: ${msg}`);
+      console.error(`[aiGgufEngine] could not load GGUF_DEFAULT_MODEL "${defaultId}": ${msg}`);
+    }
+  } else {
+    why.push("GGUF_DEFAULT_MODEL is not set");
+  }
+
+  // 3 — honest degradation: any OTHER resident model that is not the embedder.
+  for (const id of loadedModels.keys()) {
+    if (isEmbeddingModelId(id)) continue;
+    const got = takeLoadedModel(id);
+    if (got) {
+      console.warn(
+        `[aiGgufEngine] GGUF_DEFAULT_MODEL unavailable — generating with the already-resident text model "${id}" instead.`,
+      );
+      return got;
+    }
+  }
+
+  // 4 — last resort: first non-embedding .gguf on disk (mirrors isGgufModelLoadable's skip rules).
+  try {
+    ensureModelsDir();
+    const files = fs.readdirSync(GGUF_MODELS_DIR).filter((f) => f.endsWith(".gguf"));
+    for (const f of files) {
+      const base = toBasename(f);
+      if (isEmbeddingModelId(base)) continue;
+      if (/embed/i.test(base)) continue; // heuristic: an obvious embedder with no GGUF_EMBED_MODEL set
+      try {
+        const id = await loadGgufModel({ modelPath: f, contextSize });
+        const got = takeLoadedModel(id);
+        if (got) {
+          console.warn(`[aiGgufEngine] no configured chat model — generating with on-disk "${id}".`);
+          return got;
+        }
+      } catch (err) {
+        why.push(`"${f}" failed to load: ${(err as any)?.message ?? String(err)}`);
+      }
+    }
+  } catch (err) {
+    why.push(`models dir scan failed: ${(err as any)?.message ?? String(err)}`);
+  }
+
+  // 5 — HONEST FAILURE. Never substitute the embedding model for a generation request.
+  throw new Error(
+    "No text-generation model available (GGUF_DEFAULT_MODEL not loadable); refusing to generate " +
+      `with the embedding model. Cause: ${why.join(" | ") || "no candidate models found"}. ` +
+      "Set GGUF_DEFAULT_MODEL to a chat model (e.g. Qwen3-30B-A3B-Instruct) that exists under " +
+      "GGUF_MODELS_DIR. [VI] Không có model sinh văn bản khả dụng — TỪ CHỐI sinh chữ bằng model " +
+      "nhúng (model nhúng không có đầu sinh văn bản, chỉ trả ra chuỗi lặp vô nghĩa).",
+  );
+}
+
+/**
+ * Get or load a model — loads from default path if not already in memory.
+ *
+ * `purpose` (doc69 W1 modelfix) selects the resolution policy when NO modelId is pinned; see
+ * `ModelPurpose` above. An EXPLICIT modelId always wins and is loaded verbatim for every purpose
+ * (a caller that deliberately asks for the embedder — the embedding path does — still gets it).
+ */
+async function getOrLoadModel(
+  modelId?: string,
+  contextSize?: number,
+  purpose: ModelPurpose = "generate",
+): Promise<{ modelId: string; loaded: LoadedModel }> {
   if (modelId && loadedModels.has(modelId)) {
     const loaded = loadedModels.get(modelId)!;
     loaded.lastUsedAt = new Date();
@@ -716,8 +868,14 @@ async function getOrLoadModel(modelId?: string, contextSize?: number): Promise<{
     return { modelId, loaded };
   }
 
-  // If no specific model requested, try the default or first available
+  // If no specific model requested, resolve according to the caller's INTENT.
   if (!modelId) {
+    // Text generation: strict, embedder-proof, fails loudly (see getGenerationModel).
+    if (purpose === "generate") return getGenerationModel(contextSize);
+
+    // "embed"/"tokenize": legacy resolution, preserved VERBATIM. Neither drives a generation
+    // head, and generateEmbedding(s) already pin GGUF_EMBED_MODEL explicitly, so this branch is
+    // only reached when GGUF_EMBED_MODEL is unset (embed) or nothing was pinned (tokenize).
     // Check if any model is already loaded
     if (loadedModels.size > 0) {
       const [firstId, firstModel] = loadedModels.entries().next().value!;
@@ -732,7 +890,7 @@ async function getOrLoadModel(modelId?: string, contextSize?: number): Promise<{
     if (defaultModel) {
       // B0.2 — forward the per-task contextSize hint on first load (KV-cache sizing).
       const id = await loadGgufModel({ modelPath: defaultModel, contextSize });
-      return getOrLoadModel(id);
+      return getOrLoadModel(id, contextSize, purpose);
     }
 
     // Try first .gguf file in models directory
@@ -740,7 +898,7 @@ async function getOrLoadModel(modelId?: string, contextSize?: number): Promise<{
     const files = fs.readdirSync(GGUF_MODELS_DIR).filter(f => f.endsWith(".gguf"));
     if (files.length > 0) {
       const id = await loadGgufModel({ modelPath: files[0], contextSize });
-      return getOrLoadModel(id);
+      return getOrLoadModel(id, contextSize, purpose);
     }
 
     throw new Error("No GGUF model available. Upload a .gguf file or set GGUF_DEFAULT_MODEL env var.");
@@ -748,7 +906,7 @@ async function getOrLoadModel(modelId?: string, contextSize?: number): Promise<{
 
   // Try to load the specified model
   const id = await loadGgufModel({ modelPath: `${modelId}.gguf`, contextSize });
-  return getOrLoadModel(id);
+  return getOrLoadModel(id, contextSize, purpose);
 }
 
 // ─── Text Generation ───────────────────────────────────────────
@@ -769,6 +927,58 @@ export async function warmModel(modelId?: string, contextSize?: number): Promise
   } catch {
     return false;
   }
+}
+
+/**
+ * doc69 W1 "modelfix" — BOOT-TIME deep-model warm. `warmModel` above was written specifically to
+ * defuse the VRAM-ordering trap it documents, but nothing in production ever called it (grep: only
+ * tests + the copilot/RCA paths, which warm a CODE model), so the trap stayed armed: RAG made the
+ * 0.6B embedder resident first on every boot.
+ *
+ * Registered from `server/_core/backgroundJobs.ts` alongside the other schedulers. Best-effort and
+ * fail-safe by construction — `warmModel` never throws, the timer is unref'd (never holds the
+ * event loop open) and the whole body is defensive, so a missing/unloadable model can never affect
+ * boot. Idempotent: a second call is a no-op.
+ *
+ * Env:
+ *   GGUF_WARM_DEEP_MODEL_ON_BOOT=false → skip entirely (e.g. a low-VRAM box, or ROLE=worker hosts
+ *                                        that never serve chat).
+ *   GGUF_WARM_DELAY_MS                 → delay before warming (default 3000ms) so the warm never
+ *                                        competes with the rest of boot.
+ */
+let deepWarmStarted = false;
+export function initDeepModelWarmup(): void {
+  if (deepWarmStarted) return;
+  deepWarmStarted = true;
+
+  if ((process.env.GGUF_WARM_DEEP_MODEL_ON_BOOT || "").trim().toLowerCase() === "false") {
+    console.log("[aiGgufEngine] deep-model boot warm disabled (GGUF_WARM_DEEP_MODEL_ON_BOOT=false)");
+    return;
+  }
+
+  const raw = Number(process.env.GGUF_WARM_DELAY_MS);
+  const delayMs = Number.isFinite(raw) && raw > 0 ? raw : 3000;
+
+  const timer = setTimeout(() => {
+    void (async () => {
+      try {
+        const deep = resolveDefaultModelBasename();
+        if (!deep) {
+          console.warn("[aiGgufEngine] deep-model boot warm skipped — GGUF_DEFAULT_MODEL is not set.");
+          return;
+        }
+        const ok = await warmModel(deep);
+        console.log(
+          ok
+            ? `[aiGgufEngine] deep model warm OK — "${deep}" resident before RAG loads the embedder.`
+            : `[aiGgufEngine] deep model warm FAILED for "${deep}" — un-pinned generation will now fail LOUDLY rather than degrade to the embedder.`,
+        );
+      } catch (err) {
+        console.error("[aiGgufEngine] deep-model boot warm errored:", (err as any)?.message ?? err);
+      }
+    })();
+  }, delayMs);
+  if (typeof timer.unref === "function") timer.unref();
 }
 
 /**
@@ -1348,7 +1558,8 @@ export async function describeImage(
  * Count tokens accurately using the model's tokenizer
  */
 export async function countTokens(text: string, modelId?: string): Promise<number> {
-  const { loaded } = await getOrLoadModel(modelId);
+  // purpose "tokenize" — tokenizer only, no generation head involved (see ModelPurpose).
+  const { loaded } = await getOrLoadModel(modelId, undefined, "tokenize");
   try {
     const tokens = loaded.model.tokenize(text);
     return tokens.length;
@@ -1843,7 +2054,9 @@ export async function generateEmbedding(
   // FIX (doc69 W1-4 review) — resolved via the shared, suffix-safe embedModelBasename(), not a
   // raw env read (see the module-level comment above for the ".gguf.gguf" bug this closes).
   const effectiveId = modelId ?? resolveEmbedModelBasename();
-  const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId);
+  // purpose "embed" — the embedding model is the CORRECT answer here; the text-generation guard
+  // must not apply (doc69 W1 modelfix, see ModelPurpose).
+  const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId, undefined, "embed");
 
   // Mục 4: embeddings are light but still share the single GGUF slot to keep the
   // 6GB VRAM budget simple and safe.
@@ -1874,7 +2087,8 @@ export async function generateEmbeddings(
   // FIX (doc69 W1-4 review) — see generateEmbedding() above: resolved via the shared,
   // suffix-safe embedModelBasename(), not a raw env read.
   const effectiveId = modelId ?? resolveEmbedModelBasename();
-  const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId);
+  // purpose "embed" — see generateEmbedding() above.
+  const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId, undefined, "embed");
 
   // Mục 4: batch embeddings hold the single GGUF slot for the whole loop.
   return withGgufSlot(async () => {

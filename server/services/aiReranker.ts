@@ -35,6 +35,9 @@
 
 import path from "node:path";
 import fs from "node:fs";
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver. The "llm" backend below documents that
+// it scores with the FAST model (Qwen3-4B); that intent is now PINNED rather than implicit.
+import { resolveLogicalModel } from "./ai/modelResolver";
 
 // ─── Public interface ─────────────────────────────────────────────────────────
 
@@ -187,7 +190,10 @@ async function rankWithLlm(query: string, pool: RerankCandidate[]): Promise<numb
     temperature: 0,
     topP: 1,
     jsonMode: true,
-  });
+    // FAST tier — this module's header explicitly specifies "the existing fast GGUF text model
+    // (Qwen3-4B)" for the llm backend. If GGUF_FAST_MODEL is unset this resolves to undefined and
+    // the engine falls back to GGUF_DEFAULT_MODEL (still a real text model, never the embedder).
+  }, resolveLogicalModel("fast"));
 
   const parsed = parseScoreArray(result.text, pool.length);
   return parsed;

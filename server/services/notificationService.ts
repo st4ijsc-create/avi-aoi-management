@@ -9,6 +9,9 @@ import {
   getUserNotificationPreferences,
   getUnreadNotificationCount,
 } from '../db';
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the digest/personalization calls below
+// must PIN a text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
+import { resolveLogicalModel } from './ai/modelResolver';
 
 // Store Socket.io server instance
 let io: SocketIOServer | null = null;
@@ -278,7 +281,7 @@ export async function generateNotificationSummary(
       prompt: `Summarize these ${notifications.length} notifications:\n${notifList}`,
       maxTokens: 256,
       temperature: 0.5,
-    });
+    }, resolveLogicalModel('chat'));
 
     return response.text?.trim() || null;
   } catch {
@@ -310,7 +313,7 @@ Reply in JSON: { "title": string, "message": string }`,
       maxTokens: 200,
       temperature: 0.3,
       jsonMode: true,
-    });
+    }, resolveLogicalModel('chat'));
 
     const parsed = JSON.parse(response.text);
     if (parsed.title && parsed.message) {

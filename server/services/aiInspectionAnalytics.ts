@@ -32,6 +32,9 @@ import {
 import { cacheService } from "./cacheService";
 import { emitSpcViolationAlert } from "../_core/socket";
 import { calculateCapabilityIndices } from "../utils/spc";
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the narration/SPC-interpretation calls
+// below must PIN a text model (un-pinned calls used to land on the 0.6B RAG embedder).
+import { resolveLogicalModel } from "./ai/modelResolver";
 // Canonical KPI math + factory-timezone bucketing (doc 27 decision #4, gaps A2/A4).
 import {
   finalYieldPassCondSql,
@@ -1861,7 +1864,7 @@ async function narrateAnalysis(type: string, data: unknown): Promise<string | nu
       prompt: `Summarize this ${type} analysis data and highlight key findings:\n${dataStr}`,
       maxTokens: 256,
       temperature: 0.5,
-    });
+    }, resolveLogicalModel("chat"));
     return result.text.trim() || null;
   } catch {
     return null;
@@ -1951,7 +1954,7 @@ Violations:
 ${violationSummary || "Points beyond 3σ limits detected"}`,
       maxTokens: 400,
       temperature: 0.3,
-    });
+    }, resolveLogicalModel("chat"));
 
     return { data, interpretation: response.text?.trim() || null };
   } catch {

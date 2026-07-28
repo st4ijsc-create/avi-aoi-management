@@ -4,6 +4,10 @@
  * WIP tracking, conflict detection
  */
 
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver, so the AI explanation below pins a real
+// text model instead of letting the engine reuse whatever happened to load first (the RAG embedder).
+import { resolveLogicalModel } from "./ai/modelResolver";
+
 export interface SchedulableOrder {
   id: number;
   orderCode: string;
@@ -632,7 +636,7 @@ async function explainScheduleWithAIUnbounded(
       prompt: `Schedule result: ${JSON.stringify(summary)}`,
       maxTokens: 300,
       temperature: 0.5,
-    });
+    }, resolveLogicalModel("chat"));
 
     return response.text?.trim() || null;
   } catch {

@@ -6,6 +6,9 @@
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { sql } from "drizzle-orm";
+// doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the comparison narrative must PIN a text
+// model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
+import { resolveLogicalModel } from "./ai/modelResolver";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -495,7 +498,7 @@ async function narrateComparison(result: ComparisonResult): Promise<string | nul
       prompt: `Comparison: ${JSON.stringify(summary)}`,
       maxTokens: 300,
       temperature: 0.5,
-    });
+    }, resolveLogicalModel("chat"));
 
     return response.text?.trim() || null;
   } catch {
