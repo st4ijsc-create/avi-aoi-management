@@ -627,18 +627,28 @@ if (unsOptions.Enabled)
 // field-protocol driver: a Modbus TCP poller, run as its OWN isolated FleetHost pipeline slot (the payoff
 // of G2-5's per-slot fault isolation — a Modbus fault can never tear down the simulated fleet). Additive +
 // env-gated OFF BY DEFAULT (ST4I_MODBUS_ENABLED unset/false, the opposite default polarity from
-// ST4I_UNS_ENABLED — see ModbusOptions' own doc comment): when disabled, the Func<IDeviceDriver> below is
-// never registered, so FleetHost's optional `modbusDriverFactory` ctor param resolves to its own `null`
-// default — byte-identical to today, same contract as every other optional FleetHost dependency above. A
-// missing/malformed register map (ST4I_MODBUS_MAP) logs a warning and disables Modbus for this run rather
-// than crashing startup — same "never allowed to fail the host it's bolted onto" posture as the UNS
-// broker-bind failure just above.
+// ST4I_UNS_ENABLED — see ModbusOptions' own doc comment): when disabled, nothing is registered into
+// `connectorRegistry` below (see the ConnectorRegistry singleton further down), so FleetHost's optional
+// `connectorRegistry` ctor param has no "Modbus" entry in it — byte-identical to today, same contract as
+// every other optional FleetHost dependency above. A missing/malformed register map (ST4I_MODBUS_MAP) logs
+// a warning and disables Modbus for this run rather than crashing startup — same "never allowed to fail
+// the host it's bolted onto" posture as the UNS broker-bind failure just above.
+//
+// GP-4 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) — this block's
+// OWN config-loading/validation is UNCHANGED from before this task (same try/catch, same log message, same
+// "disable for this run" outcome on failure): only what happens on SUCCESS changed — instead of registering
+// a `Func<IDeviceDriver>` DI singleton consumed by a dedicated `FleetHost` constructor parameter, the
+// already-loaded map JSON TEXT is hoisted (`modbusMapJson`, right alongside `modbusSeedDescriptor`) so the
+// single `ConnectorRegistry` singleton below can register a `ModbusConnectorFactory` against it — no
+// second parse, no second file read, no second validation step; the same successfully-loaded text is
+// simply handed to the connector-level adapter too.
 // P2-3 (docs/plans/2026-07-27-giaidoan2-pass2-blueprint.md task 3) — hoisted OUTSIDE the
 // `if (modbusOptions.Enabled)` block below because `modbusMap`/`capturedMap` are scoped INSIDE it, while
 // the roster-seed call (`fleetHost.RegisterMachine`, further down, well after `app.Build()`) needs to reach
 // a descriptor built from that same map. Stays null (no-op) unless Modbus is enabled AND its register map
-// actually loaded — additive + still default-off, same contract as `_modbusDriverFactory` above.
+// actually loaded — additive + still default-off, same contract as before.
 St4i.EdgeCore.Models.MachineDescriptor? modbusSeedDescriptor = null;
+string? modbusMapJson = null;
 
 var modbusOptions = St4i.EdgeCore.Drivers.Modbus.ModbusOptions.FromEnvironment();
 if (modbusOptions.Enabled)
@@ -654,6 +664,7 @@ if (modbusOptions.Enabled)
 
         var mapJson = File.ReadAllText(modbusOptions.MapPath);
         modbusMap = St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap.FromJson(mapJson);
+        modbusMapJson = mapJson;
     }
     catch (Exception ex)
     {
@@ -667,15 +678,6 @@ if (modbusOptions.Enabled)
     if (modbusMap is not null)
     {
         var capturedMap = modbusMap;
-        builder.Services.AddSingleton<Func<St4i.Connector.Abstractions.IDeviceDriver>>(sp =>
-        {
-            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Modbus");
-            var factory = new St4i.EdgeCore.Drivers.Modbus.ModbusDriverFactory(
-                modbusOptions, capturedMap,
-                logWarning: msg => logger.LogWarning("{ModbusMsg}", msg),
-                logError: (ex, msg) => logger.LogError(ex, "{ModbusMsg}", msg));
-            return factory.Create;
-        });
 
         // P2-3 — the Modbus machine's roster descriptor, built from the SAME loaded register map (its
         // MachineCode + PollIntervalMs), so it gets a MachineState (fleet Snapshot tile + historian) and,
@@ -697,25 +699,31 @@ if (modbusOptions.Enabled)
 // field-protocol driver, mirroring the Modbus block immediately above (G2-6): an OPC-UA CLIENT poller run
 // as its OWN isolated FleetHost pipeline slot (G2-5 fault isolation — an OPC-UA fault can never tear down
 // the simulated fleet or the Modbus slot). Additive + env-gated OFF BY DEFAULT (ST4I_OPCUA_ENABLED
-// unset/false — see OpcUaOptions' own doc comment): when disabled, no OpcUaDriverFactory is registered, so
-// FleetHost's optional `opcUaDriverFactory` ctor param resolves to its own `null` default — byte-identical
-// to today. A missing/malformed node map (ST4I_OPCUA_MAP) logs a warning and disables OPC-UA for this run
-// rather than crashing startup — same posture as the Modbus/UNS blocks above.
+// unset/false — see OpcUaOptions' own doc comment): when disabled, nothing is registered into
+// `connectorRegistry` below, so FleetHost's optional `connectorRegistry` ctor param has no "OpcUa" entry in
+// it — byte-identical to today. A missing/malformed node map (ST4I_OPCUA_MAP) logs a warning and disables
+// OPC-UA for this run rather than crashing startup — same posture as the Modbus/UNS blocks above.
 //
-// DI disambiguation (the brief's explicit call-out): Modbus's factory is registered as a bare
-// `Func<IDeviceDriver>` singleton above — registering OPC-UA's factory the SAME way would collide with
-// that exact registration. Registering `OpcUaDriverFactory` AS ITSELF (a distinct concrete type) instead
-// means the two optional dependencies resolve independently; see OpcUaDriverFactory's own "DI
-// disambiguation" doc comment.
+// DI disambiguation, now historical (GP-4 update): Modbus's factory used to be registered as a bare
+// `Func<IDeviceDriver>` singleton, and OPC-UA's factory was registered as the distinct concrete
+// `OpcUaDriverFactory` type specifically so the two registrations could never collide. GP-4
+// (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) removed BOTH
+// registrations: neither `ModbusDriverFactory`/`OpcUaDriverFactory` nor their new
+// `ModbusConnectorFactory`/`OpcUaConnectorFactory` adapters are ever registered in DI at all anymore (see
+// the single `ConnectorRegistry` singleton below, which constructs them directly with `new`) — the
+// collision this workaround existed to avoid cannot occur even in principle now, since there is exactly
+// one DI-registered type (`ConnectorRegistry`) for both connector kinds combined. See
+// `OpcUaDriverFactory`'s own doc comment for the same history from that class's side.
 //
 // GĐ3 sub-3 OU-2 — P2-3 parity: `opcUaSeedDescriptor` is hoisted OUTSIDE the `if (opcUaOptions.Enabled)`
 // block below (same reasoning as `modbusSeedDescriptor` above — `opcUaMap`/`capturedOpcUaMap` are scoped
 // INSIDE it, while the roster-seed call, further down, well after `app.Build()`, needs to reach a
 // descriptor built from that same map). Stays null (no-op) unless OPC-UA is enabled AND its node map
-// actually loaded — additive + still default-off, same contract as `_opcUaDriverFactory` above. Once
-// seeded, this OPC-UA machine gets a fleet Snapshot tile/historian row/Asset row (via the roster-seed
-// call below), not just an invisible telemetry stream.
+// actually loaded — additive + still default-off, same contract as before. Once seeded, this OPC-UA
+// machine gets a fleet Snapshot tile/historian row/Asset row (via the roster-seed call below), not just an
+// invisible telemetry stream.
 St4i.EdgeCore.Models.MachineDescriptor? opcUaSeedDescriptor = null;
+string? opcUaMapJson = null;
 
 var opcUaOptions = St4i.EdgeCore.Drivers.OpcUa.OpcUaOptions.FromEnvironment();
 if (opcUaOptions.Enabled)
@@ -731,6 +739,7 @@ if (opcUaOptions.Enabled)
 
         var mapJson = File.ReadAllText(opcUaOptions.MapPath);
         opcUaMap = St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap.FromJson(mapJson);
+        opcUaMapJson = mapJson;
     }
     catch (Exception ex)
     {
@@ -744,15 +753,6 @@ if (opcUaOptions.Enabled)
     if (opcUaMap is not null)
     {
         var capturedOpcUaMap = opcUaMap;
-        builder.Services.AddSingleton(sp =>
-        {
-            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("OpcUa");
-            return new St4i.EdgeCore.Drivers.OpcUa.OpcUaDriverFactory(
-                capturedOpcUaMap,
-                pkiDir: opcUaOptions.PkiDir,
-                logWarning: msg => logger.LogWarning("{OpcUaMsg}", msg),
-                logError: (ex, msg) => logger.LogError(ex, "{OpcUaMsg}", msg));
-        });
 
         // GĐ3 sub-3 OU-2 — the OPC-UA machine's roster descriptor, built from the SAME loaded node map
         // (its MachineCode + PollIntervalMs), so it gets a MachineState (fleet Snapshot tile + historian)
@@ -770,6 +770,42 @@ if (opcUaOptions.Enabled)
             CycleSeconds: Math.Max(0.1, capturedOpcUaMap.PollIntervalMs / 1000.0));
     }
 }
+
+// GP-4 — the ONE DI singleton both connector kinds resolve through now, replacing the two separate
+// registrations above (a bare `Func<IDeviceDriver>` for Modbus, `OpcUaDriverFactory` itself for OPC-UA).
+// Lazily built (same "needs `ILoggerFactory` from `sp`, so it can't be a plain pre-`Build()` local" reason
+// the old registrations were lambdas too) — populated with whichever of Modbus/OPC-UA actually finished
+// loading their config above; either, both, or neither may be present, and `FleetHost.StartLocked` asks
+// this registry fresh, on every call, for the current full set. `ConnectorRegistry` requires no ASP.NET
+// Core service itself, so this factory only reaches into `sp` for the per-connector `ILogger`.
+builder.Services.AddSingleton(sp =>
+{
+    var registry = new St4i.EngineApi.Fleet.ConnectorRegistry();
+
+    if (modbusMapJson is not null)
+    {
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Modbus");
+        registry.Register(
+            new St4i.EdgeCore.Drivers.Modbus.ModbusConnectorFactory(
+                modbusOptions,
+                logWarning: msg => logger.LogWarning("{ModbusMsg}", msg),
+                logError: (ex, msg) => logger.LogError(ex, "{ModbusMsg}", msg)),
+            modbusMapJson);
+    }
+
+    if (opcUaMapJson is not null)
+    {
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("OpcUa");
+        registry.Register(
+            new St4i.EdgeCore.Drivers.OpcUa.OpcUaConnectorFactory(
+                pkiDir: opcUaOptions.PkiDir,
+                logWarning: msg => logger.LogWarning("{OpcUaMsg}", msg),
+                logError: (ex, msg) => logger.LogError(ex, "{OpcUaMsg}", msg)),
+            opcUaMapJson);
+    }
+
+    return registry;
+});
 
 // Task 9 (WS-A) — per-machine OEE settings (ideal-cycle override + planned-production ratio), a plain
 // JSON-file-backed store (WS-A-T5) that was never wired into DI until now. Pointed at the SAME resolved

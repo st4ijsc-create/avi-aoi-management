@@ -4,7 +4,6 @@ using St4i.EdgeCore.Drivers;
 using St4i.Connector.Abstractions;
 using St4i.EdgeCore.Drivers.HotFolder;
 using St4i.EdgeCore.Drivers.Modbus;
-using St4i.EdgeCore.Drivers.OpcUa;
 using St4i.EdgeCore.Drivers.Simulators;
 using St4i.EdgeCore.Engine;
 using St4i.EdgeCore.Historian;
@@ -147,32 +146,22 @@ public sealed class FleetHost
     /// historian run-events above.</summary>
     private readonly IUnsPublisher? _unsPublisher;
 
-    /// <summary>G2-6 (WS-H, docs/plans/2026-07-27-giaidoan2-synapse-connect-blueprint.md task 6) —
+    /// <summary>GP-4 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) —
     /// optional (defaults null, same "every pre-existing test/call site that constructs
     /// <see cref="FleetHost"/> directly without one keeps compiling/behaving byte-for-byte unchanged"
-    /// contract as every other optional dependency above) factory for the Modbus TCP driver's OWN pipeline
-    /// slot — the FIRST real field-protocol driver, riding G2-5's per-slot fault isolation so a Modbus
-    /// fault can never touch the simulated fleet (see <see cref="StartLocked"/>). Typed as a plain
-    /// <c>Func&lt;IDeviceDriver&gt;</c> (not the concrete <c>ModbusDriverFactory</c>) specifically so a
-    /// test can inject a fake driver with no NModbus/real-socket dependency
-    /// (<c>St4i.EngineApi.Tests.FleetHostModbusSlotTests</c>) — production (Program.cs) registers this as
-    /// <c>ModbusDriverFactory.Create</c>, invoked fresh on every <see cref="StartLocked"/> call, same "a
-    /// driver owns a live connection torn down on stop, so every (re)start needs a brand new instance"
-    /// reasoning the simulated fleet's own <c>SimulatorFactory.Create</c> already follows.</summary>
-    private readonly Func<IDeviceDriver>? _modbusDriverFactory;
-
-    /// <summary>GĐ3 sub-3 OU-1 (docs/plans/2026-07-27-giaidoan3-opcua-driver-blueprint.md task 1) —
-    /// optional (defaults null, same "every pre-existing test/call site that constructs
-    /// <see cref="FleetHost"/> directly without one keeps compiling/behaving byte-for-byte unchanged"
-    /// contract as every other optional dependency above) factory for the OPC-UA client driver's OWN
-    /// pipeline slot — mirrors <see cref="_modbusDriverFactory"/>'s reasoning exactly (G2-5 per-slot fault
-    /// isolation; a fresh driver/session per <see cref="StartLocked"/> call). Typed as the CONCRETE
-    /// <see cref="OpcUaDriverFactory"/> (not another <c>Func&lt;IDeviceDriver&gt;</c>) specifically so its
-    /// DI registration never collides with Modbus's own <c>Func&lt;IDeviceDriver&gt;</c> singleton — see
-    /// <see cref="OpcUaDriverFactory"/>'s own "DI disambiguation" doc comment for the full reasoning.
-    /// Production (Program.cs) registers this as itself, invoked fresh on every <see cref="StartLocked"/>
-    /// call via <see cref="OpcUaDriverFactory.Create"/>.</summary>
-    private readonly OpcUaDriverFactory? _opcUaDriverFactory;
+    /// contract as every other optional dependency above) connector-id-keyed registry, replacing what used
+    /// to be TWO separate per-driver-kind fields here: <c>Func&lt;IDeviceDriver&gt;? _modbusDriverFactory</c>
+    /// and <c>OpcUaDriverFactory? _opcUaDriverFactory</c> (G2-6 / GĐ3 sub-3 OU-1). Every registered
+    /// connector rides the SAME G2-5 per-slot fault isolation those two fields' pipeline slots always did
+    /// (see <see cref="StartLocked"/>) — a fault in any one connector, or a connector that fails to even
+    /// BUILD (a bad config, or a third-party factory that throws despite
+    /// <see cref="St4i.Connector.Abstractions.IConnectorFactory.TryCreate"/>'s contract not to), can never
+    /// touch the simulated fleet or any sibling connector. Production (Program.cs) registers Modbus/OPC-UA
+    /// into this registry via the <c>ModbusConnectorFactory</c>/<c>OpcUaConnectorFactory</c> adapters;
+    /// <see cref="StartLocked"/> asks it fresh, on every call, for the full set of configured connector ids
+    /// and a driver for each — this is what "onboarding a connector" now means: one
+    /// <see cref="ConnectorRegistry.Register"/> call, zero changes to this class.</summary>
+    private readonly ConnectorRegistry? _connectorRegistry;
 
     /// <summary>P2-1 (WS-J Asset Registry) — optional (defaults null, same "every pre-existing test that
     /// constructs <see cref="FleetHost"/> directly without one keeps compiling/behaving byte-for-byte
@@ -266,9 +255,8 @@ public sealed class FleetHost
         HistorianWriter? historianWriter = null,
         FleetSettingsStore? settingsStore = null,
         IUnsPublisher? unsPublisher = null,
-        Func<IDeviceDriver>? modbusDriverFactory = null,
         IAssetRegistry? assetRegistry = null,
-        OpcUaDriverFactory? opcUaDriverFactory = null)
+        ConnectorRegistry? connectorRegistry = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -280,9 +268,8 @@ public sealed class FleetHost
         _historianWriter = historianWriter;
         _settingsStore = settingsStore;
         _unsPublisher = unsPublisher;
-        _modbusDriverFactory = modbusDriverFactory;
         _assetRegistry = assetRegistry;
-        _opcUaDriverFactory = opcUaDriverFactory;
+        _connectorRegistry = connectorRegistry;
 
         // FF-1 — eager load, no lock needed: runs once, before this instance is published to any other
         // thread (same reasoning SeedAoiProductLinks below documents for itself). See _settingsStore's own
@@ -594,6 +581,13 @@ public sealed class FleetHost
         // roster descriptor for a configured OPC-UA machine (below), it must be driven ONLY by the real
         // OPC-UA pipeline slot, never simulated too. A roster with no Modbus/OPC-UA machines is unaffected
         // (the Where stays a no-op), so sim seeds/indices are byte-identical to before this task.
+        // GP-4 note: this exclusion deliberately stays a literal comparison against the two built-in ids,
+        // NOT a generalized "exclude anything the connector registry knows about" check — it is a
+        // roster/simulation concern (which MachineDescriptors SimulatorFactory should build a sim for),
+        // orthogonal to which connector factories exist, and both literal ids remain valid regardless of
+        // how their drivers are now wired up. Generalizing it would require a roster/MachineDescriptor
+        // story for third-party connectors that does not exist yet (GP-5's connectors.json is the earliest
+        // that could apply), so it is left exactly as it was rather than speculatively widened.
         var simFleet = effectiveFleet.Where(d => d.DriverKind != DriverKinds.Modbus && d.DriverKind != DriverKinds.OpcUa).ToList();
         var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
         IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
@@ -634,29 +628,64 @@ public sealed class FleetHost
             foreach (var g in extra) groups.Add((g.Label, g.Driver, g.Profile, null));
         }
 
-        // G2-6 — the real Modbus slot, built fresh (never reused across restarts, see
-        // _modbusDriverFactory's own doc comment) whenever a factory was actually wired up (Program.cs
-        // only does this when ST4I_MODBUS_ENABLED=true AND its register map loaded — otherwise this stays
-        // null and the fleet is byte-identical to pre-G2-6). No per-machine MappingProfile override exists
-        // for Modbus yet (that's the roster/MachineDescriptor follow-up noted in task-6-report.md), so this
-        // uses a plain Automation-class fallback profile, same shape as `profile` above.
-        if (_modbusDriverFactory is not null)
+        // GP-4 — every registered connector gets its own slot, built fresh (never reused across restarts,
+        // same "a driver owns a live resource cancelling a CTS alone does not release" reasoning
+        // ConnectorRegistry/IConnectorFactory's own doc comments carry) whenever one is actually wired up
+        // (Program.cs only registers Modbus/OPC-UA when their respective ST4I_*_ENABLED env var is set AND
+        // their config file loaded — otherwise the registry is empty/null and the fleet is byte-identical
+        // to before this task). This replaces what used to be two hardcoded, copy-pasted blocks here (one
+        // per driver kind) — onboarding a new connector no longer touches this method at all.
+        //
+        // A connector that fails to produce a driver — a bad/malformed configuration (TryCreateDriver
+        // returns false), or a third-party factory that throws despite IConnectorFactory.TryCreate's
+        // contract not to — is logged and skipped, exactly like today's "malformed map file disables that
+        // driver for this run without crashing the host" behavior for Modbus/OPC-UA specifically. This is
+        // deliberately NOT surfaced through LastError (that property is reserved for a slot that started
+        // and later faulted at RUNTIME — see StartSlot's catch below; touching it here would flip
+        // GET /v1/health unhealthy merely because an optional peripheral's config is bad, which is not
+        // today's behavior and is not this task's to change) — only a log warning, so the failure is
+        // visible without being mistaken for the whole fleet's health.
+        if (_connectorRegistry is not null)
         {
-            var modbusProfile = new MappingProfile { Name = "modbus", DeviceClass = "Automation" };
-            groups.Add(("modbus", _modbusDriverFactory(), modbusProfile, null));
-        }
+            foreach (var connectorId in _connectorRegistry.RegisteredIds)
+            {
+                IDeviceDriver? connectorDriver;
+                string? connectorError;
+                try
+                {
+                    if (!_connectorRegistry.TryCreateDriver(connectorId, out connectorDriver, out connectorError))
+                    {
+                        connectorDriver = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Defense in depth: IConnectorFactory.TryCreate's contract says "never throw for bad
+                    // config," but a third-party factory is not this codebase's own code to trust blindly.
+                    // Catching here — BEFORE any slot exists for this connector — is what keeps a rogue
+                    // factory from taking down the simulated fleet and every sibling connector along with
+                    // it, not just disabling itself; a fault AFTER a slot exists is already isolated by
+                    // StartSlot's own per-slot catch below.
+                    connectorDriver = null;
+                    connectorError = ex.Message;
+                }
 
-        // GĐ3 sub-3 OU-1 — the real OPC-UA slot, built fresh (never reused across restarts, see
-        // _opcUaDriverFactory's own doc comment) whenever a factory was actually wired up (Program.cs only
-        // does this when ST4I_OPCUA_ENABLED=true AND its node map loaded — otherwise this stays null and
-        // the fleet is byte-identical to pre-OU-1). No roster/MachineDescriptor exists for OPC-UA yet
-        // (that's OU-2 — roster/Snapshot/web visibility — deliberately out of scope here), so unlike the
-        // Modbus slot there is no matching exclusion needed in `simFleet` above: nothing can be
-        // double-driven when nothing has registered an OpcUa-kind machine.
-        if (_opcUaDriverFactory is not null)
-        {
-            var opcUaProfile = new MappingProfile { Name = "opcua", DeviceClass = "Automation" };
-            groups.Add(("opcua", _opcUaDriverFactory.Create(), opcUaProfile, null));
+                if (connectorDriver is not null)
+                {
+                    // No per-machine MappingProfile override exists for a registry-driven connector (same
+                    // as pre-GP-4 Modbus/OPC-UA), so this uses a plain Automation-class fallback profile,
+                    // same shape as `profile` above. The slot label is the connector id lowercased —
+                    // deliberately reproducing today's exact "modbus"/"opcua" literals byte-for-byte (see
+                    // ConnectorRegistry's own remarks), not a new naming scheme.
+                    var connectorLabel = connectorId.ToLowerInvariant();
+                    var connectorProfile = new MappingProfile { Name = connectorLabel, DeviceClass = "Automation" };
+                    groups.Add((connectorLabel, connectorDriver, connectorProfile, null));
+                }
+                else
+                {
+                    _logger?.LogWarning("Connector '{ConnectorId}' could not be started: {ConnectorError}", connectorId, connectorError);
+                }
+            }
         }
 
         foreach (var g in groups)

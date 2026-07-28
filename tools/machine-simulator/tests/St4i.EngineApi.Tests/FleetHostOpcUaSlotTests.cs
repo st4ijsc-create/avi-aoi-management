@@ -12,34 +12,29 @@ namespace St4i.EngineApi.Tests;
 
 /// <summary>
 /// GĐ3 sub-3 OU-1 (docs/plans/2026-07-27-giaidoan3-opcua-driver-blueprint.md task 1) — proves the REAL
-/// (production) FleetHost wiring for an OPC-UA pipeline slot, mirroring
-/// <see cref="FleetHostModbusSlotTests"/> exactly: the public <c>OpcUaDriverFactory? opcUaDriverFactory</c>
-/// ctor param (the exact seam Program.cs feeds a real <c>OpcUaDriverFactory</c> into once
-/// <c>ST4I_OPCUA_ENABLED=true</c> and a node map loads) builds an ADDITIONAL "opcua" pipeline slot alongside
-/// the simulated one, and that slot gets the SAME per-slot fault isolation G2-5 proved via its internal
-/// test-only seam (<c>FleetHostMultiPipelineFaultIsolationTests</c>) — a fault in the OPC-UA slot must never
-/// tear down the simulated fleet. Deliberately decoupled from a real OPC-UA session (that protocol-level
-/// proof lives in <c>St4i.EdgeCore.Tests/Drivers/OpcUa/OpcUaDriverLoopbackTests.cs</c>) — a fake
-/// <see cref="IDeviceDriver"/>, injected via a small <see cref="OpcUaDriverFactory"/> test subclass (see
-/// that class's own "Testability" doc comment for why a subclass, not a bare lambda, is needed here), is
-/// enough to prove the WIRING, keeping this suite fast/deterministic with no real sockets/certificates.
+/// (production) FleetHost wiring for an OPC-UA pipeline slot. GP-4
+/// (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) migrated this from a
+/// dedicated <c>OpcUaDriverFactory? opcUaDriverFactory</c> constructor parameter onto the connector-id-keyed
+/// <see cref="ConnectorRegistry"/>, mirroring <see cref="FleetHostModbusSlotTests"/> exactly: a
+/// <see cref="ConnectorRegistry"/> with an OPC-UA entry registered (the exact seam Program.cs feeds a real
+/// <see cref="OpcUaConnectorFactory"/> into once <c>ST4I_OPCUA_ENABLED=true</c> and a node map loads) builds
+/// an ADDITIONAL "opcua" pipeline slot alongside the simulated one, and that slot gets the SAME per-slot
+/// fault isolation G2-5 proved via its internal test-only seam (<c>FleetHostMultiPipelineFaultIsolationTests</c>)
+/// — a fault in the OPC-UA slot must never tear down the simulated fleet. Deliberately decoupled from a
+/// real OPC-UA session (that protocol-level proof lives in
+/// <c>St4i.EdgeCore.Tests/Drivers/OpcUa/OpcUaDriverLoopbackTests.cs</c>) — a fake <see cref="IDeviceDriver"/>,
+/// wrapped in a tiny <see cref="IConnectorFactory"/> test double, is enough to prove the WIRING, keeping
+/// this suite fast/deterministic with no real sockets/certificates.
 /// </summary>
 public sealed class FleetHostOpcUaSlotTests
 {
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
 
-    private static readonly OpcUaNodeMap DummyMap = new()
-    {
-        MachineCode = "OPCUA-FAKE",
-        EndpointUrl = "opc.tcp://unused:0",
-        Nodes = new List<OpcUaNode> { new("ns=2;s=Unused", "unused") },
-    };
-
     /// <summary>Same composition as <c>FleetHostModbusSlotTests.CreateHost</c> — default Demo mode, no real
-    /// network call ever made by any of these tests — plus the new <c>opcUaDriverFactory</c> ctor param
+    /// network call ever made by any of these tests — plus the new <c>connectorRegistry</c> ctor param
     /// under test.</summary>
-    private static FleetHost CreateHost(OpcUaDriverFactory? opcUaDriverFactory)
+    private static FleetHost CreateHost(ConnectorRegistry? connectorRegistry)
     {
         var demo = new DemoTransport(latencyMs: 0);
         var live = LiveTransport.ForMachine("http://localhost:1", mkKey: "", machineCode: "TEST", queuePath: null, verifyTls: true);
@@ -47,7 +42,7 @@ public sealed class FleetHostOpcUaSlotTests
         var switchable = new SwitchableTransport(demo);
         var coordinator = new TransportCoordinator(switchable, demo, live, auto, TransportMode.Demo);
         var eventBus = new EventBus();
-        return new FleetHost(switchable, coordinator, eventBus, opcUaDriverFactory: opcUaDriverFactory);
+        return new FleetHost(switchable, coordinator, eventBus, connectorRegistry: connectorRegistry);
     }
 
     private static async Task WaitUntilAsync(Func<bool> predicate, string because)
@@ -63,17 +58,17 @@ public sealed class FleetHostOpcUaSlotTests
     }
 
     [Fact]
-    public async Task NoOpcUaDriverFactory_BehavesByteIdentical_NoExtraSlot()
+    public async Task NoConnectorRegistry_BehavesByteIdentical_NoExtraSlot()
     {
         // The additive/default-off contract: a FleetHost built exactly like every pre-existing test builds
-        // one (opcUaDriverFactory left at its default null) must behave exactly as before this task — no
+        // one (connectorRegistry left at its default null) must behave exactly as before this task — no
         // extra slot, sim fleet online, clean stop.
-        var host = CreateHost(opcUaDriverFactory: null);
+        var host = CreateHost(connectorRegistry: null);
 
         host.Start();
         try
         {
-            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "simulated slot online after Start with no opc-ua factory wired");
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "simulated slot online after Start with no connector registry wired");
             Assert.True(host.IsRunning);
         }
         finally
@@ -85,10 +80,12 @@ public sealed class FleetHostOpcUaSlotTests
     }
 
     [Fact]
-    public async Task OpcUaDriverFactory_BuildsAdditionalSlot_RunsAlongsideSimulatedFleet()
+    public async Task OpcUaRegistered_BuildsAdditionalSlot_RunsAlongsideSimulatedFleet()
     {
         var fakeDriver = new CountingFakeOpcUaDriver();
-        var host = CreateHost(new FakeOpcUaDriverFactory(fakeDriver));
+        var registry = new ConnectorRegistry();
+        registry.Register(new FakeOpcUaConnectorFactory(() => fakeDriver), config: "unused");
+        var host = CreateHost(registry);
 
         host.Start();
         try
@@ -96,6 +93,10 @@ public sealed class FleetHostOpcUaSlotTests
             Assert.True(host.IsRunning);
             await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "simulated slot online after Start");
             await WaitUntilAsync(() => fakeDriver.Count > 0, "the opc-ua-wired fake driver producing readings, proving its own pipeline slot actually runs");
+
+            // The slot label reproduces today's exact "opcua" literal (see ConnectorRegistry's own remarks
+            // on why the label is the connector id lowercased) — not a new naming scheme.
+            Assert.Contains(host.GetDriverHealth(), s => s.SlotLabel == "opcua" && s.Kind == DriverKinds.OpcUa);
         }
         finally
         {
@@ -111,10 +112,12 @@ public sealed class FleetHostOpcUaSlotTests
     }
 
     [Fact]
-    public async Task OpcUaDriverFactory_ThrowingDriver_FaultsInIsolation_SimKeepsRunning()
+    public async Task OpcUaRegistered_ThrowingDriver_FaultsInIsolation_SimKeepsRunning()
     {
         var faultyDriver = new FaultingFakeOpcUaDriver(faultAfter: 2);
-        var host = CreateHost(new FakeOpcUaDriverFactory(faultyDriver));
+        var registry = new ConnectorRegistry();
+        registry.Register(new FakeOpcUaConnectorFactory(() => faultyDriver), config: "unused");
+        var host = CreateHost(registry);
 
         host.Start();
         try
@@ -136,16 +139,68 @@ public sealed class FleetHostOpcUaSlotTests
         }
     }
 
-    /// <summary>Test double for <see cref="OpcUaDriverFactory"/> — see that class's own "Testability" doc
-    /// comment: <see cref="OpcUaDriverFactory.Create"/> is <see langword="virtual"/> specifically so this
-    /// subclass can return a fake driver instead of a real <see cref="OpcUaDriver"/>.</summary>
-    private sealed class FakeOpcUaDriverFactory : OpcUaDriverFactory
+    [Fact]
+    public async Task OpcUaFactory_RejectsItsOwnConfig_LogsAndSkipsWithoutCrashing_SimStillStarts()
     {
-        private readonly IDeviceDriver _driver;
+        // The "malformed node map file" scenario, reproduced through the registry seam directly rather
+        // than a real bad JSON file: TryCreate reports failure (never throws), FleetHost must log it, skip
+        // the OPC-UA slot, and still start the simulated fleet fine — exactly today's "disables that
+        // driver for this run without crashing the host" behavior.
+        var registry = new ConnectorRegistry();
+        registry.Register(new RejectingConnectorFactory(DriverKinds.OpcUa), config: "not a real node map");
+        var host = CreateHost(registry);
 
-        public FakeOpcUaDriverFactory(IDeviceDriver driver) : base(DummyMap) => _driver = driver;
+        host.Start();
+        try
+        {
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "simulated slot online despite the rejected OPC-UA config");
+            Assert.True(host.IsRunning);
+            Assert.DoesNotContain(host.GetDriverHealth(), s => s.Kind == DriverKinds.OpcUa);
+            Assert.Null(host.LastError); // a build-time rejection must never be mistaken for a runtime fault.
+        }
+        finally
+        {
+            host.Stop();
+        }
+    }
 
-        public override IDeviceDriver Create() => _driver;
+    /// <summary>Test double for <see cref="IConnectorFactory"/> — mirrors production's
+    /// <see cref="OpcUaConnectorFactory"/> shape (a factory that reports <see cref="DriverKinds.OpcUa"/>
+    /// and always succeeds), but hands back a caller-supplied fake driver instead of a real
+    /// <c>OpcUaDriver</c>.</summary>
+    private sealed class FakeOpcUaConnectorFactory : IConnectorFactory
+    {
+        private readonly Func<IDeviceDriver> _build;
+
+        public FakeOpcUaConnectorFactory(Func<IDeviceDriver> build) => _build = build;
+
+        public string Kind => DriverKinds.OpcUa;
+
+        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        {
+            driver = _build();
+            error = null;
+            return true;
+        }
+    }
+
+    /// <summary>Test double for <see cref="IConnectorFactory"/> — always rejects its configuration, the
+    /// documented non-throwing shape of "I could not build a driver from this config." Shared shape with
+    /// <c>FleetHostModbusSlotTests</c>'s own copy (kept private per-file, same as this codebase's other
+    /// small per-suite test doubles, to avoid a cross-suite production-code-shaped dependency for a
+    /// two-line fake).</summary>
+    private sealed class RejectingConnectorFactory : IConnectorFactory
+    {
+        public RejectingConnectorFactory(string kind) => Kind = kind;
+
+        public string Kind { get; }
+
+        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        {
+            driver = null;
+            error = $"RejectingConnectorFactory: '{config}' is not a valid configuration (test double).";
+            return false;
+        }
     }
 
     /// <summary>Test double — an <see cref="IDeviceDriver"/> that yields a Telemetry reading on a short

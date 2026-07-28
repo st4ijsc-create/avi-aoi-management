@@ -1,6 +1,5 @@
 using System.Runtime.CompilerServices;
 using St4i.Connector.Abstractions;
-using St4i.EdgeCore.Drivers.OpcUa;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
 using St4i.Connector.Abstractions.Models;
@@ -14,16 +13,19 @@ namespace St4i.EngineApi.Tests;
 /// <summary>
 /// GĐ3 sub-3 OU-2 PART B (docs/plans/2026-07-27-giaidoan3-opcua-driver-blueprint.md task 2) — proves a
 /// configured OPC-UA (OU-1) machine becomes a first-class, UI-visible roster member instead of an
-/// invisible telemetry stream, mirroring <see cref="FleetHostModbusRosterTests"/>'s P2-3 contract
-/// exactly: (1) <see cref="FleetHost.StartLocked"/> must NOT build a simulator for a
-/// <see cref="DriverKinds.OpcUa"/> roster entry (else it's driven TWICE — once by a simulator, once by
-/// the real OPC-UA pipeline slot) — proven here by registering an OPC-UA descriptor with NO
-/// <see cref="OpcUaDriverFactory"/> wired and confirming it stays idle/0-cycles forever, never picked up
-/// by <c>SimulatorFactory</c>'s <c>DeviceClass.Automation</c> fallback; (2) once a real (here: fake)
-/// OPC-UA driver factory IS wired, the SAME registered descriptor cycles — proving it's driven by the
-/// OPC-UA slot, not simulated — while the ordinary simulated roster is completely unaffected either way.
-/// Uses the same <c>CreateHost</c>/<c>WaitUntilAsync</c> composition as
-/// <see cref="FleetHostOpcUaSlotTests"/>/<see cref="FleetHostModbusRosterTests"/>.
+/// invisible telemetry stream, mirroring <see cref="FleetHostModbusRosterTests"/>'s P2-3 contract exactly:
+/// (1) <see cref="FleetHost.StartLocked"/> must NOT build a simulator for a <see cref="DriverKinds.OpcUa"/>
+/// roster entry (else it's driven TWICE — once by a simulator, once by the real OPC-UA pipeline slot) —
+/// proven here by registering an OPC-UA descriptor with NO OPC-UA connector registered and confirming it
+/// stays idle/0-cycles forever, never picked up by <c>SimulatorFactory</c>'s <c>DeviceClass.Automation</c>
+/// fallback; (2) once a real (here: fake) OPC-UA connector IS registered, the SAME registered descriptor
+/// cycles — proving it's driven by the OPC-UA slot, not simulated — while the ordinary simulated roster is
+/// completely unaffected either way.
+///
+/// GP-4 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) migrated this
+/// suite from a dedicated <c>OpcUaDriverFactory? opcUaDriverFactory</c> constructor parameter onto the
+/// connector-id-keyed <see cref="ConnectorRegistry"/>. Uses the same <c>CreateHost</c>/<c>WaitUntilAsync</c>
+/// composition as <c>FleetHostOpcUaSlotTests</c>/<c>FleetHostModbusRosterTests</c>.
 /// </summary>
 public sealed class FleetHostOpcUaRosterTests
 {
@@ -32,14 +34,7 @@ public sealed class FleetHostOpcUaRosterTests
 
     private const string OpcUaCode = "OPCUA-ROSTER-01";
 
-    private static readonly OpcUaNodeMap DummyMap = new()
-    {
-        MachineCode = "OPCUA-ROSTER-DUMMY",
-        EndpointUrl = "opc.tcp://unused:0",
-        Nodes = new List<OpcUaNode> { new("ns=2;s=Unused", "unused") },
-    };
-
-    private static FleetHost CreateHost(OpcUaDriverFactory? opcUaDriverFactory = null, IAssetRegistry? assetRegistry = null)
+    private static FleetHost CreateHost(ConnectorRegistry? connectorRegistry = null, IAssetRegistry? assetRegistry = null)
     {
         var demo = new DemoTransport(latencyMs: 0);
         var live = LiveTransport.ForMachine("http://localhost:1", mkKey: "", machineCode: "TEST", queuePath: null, verifyTls: true);
@@ -47,7 +42,7 @@ public sealed class FleetHostOpcUaRosterTests
         var switchable = new SwitchableTransport(demo);
         var coordinator = new TransportCoordinator(switchable, demo, live, auto, TransportMode.Demo);
         var eventBus = new EventBus();
-        return new FleetHost(switchable, coordinator, eventBus, opcUaDriverFactory: opcUaDriverFactory, assetRegistry: assetRegistry);
+        return new FleetHost(switchable, coordinator, eventBus, connectorRegistry: connectorRegistry, assetRegistry: assetRegistry);
     }
 
     /// <summary>Mirrors the shape Program.cs's own seed descriptor construction builds (see the brief /
@@ -79,9 +74,9 @@ public sealed class FleetHostOpcUaRosterTests
     }
 
     [Fact]
-    public async Task OpcUaRosterMember_NoOpcUaFactory_ExcludedFromSimulation_StaysIdle_SimFleetUnaffected()
+    public async Task OpcUaRosterMember_NoOpcUaConnector_ExcludedFromSimulation_StaysIdle_SimFleetUnaffected()
     {
-        var host = CreateHost(opcUaDriverFactory: null);
+        var host = CreateHost(connectorRegistry: null);
         var added = host.RegisterMachine(NewOpcUaDescriptor());
         Assert.True(added);
 
@@ -102,7 +97,7 @@ public sealed class FleetHostOpcUaRosterTests
             Assert.Equal(DriverKinds.OpcUa, opcUaTile.DriverKind);
 
             // Double-check after a further short wait — not a one-off race where it just hasn't cycled
-            // YET, but a durable "never driven" state for as long as no opc-ua factory is wired.
+            // YET, but a durable "never driven" state for as long as no OPC-UA connector is registered.
             await Task.Delay(TimeSpan.FromMilliseconds(300));
             Assert.Equal(0, host.MachineDetail(OpcUaCode)?.Cycles ?? -1);
         }
@@ -113,10 +108,12 @@ public sealed class FleetHostOpcUaRosterTests
     }
 
     [Fact]
-    public async Task OpcUaRosterMember_WithOpcUaFactory_DrivenBySlot_Cycles_SimFleetUnaffected()
+    public async Task OpcUaRosterMember_WithOpcUaConnector_DrivenBySlot_Cycles_SimFleetUnaffected()
     {
         var fakeDriver = new RosterFakeOpcUaDriver(OpcUaCode);
-        var host = CreateHost(opcUaDriverFactory: new FakeOpcUaDriverFactory(fakeDriver));
+        var registry = new ConnectorRegistry();
+        registry.Register(new FakeOpcUaConnectorFactory(() => fakeDriver), config: "unused");
+        var host = CreateHost(connectorRegistry: registry);
         var added = host.RegisterMachine(NewOpcUaDescriptor());
         Assert.True(added);
 
@@ -138,11 +135,11 @@ public sealed class FleetHostOpcUaRosterTests
     }
 
     [Fact]
-    public async Task NoOpcUaDescriptor_NoOpcUaFactory_BehavesExactlyAsBeforeThisTask()
+    public async Task NoOpcUaDescriptor_NoConnectorRegistry_BehavesExactlyAsBeforeThisTask()
     {
         // Additive/default sanity (already covered by FleetHostOpcUaSlotTests — repeated here, cheaply, as
         // this suite's own belt-and-suspenders check): a FleetHost with no OPC-UA roster member and no
-        // OPC-UA factory must behave exactly as it did before this task existed.
+        // connector registry must behave exactly as it did before this task existed.
         var host = CreateHost();
 
         host.Start();
@@ -172,16 +169,23 @@ public sealed class FleetHostOpcUaRosterTests
         Assert.Equal(DriverKinds.OpcUa, registry.Upserted[OpcUaCode].DriverKind);
     }
 
-    /// <summary>Test double for <see cref="OpcUaDriverFactory"/> — see that class's own "Testability" doc
-    /// comment: <see cref="OpcUaDriverFactory.Create"/> is <see langword="virtual"/> specifically so this
-    /// subclass can return a fake driver instead of a real <see cref="OpcUaDriver"/>.</summary>
-    private sealed class FakeOpcUaDriverFactory : OpcUaDriverFactory
+    /// <summary>Test double for <see cref="IConnectorFactory"/> — mirrors production's
+    /// <c>OpcUaConnectorFactory</c> shape (reports <see cref="DriverKinds.OpcUa"/>, always succeeds), but
+    /// hands back a caller-supplied fake driver instead of a real <c>OpcUaDriver</c>.</summary>
+    private sealed class FakeOpcUaConnectorFactory : IConnectorFactory
     {
-        private readonly IDeviceDriver _driver;
+        private readonly Func<IDeviceDriver> _build;
 
-        public FakeOpcUaDriverFactory(IDeviceDriver driver) : base(DummyMap) => _driver = driver;
+        public FakeOpcUaConnectorFactory(Func<IDeviceDriver> build) => _build = build;
 
-        public override IDeviceDriver Create() => _driver;
+        public string Kind => DriverKinds.OpcUa;
+
+        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        {
+            driver = _build();
+            error = null;
+            return true;
+        }
     }
 
     /// <summary>Test double — an <see cref="IDeviceDriver"/> that yields a Telemetry reading for

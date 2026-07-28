@@ -8,26 +8,26 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// each pipeline (re)start needs a BRAND NEW instance, never a reused one — same reasoning
 /// <see cref="Modbus.ModbusDriverFactory"/> already documents for itself.
 ///
-/// <para><b>DI disambiguation (GĐ3 sub-3 OU-1 brief):</b> Program.cs registers Modbus's factory as a bare
-/// <c>Func&lt;IDeviceDriver&gt;</c> singleton — a SECOND <c>Func&lt;IDeviceDriver&gt;</c> registration for
-/// OPC-UA would collide (last registration wins, or an ambiguous resolution, depending on how it's
-/// consumed). This class is registered as ITSELF instead (a distinct concrete type), and
-/// <c>FleetHost</c>'s ctor takes a distinct <c>OpcUaDriverFactory?</c> param (not another
-/// <c>Func&lt;IDeviceDriver&gt;?</c>) — the two optional dependencies can never be confused with each
-/// other by the DI container.</para>
+/// <para><b>DI disambiguation, now historical (GP-4 update):</b> this class used to be registered in DI as
+/// ITSELF (a distinct concrete type) purely so it would never collide with Modbus's own
+/// <c>Func&lt;IDeviceDriver&gt;</c> singleton registration, and <c>FleetHost</c>'s ctor took a dedicated
+/// <c>OpcUaDriverFactory?</c> parameter for the same reason. GP-4
+/// (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) removed both: this
+/// type is no longer registered in DI at all (<c>OpcUaConnectorFactory</c>, an
+/// <c>St4i.Connector.Abstractions.IConnectorFactory</c> adapter, constructs one internally with a plain
+/// <see langword="new"/>), and <c>FleetHost</c> no longer has an OPC-UA-specific constructor parameter —
+/// only one <c>ConnectorRegistry</c> singleton, so the collision this workaround existed to avoid cannot
+/// occur even in principle anymore.</para>
 ///
-/// <para><b>Testability:</b> unlike <see cref="Modbus.ModbusDriverFactory"/> (which stays
-/// <see langword="sealed"/> — Modbus's <c>FleetHost</c> ctor param is a bare <c>Func&lt;IDeviceDriver&gt;</c>,
-/// so a test can inject a fake driver with no NModbus dependency by just passing a lambda), THIS factory
-/// IS the type <c>FleetHost</c>'s ctor param is declared as, so a test proving the OPC-UA slot's wiring
-/// (<c>St4i.EngineApi.Tests.FleetHostOpcUaSlotTests</c>) needs a way to substitute a fake driver WITHOUT a
-/// real OPC-UA session. <see cref="Create"/> is therefore <see langword="virtual"/> and this class is not
-/// sealed — that test defines a small subclass overriding <see cref="Create"/> to return a fake
-/// <see cref="IDeviceDriver"/>, the standard "test subclass overrides the one virtual factory method"
-/// double, same idea as <c>FleetHost</c>'s own <c>DriverDecoratorForTests</c>/
-/// <c>AdditionalPipelinesForTests</c> internal test seams achieve for the simulated pipeline.</para>
+/// <para><b>Testability, now also historical:</b> before GP-4, <c>FleetHost</c>'s ctor took this concrete
+/// type directly, so <c>St4i.EngineApi.Tests.FleetHostOpcUaSlotTests</c> substituted a fake driver by
+/// subclassing this class and overriding a <see langword="virtual"/> <see cref="Create"/>. That seam has
+/// moved: a test now registers a plain <c>IConnectorFactory</c> test double (returning a fake driver from
+/// <c>TryCreate</c>) into a <c>ConnectorRegistry</c> instead — no subclass of THIS class is needed, or
+/// exists, anymore. <see cref="Create"/> is therefore no longer <see langword="virtual"/> and this class
+/// is <see langword="sealed"/>, matching <see cref="Modbus.ModbusDriverFactory"/>'s own shape exactly.</para>
 /// </summary>
-public class OpcUaDriverFactory
+public sealed class OpcUaDriverFactory
 {
     private readonly OpcUaNodeMap _map;
     private readonly string? _pkiDir;
@@ -44,5 +44,5 @@ public class OpcUaDriverFactory
         _logError = logError;
     }
 
-    public virtual IDeviceDriver Create() => new OpcUaDriver(_map, _logWarning, _logError, _pkiDir);
+    public IDeviceDriver Create() => new OpcUaDriver(_map, _logWarning, _logError, _pkiDir);
 }

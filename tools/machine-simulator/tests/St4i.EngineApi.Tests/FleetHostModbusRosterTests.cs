@@ -15,14 +15,17 @@ namespace St4i.EngineApi.Tests;
 /// (G2-6) machine becomes a first-class, UI-visible roster member instead of an invisible telemetry
 /// stream: (1) <see cref="FleetHost.StartLocked"/> must NOT build a simulator for a
 /// <see cref="DriverKinds.Modbus"/> roster entry (else it's driven TWICE — once by a simulator, once by the
-/// real Modbus pipeline slot) — proven here by registering a Modbus descriptor with NO modbus driver
-/// factory wired and confirming it stays idle/0-cycles forever, never picked up by
-/// <c>SimulatorFactory</c>'s <c>DeviceClass.Automation</c> fallback (which would otherwise happily
-/// simulate it as a generic Screwdrive cell); (2) once a real (here: fake) modbus driver factory IS wired,
-/// the SAME registered descriptor cycles — proving it's driven by the Modbus slot, not simulated — while
-/// the ordinary simulated roster is completely unaffected either way. Uses the same
-/// <c>CreateHost</c>/<c>WaitUntilAsync</c> composition as <c>FleetHostModbusSlotTests</c>/
-/// <c>FleetHostHealthAndRegistrationTests</c>.
+/// real Modbus pipeline slot) — proven here by registering a Modbus descriptor with NO modbus connector
+/// registered and confirming it stays idle/0-cycles forever, never picked up by <c>SimulatorFactory</c>'s
+/// <c>DeviceClass.Automation</c> fallback (which would otherwise happily simulate it as a generic
+/// Screwdrive cell); (2) once a real (here: fake) Modbus connector IS registered, the SAME registered
+/// descriptor cycles — proving it's driven by the Modbus slot, not simulated — while the ordinary
+/// simulated roster is completely unaffected either way.
+///
+/// GP-4 (.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-4-brief.md) migrated this
+/// suite from a dedicated <c>Func&lt;IDeviceDriver&gt;? modbusDriverFactory</c> constructor parameter onto
+/// the connector-id-keyed <see cref="ConnectorRegistry"/>. Uses the same <c>CreateHost</c>/
+/// <c>WaitUntilAsync</c> composition as <c>FleetHostModbusSlotTests</c>/<c>FleetHostHealthAndRegistrationTests</c>.
 /// </summary>
 public sealed class FleetHostModbusRosterTests
 {
@@ -31,7 +34,7 @@ public sealed class FleetHostModbusRosterTests
 
     private const string ModbusCode = "MODBUS-ROSTER-01";
 
-    private static FleetHost CreateHost(Func<IDeviceDriver>? modbusDriverFactory = null, IAssetRegistry? assetRegistry = null)
+    private static FleetHost CreateHost(ConnectorRegistry? connectorRegistry = null, IAssetRegistry? assetRegistry = null)
     {
         var demo = new DemoTransport(latencyMs: 0);
         var live = LiveTransport.ForMachine("http://localhost:1", mkKey: "", machineCode: "TEST", queuePath: null, verifyTls: true);
@@ -39,7 +42,7 @@ public sealed class FleetHostModbusRosterTests
         var switchable = new SwitchableTransport(demo);
         var coordinator = new TransportCoordinator(switchable, demo, live, auto, TransportMode.Demo);
         var eventBus = new EventBus();
-        return new FleetHost(switchable, coordinator, eventBus, modbusDriverFactory: modbusDriverFactory, assetRegistry: assetRegistry);
+        return new FleetHost(switchable, coordinator, eventBus, connectorRegistry: connectorRegistry, assetRegistry: assetRegistry);
     }
 
     /// <summary>Mirrors the shape Program.cs's own seed descriptor construction builds (see the brief /
@@ -71,9 +74,9 @@ public sealed class FleetHostModbusRosterTests
     }
 
     [Fact]
-    public async Task ModbusRosterMember_NoModbusFactory_ExcludedFromSimulation_StaysIdle_SimFleetUnaffected()
+    public async Task ModbusRosterMember_NoModbusConnector_ExcludedFromSimulation_StaysIdle_SimFleetUnaffected()
     {
-        var host = CreateHost(modbusDriverFactory: null);
+        var host = CreateHost(connectorRegistry: null);
         var added = host.RegisterMachine(NewModbusDescriptor());
         Assert.True(added);
 
@@ -94,7 +97,7 @@ public sealed class FleetHostModbusRosterTests
             Assert.Equal(DriverKinds.Modbus, modbusTile.DriverKind);
 
             // Double-check after a further short wait — not a one-off race where it just hasn't cycled
-            // YET, but a durable "never driven" state for as long as no modbus factory is wired.
+            // YET, but a durable "never driven" state for as long as no modbus connector is registered.
             await Task.Delay(TimeSpan.FromMilliseconds(300));
             Assert.Equal(0, host.MachineDetail(ModbusCode)?.Cycles ?? -1);
         }
@@ -105,10 +108,12 @@ public sealed class FleetHostModbusRosterTests
     }
 
     [Fact]
-    public async Task ModbusRosterMember_WithModbusFactory_DrivenBySlot_Cycles_SimFleetUnaffected()
+    public async Task ModbusRosterMember_WithModbusConnector_DrivenBySlot_Cycles_SimFleetUnaffected()
     {
         var fakeDriver = new RosterFakeModbusDriver(ModbusCode);
-        var host = CreateHost(modbusDriverFactory: () => fakeDriver);
+        var registry = new ConnectorRegistry();
+        registry.Register(new FakeModbusConnectorFactory(() => fakeDriver), config: "unused");
+        var host = CreateHost(connectorRegistry: registry);
         var added = host.RegisterMachine(NewModbusDescriptor());
         Assert.True(added);
 
@@ -130,12 +135,12 @@ public sealed class FleetHostModbusRosterTests
     }
 
     [Fact]
-    public async Task NoModbusDescriptor_NoModbusFactory_BehavesExactlyAsBeforeThisTask()
+    public async Task NoModbusDescriptor_NoConnectorRegistry_BehavesExactlyAsBeforeThisTask()
     {
         // Additive/default sanity (already covered by FleetHostHealthAndRegistrationTests /
         // FleetHostModbusSlotTests — repeated here, cheaply, as this suite's own belt-and-suspenders
-        // check): a FleetHost with no Modbus roster member and no Modbus factory must behave exactly as
-        // it did before this task existed.
+        // check): a FleetHost with no Modbus roster member and no connector registry must behave exactly
+        // as it did before this task existed.
         var host = CreateHost();
 
         host.Start();
@@ -163,6 +168,25 @@ public sealed class FleetHostModbusRosterTests
 
         await WaitUntilAsync(() => registry.Upserted.ContainsKey(ModbusCode), "the Modbus descriptor to be upserted into the asset registry");
         Assert.Equal(DriverKinds.Modbus, registry.Upserted[ModbusCode].DriverKind);
+    }
+
+    /// <summary>Test double for <see cref="IConnectorFactory"/> — mirrors production's
+    /// <c>ModbusConnectorFactory</c> shape (reports <see cref="DriverKinds.Modbus"/>, always succeeds), but
+    /// hands back a caller-supplied fake driver instead of a real <c>ModbusTcpDriver</c>.</summary>
+    private sealed class FakeModbusConnectorFactory : IConnectorFactory
+    {
+        private readonly Func<IDeviceDriver> _build;
+
+        public FakeModbusConnectorFactory(Func<IDeviceDriver> build) => _build = build;
+
+        public string Kind => DriverKinds.Modbus;
+
+        public bool TryCreate(string config, out IDeviceDriver? driver, out string? error)
+        {
+            driver = _build();
+            error = null;
+            return true;
+        }
     }
 
     /// <summary>Test double — an <see cref="IDeviceDriver"/> that yields a Telemetry reading for
