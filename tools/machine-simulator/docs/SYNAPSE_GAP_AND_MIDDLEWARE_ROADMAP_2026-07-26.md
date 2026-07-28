@@ -7,8 +7,8 @@
 | Đối tượng rà soát | `tools/machine-simulator` (bộ `St4i.*`, .NET 10) — "St4i Machine Simulator" đang tiến hoá thành edge middleware |
 | Tài liệu đối chiếu | Kế hoạch & thiết kế **SYNAPSE** tại `D:\SOURCES\SYNAPSE` (SYN-RAOE-SDD-001 v1.0 + KE-HOACH-PHAT-TRIEN + 5 tầng) |
 | Phương pháp | 3 AI Agent rà soát song song: (1) chuẩn hoá 97 yêu cầu SYNAPSE, (2) kiểm kê hiện trạng theo mã nguồn, (3) phân tích contract + thương mại hoá |
-| Trạng thái | **ĐANG THỰC HIỆN** — GĐ1 xong; GĐ2 xong (trừ B2); GĐ3 phần "Join" (WS-I) nay đã đóng advertise + reconciliation + xoay vòng chứng thư + lệnh khôi phục admin — chỉ còn auto-provision/trust-on-first-discovery. Xem **§0-bis Tiến độ** (cập nhật 28/07/2026) |
-| Cập nhật gần nhất | **28/07/2026** — nhánh `feat/machine-simulator`, đợt **WS-I closeout** đóng tại `09253325` (mDNS advertise, spool bền + reconciliation, xoay vòng chứng thư + cảnh báo `Identity`, `--reset-admin-password`, trả nợ kỹ thuật WI-6; xem `.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/`) |
+| Trạng thái | **ĐANG THỰC HIỆN** — GĐ1 xong; GĐ2 xong (trừ B2); GĐ3 phần "Join" (WS-I) nay đã đóng advertise + reconciliation + xoay vòng chứng thư + lệnh khôi phục admin — chỉ còn auto-provision/trust-on-first-discovery; **WS-G-plugin (Connector SDK) nay đã có SEAM** (contract assembly độc lập + registry + `connectors.json` + bộ conformance — CHƯA có plugin loader/sidecar, xem §0-bis.2). Xem **§0-bis Tiến độ** (cập nhật 28/07/2026) |
+| Cập nhật gần nhất | **28/07/2026** — nhánh `feat/machine-simulator`; sau đợt WS-I closeout (`09253325`), đợt **WS-G-plugin Connector SDK seam** đóng phần mã nguồn tại `2df998e3` (GP-1..GP-6b) + phần web/docs tại đợt này (GP-7) — xem `.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/` |
 
 ---
 
@@ -37,6 +37,15 @@
 > Critical/Important. Bộ test SAU WS-I closeout (theo `task-6-report.md`, lần chạy sạch cuối cùng):
 > EngineApi 538 · EdgeCore 463 · EdgeService 28 (tổng 1029) · web build sạch · Playwright 171/171 (gồm
 > visual/a11y 44/44, không đổi).
+>
+> **Sau đó, đợt WS-G-plugin (Connector SDK seam, GP-1..GP-7)** thêm 2 project test mới
+> (`St4i.Connector.Abstractions.Tests`, `St4i.Connector.Conformance.Tests`) bên cạnh 3 project cũ. Bộ
+> test hiện tại (đã tự chạy lại khi đóng GP-7, không lấy nguyên báo cáo cũ): EngineApi 609 · EdgeCore
+> 530 · EdgeService 31 · Connector.Abstractions.Tests 45 · Connector.Conformance.Tests 11 (**tổng 1226**)
+> · web build sạch. Playwright: chưa chạy lại TOÀN BỘ 171 bài của đợt WS-G-plugin — trang `/assets` (nơi
+> GP-7 thêm thẻ trạng thái connector) không nằm trong 14 baseline visual/a11y hiện có (giống `/site`,
+> `/alarms`, `/line` — chỉ có DOM-level spec riêng); spec DOM `20-assets.spec.ts` (2 bài, gồm kiểm tra
+> a11y + không rò rỉ khoá i18n) đã chạy lại và PASS.
 
 ### 0-bis.1 Đã giao
 
@@ -57,6 +66,7 @@
 | **WS-H1b** OPC-UA | 3 | `OpcUaDriver` (OPC Foundation, **relicense MIT 04/12/2025**, pin 1.5.378.156) poll-only, slot cách ly, hiện trong roster/web | `d637c320` | §16.6 |
 | **WS-G-core+** Alarm + Line | 3 | **ISA-18.2 AlarmEngine** (3 nguồn: Policy-DENY / DriverHealth / NG-rate, SQLite `alarms.db`, evaluator định kỳ) + **LineController PackML/ISA-88** trên FleetHost + `/v1/alarms` `/v1/line` + UNS `_line/state` + khoá alarm→Held + màn `/alarms` `/line` | `669eba86` | §18 |
 | **WS-I closeout** | 3 | mDNS **advertise** (`_st4i-machine._tcp`, mặc định BẬT khi UNS bật) + **spool bền SQLite cho bridge** (`bridge-spool.db`) với **reconciliation** (resync record retained trước khi phát lại, seq tăng dần) + **xoay vòng chứng thư thiết bị** theo yêu cầu (`POST /v1/site/identity/rotate`, Admin-only) + hiển thị hạn dùng chứng thư + cảnh báo nguồn **`Identity`** (High, không bao giờ Critical) + verb khôi phục **`--reset-admin-password`** (ngoài băng, có audit) + trả hết nợ kỹ thuật WI-6 (WPF `IConvertible→ToDouble`, xslt khớp đuôi, `--install` pre-check) | `09253325` | §14.7, §17.8–§17.11, §18.1–§18.2 |
+| **WS-G-plugin** Connector SDK — **SEAM** (chưa phải hệ plugin) | 3 | `St4i.Connector.Abstractions` (contract assembly `net10.0` thuần, ZERO dependency) + hợp đồng vòng đời `IDeviceDriver` viết thành XML doc + connector id mở (chuỗi tự do, 5 id có sẵn giữ nguyên chính tả) + `ConnectorRegistry` thay hard-code trong `FleetHost` + `connectors.json` (chỉ dispatch được Modbus/OPC-UA có sẵn) + `GET /v1/connectors` + thẻ trạng thái connector trên `/assets` + bộ **conformance suite** đóng gói được (`St4i.Connector.Conformance`, tìm ra và giúp sửa **2 lỗi độ tin cậy thật** ở Modbus/OPC-UA — xem §16.4/§16.6). **CHƯA có plugin loader/sidecar — đây là SEAM, không phải hệ plugin đầy đủ** (xem README §19.7) | `2df998e3` (mã nguồn GP-1..GP-6b) + đợt này (GP-7, web/docs) | §16.4, §16.6, §16.7, §19 |
 
 ### 0-bis.2 Đính chính cách đánh số giai đoạn
 
@@ -64,14 +74,15 @@ Trình tự **thi công** khác trình tự **§6**. Cụ thể: bốn đợt đ
 
 - **GĐ1 — XONG.** (License/Edition không thuộc GĐ1 theo quyết định #4.)
 - **GĐ2 — XONG, trừ hai điểm:** `WS-B B2` (đảo chiều bridge — đã đánh giá riêng, **chủ động hoãn**) và `WS-H1` phần **Serial/RS-485** (chưa làm).
-- **GĐ3 — MỚI XONG ~1/4.** §6 liệt kê 4 workstream; hiện trạng:
+- **GĐ3 — MỚI XONG ~1/4–1/3.** §6 liệt kê 4 workstream; hiện trạng (2 trong 4 nay PARTIAL, nhưng
+  `WS-G-plugin`'s phần đã xong chỉ là SEAM — không tính là "đã xong workstream"):
 
 | WS-GĐ3 (§6) | Trạng thái | Còn thiếu |
 |---|---|---|
 | **WS-I** Join | **PARTIAL** — mDNS advertise ✅ xong, reconciliation seq-number + backfill ✅ xong (WS-I closeout) | auto-provision/trust-on-first-discovery (discover + advertise chỉ điền sẵn host/port; tin cậy vẫn phải dán tay PEM) |
 | **WS-E-full** License/Edition | **CHƯA BẮT ĐẦU** | Toàn bộ (Ed25519, fingerprint, offline activation, feature-flags theo edition, grace 30 ngày, license-credit nâng cấp) |
 | **WS-F4** Auto-update + LTS | **CHƯA BẮT ĐẦU** | Chỉ có nền (`Directory.Build.props`, `capabilities.version`); chưa có cơ chế phát hành/cập nhật, chưa có nhánh LTS |
-| **WS-G-plugin** Connector SDK | **CHƯA BẮT ĐẦU** | Driver hiện là in-process trực tiếp trên `IDeviceDriver`; chưa có `plugin.yaml`/apiVersion, sidecar DLL hãng, conformance suite, ký số |
+| **WS-G-plugin** Connector SDK | **PARTIAL — mới có SEAM** (contract assembly + `IDeviceDriver` lifecycle contract + connector id mở + `ConnectorRegistry` + `connectors.json` chỉ dispatch Modbus/OPC-UA + conformance suite đóng gói được, tìm ra 2 lỗi thật đã sửa — README §19) | Plugin loader/sidecar (mô hình cô lập ĐÃ CHỌN là sidecar ngoài tiến trình — CHƯA XÂY); `plugin.yaml`/SemVer `apiVersion`/`configSchema`→UI tự sinh/ký số plugin; đăng gói NuGet cho contract assembly; `connectors.json` CHƯA onboard được hãng thứ ba tuỳ ý |
 
 - **GĐ4 — CHƯA BẮT ĐẦU.**
 
@@ -85,7 +96,7 @@ Trình tự **thi công** khác trình tự **§6**. Cụ thể: bốn đợt đ
 | **D** Bảo mật & an toàn | **PARTIAL** — D1–D3 ✅ · D4 ✅ (**xoay vòng cert thủ công/theo yêu cầu ✅ qua `POST /v1/site/identity/rotate`** — nhưng vẫn CHƯA EST/SCEP, CHƯA Site-CA, chưa tự động xoay trước hạn) · D5 ✅ · `--reset-admin-password` (khôi phục Admin ngoài băng) ✅ · **D6 (ký số + SBOM + quét CVE) chưa** |
 | **E** Điều phối/Guardrail | **DONE** — E1 Policy ✅ · E2 LineController ✅ · E3 ISA-18.2 Alarm ✅ |
 | **F** Thương mại hoá | **PARTIAL** — F2 ✅ · F3 ✅; **F1 license chưa** · **F4 auto-update/LTS chưa** · F5 HA thật chưa |
-| **G** Plugin/SDK | **CHƯA BẮT ĐẦU** |
+| **G** Plugin/SDK | **PARTIAL** — **G1 seam ✅** (contract assembly độc lập + `IDeviceDriver` lifecycle contract + connector id mở + `ConnectorRegistry`/`connectors.json` + conformance suite đóng gói được, tìm ra 2 lỗi thật đã sửa ở Modbus/OPC-UA); **G2 sidecar bọc DLL hãng CHƯA** (mô hình cô lập đã chọn, chưa xây); **G3 `plugin.yaml`/apiVersion/`configSchema`→UI/ký số CHƯA** |
 | **H** Trí tuệ (T4) | **CHƯA BẮT ĐẦU** *(đúng chủ ý hoãn)* |
 
 ### 0-bis.4 Backlog đang treo *(đã ghi nhận, chưa làm)*
@@ -100,6 +111,7 @@ Mỗi mục dưới đây đều được ghi rõ trong ledger/blueprint hoặc 
 | Alarm/Line | Tự động HOLD fleet **đang chạy** khi có Critical mới; hold theo từng máy; shelving/rationalization; trạng thái PackML chuyển tiếp đầy đủ |
 | Đóng gói | Ký số MSI (cần chứng thư OV/EV); smoke cài/gỡ trên VM sạch + đo mốc ≤30 phút; MSIX |
 | Dữ liệu/Báo cáo | `run_events` theo từng máy (OEE Availability đa line); PdfSharp-GDI ⇒ chỉ chạy Windows; telemetry chưa có idempotency-key (rủi ro trùng khi replay WAL) |
+| Plugin/SDK *(mới, sau WS-G-plugin seam)* | Plugin loader/sidecar ngoài tiến trình (mô hình cô lập ĐÃ CHỌN, CHƯA XÂY — loader đó PHẢI từ chối đăng ký bên thứ ba dưới id có sẵn, xem README §19.7); `plugin.yaml`/SemVer `apiVersion`/`configSchema`→UI tự sinh/ký số plugin; đăng gói NuGet cho `St4i.Connector.Abstractions`/`St4i.Connector.Conformance`; conformance suite chưa phủ `Waveforms` (không driver thật nào populate), chưa có negative-control cho `Id`/`Kind`/baseline `Health`, và chưa phủ `ScenarioAwareDriver` (wrapper `FleetHost` thật sự lắp vào slot mô phỏng) |
 
 *(Hàng "Kỹ thuật vặt" trước đây liệt kê ở đây đã được xử lý hết bởi **Task WI-6**
 (`.superpowers/sdd/2026-07-28-giaidoan3-ws-i-closeout-blueprint/task-6-brief.md`), nên đã bỏ khỏi bảng

@@ -1500,6 +1500,22 @@ When Modbus is enabled and its map loads successfully, the Modbus machine is wir
 Asset Registry auto-upsert, §16.5) an asset row, not just an invisible telemetry stream — and its
 readings are mirrored onto the UNS spine (§16.1) exactly like every other machine's.
 
+**Reliability fix (GP-6b) — a real bug the connector conformance suite (§19.5) found, user-visible:**
+against a device that accepts the TCP handshake but then goes silent at the protocol level (a stateful
+firewall timing out an idle polled flow, a PLC whose Modbus task hung while its TCP stack stayed up, a
+device reset behind a switch that holds link) `ModbusTcpDriver` used to pin a thread-pool thread
+**forever** — the underlying NModbus read call has no cancellation overload and both
+`Transport.ReadTimeout`/`WriteTimeout` default to **infinite** (`-1`). `Health` stayed frozen at
+whatever it last reported (`Connected`, for a device that HAD been talking), so `AlarmEvaluator` never
+raised a Degraded/Down alarm — **an operator saw a green connector that had silently stopped producing
+data, indefinitely, with no alarm ever firing.** Fixed by bounding both timeouts to
+`Math.Max(1000ms, pollIntervalMs × 4)` (derived automatically from the register map's own
+`pollIntervalMs` — not a separate env var/setting) and dropping NModbus's own retry count to 1 (this
+driver already reconnects from scratch on any failure, so NModbus-level retries only multiplied the
+stall); an in-flight read is now also promptly **cancellable** (`ct.Register` disposes the live
+connection, unblocking a pending read in ~2ms instead of waiting out the timeout). A connector that hits
+this now reports `Degraded`/`Down` like any other fault, instead of staying silently green.
+
 **Honest deferrals** (documented in the driver's own source, not silently missing): 32-bit/float
 register values (combining a register PAIR) and register-block batching (today: one read per
 register, per poll) are follow-ups, not built; **Modbus RTU (serial)** is not implemented — TCP only;
@@ -1515,6 +1531,22 @@ trên). Định dạng JSON register-map: `machineCode`, `unitId` (mặc định
 `registers` rỗng bị từ chối lúc nạp — Program.cs bắt lỗi này, log cảnh báo, tắt Modbus cho lần chạy đó
 thay vì crash. Khi bật và map nạp thành công, máy Modbus trở thành thành viên fleet CHÍNH THỨC (có tile,
 historian, asset) chứ không chỉ là luồng telemetry vô hình; dữ liệu cũng được phản chiếu lên UNS spine.
+
+**Fix độ tin cậy (GP-6b) — lỗi thật do bộ conformance connector (§19.5) tìm ra, ảnh hưởng trực tiếp
+người vận hành:** trước một thiết bị vẫn bắt tay TCP nhưng im lặng ở tầng giao thức (firewall stateful
+hết giờ một luồng poll rảnh, PLC treo tác vụ Modbus trong khi tầng TCP vẫn sống, thiết bị reset sau một
+switch vẫn giữ link), `ModbusTcpDriver` trước đây ghim CHẾT một luồng thread-pool MÃI MÃI — lệnh đọc
+NModbus không có overload huỷ, và `Transport.ReadTimeout`/`WriteTimeout` mặc định là **vô hạn** (`-1`).
+`Health` đứng yên ở giá trị báo cáo gần nhất (`Connected`, với thiết bị TỪNG nói chuyện), nên
+`AlarmEvaluator` KHÔNG BAO GIỜ báo cảnh báo Degraded/Down — **operator nhìn thấy connector XANH nhưng đã
+âm thầm ngừng sinh dữ liệu, vô thời hạn, không một cảnh báo nào.** Đã sửa bằng cách chặn cả hai timeout ở
+`Math.Max(1000ms, pollIntervalMs × 4)` (tự suy ra từ `pollIntervalMs` của chính register map — không
+phải biến môi trường riêng) và hạ số lần thử lại của NModbus xuống 1 (driver đã tự kết nối lại từ đầu khi
+lỗi, nên retry cấp NModbus chỉ nhân đôi thời gian treo); một lệnh đọc đang treo giờ cũng HUỶ ĐƯỢC ngay
+(`ct.Register` đóng kết nối sống, giải phóng lệnh đọc đang treo trong ~2ms thay vì chờ hết timeout). Một
+connector gặp lỗi này giờ báo `Degraded`/`Down` như mọi lỗi khác, thay vì đứng yên màu xanh trong im
+lặng.
+
 **Những gì CHƯA làm** (đã ghi rõ trong code, không giấu): thanh ghi 32-bit/float, đọc theo khối, Modbus
 RTU (nối tiếp) — hiện chỉ có TCP; chưa có `MappingProfile` riêng cho từng máy Modbus.)*
 
@@ -1637,6 +1669,22 @@ When OPC-UA is enabled and its node map loads successfully, the OPC-UA machine i
 **first-class roster member** — it gets a fleet snapshot tile, a historian row per poll, and (via Asset
 Registry auto-upsert, §16.5) an asset row, not just an invisible telemetry stream.
 
+**Reliability fix (GP-6b) — the other bug the connector conformance suite (§19.5) found:**
+`OpcUaDriver` used to reconnect via the synchronous `CoreClientUtils.SelectEndpoint` call, which blocks
+for exactly this driver's own `TransportQuotas.OperationTimeout` (**hardcoded 15 seconds**, not
+configurable via any env var/setting) **regardless of cancellation** — five times `FleetHost`'s own
+3-second teardown budget, and completely uninterruptible while in flight (`DisposeAsync` cannot unstick
+it either, since the session field is still unset at that point). Fixed by switching to
+`CoreClientUtils.SelectEndpointAsync` — confirmed present in the installed 1.5.378.156 package by
+reflection — passing the SAME 15s value through as a `ct`-cancellable bound instead of an
+unconditional block: a healthy-but-slow endpoint negotiation is unaffected, but the call can now be
+interrupted. **Honest correction, not swept under the rug:** the fix still needs a `#pragma warning
+disable CS0618` — this specific `SelectEndpointAsync` overload, and every `Session.Create` overload in
+this package version, are themselves marked `[Obsolete]` in favor of an `ITelemetryContext`-based API
+this codebase does not thread through anywhere; migrating to it is a materially larger client-API
+change than this defect's scope, confirmed by reflection against the installed assembly before deciding
+to keep the suppression rather than re-attempt the swap.
+
 **Honest deferrals** (documented in the driver's own source, not silently missing): OPC-UA subscriptions
 (today: poll-only, one batched `Read` service call per cycle); complex/structured-type node decoding (an
 unexpected node value falls back to `ToString()` rather than a real decode); `Sign`/`SignAndEncrypt`
@@ -1668,7 +1716,24 @@ nhận được cho kết nối loopback/mạng tin cậy (trình diễn), KHÔN
 cậy; xác thực + ghim chứng chỉ CỤ THỂ của server là việc CHƯA làm, đã ghi rõ.
 
 Khi OPC-UA bật và node map nạp thành công, máy OPC-UA trở thành thành viên fleet CHÍNH THỨC (có tile,
-historian, asset) chứ không chỉ là luồng telemetry vô hình. **Những gì CHƯA làm:** OPC-UA subscription
+historian, asset) chứ không chỉ là luồng telemetry vô hình.
+
+**Fix độ tin cậy (GP-6b) — lỗi thứ hai bộ conformance connector (§19.5) tìm ra:** `OpcUaDriver` trước
+đây kết nối lại qua lệnh ĐỒNG BỘ `CoreClientUtils.SelectEndpoint`, chặn đúng bằng
+`TransportQuotas.OperationTimeout` của chính driver này (**cố định 15 giây, KHÔNG cấu hình được** qua
+biến môi trường/cài đặt nào) **bất kể có huỷ hay không** — gấp 5 lần ngân sách teardown 3 giây của
+`FleetHost`, và hoàn toàn không huỷ được khi đang chạy (`DisposeAsync` cũng không gỡ được vì trường
+session lúc đó vẫn chưa gán). Đã sửa bằng cách chuyển sang `CoreClientUtils.SelectEndpointAsync` — xác
+nhận CÓ THẬT trong gói 1.5.378.156 đã cài (kiểm chứng bằng reflection) — truyền CÙNG giá trị 15 giây đó
+nhưng giờ chặn theo `ct` huỷ được, thay vì chặn vô điều kiện: một endpoint khoẻ mạnh nhưng chậm vẫn không
+bị ảnh hưởng, nhưng lệnh giờ huỷ được. **Đính chính trung thực, không giấu:** bản sửa vẫn cần
+`#pragma warning disable CS0618` — chính overload `SelectEndpointAsync` này, và MỌI overload
+`Session.Create` trong phiên bản gói này, đều bị đánh dấu `[Obsolete]` để nhường chỗ cho một API dùng
+`ITelemetryContext` mà codebase này chưa nối dây ở đâu cả; chuyển sang đó là một thay đổi API client lớn
+hơn hẳn phạm vi lỗi này — đã xác nhận bằng reflection trên chính assembly đã cài trước khi quyết định
+giữ suppression thay vì thử chuyển lại.
+
+**Những gì CHƯA làm:** OPC-UA subscription
 (hiện chỉ poll — một lệnh `Read` theo lô mỗi chu kỳ), giải mã kiểu phức hợp/cấu trúc (giá trị lạ rơi về
 `ToString()`), chế độ bảo mật Sign/SignAndEncrypt, driver Siemens S7/EtherNet-IP.)*
 
@@ -1717,7 +1782,9 @@ file existed** — an existing install driven purely by env vars is unaffected.
 start attempt failed — an operator-visible answer to "my connector just isn't there," instead of only a
 log line. Deliberately **never flips `GET /v1/health` unhealthy** — a bad/misconfigured optional
 connector is informational, not a fault, the same judgment call this codebase already makes for a
-malformed Modbus/OPC-UA map.
+malformed Modbus/OPC-UA map. **Web UI (GP-7):** this same list is now rendered on `/assets` — see
+§19.4's own web-visibility write-up and §19.7 for exactly what `id`/`kind`/the registry do and do not
+mean today.
 
 *(VI: `connectors.json` (gốc thư mục công cụ này, cùng quy ước đóng gói như `fleet.json`) là nguồn cấu
 hình BỔ SUNG bên cạnh các biến môi trường `ST4I_MODBUS_*`/`ST4I_OPCUA_*` — một mảng JSON gồm các mục
@@ -1729,7 +1796,9 @@ diễn giải lại. Một mục lỗi (thiếu `kind`/`settings`) chỉ bị b�
 file — cùng bài học đã áp dụng cho `fleet.json`. Khi biến môi trường VÀ một mục `connectors.json` cùng
 cấu hình một `kind`: **biến môi trường luôn thắng**, mục xung đột bị bỏ qua kèm cảnh báo nêu rõ xung đột.
 `GET /v1/connectors` (vai trò Operator) hiển thị mọi connector đã cấu hình nhưng lần khởi động gần nhất
-thất bại — KHÔNG BAO GIỜ làm `GET /v1/health` báo unhealthy.)*
+thất bại — KHÔNG BAO GIỜ làm `GET /v1/health` báo unhealthy. **Web UI (GP-7):** danh sách này nay hiển
+thị ngay trên `/assets` — xem phần web-visibility ở §19.4 và §19.7 để biết chính xác `id`/`kind`/registry
+có ý nghĩa gì (và CHƯA có ý nghĩa gì) ở thời điểm này.)*
 
 ---
 
@@ -2724,3 +2793,336 @@ lệnh được. **Chưa có luồng shelving/suppression/rationalization cảnh
 không hợp lý hoá trùng lặp ngoài việc upsert theo Key (§18.1). **Chưa có đầy đủ máy trạng thái/mode
 PackML** — chỉ mô hình hoá 5 trạng thái ổn định, không có các trạng thái tức thời hay Mode
 (Auto/Manual/Maintenance/…).)*
+
+---
+
+## 19. Connector SDK — the seam for a future plugin/sidecar model (WS-G-plugin) / SDK Connector — nền tảng cho mô hình plugin/sidecar tương lai
+
+**EN** — WS-G-plugin (`.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/`) built the
+**seam** a future Connector SDK will need: a dependency-free contract assembly a third party can compile
+against, a lossless JSON wire format for that contract, connector ids opened from a closed enum to
+free-form strings, a registry that replaced `FleetHost`'s own per-driver hardcoding, a `connectors.json`
+config source, and a shippable conformance suite — which then found and fixed two real reliability
+defects in the Modbus/OPC-UA drivers that ship today (§16.4/§16.6). **Read §19.7 before assuming more
+than this shipped: there is no plugin loader, nothing external is loaded, and `connectors.json` can only
+dispatch to the two built-in protocol drivers.** This section documents the seam; §19.7 states plainly
+what it is not.
+
+*(VI: WS-G-plugin (`.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/`) xây **nền tảng**
+(seam) mà một Connector SDK trong tương lai sẽ cần: một assembly hợp đồng không phụ thuộc mà bên thứ ba
+có thể biên dịch driver của họ dựa vào, một định dạng JSON lossless cho hợp đồng đó, id connector mở từ
+enum đóng thành chuỗi tự do, một registry thay thế việc hard-code từng driver trong `FleetHost`, một
+nguồn cấu hình `connectors.json`, và một bộ kiểm tra tuân thủ (conformance suite) có thể đóng gói —
+bộ này sau đó tìm ra và giúp sửa 2 lỗi độ tin cậy THẬT trong driver Modbus/OPC-UA đang chạy sản xuất hôm
+nay (§16.4/§16.6). **Đọc §19.7 trước khi nghĩ có nhiều hơn thế: CHƯA có plugin loader, KHÔNG có mã ngoài
+nào được nạp, và `connectors.json` hiện chỉ dispatch được tới hai driver giao thức có sẵn.** Mục này ghi
+lại nền tảng đã xây; §19.7 nói thẳng nó CHƯA phải là gì.)*
+
+### 19.1 `St4i.Connector.Abstractions` — the contract assembly / Assembly hợp đồng, không phụ thuộc (GP-1)
+
+**EN** — A new project, `src/St4i.Connector.Abstractions`: plain **`net10.0`** (deliberately **not**
+`-windows`), **zero** `PackageReference`/`ProjectReference` (verified against the built DLL's own
+metadata — it references only `System.Runtime`/`System.Collections`/`System.Globalization`/
+`System.Text.Json`, all BCL). It exists because `St4i.EdgeCore` — where `IDeviceDriver` used to live —
+is `net10.0-windows` (DPAPI `CredentialStore`, a WPF-adjacent vendored SDK) and is never published:
+**before this task, nobody outside this repo could compile a driver against anything in this
+codebase.** Now they can compile against this one assembly alone.
+
+Moved here (a pure relocation — GP-1's own review re-verified byte-for-byte that no method body,
+default value, member, or accessibility changed): `IDeviceDriver`, `IConnectorFactory`,
+`DeviceReading` + its nested records (`MetricSample`/`WaveformSeries`/`Bbox`/`Values3d`/
+`MeasurementResult`/`TelemetrySample`), `CyclePlan`/`CyclePlanStep`, `TelemetryNumeric`, and the
+contract enums `ReadingKind`/`Verdict`/`DriverHealthState`/`DeviceClass` (namespace
+`St4i.Connector.Abstractions`(`.Models`)). `TransportMode` deliberately **stayed** in `St4i.EdgeCore` —
+it is a host concern (Demo/Live/Auto/Switchable), not part of the driver contract.
+
+**Not published to NuGet** — a third party currently has to reference it from source (clone/submodule
+this repo, or copy the project), not `dotnet add package`. Same is true of
+`src/St4i.Connector.Conformance` (§19.5).
+
+*(VI: Dự án mới, `src/St4i.Connector.Abstractions`: `net10.0` thuần (CỐ Ý không phải `-windows`), **ZERO**
+`PackageReference`/`ProjectReference` (đã xác minh qua metadata của DLL đã build — chỉ tham chiếu
+`System.Runtime`/`System.Collections`/`System.Globalization`/`System.Text.Json`, toàn bộ đều là BCL). Nó
+tồn tại vì `St4i.EdgeCore` — nơi `IDeviceDriver` từng sống — là `net10.0-windows` (DPAPI
+`CredentialStore`, SDK vendor gắn với WPF) và KHÔNG BAO GIỜ được publish: **trước task này, không ai
+ngoài repo này biên dịch được driver dựa vào bất cứ thứ gì trong codebase.** Giờ họ chỉ cần biên dịch
+dựa vào MỘT assembly này. Đã di dời (thuần di chuyển, review GP-1 xác minh lại từng byte không đổi
+method body/giá trị mặc định/thành viên/khả năng truy cập nào): `IDeviceDriver`, `IConnectorFactory`,
+`DeviceReading` + các record lồng, `CyclePlan`/`CyclePlanStep`, `TelemetryNumeric`, và các enum hợp đồng
+`ReadingKind`/`Verdict`/`DriverHealthState`/`DeviceClass`. `TransportMode` CỐ Ý ở lại `St4i.EdgeCore` —
+đó là mối quan tâm của host (Demo/Live/Auto/Switchable), không thuộc hợp đồng driver.
+
+**Chưa publish lên NuGet** — bên thứ ba hiện phải tham chiếu từ mã nguồn (clone/submodule repo này, hoặc
+copy project), không `dotnet add package` được. `src/St4i.Connector.Conformance` (§19.5) cũng vậy.)*
+
+### 19.2 `IDeviceDriver` — the driver lifecycle contract / Hợp đồng vòng đời driver (GP-2, GP-6)
+
+**EN** — GP-6 turned `IDeviceDriver`'s own XML doc comments into the literal conformance contract
+(§19.5 enforces every line below):
+
+- **Construction is non-blocking and performs no I/O.** `FleetHost.StartLocked` constructs drivers under
+  the SAME lock `Estop()` takes — a slow/blocking constructor stalls emergency-stop for as long as it
+  takes. Any connect/session work belongs entirely inside `ReadAsync`, never the constructor.
+- **`ReadAsync`'s cancellation must be honoured promptly — including when no device is reachable at
+  all.** The realistic failure mode this exists for: a device that's off, disconnected, or that accepts
+  a connection but never responds. `FleetHost`'s own teardown only waits a bounded few seconds before
+  giving up and moving on with the background task orphaned.
+- **`DisposeAsync` is idempotent** — safe to call more than once, after cancellation, after a completed
+  enumeration, or without `ReadAsync` ever having been enumerated — must never throw in any of those
+  cases, and should itself return promptly (`FleetHost` best-effort disposes under a bounded budget; a
+  slow `DisposeAsync` is effectively abandoned, not awaited to completion).
+- **`Id`/`Kind` are non-empty and stable for the instance's whole lifetime** (they key slot labels and,
+  through those, alarms) — including after `DisposeAsync`.
+- **`Health` only ever takes a documented `DriverHealthState` value**, and a device-backed driver must
+  **never** report `Connected` while no device is actually reachable — not even transiently, partway
+  through an attempt that never completes. A pure in-process simulator is exempt from that ONE rule, but
+  only if its own class doc comment says so explicitly and documents what `Health` reports instead —
+  claiming the exemption silently is itself a conformance violation.
+- **No reading-instance reuse or mutation** — each yielded `DeviceReading` (and anything mutable it
+  holds, e.g. its `Telemetry` list) must be a distinct instance never touched again afterward.
+  `EdgePipeline` hands the exact same reference to the UNS publisher (read later, on a background
+  thread) and to every `Committed` subscriber, with no defensive copy — reusing/mutating a
+  previously-yielded reading corrupts data that has already been delivered, in a way that's extremely
+  hard to trace back to the driver.
+- **Every yielded reading must round-trip losslessly through `ConnectorJson`** (GP-2, the sidecar-
+  readiness gate) — see `ConnectorObjectConverter`'s own doc comment for the exact accepted domain of
+  `TelemetrySample.Value`/`DeviceReading.Genealogy` values: `null`/`bool`/`string`, every standard CLR
+  integral numeric type (all widen losslessly to `long`), `float`/`double` — `decimal` and anything else
+  (a `DateTime`, an array, a nested object) is **rejected loudly** (throws), never silently coerced,
+  because a silent type change at a real process boundary is undiagnosable on the other side.
+
+*(VI: GP-6 biến các doc comment XML của `IDeviceDriver` thành hợp đồng tuân thủ THẬT SỰ (§19.5 thực thi
+từng dòng): **Khởi tạo (constructor) không chặn và không I/O** — `FleetHost.StartLocked` khởi tạo driver
+dưới CÙNG lock mà `Estop()` giữ, constructor chậm/chặn sẽ làm E-STOP treo lâu tương ứng. **Huỷ
+(cancellation) của `ReadAsync` phải được tôn trọng NGAY LẬP TỨC — kể cả khi không có thiết bị nào tiếp
+cận được** — teardown của `FleetHost` chỉ chờ vài giây có giới hạn rồi bỏ cuộc, để lại task nền mồ côi.
+**`DisposeAsync` phải idempotent** — gọi nhiều lần, sau khi huỷ, sau khi enumerate xong, hoặc chưa từng
+enumerate — không bao giờ được throw, và nên trả về nhanh. **`Id`/`Kind` không rỗng và ổn định suốt vòng
+đời instance** (dùng để đặt tên slot và qua đó là cảnh báo) — kể cả sau `DisposeAsync`. **`Health` chỉ
+nhận giá trị `DriverHealthState` đã tài liệu hoá**, và driver có thiết bị thật KHÔNG BAO GIỜ được báo
+`Connected` khi không có thiết bị nào tiếp cận được — kể cả thoáng qua. Một simulator thuần trong-tiến-
+trình được miễn trừ MỘT quy tắc này, nhưng chỉ khi doc comment của chính lớp đó nói rõ và ghi `Health`
+báo gì thay vào đó — nhận miễn trừ mà không ghi rõ chính là vi phạm tuân thủ. **Không tái sử dụng/sửa
+đổi instance reading đã yield** — mỗi `DeviceReading` yield ra phải là instance riêng biệt không bao giờ
+bị đụng vào sau đó — `EdgePipeline` giữ đúng tham chiếu đó cho UNS publisher (đọc sau, trên thread nền)
+và mọi subscriber `Committed`, không có bản sao phòng vệ. **Mọi reading yield ra phải round-trip lossless
+qua `ConnectorJson`** (GP-2) — domain chấp nhận: `null`/`bool`/`string`, mọi kiểu số nguyên CLR chuẩn
+(đều widen lossless về `long`), `float`/`double` — `decimal` và bất cứ gì khác bị TỪ CHỐI ngay (throw),
+không bao giờ âm thầm ép kiểu.)*
+
+### 19.3 Connector ids — open strings, not a closed enum / Id connector — chuỗi mở, không còn enum đóng (GP-3)
+
+**EN** — `DriverKind` used to be a closed 5-member enum; it is now a free-form `string`
+(`IDeviceDriver.Kind`, `MachineDescriptor.DriverKind`, `DriverHealthSnapshot`, the fleet DTOs, `assets.db`'s
+`driver_kind` column). **The five built-ins keep their exact historical spellings** — `DriverKinds.Simulated`
+/`HotFolderAoi`/`Mqtt`/`Modbus`/`OpcUa` (PascalCase, the same strings the old enum's
+`JsonStringEnumConverter` already produced) — **no migration**, no wire/database format change.
+`DriverKinds.Normalize` case-insensitively folds any casing of those five to the canonical spelling
+(preserving `fleet.json`'s long-standing tolerant casing), then leaves anything else — a third-party id —
+byte-for-byte, **case-sensitively** untouched: `"vendor.acme.weld"` and `"Vendor.Acme.Weld"` are two
+distinct ids as far as this codebase is concerned, and a third-party author is responsible for one
+consistent spelling.
+
+**Recommended (not enforced) third-party convention:** a namespaced, reverse-DNS-style id — e.g.
+`vendor.acme.weld` — so two unrelated vendors' ids cannot collide. This is a documentation recommendation
+only; nothing validates the shape (enforcing one here would just trade the old closed-enum problem for a
+new closed-shape one).
+
+*(VI: `DriverKind` từng là enum đóng 5 thành viên; giờ là `string` tự do. **5 loại có sẵn giữ NGUYÊN cách
+viết lịch sử** — `Simulated`/`HotFolderAoi`/`Mqtt`/`Modbus`/`OpcUa` — KHÔNG có migration, không đổi định
+dạng wire/database. `DriverKinds.Normalize` gấp mọi cách viết hoa/thường của 5 id này về đúng chính tả
+chuẩn, còn lại — id bên thứ ba — giữ NGUYÊN VĂN, PHÂN BIỆT hoa/thường: `"vendor.acme.weld"` và
+`"Vendor.Acme.Weld"` là hai id KHÁC NHAU, tác giả bên thứ ba tự chịu trách nhiệm dùng một cách viết nhất
+quán. **Quy ước khuyến nghị (không bắt buộc) cho bên thứ ba:** id kiểu namespace, reverse-DNS — vd
+`vendor.acme.weld` — để hai hãng không đụng độ id. Đây chỉ là khuyến nghị tài liệu, không có kiểm tra hình
+thức nào ép buộc.)*
+
+### 19.4 `ConnectorRegistry`, `IConnectorFactory` + web visibility / `ConnectorRegistry`, `IConnectorFactory` + hiển thị trên web (GP-4, GP-5, GP-7)
+
+**EN** — `St4i.EngineApi.Fleet.ConnectorRegistry` replaced `FleetHost`'s old per-driver-kind hardcoding
+(one dedicated constructor parameter + one copy-pasted `StartLocked` block, PER kind — Modbus and
+OPC-UA each had their own). Now: one optional `ConnectorRegistry`, one `foreach` over
+`RegisteredIds`. `IConnectorFactory` (`St4i.Connector.Abstractions`) is the two-member seam a connector
+implements to be buildable by id — `string Kind` (what the registry keys on, normalized the same way as
+any other connector id, §19.3) and `bool TryCreate(string config, out driver, out error)`. Its own doc
+comment sets three hard rules any implementation — first- or third-party — must follow:
+
+- **MUST return promptly and MUST NOT perform I/O.** `ConnectorRegistry` is consulted from inside the
+  SAME `_gate` lock `FleetHost.Estop()` takes — this is the one place third-party code runs while that
+  lock is held, so a slow `TryCreate` blocks E-STOP for as long as it takes. Both built-in factories
+  (Modbus, OPC-UA) only ever parse a small in-memory JSON blob here; the actual socket/session opens
+  lazily inside `ReadAsync`.
+  and MUST NOT throw for a bad/malformed config — return `false` with an operator-readable `error`
+  instead. `ConnectorRegistry.TryCreateDriver` doubly guards this anyway (catches a throwing factory)
+  precisely because a third party cannot be forced to honor its own contract.
+- **`config` is a completely opaque string**, never parsed by the registry — chosen specifically because
+  a plain string is what an operator-authored config file already is on disk, AND it is what would have
+  to cross a future sidecar process boundary unchanged, with no serializer assumption baked in.
+
+Config sources: the four legacy `ST4I_MODBUS_*`/`ST4I_OPCUA_*` env vars (unchanged) and `connectors.json`
+(§16.7) both register into the same `ConnectorRegistry`; env vars always win a same-kind conflict.
+
+**Web visibility (GP-7):** `GET /v1/connectors` (§16.7) is now rendered on `/assets`
+(`AssetRegistry.tsx`) as a small "Connector status" card above the asset table — placed there, not on
+`/site` or a new route, because a connector that fails to start is structurally a driver that never
+became one of the rows in that same table, so this is the one page an operator already opens to answer
+"is my machine's driver actually running." **An empty list is the healthy state** and renders as a
+plain, calm `CircleCheck` confirmation (`connectors.empty`), never an "nothing here" placeholder — a
+healthy fleet shows this card empty essentially forever, and a page that looks broken when nothing is
+wrong trains operators to ignore it. The `error` string is a factory's own exception message forwarded
+**verbatim** — a structural validation message for the two built-in factories today, but the type makes
+no promise beyond "readable text" for a future third-party factory, so it is rendered as plain,
+untrusted text (React already escapes it — no markup injection is possible) inside a wrapping container
+so an unusually long message cannot break the page layout.
+
+*(VI: `St4i.EngineApi.Fleet.ConnectorRegistry` thay thế việc hard-code từng loại driver trong `FleetHost`
+(trước đây mỗi loại Modbus/OPC-UA có RIÊNG một tham số constructor + một khối `StartLocked` copy-paste).
+Giờ: một `ConnectorRegistry` tuỳ chọn, một vòng `foreach` trên `RegisteredIds`. `IConnectorFactory` là
+hợp đồng 2 thành viên để một connector có thể được xây dựng theo id — `Kind` và
+`TryCreate(config, out driver, out error)`. Ba quy tắc cứng: **PHẢI trả về nhanh và KHÔNG được làm I/O**
+(registry được gọi từ TRONG cùng lock `_gate` mà `Estop()` giữ — đây là nơi DUY NHẤT mã bên thứ ba chạy
+trong khi lock đó đang giữ); **KHÔNG được throw với config hỏng** — trả `false` kèm `error` đọc được;
+`config` là **chuỗi hoàn toàn mờ (opaque)**, registry không bao giờ parse — chọn vậy vì đây đúng là những
+gì một file cấu hình do operator viết đã là trên đĩa, VÀ là thứ sẽ phải vượt biên giới tiến trình sidecar
+sau này không cần đổi dạng. Nguồn cấu hình: 4 biến môi trường cũ (không đổi) và `connectors.json` (§16.7)
+cùng đăng ký vào MỘT `ConnectorRegistry`; biến môi trường luôn thắng khi xung đột cùng loại.
+
+**Hiển thị trên web (GP-7):** `GET /v1/connectors` (§16.7) giờ hiển thị ngay trên `/assets`
+(`AssetRegistry.tsx`) — một thẻ nhỏ "Trạng thái connector" phía trên bảng tài sản — đặt ở đây, không phải
+`/site` hay route mới, vì một connector khởi động lỗi về bản chất là một driver chưa từng trở thành một
+hàng trong CHÍNH bảng đó, nên đây là trang operator đã sẵn mở để trả lời "driver của máy tôi có đang chạy
+không." **Danh sách rỗng LÀ trạng thái khoẻ mạnh** và hiển thị như một xác nhận `CircleCheck` bình thản,
+không phải như một chỗ trống "không có gì" — một fleet khoẻ mạnh sẽ để thẻ này trống gần như MÃI MÃI, và
+một trang trông như hỏng khi chẳng có gì sai sẽ tập cho operator thói quen bỏ qua nó. Chuỗi `error` là
+thông báo exception gốc của factory, chuyển nguyên văn — với hai factory có sẵn đây là thông báo validate
+cấu trúc, nhưng kiểu dữ liệu không hứa hẹn gì hơn "văn bản đọc được" cho một factory bên thứ ba tương lai,
+nên được hiển thị như văn bản KHÔNG ĐÁNG TIN CẬY thuần tuý (React tự động escape — không thể chèn mã) bên
+trong một khung bao để một thông báo dài bất thường không phá layout trang.)*
+
+### 19.5 The conformance suite — `St4i.Connector.Conformance` / Bộ kiểm tra tuân thủ connector (GP-6, GP-6b)
+
+**EN** — `src/St4i.Connector.Conformance` (plain `net10.0`, referencing only `St4i.Connector.Abstractions`
++ xunit — **shippable**, deliberately not buried inside a test-internal helper: a third-party driver
+author references this project/DLL directly, subclasses `DeviceDriverConformanceSuite`, and runs the
+same suite against their own driver before shipping it, without ever referencing `St4i.EdgeCore`/
+`St4i.EngineApi`). **9 checks**, each proven — against a deliberately non-conforming fake driver — to
+actually fail if its underlying mechanism were removed, not merely exercised against conforming drivers:
+construction is non-blocking + performs no I/O; `Id`/`Kind` are non-empty and stable; `Health` only takes
+documented values and is sane with no device; `ReadAsync` honours cancellation with an unreachable
+device; `DisposeAsync` is idempotent (three separate scenarios: never enumerated, after cancellation,
+after a completed enumeration); no reading-instance reuse/mutation; and the telemetry JSON round trip
+(§19.2's last bullet). A reflection-based enforcement test (`EveryCheckIsWiredOrAcknowledged`) makes a
+subclass silently skipping a check a **red test**, not an invisible gap — the AcknowledgedGaps mechanism
+exists only for a genuine, reported, currently-open finding, never as a quiet way around an inconvenient
+check.
+
+**Applied to four of this codebase's `IDeviceDriver` implementations** — `SimulatedDriver`,
+`ModbusTcpDriver`, `OpcUaDriver`, `HotFolderAoiDriver` (every driver `Program.cs` actually wires into a
+running host) — **all pass, with no acknowledged gaps remaining** as of this writing (the two gaps below
+closed by GP-6b). Along the way, the suite found the two real production defects §16.4/§16.6 describe —
+its entire reason for existing, delivered.
+
+**Coverage gaps, honestly recorded (not silently missing):**
+- **`Waveforms`** is exercised by no real driver's output today — nothing currently shipping populates a
+  `DeviceReading.Waveforms` entry, so the round-trip check has never actually compared one.
+- **`Id`/`Kind` stability and the `Health` baseline have no dedicated negative-control fake** — every
+  other check is proven to fail against a deliberately broken driver; these two are exercised only
+  against conforming drivers.
+- **Two of the six `IDeviceDriver` implementations in this repo are not under conformance test at all:**
+  `MqttDriver` (§6.2 — proven only via the test suite; `Program.cs` never wires it into a running host
+  today) and, more significantly, **`ScenarioAwareDriver`** — the wrapper `FleetHost` actually installs
+  in the simulated-fleet slot (`FleetHost.cs`), not `SimulatedDriver` directly.
+
+*(VI: `src/St4i.Connector.Conformance` (`net10.0` thuần, chỉ tham chiếu `St4i.Connector.Abstractions` +
+xunit — **CÓ THỂ ĐÓNG GÓI ĐỘC LẬP**, cố ý không giấu trong helper nội bộ test: tác giả driver bên thứ ba
+tham chiếu thẳng project/DLL này, kế thừa `DeviceDriverConformanceSuite`, chạy CÙNG bộ kiểm tra với driver
+của họ trước khi ship, không cần tham chiếu `St4i.EdgeCore`/`St4i.EngineApi`). **9 bài kiểm tra**, mỗi bài
+đã được chứng minh — bằng một driver giả cố ý KHÔNG tuân thủ — là sẽ THẬT SỰ fail nếu cơ chế nó kiểm tra
+bị gỡ bỏ, không chỉ chạy qua driver tuân thủ cho có. Một test enforcement bằng reflection
+(`EveryCheckIsWiredOrAcknowledged`) khiến việc một lớp con âm thầm bỏ qua một bài kiểm tra trở thành
+**test ĐỎ**, không phải lỗ hổng vô hình — cơ chế AcknowledgedGaps chỉ dùng cho một phát hiện THẬT, đang
+mở, đã báo cáo, không phải cách lách một bài kiểm tra bất tiện.
+
+**Áp dụng cho 4 trong số các implementation `IDeviceDriver` của codebase này** — `SimulatedDriver`,
+`ModbusTcpDriver`, `OpcUaDriver`, `HotFolderAoiDriver` (mọi driver mà `Program.cs` THẬT SỰ nối dây vào một
+host đang chạy) — **tất cả đều pass, không còn gap nào được ghi nhận** tại thời điểm viết tài liệu này (2
+gap dưới đây đã đóng bởi GP-6b). Trong quá trình đó, bộ kiểm tra tìm ra đúng 2 lỗi sản xuất THẬT mà
+§16.4/§16.6 mô tả — chính là lý do nó tồn tại, đã giao đúng giá trị.
+
+**Khoảng trống coverage, ghi nhận trung thực (không giấu):**
+- **`Waveforms`** hiện không được bất kỳ driver thật nào populate — chưa có gì đang chạy sản xuất tạo ra
+  một entry `DeviceReading.Waveforms`, nên bài kiểm tra round-trip chưa từng thực sự so sánh nó.
+- **Độ ổn định `Id`/`Kind` và baseline `Health` chưa có fake kiểm-chứng-âm (negative-control)** — mọi bài
+  kiểm tra khác đều đã chứng minh fail với driver cố ý hỏng; hai bài này mới chỉ chạy qua driver tuân thủ.
+- **Hai trong số sáu implementation `IDeviceDriver` của repo này CHƯA nằm dưới conformance test:**
+  `MqttDriver` (§6.2 — chỉ được chứng minh qua bộ test, `Program.cs` chưa bao giờ nối dây nó vào một host
+  đang chạy) và, đáng chú ý hơn, **`ScenarioAwareDriver`** — wrapper mà `FleetHost` THẬT SỰ lắp vào slot
+  fleet mô phỏng (`FleetHost.cs`), không phải `SimulatedDriver` trực tiếp.)*
+
+### 19.6 The two driver reliability fixes, in one place / Hai lỗi độ tin cậy đã sửa, gom một chỗ (GP-6b)
+
+**EN** — Both found by §19.5's suite, both genuinely user-visible (not internal cleanup) — see §16.4/
+§16.6 for the full narrative. Tunables, in one table:
+
+| Driver | What was unbounded before | Fix | New default |
+|---|---|---|---|
+| `ModbusTcpDriver` | `Transport.ReadTimeout`/`WriteTimeout` = `-1` (infinite); NModbus has no cancellable read overload at all | Bound both timeouts; cap retries; cancel via `ct.Register(DisposeConnection)` | `Math.Max(1000ms, pollIntervalMs × 4)`, `Retries=1` — derived from the register map, no new env var |
+| `OpcUaDriver` | `CoreClientUtils.SelectEndpoint` — synchronous, uncancellable | Switch to `SelectEndpointAsync`, same bound, now cancellable | `TransportQuotas.OperationTimeout = 15000ms` — hardcoded, still not configurable |
+
+Neither fix added a new environment variable or config field — both are automatic, derived-from-existing-
+config bounds (Modbus) or a hardcoded constant that only became cancellable, not configurable (OPC-UA).
+
+*(VI: Cả hai đều do bộ kiểm tra §19.5 tìm ra, cả hai đều THẬT SỰ ảnh hưởng người dùng (không phải dọn dẹp
+nội bộ) — xem §16.4/§16.6 để đọc đầy đủ câu chuyện. Bảng tunable, gom một chỗ:
+
+| Driver | Trước đây không có giới hạn | Cách sửa | Giá trị mặc định mới |
+|---|---|---|---|
+| `ModbusTcpDriver` | `ReadTimeout`/`WriteTimeout` = `-1` (vô hạn); NModbus không có overload đọc huỷ được | Chặn cả hai timeout; giới hạn retry; huỷ qua `ct.Register(DisposeConnection)` | `Math.Max(1000ms, pollIntervalMs × 4)`, `Retries=1` — suy ra từ register map, không thêm biến môi trường |
+| `OpcUaDriver` | `CoreClientUtils.SelectEndpoint` — đồng bộ, không huỷ được | Chuyển sang `SelectEndpointAsync`, cùng giới hạn, giờ huỷ được | `TransportQuotas.OperationTimeout = 15000ms` — hardcode, vẫn chưa cấu hình được |
+
+Không bản sửa nào thêm biến môi trường/trường cấu hình mới — cả hai đều là giới hạn tự động (Modbus) hoặc
+hằng số hardcode chỉ mới huỷ được, chưa cấu hình được (OPC-UA).)*
+
+### 19.7 🔴 Honest limitations — the seam, not the plugin system / Giới hạn trung thực — mới là nền tảng, CHƯA phải hệ plugin
+
+**EN** — Written down plainly, not softened:
+
+- **The isolation model is a sidecar, and it is not built.** Nothing loads external code today; the
+  registry is populated in-process by the host itself. The contract was deliberately designed to be
+  IPC-safe now (the lossless JSON round trip, §19.2) so a sidecar can arrive later without breaking it —
+  but no sidecar, loader, or process boundary exists yet.
+- **`connectors.json` cannot yet onboard an arbitrary third party.** It dispatches only to Modbus and
+  OPC-UA (`Program.cs`'s own dispatch `switch`), because no plugin-loading mechanism exists. Its
+  practical value today is "configure Modbus/OPC-UA without the two environment variables" — **not**
+  "add a connector by configuration alone."
+- **The `id`/`kind` split has no functional effect today** — the registry is one-factory-per-kind, and
+  `id` is used only for log/slot-label naming.
+- **A known hazard for whoever builds the loader:** the simulated-fleet carve-out means a connector
+  registered under a **built-in** id (notably `Simulated`) could re-open a double-drive path where two
+  pipelines write the same machine and corrupt cycle counts. **Unreachable today** — no dispatch path
+  registers arbitrary ids — **but it goes live the moment a plugin loader exists**, and that loader
+  **must reject third-party registration under any built-in id.**
+- **Conformance coverage gaps** (repeated from §19.5 for visibility here): `Waveforms` is exercised by no
+  real driver's output; `Id`/`Kind` and the `Health` baseline have no dedicated negative control; and
+  `ScenarioAwareDriver` — the wrapper `FleetHost` actually installs in the simulated slot — is not itself
+  under conformance test.
+- **The contract assembly is not published to NuGet** — a third party references it from source today.
+- **Not started:** `plugin.yaml`/SemVer `apiVersion`/`configSchema`-driven UI/plugin signing.
+
+*(VI: Ghi rõ ràng, không mềm hoá: **Mô hình cô lập là sidecar, và CHƯA được xây.** Hôm nay không có mã
+ngoài nào được nạp; registry được host tự đăng ký trong-tiến-trình. Hợp đồng được thiết kế CỐ Ý an toàn
+IPC ngay từ bây giờ (round-trip JSON lossless, §19.2) để sidecar có thể đến sau mà không phá vỡ nó — nhưng
+CHƯA có sidecar, loader, hay ranh giới tiến trình nào tồn tại. **`connectors.json` CHƯA thể onboard một
+bên thứ ba bất kỳ.** Nó chỉ dispatch được tới Modbus và OPC-UA (switch dispatch của chính `Program.cs`),
+vì chưa có cơ chế nạp plugin. Giá trị thực tế hôm nay là "cấu hình Modbus/OPC-UA mà không cần 2 biến môi
+trường" — KHÔNG PHẢI "thêm connector chỉ bằng cấu hình." **Việc tách `id`/`kind` CHƯA có tác dụng chức
+năng nào hôm nay** — registry là một-factory-một-kind, `id` chỉ dùng để đặt tên log/slot. **Một rủi ro đã
+biết cho ai xây loader sau này:** carve-out cho simulated-fleet nghĩa là một connector đăng ký dưới một id
+**có sẵn** (đặc biệt `Simulated`) có thể MỞ LẠI đường double-drive khiến hai pipeline cùng ghi một máy và
+làm hỏng số đếm chu kỳ. **KHÔNG THỂ xảy ra hôm nay** — không có đường dispatch nào đăng ký id tuỳ ý — **NHƯNG
+sẽ trở thành THẬT ngay khi có plugin loader**, và loader đó **PHẢI từ chối đăng ký bên thứ ba dưới bất kỳ id
+có sẵn nào.** **Khoảng trống coverage conformance** (nhắc lại từ §19.5 để dễ thấy ở đây): `Waveforms` chưa
+được driver thật nào populate; baseline `Id`/`Kind` và `Health` chưa có negative-control riêng;
+`ScenarioAwareDriver` — wrapper `FleetHost` THẬT SỰ lắp vào slot mô phỏng — CHƯA tự nó nằm dưới conformance
+test. **Assembly hợp đồng chưa publish lên NuGet** — bên thứ ba hiện tham chiếu từ mã nguồn. **Chưa bắt
+đầu:** `plugin.yaml`/SemVer `apiVersion`/UI sinh từ `configSchema`/ký số plugin.)*

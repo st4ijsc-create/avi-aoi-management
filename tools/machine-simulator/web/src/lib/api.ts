@@ -1567,6 +1567,44 @@ export function useSetAssetLifecycle() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Connectors — GP-7 (`.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-7-brief.md`
+// item 1), the web surface over GP-5's `GET /v1/connectors` (`ConnectorEndpoints.cs`). Wire shape
+// mirrors `St4i.EngineApi.Fleet.Dtos.ConnectorStatusDto` exactly: every currently-REGISTERED connector
+// (built from `connectors.json` or the legacy `ST4I_MODBUS_*`/`ST4I_OPCUA_*` env vars) that failed to
+// start on the fleet's most recent start attempt, keyed by its own `id`. An empty array is the healthy
+// case — either nothing is registered, or everything registered started fine — rendered in
+// `AssetRegistry.tsx` as a calm confirmation, never an empty-state "nothing here" placeholder.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `ConnectorStatusDto` (`Fleet/Dtos.cs`). `error` is a factory's own exception message forwarded
+ * verbatim (`FleetHost.GetConfiguredConnectorIssues`) — for the two built-in factories this is always a
+ * structural validation message (bad JSON, a missing field), but the type makes no promise beyond
+ * "readable text": a future third-party factory's message is UNSANITIZED, so callers must render it as
+ * plain untrusted text and never let its length/content affect layout (see `ConnectorIssuesCard`). */
+export interface ConnectorStatus {
+  id: string
+  error: string
+}
+
+const CONNECTORS_QUERY_KEY = ["connectors"] as const
+
+const connectorEndpoints = {
+  connectors: () => request<ConnectorStatus[]>("/v1/connectors"),
+}
+
+/** `GET /v1/connectors` (Operator) — same 5s poll cadence as `useHealth`/`useSite`: this list only
+ * changes when the fleet (re)starts (a fixed `connectors.json` typo, or a restart after one is
+ * introduced), but polling means an operator watching the page sees it clear on its own once the fleet
+ * comes back up, with no manual refresh. */
+export function useConnectorIssues(): UseQueryResult<ConnectorStatus[]> {
+  return useQuery({
+    queryKey: CONNECTORS_QUERY_KEY,
+    queryFn: connectorEndpoints.connectors,
+    refetchInterval: 5000,
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Site / Ecosystem — GĐ3 EC-4 (`routes/Site.tsx`). Wire shapes mirror `St4i.EngineApi.Endpoints.
 // SiteEndpoints`'s `SiteStatusDto`/`SiteLinkRequest`/`SiteIdentityDto` exactly (EC-3,
 // `src/St4i.EngineApi/Endpoints/SiteEndpoints.cs`) — the HTTP surface over EC-2's `SiteBridgeManager`

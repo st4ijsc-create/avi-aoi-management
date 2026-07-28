@@ -1,12 +1,20 @@
 import * as React from "react"
 import { motion } from "framer-motion"
-import { Loader2, Package } from "lucide-react"
+import { CircleCheck, Loader2, Package, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 
 import { useGloss } from "@/components/hmi/bilingual"
 import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
-import { useAsset, useAssets, useSetAssetLifecycle, type AssetLifecycleState, type AssetRecord } from "@/lib/api"
+import {
+  useAsset,
+  useAssets,
+  useConnectorIssues,
+  useSetAssetLifecycle,
+  type AssetLifecycleState,
+  type AssetRecord,
+  type ConnectorStatus,
+} from "@/lib/api"
 import { driverKindLabel } from "@/lib/driverKind"
 import { fadeSlideUp } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
@@ -357,6 +365,80 @@ function AssetDetailDialog({ code, onOpenChange }: { code: string | null; onOpen
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// GP-7 (`.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-7-brief.md` item 1) —
+// visibility for `GET /v1/connectors`: a connector that IS configured (`connectors.json`, or one of the
+// legacy `ST4I_MODBUS_*`/`ST4I_OPCUA_*` env vars) but did NOT start — a typo'd map file or a malformed
+// `connectors.json` entry. Placed on THIS page, not `Site.tsx` or a new route: `Site.tsx` is about the
+// northbound SYNAPSE uplink (a different concern entirely — cloud bridge status, this device's own
+// identity), whereas a connector that fails to start is, structurally, a driver that never became one of
+// the asset rows below — this is the one page an operator already opens to answer "is my machine's
+// driver actually running," so a small card above the existing table reuses that context instead of
+// asking the operator to learn a new destination for what is usually nothing to look at.
+//
+// The empty state MUST read as calm, not as an absence of information (the brief's own framing: "a page
+// that looks broken when nothing is wrong trains operators to ignore it") — a healthy fleet renders this
+// card literally empty essentially forever, so `connectors.empty` is a plain, quiet confirmation with an
+// ok-toned check, the same `CircleCheck`/`text-ok-text` idiom `Settings.tsx`'s own inline success message
+// already uses, never an `Inbox`-style "nothing here yet" placeholder (that idiom elsewhere in this app,
+// e.g. `Users.tsx`, deliberately reads as "nothing has happened," which is the WRONG message here).
+//
+// `error` is a factory's own exception message, forwarded verbatim by the server (`ConnectorStatus` in
+// `lib/api.ts`) — a structural validation message for the two built-in factories today, but the type
+// makes no promise beyond "readable text" for a future third-party factory. Rendered as plain text
+// content (React already escapes it — no markup injection is possible) inside a `break-words
+// whitespace-pre-wrap` block so an unusually long or unbroken message wraps instead of overflowing the
+// card and breaking the page layout.
+// ─────────────────────────────────────────────────────────────────────────
+
+function ConnectorIssueRow({ issue }: { issue: ConnectorStatus }) {
+  const t = useT()
+  return (
+    <li
+      aria-label={t("connectors.itemAria", { id: issue.id, error: issue.error })}
+      className="flex flex-col gap-0.5 border border-warn/30 bg-warn/10 px-3 py-2"
+    >
+      <span className="flex items-center gap-1.5 font-mono text-xs font-semibold text-text-strong">
+        <TriangleAlert className="size-3.5 shrink-0 text-warn-text" aria-hidden="true" />
+        {issue.id}
+      </span>
+      <span className="max-w-full min-w-0 overflow-hidden text-xs break-words whitespace-pre-wrap text-text-muted">
+        {t("connectors.errorLabel", { error: issue.error })}
+      </span>
+    </li>
+  )
+}
+
+function ConnectorIssuesCard() {
+  const t = useT()
+  const gloss = useGloss()
+  const { data, isPending, isError } = useConnectorIssues()
+  const issues = data ?? []
+
+  return (
+    <Sheet title={t("connectors.title")} titleEn={gloss("connectors.title")} bodyClassName="flex flex-col gap-2">
+      <p className="text-sm text-text-muted">{t("connectors.description")}</p>
+
+      {isError ? (
+        <p className="text-sm text-danger-text">{t("connectors.loadFailed")}</p>
+      ) : isPending ? (
+        <Skeleton className="h-6 w-64" />
+      ) : issues.length === 0 ? (
+        <div className="flex items-center gap-1.5 text-sm text-ok-text">
+          <CircleCheck className="size-4 shrink-0" aria-hidden="true" />
+          {t("connectors.empty")}
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {issues.map((issue) => (
+            <ConnectorIssueRow key={issue.id} issue={issue} />
+          ))}
+        </ul>
+      )}
+    </Sheet>
+  )
+}
+
 function AssetRegistryScreen() {
   const t = useT()
   const gloss = useGloss()
@@ -380,6 +462,8 @@ function AssetRegistryScreen() {
         <p className="hmi-micro mt-1">{gloss("assets.title")}</p>
         <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("assets.description")}</p>
       </div>
+
+      <ConnectorIssuesCard />
 
       <Sheet className="min-h-0 flex-1" bodyClassName="flex flex-1 min-h-0 flex-col gap-2 p-0">
         <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">

@@ -1746,6 +1746,23 @@ export const en: Dictionary = {
     },
   },
 
+  // GP-7 (`.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/task-7-brief.md` item 1) —
+  // the small status card `AssetRegistry.tsx` renders above the asset table, over GP-5's
+  // `GET /v1/connectors`: every currently-registered connector (from `connectors.json` or the legacy
+  // env vars) that failed to start. An empty list is the healthy state — `empty` reads as a plain
+  // confirmation, not an absence of information — because most decommissioned/typo-free installs will
+  // see this card empty essentially always.
+  connectors: {
+    title: "Connector status",
+    description: "Connectors configured (via connectors.json or an environment variable) that failed to start.",
+    empty: "All configured connectors started normally.",
+    loadFailed: "Couldn't check connector status.",
+    // `error` is a factory's own exception message, forwarded verbatim and unsanitized — see
+    // `ConnectorStatus` in `lib/api.ts`.
+    errorLabel: (vars: Vars) => `Error: ${vars.error}`,
+    itemAria: (vars: Vars) => `Connector ${vars.id} failed to start: ${vars.error}`,
+  },
+
   // GĐ3 EC-4 (`routes/Site.tsx`, `.superpowers/sdd/2026-07-27-giaidoan3-ecosystem-connect-blueprint/
   // task-4-brief.md`) — the web page over EC-3's `/v1/site*` endpoints: this device's own identity
   // fingerprint + cert PEM (to register at a SYNAPSE Site), an Engineer-gated Site-link form (host/
