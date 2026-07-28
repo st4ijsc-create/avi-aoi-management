@@ -994,7 +994,22 @@ public sealed class FleetHost
     /// <see cref="WaitAndDisposeOldPipeline"/>, THEN re-acquire the gate to call <see cref="StartLocked"/>
     /// — never while still holding it (a slot's own catch above re-acquires <see cref="_gate"/>, so waiting for
     /// an old task from inside this same lock would deadlock whenever that catch actually needs to
-    /// run). Assumes the caller already holds <see cref="_gate"/>.</summary>
+    /// run). Assumes the caller already holds <see cref="_gate"/>.
+    ///
+    /// <para><b>Batch review (WS-G-plugin whole-batch, fix 1) — <see cref="CancellationTokenSource.Cancel"/>
+    /// itself is wrapped per-slot in its own try/catch.</b> <c>Cancel()</c> runs every callback registered via
+    /// <see cref="CancellationToken.Register(Action)"/> SYNCHRONOUSLY on THIS thread and rethrows any exception
+    /// one of them throws. <c>ModbusTcpDriver.PollOnceAsync</c>'s <c>ct.Register(DisposeConnection)</c> (the
+    /// repo's first-ever registration on a slot token) is benign today (<c>DisposeConnection</c> wraps each
+    /// disposal in its own try/catch), but <see cref="Estop"/>/<see cref="Stop"/> call this method with
+    /// <see cref="_gate"/> HELD — an uncaught throw here, from a THIRD-PARTY driver mirroring that same
+    /// <c>ct.Register</c> pattern with a misbehaving callback, would abort this entire loop before
+    /// <c>_slots.Clear()</c> below ever runs and before <see cref="Estop"/> latches <see cref="_estopEngaged"/>
+    /// — machinery would keep running while the caller believes E-STOP succeeded (or the caller sees an
+    /// exception instead of a clean stop). Caught PER-SLOT, not around the whole loop, so one misbehaving
+    /// driver's callback can never also skip cancelling every OTHER slot — see
+    /// <see cref="IDeviceDriver.ReadAsync"/>'s own doc comment for the contract this documents on the driver
+    /// side.</para></summary>
     private PipelineHandle StopLocked()
     {
         if (_slots.Count == 0) return default;
@@ -1002,7 +1017,22 @@ public sealed class FleetHost
         var old = _slots.ToList();
         foreach (var slot in old)
         {
-            slot.Cts.Cancel();
+            try
+            {
+                slot.Cts.Cancel();
+            }
+            catch (Exception ex)
+            {
+                // A driver's cancellation-registration callback threw — never let it abort E-STOP for every
+                // OTHER slot, or stop this method from reaching _slots.Clear()/the EstopEngaged latch below.
+                _logger?.LogError(
+                    ex,
+                    "FleetHost pipeline slot '{Slot}' threw from a cancellation-registration callback during " +
+                    "Cts.Cancel() — IDeviceDriver.ReadAsync's contract requires such a callback to be prompt " +
+                    "and non-throwing; continuing to cancel/tear down every other slot regardless",
+                    slot.Label);
+            }
+
             slot.Pipeline.Committed -= OnPipelineCommitted;
         }
 

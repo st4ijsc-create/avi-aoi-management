@@ -72,6 +72,18 @@ public interface IDeviceDriver : IAsyncDisposable
     /// <paramref name="ct"/> cannot be stopped; <c>FleetHost</c>'s teardown waits on this with only a
     /// bounded (few-second) budget before giving up and moving on with the background task orphaned.</para>
     ///
+    /// <para><b>A cancellation callback registered on <paramref name="ct"/> (e.g. via
+    /// <see cref="System.Threading.CancellationToken.Register(Action)"/>) runs SYNCHRONOUSLY, on the
+    /// CANCELLING thread, while the host holds its own internal state lock</b> — <c>FleetHost.Estop()</c>/
+    /// <c>Stop()</c> cancel every slot's token from inside the SAME lock that guards every other fleet state
+    /// transition, because <see cref="System.Threading.CancellationTokenSource.Cancel()"/> itself invokes
+    /// every registered callback inline and rethrows any exception one of them throws. Such a callback
+    /// therefore MUST be prompt, MUST NOT throw, and MUST NOT perform blocking I/O — a slow or throwing
+    /// registration stalls or corrupts the SAME emergency-stop transition every other member of this
+    /// contract is written to protect. <c>ModbusTcpDriver.PollOnceAsync</c>'s own
+    /// <c>ct.Register(DisposeConnection)</c> is the one existing example: <c>DisposeConnection</c> wraps
+    /// each disposal in its own try/catch specifically because of this rule.</para>
+    ///
     /// <para><b>Never reuse or mutate a previously-yielded <see cref="Models.DeviceReading"/>.</b> Each
     /// yield must be a distinct instance that is never touched again afterward — not the object itself, and
     /// not any mutable collection it holds (e.g. its <see cref="Models.DeviceReading.Telemetry"/> list, even

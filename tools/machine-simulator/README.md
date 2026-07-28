@@ -2822,8 +2822,8 @@ lại nền tảng đã xây; §19.7 nói thẳng nó CHƯA phải là gì.)*
 
 **EN** — A new project, `src/St4i.Connector.Abstractions`: plain **`net10.0`** (deliberately **not**
 `-windows`), **zero** `PackageReference`/`ProjectReference` (verified against the built DLL's own
-metadata — it references only `System.Runtime`/`System.Collections`/`System.Globalization`/
-`System.Text.Json`, all BCL). It exists because `St4i.EdgeCore` — where `IDeviceDriver` used to live —
+metadata — it references only `System.Runtime`/`System.Collections`/`System.Text.Json`, all BCL). It
+exists because `St4i.EdgeCore` — where `IDeviceDriver` used to live —
 is `net10.0-windows` (DPAPI `CredentialStore`, a WPF-adjacent vendored SDK) and is never published:
 **before this task, nobody outside this repo could compile a driver against anything in this
 codebase.** Now they can compile against this one assembly alone.
@@ -2834,7 +2834,7 @@ default value, member, or accessibility changed): `IDeviceDriver`, `IConnectorFa
 `MeasurementResult`/`TelemetrySample`), `CyclePlan`/`CyclePlanStep`, `TelemetryNumeric`, and the
 contract enums `ReadingKind`/`Verdict`/`DriverHealthState`/`DeviceClass` (namespace
 `St4i.Connector.Abstractions`(`.Models`)). `TransportMode` deliberately **stayed** in `St4i.EdgeCore` —
-it is a host concern (Demo/Live/Auto/Switchable), not part of the driver contract.
+it is a host concern (the enum itself is `{Live, Demo, Auto}` — not part of the driver contract).
 
 **Not published to NuGet** — a third party currently has to reference it from source (clone/submodule
 this repo, or copy the project), not `dotnet add package`. Same is true of
@@ -2842,7 +2842,7 @@ this repo, or copy the project), not `dotnet add package`. Same is true of
 
 *(VI: Dự án mới, `src/St4i.Connector.Abstractions`: `net10.0` thuần (CỐ Ý không phải `-windows`), **ZERO**
 `PackageReference`/`ProjectReference` (đã xác minh qua metadata của DLL đã build — chỉ tham chiếu
-`System.Runtime`/`System.Collections`/`System.Globalization`/`System.Text.Json`, toàn bộ đều là BCL). Nó
+`System.Runtime`/`System.Collections`/`System.Text.Json`, toàn bộ đều là BCL). Nó
 tồn tại vì `St4i.EdgeCore` — nơi `IDeviceDriver` từng sống — là `net10.0-windows` (DPAPI
 `CredentialStore`, SDK vendor gắn với WPF) và KHÔNG BAO GIỜ được publish: **trước task này, không ai
 ngoài repo này biên dịch được driver dựa vào bất cứ thứ gì trong codebase.** Giờ họ chỉ cần biên dịch
@@ -2850,7 +2850,7 @@ dựa vào MỘT assembly này. Đã di dời (thuần di chuyển, review GP-1 
 method body/giá trị mặc định/thành viên/khả năng truy cập nào): `IDeviceDriver`, `IConnectorFactory`,
 `DeviceReading` + các record lồng, `CyclePlan`/`CyclePlanStep`, `TelemetryNumeric`, và các enum hợp đồng
 `ReadingKind`/`Verdict`/`DriverHealthState`/`DeviceClass`. `TransportMode` CỐ Ý ở lại `St4i.EdgeCore` —
-đó là mối quan tâm của host (Demo/Live/Auto/Switchable), không thuộc hợp đồng driver.
+đó là mối quan tâm của host (bản thân enum là `{Live, Demo, Auto}` — không thuộc hợp đồng driver).
 
 **Chưa publish lên NuGet** — bên thứ ba hiện phải tham chiếu từ mã nguồn (clone/submodule repo này, hoặc
 copy project), không `dotnet add package` được. `src/St4i.Connector.Conformance` (§19.5) cũng vậy.)*
@@ -2952,7 +2952,7 @@ comment sets three hard rules any implementation — first- or third-party — m
   lock is held, so a slow `TryCreate` blocks E-STOP for as long as it takes. Both built-in factories
   (Modbus, OPC-UA) only ever parse a small in-memory JSON blob here; the actual socket/session opens
   lazily inside `ReadAsync`.
-  and MUST NOT throw for a bad/malformed config — return `false` with an operator-readable `error`
+- **MUST NOT throw for a bad/malformed config** — return `false` with an operator-readable `error`
   instead. `ConnectorRegistry.TryCreateDriver` doubly guards this anyway (catches a throwing factory)
   precisely because a third party cannot be forced to honor its own contract.
 - **`config` is a completely opaque string**, never parsed by the registry — chosen specifically because
@@ -2974,6 +2974,17 @@ wrong trains operators to ignore it. The `error` string is a factory's own excep
 no promise beyond "readable text" for a future third-party factory, so it is rendered as plain,
 untrusted text (React already escapes it — no markup injection is possible) inside a wrapping container
 so an unusually long message cannot break the page layout.
+
+**Small doc correction (batch review) — the `id` field is actually the `kind`.** `ConnectorRegistry`
+keys purely on the normalized `Kind` (§19.3) — a `connectors.json` entry's OWN `id` field (e.g.
+`{"id":"line3-weld","kind":"Modbus"}`) is used only for the per-entry warning naming during config
+loading (`ConnectorsConfig.Load`/`ResolveEntries`) and is discarded before `Register` is ever called, so
+it never reaches the registry at all. `ConnectorStatusDto`'s `Id` field (`GET /v1/connectors`) is
+populated from the registry's own key — i.e. the entry above surfaces as `{"id":"Modbus","error":...}`,
+NOT `{"id":"line3-weld",...}`. Kept as documentation rather than a rename: renaming the DTO field would
+touch `AssetRegistry.tsx` and every existing test asserting on `Id`/`SlotLabel` naming for a field whose
+actual (undocumented) behavior this note now simply makes explicit — a wire-format change is a separate
+decision from writing down what the wire format already, honestly, does today.
 
 *(VI: `St4i.EngineApi.Fleet.ConnectorRegistry` thay thế việc hard-code từng loại driver trong `FleetHost`
 (trước đây mỗi loại Modbus/OPC-UA có RIÊNG một tham số constructor + một khối `StartLocked` copy-paste).
@@ -2997,7 +3008,18 @@ một trang trông như hỏng khi chẳng có gì sai sẽ tập cho operator t
 thông báo exception gốc của factory, chuyển nguyên văn — với hai factory có sẵn đây là thông báo validate
 cấu trúc, nhưng kiểu dữ liệu không hứa hẹn gì hơn "văn bản đọc được" cho một factory bên thứ ba tương lai,
 nên được hiển thị như văn bản KHÔNG ĐÁNG TIN CẬY thuần tuý (React tự động escape — không thể chèn mã) bên
-trong một khung bao để một thông báo dài bất thường không phá layout trang.)*
+trong một khung bao để một thông báo dài bất thường không phá layout trang.
+
+**Đính chính tài liệu nhỏ (đợt review toàn batch) — trường `id` thực ra là `kind`.** `ConnectorRegistry`
+chỉ key theo `Kind` đã chuẩn hoá (§19.3) — trường `id` riêng của một entry `connectors.json` (vd
+`{"id":"line3-weld","kind":"Modbus"}`) chỉ dùng để đặt tên cảnh báo lúc load config
+(`ConnectorsConfig.Load`/`ResolveEntries`) rồi bị bỏ trước khi `Register` được gọi, nên KHÔNG BAO GIỜ tới
+được registry. Trường `Id` của `ConnectorStatusDto` (`GET /v1/connectors`) lấy từ chính KHOÁ của registry
+— tức entry trên sẽ hiển thị thành `{"id":"Modbus","error":...}`, KHÔNG PHẢI `{"id":"line3-weld",...}`.
+Chọn ghi tài liệu thay vì đổi tên trường: đổi tên DTO sẽ đụng tới `AssetRegistry.tsx` và mọi test đang
+assert theo `Id`/`SlotLabel` cho một trường mà hành vi thật (chưa từng ghi rõ) nay chỉ được nói thẳng ra —
+đổi định dạng wire là một quyết định khác, tách biệt với việc ghi lại đúng những gì định dạng đó đang thật
+sự làm hôm nay.)*
 
 ### 19.5 The conformance suite — `St4i.Connector.Conformance` / Bộ kiểm tra tuân thủ connector (GP-6, GP-6b)
 
@@ -3005,16 +3027,26 @@ trong một khung bao để một thông báo dài bất thường không phá l
 + xunit — **shippable**, deliberately not buried inside a test-internal helper: a third-party driver
 author references this project/DLL directly, subclasses `DeviceDriverConformanceSuite`, and runs the
 same suite against their own driver before shipping it, without ever referencing `St4i.EdgeCore`/
-`St4i.EngineApi`). **9 checks**, each proven — against a deliberately non-conforming fake driver — to
-actually fail if its underlying mechanism were removed, not merely exercised against conforming drivers:
-construction is non-blocking + performs no I/O; `Id`/`Kind` are non-empty and stable; `Health` only takes
-documented values and is sane with no device; `ReadAsync` honours cancellation with an unreachable
-device; `DisposeAsync` is idempotent (three separate scenarios: never enumerated, after cancellation,
-after a completed enumeration); no reading-instance reuse/mutation; and the telemetry JSON round trip
-(§19.2's last bullet). A reflection-based enforcement test (`EveryCheckIsWiredOrAcknowledged`) makes a
-subclass silently skipping a check a **red test**, not an invisible gap — the AcknowledgedGaps mechanism
-exists only for a genuine, reported, currently-open finding, never as a quiet way around an inconvenient
-check.
+`St4i.EngineApi`). **9 checks** total: construction is non-blocking + performs no I/O; `Id`/`Kind` are
+non-empty and stable; `Health` only takes documented values and is sane with no device; `ReadAsync`
+honours cancellation with an unreachable device; `DisposeAsync` is idempotent (three separate scenarios:
+never enumerated, after cancellation, after a completed enumeration); no reading-instance reuse/mutation;
+and the telemetry JSON round trip (§19.2's last bullet). A reflection-based enforcement test
+(`EveryCheckIsWiredOrAcknowledged`) makes a subclass silently skipping a check a **red test**, not an
+invisible gap — the AcknowledgedGaps mechanism exists only for a genuine, reported, currently-open
+finding, never as a quiet way around an inconvenient check.
+
+**Falsifiability — corrected count (batch review):** only **5 of these 9** are proven — against a
+deliberately non-conforming fake driver — to actually fail if their underlying mechanism were removed.
+**4 of 9 are not**: `Id`/`Kind` stability (already disclosed below) **plus all three `DisposeAsync`
+idempotency checks (never enumerated / after cancellation / after a completed enumeration), which were
+NOT previously disclosed anywhere** — not here, not §19.7, not the roadmap backlog; no fake in
+`tests/St4i.Connector.Conformance.Tests/Fakes/` targets `DisposeAsync` at all. The opposite error also
+happened, in `Health`'s favor: it was UNDERSOLD, not oversold — it has **four** dedicated negative
+controls (two proving the device-backed loop body actually executes, one proving its `sawConnected`
+mechanism is independently load-bearing against a purely-transient violation, one proving the
+device-less branch's assertion is falsifiable); only its narrow `Enum.IsDefined` baseline has no
+dedicated control.
 
 **Applied to four of this codebase's `IDeviceDriver` implementations** — `SimulatedDriver`,
 `ModbusTcpDriver`, `OpcUaDriver`, `HotFolderAoiDriver` (every driver `Program.cs` actually wires into a
@@ -3025,9 +3057,13 @@ its entire reason for existing, delivered.
 **Coverage gaps, honestly recorded (not silently missing):**
 - **`Waveforms`** is exercised by no real driver's output today — nothing currently shipping populates a
   `DeviceReading.Waveforms` entry, so the round-trip check has never actually compared one.
-- **`Id`/`Kind` stability and the `Health` baseline have no dedicated negative-control fake** — every
-  other check is proven to fail against a deliberately broken driver; these two are exercised only
-  against conforming drivers.
+- **4 of the 9 checks have no dedicated negative-control fake** — every other check is proven to fail
+  against a deliberately broken driver; these four are exercised only against conforming drivers:
+  `Id`/`Kind` stability, and all **three `DisposeAsync` idempotency checks** (never enumerated, after
+  cancellation, after a completed enumeration) — the latter three were not previously disclosed anywhere
+  in this document. `Health`'s baseline, by contrast, is the ONE narrow exception that has no control —
+  `Health` overall is otherwise the best-covered check here (four dedicated negative controls; see §19.5's
+  falsifiability paragraph above).
 - **Two of the six `IDeviceDriver` implementations in this repo are not under conformance test at all:**
   `MqttDriver` (§6.2 — proven only via the test suite; `Program.cs` never wires it into a running host
   today) and, more significantly, **`ScenarioAwareDriver`** — the wrapper `FleetHost` actually installs
@@ -3036,12 +3072,24 @@ its entire reason for existing, delivered.
 *(VI: `src/St4i.Connector.Conformance` (`net10.0` thuần, chỉ tham chiếu `St4i.Connector.Abstractions` +
 xunit — **CÓ THỂ ĐÓNG GÓI ĐỘC LẬP**, cố ý không giấu trong helper nội bộ test: tác giả driver bên thứ ba
 tham chiếu thẳng project/DLL này, kế thừa `DeviceDriverConformanceSuite`, chạy CÙNG bộ kiểm tra với driver
-của họ trước khi ship, không cần tham chiếu `St4i.EdgeCore`/`St4i.EngineApi`). **9 bài kiểm tra**, mỗi bài
-đã được chứng minh — bằng một driver giả cố ý KHÔNG tuân thủ — là sẽ THẬT SỰ fail nếu cơ chế nó kiểm tra
-bị gỡ bỏ, không chỉ chạy qua driver tuân thủ cho có. Một test enforcement bằng reflection
+của họ trước khi ship, không cần tham chiếu `St4i.EdgeCore`/`St4i.EngineApi`). **9 bài kiểm tra** tổng
+cộng: khởi tạo không chặn + không I/O; `Id`/`Kind` không rỗng và ổn định; `Health` chỉ nhận giá trị đã tài
+liệu hoá và hợp lý khi không có thiết bị; `ReadAsync` tôn trọng huỷ khi thiết bị không tiếp cận được;
+`DisposeAsync` idempotent (3 kịch bản: chưa enumerate, sau khi huỷ, sau khi enumerate xong); không tái sử
+dụng/sửa instance reading; và round-trip JSON telemetry. Một test enforcement bằng reflection
 (`EveryCheckIsWiredOrAcknowledged`) khiến việc một lớp con âm thầm bỏ qua một bài kiểm tra trở thành
 **test ĐỎ**, không phải lỗ hổng vô hình — cơ chế AcknowledgedGaps chỉ dùng cho một phát hiện THẬT, đang
 mở, đã báo cáo, không phải cách lách một bài kiểm tra bất tiện.
+
+**Khả năng chứng minh sai (falsifiability) — đếm lại cho đúng (đợt review toàn batch):** chỉ **5 trong 9**
+bài được chứng minh — bằng một driver giả cố ý KHÔNG tuân thủ — là sẽ THẬT SỰ fail nếu cơ chế nó kiểm tra
+bị gỡ bỏ. **4 trong 9 thì KHÔNG**: độ ổn định `Id`/`Kind` (đã ghi ở dưới) **cộng với cả BA bài kiểm tra
+idempotent của `DisposeAsync`** (chưa enumerate / sau khi huỷ / sau khi enumerate xong) — ba bài sau
+TRƯỚC ĐÂY CHƯA từng được ghi ở bất kỳ đâu trong tài liệu này. Chiều ngược lại cũng có lỗi, nhưng theo
+hướng có lợi cho `Health`: nó bị ĐÁNH GIÁ THẤP, không phải thổi phồng — `Health` có **bốn** negative-control
+riêng (hai bài chứng minh vòng lặp device-backed thật sự chạy, một bài chứng minh cơ chế `sawConnected`
+độc lập có tác dụng trước vi phạm thoáng qua, một bài chứng minh nhánh device-less có thể chứng minh sai
+được); chỉ có baseline `Enum.IsDefined` của nó là chưa có kiểm-chứng-âm riêng.
 
 **Áp dụng cho 4 trong số các implementation `IDeviceDriver` của codebase này** — `SimulatedDriver`,
 `ModbusTcpDriver`, `OpcUaDriver`, `HotFolderAoiDriver` (mọi driver mà `Program.cs` THẬT SỰ nối dây vào một
@@ -3052,8 +3100,12 @@ gap dưới đây đã đóng bởi GP-6b). Trong quá trình đó, bộ kiểm 
 **Khoảng trống coverage, ghi nhận trung thực (không giấu):**
 - **`Waveforms`** hiện không được bất kỳ driver thật nào populate — chưa có gì đang chạy sản xuất tạo ra
   một entry `DeviceReading.Waveforms`, nên bài kiểm tra round-trip chưa từng thực sự so sánh nó.
-- **Độ ổn định `Id`/`Kind` và baseline `Health` chưa có fake kiểm-chứng-âm (negative-control)** — mọi bài
-  kiểm tra khác đều đã chứng minh fail với driver cố ý hỏng; hai bài này mới chỉ chạy qua driver tuân thủ.
+- **4 trong 9 bài kiểm tra chưa có fake kiểm-chứng-âm (negative-control) riêng** — mọi bài khác đều đã
+  chứng minh fail với driver cố ý hỏng; bốn bài này mới chỉ chạy qua driver tuân thủ: độ ổn định
+  `Id`/`Kind`, và cả **ba bài kiểm tra idempotent của `DisposeAsync`** (chưa enumerate, sau khi huỷ, sau
+  khi enumerate xong) — ba bài sau trước đây chưa từng được ghi ở bất kỳ đâu trong tài liệu này. Baseline
+  của `Health` là NGOẠI LỆ hẹp duy nhất chưa có kiểm-chứng-âm — nhìn chung `Health` là bài được phủ tốt
+  nhất ở đây (bốn negative-control riêng; xem đoạn falsifiability của §19.5 phía trên).
 - **Hai trong số sáu implementation `IDeviceDriver` của repo này CHƯA nằm dưới conformance test:**
   `MqttDriver` (§6.2 — chỉ được chứng minh qua bộ test, `Program.cs` chưa bao giờ nối dây nó vào một host
   đang chạy) và, đáng chú ý hơn, **`ScenarioAwareDriver`** — wrapper mà `FleetHost` THẬT SỰ lắp vào slot
@@ -3093,19 +3145,42 @@ hằng số hardcode chỉ mới huỷ được, chưa cấu hình được (OPC
   but no sidecar, loader, or process boundary exists yet.
 - **`connectors.json` cannot yet onboard an arbitrary third party.** It dispatches only to Modbus and
   OPC-UA (`Program.cs`'s own dispatch `switch`), because no plugin-loading mechanism exists. Its
-  practical value today is "configure Modbus/OPC-UA without the two environment variables" — **not**
-  "add a connector by configuration alone."
+  practical value today is "configure Modbus/OPC-UA without the two `*_ENABLED` environment variables" —
+  **not** "add a connector by configuration alone." **Correction (batch review): "the two environment
+  variables" understates it** — `ST4I_MODBUS_HOST`/`ST4I_MODBUS_PORT`/`ST4I_OPCUA_PKI_DIR` still come
+  from the environment regardless of whether a connector was configured via the two `*_ENABLED` vars or
+  via `connectors.json`: `Program.cs` builds ONE `ModbusConnectorFactory`/`OpcUaConnectorFactory` per kind
+  from `ModbusOptions`/`OpcUaOptions` (both `FromEnvironment()`-sourced) and reuses that same instance for
+  BOTH the env-var path and any `connectors.json` entry of the same kind — only the register/node MAP
+  (`settings`) is genuinely swappable via `connectors.json` today.
 - **The `id`/`kind` split has no functional effect today** — the registry is one-factory-per-kind, and
-  `id` is used only for log/slot-label naming.
+  `id` is used only for log/slot-label naming (see §19.4's own doc correction: `GET /v1/connectors`'
+  `id` field is actually the registry key — the normalized `kind` — not a `connectors.json` entry's own
+  `id`, which is discarded after config loading).
 - **A known hazard for whoever builds the loader:** the simulated-fleet carve-out means a connector
   registered under a **built-in** id (notably `Simulated`) could re-open a double-drive path where two
   pipelines write the same machine and corrupt cycle counts. **Unreachable today** — no dispatch path
   registers arbitrary ids — **but it goes live the moment a plugin loader exists**, and that loader
   **must reject third-party registration under any built-in id.**
-- **Conformance coverage gaps** (repeated from §19.5 for visibility here): `Waveforms` is exercised by no
-  real driver's output; `Id`/`Kind` and the `Health` baseline have no dedicated negative control; and
-  `ScenarioAwareDriver` — the wrapper `FleetHost` actually installs in the simulated slot — is not itself
-  under conformance test.
+- **A second, narrower hazard for the same future loader (batch review, fix 1):** a cancellation callback
+  a third-party driver registers on the token `ReadAsync` receives (`CancellationToken.Register`, per
+  `IDeviceDriver.ReadAsync`'s own doc comment) runs SYNCHRONOUSLY, on the E-STOP caller's thread, while
+  `FleetHost` holds `_gate` — `FleetHost.StopLocked` now catches a THROWING callback per-slot so it can
+  never abort the `EstopEngaged` latch or any sibling slot's cancellation, but a callback that is merely
+  SLOW (never throws) still stalls that same E-STOP transition for as long as it runs; there is no
+  independent timeout around the callback itself.
+- **Conformance coverage gaps** (repeated from §19.5 for visibility here, corrected count — batch review):
+  `Waveforms` is exercised by no real driver's output; 4 of the suite's 9 checks have no dedicated
+  negative control (`Id`/`Kind` stability, plus all three `DisposeAsync` idempotency checks — `Health`'s
+  own baseline is the only part of THAT check without one, `Health` overall being the best-covered check
+  here); the `ModelsExternalDeviceConnection = false` escape hatch (used by
+  `HotFolderAoiDriverConformanceTests`) guts not one but TWO checks — Health, and the second assertion of
+  `Check_Construction_IsNonBlocking_AndPerformsNoIO` — and lets a REAL, known violation through silently:
+  `HotFolderAoiDriver`'s constructor calls `Directory.CreateDirectory` three times and constructs a
+  `FileSystemWatcher`, a direct violation of `IDeviceDriver`'s own "construction performs no I/O" rule
+  (deliberately not fixed here — a separate decision, and this driver is only ever constructed off
+  `FleetHost`'s `_gate` today, unlike Modbus/OPC-UA); and `ScenarioAwareDriver` — the wrapper `FleetHost`
+  actually installs in the simulated slot — is not itself under conformance test.
 - **The contract assembly is not published to NuGet** — a third party references it from source today.
 - **Not started:** `plugin.yaml`/SemVer `apiVersion`/`configSchema`-driven UI/plugin signing.
 
@@ -3115,14 +3190,36 @@ IPC ngay từ bây giờ (round-trip JSON lossless, §19.2) để sidecar có th
 CHƯA có sidecar, loader, hay ranh giới tiến trình nào tồn tại. **`connectors.json` CHƯA thể onboard một
 bên thứ ba bất kỳ.** Nó chỉ dispatch được tới Modbus và OPC-UA (switch dispatch của chính `Program.cs`),
 vì chưa có cơ chế nạp plugin. Giá trị thực tế hôm nay là "cấu hình Modbus/OPC-UA mà không cần 2 biến môi
-trường" — KHÔNG PHẢI "thêm connector chỉ bằng cấu hình." **Việc tách `id`/`kind` CHƯA có tác dụng chức
-năng nào hôm nay** — registry là một-factory-một-kind, `id` chỉ dùng để đặt tên log/slot. **Một rủi ro đã
+trường `*_ENABLED`" — KHÔNG PHẢI "thêm connector chỉ bằng cấu hình." **Đính chính (đợt review toàn
+batch): "2 biến môi trường" nói giảm** — `ST4I_MODBUS_HOST`/`ST4I_MODBUS_PORT`/`ST4I_OPCUA_PKI_DIR` vẫn
+lấy từ môi trường bất kể connector được cấu hình qua 2 biến `*_ENABLED` hay qua `connectors.json`:
+`Program.cs` dựng ĐÚNG MỘT `ModbusConnectorFactory`/`OpcUaConnectorFactory` cho mỗi loại từ
+`ModbusOptions`/`OpcUaOptions` (đều lấy từ `FromEnvironment()`) và dùng lại CHÍNH instance đó cho cả
+đường env-var lẫn mọi entry `connectors.json` cùng loại — chỉ riêng MAP thanh ghi/node (`settings`) mới
+thực sự thay được qua `connectors.json` hôm nay. **Việc tách `id`/`kind` CHƯA có tác dụng chức
+năng nào hôm nay** — registry là một-factory-một-kind, `id` chỉ dùng để đặt tên log/slot (xem đính chính ở
+§19.4: trường `id` của `GET /v1/connectors` thực ra là khoá registry — `kind` đã chuẩn hoá — không phải
+`id` riêng của entry `connectors.json`, vốn đã bị bỏ sau khi load config). **Một rủi ro đã
 biết cho ai xây loader sau này:** carve-out cho simulated-fleet nghĩa là một connector đăng ký dưới một id
 **có sẵn** (đặc biệt `Simulated`) có thể MỞ LẠI đường double-drive khiến hai pipeline cùng ghi một máy và
 làm hỏng số đếm chu kỳ. **KHÔNG THỂ xảy ra hôm nay** — không có đường dispatch nào đăng ký id tuỳ ý — **NHƯNG
 sẽ trở thành THẬT ngay khi có plugin loader**, và loader đó **PHẢI từ chối đăng ký bên thứ ba dưới bất kỳ id
-có sẵn nào.** **Khoảng trống coverage conformance** (nhắc lại từ §19.5 để dễ thấy ở đây): `Waveforms` chưa
-được driver thật nào populate; baseline `Id`/`Kind` và `Health` chưa có negative-control riêng;
-`ScenarioAwareDriver` — wrapper `FleetHost` THẬT SỰ lắp vào slot mô phỏng — CHƯA tự nó nằm dưới conformance
-test. **Assembly hợp đồng chưa publish lên NuGet** — bên thứ ba hiện tham chiếu từ mã nguồn. **Chưa bắt
+có sẵn nào.** **Rủi ro thứ hai, hẹp hơn, cho cùng loader tương lai (đợt review, fix 1):** một callback
+huỷ mà driver bên thứ ba đăng ký trên token `ReadAsync` nhận được chạy ĐỒNG BỘ, trên thread gọi E-STOP,
+trong khi `FleetHost` giữ `_gate` — `FleetHost.StopLocked` nay bắt callback THROW theo từng slot để không
+bao giờ chặn được latch `EstopEngaged` hay việc huỷ các slot khác, nhưng một callback chỉ CHẬM (không
+throw) vẫn làm chậm chính giao dịch E-STOP đó; chưa có timeout riêng cho bản thân callback.
+**Khoảng trống coverage conformance** (nhắc lại từ §19.5 để dễ thấy ở đây, đã đếm lại cho đúng — đợt
+review toàn batch): `Waveforms` chưa được driver thật nào populate; 4 trong 9 bài kiểm tra của bộ suite
+chưa có negative-control riêng (độ ổn định `Id`/`Kind`, cộng cả ba bài idempotent của `DisposeAsync` —
+baseline của `Health` là phần DUY NHẤT của bài đó chưa có, `Health` nhìn chung là bài được phủ tốt nhất ở
+đây); cờ thoát hiểm `ModelsExternalDeviceConnection = false` (dùng bởi
+`HotFolderAoiDriverConformanceTests`) làm mất tác dụng không chỉ MỘT mà HAI bài kiểm tra — Health, và
+assertion thứ hai của `Check_Construction_IsNonBlocking_AndPerformsNoIO` — và để lọt một vi phạm THẬT, đã
+biết, một cách im lặng: constructor của `HotFolderAoiDriver` gọi `Directory.CreateDirectory` ba lần và
+dựng một `FileSystemWatcher`, vi phạm trực tiếp quy tắc "constructor không I/O" của chính `IDeviceDriver`
+(cố ý CHƯA sửa ở đây — một quyết định khác, và driver này hôm nay chỉ được dựng ngoài `_gate` của
+`FleetHost`, không giống Modbus/OPC-UA); và `ScenarioAwareDriver` — wrapper `FleetHost` THẬT SỰ lắp vào
+slot mô phỏng — CHƯA tự nó nằm dưới conformance test. **Assembly hợp đồng chưa publish lên NuGet** — bên
+thứ ba hiện tham chiếu từ mã nguồn. **Chưa bắt
 đầu:** `plugin.yaml`/SemVer `apiVersion`/UI sinh từ `configSchema`/ký số plugin.)*

@@ -383,6 +383,98 @@ public sealed class FleetHostConnectorRegistryTests
             "_gate must be free during that disposal (off-lock), not held for its duration.");
     }
 
+    [Fact]
+    public async Task Estop_OneSlotsCancellationRegistrationThrows_LatchesAnyway_AndCancelsOtherSlotsToo()
+    {
+        // Batch review, fix 1 — CancellationTokenSource.Cancel() runs every registered callback
+        // SYNCHRONOUSLY on the calling thread and rethrows any exception one of them throws.
+        // ModbusTcpDriver.PollOnceAsync registers exactly this shape of ct.Register(...) callback (the
+        // repo's first) on the very token FleetHost.StopLocked cancels with _gate held — a third-party
+        // driver mirroring that pattern with a MISBEHAVING (throwing) callback must never be able to abort
+        // Estop() before it latches EstopEngaged or before it cancels every OTHER slot.
+        // ThrowsFromCancellationRegistrationDriver below reproduces that exact shape. Before fix 1, this
+        // test fails: Estop() propagates the callback's exception straight out to the caller, EstopEngaged
+        // never latches, and _slots is never cleared (machinery kept "running" even though the caller
+        // believes E-STOP failed).
+        var throwingDriver = new ThrowsFromCancellationRegistrationDriver("vendor.acme.throws-on-cancel");
+        var siblingDriver = new CountingDriver("vendor.acme.sibling-of-throws", "SIBLING-01");
+        var registry = new ConnectorRegistry();
+        registry.Register(new FakeConnectorFactory("vendor.acme.throws-on-cancel", () => throwingDriver), config: "x");
+        registry.Register(new FakeConnectorFactory("vendor.acme.sibling-of-throws", () => siblingDriver), config: "y");
+        var host = CreateHost(registry);
+
+        host.Start();
+        try
+        {
+            await WaitUntilAsync(() => siblingDriver.Count > 0, "the sibling connector's slot to actually run before Estop");
+
+            // THE load-bearing assertion: Estop() must not throw even though one slot's Cts.Cancel() will.
+            var ex = Record.Exception(() => host.Estop());
+            Assert.Null(ex);
+
+            // ... and it must have genuinely completed the transition, not merely swallowed the exception
+            // and bailed out early.
+            Assert.True(host.EstopEngaged, "Estop() must latch EstopEngaged even when one slot's cancellation registration throws");
+            Assert.False(host.IsRunning, "Estop() must still clear every slot despite the throwing registration");
+
+            // ... and the OTHER slot must still have been torn down (cancelled + disposed) — a per-slot
+            // catch, not a whole-loop bail-out, is what fix 1 requires.
+            await WaitUntilAsync(() => siblingDriver.Disposed, "the sibling slot to still be cancelled and disposed despite the throwing slot");
+            await WaitUntilAsync(() => throwingDriver.Disposed, "the throwing slot itself to still be disposed, not leaked");
+        }
+        finally
+        {
+            // Best-effort cleanup only — if the primary assertions above already failed (e.g. a regression
+            // reintroducing the pre-fix bug), a second Estop() attempt could throw the SAME way; never let
+            // that mask the real assertion failure.
+            try { if (!host.EstopEngaged) host.Estop(); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>Test double for fix 1 (batch review) — mirrors <c>ModbusTcpDriver.PollOnceAsync</c>'s
+    /// <c>ct.Register(DisposeConnection)</c> pattern exactly, except this registration deliberately THROWS:
+    /// the misbehaving-third-party-driver shape <see cref="FleetHostConnectorRegistryTests.Estop_OneSlotsCancellationRegistrationThrows_LatchesAnyway_AndCancelsOtherSlotsToo"/>
+    /// proves <see cref="FleetHost"/> survives. <see cref="FleetHost.StopLocked"/> calls
+    /// <c>slot.Cts.Cancel()</c> with <c>_gate</c> held, which runs this registration SYNCHRONOUSLY and would
+    /// (pre-fix) propagate straight out of <see cref="FleetHost.Estop"/>.</summary>
+    private sealed class ThrowsFromCancellationRegistrationDriver : IDeviceDriver
+    {
+        private volatile bool _disposed;
+
+        public ThrowsFromCancellationRegistrationDriver(string kind) => Kind = kind;
+
+        public bool Disposed => _disposed;
+        public string Id => $"throws-on-cancel-{Kind}-driver";
+        public string Kind { get; }
+        public DriverHealthState Health => DriverHealthState.Connected;
+
+        public async IAsyncEnumerable<DeviceReading> ReadAsync([EnumeratorCancellation] CancellationToken ct)
+        {
+            using var registration = ct.Register(() =>
+                throw new InvalidOperationException(
+                    "ThrowsFromCancellationRegistrationDriver: simulated misbehaving cancellation callback (test double)."));
+
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return new DeviceReading
+                {
+                    MachineCode = "VENDOR-THROWS-ON-CANCEL",
+                    Kind = ReadingKind.Telemetry,
+                    SerialNumber = "SN-VENDOR-THROWS-ON-CANCEL",
+                    Timestamp = DateTimeOffset.UtcNow,
+                };
+                await Task.Delay(TimeSpan.FromMilliseconds(20), ct).ConfigureAwait(false);
+            }
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class FakeConnectorFactory : IConnectorFactory
     {
         private readonly Func<IDeviceDriver> _build;

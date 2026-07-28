@@ -14,7 +14,7 @@ namespace St4i.EdgeCore.Tests.Drivers;
 /// this class is what actually exercises <c>DeviceReadingEquality.CompareGenealogy</c>/<c>CompareMeasurement</c>/
 /// <c>Values3dEquals</c>/the <see cref="Bbox"/> path with a REAL driver's output; none of
 /// <c>SimulatedDriver</c>/<c>ModbusTcpDriver</c>/<c>OpcUaDriver</c> ever populate those fields. All 9 checks
-/// pass — no known gap.
+/// pass — but see the batch-review finding below for a KNOWN gap in what "pass" means for one of them.
 ///
 /// <para><b>Interpretation call, flagged per task-6-report.md's own convention:</b>
 /// <see cref="ModelsExternalDeviceConnection"/> is overridden <see langword="false"/> here. Unlike
@@ -29,6 +29,24 @@ namespace St4i.EdgeCore.Tests.Drivers;
 /// exemption is for), not a literal reading of this driver's own doc comment — which I judge to currently be
 /// SILENT on the point, not explicit either way. I did not change <see cref="HotFolderAoiDriver"/>'s
 /// behaviour or doc comment to resolve this; see task-6-report.md for the full writeup.</para>
+///
+/// <para><b>Batch review finding — that same override also guts a SECOND check, and hides a REAL
+/// violation.</b> <see cref="ModelsExternalDeviceConnection"/> = <see langword="false"/> also gates
+/// <see cref="Check_Construction_IsNonBlocking_AndPerformsNoIO"/>'s second assertion (see that flag's own
+/// doc comment, batch review fix 4) — and <see cref="HotFolderAoiDriver"/>'s constructor genuinely violates
+/// <see cref="IDeviceDriver"/>'s class-level "construction is non-blocking and performs no I/O" rule: it
+/// calls <c>Directory.CreateDirectory</c> three times (<c>watchDir</c>/<c>archiveDir</c>/<c>errorDir</c>)
+/// and constructs a real <see cref="System.IO.FileSystemWatcher"/>. With the flag at its default (device-
+/// backed) value, the gutted assertion would still have run and (being a proxy for "no I/O", not a direct
+/// I/O detector) would likely still have passed since none of that work touches <c>Health</c> — so this is
+/// recorded here as a KNOWN, currently-undetected conformance gap rather than left silently passing with no
+/// trace: the timing-only first assertion is all that actually protects this driver's constructor today.
+/// Deliberately NOT fixed by changing <see cref="HotFolderAoiDriver"/> itself here — that is a separate
+/// decision (this task's scope is the conformance-suite/documentation seam, not this driver's behaviour),
+/// and the practical E-STOP-blocking risk the "no I/O in the constructor" rule exists to prevent does not
+/// apply to this SPECIFIC driver today: <c>Program.cs</c> only ever constructs it off <c>FleetHost</c>'s
+/// <c>_gate</c> (unlike Modbus/OPC-UA connectors, which <c>ConnectorRegistry.TryCreateDriver</c> constructs
+/// WITH <c>_gate</c> held).</para>
 /// </summary>
 public sealed class HotFolderAoiDriverConformanceTests : DeviceDriverConformanceSuite
 {

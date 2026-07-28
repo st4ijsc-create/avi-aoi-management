@@ -16,9 +16,13 @@ namespace St4i.Connector.Conformance.Tests.Fakes;
 internal sealed class ConnectsInConstructorHarness : DeviceDriverConformanceSuite
 {
     // No ModelsExternalDeviceConnection override here — this harness only ever has
-    // Check_Construction_IsNonBlocking_AndPerformsNoIO invoked against it, which doesn't consult that flag
-    // at all. task-6-report.md "Fix round 1" (IMPORTANT 2) flagged an earlier `=> false` override here as an
-    // unjustified, unused example of the escape hatch — removed rather than left as a bad precedent.
+    // Check_Construction_IsNonBlocking_AndPerformsNoIO invoked against it, which DOES consult that flag (it
+    // gates the check's second, "Health not already Connected" assertion — see
+    // DeviceDriverConformanceSuite.ModelsExternalDeviceConnection's own doc comment, batch review fix 4).
+    // Left at its default (true) deliberately: ConnectsInConstructorFakeDriver is exactly the device-backed
+    // violation that second assertion exists to catch, so gating it away here would defeat this harness's
+    // own purpose. task-6-report.md "Fix round 1" (IMPORTANT 2) flagged an earlier `=> false` override here
+    // as an unjustified, unused example of the escape hatch — removed rather than left as a bad precedent.
     protected override bool IsConformanceTarget => false;
 
     protected override IDeviceDriver CreateDriver() => new ConnectsInConstructorFakeDriver();

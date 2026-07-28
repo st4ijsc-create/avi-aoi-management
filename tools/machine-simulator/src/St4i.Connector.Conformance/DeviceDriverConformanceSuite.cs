@@ -119,6 +119,22 @@ public abstract class DeviceDriverConformanceSuite
     /// negative-control fake whose <see cref="IDeviceDriver.Health"/> is irrelevant to what it exists to
     /// prove) should simply leave this at its default rather than override it to <see langword="false"/> for
     /// no stated reason.</para>
+    ///
+    /// <para><b>Batch review finding — this flag guts a SECOND check too, not just Health.</b>
+    /// <see cref="Check_Construction_IsNonBlocking_AndPerformsNoIO"/>'s second, independent assertion (the
+    /// "Health is not already Connected the instant construction returns" proxy for "the constructor
+    /// performed no I/O") is ALSO gated behind this same flag — flipping it to <see langword="false"/>
+    /// reduces that check to its first assertion alone (a bare stopwatch), for exactly the same reason the
+    /// Health check is gutted: a device-less driver's <see cref="IDeviceDriver.Health"/> reading proves
+    /// nothing either way, so there is nothing left for the proxy to check. A subclass overriding this MUST
+    /// weigh BOTH checks' loss, not just Health's — <c>HotFolderAoiDriverConformanceTests</c> is the one
+    /// example in this repo today: its override lets <c>HotFolderAoiDriver</c>'s constructor (which calls
+    /// <c>Directory.CreateDirectory</c> three times and constructs a <see cref="System.IO.FileSystemWatcher"/>
+    /// — real I/O, a direct violation of this interface's own class-level "construction is non-blocking and
+    /// performs no I/O" rule) pass silently instead of being caught by the timing assertion it would
+    /// otherwise still have to clear on every run. See that test class's own doc comment for the full
+    /// writeup of this known, un-acknowledged gap (deliberately not fixed here — the driver itself is a
+    /// separate decision, and it is only ever constructed off <c>FleetHost</c>'s <c>_gate</c> today).</para>
     /// </summary>
     protected virtual bool ModelsExternalDeviceConnection => true;
 
@@ -230,9 +246,15 @@ public abstract class DeviceDriverConformanceSuite
     /// "ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable") of checks this subclass deliberately does
     /// NOT wire as a passing <c>[Fact]</c>. Use this ONLY for a genuine, reported finding (a <c>KnownGap_*</c>
     /// test pinning real, currently-broken driver behaviour — see task-6-report.md §5) — never as a way to
-    /// quietly skip a check that is merely inconvenient. <see cref="EveryCheckIsWiredOrAcknowledged"/> still
-    /// requires every name here to correspond to a REAL <c>Check_*</c> method (a stale/misspelled entry is
-    /// itself a defect this could otherwise hide).
+    /// quietly skip a check that is merely inconvenient.
+    ///
+    /// <para><b>Small doc correction (batch review): a stale/misspelled entry here is NOT itself validated.</b>
+    /// <see cref="EveryCheckIsWiredOrAcknowledged"/>/<see cref="FindUnwiredAndUnacknowledgedChecks"/> only
+    /// subtract this set from the REAL <c>Check_*</c> names to find what's still missing — a name in here
+    /// that doesn't match any real check is simply inert (it matches nothing, so it neither hides a genuine
+    /// gap nor is itself flagged as wrong). This fails SAFE — a real unwired check is still reported
+    /// regardless — but nothing here actually detects the stale entry itself; that would need a separate,
+    /// currently-unwritten check.</para>
     /// </summary>
     protected virtual ISet<string> AcknowledgedGaps { get; } = new HashSet<string>();
 
@@ -379,10 +401,17 @@ public abstract class DeviceDriverConformanceSuite
     /// currently-wired test ever exercised): (1) <c>sawConnected</c>, checked on every yielded reading
     /// throughout the whole drive — catches a driver that reports <see cref="DriverHealthState.Connected"/>
     /// TRANSIENTLY and something else by the time enumeration ends; (2) the final single-sample assertion —
-    /// catches a driver that is simply, persistently wrong. Proven independently load-bearing in
-    /// task-6-report.md's negative controls (<c>ReusesReadingInstanceHarness</c>/
-    /// <c>MutatesSharedTelemetryListHarness</c>, both device-backed fakes that DO yield readings while
-    /// reporting Connected).</para>
+    /// catches a driver that is simply, persistently wrong.</para>
+    ///
+    /// <para><b>Small doc correction (batch review):</b> <c>ReusesReadingInstanceHarness</c>/
+    /// <c>MutatesSharedTelemetryListHarness</c> (both device-backed fakes that DO yield readings while
+    /// reporting Connected) prove only that this loop body ISN'T dead code — their own Health is a CONSTANT
+    /// Connected, so <c>NegativeControlTests</c>' own "Honesty note" on those two controls explicitly
+    /// retracts any claim that they isolate <c>sawConnected</c> specifically (the final single-sample
+    /// assertion alone would already catch a driver that is Connected the WHOLE time). <c>sawConnected</c>'s
+    /// OWN independent load-bearing-ness is proven by <c>TransientlyConnectedThenDownFakeDriver</c> alone
+    /// (Connected only for a short window, then Down for the rest of the drive — the final single-sample
+    /// assertion would miss that transient violation entirely; only <c>sawConnected</c> catches it).</para>
     /// </summary>
     public virtual async Task Check_Health_OnlyTakesDocumentedValues_AndIsSaneWithNoDevice()
     {

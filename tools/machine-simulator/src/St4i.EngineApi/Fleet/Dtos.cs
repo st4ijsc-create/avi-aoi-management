@@ -166,5 +166,12 @@ public sealed record ApiErrorDto(string Error);
 // ConnectorRegistry) but not currently running because its last start attempt failed. See
 // FleetHost.GetConfiguredConnectorIssues's own doc comment for why this is deliberately informational,
 // never a /v1/health fault.
+//
+// Small doc correction (batch review) — `Id` here is actually the REGISTRY KEY, i.e. the normalized
+// `kind` (see ConnectorRegistry's own doc comment on id-comparison semantics), NOT a connectors.json
+// entry's own `id` field: ConnectorsConfig.Load reads that field only to NAME per-entry warnings, then
+// discards it — ConnectorRegistry.Register keys purely on IConnectorFactory.Kind. A connectors.json entry
+// `{"id":"line3-weld","kind":"Modbus"}` therefore surfaces here as `{"id":"Modbus","error":...}`. See
+// README §19.4 for the fuller writeup and why this is documented rather than renamed.
 // ─────────────────────────────────────────────────────────────────────────
 public sealed record ConnectorStatusDto(string Id, string Error);
