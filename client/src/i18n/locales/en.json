@@ -14342,6 +14342,7 @@
     "unsaved": "Unsaved",
     "kind": "Device type",
     "language": "Language",
+    "manualHelp": "Manual",
     "lines": "lines",
     "name": "Name",
     "newProject": "New project",

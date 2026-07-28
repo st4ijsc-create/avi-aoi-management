@@ -769,14 +769,40 @@ export async function completeInline(input: CompleteInlineInput): Promise<Comple
 
   try {
     const { generateFim, stripThinking } = await import("../aiGgufEngine");
-    const res = await generateFim({
-      prefix,
-      suffix,
-      maxTokens: clampInlineMaxTokens(input?.maxTokens),
-      temperature: 0.1,
-      // Stop at a blank line — inline completion is a short infill, not a whole file.
-      stopSequences: ["\n\n"],
-    });
+
+    // Doc69 W2-C — resolve the model EXPLICITLY before calling generateFim instead of
+    // leaving the second arg `undefined` (the OLD call shape below). Wave 1's lesson:
+    // getOrLoadModel(undefined) can reuse whatever model happens to already be resident
+    // (including the embedder) rather than the intended FIM/code model. This also fixes a
+    // real bug: the undefined-arg call bypassed aiModelRouter entirely, so AI_CODE_ROUTER_
+    // ENABLED had ZERO effect on ghost-text. Prefer the router's task:"fim" tier (honors
+    // the flag when it's on); if that resolves to nothing, fall back to the same
+    // fimModelBasename() chain (GGUF_FIM_MODEL → GGUF_FAST_MODEL → GGUF_DEFAULT_MODEL)
+    // generateFim itself would otherwise apply internally — so this never regresses to
+    // "no model", it only ever makes the choice explicit.
+    let modelId: string | undefined;
+    try {
+      const { route } = await import("../aiModelRouter");
+      modelId = route({ task: "fim", text: prefix.slice(-200) }).modelId;
+    } catch {
+      /* best-effort routing — fall through to the resolver backstop below */
+    }
+    if (!modelId) {
+      const { fimModelBasename } = await import("../ai/modelResolver");
+      modelId = fimModelBasename();
+    }
+
+    const res = await generateFim(
+      {
+        prefix,
+        suffix,
+        maxTokens: clampInlineMaxTokens(input?.maxTokens),
+        temperature: 0.1,
+        // Stop at a blank line — inline completion is a short infill, not a whole file.
+        stopSequences: ["\n\n"],
+      },
+      modelId,
+    );
     const raw = (res?.text ?? "").toString();
     if (!raw) return { completion: "" };
     const { answer } = stripThinking(raw);

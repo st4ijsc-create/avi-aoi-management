@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -436,11 +437,18 @@ export default function PouStudio() {
                 </div>
               )
             ) : (
-              <Textarea
-                className="min-h-[560px] font-mono text-xs"
-                spellCheck={false}
+              <CodeEditor
                 value={jsonText}
-                onChange={(e) => setJsonText(e.target.value)}
+                onChange={setJsonText}
+                language="json"
+                height="560px"
+                aria-label="pou-json"
+                // doc69 · Wave 2 / C — this is the hand-authoring surface for the POU model
+                // (the JSON escape hatch alongside the graphical Canvas view); previously a
+                // plain <Textarea> with no editor affordances at all. Swapping to the shared
+                // CodeEditor picks up line numbers + bracket matching for free and, opt-in,
+                // ghost-text completion — same as the other code-authoring surfaces.
+                inlineCopilot
               />
             )}
             {/* Live lint indicator */}

@@ -31,6 +31,10 @@ import { buildBreadcrumbs } from "@/lib/breadcrumbs";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
 import { LadderEditor } from "@/components/engineering/LadderEditor";
 import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
+// Doc 69 · Wave 2 / C — page-cited vendor-manual lookup (doc 37 B1), now reaching the actual
+// code-authoring surface (previously only on AndonBoard/DeviceAdapterManagement — no screen
+// where an engineer TYPES a program had it).
+import ManualHelp from "@/components/ManualHelp";
 // Doc 34 · P3 — embed the in-app Programming Copilot (LLM codegen, validated by the substrate).
 import { COPILOT_KINDS, type CopilotKind } from "@/components/programming/ProgrammingCopilotPanel";
 import { useCopilotBinding, useProgrammingCopilot } from "@/contexts/ProgrammingCopilotContext";
@@ -991,6 +995,19 @@ export default function EngineeringWorkspace() {
                           </button>
                         </div>
                       )}
+                      {/* Doc 69 · Wave 2 / C — manual lookup right where the code is written.
+                          ManualHelp has no dedicated "kind" filter prop (query/vendor/lang only,
+                          see client/src/components/ManualHelp.tsx) — the selected kind + language
+                          are folded into the free-text query (same pattern as
+                          DeviceAdapterManagement.tsx's protocol-scoped lookup); no vendor is
+                          known for a device-programming project here, so `vendor` is left unset
+                          (widens the search rather than silently filtering to nothing). */}
+                      <ManualHelp
+                        query={`${project?.kind ?? ""} ${language} programming syntax reference`.trim()}
+                        buttonLabel={t("engineering.manualHelp", "Sổ tay")}
+                        size="sm"
+                        variant="ghost"
+                      />
                       <span className="ml-auto text-xs text-muted-foreground">{code.split("\n").length} {t("engineering.lines", "dòng")}</span>
                     </div>
                     {visualKind && editorMode === "visual" ? (

@@ -315,6 +315,11 @@ export function ProgrammingCopilotPanel({
             height={ctxHeight}
             placeholder={t("progCopilot.contextPh", "Paste the program to complete / translate / review / explain…")}
             aria-label="copilot-context"
+            // doc69 · Wave 2 / C — this is the editable INPUT surface (the engineer types/pastes
+            // the program to complete/translate/review/explain); ghost-text helps here. The
+            // RESULT editor below (aria-label="copilot-result") stays WITHOUT this prop — it is
+            // for reviewing/copying the model's own output, not a fresh authoring surface.
+            inlineCopilot
           />
         </div>
       )}
