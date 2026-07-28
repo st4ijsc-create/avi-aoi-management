@@ -78,6 +78,8 @@ export interface KbCitation {
   // ONLY — never an arbitrary string). null/absent when unresolvable: the FE must
   // render the citation as plain, non-clickable text (honest).
   route?: string | null;
+  /** Wave 2 — nguồn của trích dẫn. Vắng mặt = "system" (giữ nguyên hành vi cũ cho mọi consumer). */
+  origin?: "system" | "studio";
 }
 
 // zh — language union extended to include Chinese (backward-compatible: extra branch).
@@ -1767,6 +1769,49 @@ export async function retrieveKnowledge(
   const top1 = ranked[0]?.score ?? 0.25;
   const top2 = ranked[Math.min(1, ranked.length - 1)]?.score ?? 0.2;
   const confidence = clamp01((top1 + top2) / 1.6);
+
+  // Wave 2 đường B — bổ sung nguồn "tài liệu người dùng nạp" (kho Training Studio).
+  // Kho này ĐÃ có searchCorpus() (server/services/kbVectorStore.ts:180) nhưng chưa
+  // từng có caller ⇒ tài liệu nạp vào không bao giờ tới được trợ lý. Bổ sung, KHÔNG
+  // thay thế: mọi lỗi ⇒ giữ nguyên kết quả corpus file (citations/contexts ở trên).
+  // Chỉ chạy khi qVec khác null — nếu embed-model của corpus lệch (guard
+  // computeEmbedModelMatches ở trên đã từ chối vector), không có cách so khớp hợp lệ
+  // với kho Studio nên bỏ qua nhánh này, KHÔNG nhúng lại (embedQuestion) lần hai.
+  if (qVec) {
+    try {
+      const { gatherStudioHits } = await import("./aiLocalKnowledgeStudio");
+      const studioHits = await gatherStudioHits(qVec, topK);
+      for (const h of studioHits) {
+        citations.push({
+          id: `studio:${h.corpus}:${h.id}`,
+          sourcePath: h.sourceRef,
+          title: h.sourceRef,
+          sourceType: "studio",
+          score: h.score,
+          origin: "studio",
+        });
+        contexts.push(h.text);
+      }
+      // citations/contexts stay index-paired (each push above is 1:1). retrieveKnowledge
+      // has no further topK slice downstream of this point, so re-sort the COMBINED list
+      // by score and cut to finalK here — otherwise a corpus with many Studio hits could
+      // push every system source out of the citations the caller/LLM actually sees.
+      if (studioHits.length > 0 && citations.length > finalK) {
+        const paired = citations.map((c, i) => ({ c, ctx: contexts[i] ?? "" }));
+        paired.sort((a, b) => b.c.score - a.c.score);
+        const trimmed = paired.slice(0, finalK);
+        citations.length = 0;
+        contexts.length = 0;
+        for (const p of trimmed) {
+          citations.push(p.c);
+          contexts.push(p.ctx);
+        }
+      }
+    } catch {
+      // Nhánh Studio hỏng KHÔNG được làm hỏng trợ lý đang chạy — citations/contexts
+      // giữ nguyên kết quả corpus file đã tính ở trên.
+    }
+  }
 
   return {
     question,

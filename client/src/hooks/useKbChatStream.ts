@@ -107,6 +107,9 @@ export interface KbCitation {
   // older payload shapes stay valid.
   id?: string;
   sourceType?: string;
+  // Wave 2 đường B — "system" (KB corpus tệp, mặc định/vắng mặt) hay "studio" (tài
+  // liệu người dùng tự nạp vào Training Studio, server/services/kbVectorStore.ts).
+  origin?: "system" | "studio";
 }
 
 export interface KbStructured {

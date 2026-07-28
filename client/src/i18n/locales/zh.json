@@ -1522,6 +1522,10 @@
     "websocketServer": "WebSocket服务器"
   },
   "ai": {
+    "citation": {
+      "studio": "您上传的文档",
+      "system": "系统知识库"
+    },
     "suggestionsDescription": "建议描述",
     "suggestedAnnotations": "建议标注",
     "submitFeedback": "提交反馈",
@@ -14571,7 +14575,7 @@
       "title": "模型构建",
       "desc": "在语料库上微调本地模型（LoRA）",
       "comingSoon": "将在后续任务中提供（E3-6）",
-      "comingSoonDesc": "LoRA 微调功能尚未构建。目前的语料库已经在 AI 助手中支撑基于检索增强（RAG）的有依据回答 — 专用微调模型是未来的升级项，并非必需项。",
+      "comingSoonDesc": "LoRA 微调功能尚未构建。您已导入语料库的文档现在会被 AI 助手用作回答中的引用来源（标注为“您上传的文档”）— 而专用微调模型仍是未来的升级项，尚未构建。",
       "startButton": "开始微调"
     }
   },

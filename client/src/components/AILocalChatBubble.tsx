@@ -169,6 +169,9 @@ interface ChatMessage {
       route?: string | null;
       id?: string;
       sourceType?: string;
+      // Wave 2 đường B — "system" (KB corpus tệp, mặc định/vắng mặt) hay "studio"
+      // (tài liệu người dùng tự nạp vào Training Studio).
+      origin?: "system" | "studio";
     }>;
     cached?: boolean;
     followUpSuggestions?: string[];
@@ -1484,6 +1487,13 @@ export function AILocalChatBubble() {
                                   ) : (
                                     <span className="break-all">{cite.title || cite.sourcePath}</span>
                                   )}
+                                  {/* Wave 2 đường B — phân biệt nguồn hệ thống vs tài
+                                      liệu người dùng tự nạp (Training Studio). */}
+                                  <Badge variant="outline" className="shrink-0 text-[10px] px-1 py-0 h-4">
+                                    {cite.origin === "studio"
+                                      ? t("ai.citation.studio", "Tài liệu bạn nạp")
+                                      : t("ai.citation.system", "Kho hệ thống")}
+                                  </Badge>
                                 </div>
                               ))}
                             </div>

@@ -1523,6 +1523,10 @@
     "websocketServer": "WebSocket Server"
   },
   "ai": {
+    "citation": {
+      "studio": "Your uploaded documents",
+      "system": "System knowledge base"
+    },
     "suggestionsDescription": "Suggestions description",
     "suggestedAnnotations": "Suggested annotations",
     "submitFeedback": "Submit feedback",
@@ -14014,7 +14018,7 @@
       "title": "Model Builder",
       "desc": "Fine-tune a local model on a corpus (LoRA)",
       "comingSoon": "Coming in a later task (E3-6)",
-      "comingSoonDesc": "LoRA fine-tuning is not built yet. Today's corpora already power RAG-grounded answers in the AI assistant — a dedicated fine-tuned model is a future upgrade, not a requirement.",
+      "comingSoonDesc": "LoRA fine-tuning is not built yet. Documents you've ingested into a corpus are now used by the AI assistant as citation sources (labeled \"Your uploaded documents\") in its answers — a dedicated fine-tuned model is a separate future upgrade, not built yet.",
       "startButton": "Start fine-tune"
     }
   },

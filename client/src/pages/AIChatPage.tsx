@@ -640,6 +640,13 @@ export default function AIChatPage() {
                     ) : (
                       <span className="break-all">{c.title || c.sourcePath}</span>
                     )}
+                    {/* Wave 2 đường B — phân biệt nguồn hệ thống vs tài liệu người
+                        dùng tự nạp (Training Studio), honest về xuất xứ trích dẫn. */}
+                    <Badge variant="outline" className="shrink-0 text-[10px] px-1 py-0 h-4">
+                      {c.origin === "studio"
+                        ? t("ai.citation.studio", "Tài liệu bạn nạp")
+                        : t("ai.citation.system", "Kho hệ thống")}
+                    </Badge>
                   </div>
                 ))}
               </div>

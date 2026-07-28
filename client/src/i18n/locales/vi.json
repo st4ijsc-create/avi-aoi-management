@@ -1523,6 +1523,10 @@
     "websocketServer": "Máy chủ WebSocket"
   },
   "ai": {
+    "citation": {
+      "studio": "Tài liệu bạn nạp",
+      "system": "Kho hệ thống"
+    },
     "suggestionsDescription": "Mô tả gợi ý",
     "alternativeSuggestions": "Gợi ý thay thế",
     "autoDetectDescription": "Tự động phát hiện và gợi ý vùng chú thích",
@@ -13997,7 +14001,7 @@
       "title": "Xây dựng mô hình",
       "desc": "Tinh chỉnh (fine-tune) một mô hình cục bộ trên corpus (LoRA)",
       "comingSoon": "Sẽ có ở tác vụ sau (E3-6)",
-      "comingSoonDesc": "Tinh chỉnh LoRA chưa được xây dựng. Các corpus hiện tại đã hỗ trợ câu trả lời có căn cứ (RAG) trong trợ lý AI — một mô hình tinh chỉnh riêng là nâng cấp tương lai, không phải yêu cầu bắt buộc.",
+      "comingSoonDesc": "Tinh chỉnh (fine-tune) LoRA chưa được xây dựng. Tài liệu bạn đã nạp vào corpus giờ được trợ lý AI dùng làm nguồn trích dẫn (nhãn \"Tài liệu bạn nạp\") trong câu trả lời — còn việc huấn luyện một mô hình tinh chỉnh riêng vẫn là nâng cấp trong tương lai, chưa được xây dựng.",
       "startButton": "Bắt đầu tinh chỉnh"
     }
   },
