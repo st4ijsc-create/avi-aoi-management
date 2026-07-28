@@ -48,4 +48,47 @@ describe("countPendingByPoint", () => {
     });
     await expect(countPendingByPoint(1)).resolves.toEqual({ byPoint: {}, total: 0 });
   });
+
+  // Vòng sửa 1 (review) — "suy giảm phải TRUNG THỰC": lỗi KHÔNG phải missing-table
+  // là BẤT NGỜ (bug/kết nối hỏng/...), phải khác hẳn console.warn im lặng của
+  // trường hợp "chưa migrate". Hai nhánh log khác nhau ⇒ hai test riêng, không gộp.
+  it("lỗi BẤT NGỜ (không phải missing-table) ⇒ vẫn trả rỗng NHƯNG console.error được gọi với lỗi gốc", async () => {
+    const boom = new Error("connection reset by peer");
+    const { getDb } = await import("../db/connection");
+    (getDb as any).mockResolvedValueOnce({
+      select: () => ({ from: () => ({ innerJoin: () => ({ where: () => Promise.reject(boom) }) }) }),
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(countPendingByPoint(1)).resolves.toEqual({ byPoint: {}, total: 0 });
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0]).toContain(boom);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("bảng chưa migrate (42P01) ⇒ console.error KHÔNG được gọi (chỉ console.warn — dự kiến được)", async () => {
+    const inner: any = new Error('relation "threshold_approvals" does not exist');
+    inner.code = "42P01";
+    const wrapped: any = new Error("DrizzleQueryError");
+    wrapped.cause = inner;
+    const { getDb } = await import("../db/connection");
+    (getDb as any).mockResolvedValueOnce({
+      select: () => ({ from: () => ({ innerJoin: () => ({ where: () => Promise.reject(wrapped) }) }) }),
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(countPendingByPoint(1)).resolves.toEqual({ byPoint: {}, total: 0 });
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
 });

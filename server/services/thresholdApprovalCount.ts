@@ -49,8 +49,19 @@ export async function countPendingByPoint(productModelId: number): Promise<Pendi
     }
     return { byPoint, total };
   } catch (err) {
-    if (!isMissingTable(err)) {
+    if (isMissingTable(err)) {
+      // Dự kiến được: môi trường chưa chạy migration cho threshold_approvals.
       console.warn("[thresholdApprovalCount] đếm thất bại — ẩn badge, màn điểm đo vẫn chạy:", (err as any)?.message ?? err);
+    } else {
+      // BẤT NGỜ — không phải "thiếu bảng". Log nguyên đối tượng lỗi (không rút
+      // gọn về String/.message) để giữ stack + err.cause (DrizzleQueryError bọc
+      // lỗi driver thật trong .cause) cho việc điều tra sau này. Vẫn trả EMPTY —
+      // đây là tính năng phụ, không được chặn màn hình chính — nhưng KHÔNG được
+      // im lặng như trường hợp "không có đề xuất nào" (suy giảm phải trung thực).
+      console.error(
+        "[thresholdApprovalCount] unexpected failure — pending-suggestion badges will be hidden for this product:",
+        err,
+      );
     }
     return EMPTY;
   }
