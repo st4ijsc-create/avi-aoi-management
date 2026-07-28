@@ -6520,6 +6520,7 @@
     "rejectSuccess": "建议已拒绝",
     "rejectSuggestion": "拒绝",
     "showOlderSuggestions": "还有 {{n}} 条该点位的旧建议——点击查看",
+    "thresholdAppliedNoInputs": "新阈值（{{lsl}}–{{usl}}）已写入该测量点。此点位类型的表单不显示阈值输入框。",
     "thresholdReloaded": "批准后已将最新阈值加载到表单（{{lsl}}–{{usl}}）。",
     "thresholdReloadedOverDirty": "该阈值刚被批准并写入测量点——已用新值（{{lsl}}–{{usl}}）替换您尚未保存的手动修改。保存前请再次确认。",
     "unknownUserBlocked": "无法确认您的账户身份——请重新登录后再进行审批。"

@@ -6717,6 +6717,7 @@
     "rejectSuccess": "Đã từ chối đề xuất",
     "rejectSuggestion": "Từ chối",
     "showOlderSuggestions": "Còn {{n}} đề xuất cũ hơn cho điểm này — bấm để xem",
+    "thresholdAppliedNoInputs": "Ngưỡng mới ({{lsl}}–{{usl}}) đã được ghi vào điểm đo. Loại điểm này không hiển thị ô ngưỡng trên form.",
     "thresholdReloaded": "Đã nạp ngưỡng mới nhất vào form ({{lsl}}–{{usl}}) sau khi duyệt.",
     "thresholdReloadedOverDirty": "Ngưỡng vừa được duyệt và ghi vào điểm đo — đã thay bản bạn đang gõ tay bằng giá trị mới ({{lsl}}–{{usl}}). Kiểm tra lại trước khi Lưu.",
     "unknownUserBlocked": "Chưa xác định được tài khoản của bạn — hãy đăng nhập lại để duyệt."

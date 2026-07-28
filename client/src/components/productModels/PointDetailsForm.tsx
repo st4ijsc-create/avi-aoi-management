@@ -223,9 +223,28 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
       norm(current.lowerLimit) !== norm(pointLowerLimit) ||
       norm(current.upperLimit) !== norm(pointUpperLimit) ||
       norm(current.nominalValue) !== norm(pointNominalValue);
+    // Cập nhật state LUÔN, bất kể loại điểm có hiện ô ngưỡng hay không — đây là
+    // state chung mà handleSavePoint (ProductModels.tsx) dùng để build payload
+    // Lưu; nếu bỏ qua cho POSITION/COLOR/VISUAL, "Lưu" ngay sau đó sẽ gửi state
+    // CŨ (trước khi refetch kịp đồng bộ measurementPoints) — nguy cơ y hệt F1
+    // cho 40% loại điểm không có ô ngưỡng hiển thị (vòng sửa 3, F4).
     setPointLowerLimit(applied.lsl);
     setPointUpperLimit(applied.usl);
     setPointNominalValue(applied.nominal ?? "");
+    // Vòng sửa 3 (F4) — loại điểm này (POSITION/COLOR/VISUAL/SURFACE...) không
+    // render 3 ô LSL/USL/nominal (showToleranceSection false) — nói "đã nạp vào
+    // FORM" là SAI SỰ THẬT vì không có ô nào để nạp vào. Nói đúng: ngưỡng đã
+    // được GHI VÀO ĐIỂM ĐO (server), không nhắc tới "form".
+    if (!showToleranceSection) {
+      toast.info(
+        t(
+          "productModels.thresholdAppliedNoInputs",
+          "Ngưỡng mới ({{lsl}}–{{usl}}) đã được ghi vào điểm đo. Loại điểm này không hiển thị ô ngưỡng trên form.",
+          { lsl: applied.lsl, usl: applied.usl },
+        ),
+      );
+      return;
+    }
     if (wasDirty) {
       toast.warning(
         t(
@@ -401,6 +420,23 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
                           <p>{t("products.radius")}: {measurementPoints[selectedPointIndex]?.radius}px</p>
                         </div>
 
+                        {/* Wave 2 đường A (Task 2) — đề xuất ĐANG CHỜ. Vòng sửa 3 (F4, nghiệm thu
+                            live) — di chuyển RA KHỎI mục "Ngưỡng & dung sai" (AccordionItem
+                            "thresholds") vì mục đó chỉ render khi `showToleranceSection` đúng
+                            (DIMENSION/GD_T/ELECTRICAL) — 40% đề xuất (POSITION/COLOR/VISUAL) từng
+                            hoàn toàn không có chỗ để xem, kể cả sau khi bấm "Sửa". Đặt ở đây — LUÔN
+                            render khi đã chọn một điểm, bất kể loại — để đề xuất luôn nhìn thấy được.
+                            KHÔNG đụng `showToleranceSection`, KHÔNG ép mục Ngưỡng hiện ra cho loại
+                            không dùng ngưỡng — chỉ thẻ đề-xuất-đang-chờ di chuyển. */}
+                        {selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
+                          <PendingSuggestionCard
+                            pointDefId={measurementPoints[selectedPointIndex]!.id as number}
+                            currentUserId={user?.id}
+                            onDecided={refreshSuggestionState}
+                            onApplied={handleSuggestionApplied}
+                          />
+                        ) : null}
+
                         {/* ── Nhóm gập: Progressive disclosure (doc 43 Đợt 2 §3.1) ── */}
                         <Accordion
                           type="multiple"
@@ -457,22 +493,9 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
                                     <ValidationMessage error={pointValidation.getFieldError("upperLimit")} />
                                   </div>
                                 </div>
-                                {/* Wave 2 đường A (Task 2) — đề xuất ĐANG CHỜ hiện ở đây, cạnh nút "xin đề
-                                    xuất mới". Vòng sửa 2 (F2, nghiệm thu live) — XEM + DUYỆT/TỪ CHỐI là hành
-                                    động ĐỌC + một quyết định độc lập với việc SỬA tay điểm đo (máy chủ mới là
-                                    nơi thực thi thật, qualityProcedure + SoD không quan tâm client đang ở chế
-                                    độ nào) — nên KHÔNG còn bị khoá sau `isEditMode`. Trước sửa: badge "N đề
-                                    xuất AI" trên hàng điểm đo dẫn tới panel RỖNG cho tới khi bấm "Sửa". */}
-                                {selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
-                                  <PendingSuggestionCard
-                                    pointDefId={measurementPoints[selectedPointIndex]!.id as number}
-                                    currentUserId={user?.id}
-                                    onDecided={refreshSuggestionState}
-                                    onApplied={handleSuggestionApplied}
-                                  />
-                                ) : null}
                                 {/* AI Threshold Advisor (xin đề xuất MỚI) — đây LÀ hành động sửa đổi, giữ
-                                    nguyên chỉ ở chế độ Sửa (không đổi theo yêu cầu F2). */}
+                                    nguyên chỉ ở chế độ Sửa VÀ trong mục Ngưỡng & dung sai (không đổi theo yêu
+                                    cầu vòng sửa 3 — chỉ thẻ đề-xuất-đang-chờ bị di chuyển, nút này ở nguyên). */}
                                 {isEditMode && selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
                                   <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
                                     <span className="text-xs text-muted-foreground">
