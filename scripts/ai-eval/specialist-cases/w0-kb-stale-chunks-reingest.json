@@ -2,12 +2,13 @@
   "id": "w0-kb-stale-chunks-reingest",
   "title": "Nạp lại tài liệu KB Studio đã rút ngắn để sót chunk cũ",
   "agentId": "backend-engineer",
+  "fixCommit": "e4b9c6fc",
   "objective": "Khi một tài liệu trong KB Studio được chỉnh sửa ngắn lại rồi nạp lại (re-ingest), các chunk cũ ở chỉ số cao hơn số chunk mới vẫn còn sót lại trong bảng kb_studio_chunks và tiếp tục xuất hiện trong kết quả tìm kiếm. Tìm nguyên nhân gốc và cách sửa.",
   "files": ["server/services/kbVectorStore.ts"],
   "expected": {
-    "rootCauseKeywords": ["chunkIndex", "sourceRef", "upsertChunks"],
+    "rootCauseKeywords": ["DELETE"],
     "mustMentionFiles": ["server/services/kbVectorStore.ts"],
-    "fixDirectionKeywords": ["DELETE FROM kb_studio_chunks", "clean-slate", "db.transaction"]
+    "fixDirectionKeywords": ["clean-slate", "DELETE FROM kb_studio_chunks", "xoá trước", "xóa trước", "thay thế toàn bộ"]
   },
-  "notes": "Bug thật đã sửa ở doc69 E3-1, commit e4b9c6fc (upsertChunks chỉ INSERT chunk mới, không DELETE chunk cũ theo (corpus,sourceRef) trước, nên tài liệu rút ngắn để lại rác ở chunkIndex cao)."
+  "notes": "Bug thật đã sửa ở doc69 E3-1, commit e4b9c6fc (upsertChunks chỉ INSERT chunk mới, không DELETE chunk cũ theo (corpus,sourceRef) trước, nên tài liệu rút ngắn để lại rác ở chunkIndex cao). FIX ROUND 2 (chống rò đáp án): chunkIndex/sourceRef/upsertChunks/db.transaction đều nằm sẵn trong mã trước-khi-sửa ⇒ bỏ. Điều CHƯA có trong mã lỗi là chính câu lệnh DELETE — model phải nêu ra nó. 'chunk cũ' cũng bị loại vì nằm trong chính đề bài."
 }

@@ -15,7 +15,6 @@ import {
   appendAiSpecialistSessionStep,
   completeAiSpecialistSession,
   createAiSpecialistSession,
-  getAiSpecialistSessionById,
   getAiSpecialistSessionDetail,
   listAiSpecialistSessions,
   getModuleImprovementStats,
@@ -24,7 +23,7 @@ import {
 } from "../db/aiSpecialist";
 import { getTool, isWriteTool } from "../services/aiLocalTools/toolRegistry";
 import { proposeAction } from "../services/aiCopilotActions";
-import { gatherRepoContext } from "../services/ai/repoContextService";
+import { gatherRepoContext, type RepoContextResult } from "../services/ai/repoContextService";
 
 /**
  * Wave 1 — siết RBAC: trước đây MỌI procedure chỉ yêu cầu đăng nhập (không lọc
@@ -61,6 +60,78 @@ const workflowInputSchema = runInputSchema
   });
 
 /**
+ * Wave 1 fix round 2 (I-4/I-5) — bản TÓM TẮT GỌN của ngữ cảnh repo, là thứ DUY
+ * NHẤT được lưu vào `ai_specialist_session_steps.inputPayload`.
+ *
+ * Vì sao không lưu nguyên khối: `repoContext` chứa tới 256KB mã nguồn + mảnh
+ * RAG. Lưu nguyên khối là nhồi từng ấy byte vào DB mỗi lần chạy VÀ đẩy ngược cả
+ * khối đó về trình duyệt ở MỖI lượt poll `getSessionDetail` (2s/lượt). Model
+ * vẫn nhận đủ ngữ cảnh — nó nằm trong prompt, chỉ là không lưu lại.
+ *
+ * Vì sao vẫn phải lưu bản tóm tắt: `submitFeedback` cần biết phiên đó CÓ THẬT SỰ
+ * đọc được file nào không để tự suy ra `repoContextUsed` — client không được
+ * quyền tự khai (xem `deriveFeedbackFacts`).
+ */
+export interface RepoContextSummary {
+  filesRead: number;
+  skipped: number;
+  truncated: number;
+  totalBytes: number;
+}
+
+export function summarizeRepoContext(ctx?: RepoContextResult): RepoContextSummary {
+  return {
+    filesRead: ctx?.files?.length ?? 0,
+    skipped: ctx?.skipped?.length ?? 0,
+    truncated: ctx?.files?.filter((f) => f.truncated).length ?? 0,
+    totalBytes: ctx?.totalBytes ?? 0,
+  };
+}
+
+/**
+ * Wave 1 fix round 2 (I-1/I-2/I-4) — MÁY CHỦ là nguồn sự thật cho phiếu chấm.
+ *
+ * Trước bản này client tự khai `agentId`/`moduleName`/`repoContextUsed` lúc bấm
+ * chấm điểm, và cả ba đều sai được:
+ *  - `repoContextUsed` lấy từ TRẠNG THÁI CÔNG TẮC HIỆN TẠI, không phải lúc giao
+ *    việc (công tắc chỉ khoá ~1 giây khi dispatch, còn model chạy vài phút) —
+ *    gạt công tắc trong lúc chờ là phiếu ghi sai;
+ *  - client khai `true` cả khi đọc được 0 file (bỏ trống ô "File liên quan", gõ
+ *    sai đường dẫn, file `.py`, file trong `node_modules/`…). Khi đó
+ *    `buildRepoContextBlock` trả `""` — prompt GIỐNG HỆT lúc tắt mắt — nhưng
+ *    bảng điểm vẫn ghi "có mắt", phá thẳng cột so sánh có-mắt/không-mắt.
+ *
+ * Quy tắc: `repoContextUsed = (tổng filesRead của các bước) > 0`. Một lượt chạy
+ * KHÔNG đọc được file nào thì KHÔNG có mắt, bất kể công tắc nói gì.
+ *
+ * Hàm THUẦN để test được không cần DB.
+ */
+export function deriveFeedbackFacts(session: {
+  moduleName?: string | null;
+  requestedAgents?: unknown;
+  steps?: Array<{ agentId?: string | null; inputPayload?: unknown }>;
+}): { agentId: string; moduleName: string | null; repoContextUsed: boolean } {
+  const steps = session.steps ?? [];
+  const firstStepAgent = steps.find((s) => typeof s.agentId === "string" && s.agentId)?.agentId;
+  const requested = Array.isArray(session.requestedAgents) ? session.requestedAgents : [];
+  const requestedFirst = typeof requested[0] === "string" ? (requested[0] as string) : undefined;
+
+  let filesRead = 0;
+  for (const s of steps) {
+    const summary = (s.inputPayload as { repoContextSummary?: { filesRead?: unknown } } | null | undefined)
+      ?.repoContextSummary;
+    const n = Number(summary?.filesRead ?? 0);
+    if (Number.isFinite(n) && n > 0) filesRead += n;
+  }
+
+  return {
+    agentId: firstStepAgent ?? requestedFirst ?? "unknown",
+    moduleName: session.moduleName ?? null,
+    repoContextUsed: filesRead > 0,
+  };
+}
+
+/**
  * Wave 1 — chạy 1 phiên specialist ở tiến trình NỀN.
  * KHÔNG BAO GIỜ ném: mọi lỗi được ghi vào phiên dưới dạng status "failed", vì
  * hàm này chạy fire-and-forget (không ai await) — một promise reject không bắt
@@ -72,6 +143,8 @@ export async function runSpecialistSessionInBackground(args: {
   runInput: Parameters<typeof runSpecialistAgent>[0];
 }): Promise<void> {
   const { sessionId, userId, runInput } = args;
+  // I-5 — khối ngữ cảnh vẫn đi vào model (runInput), nhưng KHÔNG đi vào DB.
+  const { repoContext, ...slimInput } = runInput;
   try {
     const result = await runSpecialistAgent(runInput);
     await appendAiSpecialistSessionStep({
@@ -79,7 +152,7 @@ export async function runSpecialistSessionInBackground(args: {
       stepOrder: 1,
       agentId: result.agent.id,
       status: "completed",
-      inputPayload: runInput,
+      inputPayload: { ...slimInput, repoContextSummary: summarizeRepoContext(repoContext) },
       outputPayload: result.output,
       modelId: result.modelId,
       tokensPrompt: result.metrics.tokensPrompt,
@@ -114,6 +187,10 @@ export async function runSpecialistWorkflowSessionInBackground(args: {
   presetMeta?: { id: string; label: string };
 }): Promise<void> {
   const { sessionId, userId, workflowInput, mode, presetMeta } = args;
+  // I-4 — nhánh này vốn đã lưu gọn; nay thêm bản tóm tắt ngữ cảnh để
+  // `deriveFeedbackFacts` suy được `repoContextUsed` cho CẢ phiên workflow/audit
+  // (trước đây client hardcode `true` cho mọi phiên audit, kể cả khi đọc 0 file).
+  const repoContextSummary = summarizeRepoContext(workflowInput.repoContext);
   try {
     const workflow = await runSpecialistWorkflowChain(workflowInput);
 
@@ -125,11 +202,12 @@ export async function runSpecialistWorkflowSessionInBackground(args: {
         status: "completed",
         inputPayload:
           mode === "module-audit"
-            ? { objective: workflowInput.objective, moduleName: workflowInput.moduleName }
+            ? { objective: workflowInput.objective, moduleName: workflowInput.moduleName, repoContextSummary }
             : {
                 objective: step.result.output.summary,
                 moduleName: workflowInput.moduleName,
                 files: workflowInput.files,
+                repoContextSummary,
               },
         outputPayload: step.result.output,
         modelId: step.result.modelId,
@@ -410,24 +488,31 @@ export const aiSpecialistAgentRouter = router({
 
   // ─── Wave 1 Task 3 — Quality Feedback (human rating half of the quality gate) ─
 
+  // `agentId`, `moduleName` và `repoContextUsed` CỐ Ý không có trong input: máy
+  // chủ nắm sự thật về phiên, client thì không (xem `deriveFeedbackFacts`). Bỏ
+  // hẳn khỏi hợp đồng thay vì "nhận rồi phớt lờ" để không ai hiểu nhầm là mình
+  // điều khiển được chúng.
   submitFeedback: specialistProcedure
     .input(z.object({
       sessionId: z.number().int().positive(),
-      agentId: z.string().min(1).max(64),
-      moduleName: z.string().max(255).optional(),
       rating: z.enum(["useful", "partial", "useless"]),
       usefulSections: z.array(z.enum([
         "diagnosis", "actionPlan", "patchHints", "testPlan", "optimizationIdeas", "risks",
       ])).max(6).optional(),
       reason: z.string().max(500).optional(),
-      repoContextUsed: z.boolean(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await getAiSpecialistSessionById(input.sessionId, ctx.user.id);
+      // getAiSpecialistSessionDetail lọc theo userId y hệt getAiSpecialistSessionById
+      // (cùng chốt sở hữu), nhưng trả kèm `steps` — nơi chứa `repoContextSummary`.
+      const session = await getAiSpecialistSessionDetail(input.sessionId, ctx.user.id);
       if (!session) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Session does not belong to current user" });
       }
-      return upsertSpecialistFeedback({ ...input, userId: ctx.user.id });
+      return upsertSpecialistFeedback({
+        ...input,
+        userId: ctx.user.id,
+        ...deriveFeedbackFacts(session),
+      });
     }),
 
   getQualityScoreboard: specialistProcedure

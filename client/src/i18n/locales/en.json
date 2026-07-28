@@ -13768,7 +13768,13 @@
       "copy": "Copy",
       "copied": "Copied",
       "chainSummaryTitle": "Chain summary",
-      "stepSelectorAria": "Select step"
+      "stepSelectorAria": "Select step",
+      "repoContext": {
+        "summary": "Agent read {{filesRead}} file(s) · skipped {{skipped}} · truncated {{truncated}}",
+        "noneTitle": "The agent could not read any file",
+        "none": "The recommendations below were produced WITHOUT real source code ({{skipped}} path(s) skipped). Check the \"Related files\" field.",
+        "unknown": "This session did not record how many files the agent read."
+      }
     },
     "feedback": {
       "title": "Rate this result",
@@ -13819,6 +13825,7 @@
       "totalRatings": "Total ratings",
       "usefulPct": "% Useful",
       "empty": "No ratings yet.",
+      "scopeMineNote": "Figures in this card count YOUR ratings only.",
       "col": {
         "agent": "Agent",
         "module": "Module",
@@ -13832,6 +13839,7 @@
       "decisionRule": {
         "title": "Tier B decision rule",
         "criteria": "Criteria: ≥20 ratings and ≥50% useful.",
+        "scopeNote": "The figures below are ORGANISATION-WIDE (every user's ratings) — the scope the decision rule actually asks for.",
         "current": "Currently {{total}} ratings, {{pct}} useful.",
         "insufficient": "Not enough data to decide yet.",
         "remaining": "{{remaining}} more ratings needed to reach the minimum of 20.",

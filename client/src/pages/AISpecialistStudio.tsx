@@ -134,25 +134,16 @@ export default function AISpecialistStudio() {
   // Which step of a (possibly multi-step) session the Result card currently
   // shows — reset to the first step whenever a different session loads.
   const [activeStepIdx, setActiveStepIdx] = useState(0);
-  // Task 5 (fix round 1) — the Result card is shared by 3 entry points
-  // (Dispatch here, History tab, Audit-module tab). FeedbackBar's
-  // `repoContextUsed` must be a value THIS page can actually vouch for, not a
-  // guess — the 3 sources differ:
-  //   - "dispatch": mirrors the `useEyes` toggle that was actually sent to
-  //     `run()` — known with certainty.
-  //   - "audit": `runModuleAudit` (server/routers/aiSpecialistAgentRouter.ts)
-  //     has NO `includeRepoContext` field in its input schema at all — it
-  //     calls `gatherRepoContext(...)` UNCONDITIONALLY for every module-audit
-  //     session. So repo-context is a known CONSTANT (`true`) the instant
-  //     "Chạy audit" is clicked — the same certainty as `useEyes` at Dispatch
-  //     time, not a client-side heuristic.
-  //   - "loaded" (History): a session dispatched at some point in the past.
-  //     `inputPayload` for workflow/module-audit steps never persists
-  //     `repoContext` (confirmed in `runSpecialistWorkflowSessionInBackground`,
-  //     aiSpecialistAgentRouter.ts) and single-agent `run` sessions don't
-  //     expose it back via `getSessionDetail` either — genuinely
-  //     unrecoverable. History-loaded sessions correctly get NO FeedbackBar.
-  const [sessionSource, setSessionSource] = useState<"dispatch" | "loaded" | "audit">("dispatch");
+  // Fix round 2 (I-1/I-2/I-4) — trước đây trang này phải tự đoán
+  // `repoContextUsed` để gửi kèm phiếu chấm, và cả 3 nguồn phiên (Dispatch /
+  // Audit / Lịch sử) đều đoán sai được: công tắc `useEyes` là trạng thái HIỆN
+  // TẠI chứ không phải lúc giao việc (công tắc chỉ khoá ~1 giây, model chạy vài
+  // phút), còn "audit" thì hardcode `true` kể cả khi đọc được 0 file. Nay MÁY
+  // CHỦ tự suy ra từ `repoContextSummary` đã lưu ở bước đầu tiên
+  // (`deriveFeedbackFacts`, aiSpecialistAgentRouter.ts) và 3 trường đó đã bị bỏ
+  // khỏi hợp đồng `submitFeedback`. Hệ quả: KHÔNG còn khái niệm "nguồn phiên",
+  // và phiên mở từ tab Lịch sử CHẤM ĐIỂM ĐƯỢC như mọi phiên khác — ghi chú cũ
+  // ("không khôi phục được") là sai sự thật, đã bỏ.
   const [activeTab, setActiveTab] = useState<"dispatch" | "history" | "audit" | "quality">("dispatch");
 
   const agents = trpc.aiSpecialistAgent.listAgents.useQuery();
@@ -198,7 +189,6 @@ export default function AISpecialistStudio() {
         codeSnippet: codeSnippet.trim() || undefined,
       });
       setSessionId(res.sessionId);
-      setSessionSource("dispatch");
     } catch (err: any) {
       toast.error(err?.message || t("specialistStudio.dispatch.dispatchError", "Không giao được việc — thử lại."));
     }
@@ -208,14 +198,11 @@ export default function AISpecialistStudio() {
    * Task 5 — History tab row click / Audit-module "Chạy audit" both funnel
    * here: load the session into THIS SAME Result card (no second render/poll
    * scheme) and jump the Tabs back to "Giao việc" so it is immediately
-   * visible. `source` is passed explicitly by the caller (never defaulted)
-   * so History and Audit cannot be silently conflated — see the
-   * `sessionSource` doc-comment above for why they need different
-   * FeedbackBar behavior.
+   * visible. Cả 3 nguồn phiên nay đối xử NHƯ NHAU — mọi sự thật cần cho phiếu
+   * chấm đều do máy chủ suy ra (xem ghi chú ở `activeTab`).
    */
-  function handleLoadSession(id: number, source: "loaded" | "audit") {
+  function handleLoadSession(id: number) {
     setSessionId(id);
-    setSessionSource(source);
     setActiveTab("dispatch");
   }
 
@@ -558,29 +545,19 @@ export default function AISpecialistStudio() {
                     tokensGenerated={activeStep?.tokensGenerated}
                     totalTimeMs={activeStep?.totalTimeMs}
                   />
-                  {/* Feedback for "dispatch" (just-run) and "audit"
-                      (just-started, repoContextUsed is a known constant —
-                      see the `sessionSource` doc-comment above) — NOT for
-                      "loaded" (History), where repoContextUsed is genuinely
-                      unrecoverable. `agentId`/`moduleName` are read off the
-                      loaded session itself (the active step's agent, the
-                      session's own module), not the Dispatch form's current
-                      selection, so a rating on an audit session attributes
-                      correctly even though the form still shows whatever
-                      agent/module was last picked there. */}
-                  {(sessionSource === "dispatch" || sessionSource === "audit") && (
-                    <div className="border-t pt-4">
-                      <p className="mb-2 text-sm font-medium">
-                        {t("specialistStudio.feedback.title", "Đánh giá kết quả này")}
-                      </p>
-                      <FeedbackBar
-                        sessionId={sessionId}
-                        agentId={activeStep?.agentId ?? agentId}
-                        moduleName={session.data?.moduleName ?? undefined}
-                        repoContextUsed={sessionSource === "audit" ? true : useEyes}
-                      />
-                    </div>
-                  )}
+                  {/* Spec §11 — nói thẳng agent ĐÃ ĐỌC ĐƯỢC GÌ. Không có dòng
+                      này thì "đã bật công tắc đọc mã" và "thật sự đọc được
+                      file" nhìn giống hệt nhau trên màn hình. */}
+                  <RepoContextNotice step={activeStep} />
+                  {/* Mọi phiên đã hoàn tất đều chấm điểm được — kể cả phiên mở
+                      từ tab Lịch sử. `agentId`/`moduleName`/`repoContextUsed`
+                      do MÁY CHỦ suy ra từ chính phiên đó, client không gửi. */}
+                  <div className="border-t pt-4">
+                    <p className="mb-2 text-sm font-medium">
+                      {t("specialistStudio.feedback.title", "Đánh giá kết quả này")}
+                    </p>
+                    <FeedbackBar sessionId={sessionId} />
+                  </div>
                 </>
               )}
             </CardContent>
@@ -589,11 +566,11 @@ export default function AISpecialistStudio() {
           </TabsContent>
 
           <TabsContent value="history">
-            <SpecialistHistoryTab onSelectSession={(id) => handleLoadSession(id, "loaded")} />
+            <SpecialistHistoryTab onSelectSession={handleLoadSession} />
           </TabsContent>
 
           <TabsContent value="audit">
-            <SpecialistAuditTab onSessionStarted={(id) => handleLoadSession(id, "audit")} />
+            <SpecialistAuditTab onSessionStarted={handleLoadSession} />
           </TabsContent>
 
           <TabsContent value="quality">
@@ -704,22 +681,86 @@ export function SpecialistResultView({
   );
 }
 
+/** Bản tóm tắt ngữ cảnh repo mà máy chủ lưu ở `inputPayload` của mỗi bước. */
+type RepoContextSummary = {
+  filesRead?: number;
+  skipped?: number;
+  truncated?: number;
+  totalBytes?: number;
+};
+
+function repoContextSummaryOf(step: { inputPayload?: unknown } | undefined): RepoContextSummary | null {
+  const s = (step?.inputPayload as { repoContextSummary?: RepoContextSummary } | null | undefined)
+    ?.repoContextSummary;
+  return s && typeof s === "object" ? s : null;
+}
+
+/**
+ * Fix round 2 (I-2, spec §11) — dòng sự thật "agent đã đọc được gì".
+ *
+ * Bật công tắc "cho agent đọc mã nguồn" KHÔNG đồng nghĩa agent đọc được file
+ * nào: bỏ trống ô "File liên quan", gõ sai đường dẫn, file `.py`, file trong
+ * `node_modules/`… đều cho ra 0 file, và khi đó prompt GIỐNG HỆT lúc tắt mắt.
+ * Không hiện con số này thì hai tình huống đó không phân biệt được trên màn
+ * hình, và người dùng sẽ chấm điểm một phiên "mù" như thể nó có mắt.
+ *
+ * Phiên cũ (chạy trước bản này) không có `repoContextSummary` — nói thẳng là
+ * KHÔNG BIẾT, không đoán bừa.
+ */
+function RepoContextNotice({ step }: { step: { inputPayload?: unknown } | undefined }) {
+  const { t } = useTranslation();
+  const summary = repoContextSummaryOf(step);
+
+  if (!summary) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        {t("specialistStudio.result.repoContext.unknown", "Phiên này không ghi lại số file agent đã đọc.")}
+      </p>
+    );
+  }
+
+  const filesRead = Number(summary.filesRead ?? 0);
+  if (filesRead <= 0) {
+    return (
+      <Alert variant="destructive">
+        <AlertTriangle />
+        <AlertTitle>{t("specialistStudio.result.repoContext.noneTitle", "Agent không đọc được file nào")}</AlertTitle>
+        <AlertDescription>
+          {t(
+            "specialistStudio.result.repoContext.none",
+            "Khuyến nghị dưới đây được đưa ra KHÔNG có mã nguồn thật (bỏ qua {{skipped}} đường dẫn). Kiểm tra lại ô \"File liên quan\".",
+            { skipped: Number(summary.skipped ?? 0) },
+          )}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <p className="text-xs text-muted-foreground">
+      {t(
+        "specialistStudio.result.repoContext.summary",
+        "Agent đã đọc {{filesRead}} file · bỏ qua {{skipped}} · cắt bớt {{truncated}}",
+        {
+          filesRead,
+          skipped: Number(summary.skipped ?? 0),
+          truncated: Number(summary.truncated ?? 0),
+        },
+      )}
+    </p>
+  );
+}
+
 /**
  * 3-button usefulness rating + optional free-text reason, wired to
  * `trpc.aiSpecialistAgent.submitFeedback`. Extracted (not inlined) so Wave 1
  * Task 5 can attach the same rating strip to a session viewed from history.
+ *
+ * Fix round 2 (I-4) — chỉ còn nhận `sessionId`. `agentId`/`moduleName`/
+ * `repoContextUsed` đã bị BỎ khỏi hợp đồng `submitFeedback`: máy chủ nắm sự
+ * thật về phiên, client thì không.
  */
-export function FeedbackBar({
-  sessionId,
-  agentId,
-  moduleName,
-  repoContextUsed,
-}: {
-  sessionId: number;
-  agentId: string;
-  moduleName?: string;
-  repoContextUsed: boolean;
-}) {
+export function FeedbackBar({ sessionId }: { sessionId: number }) {
   const { t } = useTranslation();
   const [reason, setReason] = useState("");
   const [saved, setSaved] = useState(false);
@@ -735,11 +776,8 @@ export function FeedbackBar({
     try {
       await submit.mutateAsync({
         sessionId,
-        agentId,
-        moduleName,
         rating,
         reason: reason || undefined,
-        repoContextUsed,
       });
       setSaved(true);
     } catch (err: any) {
@@ -954,11 +992,17 @@ function SpecialistAuditTab({ onSessionStarted }: { onSessionStarted: (sessionId
 }
 
 /**
- * Task 5, Step 3 — "Chất lượng" tab: `getQualityScoreboard.useQuery({ mineOnly: true })`.
- * Renders the overall line, the per agent×module table (`—` for the null
- * with/without-eyes buckets — NEVER rendered as 0), and the "Luật quyết định
- * mức B" block, whose 3 states are all measured from `overall`, never
- * projected:
+ * Task 5, Step 3 — "Chất lượng" tab.
+ *
+ * HAI PHẠM VI, ghi nhãn rõ ràng (fix round 2, I-3):
+ *  - Bảng chi tiết agent×module: `{ mineOnly: true }` — phiếu CỦA BẠN.
+ *  - Khối "Luật quyết định mức B": `getQualityScoreboard()` KHÔNG tham số =
+ *    TOÀN TỔ CHỨC. Trước đây khối này cũng dùng số của riêng người đang xem, nên
+ *    3 kỹ sư mỗi người 8 phiếu (24 phiếu toàn công ty, đã quá ngưỡng 20) mà ai
+ *    cũng thấy "còn thiếu 12 phiếu" — con số thật sự quyết định mức B KHÔNG
+ *    hiển thị ở đâu cả. Backend đã hỗ trợ sẵn phạm vi này.
+ *
+ * 3 trạng thái của khối quyết định đều ĐO từ `overall`, không suy diễn:
  *   1. total < 20            → "Chưa đủ dữ liệu để quyết định" + shortfall count
  *   2. total ≥ 20, useful<50 → enough volume, but the bar is not met
  *   3. total ≥ 20, useful≥50 → criteria met
@@ -966,6 +1010,7 @@ function SpecialistAuditTab({ onSessionStarted }: { onSessionStarted: (sessionId
 function SpecialistQualityTab() {
   const { t } = useTranslation();
   const scoreboard = trpc.aiSpecialistAgent.getQualityScoreboard.useQuery({ mineOnly: true });
+  const orgScoreboard = trpc.aiSpecialistAgent.getQualityScoreboard.useQuery(undefined);
   const rows = scoreboard.data?.rows ?? [];
   const overall = scoreboard.data?.overall;
   const totalRatings = overall?.total ?? 0;
@@ -973,9 +1018,11 @@ function SpecialistQualityTab() {
 
   const MIN_RATINGS = 20;
   const MIN_USEFUL_PCT = 50;
-  const enoughVolume = totalRatings >= MIN_RATINGS;
-  const meetsBar = enoughVolume && usefulPct >= MIN_USEFUL_PCT;
-  const remaining = Math.max(MIN_RATINGS - totalRatings, 0);
+  const orgTotal = orgScoreboard.data?.overall.total ?? 0;
+  const orgUsefulPct = orgScoreboard.data?.overall.usefulPct ?? 0;
+  const enoughVolume = orgTotal >= MIN_RATINGS;
+  const meetsBar = enoughVolume && orgUsefulPct >= MIN_USEFUL_PCT;
+  const remaining = Math.max(MIN_RATINGS - orgTotal, 0);
 
   return (
     <div className="space-y-4">
@@ -1006,6 +1053,9 @@ function SpecialistQualityTab() {
                   {t("specialistStudio.quality.usefulPct", "% Dùng được")}: {totalRatings > 0 ? `${usefulPct}%` : "—"}
                 </Badge>
               </div>
+              <p className="text-xs text-muted-foreground">
+                {t("specialistStudio.quality.scopeMineNote", "Số liệu trong thẻ này CHỈ tính phiếu của bạn.")}
+              </p>
 
               {rows.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
@@ -1055,28 +1105,51 @@ function SpecialistQualityTab() {
             {t("specialistStudio.quality.decisionRule.criteria", "Điều kiện: ≥20 phiếu đánh giá và % Dùng được ≥ 50%.")}
           </p>
           <p className="text-muted-foreground">
-            {t("specialistStudio.quality.decisionRule.current", "Hiện có {{total}} phiếu, % Dùng được {{pct}}.", {
-              total: totalRatings,
-              // Same "never show 0% for an empty set" convention as the badge
-              // above — pct already carries its own "%" (or the "—" fallback).
-              pct: totalRatings > 0 ? `${usefulPct}%` : "—",
-            })}
+            {t(
+              "specialistStudio.quality.decisionRule.scopeNote",
+              "Số liệu dưới đây tính trên TOÀN TỔ CHỨC (phiếu của mọi người dùng) — đúng phạm vi mà luật quyết định yêu cầu.",
+            )}
           </p>
-          {!enoughVolume ? (
-            <p className="font-medium text-foreground">
-              {t("specialistStudio.quality.decisionRule.insufficient", "Chưa đủ dữ liệu để quyết định.")}{" "}
-              {t("specialistStudio.quality.decisionRule.remaining", "Còn thiếu {{remaining}} phiếu để đạt tối thiểu 20.", {
-                remaining,
-              })}
-            </p>
-          ) : meetsBar ? (
-            <p className="font-medium text-success">
-              {t("specialistStudio.quality.decisionRule.met", "Đủ điều kiện — có thể xem xét chuyển mức B.")}
-            </p>
-          ) : (
-            <p className="font-medium text-warning">
-              {t("specialistStudio.quality.decisionRule.belowThreshold", "Đủ số phiếu nhưng % Dùng được chưa đạt 50%.")}
-            </p>
+
+          {orgScoreboard.isLoading && <Skeleton className="h-16 w-full rounded-lg" />}
+
+          {orgScoreboard.isError && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>{t("specialistStudio.result.failedTitle", "Phiên chạy lỗi")}</AlertTitle>
+              <AlertDescription>
+                {t("specialistStudio.quality.loadError", "Không thể tải bảng điểm chất lượng lúc này.")}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {orgScoreboard.data && (
+            <>
+              <p className="text-muted-foreground">
+                {t("specialistStudio.quality.decisionRule.current", "Hiện có {{total}} phiếu, % Dùng được {{pct}}.", {
+                  total: orgTotal,
+                  // Same "never show 0% for an empty set" convention as the badge
+                  // above — pct already carries its own "%" (or the "—" fallback).
+                  pct: orgTotal > 0 ? `${orgUsefulPct}%` : "—",
+                })}
+              </p>
+              {!enoughVolume ? (
+                <p className="font-medium text-foreground">
+                  {t("specialistStudio.quality.decisionRule.insufficient", "Chưa đủ dữ liệu để quyết định.")}{" "}
+                  {t("specialistStudio.quality.decisionRule.remaining", "Còn thiếu {{remaining}} phiếu để đạt tối thiểu 20.", {
+                    remaining,
+                  })}
+                </p>
+              ) : meetsBar ? (
+                <p className="font-medium text-success">
+                  {t("specialistStudio.quality.decisionRule.met", "Đủ điều kiện — có thể xem xét chuyển mức B.")}
+                </p>
+              ) : (
+                <p className="font-medium text-warning">
+                  {t("specialistStudio.quality.decisionRule.belowThreshold", "Đủ số phiếu nhưng % Dùng được chưa đạt 50%.")}
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

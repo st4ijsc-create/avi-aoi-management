@@ -2,12 +2,13 @@
   "id": "w0-lora-path-traversal",
   "title": "targetVersion do người dùng nhập ảnh hưởng trực tiếp đường dẫn file model đã huấn luyện",
   "agentId": "backend-engineer",
+  "fixCommit": "8ff6c969",
   "objective": "Người dùng tự đặt tên cho phiên bản model khi khởi chạy fine-tune LoRA. Với một số chuỗi tên đặc biệt (chứa dấu gạch chéo hoặc hai dấu chấm liên tiếp), file .gguf kết quả sau khi huấn luyện xong lại được ghi ra một vị trí khác trên đĩa, nằm ngoài thư mục lưu model đã huấn luyện. Tìm nguyên nhân gốc trong cách xây dựng đường dẫn file kết quả, và cách sửa.",
   "files": ["server/services/aiLlmFinetuneSidecar.ts"],
   "expected": {
-    "rootCauseKeywords": ["targetVersion", "finalPath", "path traversal"],
+    "rootCauseKeywords": ["traversal"],
     "mustMentionFiles": ["server/services/aiLlmFinetuneSidecar.ts"],
-    "fixDirectionKeywords": ["safeTrainedFilePath", "assertSafeIdentifier", "jobId"]
+    "fixDirectionKeywords": ["safeTrainedFilePath", "assertSafeIdentifier", "allowlist", "danh sách trắng", "path.resolve"]
   },
-  "notes": "Bug thật đã sửa ở doc69 E3-6, commit 8ff6c969 (finalPath = path.join(trainedDir, `lora_${jobId}_${targetVersion}.gguf`) ghép trực tiếp targetVersion caller-supplied vào đường dẫn FS)."
+  "notes": "Bug thật đã sửa ở doc69 E3-6, commit 8ff6c969 (finalPath = path.join(trainedDir, `lora_${jobId}_${targetVersion}.gguf`) ghép trực tiếp targetVersion caller-supplied vào đường dẫn FS). FIX ROUND 2 (chống rò đáp án): targetVersion/finalPath/jobId đều nằm sẵn trong mã trước-khi-sửa ⇒ bỏ. Từ khoá quyết định là tên đúng của lớp lỗi ('traversal' — khớp cả 'path traversal'), thứ đề bài cố ý chỉ MÔ TẢ triệu chứng chứ không gọi tên."
 }

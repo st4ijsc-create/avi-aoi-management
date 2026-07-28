@@ -13751,7 +13751,13 @@
       "copy": "Sao chép",
       "copied": "Đã sao chép",
       "chainSummaryTitle": "Tóm tắt chuỗi",
-      "stepSelectorAria": "Chọn bước"
+      "stepSelectorAria": "Chọn bước",
+      "repoContext": {
+        "summary": "Agent đã đọc {{filesRead}} file · bỏ qua {{skipped}} · cắt bớt {{truncated}}",
+        "noneTitle": "Agent không đọc được file nào",
+        "none": "Khuyến nghị dưới đây được đưa ra KHÔNG có mã nguồn thật (bỏ qua {{skipped}} đường dẫn). Kiểm tra lại ô \"File liên quan\".",
+        "unknown": "Phiên này không ghi lại số file agent đã đọc."
+      }
     },
     "feedback": {
       "title": "Đánh giá kết quả này",
@@ -13802,6 +13808,7 @@
       "totalRatings": "Tổng số phiếu",
       "usefulPct": "% Dùng được",
       "empty": "Chưa có đánh giá nào.",
+      "scopeMineNote": "Số liệu trong thẻ này CHỈ tính phiếu của bạn.",
       "col": {
         "agent": "Agent",
         "module": "Module",
@@ -13815,6 +13822,7 @@
       "decisionRule": {
         "title": "Luật quyết định mức B",
         "criteria": "Điều kiện: ≥20 phiếu đánh giá và % Dùng được ≥ 50%.",
+        "scopeNote": "Số liệu dưới đây tính trên TOÀN TỔ CHỨC (phiếu của mọi người dùng) — đúng phạm vi mà luật quyết định yêu cầu.",
         "current": "Hiện có {{total}} phiếu, % Dùng được {{pct}}.",
         "insufficient": "Chưa đủ dữ liệu để quyết định.",
         "remaining": "Còn thiếu {{remaining}} phiếu để đạt tối thiểu 20.",

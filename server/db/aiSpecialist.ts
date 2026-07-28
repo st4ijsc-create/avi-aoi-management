@@ -23,6 +23,19 @@ export async function appendAiSpecialistSessionStep(data: InsertAiSpecialistSess
   return result;
 }
 
+/**
+ * Đóng phiên — CHỈ khi phiên còn ở trạng thái `running` (M-3).
+ *
+ * Vì sao có điều kiện trạng thái: `expireStaleSpecialistSessions()` (housekeeping)
+ * có thể đã đánh phiên này là `failed` vì quá hạn, rồi tiến trình nền mới chạy
+ * xong và gọi vào đây. Không có điều kiện, phiên sẽ bị LẬT NGƯỢC `failed` →
+ * `completed` (hoặc ghi đè `failed` này bằng `failed` khác), làm hỏng chính số
+ * liệu `completionRate` mà `getModuleImprovementStats` dùng để chấm điểm. Trạng
+ * thái cuối là TRẠNG THÁI CUỐI.
+ *
+ * Không khớp ⇒ `returning()` rỗng ⇒ trả `undefined`. Cả hai lời gọi trong
+ * `aiSpecialistAgentRouter.ts` đều bỏ qua giá trị trả về, nên đây là no-op an toàn.
+ */
 export async function completeAiSpecialistSession(
   sessionId: number,
   userId: number,
@@ -40,7 +53,13 @@ export async function completeAiSpecialistSession(
       completedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(and(eq(aiSpecialistSessions.id, sessionId), eq(aiSpecialistSessions.userId, userId)))
+    .where(
+      and(
+        eq(aiSpecialistSessions.id, sessionId),
+        eq(aiSpecialistSessions.userId, userId),
+        eq(aiSpecialistSessions.status, "running"),
+      ),
+    )
     .returning();
 
   return result;

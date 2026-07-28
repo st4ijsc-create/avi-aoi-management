@@ -2,12 +2,13 @@
   "id": "w0-action-inbox-dead-import",
   "title": "Action Inbox không bao giờ trả cảnh báo bất thường",
   "agentId": "backend-engineer",
+  "fixCommit": "6b91c909",
   "objective": "Hàm listAlerts trong server/services/aiActionInbox.ts luôn trả mảng rỗng cho nhánh bất thường dù dữ liệu bất thường có tồn tại. Tìm nguyên nhân gốc và cách sửa.",
   "files": ["server/services/aiActionInbox.ts", "server/routers/aiAnomalyRouter.ts"],
   "expected": {
-    "rootCauseKeywords": ["import", "không tồn tại", "undefined", "latestForMachine"],
+    "rootCauseKeywords": ["không tồn tại"],
     "mustMentionFiles": ["server/services/aiActionInbox.ts"],
-    "fixDirectionKeywords": ["readMachineStatuses", "ScopedMachine", "aiAnomalyDetection"]
+    "fixDirectionKeywords": ["ScopedMachine", "đúng tên hàm", "hàm thật", "export thật", "kiểm tra export"]
   },
-  "notes": "Bug thật đã sửa ở Wave 0, commit 6b91c909."
+  "notes": "Bug thật đã sửa ở Wave 0, commit 6b91c909. FIX ROUND 2 (chống rò đáp án): bộ từ khoá cũ (import/undefined/latestForMachine/readMachineStatuses/aiAnomalyDetection) đều nằm SẴN trong mã trước-khi-sửa của chính 2 file được đưa, nên một bản tóm tắt file cũng đủ đạt điểm. Đáp án mới bám vào điều model phải TỰ khẳng định — ký hiệu được import KHÔNG TỒN TẠI trong module — và hướng sửa (gọi đúng hàm module thật sự export, mang theo id máy qua ScopedMachine). rootCause chỉ 1 từ khoá ⇒ phải đạt 1/1."
 }

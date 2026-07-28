@@ -2,12 +2,13 @@
   "id": "w0-42p01-cause-walk",
   "title": "Kiểm tra bảng-chưa-migrate bỏ sót lỗi do drizzle bọc mã Postgres trong err.cause",
   "agentId": "backend-engineer",
+  "fixCommit": "eca33661",
   "objective": "Khi bảng kb_studio_chunks/kb_corpora chưa được migrate, service KB Studio ném lỗi 500 thô cho người dùng thay vì tự nhận biết bảng chưa tồn tại và trả kết quả rỗng/không sẵn sàng. Tìm nguyên nhân gốc và cách sửa.",
-  "files": ["server/_core/dbErrors.ts", "server/services/kbStudioService.ts"],
+  "files": ["server/services/kbStudioService.ts"],
   "expected": {
-    "rootCauseKeywords": ["err.cause", "DrizzleQueryError", "42P01"],
-    "mustMentionFiles": ["server/_core/dbErrors.ts"],
-    "fixDirectionKeywords": ["isMissingTable", "err.cause", "UNDEFINED_TABLE"]
+    "rootCauseKeywords": ["DrizzleQueryError", ".cause"],
+    "mustMentionFiles": ["server/services/kbStudioService.ts"],
+    "fixDirectionKeywords": ["cause chain", "chuỗi cause", "duyệt cause", "walk"]
   },
-  "notes": "Bug thật đã sửa ở doc69 E3-2, commit eca33661 (kiểm tra err.code trần bỏ sót mã 42P01 vì drizzle-orm bọc lỗi driver thật trong DrizzleQueryError, mã nằm ở err.cause)."
+  "notes": "Bug thật đã sửa ở doc69 E3-2, commit eca33661 (kiểm tra err.code trần bỏ sót mã 42P01 vì drizzle-orm bọc lỗi driver thật trong DrizzleQueryError, mã nằm ở err.cause). FIX ROUND 2 (chống rò đáp án): đã BỎ 'server/_core/dbErrors.ts' khỏi files — ngay bản TRƯỚC-KHI-SỬA của file đó đã có doc-comment mô tả đúng khuôn DrizzleQueryError/err.cause cho mã 23505, tức viết sẵn đáp án ra; giữ lại thì mọi từ khoá chấm điểm đều rò. Ngữ cảnh còn lại (kbStudioService.ts trước khi sửa) chứa đúng chỗ lỗi `(e as {code}).code === '42P01'` — model phải tự biết drizzle bọc lỗi driver. rootCause đòi CẢ HAI từ khoá (2/2 >= 60%)."
 }

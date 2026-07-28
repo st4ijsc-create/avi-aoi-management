@@ -138,18 +138,32 @@ export async function gatherRepoContext(input: GatherRepoContextInput): Promise<
     }
     try {
       const abs = path.resolve(repoRoot, rel);
-      // Chốt chặn cuối: sau resolve vẫn phải nằm trong gốc repo.
+      // Chốt chặn 1 (thuần chuỗi): sau resolve vẫn phải nằm trong gốc repo.
       const rootResolved = path.resolve(repoRoot);
       if (abs !== rootResolved && !abs.startsWith(rootResolved + path.sep)) {
         skipped.push({ path: rel, reason: "ESCAPE" });
         continue;
       }
-      const stat = fs.statSync(abs);
+      // Chốt chặn 2 (M-1): `statSync`/`readFileSync` ĐI THEO symlink, nên một
+      // symlink/junction NẰM TRONG repo mà trỏ ra ngoài vẫn lọt chốt chặn 1
+      // (đường dẫn danh nghĩa vẫn có tiền tố gốc repo) rồi đọc được file ngoài
+      // repo. So lại tiền tố sau khi ĐÃ GIẢI HẾT symlink của cả file lẫn gốc
+      // repo (giải cả hai vì bản thân gốc repo cũng có thể nằm sau symlink —
+      // vd. /tmp trên macOS — nếu chỉ giải một phía thì mọi đường dẫn hợp lệ
+      // đều bị coi là ESCAPE). `realpathSync` ném khi đường dẫn không tồn tại
+      // ⇒ rơi xuống catch thành NOT_FOUND, đúng như trước.
+      const realRoot = fs.realpathSync(rootResolved);
+      const realAbs = fs.realpathSync(abs);
+      if (realAbs !== realRoot && !realAbs.startsWith(realRoot + path.sep)) {
+        skipped.push({ path: rel, reason: "ESCAPE" });
+        continue;
+      }
+      const stat = fs.statSync(realAbs);
       if (!stat.isFile()) {
         skipped.push({ path: rel, reason: "NOT_A_FILE" });
         continue;
       }
-      const original = fs.readFileSync(abs, "utf8");
+      const original = fs.readFileSync(realAbs, "utf8");
       const budgetLeft = maxTotalBytes - totalBytes;
       const limit = Math.min(maxFileBytes, budgetLeft);
       const truncated = original.length > limit;

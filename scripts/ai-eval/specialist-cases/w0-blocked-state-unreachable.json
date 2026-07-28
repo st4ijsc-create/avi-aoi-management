@@ -2,12 +2,13 @@
   "id": "w0-blocked-state-unreachable",
   "title": "Agent Command Center: trạng thái blocked không bao giờ hiện, working che mất awaiting_approval",
   "agentId": "backend-engineer",
+  "fixCommit": "7f71461f",
   "objective": "Trên Agent Command Center, khung trạng thái của persona Operations Agent có hai biểu hiện sai: (1) khi một phiên vận hành đang bị tạm ngưng vì có thao tác ghi bị từ chối/vượt giới hạn, khung trạng thái không bao giờ phản ánh điều đó — nó luôn rơi về một giá trị khác; (2) khi cùng lúc có một phiên đang chạy bình thường VÀ một phiên khác đang cần người dùng xác nhận trước khi tiếp tục, khung trạng thái chỉ cho thấy phiên đang chạy bình thường, phiên cần xác nhận bị che mất hoàn toàn. Tìm nguyên nhân gốc trong cách persona này chọn ra phiên đại diện cho trạng thái hiển thị, và cách sửa.",
   "files": ["server/services/aiAgentCenterService.ts"],
   "expected": {
-    "rootCauseKeywords": ["paused", "blocked", "awaiting_approval"],
+    "rootCauseKeywords": ["paused"],
     "mustMentionFiles": ["server/services/aiAgentCenterService.ts"],
-    "fixDirectionKeywords": ["pickByAttention", "ATTENTION_PRIORITY", "SESSION_ATTENTION_STATUS"]
+    "fixDirectionKeywords": ["pickByAttention", "ATTENTION_PRIORITY", "SESSION_ATTENTION_STATUS", "ưu tiên", "attention"]
   },
-  "notes": "Bug thật đã sửa ở doc69 E2-1, commit 7f71461f (chọn active ?? awaiting ?? null theo find() đầu tiên, 'paused' chưa từng được map sang blocked, nên working luôn thắng và blocked không thể đạt tới)."
+  "notes": "Bug thật đã sửa ở doc69 E2-1, commit 7f71461f (chọn active ?? awaiting ?? null theo find() đầu tiên, 'paused' chưa từng được map sang blocked, nên working luôn thắng và blocked không thể đạt tới). FIX ROUND 2 (chống rò đáp án): 'blocked' và 'awaiting_approval' đã có sẵn trong mã trước-khi-sửa ⇒ bỏ khỏi rootCause. Từ khoá quyết định còn lại là 'paused' — trạng thái nguồn CHƯA từng được ánh xạ, không hề xuất hiện trong file lỗi; model phải tự truy ra nó. fixDirection thêm 2 phương án diễn đạt khái niệm (ưu tiên/attention) bên cạnh 3 định danh của bản vá."
 }

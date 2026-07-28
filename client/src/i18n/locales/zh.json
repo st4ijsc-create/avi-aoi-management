@@ -14325,7 +14325,13 @@
       "copy": "复制",
       "copied": "已复制",
       "chainSummaryTitle": "链摘要",
-      "stepSelectorAria": "选择步骤"
+      "stepSelectorAria": "选择步骤",
+      "repoContext": {
+        "summary": "Agent 已读取 {{filesRead}} 个文件 · 跳过 {{skipped}} · 截断 {{truncated}}",
+        "noneTitle": "Agent 未能读取任何文件",
+        "none": "以下建议是在没有真实源代码的情况下给出的（跳过了 {{skipped}} 个路径）。请检查\"相关文件\"输入框。",
+        "unknown": "该会话未记录 Agent 读取的文件数量。"
+      }
     },
     "feedback": {
       "title": "为该结果评分",
@@ -14376,6 +14382,7 @@
       "totalRatings": "评分总数",
       "usefulPct": "有用率 %",
       "empty": "暂无评分。",
+      "scopeMineNote": "本卡片中的数据仅统计您本人的评分。",
       "col": {
         "agent": "Agent",
         "module": "模块",
@@ -14389,6 +14396,7 @@
       "decisionRule": {
         "title": "B 级判定规则",
         "criteria": "条件：≥20 条评分且有用率 ≥ 50%。",
+        "scopeNote": "以下数据按全组织统计（所有用户的评分）— 这才是判定规则要求的范围。",
         "current": "目前有 {{total}} 条评分，有用率 {{pct}}。",
         "insufficient": "数据不足，暂无法判定。",
         "remaining": "还需 {{remaining}} 条评分才能达到最低 20 条。",

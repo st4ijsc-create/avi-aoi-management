@@ -148,4 +148,39 @@ describe("gatherRepoContext", () => {
     expect(r.ragSnippets.length).toBeGreaterThan(0);
     expect(r.ragSnippets[0].text).toBe("nội dung liên quan");
   });
+
+  // M-1 — `classifyRepoPath` là hàm THUẦN (không chạm đĩa) nên không thể biết
+  // một thành phần đường dẫn là symlink; còn `statSync`/`readFileSync` thì ĐI
+  // THEO symlink. Trước bản sửa, một symlink/junction nằm TRONG repo trỏ ra
+  // ngoài vượt qua cả classifyRepoPath (không có "..", không tuyệt đối) lẫn
+  // chốt ESCAPE thuần-chuỗi (đường dẫn danh nghĩa vẫn có tiền tố gốc repo) và
+  // NỘI DUNG NGOÀI REPO chui thẳng vào prompt.
+  it("symlink trong repo trỏ RA NGOÀI ⇒ ESCAPE, KHÔNG đọc được nội dung ngoài repo", async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "repoctx-outside-"));
+    try {
+      fs.writeFileSync(path.join(outside, "loot.ts"), "export const LOOT = 'ngoài-repo';\n");
+      // "junction" để chạy được trên Windows không cần quyền admin; trên POSIX
+      // tham số type bị bỏ qua và vẫn tạo symlink thư mục như thường.
+      fs.symlinkSync(outside, path.join(root, "escape-link"), "junction");
+
+      const r = await gatherRepoContext({
+        files: ["escape-link/loot.ts"],
+        repoRoot: root,
+        includeRag: false,
+      });
+
+      expect(r.files).toHaveLength(0);
+      expect(r.skipped).toEqual([{ path: "escape-link/loot.ts", reason: "ESCAPE" }]);
+      expect(JSON.stringify(r)).not.toContain("ngoài-repo");
+    } finally {
+      fs.rmSync(path.join(root, "escape-link"), { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("file thật trong repo vẫn đọc được sau khi siết realpath (không chặn nhầm)", async () => {
+    const r = await gatherRepoContext({ files: ["server/services/a.ts"], repoRoot: root, includeRag: false });
+    expect(r.files).toHaveLength(1);
+    expect(r.files[0].content).toContain("export const A = 1;");
+  });
 });

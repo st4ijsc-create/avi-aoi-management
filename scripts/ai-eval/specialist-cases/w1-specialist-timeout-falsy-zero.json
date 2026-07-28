@@ -1,13 +1,14 @@
 {
   "id": "w1-specialist-timeout-falsy-zero",
-  "title": "Đặt AI_SPECIALIST_RUN_TIMEOUT_MS=\"0\" làm mọi phiên specialist đang chạy hết hạn ngay lập tức",
+  "title": "Cấu hình ngưỡng hết hạn sai kiểu làm mọi phiên specialist đang chạy hết hạn ngay lập tức",
   "agentId": "backend-engineer",
-  "objective": "Khi biến môi trường AI_SPECIALIST_RUN_TIMEOUT_MS được đặt thành chuỗi \"0\", vòng dọn dẹp housekeeping coi MỌI phiên specialist đang chạy là đã hết hạn ngay lập tức, dù phiên vừa mới bắt đầu. Tìm nguyên nhân gốc và cách sửa.",
+  "fixCommit": "521e788c",
+  "objective": "Ở một cấu hình triển khai nhất định, vòng dọn dẹp housekeeping của agent coi MỌI phiên specialist đang chạy là đã hết hạn ngay lập tức, dù phiên vừa mới bắt đầu vài giây trước. Tìm nguyên nhân gốc trong cách hàm dọn dẹp đọc ngưỡng hết hạn từ cấu hình, và cách sửa.",
   "files": ["server/services/aiAgentHousekeepingScheduler.ts"],
   "expected": {
-    "rootCauseKeywords": ["AI_SPECIALIST_RUN_TIMEOUT_MS", "truthy", "expireStaleSpecialistSessions"],
+    "rootCauseKeywords": ["truthy"],
     "mustMentionFiles": ["server/services/aiAgentHousekeepingScheduler.ts"],
-    "fixDirectionKeywords": ["specialistTimeoutMs", "Number.isFinite", "raw > 0"]
+    "fixDirectionKeywords": ["specialistTimeoutMs", "raw > 0", "lớn hơn 0", "dương", "giá trị mặc định"]
   },
-  "notes": "Bug thật đã sửa ở Wave 1, commit 521e788c (Number(env || 900_000): chuỗi \"0\" là truthy nên bỏ qua giá trị mặc định, Number(\"0\")=0 khiến ngưỡng hết hạn = 0)."
+  "notes": "Bug thật đã sửa ở Wave 1, commit 521e788c (Number(env || 900_000): chuỗi \"0\" là truthy nên bỏ qua giá trị mặc định, Number(\"0\")=0 khiến ngưỡng hết hạn = 0). FIX ROUND 2 (chống rò đáp án): tên biến môi trường và expireStaleSpecialistSessions nằm SẴN trong chính đề bài cũ và trong mã trước-khi-sửa; Number.isFinite cũng đã có sẵn (hàm intervalMs). Đề bài đã được viết lại để KHÔNG nêu tên biến môi trường lẫn giá trị \"0\" — model phải tự tìm ra cả hai. Từ khoá quyết định là 'truthy' (bản chất của lỗi)."
 }

@@ -183,6 +183,10 @@ validation-reports/
 # doc 34 P4 — eval run reports (regenerate via scripts/ai-eval/*). Keep cases/harness, not runs.
 scripts/ai-eval/reports/
 
+# doc69 Wave 1 — kết quả chạy bộ đề specialist (npm run eval:specialist ghi vào
+# knowledge/eval/specialist-<timestamp>.json). Giữ bộ đề + harness, không giữ lần chạy.
+knowledge/eval/
+
 # FE live-verify session cookies (never commit — contain auth tokens)
 scripts/.fe-auth/
 
