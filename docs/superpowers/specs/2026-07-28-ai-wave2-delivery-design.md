@@ -41,9 +41,13 @@ Yêu cầu ban đầu (concern #1) là *"copilot lập trình phải thực sự
 |---|---|---|---|
 | `knowledge/*.jsonl` (file) | 5.370 | `retrieveKnowledge()` (`aiLocalKnowledgeService.ts:1576`) | ✅ **kho thật đang chạy** |
 | `kb_chunks` (pgvector) | 0 | `searchKb()` (`kbVectorStore.ts:110`) | ❌ chỉ có `kbVectorRouter`, không client nào gọi |
-| `kb_studio_chunks` (Studio) | 0 | **KHÔNG TỒN TẠI** | ❌ |
+| `kb_studio_chunks` (Studio) | 0 | `searchCorpus()` (`server/services/kbVectorStore.ts:180`) | ❌ **0 caller sản xuất** |
 
-⚠ Đính chính một hiểu nhầm dễ mắc: `searchKb()` truy vấn bảng **`kb_chunks`**, KHÔNG phải `kb_studio_chunks`. Ba thứ duy nhất đọc `kb_studio_chunks` là `corpusPreview` (xem mẫu ở tab Eval), `listCorpusChunksForTraining` (dữ liệu LoRA), và `deleteCorpus`. **Khả năng truy hồi cho kho Studio chưa từng được xây** — đây là *xây mới*, không phải *nối lại*.
+⚠ **CÓ HAI FILE TRÙNG TÊN `kbVectorStore.ts` — đây là bẫy đã làm chính tác giả spec đọc nhầm một lần:**
+- `server/services/kb/kbVectorStore.ts` → `searchKb()` (`:110`) đọc bảng **`kb_chunks`** (kho song song, 0 dòng, chỉ có `kbVectorRouter`, không client nào gọi).
+- `server/services/kbVectorStore.ts` → `upsertChunks()` (`:93`, **đang được `kbIngestService` dùng để ghi**) và `searchCorpus(corpus, queryEmbedding, k)` (`:180`) đọc bảng **`kb_studio_chunks`**.
+
+Vậy hàm truy hồi cho kho Studio **ĐÃ TỒN TẠI** — vấn đề là **không ai gọi nó** (grep toàn repo: 0 caller sản xuất; chỉ có một comment trong `kbIngestService.ts:212` nhắc tới). Đây là **nối lại**, KHÔNG phải xây mới. Người thi công phải mở đúng file (`server/services/kbVectorStore.ts`, không có `/kb/`).
 
 **Hai điều kiện kỹ thuật đã xác minh, quyết định tính khả thi:**
 1. `kb_studio_chunks.embedding_vec` là `vector(1024)`, sinh bởi **cùng** `generateEmbedding()` mà corpus file dùng (Qwen3-Embedding-0.6B) ⇒ **gộp hai nguồn là hợp lệ về toán học**, cosine có nghĩa.
@@ -102,9 +106,13 @@ Badge đếm đúng theo `pointDefId`; tự-duyệt bị khoá kèm lý do; batc
 ### B1 — Vá lời nói dối TRƯỚC (làm cùng lúc với việc biến nó thành sự thật)
 Tab Model Builder hiện ghi *"Today's corpora already power RAG-grounded answers in the AI assistant"* (khoá i18n `kbStudio.modelBuilder.comingSoonDesc`) — **sai sự thật**. Sửa câu chữ ở cả `vi/en/zh` để phản ánh đúng trạng thái tại từng thời điểm của wave này.
 
-### B2 — Xây hàm truy hồi cho kho Studio (mới)
-- Thêm `searchStudioCorpus(query, topK, corpus?)` vào `server/services/kb/kbVectorStore.ts`, **mô phỏng đúng khuôn `searchKb()` đã có** (`:110-135`): pgvector HNSW cosine `<=>` trước, brute-force trong Node làm dự phòng, cùng `DIM`, cùng cách dựng `vecStr`.
-- Fail-safe: DB null ⇒ `[]`; bảng chưa migrate ⇒ `[]` qua cause-walker `isMissingTable`; **không bao giờ ném**.
+### B2 — Nối hàm truy hồi ĐÃ CÓ của kho Studio
+`searchCorpus(corpus, queryEmbedding, k)` (`server/services/kbVectorStore.ts:180`) đã tồn tại, đã có 2 tầng (pgvector HNSW khi `queryEmbedding.length === VECTOR_DIM=1024`, brute-force dự phòng) và đã fail-safe (`db` null ⇒ `[]`, corpus rỗng ⇒ `[]`, `k` kẹp 1..50). **Không viết lại.**
+
+Hai việc phải làm để dùng được nó:
+1. **Nó nhận embedding ĐÃ TÍNH SẴN, không nhận chuỗi truy vấn.** `retrieveKnowledge()` vốn đã tính `qVec` qua `embedQuestion(question)` — truyền lại chính vector đó, **không nhúng lần hai** (tốn thời gian và có thể lệch).
+2. **Nó lọc theo MỘT corpus.** Cần quyết định tìm trong corpus nào: gọi `listCorpora()` (`kbStudioService.ts:89`) rồi tìm trong **tất cả corpus đang có**, gộp kết quả rồi cắt `topK`. Với số corpus nhỏ (thực tế hiện là 0) chi phí không đáng kể; nếu sau này nhiều corpus, đó là lúc thêm bộ lọc do người dùng chọn — **không tối ưu sớm**.
+- Bọc thành một hàm mỏng trong `aiLocalKnowledgeService` để `retrieveKnowledge` gọi một chỗ, và để fail-safe tập trung: bất kỳ lỗi nào ⇒ `[]`, **không bao giờ ném**.
 
 ### B3 — Trộn vào `retrieveKnowledge()`
 - `retrieveKnowledge()` (`aiLocalKnowledgeService.ts:1576`) truy hồi **hai nguồn**: corpus file (như hiện nay) **+** `searchStudioCorpus`.
@@ -178,7 +186,11 @@ Ghost-text bật đúng ở cả 4 màn (không rò sang editor chỉ-đọc); `
 ## 10. Tài liệu tham chiếu
 
 - `server/services/aiLocalKnowledgeService.ts:1576` — `retrieveKnowledge()`
-- `server/services/kb/kbVectorStore.ts:110` — `searchKb()` (khuôn để mô phỏng; lưu ý nó đọc `kb_chunks`)
+- `server/services/kbVectorStore.ts:93,180` — `upsertChunks()` (đường ghi Studio đang dùng) + `searchCorpus()` (**hàm truy hồi cần nối**, `VECTOR_DIM=1024`)
+- `server/services/kb/kbVectorStore.ts:110` — `searchKb()` — **file KHÁC, bảng KHÁC (`kb_chunks`)**, không dùng cho Wave 2
+- `server/services/kbStudioService.ts:89` — `listCorpora()` (để duyệt các corpus khi truy hồi)
+- `server/services/aiProviderRouter.ts:391` — `describeImage()` (primitive VLM chung; `describeDefect` ở `aiVisionLanguage.ts:55` là **prompt riêng cho lỗi AOI**, KHÔNG dùng cho ảnh tài liệu)
+- `server/services/llamaVisionSidecar.ts:122` — `isVisionSidecarAvailable()` (kiểm trung thực trước khi nhận ảnh)
 - `drizzle/schema/product.ts:1076-1102` — `threshold_approvals`
 - `client/src/components/AIThresholdSuggestButton.tsx:67`; dùng ở `PointDetailsForm.tsx:402`, `MqttNgRateThreshold.tsx:742`
 - `client/src/pages/ProductModels.tsx:468,2297,2308` — batch-select sẵn có
