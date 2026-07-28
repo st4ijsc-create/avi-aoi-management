@@ -1769,6 +1769,26 @@ export const en: Dictionary = {
       copyFailed: "Couldn't copy — select and copy manually instead.",
       register: "Register this identity at your SYNAPSE Site.",
       loadFailed: "Couldn't load the device identity.",
+      // GĐ3 closeout WI-4 — certificate expiry + Admin-only rotation.
+      expiryLabel: "Certificate expiry",
+      expired: (vars: Vars) => `This certificate EXPIRED ${vars.days} day(s) ago — rotate it now.`,
+      expiringSoon: (vars: Vars) => `This certificate expires in ${vars.days} day(s) — plan a rotation soon.`,
+      rotateButton: "Rotate identity",
+      rotateConfirmTitle: "Rotate device identity?",
+      rotateConfirmDescription:
+        "This mints a brand-new certificate and fingerprint for this device, replacing the current one everywhere it's used. The Site you're linked to has PINNED the CURRENT fingerprint — the moment you rotate, the uplink will stop working and stay down until an operator pastes the NEW fingerprint into that Site's trust configuration. Only do this when you're ready to update the Site right after. This cannot be undone.",
+      rotateConfirmSubmit: "Rotate identity",
+      rotateCancel: "Cancel",
+      rotating: "Rotating…",
+      rotateSuccessTitle: "Identity rotated",
+      rotateSuccessDescription:
+        "This device now presents a new certificate. Copy the fingerprint below and update it at your SYNAPSE Site now — the uplink stays down until you do.",
+      rotateDone: "Done",
+      rotateErrorBadRequest: "The current fingerprint wasn't sent correctly — reload the page and try again.",
+      rotateErrorConflict:
+        "The device identity changed since this page loaded (it may already have been rotated) — reload the page to see the current fingerprint, then try again.",
+      rotateErrorForbidden: "You don't have permission to rotate the device identity.",
+      rotateErrorGeneric: "Couldn't rotate the device identity.",
     },
     form: {
       title: "Site connection",
@@ -1796,6 +1816,11 @@ export const en: Dictionary = {
       Connected: "Connected",
       Degraded: "Degraded",
       Down: "Down",
+      // GĐ3 closeout WI-3 — the spool writer and/or forward loop died in the background; the MQTT
+      // clients can still look connected while this is true, which is exactly why it outranks them.
+      Faulted: "Faulted",
+      faultedWarning:
+        "The bridge's internal spool/forward loop has stopped — production data may no longer be persisted or forwarded even though the connection itself looks fine. This does not self-heal; it requires a service restart to clear. Check the machine's logs for the underlying error.",
       lastError: (vars: Vars) => `Last error: ${vars.error}`,
       siteVerified: (vars: Vars) => `Verified Site certificate: ${vars.fingerprint}`,
       unsDisabled: "The local UNS spine is disabled (ST4I_UNS_ENABLED=false); enable it to federate this device to a Site.",
@@ -1815,6 +1840,18 @@ export const en: Dictionary = {
       empty: "No Sites found on the LAN.",
       error: "Couldn't scan the LAN for Sites.",
       pick: (vars: Vars) => `Use ${vars.instanceName} (${vars.host}:${vars.port}) to fill in the Site host and port`,
+    },
+    // GĐ3 closeout WI-3 — the durable northbound spool's own telemetry (`GET /v1/site`'s `spoolDepth`/
+    // `lastAckedSeq`/`droppedTotal`). `droppedLabel`'s value is rendered in a danger tone, and
+    // `droppedWarning` only shown at all, whenever `droppedTotal > 0` — that count means production data
+    // that will NEVER reach the Site, not a neutral statistic.
+    spool: {
+      title: "Northbound spool",
+      depthLabel: "Messages queued",
+      lastAckedLabel: "Last acked sequence",
+      droppedLabel: "Permanently dropped",
+      droppedWarning: (vars: Vars) =>
+        `${vars.count} message(s) were permanently dropped by the spool and can never be recovered — the Site never received this production data.`,
     },
   },
 
@@ -1857,6 +1894,8 @@ export const en: Dictionary = {
       Policy: "Safety policy",
       DriverHealth: "Driver health",
       NgRate: "NG rate",
+      // GĐ3 closeout WI-4 — the identity/certificate-expiry evaluator (raised at High, never Critical).
+      Identity: "Certificate expiry",
     },
     detail: {
       title: (vars: Vars) => `Alarm #${vars.id} detail`,
@@ -2008,6 +2047,8 @@ export const en: Dictionary = {
     siteLinkSaveFailed: "Couldn't save the Site connection.",
     fingerprintCopied: "Fingerprint copied.",
     certCopied: "Certificate copied.",
+    identityRotated: "Device identity rotated.",
+    identityRotateFailed: "Couldn't rotate the device identity.",
     alarmAcked: (vars: Vars) => `Acknowledged alarm ${vars.code}.`,
     alarmAckFailed: "Couldn't acknowledge the alarm.",
     lineCommandApplied: (vars: Vars) => `Command applied — current state: ${vars.state}.`,

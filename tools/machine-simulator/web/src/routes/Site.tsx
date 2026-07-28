@@ -1,7 +1,7 @@
 import * as React from "react"
 import { motion } from "framer-motion"
 import type { VariantProps } from "class-variance-authority"
-import { Copy, Eye, EyeOff, Loader2, Network, Radar, Save, ShieldAlert } from "lucide-react"
+import { Copy, Eye, EyeOff, Loader2, Network, Radar, RotateCw, Save, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
 
 import { useGloss } from "@/components/hmi/bilingual"
@@ -9,6 +9,7 @@ import { useT } from "@/i18n"
 import { useAuth } from "@/lib/auth"
 import {
   EngineApiError,
+  useRotateIdentity,
   useSetSiteLink,
   useSite,
   useSiteDiscover,
@@ -19,6 +20,7 @@ import {
 import { fadeSlideUp } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { FormField } from "@/components/FormField"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -64,21 +66,26 @@ function RequireRole({ role, children }: { role: string; children: React.ReactNo
   return <>{children}</>
 }
 
-const KNOWN_BRIDGE_STATES = new Set<string>(["Disabled", "Connecting", "Connected", "Degraded", "Down"])
+const KNOWN_BRIDGE_STATES = new Set<string>(["Disabled", "Connecting", "Connected", "Degraded", "Down", "Faulted"])
 
 /** 1:1 with the five `StatusBadge` tones (`ui/status-badge.tsx`) — `Connecting` reuses `info`, the same
  * "in progress" tone `EcosystemConnect.tsx`'s own `STATUS_BADGE` map uses for its analogous `testing`
- * state; `Degraded` reads as `warn` (amber/orange), `Down` as `danger` (red), matching the blueprint's
- * own grey/amber/green/orange/red ramp as closely as the shared 5-tone palette allows. */
+ * state; `Degraded` reads as `warn` (amber/orange), `Down`/`Faulted` as `danger` (red), matching the
+ * blueprint's own grey/amber/green/orange/red ramp as closely as the shared 5-tone palette allows.
+ * `Faulted` (GĐ3 closeout WI-3) shares `Down`'s `danger` tone rather than inventing a sixth hue this
+ * palette doesn't have — the two states read as distinctly different TEXT (`site.status.Faulted` is not
+ * `site.status.Down`) on the SAME "this is broken" red, which is exactly the point: `Faulted` must never
+ * again be mistaken for `Disabled`'s neutral grey, the bug this task fixes. */
 const BRIDGE_STATUS_BADGE: Record<BridgeState, BadgeStatus> = {
   Disabled: "neutral",
   Connecting: "info",
   Connected: "ok",
   Degraded: "warn",
   Down: "danger",
+  Faulted: "danger",
 }
 
-/** Known-value lookup with a verbatim fallback for anything outside the five names above — same idiom
+/** Known-value lookup with a verbatim fallback for anything outside the six names above — same idiom
  * `AssetRegistry.tsx`'s `deviceClassLabel`/`driverKindLabel` use for a wire value the client has no
  * i18n entry for yet. */
 function bridgeStateLabel(t: TFunc, value: string): string {
@@ -128,11 +135,135 @@ function IdentityCopyButton({ value, label, successToast }: { value: string; lab
   )
 }
 
+const certDateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+})
+
+function formatCertDate(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? "—" : certDateTimeFormatter.format(d)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GĐ3 closeout WI-4 — device-identity rotation. Admin-only, gated by `RequireRole role="Admin"` at the
+// call site below. `POST /v1/site/identity/rotate` is genuinely destructive (see `SiteEndpoints.
+// RotateIdentityAsync`'s own doc comment): the Site pins THIS device's OLD fingerprint, so rotating
+// breaks the uplink until an operator pastes the NEW fingerprint into the Site — the confirmation copy
+// below says so plainly BEFORE the click, and the success view puts the new fingerprint front and
+// center, easy to copy, so nobody has to go hunting for it afterward.
+// ─────────────────────────────────────────────────────────────────────────
+
+function RotateIdentityDialog({
+  open,
+  onOpenChange,
+  currentFingerprint,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  currentFingerprint: string
+}) {
+  const t = useT()
+  const rotate = useRotateIdentity()
+  const [newFingerprint, setNewFingerprint] = React.useState<string | null>(null)
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
+
+  // Reset to a fresh confirmation every time the dialog is (re)opened — otherwise a second rotation
+  // later in the same session would reopen straight into the PREVIOUS rotation's success view.
+  React.useEffect(() => {
+    if (open) {
+      setNewFingerprint(null)
+      setErrorMsg(null)
+    }
+  }, [open])
+
+  function handleConfirm() {
+    setErrorMsg(null)
+    rotate.mutate(
+      { currentFingerprint },
+      {
+        onSuccess: (identity) => {
+          setNewFingerprint(identity.deviceFingerprint)
+          toast.success(t("toast.identityRotated"))
+        },
+        onError: (err) => {
+          let key = "site.identity.rotateErrorGeneric"
+          if (err instanceof EngineApiError) {
+            if (err.status === 400) key = "site.identity.rotateErrorBadRequest"
+            else if (err.status === 409) key = "site.identity.rotateErrorConflict"
+            else if (err.status === 403) key = "site.identity.rotateErrorForbidden"
+          }
+          setErrorMsg(t(key))
+          toast.error(t("toast.identityRotateFailed"))
+        },
+      }
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        {newFingerprint ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{t("site.identity.rotateSuccessTitle")}</DialogTitle>
+              <DialogDescription>{t("site.identity.rotateSuccessDescription")}</DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center gap-1.5">
+              <Input readOnly value={newFingerprint} className="font-mono text-xs" aria-label={t("site.identity.fingerprintLabel")} />
+              <IdentityCopyButton
+                value={newFingerprint}
+                label={t("site.identity.copyFingerprint")}
+                successToast={t("toast.fingerprintCopied")}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" onClick={() => onOpenChange(false)}>
+                {t("site.identity.rotateDone")}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>{t("site.identity.rotateConfirmTitle")}</DialogTitle>
+              <DialogDescription>{t("site.identity.rotateConfirmDescription")}</DialogDescription>
+            </DialogHeader>
+            {errorMsg ? (
+              <p className="text-xs text-danger-text" role="alert">
+                {errorMsg}
+              </p>
+            ) : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={rotate.isPending}>
+                {t("site.identity.rotateCancel")}
+              </Button>
+              <Button type="button" variant="destructive" onClick={handleConfirm} disabled={rotate.isPending}>
+                {rotate.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <RotateCw className="size-3.5" aria-hidden="true" />
+                )}
+                {rotate.isPending ? t("site.identity.rotating") : t("site.identity.rotateConfirmSubmit")}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function DeviceIdentityCard() {
   const t = useT()
   const gloss = useGloss()
   const { data, isPending, isError } = useSiteIdentity()
   const [showPem, setShowPem] = React.useState(false)
+  const [rotateOpen, setRotateOpen] = React.useState(false)
+
+  const expiryTone: "danger" | "warn" | null =
+    data === undefined ? null : data.daysToExpiry < 0 ? "danger" : data.daysToExpiry < 30 ? "warn" : null
 
   return (
     <Sheet title={t("site.identity.title")} titleEn={gloss("site.identity.title")} bodyClassName="flex flex-col gap-4">
@@ -162,6 +293,24 @@ function DeviceIdentityCard() {
             </div>
           </FormField>
 
+          <dl>
+            <DetailField label={t("site.identity.expiryLabel")}>{formatCertDate(data.notAfterUtc)}</DetailField>
+          </dl>
+
+          {expiryTone === "danger" ? (
+            <div className="flex items-start gap-2 border border-danger/30 bg-danger/10 px-3 py-2.5">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-danger-text" aria-hidden="true" />
+              <p className="text-sm text-danger-text" role="alert">
+                {t("site.identity.expired", { days: Math.abs(data.daysToExpiry) })}
+              </p>
+            </div>
+          ) : expiryTone === "warn" ? (
+            <div className="flex items-start gap-2 border border-warn/30 bg-warn/10 px-3 py-2.5">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warn-text" aria-hidden="true" />
+              <p className="text-sm text-warn-text">{t("site.identity.expiringSoon", { days: data.daysToExpiry })}</p>
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-text-body">{t("site.identity.pemLabel")}</span>
@@ -189,6 +338,16 @@ function DeviceIdentityCard() {
           </div>
 
           <p className="text-[11px] text-text-muted">{t("site.identity.register")}</p>
+
+          <RequireRole role="Admin">
+            <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+              <Button type="button" variant="destructive" size="sm" className="w-fit" onClick={() => setRotateOpen(true)}>
+                <RotateCw className="size-3.5" aria-hidden="true" />
+                {t("site.identity.rotateButton")}
+              </Button>
+              <RotateIdentityDialog open={rotateOpen} onOpenChange={setRotateOpen} currentFingerprint={data.deviceFingerprint} />
+            </div>
+          </RequireRole>
         </>
       )}
     </Sheet>
@@ -372,6 +531,41 @@ function SiteConnectionCard() {
               <p className="text-sm text-warn-text">{t("site.status.unsDisabled")}</p>
             </div>
           ) : null}
+
+          {/* GĐ3 closeout WI-3 — `Faulted` OUTRANKS every other state on the server precisely because the
+              MQTT clients can look fine while the background writer/forward loop is dead; this banner is
+              the plain-language explanation the terse status badge above can't carry on its own. */}
+          {data.bridgeState === "Faulted" ? (
+            <div className="flex items-start gap-2 border border-danger/30 bg-danger/10 px-3 py-2.5">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-danger-text" aria-hidden="true" />
+              <p className="text-sm text-danger-text" role="alert">
+                {t("site.status.faultedWarning")}
+              </p>
+            </div>
+          ) : null}
+
+          {/* GĐ3 closeout WI-3 — the durable northbound spool's own telemetry: how much is currently
+              backed up on disk, the last acked seq, and (the one that matters most) how much has EVER
+              been permanently dropped by the spool's own age/byte caps. Shown unconditionally — all
+              three are a real `0`, never garbage, whenever there's no spool at all (see `SiteStatus`'s
+              own doc comment in `lib/api.ts`). */}
+          <div className="flex flex-col gap-2 border border-border-strong bg-surface-muted/40 px-3 py-2.5">
+            <span className="text-xs font-medium text-text-body">{t("site.spool.title")}</span>
+            <dl className="grid grid-cols-3 gap-x-3 gap-y-2">
+              <DetailField label={t("site.spool.depthLabel")}>{data.spoolDepth}</DetailField>
+              <DetailField label={t("site.spool.lastAckedLabel")}>{data.lastAckedSeq}</DetailField>
+              <DetailField label={t("site.spool.droppedLabel")}>
+                <span className={data.droppedTotal > 0 ? "font-semibold text-danger-text" : undefined}>
+                  {data.droppedTotal}
+                </span>
+              </DetailField>
+            </dl>
+            {data.droppedTotal > 0 ? (
+              <p className="text-xs text-danger-text" role="alert">
+                {t("site.spool.droppedWarning", { count: data.droppedTotal })}
+              </p>
+            ) : null}
+          </div>
 
           <RequireRole role="Engineer">
             <>

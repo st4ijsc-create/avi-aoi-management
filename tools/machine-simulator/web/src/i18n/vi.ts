@@ -1836,6 +1836,26 @@ export const vi = {
       copyFailed: "Không thể sao chép — hãy chọn và sao chép thủ công.",
       register: "Đăng ký định danh này tại SYNAPSE Site của bạn.",
       loadFailed: "Không thể tải định danh thiết bị.",
+      // GĐ3 closeout WI-4 — hạn dùng chứng chỉ + cấp lại định danh (chỉ dành cho Admin).
+      expiryLabel: "Ngày hết hạn chứng chỉ",
+      expired: (vars: Vars) => `Chứng chỉ này ĐÃ HẾT HẠN ${vars.days} ngày trước — hãy cấp lại ngay.`,
+      expiringSoon: (vars: Vars) => `Chứng chỉ này sẽ hết hạn trong ${vars.days} ngày nữa — hãy lên kế hoạch cấp lại sớm.`,
+      rotateButton: "Cấp lại định danh",
+      rotateConfirmTitle: "Cấp lại định danh thiết bị?",
+      rotateConfirmDescription:
+        "Thao tác này sẽ tạo một chứng chỉ và vân tay (fingerprint) HOÀN TOÀN MỚI cho thiết bị này, thay thế giá trị hiện tại ở mọi nơi đang dùng nó. Site mà bạn đang liên kết đã GHIM vân tay HIỆN TẠI — ngay khi cấp lại, kết nối lên Site sẽ NGỪNG hoạt động và tiếp tục gián đoạn cho đến khi có người dán vân tay MỚI vào cấu hình tin cậy tại Site đó. Chỉ thực hiện khi bạn đã sẵn sàng cập nhật Site ngay sau đó. Hành động này không thể hoàn tác.",
+      rotateConfirmSubmit: "Cấp lại định danh",
+      rotateCancel: "Hủy",
+      rotating: "Đang cấp lại…",
+      rotateSuccessTitle: "Đã cấp lại định danh",
+      rotateSuccessDescription:
+        "Thiết bị này hiện đang dùng chứng chỉ mới. Hãy sao chép vân tay bên dưới và cập nhật ngay vào SYNAPSE Site của bạn — kết nối sẽ tiếp tục gián đoạn cho đến khi bạn làm điều đó.",
+      rotateDone: "Xong",
+      rotateErrorBadRequest: "Vân tay hiện tại chưa được gửi đúng cách — hãy tải lại trang và thử lại.",
+      rotateErrorConflict:
+        "Định danh thiết bị đã thay đổi kể từ khi trang này được tải (có thể đã được cấp lại) — hãy tải lại trang để xem vân tay hiện tại rồi thử lại.",
+      rotateErrorForbidden: "Bạn không có quyền cấp lại định danh thiết bị.",
+      rotateErrorGeneric: "Không thể cấp lại định danh thiết bị.",
     },
     form: {
       title: "Kết nối Site",
@@ -1863,6 +1883,12 @@ export const vi = {
       Connected: "Đã kết nối",
       Degraded: "Suy giảm",
       Down: "Mất kết nối",
+      // GĐ3 closeout WI-3 — vòng lặp lưu đệm (spool)/chuyển tiếp nội bộ đã dừng ở phía sau; các client
+      // MQTT vẫn có thể trông như đang kết nối bình thường trong lúc này, đó chính là lý do trạng thái
+      // này được ưu tiên cao hơn tất cả các trạng thái khác.
+      Faulted: "Gặp lỗi",
+      faultedWarning:
+        "Vòng lặp lưu đệm (spool)/chuyển tiếp nội bộ của cầu nối đã dừng — dữ liệu sản xuất có thể không còn được lưu hoặc chuyển tiếp dù bản thân kết nối trông vẫn bình thường. Lỗi này không tự phục hồi; cần khởi động lại dịch vụ để khắc phục. Hãy kiểm tra nhật ký (log) của máy để tìm nguyên nhân.",
       lastError: (vars: Vars) => `Lỗi gần nhất: ${vars.error}`,
       siteVerified: (vars: Vars) => `Đã xác thực chứng chỉ Site: ${vars.fingerprint}`,
       unsDisabled:
@@ -1884,6 +1910,18 @@ export const vi = {
       error: "Không thể quét mạng LAN để tìm Site.",
       pick: (vars: Vars) =>
         `Dùng ${vars.instanceName} (${vars.host}:${vars.port}) để điền vào ô Địa chỉ Site và Cổng`,
+    },
+    // GĐ3 closeout WI-3 — thông tin của bộ đệm chuyển tiếp (spool) phía bắc (`spoolDepth`/
+    // `lastAckedSeq`/`droppedTotal` từ `GET /v1/site`). Giá trị `droppedLabel` hiển thị ở tông màu nguy
+    // hiểm, và `droppedWarning` chỉ hiện khi `droppedTotal > 0` — con số đó nghĩa là dữ liệu sản xuất sẽ
+    // KHÔNG BAO GIỜ đến được Site, không phải một con số thống kê bình thường.
+    spool: {
+      title: "Bộ đệm chuyển tiếp (spool)",
+      depthLabel: "Bản ghi đang chờ",
+      lastAckedLabel: "Số thứ tự (seq) đã xác nhận gần nhất",
+      droppedLabel: "Đã bị loại bỏ vĩnh viễn",
+      droppedWarning: (vars: Vars) =>
+        `Đã có ${vars.count} bản ghi bị loại bỏ vĩnh viễn khỏi bộ đệm (spool) và không thể khôi phục — Site chưa bao giờ nhận được dữ liệu sản xuất này.`,
     },
   },
 
@@ -1926,6 +1964,8 @@ export const vi = {
       Policy: "Chính sách an toàn",
       DriverHealth: "Sức khỏe driver",
       NgRate: "Tỷ lệ NG",
+      // GĐ3 closeout WI-4 — bộ đánh giá định danh/hết hạn chứng chỉ (phát ở mức High, không bao giờ Critical).
+      Identity: "Hết hạn chứng chỉ",
     },
     detail: {
       title: (vars: Vars) => `Chi tiết cảnh báo #${vars.id}`,
@@ -2079,6 +2119,8 @@ export const vi = {
     siteLinkSaveFailed: "Không thể lưu kết nối Site.",
     fingerprintCopied: "Đã sao chép vân tay.",
     certCopied: "Đã sao chép chứng chỉ.",
+    identityRotated: "Đã cấp lại định danh thiết bị.",
+    identityRotateFailed: "Không thể cấp lại định danh thiết bị.",
     alarmAcked: (vars: Vars) => `Đã xác nhận cảnh báo ${vars.code}.`,
     alarmAckFailed: "Không thể xác nhận cảnh báo.",
     lineCommandApplied: (vars: Vars) => `Đã thực hiện lệnh — trạng thái hiện tại: ${vars.state}.`,

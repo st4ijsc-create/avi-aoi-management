@@ -56,12 +56,13 @@ const PRIORITY_TONE: Record<AlarmPriority, BadgeStatus> = {
   Low: "info",
 }
 
-const KNOWN_SOURCES = new Set<string>(["Policy", "DriverHealth", "NgRate"])
+const KNOWN_SOURCES = new Set<string>(["Policy", "DriverHealth", "NgRate", "Identity"])
 
-/** Known-value lookup with a verbatim fallback for anything outside the three known sources — same
+/** Known-value lookup with a verbatim fallback for anything outside the four known sources — same
  * idiom `AssetRegistry.tsx`'s `deviceClassLabel`/`driverKindLabel` use for a wire value the client has
- * no i18n entry for yet (LC-2's `DriverHealth`/`NgRate` sources already have entries here, so this only
- * ever falls back for a genuinely future addition). */
+ * no i18n entry for yet (LC-2's `DriverHealth`/`NgRate` sources, and GĐ3 closeout WI-4's `Identity`
+ * certificate-expiry source, already have entries here, so this only ever falls back for a genuinely
+ * future addition). */
 function sourceLabel(t: TFunc, value: AlarmSource | string): string {
   return KNOWN_SOURCES.has(value) ? t(`alarms.source.${value}`) : value
 }

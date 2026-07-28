@@ -1567,16 +1567,29 @@ export function useSetAssetLifecycle() {
 /** `St4i.EdgeCore.Site.BridgeStatus.BridgeState` — the northbound bridge's own health ramp. Kept as a
  * plain `string` on `SiteStatusDto.BridgeState` (not narrowed to a TS union) since the server itself
  * only ever emits `.ToString()` of the C# enum — `Site.tsx`'s own status-badge lookup falls back to
- * the raw value verbatim for anything outside these five known names, same "known-value lookup with a
- * verbatim fallback" idiom `deviceClassLabel`/`driverKindLabel` (`AssetRegistry.tsx`) already use. */
-export type BridgeState = "Disabled" | "Connecting" | "Connected" | "Degraded" | "Down"
+ * the raw value verbatim for anything outside these six known names, same "known-value lookup with a
+ * verbatim fallback" idiom `deviceClassLabel`/`driverKindLabel` (`AssetRegistry.tsx`) already use.
+ * `Faulted` (GĐ3 closeout WI-3) — the spool writer and/or forward loop died in the background while the
+ * MQTT clients still look connected; it OUTRANKS `Connected`/`Degraded`/`Connecting` on the server (see
+ * `BridgeState.cs`'s own doc comment) precisely so an operator never sees a healthy-looking badge while
+ * forwarding has silently stopped — `Site.tsx` must render it in a danger tone, never lumped in with
+ * `Disabled`'s neutral one. */
+export type BridgeState = "Disabled" | "Connecting" | "Connected" | "Degraded" | "Down" | "Faulted"
 
 /** `SiteStatusDto` — `GET /v1/site` (Operator). `siteTrustPem` never appears here — it's write-only via
  * `SiteLinkRequest` below (see `SiteEndpoints.cs`'s own doc comment); `siteFingerprint` is the PINNED
  * value the bridge actually validated on its last successful handshake instead, `null` until then.
  * `unsEnabled: false` means `SiteBridgeManager` isn't registered at all (`ST4I_UNS_ENABLED` off) —
  * `enabled`/`host`/`port`/`bridgeState` are then fixed placeholders (`false`/`""`/`0`/`"Disabled"`),
- * only `deviceFingerprint` stays a real value. */
+ * only `deviceFingerprint` stays a real value.
+ *
+ * <para>GĐ3 closeout WI-3 — `spoolDepth`/`lastAckedSeq`/`droppedTotal` mirror
+ * `BridgeStatusSnapshot`'s own same-named fields verbatim: how many northbound messages are currently
+ * backed up on disk, the highest spooled seq ever successfully forwarded+acked, and how many spooled
+ * messages have ever been permanently dropped by the spool's own age/byte caps. All three are `0` —
+ * never garbage — whenever there's no durable spool at all (UNS disabled, no bridge, or
+ * `ST4I_BRIDGE_SPOOL_ENABLED=0`). `droppedTotal > 0` means production data that will NEVER reach the
+ * Site — `Site.tsx` treats it as a warning, not a neutral counter. */
 export interface SiteStatus {
   enabled: boolean
   host: string
@@ -1586,14 +1599,35 @@ export interface SiteStatus {
   siteFingerprint: string | null
   deviceFingerprint: string
   unsEnabled: boolean
+  spoolDepth: number
+  lastAckedSeq: number
+  droppedTotal: number
 }
 
 /** `SiteIdentityDto` — `GET /v1/site/identity` (Operator). This device's own public identity, for an
  * operator to register at a SYNAPSE Site — always real regardless of `unsEnabled`/whether a Site link
- * is configured at all (EC-1's `DeviceIdentity` is generated/loaded once at process startup). */
+ * is configured at all (EC-1's `DeviceIdentity` is generated/loaded once at process startup).
+ *
+ * <para>GĐ3 closeout WI-4 — `notAfterUtc`/`daysToExpiry` make the certificate's own expiry visible for
+ * the first time. `daysToExpiry` can be NEGATIVE for an already-expired certificate (a floor of the day
+ * delta, computed fresh at response time, not stored) — `Site.tsx` treats that as "rotate NOW", never
+ * clamps it away. */
 export interface SiteIdentity {
   deviceFingerprint: string
   deviceCertPem: string
+  notAfterUtc: string
+  daysToExpiry: number
+}
+
+/** `RotateIdentityRequest` — `POST /v1/site/identity/rotate` (Admin) body. `SiteEndpoints.
+ * RotateIdentityAsync` requires this to echo the fingerprint `GET /v1/site/identity` currently reports:
+ * missing/blank is a 400, a mismatch (someone else already rotated, or the page is just stale) is a
+ * 409 — see `useRotateIdentity` below for how `Site.tsx` surfaces each. Deliberately NOT optional on
+ * this interface (unlike the server's own nullable DTO) — every call site in this app already holds a
+ * real current fingerprint (`useSiteIdentity`'s own data) before it can render the Rotate button at
+ * all, so there is never a legitimate reason for this client to send a blank one. */
+export interface RotateIdentityRequest {
+  currentFingerprint: string
 }
 
 /** `SiteLinkRequest` — `PUT /v1/site` (Engineer) body. `host`/`port`/`siteTrustPem` are only
@@ -1623,6 +1657,7 @@ export interface DiscoveredSite {
 }
 
 const SITE_QUERY_KEY = ["site"] as const
+const SITE_IDENTITY_QUERY_KEY = ["site", "identity"] as const
 
 const siteEndpoints = {
   site: () => request<SiteStatus>("/v1/site"),
@@ -1632,6 +1667,11 @@ const siteEndpoints = {
   /** `GET /v1/site/discover` (Engineer) — a bounded ~4s mDNS LAN browse; an empty array is a legitimate
    * result (no Site advertising on this LAN segment), never a 404/500 (see `SiteEndpoints.DiscoverAsync`). */
   discover: () => request<DiscoveredSite[]>("/v1/site/discover"),
+  /** `POST /v1/site/identity/rotate` (Admin) — see `RotateIdentityRequest`'s own doc comment for why
+   * `currentFingerprint` is required, not optional, on this client. Returns the SAME `SiteIdentityDto`
+   * shape `GET /v1/site/identity` does, now reflecting the freshly-minted certificate. */
+  rotateIdentity: (body: RotateIdentityRequest) =>
+    request<SiteIdentity>("/v1/site/identity/rotate", { method: "POST", body: JSON.stringify(body) }),
 }
 
 /** `GET /v1/site` (Operator) — polled at 3s so the bridge-status badge (`Connecting` →
@@ -1650,7 +1690,7 @@ export function useSite(): UseQueryResult<SiteStatus> {
  * fingerprint never changes for the life of the process, so there's nothing external to poll for. */
 export function useSiteIdentity(): UseQueryResult<SiteIdentity> {
   return useQuery({
-    queryKey: ["site", "identity"] as const,
+    queryKey: SITE_IDENTITY_QUERY_KEY,
     queryFn: siteEndpoints.siteIdentity,
   })
 }
@@ -1665,6 +1705,31 @@ export function useSetSiteLink() {
   return useMutation({
     mutationFn: siteEndpoints.setSiteLink,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SITE_QUERY_KEY })
+    },
+  })
+}
+
+/** `POST /v1/site/identity/rotate` (Admin — `Site.tsx`'s own client-side `RequireRole role="Admin"` is
+ * only a UX gate; the server's `Policies.Admin` is the real enforcement). This is a genuinely
+ * destructive action — see `Site.tsx`'s confirmation dialog for why — so unlike every other mutation in
+ * this file, the CALLER is expected to have already confirmed with the operator before ever calling
+ * `.mutate()`. On success, `setQueryData`s the new identity straight into `["site","identity"]` (same
+ * "write the specific entry, then invalidate the wider collection" idiom `useSetAssetLifecycle` uses
+ * above) AND invalidates `["site"]` — rotation re-applies the live Site bridge with the new certificate
+ * (`RotateIdentityAsync`'s own doc comment), which can flip `bridgeState` (typically toward
+ * `Connecting`/`Down`, since the Site still trusts the OLD fingerprint) well before the next 3s poll.
+ * Rejected — 400 (blank/missing `currentFingerprint`, shouldn't happen from this client but handled
+ * defensively), 409 (the fingerprint changed since the caller read it), 403 (non-Admin) — touches
+ * neither cache entry; the caller's own `onError` (branching on `EngineApiError.status`) is how the
+ * dialog surfaces each distinctly, in particular turning a 409 into "reload — this changed underneath
+ * you" rather than a generic failure. */
+export function useRotateIdentity() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: siteEndpoints.rotateIdentity,
+    onSuccess: (data) => {
+      queryClient.setQueryData(SITE_IDENTITY_QUERY_KEY, data)
       queryClient.invalidateQueries({ queryKey: SITE_QUERY_KEY })
     },
   })
@@ -1693,8 +1758,12 @@ export function useSiteDiscover() {
 // ─────────────────────────────────────────────────────────────────────────
 
 /** `AlarmSource` (`Alarms/Alarm.cs`) — where an alarm condition originates. `Policy` is every
- * `PolicyResults.DenyAsync` denial (LC-1); `DriverHealth`/`NgRate` are LC-2's periodic evaluator. */
-export type AlarmSource = "Policy" | "DriverHealth" | "NgRate"
+ * `PolicyResults.DenyAsync` denial (LC-1); `DriverHealth`/`NgRate` are LC-2's periodic evaluator.
+ * `Identity` (GĐ3 closeout WI-4) is the same evaluator's certificate-expiry check — raised at `High`
+ * (never `Critical`: an expiring cert must never trip LineController's alarm→hold gate, see
+ * `AlarmEvaluator.EvaluateIdentityExpiryAsync`'s own doc comment) once `SiteIdentity.daysToExpiry` falls
+ * inside the warn window. */
+export type AlarmSource = "Policy" | "DriverHealth" | "NgRate" | "Identity"
 
 /** `AlarmPriority` (`Alarms/Alarm.cs`) — ISA-18.2 priority, most-severe first; `ListActiveAsync` sorts
  * by this (descending) then `lastRaisedUtc` (descending). */
