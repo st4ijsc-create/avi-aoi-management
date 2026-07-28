@@ -58,7 +58,7 @@ public sealed class ModbusConnectorFactory : IConnectorFactory
     {
         try
         {
-            var map = ModbusRegisterMap.FromJson(config);
+            var map = ModbusRegisterMap.FromJson(config, _logWarning);
             driver = new ModbusDriverFactory(_options, map, _logWarning, _logError).Create();
             error = null;
             return true;

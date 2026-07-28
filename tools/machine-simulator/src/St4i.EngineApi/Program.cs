@@ -663,7 +663,10 @@ if (modbusOptions.Enabled)
         }
 
         var mapJson = File.ReadAllText(modbusOptions.MapPath);
-        modbusMap = St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap.FromJson(mapJson);
+        // Task 9 — logWarning surfaces a tolerated (not fatal) readTimeoutMs/retries fallback the same
+        // "visible even though nothing crashed" way the catch below already logs a fatal one.
+        modbusMap = St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap.FromJson(mapJson, logWarning: msg =>
+            Console.Error.WriteLine($"[startup] {msg}"));
         modbusMapJson = mapJson;
     }
     catch (Exception ex)

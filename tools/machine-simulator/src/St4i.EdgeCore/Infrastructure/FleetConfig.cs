@@ -125,7 +125,25 @@ public static class FleetConfig
 
                     // GP-3 — the one place an externally-authored driverKind is normalized against the
                     // five built-ins (see DriverKinds.Normalize's own doc comment for the casing rule).
-                    machines.Add(descriptor with { DriverKind = DriverKinds.Normalize(descriptor.DriverKind) });
+                    //
+                    // Task 9 fix — an OMITTED driverKind key deserializes descriptor.DriverKind to null
+                    // (MachineDescriptor.DriverKind is a plain, non-required string since GP-3 opened it
+                    // from a closed enum), and DriverKinds.Normalize(null) returns null BY DESIGN (see its
+                    // own doc comment: "nothing to normalize against" — several OTHER call sites, e.g.
+                    // FleetHost's registry-key lookups, rely on that null-passthrough and must not change).
+                    // BEFORE GP-3, the same omission deserialized straight to the closed enum's ordinal 0
+                    // (DriverKind.Simulated) for free, via System.Text.Json's default-enum-member behavior
+                    // — GP-3 silently lost that: a null DriverKind sails through this loader (simFleet's
+                    // filter still happens to include it), but AssetRegistryStore.UpsertAsync writes into a
+                    // driver_kind TEXT NOT NULL column and its blanket catch swallows the resulting
+                    // constraint failure, so that machine's asset row is silently never written. Restoring
+                    // the pre-GP-3 default HERE (the one shared entry point FleetHost/FleetService/
+                    // EdgeWorker all load fleet.json through) rather than inside DriverKinds.Normalize
+                    // itself keeps every other Normalize call site's null-passthrough intact.
+                    var driverKind = descriptor.DriverKind is null
+                        ? DriverKinds.Simulated
+                        : DriverKinds.Normalize(descriptor.DriverKind);
+                    machines.Add(descriptor with { DriverKind = driverKind });
                 }
                 catch (Exception e) when (e is JsonException or NotSupportedException or FormatException)
                 {

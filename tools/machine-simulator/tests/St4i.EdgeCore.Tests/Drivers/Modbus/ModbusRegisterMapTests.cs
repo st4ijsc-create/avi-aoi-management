@@ -111,6 +111,171 @@ public class ModbusRegisterMapTests
         Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Task 9 — ReadTimeoutMs/Retries: optional overrides for the GP-6b health-freeze fix's derived
+    // Math.Max(1000, PollIntervalMs * 4)/Retries=1 bound. Unset must stay byte-identical to before these
+    // fields existed; a malformed value must fall back to that same default (never throw the whole map
+    // out) with a logged warning, never silently.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void EffectiveReadTimeoutMsAndRetries_DefaultToTheOriginalDerivedFormula_WhenFieldsOmitted()
+    {
+        const string json = """
+        { "machineCode": "PLC-01", "pollIntervalMs": 200,
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+
+        Assert.Null(map.ReadTimeoutMs);
+        Assert.Null(map.Retries);
+        // Math.Max(1000, 200 * 4) = 1000 (floored) — unchanged from before these fields existed.
+        Assert.Equal(1000, map.EffectiveReadTimeoutMs);
+        Assert.Equal(1, map.EffectiveRetries);
+    }
+
+    [Fact]
+    public void EffectiveReadTimeoutMsAndRetries_DefaultFormula_ScalesWithPollIntervalMs_WhenAboveTheFloor()
+    {
+        const string json = """
+        { "machineCode": "PLC-01", "pollIntervalMs": 2000,
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+
+        // Math.Max(1000, 2000 * 4) = 8000 — the 1s floor no longer binds once pollIntervalMs is large enough.
+        Assert.Equal(8000, map.EffectiveReadTimeoutMs);
+    }
+
+    [Fact]
+    public void ReadTimeoutMsAndRetries_ExplicitValidValues_OverrideTheDerivedDefault_NoWarning()
+    {
+        const string json = """
+        { "machineCode": "PLC-GATEWAY", "pollIntervalMs": 200, "readTimeoutMs": 3000, "retries": 2,
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = ModbusRegisterMap.FromJson(json, logWarning: warnings.Add);
+
+        Assert.Equal(3000, map.ReadTimeoutMs);
+        Assert.Equal(2, map.Retries);
+        Assert.Equal(3000, map.EffectiveReadTimeoutMs);
+        Assert.Equal(2, map.EffectiveRetries);
+        Assert.Empty(warnings);
+    }
+
+    [Theory]
+    [InlineData("\"readTimeoutMs\": 0")]
+    [InlineData("\"readTimeoutMs\": -500")]
+    [InlineData("\"readTimeoutMs\": \"not-a-number\"")]
+    [InlineData("\"readTimeoutMs\": 12.5")]
+    public void ReadTimeoutMs_Malformed_FallsBackToDefault_WarnsInsteadOfThrowing(string malformedField)
+    {
+        var json = $$"""
+        { "machineCode": "PLC-BAD-TIMEOUT", "pollIntervalMs": 200, {{malformedField}},
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = ModbusRegisterMap.FromJson(json, logWarning: warnings.Add);
+
+        // Never throws — the whole map still loads. The malformed field is ignored (falls back to the
+        // derived default), and the operator is warned it was ignored.
+        Assert.Null(map.ReadTimeoutMs);
+        Assert.Equal(1000, map.EffectiveReadTimeoutMs);
+        var warning = Assert.Single(warnings);
+        Assert.Contains("readTimeoutMs", warning);
+    }
+
+    [Fact]
+    public void ReadTimeoutMs_AboveTheMaxGuard_FallsBackToDefault_WarnsInsteadOfThrowing()
+    {
+        // Computed at runtime (not an [InlineData] literal) so this stays locked to
+        // ModbusRegisterMap.MaxReadTimeoutMs even if that constant's value ever changes.
+        var json = $$"""
+        { "machineCode": "PLC-TOO-SLOW", "pollIntervalMs": 200, "readTimeoutMs": {{ModbusRegisterMap.MaxReadTimeoutMs + 1}},
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = ModbusRegisterMap.FromJson(json, logWarning: warnings.Add);
+
+        Assert.Null(map.ReadTimeoutMs);
+        Assert.Equal(1000, map.EffectiveReadTimeoutMs);
+        var warning = Assert.Single(warnings);
+        Assert.Contains("readTimeoutMs", warning);
+    }
+
+    [Theory]
+    [InlineData("\"retries\": 0")]
+    [InlineData("\"retries\": -1")]
+    [InlineData("\"retries\": \"two\"")]
+    public void Retries_Malformed_FallsBackToDefault_WarnsInsteadOfThrowing(string malformedField)
+    {
+        var json = $$"""
+        { "machineCode": "PLC-BAD-RETRIES", "pollIntervalMs": 200, {{malformedField}},
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = ModbusRegisterMap.FromJson(json, logWarning: warnings.Add);
+
+        Assert.Null(map.Retries);
+        Assert.Equal(1, map.EffectiveRetries);
+        var warning = Assert.Single(warnings);
+        Assert.Contains("retries", warning);
+    }
+
+    [Fact]
+    public void Retries_AboveTheMaxGuard_FallsBackToDefault_WarnsInsteadOfThrowing()
+    {
+        var json = $$"""
+        { "machineCode": "PLC-TOO-MANY-RETRIES", "pollIntervalMs": 200, "retries": {{ModbusRegisterMap.MaxRetries + 1}},
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = ModbusRegisterMap.FromJson(json, logWarning: warnings.Add);
+
+        Assert.Null(map.Retries);
+        Assert.Equal(1, map.EffectiveRetries);
+        var warning = Assert.Single(warnings);
+        Assert.Contains("retries", warning);
+    }
+
+    [Fact]
+    public void ReadTimeoutMs_ExplicitJsonNull_TreatedSameAsOmitted_NoWarning()
+    {
+        const string json = """
+        { "machineCode": "PLC-NULL-TIMEOUT", "pollIntervalMs": 200, "readTimeoutMs": null,
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = ModbusRegisterMap.FromJson(json, logWarning: warnings.Add);
+
+        Assert.Null(map.ReadTimeoutMs);
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void ReadTimeoutMs_AtTheMaxGuard_IsAccepted_NotRejected()
+    {
+        var json = $$"""
+        { "machineCode": "PLC-AT-MAX", "pollIntervalMs": 200, "readTimeoutMs": {{ModbusRegisterMap.MaxReadTimeoutMs}},
+          "registers": [ { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ] }
+        """;
+
+        var warnings = new List<string>();
+        var map = ModbusRegisterMap.FromJson(json, logWarning: warnings.Add);
+
+        Assert.Equal(ModbusRegisterMap.MaxReadTimeoutMs, map.ReadTimeoutMs);
+        Assert.Empty(warnings);
+    }
+
     [Theory]
     [InlineData(0xFFFF, ModbusDataType.Int16, 0.1, -0.1)]
     [InlineData(0xFFFF, ModbusDataType.UInt16, 1.0, 65535.0)]

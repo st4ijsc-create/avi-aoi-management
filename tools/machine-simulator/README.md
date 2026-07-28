@@ -1473,6 +1473,8 @@ Register-map JSON shape (`ModbusRegisterMap.FromJson` — property names matched
   "machineCode": "MODBUS-01",
   "unitId": 1,
   "pollIntervalMs": 1000,
+  "readTimeoutMs": 3000,
+  "retries": 2,
   "registers": [
     { "address": 100, "type": "Holding", "dataType": "UInt16", "scale": 0.1, "metric": "temperature", "unit": "°C" },
     { "address": 101, "type": "Input", "dataType": "Int16", "scale": 1.0, "metric": "pressure", "unit": "kPa" }
@@ -1483,6 +1485,13 @@ Register-map JSON shape (`ModbusRegisterMap.FromJson` — property names matched
 - `machineCode` — required, non-blank; becomes this Modbus machine's roster/asset code.
 - `unitId` — the Modbus slave address on the wire (not related to `machineCode`); defaults to `1`.
 - `pollIntervalMs` — poll cadence; defaults to `1000`.
+- `readTimeoutMs` *(optional, Task 9)* — overrides `Transport.ReadTimeout`/`WriteTimeout` (ms) instead of
+  deriving them from `pollIntervalMs` — see the "configurable timeout" note below. Rejected (falls back to
+  the derived default, with a logged warning — never fails the whole map load) if it isn't a positive
+  whole number, or exceeds the 60 000 ms (`ModbusRegisterMap.MaxReadTimeoutMs`) upper guard. Omitted/JSON
+  `null` silently keeps the derived default.
+- `retries` *(optional, Task 9)* — overrides `Transport.Retries`. Same rejection rule as `readTimeoutMs`,
+  guarded at 5 (`ModbusRegisterMap.MaxRetries`).
 - `registers[]` — required, at least one entry:
   - `address` — the register address (`ushort`).
   - `type` — `"Holding"` (FC03, read/write on the real device) or `"Input"` (FC04, read-only) — this
@@ -1494,6 +1503,8 @@ Register-map JSON shape (`ModbusRegisterMap.FromJson` — property names matched
   - `metric`/`unit` — the resulting telemetry sample's name/unit.
 - A blank `machineCode` or an empty `registers` list is rejected at load (throws), which Program.cs
   catches — it logs a warning and disables Modbus for the run rather than crashing startup.
+  `readTimeoutMs`/`retries` are the ONE deliberate exception to that "malformed input throws" rule — see
+  above.
 
 When Modbus is enabled and its map loads successfully, the Modbus machine is wired in as a
 **first-class roster member** — it gets a fleet snapshot tile, a historian row per poll, and (via
@@ -1509,12 +1520,26 @@ device reset behind a switch that holds link) `ModbusTcpDriver` used to pin a th
 whatever it last reported (`Connected`, for a device that HAD been talking), so `AlarmEvaluator` never
 raised a Degraded/Down alarm — **an operator saw a green connector that had silently stopped producing
 data, indefinitely, with no alarm ever firing.** Fixed by bounding both timeouts to
-`Math.Max(1000ms, pollIntervalMs × 4)` (derived automatically from the register map's own
-`pollIntervalMs` — not a separate env var/setting) and dropping NModbus's own retry count to 1 (this
-driver already reconnects from scratch on any failure, so NModbus-level retries only multiplied the
-stall); an in-flight read is now also promptly **cancellable** (`ct.Register` disposes the live
-connection, unblocking a pending read in ~2ms instead of waiting out the timeout). A connector that hits
-this now reports `Degraded`/`Down` like any other fault, instead of staying silently green.
+`Math.Max(1000ms, pollIntervalMs × 4)` **by default** and dropping NModbus's own retry count to 1 by
+default (this driver already reconnects from scratch on any failure, so NModbus-level retries only
+multiplied the stall); an in-flight read is now also promptly **cancellable** (`ct.Register` disposes the
+live connection, unblocking a pending read in ~2ms instead of waiting out the timeout). A connector that
+hits this now reports `Degraded`/`Down` like any other fault, instead of staying silently green.
+
+**Plant-rollout follow-up (Task 9) — the derived-only timeout was itself a hazard for one real
+deployment shape.** A site whose Modbus TCP endpoint is actually a **TCP→RTU gateway** can legitimately
+take several seconds to answer ONE register when the RTU slave drops a frame (the gateway's own internal
+retry budget) — and the derived formula COUPLES that tolerance to `pollIntervalMs`, the wrong direction:
+the only way to buy more tolerance was to poll slower, and any site polling at `pollIntervalMs ≤ 250`
+(exactly the fast, gateway-fronted sites most likely to need it) got a flat, un-liftable 1000ms floor.
+Worse, exceeding the bound isn't "one slow poll" — the catch sets `Health = Degraded` **and tears down the
+TCP connection**, so a device chronically just over the bound produces continuous connect/close churn
+that can exhaust a gateway's small fixed TCP-slot pool. `readTimeoutMs`/`retries` (see the register-map
+shape above) let a site set the bound **directly** instead of gaming `pollIntervalMs` — unset, the
+behaviour is byte-identical to before these fields existed. **Sizing note:** the effective tolerance for a
+healthy-but-slow device is **one `readTimeoutMs`, not `retries` of them** — a retry is a fresh request
+under the exact same per-attempt bound, so a device that consistently answers just over it fails every
+attempt identically; size the value for the slowest legitimate single round-trip, not a multiple of it.
 
 **Honest deferrals** (documented in the driver's own source, not silently missing): 32-bit/float
 register values (combining a register PAIR) and register-block batching (today: one read per
@@ -1526,7 +1551,9 @@ fallback profile for every Modbus machine today).
 kỳ (NModbus) đọc danh sách thanh ghi cố định từ một Modbus TCP slave, chạy trong pipeline slot cách ly
 lỗi riêng (§16.3). **MẶC ĐỊNH TẮT** — ngược cực với UNS spine. 4 biến môi trường `ST4I_MODBUS_*` (bảng
 trên). Định dạng JSON register-map: `machineCode`, `unitId` (mặc định 1), `pollIntervalMs` (mặc định
-1000), `registers[]` gồm `address`/`type` (Holding FC03 hoặc Input FC04, chỉ ĐỌC dù loại nào)/`dataType`
+1000), `readTimeoutMs`/`retries` *(tuỳ chọn, Task 9 — xem đoạn "follow-up rollout" bên dưới; sai định dạng
+thì rơi về mặc định suy ra + log cảnh báo, KHÔNG làm hỏng cả map, giới hạn trên lần lượt 60 000ms/5)*,
+`registers[]` gồm `address`/`type` (Holding FC03 hoặc Input FC04, chỉ ĐỌC dù loại nào)/`dataType`
 (UInt16 hoặc Int16, giải mã XONG mới nhân `scale`)/`scale`/`metric`/`unit`. `machineCode` rỗng hoặc
 `registers` rỗng bị từ chối lúc nạp — Program.cs bắt lỗi này, log cảnh báo, tắt Modbus cho lần chạy đó
 thay vì crash. Khi bật và map nạp thành công, máy Modbus trở thành thành viên fleet CHÍNH THỨC (có tile,
@@ -1540,12 +1567,26 @@ NModbus không có overload huỷ, và `Transport.ReadTimeout`/`WriteTimeout` m�
 `Health` đứng yên ở giá trị báo cáo gần nhất (`Connected`, với thiết bị TỪNG nói chuyện), nên
 `AlarmEvaluator` KHÔNG BAO GIỜ báo cảnh báo Degraded/Down — **operator nhìn thấy connector XANH nhưng đã
 âm thầm ngừng sinh dữ liệu, vô thời hạn, không một cảnh báo nào.** Đã sửa bằng cách chặn cả hai timeout ở
-`Math.Max(1000ms, pollIntervalMs × 4)` (tự suy ra từ `pollIntervalMs` của chính register map — không
-phải biến môi trường riêng) và hạ số lần thử lại của NModbus xuống 1 (driver đã tự kết nối lại từ đầu khi
-lỗi, nên retry cấp NModbus chỉ nhân đôi thời gian treo); một lệnh đọc đang treo giờ cũng HUỶ ĐƯỢC ngay
-(`ct.Register` đóng kết nối sống, giải phóng lệnh đọc đang treo trong ~2ms thay vì chờ hết timeout). Một
-connector gặp lỗi này giờ báo `Degraded`/`Down` như mọi lỗi khác, thay vì đứng yên màu xanh trong im
-lặng.
+`Math.Max(1000ms, pollIntervalMs × 4)` **theo mặc định** và hạ số lần thử lại của NModbus xuống 1 theo mặc
+định (driver đã tự kết nối lại từ đầu khi lỗi, nên retry cấp NModbus chỉ nhân đôi thời gian treo); một
+lệnh đọc đang treo giờ cũng HUỶ ĐƯỢC ngay (`ct.Register` đóng kết nối sống, giải phóng lệnh đọc đang treo
+trong ~2ms thay vì chờ hết timeout). Một connector gặp lỗi này giờ báo `Degraded`/`Down` như mọi lỗi khác,
+thay vì đứng yên màu xanh trong im lặng.
+
+**Follow-up rollout thực tế (Task 9) — công thức suy-ra-duy-nhất tự nó là một rủi ro cho một dạng triển
+khai thật.** Một site mà đầu Modbus TCP thực ra là **gateway TCP→RTU** có thể hợp lý mất vài giây để trả
+lời MỘT thanh ghi khi slave RTU rớt khung (do ngân sách tự retry nội bộ của gateway) — mà công thức suy ra
+lại KHOÁ độ chịu lỗi đó vào `pollIntervalMs`, sai chiều: cách duy nhất để có thêm độ chịu lỗi là poll chậm
+lại, và bất kỳ site nào poll ở `pollIntervalMs ≤ 250` (đúng nhóm site nhanh, sau gateway, cần nó nhất) bị
+ghim ở sàn 1000ms không thể nới. Tệ hơn, vượt ngưỡng không phải là "một lần poll chậm" — catch đặt
+`Health = Degraded` **VÀ phá kết nối TCP**, nên một thiết bị liên tục hơi vượt ngưỡng tạo ra vòng lặp
+connect/close liên tục có thể làm cạn pool TCP-slot cố định nhỏ của gateway. `readTimeoutMs`/`retries`
+(xem định dạng register-map ở trên) cho phép site đặt ngưỡng TRỰC TIẾP thay vì phải "lách" qua
+`pollIntervalMs` — không đặt thì hành vi giữ nguyên y hệt trước khi hai trường này tồn tại. **Lưu ý khi
+chỉnh:** độ chịu lỗi thực tế cho một thiết bị khoẻ-nhưng-chậm là **MỘT `readTimeoutMs`, không phải
+`retries` lần** — một lần retry là một yêu cầu MỚI dưới đúng ngưỡng mỗi-lần-thử đó, nên một thiết bị luôn
+trả lời hơi trễ hơn ngưỡng sẽ trượt MỌI lần thử như nhau; hãy đặt giá trị theo round-trip đơn hợp lý chậm
+nhất, không phải bội số của nó.
 
 **Những gì CHƯA làm** (đã ghi rõ trong code, không giấu): thanh ghi 32-bit/float, đọc theo khối, Modbus
 RTU (nối tiếp) — hiện chỉ có TCP; chưa có `MappingProfile` riêng cho từng máy Modbus.)*
@@ -3118,22 +3159,26 @@ gap dưới đây đã đóng bởi GP-6b). Trong quá trình đó, bộ kiểm 
 
 | Driver | What was unbounded before | Fix | New default |
 |---|---|---|---|
-| `ModbusTcpDriver` | `Transport.ReadTimeout`/`WriteTimeout` = `-1` (infinite); NModbus has no cancellable read overload at all | Bound both timeouts; cap retries; cancel via `ct.Register(DisposeConnection)` | `Math.Max(1000ms, pollIntervalMs × 4)`, `Retries=1` — derived from the register map, no new env var |
+| `ModbusTcpDriver` | `Transport.ReadTimeout`/`WriteTimeout` = `-1` (infinite); NModbus has no cancellable read overload at all | Bound both timeouts; cap retries; cancel via `ct.Register(DisposeConnection)` | `Math.Max(1000ms, pollIntervalMs × 4)`, `Retries=1` — derived from the register map by default; **Task 9: `readTimeoutMs`/`retries` register-map fields now override either directly** (no new env var), see §16.4's plant-rollout follow-up |
 | `OpcUaDriver` | `CoreClientUtils.SelectEndpoint` — synchronous, uncancellable | Switch to `SelectEndpointAsync`, same bound, now cancellable | `TransportQuotas.OperationTimeout = 15000ms` — hardcoded, still not configurable |
 
-Neither fix added a new environment variable or config field — both are automatic, derived-from-existing-
-config bounds (Modbus) or a hardcoded constant that only became cancellable, not configurable (OPC-UA).
+Neither fix added a new environment variable. Modbus's bound started fully automatic/derived and, per
+Task 9, gained two optional register-map fields to override it directly (no env var either) once the
+derived-only version turned out to be its own rollout hazard for gateway-fronted slaves (§16.4); OPC-UA's
+remains a hardcoded constant that only became cancellable, not configurable.
 
 *(VI: Cả hai đều do bộ kiểm tra §19.5 tìm ra, cả hai đều THẬT SỰ ảnh hưởng người dùng (không phải dọn dẹp
 nội bộ) — xem §16.4/§16.6 để đọc đầy đủ câu chuyện. Bảng tunable, gom một chỗ:
 
 | Driver | Trước đây không có giới hạn | Cách sửa | Giá trị mặc định mới |
 |---|---|---|---|
-| `ModbusTcpDriver` | `ReadTimeout`/`WriteTimeout` = `-1` (vô hạn); NModbus không có overload đọc huỷ được | Chặn cả hai timeout; giới hạn retry; huỷ qua `ct.Register(DisposeConnection)` | `Math.Max(1000ms, pollIntervalMs × 4)`, `Retries=1` — suy ra từ register map, không thêm biến môi trường |
+| `ModbusTcpDriver` | `ReadTimeout`/`WriteTimeout` = `-1` (vô hạn); NModbus không có overload đọc huỷ được | Chặn cả hai timeout; giới hạn retry; huỷ qua `ct.Register(DisposeConnection)` | `Math.Max(1000ms, pollIntervalMs × 4)`, `Retries=1` — mặc định suy ra từ register map; **Task 9: hai trường `readTimeoutMs`/`retries` trong register map nay ghi đè trực tiếp được** (không thêm biến môi trường), xem follow-up rollout ở §16.4 |
 | `OpcUaDriver` | `CoreClientUtils.SelectEndpoint` — đồng bộ, không huỷ được | Chuyển sang `SelectEndpointAsync`, cùng giới hạn, giờ huỷ được | `TransportQuotas.OperationTimeout = 15000ms` — hardcode, vẫn chưa cấu hình được |
 
-Không bản sửa nào thêm biến môi trường/trường cấu hình mới — cả hai đều là giới hạn tự động (Modbus) hoặc
-hằng số hardcode chỉ mới huỷ được, chưa cấu hình được (OPC-UA).)*
+Không bản sửa nào thêm biến môi trường. Ngưỡng của Modbus ban đầu hoàn toàn tự động/suy ra và, theo Task 9,
+có thêm hai trường tuỳ chọn trong register map để ghi đè trực tiếp (cũng không thêm biến môi trường) khi
+bản chỉ-suy-ra tự nó lộ ra là một rủi ro rollout cho các slave sau gateway (§16.4); OPC-UA vẫn là hằng số
+hardcode chỉ mới huỷ được, chưa cấu hình được.)*
 
 ### 19.7 🔴 Honest limitations — the seam, not the plugin system / Giới hạn trung thực — mới là nền tảng, CHƯA phải hệ plugin
 

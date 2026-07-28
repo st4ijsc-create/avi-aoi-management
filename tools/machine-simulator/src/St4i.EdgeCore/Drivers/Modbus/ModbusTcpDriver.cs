@@ -152,21 +152,28 @@ public sealed class ModbusTcpDriver : IDeviceDriver
         // PollOnceAsync's own ct.Register(DisposeConnection) (see its doc comment) separately makes an
         // in-flight read promptly CANCELLABLE, which is a distinct concern from bounding it.
         //
-        // Math.Max(1000, PollIntervalMs * 4): generous enough that a genuinely healthy device polled quickly
-        // (ModbusTcpDriverLoopbackTests' 50ms interval, the conformance suite's 20ms one) never has a real,
-        // succeeding read torn down mid-flight — floored at a flat 1 second so a fast poll cadence can't
-        // produce an unreasonably tight bound — while keeping the worst-case stall a small, fixed multiple of
-        // how often this driver expects to hear back from the device at all.
-        var timeoutMs = Math.Max(1000, _map.PollIntervalMs * 4);
+        // Task 9 (plant-rollout follow-up to GP-6b) — Math.Max(1000, PollIntervalMs * 4) is only the
+        // DEFAULT now, not the only option: ModbusRegisterMap.ReadTimeoutMs/Retries (see their own doc
+        // comments for the full "why") let a site override either directly instead of distorting
+        // PollIntervalMs to game the derived value — e.g. a device fronted by a Modbus TCP→RTU gateway
+        // that legitimately needs a multi-second per-register bound at a fast poll cadence. Unset (the
+        // common case — ModbusTcpDriverLoopbackTests' 50ms interval, the conformance suite's 20ms one)
+        // resolves to EXACTLY the same values as before this field existed: generous enough that a
+        // genuinely healthy device polled quickly never has a real, succeeding read torn down mid-flight
+        // (floored at 1 second so a fast poll cadence alone can't produce an unreasonably tight bound),
+        // and NModbus's own retry count of 1 (this driver already reconnects from scratch on ANY poll
+        // failure — see class doc comment's resilience model — so extra NModbus-level retries only
+        // multiply the stall for no benefit, at the default).
+        var timeoutMs = _map.EffectiveReadTimeoutMs;
         master.Transport.ReadTimeout = timeoutMs;
         master.Transport.WriteTimeout = timeoutMs;
 
-        // NModbus retries a failed read/write up to Transport.Retries (default 3) times, waiting
-        // Transport.WaitToRetryMilliseconds (default 250ms, left as-is) between attempts — worst case ~4x
-        // ReadTimeout PER REGISTER before NModbus itself gives up and throws. This driver already reconnects
-        // from scratch on ANY poll failure (see class doc comment's resilience model), so NModbus-level
-        // retries only multiply the stall for no benefit — one attempt is enough.
-        master.Transport.Retries = 1;
+        // NModbus retries a failed read/write up to Transport.Retries times, waiting
+        // Transport.WaitToRetryMilliseconds (default 250ms, left as-is) between attempts — EACH retry is a
+        // FRESH request under the SAME ReadTimeout bound above, not an extension of it (see
+        // ModbusRegisterMap.ReadTimeoutMs's own remarks: the effective tolerance for a healthy-but-slow
+        // device is one timeout, not Retries of them).
+        master.Transport.Retries = _map.EffectiveRetries;
 
         // GP-6b (Fix round 1, task-6b-report.md) — tcp.ConnectAsync above already takes `ct`, but
         // DisposeAsync could still have run to completion WHILE it was in flight

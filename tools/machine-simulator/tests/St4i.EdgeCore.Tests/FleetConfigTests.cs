@@ -155,6 +155,37 @@ public class FleetConfigTests
         }
     }
 
+    /// <summary>Task 9 regression — before GP-3 opened <c>DriverKind</c> from a closed enum into a plain
+    /// string, an ENTRY THAT OMITS <c>driverKind</c> ENTIRELY deserialized to the enum's ordinal 0
+    /// (<c>DriverKind.Simulated</c>) for free. GP-3 silently lost that: an omitted key now deserializes
+    /// <see cref="MachineDescriptor.DriverKind"/> to <see langword="null"/>, and
+    /// <see cref="DriverKinds.Normalize"/> returns <see langword="null"/> unchanged for a null input BY
+    /// DESIGN (its own doc comment — several other call sites rely on that null-passthrough) — so, before
+    /// this fix, the machine still loaded into the roster with a null <c>DriverKind</c>, which then made
+    /// <c>AssetRegistryStore.UpsertAsync</c> silently fail its <c>driver_kind TEXT NOT NULL</c> insert (its
+    /// blanket catch swallows the failure — no visible symptom besides the asset row never appearing).
+    /// Asserts parity is restored: an omitted <c>driverKind</c> behaves exactly like the old enum default.</summary>
+    [Fact]
+    public void Load_omittedDriverKind_DefaultsToSimulated_LikeThePreGP3EnumOrdinalZero()
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), "fleet-omitted-driverkind-" + Guid.NewGuid() + ".json");
+        File.WriteAllText(tmp, """
+        [
+          { "code": "NODRIVERKIND-01", "serialSeed": "N1", "deviceClass": "Automation", "machineType": "screwdriver",
+            "stepType": null, "recipeCode": null, "mappingProfile": null, "cycleSeconds": 1.0 }
+        ]
+        """);
+        try
+        {
+            var machine = Assert.Single(FleetConfig.Load(tmp));
+            Assert.Equal(DriverKinds.Simulated, machine.DriverKind);
+        }
+        finally
+        {
+            File.Delete(tmp);
+        }
+    }
+
     [Fact]
     public void Load_thirdPartyDriverKind_survivesByteForByte_notCaseFolded()
     {
