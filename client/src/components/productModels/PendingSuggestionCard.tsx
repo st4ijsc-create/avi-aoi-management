@@ -15,10 +15,10 @@
  *   - Suy giảm phải TRUNG THỰC: lỗi tải danh sách hiện thông báo LỖI (không giả
  *     vờ "không có đề xuất"); rỗng thật sự ⇒ không render gì (không chiếm chỗ).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Loader2, Sparkles, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Loader2, Sparkles, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,16 @@ interface PendingSuggestionCardProps {
   currentUserId?: number;
   /** Cha invalidate cả countPendingByProduct lẫn list (xem PointDetailsForm.refreshSuggestionState). */
   onDecided?: () => void;
+  /**
+   * Vòng sửa 2 (F1, nghiệm thu live) — gọi CHỈ khi một đề xuất của điểm này vừa
+   * được DUYỆT VÀ ÁP DỤNG THẬT (server ghi measurement_point_defs, status trả về
+   * "applied"). KHÔNG gọi khi Từ chối (không ghi gì) hay khi duyệt-không-áp-dụng
+   * (không xảy ra ở thẻ này — không có toggle apply, nhưng kiểm tra status cho
+   * chắc thay vì giả định). Cha dùng để nạp lại ô nhập ngưỡng của form — nếu
+   * không, form giữ giá trị CŨ và nút "Lưu" ngay cạnh sẽ ghi đè ngược đề xuất
+   * vừa duyệt (đúng lỗi CRITICAL bị bắt khi nghiệm thu live).
+   */
+  onApplied?: (applied: { pointDefId: number; lsl: string; usl: string; nominal: string | null }) => void;
 }
 
 function num(v: string | null | undefined): string {
@@ -42,10 +52,20 @@ function num(v: string | null | undefined): string {
   return Number.isFinite(n) ? String(n) : v;
 }
 
-export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided }: PendingSuggestionCardProps) {
+export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided, onApplied }: PendingSuggestionCardProps) {
   const { t } = useTranslation();
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [rejectComment, setRejectComment] = useState("");
+  // F3 (nghiệm thu live) — mặc định chỉ hiện đề xuất MỚI NHẤT (auto-tune lặp lại
+  // tạo hàng chục bản trùng cho cùng 1 điểm, không có ràng buộc chống trùng ở DB —
+  // nợ có sẵn, không sửa DB ở đây). Reset khi đổi điểm để không mang trạng thái
+  // "đã mở rộng" của điểm cũ sang điểm mới.
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => {
+    setShowAll(false);
+    setRejectingId(null);
+    setRejectComment("");
+  }, [pointDefId]);
 
   // Vòng sửa 1 (review Task 2) — approve/reject là qualityProcedure ở server
   // (settings_alerts.canEdit); dùng ĐÚNG cặp module/action mà hai tiền lệ trong
@@ -59,8 +79,19 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided }: 
   const listQuery = trpc.thresholdApproval.list.useQuery({ status: "requested", pointDefId });
 
   const approveM = trpc.thresholdApproval.approve.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success(t("productModels.approveSuccess", "Đã duyệt đề xuất"));
+      // F1 (nghiệm thu live) — chỉ báo cho cha nạp lại ô nhập khi server THỰC SỰ
+      // ghi giới hạn mới (status "applied"); "approved" (chưa apply) không đổi gì
+      // ở measurement_point_defs nên KHÔNG được đụng ô nhập.
+      if (data?.status === "applied") {
+        onApplied?.({
+          pointDefId: data.pointDefId,
+          lsl: data.proposedLsl,
+          usl: data.proposedUsl,
+          nominal: data.proposedNominal ?? null,
+        });
+      }
       onDecided?.();
     },
     onError: (e) => toast.error(e.message || t("productModels.approveFailed", "Duyệt thất bại")),
@@ -113,6 +144,12 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided }: 
   const approvals = (listQuery.data ?? []) as Approval[];
   if (approvals.length === 0) return null; // rỗng thật ⇒ không chiếm chỗ trong form
 
+  // F3 (nghiệm thu live) — `list` đã orderBy(desc(createdAt)) ở server nên
+  // approvals[0] LÀ đề xuất mới nhất; mặc định chỉ hiện nó, phần còn lại mở khi
+  // bấm — KHÔNG được rơi mất khỏi bộ đếm (heading vẫn dùng approvals.length thật).
+  const visibleApprovals = showAll ? approvals : approvals.slice(0, 1);
+  const olderCount = approvals.length - 1;
+
   return (
     <div className="space-y-2 rounded-md border bg-muted/10 p-3">
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -120,7 +157,7 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided }: 
         {t("productModels.pendingHeading", "{{n}} đề xuất đang chờ duyệt", { n: approvals.length })}
       </div>
 
-      {approvals.map((approval) => {
+      {visibleApprovals.map((approval) => {
         const gate = canDecide({ requestedBy: approval.requestedBy }, currentUserId, canApproveThresholds);
         const s = (approval.suggestion ?? {}) as Record<string, any>;
         const sampleSize = s.sampleSize ?? null;
@@ -263,6 +300,28 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided }: 
           </div>
         );
       })}
+
+      {olderCount > 0 && (
+        // F3 — KHÔNG được im lặng giấu N cái còn lại: một dòng thật, bấm được,
+        // luôn hiện (không phải tooltip/ẩn trong menu), nêu đúng số thật.
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="flex w-full items-center justify-center gap-1 rounded border border-dashed py-1.5 text-[11px] text-muted-foreground hover:bg-muted/40"
+        >
+          {showAll ? (
+            <>
+              <ChevronUp className="h-3 w-3" />
+              {t("productModels.collapseOlderSuggestions", "Thu gọn")}
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3 w-3" />
+              {t("productModels.showOlderSuggestions", "Còn {{n}} đề xuất cũ hơn cho điểm này — bấm để xem", { n: olderCount })}
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 }

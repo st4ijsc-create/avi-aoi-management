@@ -6723,6 +6723,7 @@
     "batchSuggestLoading": "Computing suggestions for {{done}}/{{total}} points...",
     "batchSuggestTitle": "Threshold suggestions for {{n}} selected point(s)",
     "cancelReject": "Cancel",
+    "collapseOlderSuggestions": "Collapse",
     "insufficientSamples": "Not enough samples to suggest — needs at least {{min}} samples.",
     "noPermissionBlocked": "You don't have permission to decide threshold suggestions — a quality manager must.",
     "ownRequestBlocked": "You created this suggestion — a different reviewer must decide.",
@@ -6735,6 +6736,9 @@
     "rejectFailed": "Reject failed",
     "rejectSuccess": "Suggestion rejected",
     "rejectSuggestion": "Reject",
+    "showOlderSuggestions": "{{n}} older suggestion(s) for this point — click to view",
+    "thresholdReloaded": "Loaded the latest threshold into the form ({{lsl}}–{{usl}}) after approval.",
+    "thresholdReloadedOverDirty": "The threshold was just approved and written to the point — your unsaved edit was replaced with the new value ({{lsl}}–{{usl}}). Review before saving.",
     "unknownUserBlocked": "Your account could not be identified — please sign in again to decide."
   },
   "products": {

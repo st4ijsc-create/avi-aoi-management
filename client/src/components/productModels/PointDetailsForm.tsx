@@ -193,6 +193,58 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
     showPositionSection, showSolderSection, showToleranceSection, showXraySection,
     workstations,
   } = props;
+
+  // Vòng sửa 2 (F1, nghiệm thu live — CRITICAL) — sau khi một đề xuất được DUYỆT
+  // VÀ ÁP DỤNG, ô nhập LSL/USL/nominal của form vẫn giữ giá trị CŨ vì chúng là
+  // state cục bộ nạp lúc CHỌN điểm — chỉ refetch danh sách/đếm KHÔNG tự nạp lại
+  // ô nhập. Hậu quả đo được: DB đã ghi 0.24/0.36 nhưng form còn 0.25/0.35, và nút
+  // "Lưu" ngay cạnh sẽ ghi đè ngược đúng giá trị vừa duyệt — im lặng, không cảnh
+  // báo. Hàm này nạp lại ĐÚNG 3 ô ngưỡng từ giá trị server vừa ghi (không phải từ
+  // refetch — dùng thẳng kết quả mutation, không round-trip thêm) — CHỈ khi điểm
+  // vừa được áp dụng LÀ điểm đang mở (bảo vệ trường hợp người dùng đã chuyển sang
+  // điểm khác trong lúc mutation còn đang chạy).
+  //
+  // Xung đột "người dùng đã gõ tay": nếu 3 ô này đã lệch khỏi giá trị vừa nạp gần
+  // nhất (measurementPoints[selectedPointIndex], tức bản trước-khi-duyệt), NGHĨA
+  // LÀ có bản nháp tay chưa lưu. Chọn NẠP ĐÈ + báo rõ bằng toast riêng (không phải
+  // giữ nguyên bản nháp) — vì rủi ro lớn hơn nằm ở việc form sai lệch với DB ngay
+  // sau một quyết định duyệt (đúng gốc rễ của F1); giữ bản nháp tay chỉ dời hiểm
+  // hoạ này sang dạng khác (nút Lưu vẫn cạnh đó, vẫn có thể ghi giá trị không còn
+  // đúng ý người dùng nếu họ quên là nó vừa bị duyệt). Nạp đè + toast tường minh
+  // đảm bảo ô nhập luôn khớp máy chủ ngay sau một quyết định — không bao giờ đổi
+  // lén: người dùng luôn thấy vì sao giá trị vừa nhảy.
+  const handleSuggestionApplied = (applied: { pointDefId: number; lsl: string; usl: string; nominal: string | null }) => {
+    refetchPoints();
+    if (selectedPointIndex === null) return;
+    const current = measurementPoints[selectedPointIndex];
+    if (!current || current.id !== applied.pointDefId) return;
+    const norm = (v: unknown) => (v == null ? "" : String(v));
+    const wasDirty =
+      norm(current.lowerLimit) !== norm(pointLowerLimit) ||
+      norm(current.upperLimit) !== norm(pointUpperLimit) ||
+      norm(current.nominalValue) !== norm(pointNominalValue);
+    setPointLowerLimit(applied.lsl);
+    setPointUpperLimit(applied.usl);
+    setPointNominalValue(applied.nominal ?? "");
+    if (wasDirty) {
+      toast.warning(
+        t(
+          "productModels.thresholdReloadedOverDirty",
+          "Ngưỡng vừa được duyệt và ghi vào điểm đo — đã thay bản bạn đang gõ tay bằng giá trị mới ({{lsl}}–{{usl}}). Kiểm tra lại trước khi Lưu.",
+          { lsl: applied.lsl, usl: applied.usl },
+        ),
+      );
+    } else {
+      toast.info(
+        t(
+          "productModels.thresholdReloaded",
+          "Đã nạp ngưỡng mới nhất vào form ({{lsl}}–{{usl}}) sau khi duyệt.",
+          { lsl: applied.lsl, usl: applied.usl },
+        ),
+      );
+    }
+  };
+
   return (
     <>
                 <div className="xl:col-span-1">
@@ -405,27 +457,33 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
                                     <ValidationMessage error={pointValidation.getFieldError("upperLimit")} />
                                   </div>
                                 </div>
-                                {/* AI Threshold Advisor — only for a persisted point in edit mode.
-                                    Wave 2 đường A (Task 2): đề xuất ĐANG CHỜ hiện NGAY ở đây (PendingSuggestionCard)
-                                    — cạnh nút "xin đề xuất mới" — thay vì chỉ hiện ở /threshold-approvals. */}
+                                {/* Wave 2 đường A (Task 2) — đề xuất ĐANG CHỜ hiện ở đây, cạnh nút "xin đề
+                                    xuất mới". Vòng sửa 2 (F2, nghiệm thu live) — XEM + DUYỆT/TỪ CHỐI là hành
+                                    động ĐỌC + một quyết định độc lập với việc SỬA tay điểm đo (máy chủ mới là
+                                    nơi thực thi thật, qualityProcedure + SoD không quan tâm client đang ở chế
+                                    độ nào) — nên KHÔNG còn bị khoá sau `isEditMode`. Trước sửa: badge "N đề
+                                    xuất AI" trên hàng điểm đo dẫn tới panel RỖNG cho tới khi bấm "Sửa". */}
+                                {selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
+                                  <PendingSuggestionCard
+                                    pointDefId={measurementPoints[selectedPointIndex]!.id as number}
+                                    currentUserId={user?.id}
+                                    onDecided={refreshSuggestionState}
+                                    onApplied={handleSuggestionApplied}
+                                  />
+                                ) : null}
+                                {/* AI Threshold Advisor (xin đề xuất MỚI) — đây LÀ hành động sửa đổi, giữ
+                                    nguyên chỉ ở chế độ Sửa (không đổi theo yêu cầu F2). */}
                                 {isEditMode && selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
-                                  <>
-                                    <PendingSuggestionCard
-                                      pointDefId={measurementPoints[selectedPointIndex]!.id as number}
-                                      currentUserId={user?.id}
-                                      onDecided={refreshSuggestionState}
+                                  <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
+                                    <span className="text-xs text-muted-foreground">
+                                      {t("thresholdAdvisor.pointHint", "Để AI tính LSL/USL/mục tiêu từ dữ liệu đo gần đây")}
+                                    </span>
+                                    <AIThresholdSuggestButton
+                                      target={{ kind: "point", measurementPointId: measurementPoints[selectedPointIndex]!.id! }}
+                                      onApplied={() => refetchPoints()}
+                                      onSubmitted={() => { refetchPoints(); refreshSuggestionState(); }}
                                     />
-                                    <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
-                                      <span className="text-xs text-muted-foreground">
-                                        {t("thresholdAdvisor.pointHint", "Để AI tính LSL/USL/mục tiêu từ dữ liệu đo gần đây")}
-                                      </span>
-                                      <AIThresholdSuggestButton
-                                        target={{ kind: "point", measurementPointId: measurementPoints[selectedPointIndex]!.id! }}
-                                        onApplied={() => refetchPoints()}
-                                        onSubmitted={() => { refetchPoints(); refreshSuggestionState(); }}
-                                      />
-                                    </div>
-                                  </>
+                                  </div>
                                 ) : null}
                                 <div className="space-y-2">
                                   <Label htmlFor="pointNominalValue">{t("products.nominalValue")}</Label>
