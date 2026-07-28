@@ -208,6 +208,37 @@ public sealed class FleetHost
     /// <c>app.Run()</c> ever serves a request.</summary>
     private readonly FleetSettingsStore? _settingsStore;
 
+    /// <summary>SM-1 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1-brief.md) —
+    /// optional (defaults null, same "every pre-existing test/call site that constructs <see cref="FleetHost"/>
+    /// directly without one keeps compiling/behaving byte-for-byte unchanged" contract as every other
+    /// optional dependency above) reuse of the ONE existing seam that already decides demo-vs-product
+    /// (<c>Program.cs</c>'s <c>TransportCoordinator</c>/auto-login wiring, <c>ModeEndpoints</c>) — deliberately
+    /// NOT a second "am I in demo mode" flag invented for the fleet roster specifically. Consulted exactly
+    /// once, by <see cref="LoadFleet"/>, from the constructor:
+    ///  - <see langword="null"/> (every pre-existing test) or <see cref="St4i.EngineApi.Config.DemoModeGate.Enabled"/>
+    ///    keeps the ORIGINAL fleet.json/<see cref="BuildDefaultFleet"/> resolution byte-identical — the
+    ///    exhibition/sales fleet must never regress.
+    ///  - non-null and disabled means a real product deployment: the roster starts EMPTY. fleet.json and
+    ///    <see cref="BuildDefaultFleet"/> become demo-only artifacts — see <see cref="ResolveFleet"/>.
+    /// Production (Program.cs) never has to pass this explicitly: <see cref="St4i.EngineApi.Config.DemoModeGate"/>
+    /// is already registered as a DI singleton, so the container resolves it into this optional parameter
+    /// automatically, the same way <see cref="MachineConfigStore"/> already does.</summary>
+    private readonly St4i.EngineApi.Config.DemoModeGate? _demoModeGate;
+
+    /// <summary>SM-1 — the fleet is "running" (an operator has called <see cref="Start"/> and neither
+    /// <see cref="Stop"/>/<see cref="Estop"/> nor a total runtime fault-out has happened since). This
+    /// REPLACES the old computed definition (<c>_slots.Count > 0</c>) — that definition could never
+    /// distinguish "an empty roster the operator deliberately started, with nothing to pipeline yet" (a
+    /// coherent running state this task makes real, see the deliverable) from "every slot has faulted out
+    /// at runtime" (a degraded state that WAS, and still is, reported as not-running). Set by
+    /// <see cref="StartLocked"/> (unconditionally, whenever it doesn't early-return), cleared by
+    /// <see cref="StopLocked"/>, and ALSO cleared by <see cref="StartSlot"/>'s own fault-catch the moment
+    /// its removal brings <see cref="_slots"/> back down to zero — that one line is what keeps every
+    /// pre-existing "the sole/last slot faulting flips IsRunning false" test passing unchanged; a roster
+    /// that never had any slot to begin with (the empty-roster case) never reaches that catch at all, so
+    /// it stays running until a genuine <see cref="Stop"/>/<see cref="Estop"/>.</summary>
+    private bool _running;
+
     /// <summary>Task 3 — "what product is machine X running right now", keyed case-insensitively by
     /// <see cref="MachineDescriptor.Code"/>. A machine absent from this map (the common case — nothing
     /// sets it yet outside tests) resolves machine-scoped config only, exactly like a machine whose
@@ -269,7 +300,8 @@ public sealed class FleetHost
         FleetSettingsStore? settingsStore = null,
         IUnsPublisher? unsPublisher = null,
         IAssetRegistry? assetRegistry = null,
-        ConnectorRegistry? connectorRegistry = null)
+        ConnectorRegistry? connectorRegistry = null,
+        St4i.EngineApi.Config.DemoModeGate? demoModeGate = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -283,6 +315,7 @@ public sealed class FleetHost
         _unsPublisher = unsPublisher;
         _assetRegistry = assetRegistry;
         _connectorRegistry = connectorRegistry;
+        _demoModeGate = demoModeGate;
 
         // FF-1 — eager load, no lock needed: runs once, before this instance is published to any other
         // thread (same reasoning SeedAoiProductLinks below documents for itself). See _settingsStore's own
@@ -369,10 +402,11 @@ public sealed class FleetHost
     /// driver, and the fallback MappingProfile for its readings.</summary>
     internal Func<IReadOnlyList<(string Label, IDeviceDriver Driver, MappingProfile Profile)>>? AdditionalPipelinesForTests { get; set; }
 
-    /// <summary>G2-5 — the fleet is "running" while at least one pipeline slot is live. With a single slot
-    /// (today's simulated fleet) this is byte-identical to the old stored flag: the slot's fault-catch removes
-    /// it (see <see cref="StartLocked"/>), so the last slot faulting flips this false exactly as before.</summary>
-    public bool IsRunning { get { lock (_gate) return _slots.Count > 0; } }
+    /// <summary>G2-5 / SM-1 — see <see cref="_running"/>'s own doc comment for the full definition. With a
+    /// non-empty roster (every roster before this task, and demo mode always) this is byte-identical to the
+    /// original stored-flag behavior: the slot's fault-catch removes it (see <see cref="StartLocked"/>), so
+    /// the last slot faulting flips this false exactly as before.</summary>
+    public bool IsRunning { get { lock (_gate) return _running; } }
 
     /// <summary>Branch-review C-2 — the E-STOP latch, now owned by the engine (not any one browser
     /// tab's React state) so it's shared across every panel that polls <see cref="Snapshot"/> and
@@ -715,12 +749,23 @@ public sealed class FleetHost
                 || !registeredConnectorIds.Contains(DriverKinds.Normalize(d.DriverKind))))
             .ToList();
         var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
-        IDeviceDriver driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
 
-        var decorator = DriverDecoratorForTests;
-        if (decorator is not null)
+        // SM-1 (task-1-brief.md) — a roster with no simulated machines (an empty product roster, or one
+        // containing ONLY real Modbus/OPC-UA/registered-connector entries — every one of which `simFleet`
+        // above already excludes) must never reach SimulatedDriver's own constructor guard ("At least one
+        // simulator is required"). That guard is correct and stays exactly as strict as it is — it caught a
+        // real bug once — so the fix belongs at THIS call site, not a weakened constructor: no simulators
+        // simply means no "simulated" pipeline group is built this Start, never a crash.
+        IDeviceDriver? driver = null;
+        if (sims.Count > 0)
         {
-            driver = decorator(driver);
+            driver = new ScenarioAwareDriver(new SimulatedDriver(sims), () => _scenario);
+
+            var decorator = DriverDecoratorForTests;
+            if (decorator is not null)
+            {
+                driver = decorator(driver);
+            }
         }
 
         // G2-1 — per-machine mapping/*.json profiles (docs/plans/2026-07-27-giaidoan2-synapse-connect-
@@ -776,10 +821,12 @@ public sealed class FleetHost
         // ConnectorRegisteredWithKindSimulated_GetsDistinctSlotLabel_FromTheBuiltInSimSlot), built directly
         // here, never asked of `_connectorRegistry`. This is the ONE remaining special case in StartLocked;
         // everything else (Modbus, OPC-UA, any third-party id) goes through the registry uniformly.
-        var groups = new List<(string Label, IDeviceDriver Driver, MappingProfile Profile, Func<string, MappingProfile?>? Resolver)>
+        var groups = new List<(string Label, IDeviceDriver Driver, MappingProfile Profile, Func<string, MappingProfile?>? Resolver)>();
+        if (driver is not null)
         {
-            ("simulated", driver, profile, mappingResolver.Resolve),
-        };
+            groups.Add(("simulated", driver, profile, mappingResolver.Resolve));
+        }
+
         var extra = AdditionalPipelinesForTests?.Invoke();
         if (extra is not null)
         {
@@ -896,6 +943,12 @@ public sealed class FleetHost
             StartSlot(g.Label, g.Driver, g.Profile, g.Resolver);
         }
 
+        // SM-1 — set unconditionally here (never gated on `groups.Count > 0`): this method already
+        // early-returned above if IsRunning/_estopEngaged, so reaching this point always means a genuine
+        // not-running -> running transition, whether or not any pipeline slot actually got built (an empty
+        // product roster builds zero slots by design — see _running's own doc comment).
+        _running = true;
+
         return orphanedConnectorDrivers;
     }
 
@@ -967,6 +1020,17 @@ public sealed class FleetHost
                     {
                         LastError = ex;
                         pipeline.Committed -= OnPipelineCommitted;
+
+                        // SM-1 — IsRunning is no longer computed straight off _slots.Count (see _running's
+                        // own doc comment); this is the one place that old invariant must be reproduced by
+                        // hand. Only fires when THIS removal is what brought _slots back down to zero — an
+                        // empty roster (no slot ever built) never reaches this catch at all, so it never
+                        // touches _running; only a roster that HAD live slots, all of which have now
+                        // faulted out, flips running->false here, exactly like the old computed property did.
+                        if (_slots.Count == 0)
+                        {
+                            _running = false;
+                        }
                     }
                 }
 
@@ -1012,6 +1076,13 @@ public sealed class FleetHost
     /// side.</para></summary>
     private PipelineHandle StopLocked()
     {
+        // SM-1 — guard on _running (the operator-started flag), not _slots.Count: an empty-roster fleet
+        // that was Start()ed has _running == true with zero slots, and this call must still flip it back
+        // to false (a real Stop()) rather than early-returning as a no-op. Only a genuinely
+        // already-not-running fleet (never started, or already stopped/faulted-out) skips everything below.
+        if (!_running) return default;
+        _running = false;
+
         if (_slots.Count == 0) return default;
 
         var old = _slots.ToList();
@@ -1578,29 +1649,92 @@ public sealed class FleetHost
     // ─────────────────────────────────────────────────────────────────────
     /// <summary>GP-3 — instance method (not static, as before) purely so a per-entry
     /// <see cref="FleetConfig.Load"/> warning can reach <see cref="_logger"/>; called exactly once, from
-    /// the constructor, after <see cref="_logger"/> is assigned. <see cref="FleetConfigException"/> (the
-    /// file genuinely doesn't parse — bad JSON, or an empty/zero-machine result) is still the only case
-    /// that falls back to <see cref="BuildDefaultFleet"/>; a malformed INDIVIDUAL entry no longer reaches
-    /// that exception at all (see <see cref="FleetConfig.Load"/>'s own remarks) — its valid siblings load
-    /// normally and only the bad entry is missing, with a logged warning naming it.</summary>
+    /// the constructor, after <see cref="_logger"/> is assigned.
+    ///
+    /// SM-1 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1-brief.md) —
+    /// <see cref="_demoModeGate"/> now decides which of two outcomes this resolves to, reusing the same
+    /// demo-vs-product seam <c>Program.cs</c>/<c>ModeEndpoints</c> already key off, rather than inventing a
+    /// second one:
+    ///  - null (every pre-existing test/call site that constructs <see cref="FleetHost"/> directly) or
+    ///    <see cref="St4i.EngineApi.Config.DemoModeGate.Enabled"/> — byte-identical to this method's
+    ///    pre-SM-1 behavior, handled by <see cref="ResolveFleet"/> with <c>demoMode: true</c>.
+    ///  - non-null and disabled (a real product deployment) — the roster starts EMPTY. No fleet.json path
+    ///    at all (nothing beside the exe, no <c>--fleet</c> arg) is simply an empty roster, same as before
+    ///    this task for THAT specific case; a path that DOES resolve is still handed to
+    ///    <see cref="ResolveFleet"/> (with <c>demoMode: false</c>) purely so a present-but-broken file
+    ///    produces a clear, visible warning instead of being silently ignored outright — but its content
+    ///    (valid or not) never populates a product roster; see that method's own remarks.
+    /// </summary>
     private IReadOnlyList<MachineDescriptor> LoadFleet()
     {
+        var demoMode = _demoModeGate is null || _demoModeGate.Enabled;
         var path = ResolveFleetPath();
-        if (path is not null)
+
+        return path is null
+            ? (demoMode ? BuildDefaultFleet() : Array.Empty<MachineDescriptor>())
+            : ResolveFleet(path, demoMode);
+    }
+
+    /// <summary>The shared decision core both branches of <see cref="LoadFleet"/> funnel through once a
+    /// <c>fleet.json</c> PATH has actually been resolved (see <see cref="ResolveFleetPath"/>). Factored out
+    /// of <see cref="LoadFleet"/> (rather than duplicated per-mode) so the parsing/exception handling is
+    /// written — and tested — exactly once. <see langword="internal"/> (not <see langword="private"/>) so
+    /// <c>St4i.EngineApi.Tests</c> can drive the malformed-file branch directly against a throwaway temp
+    /// file: there is no clean per-test way to reach this same code path through <see cref="LoadFleet"/>
+    /// itself without mutating real, shared, concurrently-read process/filesystem state (this assembly's
+    /// own <c>fleet.json</c>, sitting beside every test's output directory, and the actual process command
+    /// line <see cref="ResolveFleetPath"/> also consults) — which would be flaky under this solution's
+    /// parallel test execution.
+    ///
+    /// <para><paramref name="demoMode"/> <see langword="true"/> (demo): byte-identical to this method's
+    /// pre-SM-1 behavior. A <see cref="FleetConfigException"/> (genuinely unparseable JSON) or a
+    /// zero-machine result both fall back to <see cref="BuildDefaultFleet"/>, exactly as before — the
+    /// exhibition/sales fleet's forgiving "never crash startup over a bad file" contract is unchanged.</para>
+    ///
+    /// <para><paramref name="demoMode"/> <see langword="false"/> (product): NEVER falls back to
+    /// <see cref="BuildDefaultFleet"/> — that would be exactly the "silently show a customer fake machines
+    /// that look like production data" bug this task exists to close. A genuinely malformed file logs a
+    /// clear warning naming the path and yields an empty roster — never a raw exception, never the demo
+    /// fleet. A file that parses FINE but has entries ALSO yields an empty roster (with its own warning
+    /// naming the ignored count): fleet.json is a demo-only artifact in product mode — its content is never
+    /// a valid way to declare a real machine, only <c>connectors.json</c>/env vars
+    /// (via <see cref="RegisterMachine"/>) are.</para></summary>
+    internal IReadOnlyList<MachineDescriptor> ResolveFleet(string path, bool demoMode)
+    {
+        try
         {
-            try
+            var loaded = FleetConfig.Load(path, logWarning: msg => _logger?.LogWarning("{FleetConfigWarning}", msg));
+            if (loaded.Count > 0)
             {
-                var loaded = FleetConfig.Load(path, logWarning: msg => _logger?.LogWarning("{FleetConfigWarning}", msg));
-                if (loaded.Count > 0) return loaded;
+                if (demoMode) return loaded;
+
+                _logger?.LogWarning(
+                    "Product mode ignores fleet.json — {Count} entry(ies) at '{Path}' were NOT loaded into the " +
+                    "roster. fleet.json only supplies the demo fleet; configure real machines via connectors.json " +
+                    "or the ST4I_MODBUS_*/ST4I_OPCUA_* environment variables instead. The roster starts empty.",
+                    loaded.Count, path);
+                return Array.Empty<MachineDescriptor>();
             }
-            catch (FleetConfigException ex)
+        }
+        catch (FleetConfigException ex)
+        {
+            if (demoMode)
             {
                 // Malformed fleet.json — fall through to the in-code default rather than fail startup.
                 _logger?.LogWarning(ex, "Malformed fleet.json at '{Path}' — falling back to the in-code default fleet", path);
+                return BuildDefaultFleet();
             }
+
+            _logger?.LogWarning(
+                ex,
+                "Product mode: fleet.json at '{Path}' is malformed and was ignored. fleet.json only supplies the " +
+                "demo fleet; configure real machines via connectors.json or the ST4I_MODBUS_*/ST4I_OPCUA_* " +
+                "environment variables instead. The roster starts empty.",
+                path);
+            return Array.Empty<MachineDescriptor>();
         }
 
-        return BuildDefaultFleet();
+        return demoMode ? BuildDefaultFleet() : Array.Empty<MachineDescriptor>();
     }
 
     private static string? ResolveFleetPath()

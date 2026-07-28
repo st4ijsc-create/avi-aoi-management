@@ -34,7 +34,7 @@ public sealed class AssetEndpointsTests
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync()
+    private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(bool demoEnabled = false)
     {
         var securityDir = Directory.CreateTempSubdirectory("st4i-assets-ep-security-").FullName;
         var historianDir = Directory.CreateTempSubdirectory("st4i-assets-ep-historian-").FullName;
@@ -70,7 +70,12 @@ public sealed class AssetEndpointsTests
         try
         {
             Environment.SetEnvironmentVariable("ST4I_SECURITY_DIR", securityDir);
-            Environment.SetEnvironmentVariable("ST4I_DEMO_ENABLED", null);
+            // SM-1 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1-brief.md) —
+            // product mode (the previous unconditional null here) now starts FleetHost's roster EMPTY;
+            // this class's whole premise is "the default roster's machines show up" (see the class doc
+            // comment), so any test that needs AOI-01/SCRW-01 to actually exist must opt into demoEnabled,
+            // same convention AuditWiringTests/AuthPipelineTests already use.
+            Environment.SetEnvironmentVariable("ST4I_DEMO_ENABLED", demoEnabled ? "true" : null);
             Environment.SetEnvironmentVariable("ST4I_HISTORIAN_DIR", historianDir);
             Environment.SetEnvironmentVariable("ST4I_WAL_DIR", walDir);
             Environment.SetEnvironmentVariable("ST4I_SETTINGS_DIR", settingsDir);
@@ -133,13 +138,18 @@ public sealed class AssetEndpointsTests
     [Fact]
     public async Task Operator_ListsAssets_AndSeesTheDefaultRosterMachines()
     {
-        await using var factory = await CreateFactoryAsync();
-        await BootstrapAdminAsync(factory, "assets-admin-1", "AdminPass123!");
-        await CreateUserAsync(factory, "assets-operator-1", "OperatorPass123!", Roles.Operator);
+        // SM-1 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1-brief.md) —
+        // "the default roster" this test names is now specifically the DEMO roster; a product
+        // deployment's default is an empty one (see FleetHostProductModeRosterTests). demoEnabled: true
+        // is what actually seeds AOI-01/SCRW-01 for this test to find — and it also means
+        // DemoAutoLoginMiddleware auto-creates + signs in "demo-admin" on the very first request, so
+        // bootstrapping a SEPARATE admin/operator on top of that would 409 (the user store is no longer
+        // empty). This test isn't about proving Operator-specific RBAC (that's covered elsewhere), just
+        // that the roster is listable, so the auto-logged-in demo-admin is used directly.
+        await using var factory = await CreateFactoryAsync(demoEnabled: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
 
-        using var operatorClient = await LoginAsAsync(factory, "assets-operator-1", "OperatorPass123!");
-
-        using var listResp = await operatorClient.GetAsync("/v1/assets");
+        using var listResp = await client.GetAsync("/v1/assets");
         Assert.Equal(HttpStatusCode.OK, listResp.StatusCode);
 
         var assets = await listResp.Content.ReadFromJsonAsync<List<AssetRecordDto>>(JsonOptionsWithEnums);
@@ -158,20 +168,20 @@ public sealed class AssetEndpointsTests
     [Fact]
     public async Task Operator_GetsAssetDetail_200ForKnownCode_404ForUnknownCode()
     {
-        await using var factory = await CreateFactoryAsync();
-        await BootstrapAdminAsync(factory, "assets-admin-2", "AdminPass123!");
-        await CreateUserAsync(factory, "assets-operator-2", "OperatorPass123!", Roles.Operator);
+        // SM-1 — AOI-01 is a demo-fleet code; see Operator_ListsAssets_AndSeesTheDefaultRosterMachines
+        // for why this uses the auto-logged-in demo-admin directly instead of bootstrapping a separate
+        // admin/operator.
+        await using var factory = await CreateFactoryAsync(demoEnabled: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
 
-        using var operatorClient = await LoginAsAsync(factory, "assets-operator-2", "OperatorPass123!");
-
-        using (var known = await operatorClient.GetAsync("/v1/assets/AOI-01"))
+        using (var known = await client.GetAsync("/v1/assets/AOI-01"))
         {
             Assert.Equal(HttpStatusCode.OK, known.StatusCode);
             var asset = await known.Content.ReadFromJsonAsync<AssetRecordDto>(JsonOptionsWithEnums);
             Assert.Equal("AOI-01", asset!.Code);
         }
 
-        using (var unknown = await operatorClient.GetAsync("/v1/assets/NO-SUCH-MACHINE"))
+        using (var unknown = await client.GetAsync("/v1/assets/NO-SUCH-MACHINE"))
         {
             Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
         }
@@ -185,13 +195,13 @@ public sealed class AssetEndpointsTests
     [Fact]
     public async Task Engineer_SetsLifecycle_ChangesStoredState_AndWritesAuditRow()
     {
-        await using var factory = await CreateFactoryAsync();
-        await BootstrapAdminAsync(factory, "assets-admin-3", "AdminPass123!");
-        await CreateUserAsync(factory, "assets-engineer-3", "EngineerPass123!", Roles.Engineer);
+        // SM-1 — SCRW-01 is a demo-fleet code; see Operator_ListsAssets_AndSeesTheDefaultRosterMachines
+        // for why this uses the auto-logged-in demo-admin directly instead of bootstrapping a separate
+        // admin/engineer (demo-admin's Admin role satisfies the Engineer-gated route below too).
+        await using var factory = await CreateFactoryAsync(demoEnabled: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
 
-        using var engineerClient = await LoginAsAsync(factory, "assets-engineer-3", "EngineerPass123!");
-
-        using (var put = await engineerClient.PutAsJsonAsync(
+        using (var put = await client.PutAsJsonAsync(
                    "/v1/assets/SCRW-01/lifecycle", new { state = "Maintenance" }, JsonOptions))
         {
             Assert.Equal(HttpStatusCode.OK, put.StatusCode);
@@ -200,7 +210,7 @@ public sealed class AssetEndpointsTests
         }
 
         // Confirms the PUT above genuinely persisted (not just an in-memory echo).
-        using (var get = await engineerClient.GetAsync("/v1/assets/SCRW-01"))
+        using (var get = await client.GetAsync("/v1/assets/SCRW-01"))
         {
             var asset = await get.Content.ReadFromJsonAsync<AssetRecordDto>(JsonOptionsWithEnums);
             Assert.Equal("Maintenance", asset!.Lifecycle.ToString());

@@ -254,30 +254,36 @@ public sealed class AuditWiringTests
     [Fact]
     public async Task MachineSettingsSet_AsEngineer_RecordsAuthenticatedActor_NotClientSuppliedBy()
     {
-        await using var factory = await CreateFactoryAsync();
-        using var adminClient = await BootstrapAdminAsync(factory, "aw-msettings-admin", "AdminPass123!");
-        await CreateUserAsync(factory, "aw-msettings-engineer", "EngineerPass123!", Roles.Engineer);
-        using var engineerClient = await LoginAsAsync(factory, "aw-msettings-engineer", "EngineerPass123!");
+        // SM-1 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1-brief.md) —
+        // AOI-01 is a demo-fleet code; a product deployment's default roster is now empty (see
+        // FleetHostProductModeRosterTests), so this test must opt into demoEnabled to get a machine to
+        // exercise. demoEnabled:true also means DemoAutoLoginMiddleware auto-creates + signs in
+        // "demo-admin" (Roles.Admin, which satisfies the Engineer-gated route below too) on the very
+        // first request — bootstrapping a SEPARATE admin/engineer on top of that would 409 (the user
+        // store is no longer empty), so this uses the auto-logged-in demo-admin directly for everything,
+        // same convention OnboardingClaim_RecordsKeyFingerprint_NeverTheRawKey already uses below.
+        await using var factory = await CreateFactoryAsync(demoEnabled: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
 
         // Read the CURRENT effective value first — MachineConfigStore persists beside the test binary
         // (no per-test directory override exists for it), so a fresh WebApplicationFactory can still
         // inherit state from an earlier run; reading before writing keeps this test correct regardless.
-        using var getResp = await engineerClient.GetAsync("/v1/machines/AOI-01/settings");
+        using var getResp = await client.GetAsync("/v1/machines/AOI-01/settings");
         Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
         var before = ExtractExposureUs(await getResp.Content.ReadAsStringAsync());
         var newValue = Math.Clamp(before + 50, 50, 20000);
 
         // The wire DTO's `by` field is populated with an OBVIOUSLY-different, untrusted value — proving
         // the server ignores it in favor of the authenticated identity, not just that it happens to match.
-        using var put = await engineerClient.PutAsJsonAsync(
+        using var put = await client.PutAsJsonAsync(
             "/v1/machines/AOI-01/settings/exposureUs",
             new { value = newValue, scope = "machine", by = "someone-else-entirely" },
             JsonOptions);
         Assert.Equal(HttpStatusCode.OK, put.StatusCode);
 
-        var entries = await GetAuditEntriesAsync(adminClient, "machine.settings.set");
+        var entries = await GetAuditEntriesAsync(client, "machine.settings.set");
         var entry = Assert.Single(entries);
-        Assert.Equal("aw-msettings-engineer", entry.ActorUsername);
+        Assert.Equal(DemoAutoLoginMiddleware.DemoUsername, entry.ActorUsername);
         Assert.NotEqual("someone-else-entirely", entry.ActorUsername);
         Assert.Equal("AOI-01:exposureUs", entry.TargetId);
         Assert.Equal(before, double.Parse(entry.OldValueJson!, System.Globalization.CultureInfo.InvariantCulture), 6);
@@ -366,20 +372,20 @@ public sealed class AuditWiringTests
     [Fact]
     public async Task OeeSettingsUpdate_AsEngineer_RecordsOldAndNewForTheMachine()
     {
-        await using var factory = await CreateFactoryAsync();
-        using var adminClient = await BootstrapAdminAsync(factory, "aw-oee-admin", "AdminPass123!");
-        await CreateUserAsync(factory, "aw-oee-engineer", "EngineerPass123!", Roles.Engineer);
-        using var engineerClient = await LoginAsAsync(factory, "aw-oee-engineer", "EngineerPass123!");
+        // SM-1 — SCRW-01 is a demo-fleet code; see MachineSettingsSet_AsEngineer_... above for why this
+        // uses the auto-logged-in demo-admin directly instead of bootstrapping a separate admin/engineer.
+        await using var factory = await CreateFactoryAsync(demoEnabled: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
 
-        using var put = await engineerClient.PutAsJsonAsync(
+        using var put = await client.PutAsJsonAsync(
             "/v1/historian/oee/settings?machine=SCRW-01",
             new { idealCycleSecondsOverride = 0.5, plannedProductionRatio = 0.75 },
             JsonOptions);
         Assert.Equal(HttpStatusCode.OK, put.StatusCode);
 
-        var entries = await GetAuditEntriesAsync(adminClient, "historian.oee_settings.update");
+        var entries = await GetAuditEntriesAsync(client, "historian.oee_settings.update");
         var entry = Assert.Single(entries);
-        Assert.Equal("aw-oee-engineer", entry.ActorUsername);
+        Assert.Equal(DemoAutoLoginMiddleware.DemoUsername, entry.ActorUsername);
         Assert.Equal("SCRW-01", entry.TargetId);
         Assert.Contains("0.5", entry.NewValueJson);
     }
@@ -469,17 +475,17 @@ public sealed class AuditWiringTests
     [Fact]
     public async Task MachineConfigSync_AsEngineer_RecordsAuthenticatedActorAndResultSummary()
     {
-        await using var factory = await CreateFactoryAsync();
-        using var adminClient = await BootstrapAdminAsync(factory, "aw-sync-admin", "AdminPass123!");
-        await CreateUserAsync(factory, "aw-sync-engineer", "EngineerPass123!", Roles.Engineer);
-        using var engineerClient = await LoginAsAsync(factory, "aw-sync-engineer", "EngineerPass123!");
+        // SM-1 — AOI-01 is a demo-fleet code; see MachineSettingsSet_AsEngineer_... above for why this
+        // uses the auto-logged-in demo-admin directly instead of bootstrapping a separate admin/engineer.
+        await using var factory = await CreateFactoryAsync(demoEnabled: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
 
-        using var post = await engineerClient.PostAsync("/v1/machines/AOI-01/sync-config", null);
+        using var post = await client.PostAsync("/v1/machines/AOI-01/sync-config", null);
         Assert.Equal(HttpStatusCode.OK, post.StatusCode);
 
-        var entries = await GetAuditEntriesAsync(adminClient, "machine.config.sync");
+        var entries = await GetAuditEntriesAsync(client, "machine.config.sync");
         var entry = Assert.Single(entries);
-        Assert.Equal("aw-sync-engineer", entry.ActorUsername);
+        Assert.Equal(DemoAutoLoginMiddleware.DemoUsername, entry.ActorUsername);
         Assert.Equal("AOI-01", entry.TargetId);
         Assert.Null(entry.OldValueJson); // a version CHECK, not an old->new field edit — nothing "before" to record.
         Assert.Contains("driftState", entry.NewValueJson);
