@@ -376,12 +376,26 @@ export function BatchSuggestDialog({ open, pointDefIds, onClose }: BatchSuggestD
             </div>
           )}
 
+          {/* Vòng sửa 2 (review Task 3) — nhóm này chứa HAI loại khác bản chất:
+              thiếu mẫu THẬT (degraded) và đủ mẫu nhưng đáng ngờ (needsReview,
+              server chỉ đặt khi degraded===false — server/services/aiThresholdAdvisor.ts:72-75,409-418).
+              Tiêu đề cũ "Chưa đủ dữ liệu" tự mâu thuẫn với một dòng needsReview
+              hiện rõ ràng 900 mẫu ngay bên dưới. Đổi cả GIÁ TRỊ lẫn TÊN KHOÁ
+              (batchInsufficientHeading → batchNeedsCautionHeading) vì tên khoá
+              cũ tự mang nghĩa "insufficient" — dễ khiến người sau lại viết ra
+              câu sai y hệt. Không đụng partitionBatch/phân loại/test. */}
           {!fetching && partition.insufficient.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">
                 <AlertTriangle className="h-4 w-4" />
-                {t("productModels.batchInsufficientHeading", "Chưa đủ dữ liệu ({{n}})", { n: partition.insufficient.length })}
+                {t("productModels.batchNeedsCautionHeading", "Chưa nên đề xuất tự động ({{n}})", { n: partition.insufficient.length })}
               </div>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "productModels.batchNeedsCautionHint",
+                  "Gồm điểm chưa đủ số mẫu và điểm có đủ mẫu nhưng dữ liệu đáng ngờ — xem lý do từng dòng.",
+                )}
+              </p>
               <ul className="space-y-1.5 rounded-md border border-dashed bg-muted/20 p-2.5">
                 {partition.insufficient.map((item) => (
                   <li key={item.pointDefId} className="flex flex-wrap items-start gap-2 text-xs">

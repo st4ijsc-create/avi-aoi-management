@@ -1,27 +1,36 @@
 /**
  * Wave 2 đường A — Task 3: chia kết quả đề xuất hàng loạt thành BA nhóm —
- * "gửi được" / "chưa đủ dữ liệu" / "không lấy được khuyến nghị" — và ánh xạ
- * MỘT kết quả recommendForPoint (thô) sang dạng BatchSuggestItem mà
+ * "gửi được" / "chưa nên đề xuất tự động" / "không lấy được khuyến nghị" — và
+ * ánh xạ MỘT kết quả recommendForPoint (thô) sang dạng BatchSuggestItem mà
  * partitionBatch hiểu. Cũng chứa vòng gửi hàng loạt CÓ THỂ HUỶ
  * (runCancellableBatchSubmit), tách khỏi React để test được thuần tuý.
  *
  * Nguyên tắc TRUNG THỰC (bắt buộc theo kế hoạch Wave 2 đường A):
  *   - Điểm không đủ mẫu (sampleSize < ngưỡng tối thiểu, mặc định 300 —
  *     server/services/aiThresholdAdvisor.ts:37-40, `minSamples()`) PHẢI rơi
- *     vào nhóm "insufficient" kèm lý do THẬT (lấy nguyên văn `note` do server
- *     tính), TUYỆT ĐỐI không bịa proposedLsl/proposedUsl/proposedNominal cho nó.
- *   - `needsReview` (server đánh dấu dữ liệu đo lệch xa giới hạn hiện tại —
- *     khả năng sai đơn vị/cấu hình điểm đo) CŨNG ở nhóm "insufficient" dù đủ
- *     mẫu: số liệu không đáng tin để tự động gửi hàng loạt mà không ai xem
- *     qua trước — cùng nguyên tắc chặn mà AIThresholdSuggestButton áp dụng
- *     cho đường đơn-điểm (`disabled={busy || needsReview}`,
- *     client/src/components/AIThresholdSuggestButton.tsx).
+ *     vào nhóm `insufficient` (tên field TypeScript — KHÔNG đổi, xem Vòng sửa
+ *     2) kèm lý do THẬT (lấy nguyên văn `note` do server tính), TUYỆT ĐỐI
+ *     không bịa proposedLsl/proposedUsl/proposedNominal cho nó.
+ *   - `needsReview` (server chỉ đặt khi `degraded===false` — tức ĐÃ ĐỦ mẫu,
+ *     nhưng dữ liệu đo lệch xa giới hạn hiện tại, nghi sai đơn vị/cấu hình
+ *     điểm đo, server/services/aiThresholdAdvisor.ts:72-75,409-418) CŨNG rơi
+ *     vào field `insufficient` dù đủ mẫu: số liệu không đáng tin để tự động
+ *     gửi hàng loạt mà không ai xem qua trước — cùng nguyên tắc chặn mà
+ *     AIThresholdSuggestButton áp dụng cho đường đơn-điểm
+ *     (`disabled={busy || needsReview}`, client/src/components/AIThresholdSuggestButton.tsx).
  *   - Vòng sửa 1 (review Task 3, Important #2) — lỗi HẠ TẦNG (mạng/tính toán/
- *     điểm không tìm thấy/trợ lý chưa bật) là BẢN CHẤT KHÁC với "chưa đủ dữ
- *     liệu thật": một cái là "chờ thêm sản phẩm để có mẫu", cái kia là "hệ
- *     thống hỏng/tắt, thử lại đi" — người dùng cần phân biệt để biết phải làm
- *     gì. Nhóm này tách riêng thành `failed` (field `BatchSuggestItem.failed`),
- *     KHÔNG gộp chung vào "insufficient" nữa.
+ *     điểm không tìm thấy/trợ lý chưa bật) là BẢN CHẤT KHÁC với "chưa nên đề
+ *     xuất tự động": một cái là "chờ thêm sản phẩm để có mẫu / kỹ sư xem lại
+ *     cấu hình", cái kia là "hệ thống hỏng/tắt, thử lại đi" — người dùng cần
+ *     phân biệt để biết phải làm gì. Nhóm này tách riêng thành `failed` (field
+ *     `BatchSuggestItem.failed`), KHÔNG gộp chung vào `insufficient` nữa.
+ *   - Vòng sửa 2 (review Task 3, Minor) — tiêu đề UI của field `insufficient`
+ *     TỪNG là "Chưa đủ dữ liệu", SAI bản chất với needsReview (đủ mẫu, chỉ là
+ *     đáng ngờ — một dòng needsReview vẫn hiện đúng số mẫu thật, ví dụ 900, mà
+ *     tiêu đề phía trên lại nói "chưa đủ"). Sửa CÂU CHỮ hiển thị
+ *     (`productModels.batchNeedsCautionHeading` = "Chưa nên đề xuất tự động")
+ *     — KHÔNG đổi field TypeScript `insufficient` (đổi sẽ đụng partitionBatch +
+ *     toàn bộ test, ngoài phạm vi review yêu cầu).
  */
 export interface BatchSuggestItem {
   pointDefId: number;
@@ -90,10 +99,15 @@ export interface AdvisorRecommendationLike {
  *      lòng thử lại" trong `note`), `disabled` (trợ lý chưa bật), hoặc thiếu
  *      hẳn `recommended` dù `ok:true` (hình dạng bất thường, không đáng tin).
  *      ⇒ "Không lấy được khuyến nghị" — gợi ý: THỬ LẠI.
- *   2) `failed` không set — CHƯA ĐỦ DỮ LIỆU THẬT: `degraded` (thiếu mẫu) hoặc
- *      `needsReview` (đủ mẫu nhưng dữ liệu lệch xa giới hạn hiện tại, nghi sai
- *      đơn vị/cấu hình) ⇒ "Chưa đủ dữ liệu" — gợi ý: CHỜ THÊM SẢN PHẨM / kỹ sư
- *      xem lại cấu hình điểm đo (không phải lỗi hệ thống).
+ *   2) `failed` không set — CHƯA NÊN ĐỀ XUẤT TỰ ĐỘNG, và đây là HAI lý do khác
+ *      nhau dù cùng một nhóm (Vòng sửa 2 — UI phải nói đúng cả hai, không chỉ
+ *      "chưa đủ dữ liệu"): `degraded` (thiếu mẫu THẬT — sampleSize < ngưỡng)
+ *      HOẶC `needsReview` (server chỉ đặt khi `degraded===false`, tức ĐÃ ĐỦ
+ *      mẫu — nhưng dữ liệu lệch xa giới hạn hiện tại, nghi sai đơn vị/cấu hình,
+ *      server/services/aiThresholdAdvisor.ts:72-75,409-418). `item.reason` vẫn
+ *      là `rec.note` nguyên văn nên luôn đúng ở tầng dòng-chi-tiết; chỉ tiêu đề
+ *      NHÓM từng nói sai (gộp cả hai thành "thiếu dữ liệu" trong khi một nửa
+ *      lại đủ mẫu) — đã sửa ở BatchSuggestDialog (`batchNeedsCautionHeading`).
  *   3) `ok=true` — sẵn sàng gửi, số liệu lấy nguyên văn từ server.
  */
 export function toBatchItem(
