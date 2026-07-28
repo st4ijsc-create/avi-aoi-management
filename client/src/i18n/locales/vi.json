@@ -6679,11 +6679,13 @@
     "deleteOrder": "Xóa đơn hàng"
   },
   "productModels": {
+    "approveAppliesImmediately": "Duyệt sẽ áp ngưỡng mới vào điểm đo ngay lập tức.",
     "approveFailed": "Duyệt thất bại",
     "approveSuccess": "Đã duyệt đề xuất",
     "approveSuggestion": "Duyệt",
     "autoTuneBadge": "Tự động dò",
     "cancelReject": "Huỷ",
+    "noPermissionBlocked": "Bạn không có quyền duyệt đề xuất ngưỡng — cần người phụ trách chất lượng.",
     "ownRequestBlocked": "Bạn là người tạo đề xuất này — cần người khác duyệt.",
     "pendingHeading": "{{n}} đề xuất đang chờ duyệt",
     "pendingLoadError": "Không tải được đề xuất đang chờ.",

@@ -6699,11 +6699,13 @@
     "deleteOrder": "Delete order"
   },
   "productModels": {
+    "approveAppliesImmediately": "Approving applies the new threshold to the point immediately.",
     "approveFailed": "Approve failed",
     "approveSuccess": "Suggestion approved",
     "approveSuggestion": "Approve",
     "autoTuneBadge": "Auto-tuned",
     "cancelReject": "Cancel",
+    "noPermissionBlocked": "You don't have permission to decide threshold suggestions — a quality manager must.",
     "ownRequestBlocked": "You created this suggestion — a different reviewer must decide.",
     "pendingHeading": "{{n}} suggestion(s) awaiting review",
     "pendingLoadError": "Could not load pending suggestions.",

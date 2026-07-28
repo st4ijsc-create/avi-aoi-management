@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Loader2, Sparkles, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,6 +46,13 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided }: 
   const { t } = useTranslation();
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [rejectComment, setRejectComment] = useState("");
+
+  // Vòng sửa 1 (review Task 2) — approve/reject là qualityProcedure ở server
+  // (settings_alerts.canEdit); dùng ĐÚNG cặp module/action mà hai tiền lệ trong
+  // codebase đã dùng cho cùng router này (ThresholdApprovalsPage.tsx,
+  // ApprovalsInbox.tsx) để client ↔ server luôn khớp gate.
+  const { hasPermission } = usePermissions();
+  const canApproveThresholds = hasPermission("settings_alerts", "canEdit");
 
   // Server ĐÃ hỗ trợ lọc theo pointDefId (thresholdApprovalRouter.list) — dùng
   // thẳng bộ lọc của server, KHÔNG lọc phía client, KHÔNG đổi hợp đồng `list`.
@@ -113,7 +121,7 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided }: 
       </div>
 
       {approvals.map((approval) => {
-        const gate = canDecide({ requestedBy: approval.requestedBy }, currentUserId);
+        const gate = canDecide({ requestedBy: approval.requestedBy }, currentUserId, canApproveThresholds);
         const s = (approval.suggestion ?? {}) as Record<string, any>;
         const sampleSize = s.sampleSize ?? null;
         // Producer khác nhau đặt tên khác nhau (proposedCpk từ AIThresholdSuggestButton,
@@ -193,7 +201,9 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided }: 
                 <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                 {gate.reason === "unknown-user"
                   ? t("productModels.unknownUserBlocked", "Chưa xác định được tài khoản của bạn — hãy đăng nhập lại để duyệt.")
-                  : t("productModels.ownRequestBlocked", "Bạn là người tạo đề xuất này — cần người khác duyệt.")}
+                  : gate.reason === "no-permission"
+                    ? t("productModels.noPermissionBlocked", "Bạn không có quyền duyệt đề xuất ngưỡng — cần người phụ trách chất lượng.")
+                    : t("productModels.ownRequestBlocked", "Bạn là người tạo đề xuất này — cần người khác duyệt.")}
               </p>
             )}
 
@@ -221,24 +231,33 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided }: 
                 </div>
               </div>
             ) : (
-              <div className="flex gap-1.5">
-                <Button
-                  size="sm"
-                  disabled={!gate.allowed || busy}
-                  onClick={() => approveM.mutate({ id: approval.id })}
-                >
-                  {approvingThis ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {t("productModels.approveSuggestion", "Duyệt")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!gate.allowed || busy}
-                  onClick={() => setRejectingId(approval.id)}
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                  {t("productModels.rejectSuggestion", "Từ chối")}
-                </Button>
+              <div className="space-y-1">
+                {/* Vòng sửa 1 — Duyệt ở đây gọi apply mặc định true (server default),
+                    tức ghi thẳng vào measurement_point_defs của sản phẩm đang chạy
+                    NGAY khi bấm. Nói thẳng điều đó thay vì để nút "Duyệt" trông như
+                    một quyết định nhẹ nhàng, không hậu quả tức thời. */}
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  {t("productModels.approveAppliesImmediately", "Duyệt sẽ áp ngưỡng mới vào điểm đo ngay lập tức.")}
+                </p>
+                <div className="flex gap-1.5">
+                  <Button
+                    size="sm"
+                    disabled={!gate.allowed || busy}
+                    onClick={() => approveM.mutate({ id: approval.id })}
+                  >
+                    {approvingThis ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    {t("productModels.approveSuggestion", "Duyệt")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!gate.allowed || busy}
+                    onClick={() => setRejectingId(approval.id)}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    {t("productModels.rejectSuggestion", "Từ chối")}
+                  </Button>
+                </div>
               </div>
             )}
           </div>
