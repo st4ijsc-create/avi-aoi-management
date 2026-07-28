@@ -13906,6 +13906,7 @@
       "corpusPlaceholder": "vd: vendor-x-manuals",
       "corpusHelp": "Chọn corpus có sẵn hoặc gõ tên mới — corpus sẽ tự động đăng ký khi nạp lần đầu.",
       "corpusRequired": "Nhập hoặc chọn tên corpus trước.",
+      "loadError": "Không tải được cấu hình tải lên (loại tệp cho phép, dung lượng tối đa) — kiểm tra quyền hoặc trạng thái 2FA rồi thử lại.",
       "uploadTitle": "Tải lên tài liệu",
       "uploadDesc": "{{formats}} — tối đa {{maxMb}} MB",
       "uploadImageHint": "Ảnh (png, jpg, jpeg, webp) sẽ được AI mô tả thành văn bản trước khi đưa vào kho tri thức.",

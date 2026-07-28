@@ -25,8 +25,11 @@ import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/EmptyState";
 import { SourceTab } from "@/components/kbStudio/SourceTab";
+import { resolveSourceTabState } from "@/components/kbStudio/kbStudioSourceState";
 import { JobsTab } from "@/components/kbStudio/JobsTab";
 import { CorpusTab } from "@/components/kbStudio/CorpusTab";
 import { EvalTab } from "@/components/kbStudio/EvalTab";
@@ -98,12 +101,37 @@ export default function KbStudioPage() {
               </TabsList>
 
               <TabsContent value="source">
-                <SourceTab
-                  enabled={statusQuery.data?.enabled ?? false}
-                  webIngestEnabled={statusQuery.data?.webIngestEnabled ?? false}
-                  maxUploadBytes={statusQuery.data?.maxUploadBytes ?? 20 * 1024 * 1024}
-                  allowedTypes={statusQuery.data?.allowedTypes ?? ["pdf", "docx", "md", "txt"]}
-                />
+                {/* Final-fix round (Important-2) — NEVER fabricate `allowedTypes` (the old
+                    `?? ["pdf","docx","md","txt"]` fallback silently hid the 4 image extensions
+                    the server actually accepts while the real status was loading, or FOREVER if
+                    it errored — kbIngest.status is `kbStudioProcedure`, which requires a
+                    still-valid 2FA step-up). resolveSourceTabState() is the single pure decision:
+                    loading/error render honest placeholders here; only a REAL server response
+                    ever reaches <SourceTab>. */}
+                {(() => {
+                  const state = resolveSourceTabState(statusQuery);
+                  if (state.kind === "loading") {
+                    return (
+                      <div className="space-y-2">
+                        <Skeleton className="h-40 w-full" />
+                        <Skeleton className="h-8 w-1/2" />
+                      </div>
+                    );
+                  }
+                  if (state.kind === "error") {
+                    return (
+                      <EmptyState
+                        variant="error"
+                        compact
+                        title={t("kbStudio.source.loadError")}
+                        description={state.message}
+                        actionLabel={t("common.retry", "Retry")}
+                        onAction={() => statusQuery.refetch()}
+                      />
+                    );
+                  }
+                  return <SourceTab {...state.props} />;
+                })()}
               </TabsContent>
               <TabsContent value="jobs">
                 <JobsTab />

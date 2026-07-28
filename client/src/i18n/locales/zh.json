@@ -14480,6 +14480,7 @@
       "corpusPlaceholder": "例如 vendor-x-manuals",
       "corpusHelp": "选择已有语料库或输入新名称 — 首次导入时会自动注册。",
       "corpusRequired": "请先输入或选择语料库名称。",
+      "loadError": "无法加载上传配置（允许的文件类型、最大大小）— 请检查权限或 2FA 状态后重试。",
       "uploadTitle": "上传文档",
       "uploadDesc": "支持 {{formats}} — 最大 {{maxMb}} MB",
       "uploadImageHint": "图片（png、jpg、jpeg、webp）会先由 AI 生成文字描述，然后才存入知识库。",

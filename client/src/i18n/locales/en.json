@@ -13923,6 +13923,7 @@
       "corpusPlaceholder": "e.g. vendor-x-manuals",
       "corpusHelp": "Pick an existing corpus or type a new name — it is registered automatically on first ingest.",
       "corpusRequired": "Enter or pick a corpus name first.",
+      "loadError": "Could not load the upload configuration (allowed types, max size) — check your permission or 2FA status and try again.",
       "uploadTitle": "Upload a document",
       "uploadDesc": "{{formats}} — up to {{maxMb}} MB",
       "uploadImageHint": "Images (png, jpg, jpeg, webp) are described by AI into text before being added to the knowledge base.",

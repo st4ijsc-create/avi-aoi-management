@@ -10,6 +10,7 @@ import { type RouterOutputs, mapCatalogCategoryToLegacyType, type MaterialCondit
 import { useAuth } from "@/_core/hooks/useAuth";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 import { PendingSuggestionCard } from "./PendingSuggestionCard";
+import { resolveAppliedThreshold } from "./resolveAppliedThreshold";
 import { ValidationMessage } from "@/components/ValidationMessage";
 import { PointCriteriaEditor, type PointCriteriaItem } from "@/components/products/PointCriteriaEditor";
 import { PointLightingEditor } from "@/components/products/PointLightingEditor";
@@ -215,27 +216,34 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
   // lén: người dùng luôn thấy vì sao giá trị vừa nhảy.
   const handleSuggestionApplied = (applied: { pointDefId: number; lsl: string; usl: string; nominal: string | null }) => {
     refetchPoints();
-    if (selectedPointIndex === null) return;
-    const current = measurementPoints[selectedPointIndex];
-    if (!current || current.id !== applied.pointDefId) return;
-    const norm = (v: unknown) => (v == null ? "" : String(v));
-    const wasDirty =
-      norm(current.lowerLimit) !== norm(pointLowerLimit) ||
-      norm(current.upperLimit) !== norm(pointUpperLimit) ||
-      norm(current.nominalValue) !== norm(pointNominalValue);
+    // Final-fix round (khuyến nghị mạnh) — quyết định rủi ro (guard "điểm đang mở", so
+    // wasDirty, nhánh !showToleranceSection) chuyển sang hàm THUẦN có test riêng
+    // (resolveAppliedThreshold.unit.test.ts, 4 nhánh toast + ca "điểm đã đổi ⇒ none").
+    // Component chỉ còn setState + toast theo kết quả — không còn quyết định nào không-test
+    // nằm inline ở đây.
+    const resolved = resolveAppliedThreshold({
+      applied,
+      selectedPointIndex,
+      currentPoint: selectedPointIndex !== null ? measurementPoints[selectedPointIndex] : undefined,
+      formLowerLimit: pointLowerLimit,
+      formUpperLimit: pointUpperLimit,
+      formNominalValue: pointNominalValue,
+      showToleranceSection,
+    });
+    if (resolved.toast === "none") return;
     // Cập nhật state LUÔN, bất kể loại điểm có hiện ô ngưỡng hay không — đây là
     // state chung mà handleSavePoint (ProductModels.tsx) dùng để build payload
     // Lưu; nếu bỏ qua cho POSITION/COLOR/VISUAL, "Lưu" ngay sau đó sẽ gửi state
     // CŨ (trước khi refetch kịp đồng bộ measurementPoints) — nguy cơ y hệt F1
     // cho 40% loại điểm không có ô ngưỡng hiển thị (vòng sửa 3, F4).
-    setPointLowerLimit(applied.lsl);
-    setPointUpperLimit(applied.usl);
-    setPointNominalValue(applied.nominal ?? "");
-    // Vòng sửa 3 (F4) — loại điểm này (POSITION/COLOR/VISUAL/SURFACE...) không
-    // render 3 ô LSL/USL/nominal (showToleranceSection false) — nói "đã nạp vào
-    // FORM" là SAI SỰ THẬT vì không có ô nào để nạp vào. Nói đúng: ngưỡng đã
-    // được GHI VÀO ĐIỂM ĐO (server), không nhắc tới "form".
-    if (!showToleranceSection) {
+    setPointLowerLimit(resolved.lsl!);
+    setPointUpperLimit(resolved.usl!);
+    setPointNominalValue(resolved.nominal!);
+    if (resolved.toast === "noInputs") {
+      // Vòng sửa 3 (F4) — loại điểm này (POSITION/COLOR/VISUAL/SURFACE...) không
+      // render 3 ô LSL/USL/nominal (showToleranceSection false) — nói "đã nạp vào
+      // FORM" là SAI SỰ THẬT vì không có ô nào để nạp vào. Nói đúng: ngưỡng đã
+      // được GHI VÀO ĐIỂM ĐO (server), không nhắc tới "form".
       toast.info(
         t(
           "productModels.thresholdAppliedNoInputs",
@@ -245,7 +253,7 @@ export function PointDetailsForm(props: PointDetailsFormProps) {
       );
       return;
     }
-    if (wasDirty) {
+    if (resolved.toast === "overDirty") {
       toast.warning(
         t(
           "productModels.thresholdReloadedOverDirty",

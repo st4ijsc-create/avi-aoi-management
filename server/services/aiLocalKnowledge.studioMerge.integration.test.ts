@@ -147,6 +147,29 @@ describe("retrieveKnowledge — trộn kho Training Studio (tích hợp, Vòng s
     expect(res.contexts).not.toContain("STUDIO_WEAK");
   });
 
+  it("(f) I-1 final-fix — kho hệ thống YẾU + hit Studio MẠNH (0.9) ⇒ confidence tính LẠI (>=0.30), không giữ số 0 tính trước khi trộn", async () => {
+    // Reviewer's real probe (final-fix-brief.md §3): citations trộn đúng ("studio:manuals:101"
+    // score 0.9 đứng đầu) nhưng confidence VẪN 0 vì nó được tính ở dòng 1771 từ `ranked` (CHỈ
+    // nguồn hệ thống, TRƯỚC khi trộn Studio) và khối trộn ở dòng 1791-1830 không tính lại.
+    // Query vector KHÔNG khớp embedding của c1/c2 (unit(777) trực giao unit(0)) và câu hỏi
+    // không chứa token khớp title/path/text/keywords của c1/c2 ⇒ semantic=0, keyword=0 ⇒ điểm
+    // hệ thống = 0 cho cả hai (chỉ c1 sống sót nhờ luật "giữ top-1 dù yếu", idx===0 ở dòng 1753).
+    generateEmbedding.mockResolvedValue({ embedding: unit(777), dimensions: DIM, modelId: "mxbai-embed-large-v1-f16" });
+    gatherStudioHitsMock.mockResolvedValue([
+      { id: 101, text: "STUDIO_TEXT_HIGH", sourceRef: "studio-high.pdf", score: 0.9, corpus: "manuals" },
+    ]);
+    const res = await retrieveKnowledge("xyzzy plugh unrelated nonsense query", 5);
+
+    // Citations đã trộn+sắp đúng (Task 4 / vòng sửa 1, KHÔNG phải phần hỏng ở đây).
+    expect(res.citations[0]?.id).toBe("studio:manuals:101");
+    expect(res.citations[0]?.score).toBe(0.9);
+    // confidence PHẢI phản ánh trích dẫn số 1 thật (0.9), không phải điểm hệ thống cũ (0).
+    // Đây chính là mục 1 trong "Ba hậu quả đo được": shouldUseLlm = confidence >= 0.30 ở
+    // answerQuestion() (:2187) — confidence=0 ⇒ LLM không bao giờ được gọi cho câu hỏi mà
+    // CHỈ tài liệu người dùng (Studio) trả lời được.
+    expect(res.confidence).toBeGreaterThanOrEqual(0.3);
+  });
+
   it("kho Studio rỗng ([]) ⇒ kết quả y hệt trước Task 4 (không có citation origin=studio)", async () => {
     gatherStudioHitsMock.mockResolvedValue([]);
     const res = await retrieveKnowledge("hỏi về AOI", 5);

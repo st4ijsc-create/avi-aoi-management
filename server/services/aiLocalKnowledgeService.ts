@@ -1766,9 +1766,11 @@ export async function retrieveKnowledge(
   }));
 
   const contexts = ranked.map((r) => (r.chunk ? r.chunk.text : ""));
-  const top1 = ranked[0]?.score ?? 0.25;
-  const top2 = ranked[Math.min(1, ranked.length - 1)]?.score ?? 0.2;
-  const confidence = clamp01((top1 + top2) / 1.6);
+  // `let`, not `const` — final-fix round (I-1, IMPORTANT) recomputes these below when the
+  // Studio merge block actually changes `citations`' order/contents. See that block for why.
+  let top1 = ranked[0]?.score ?? 0.25;
+  let top2 = ranked[Math.min(1, ranked.length - 1)]?.score ?? 0.2;
+  let confidence = clamp01((top1 + top2) / 1.6);
 
   // Wave 2 đường B — bổ sung nguồn "tài liệu người dùng nạp" (kho Training Studio).
   // Kho này ĐÃ có searchCorpus() (server/services/kbVectorStore.ts:180) nhưng chưa
@@ -1822,6 +1824,26 @@ export async function retrieveKnowledge(
           citations.push(p.c);
           contexts.push(p.ctx);
         }
+        // Final-fix round (I-1, IMPORTANT) — `top1`/`top2`/`confidence` were computed ABOVE
+        // from `ranked` (system sources only, BEFORE this merge) and never recomputed here, so
+        // a strong Studio hit that reorders `citations` to the front never showed up in
+        // `confidence` — the field kept scoring the pre-merge system-only world. Reviewer's
+        // real probe: citations[0] = studio hit score 0.9, yet confidence stayed 0. Measured
+        // consequences: (1) answerQuestion()'s `shouldUseLlm = retrieve.confidence >= 0.30`
+        // (:2187) never fires the LLM for a question ONLY a user-uploaded doc can answer: (2)
+        // buildExtractiveAnswer's STRONG_MATCH_FLOOR (:772) can refuse "no info" even though the
+        // relevant paragraph is sitting right there in `contexts`; (3) the UI shows the lowest
+        // confidence badge on an answer whose #1 citation is the user's own 0.9-scoring doc.
+        // Recompute from `citations`/`trimmed` (already merged AND already sorted best-first —
+        // see the comment above) using the EXACT SAME formula as above, so this is a pure
+        // "read the right array" fix, not a new confidence model. Placed INSIDE this
+        // `mergedStudioCount > 0` guard so the untouched (`else`) path — Studio corpus empty —
+        // keeps computing confidence from `ranked` exactly as before, preserving the
+        // system-only invariant verified by this file's own "kho Studio rỗng ⇒ kết quả y hệt
+        // trước Task 4" test below.
+        top1 = citations[0]?.score ?? top1;
+        top2 = citations[Math.min(1, citations.length - 1)]?.score ?? top2;
+        confidence = clamp01((top1 + top2) / 1.6);
       }
     } catch {
       // Nhánh Studio hỏng KHÔNG được làm hỏng trợ lý đang chạy — citations/contexts

@@ -773,23 +773,35 @@ export async function completeInline(input: CompleteInlineInput): Promise<Comple
     // Doc69 W2-C — resolve the model EXPLICITLY before calling generateFim instead of
     // leaving the second arg `undefined` (the OLD call shape below). Wave 1's lesson:
     // getOrLoadModel(undefined) can reuse whatever model happens to already be resident
-    // (including the embedder) rather than the intended FIM/code model. This also fixes a
-    // real bug: the undefined-arg call bypassed aiModelRouter entirely, so AI_CODE_ROUTER_
-    // ENABLED had ZERO effect on ghost-text. Prefer the router's task:"fim" tier (honors
-    // the flag when it's on); if that resolves to nothing, fall back to the same
-    // fimModelBasename() chain (GGUF_FIM_MODEL → GGUF_FAST_MODEL → GGUF_DEFAULT_MODEL)
-    // generateFim itself would otherwise apply internally — so this never regresses to
-    // "no model", it only ever makes the choice explicit.
-    let modelId: string | undefined;
+    // (including the embedder) rather than the intended FIM/code model.
+    //
+    // Final-fix round (C-1, CRITICAL) — `fimModelBasename()` (GGUF_FIM_MODEL → GGUF_FAST_MODEL
+    // → GGUF_DEFAULT_MODEL) is the CORRECT BASE, always, regardless of AI_CODE_ROUTER_ENABLED:
+    // it is the operator's dedicated FIM/ghost-text model. The PRIOR version of this code took
+    // aiModelRouter.route({task:"fim"}).modelId as authoritative — but route()'s flag-OFF branch
+    // (the DEFAULT, see aiModelRouter.ts:369-375) is `fastModelId() ?? defaultModelId()`, which
+    // NEVER reads GGUF_FIM_MODEL at all. So with the router flag off (every install that hasn't
+    // opted in), ghost-text silently used the general fast/default CHAT model instead of the
+    // dedicated FIM model — exactly the "generate text with the wrong model" bug class Wave 1
+    // existed to fix, reintroduced by Task 7's router integration. Reviewer probe:
+    // "PINNED MODEL (router OFF) = GENERAL-FAST-CHAT-MODEL ← SAI".
+    //
+    // Fix: default to fimModelBasename(); ONLY let route()'s decision override it when
+    // AI_CODE_ROUTER_ENABLED is actually on. Router route() is still called unconditionally
+    // (both here and inside route() itself) so its telemetry (aiModelRouter.getRouterStats())
+    // keeps recording this "fim" decision exactly as before — only the decision of WHICH
+    // modelId to trust changed. When the flag IS on, route()'s "fim" branch resolves via this
+    // EXACT SAME resolveTaskModel("fim")/fimModelBasename() chain (aiModelRouter.ts:369-372), so
+    // the two paths are byte-identical there — this is a pure no-op for that case, satisfying
+    // the "cờ BẬT ⇒ hành vi ghim model không đổi" invariant.
+    const { fimModelBasename } = await import("../ai/modelResolver");
+    let modelId: string | undefined = fimModelBasename();
     try {
-      const { route } = await import("../aiModelRouter");
-      modelId = route({ task: "fim", text: prefix.slice(-200) }).modelId;
+      const { route, codeRouterEnabled } = await import("../aiModelRouter");
+      const decision = route({ task: "fim", text: prefix.slice(-200) });
+      if (codeRouterEnabled() && decision.modelId) modelId = decision.modelId;
     } catch {
-      /* best-effort routing — fall through to the resolver backstop below */
-    }
-    if (!modelId) {
-      const { fimModelBasename } = await import("../ai/modelResolver");
-      modelId = fimModelBasename();
+      /* best-effort routing — modelId already carries the correct fimModelBasename() fallback */
     }
 
     const res = await generateFim(

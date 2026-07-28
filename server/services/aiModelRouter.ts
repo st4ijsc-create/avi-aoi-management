@@ -256,8 +256,16 @@ function deepModelFor(task: TaskKind, difficulty: Difficulty): { id: string | un
  * GGUF_CODE_MODEL/GGUF_FIM_MODEL envs are IGNORED — so turning this off is a guaranteed no-op.
  * ON: `code` → the code model (deep-tier semantics, large RAG-friendly ctx) and `fim` → the fim
  * model (fast-tier semantics, small ctx / low latency for inline completion).
+ *
+ * Exported (final-fix round, C-1) — `server/services/programming/aiProgrammingCopilot.ts`'s
+ * `completeInline()` needs to know the flag state BEFORE trusting `route()`'s modelId for the
+ * "fim" task: route()'s OFF branch deliberately ignores GGUF_FIM_MODEL (ONE tier below, `fim →
+ * Tier 1 fast`), so a caller that needs the DEDICATED fim model regardless of this flag must
+ * check it directly rather than assume route()'s result is authoritative for that purpose. Kept
+ * as the SAME predicate (just exported) so there is still exactly one place that parses the env
+ * var — no duplicated true/false/yes/on parsing anywhere else.
  */
-function codeRouterEnabled(): boolean {
+export function codeRouterEnabled(): boolean {
   const v = (process.env.AI_CODE_ROUTER_ENABLED || "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
