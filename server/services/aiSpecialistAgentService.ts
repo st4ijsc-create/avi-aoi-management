@@ -481,34 +481,41 @@ export function salvageAgentSections(rawText: string): Partial<SpecialistAgentRu
 }
 
 /**
- * Wave 1 FF-A — 1400 token không đủ cho 8 khối đầu ra ⇒ model bị cắt giữa
- * chừng, JSON hỏng. Cho phép cấu hình qua env.
+ * Wave 1 FF-A — mặc định 1400. Cho phép cấu hình qua env.
  *
- * FIX-ROUND 2 — giữ nguyên mặc định 3000 (không đổi so với round 1), nhưng
- * nay có lý do khác hẳn: round 1 nâng lên 3000 để "cho model thêm chỗ", round
- * đó chính là nguyên nhân model có ĐỦ CHỖ ĐỂ THOÁI HOÁ (12139 ký tự rác lặp
- * từ) mà không hề bị chặn — `maxTokens` cao không phải là thứ gây thoái hoá,
- * nhưng cũng không NGĂN được nó khi không có ngữ pháp ràng buộc.
+ * FIX-ROUND 3 — hoàn 1400 (round 1 từng nâng lên 3000; round 2 giữ 3000 với
+ * lý do khác — xem lịch sử bên dưới). Số 1400 này KHÔNG phải phỏng đoán, mà
+ * là mức ĐO ĐƯỢC TRỰC TIẾP trên live, đối chứng 3 lượt chạy CÙNG một request:
  *
- * Nay với `generateJSON` (grammar-constrained — xem SPECIALIST_JSON_SCHEMA),
- * bộ giải mã không còn tự do lan man ngoài cấu trúc JSON, nên số token cần
- * cho MỘT LƯỢT CHẠY BÌNH THƯỜNG (không thoái hoá) ước tính lại từ ngân sách
- * thật của schema: summary ~60-100 từ tiếng Việt (~150-250 token, tiếng Việt
- * có dấu tốn token hơn tiếng Anh) + 7 mảng × ~5 mục/mảng (ước tính gốc của
- * hợp đồng đầu ra) × ~40 token/mục (10-25 từ + overhead dấu ngoặc/nháy JSON)
- * ≈ 1400 token cho riêng phần mảng + ~50 token cho cấu trúc JSON (khoá, dấu
- * phẩy) ⇒ tổng ước tính ~1700 token cho một lượt "điển hình, không thoái
- * hoá". 3000 giữ biên an toàn ~1.75× con số đó — đủ rộng cho câu trả lời dài
- * hơn trung bình, nhưng không lãng phí tới mức phải nâng thêm. Vì grammar chỉ
- * ép CẤU TRÚC (không có `minItems`/`maxLength` trong schema — cố ý bám sát
- * đúng hình dạng schema được yêu cầu, không thêm ràng buộc ngoài phạm vi),
- * một agent không cần dùng tới một khối (vd `patchHints` với data-analyst)
- * vẫn có thể trả mảng RỖNG hợp lệ — không buộc phải "bịa" nội dung cho đủ 8
- * khoá, chỉ buộc phải CÓ MẶT khoá đó.
+ *   | phiên | maxTokens | đường          | kết quả thật               |
+ *   |-------|-----------|----------------|-----------------------------|
+ *   | #1    | 1400      | generateText   | nội dung tiếng Việt MẠCH LẠC, đúng file thật, chỉ bị CẮT NGANG |
+ *   | #3    | 3000      | generateText   | thoái hoá (lặp từ/trộn ngôn ngữ) |
+ *   | #4    | 3000      | generateJSON+grammar | thoái hoá GIỐNG HỆT — summary 20953 ký tự toàn `"result result result…"`, KHÔNG một ký tự JSON nào, cả 7 mảng rỗng |
+ *
+ * Kết luận rút ra từ phiên #4: đây CHƯA BAO GIỜ là vấn đề định dạng. Model
+ * sinh nội dung tốt trong khoảng ~1400 token ĐẦU rồi rơi vào VÒNG LẶP LẶP TỪ
+ * (repetition loop) — một hiện tượng suy biến ở TẦNG SAMPLING, không phải cú
+ * pháp. Grammar (round 2) chỉ ép CẤU TRÚC, không ép NỘI DUNG — nó chấp nhận
+ * `"summary": "result result result..."` là một chuỗi hợp lệ theo schema.
+ * Nâng trần lên 3000 vì vậy là một BƯỚC LÙI RÒNG: nó biến "tốt nhưng bị cắt
+ * ngang" (round 1, có thể vớt tiếp bằng salvage) thành "rác sạch cú pháp"
+ * (round 2, không gì vớt được vì rác không có cấu trúc). 1400 là mức trần cao
+ * nhất được XÁC NHẬN còn mạch lạc — không phải một con số ước lượng ngân sách
+ * schema như round 2 từng lập luận (ước lượng đó SAI vì giả định model không
+ * suy biến trong phạm vi đó, giả định này bị chính phiên #4 bác bỏ).
+ *
+ * Hệ quả CHỦ Ý chấp nhận ở 1400: JSON có thể bị cắt ngang giữa cấu trúc
+ * (đúng bug gốc mà fix-round 1 mô tả) — đó là lý do salvageAgentSections VẪN
+ * PHẢI giữ nguyên làm lưới an toàn (không xoá, không được xoá). Với đường
+ * `generateJSON`, cắt ngang giữa cấu trúc có thể khiến `grammar.parse` ném
+ * ("Grammar produced invalid JSON") ⇒ rơi về lưới dự phòng `generateText` +
+ * `parseAgentOutput` (chạy THÊM một lượt inference — xem ghi chú độ trễ trong
+ * báo cáo round này, .superpowers/sdd/w1-ff-report.md).
  */
 export function specialistMaxTokens(): number {
   const raw = Number(process.env.AI_SPECIALIST_MAX_TOKENS);
-  return Number.isFinite(raw) && raw > 0 ? raw : 3000;
+  return Number.isFinite(raw) && raw > 0 ? raw : 1400;
 }
 
 /**

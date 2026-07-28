@@ -184,18 +184,20 @@ describe("specialistMaxTokens", () => {
     else process.env[KEY] = original;
   });
 
-  it("7. không set ⇒ 3000; '0' ⇒ 3000; '-5' ⇒ 3000; 'abc' ⇒ 3000; '5000' ⇒ 5000", () => {
+  // Fix-round 3 — hoàn mặc định về 1400 (đo được trực tiếp trên live: >1400
+  // model rơi vào vòng lặp lặp từ, xem doc comment specialistMaxTokens()).
+  it("7. không set ⇒ 1400; '0' ⇒ 1400; '-5' ⇒ 1400; 'abc' ⇒ 1400; '5000' ⇒ 5000", () => {
     delete process.env[KEY];
-    expect(specialistMaxTokens()).toBe(3000);
+    expect(specialistMaxTokens()).toBe(1400);
 
     process.env[KEY] = "0";
-    expect(specialistMaxTokens()).toBe(3000);
+    expect(specialistMaxTokens()).toBe(1400);
 
     process.env[KEY] = "-5";
-    expect(specialistMaxTokens()).toBe(3000);
+    expect(specialistMaxTokens()).toBe(1400);
 
     process.env[KEY] = "abc";
-    expect(specialistMaxTokens()).toBe(3000);
+    expect(specialistMaxTokens()).toBe(1400);
 
     process.env[KEY] = "5000";
     expect(specialistMaxTokens()).toBe(5000);
