@@ -26,6 +26,14 @@ namespace St4i.EdgeCore.Tests.Drivers.OpcUa;
 [Collection("St4i.EdgeCore.Tests.OpcUa")]
 public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
 {
+    /// <summary>Declares the ONE check this class deliberately does not wire as a passing <c>[Fact]</c> —
+    /// see <see cref="KnownGap_ReadAsync_DoesNotHonourCancellation_AgainstAProtocolSilentPeer"/> and this
+    /// class's own doc comment. Required since GP-6 "Fix round 1" (IMPORTANT 3): without this,
+    /// <see cref="DeviceDriverConformanceSuite.EveryCheckIsWiredOrAcknowledged"/> would flag the omission as
+    /// silent/undeclared instead of a reported finding.</summary>
+    protected override ISet<string> AcknowledgedGaps { get; } =
+        new HashSet<string> { "ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable" };
+
     /// <summary>A definitely-closed loopback port, computed ONCE (not inside <see cref="CreateDriver"/>).
     /// Connecting here fails FAST, unlike <see cref="CreateUnresponsiveDeviceAsync"/>'s target below.</summary>
     private static readonly int ClosedPort = FindAndReleaseFreePort();

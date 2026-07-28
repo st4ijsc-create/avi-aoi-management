@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using St4i.Connector.Abstractions;
 using St4i.Connector.Abstractions.Json;
@@ -31,6 +32,15 @@ namespace St4i.Connector.Conformance;
 /// conforming ones. (2) a check that silently examines zero real readings is a silent no-op, not a passing
 /// check — <see cref="CollectReadingsAsync"/>'s own contract requires it to throw rather than return fewer
 /// than the requested count.</para>
+///
+/// <para><b>A third trap, found by review (task-6-report.md "Fix round 1", IMPORTANT 3): silent
+/// omission.</b> Because wiring is hand-written per concrete subclass (one <c>[Fact]</c> delegating method
+/// per check), nothing stopped a subclass from simply never wiring a check at all — indistinguishable from
+/// that check having been proven unnecessary. <see cref="EveryCheckIsWiredOrAcknowledged"/> closes this: every
+/// <c>Check_*</c> method declared here must be either wired (a <c>[Fact]</c> method on the concrete subclass
+/// named identically, minus the "Check_" prefix — the convention every wiring already follows) or listed in
+/// <see cref="AcknowledgedGaps"/> with a reason (e.g. a <c>KnownGap_*</c> test pinning real, currently-broken
+/// behaviour). Anything neither is now a red test instead of a silent absence.</para>
 /// </summary>
 public abstract class DeviceDriverConformanceSuite
 {
@@ -92,13 +102,38 @@ public abstract class DeviceDriverConformanceSuite
     protected abstract IDeviceDriver CreateDriver();
 
     /// <summary>
-    /// <see langword="false"/> only for a driver with no external device/connection concept at all (e.g. a
+    /// <see langword="false"/> ONLY for a driver with no external device/connection concept at all (e.g. a
     /// pure in-process simulator) — such a driver's own doc comment is expected to document why its
     /// <see cref="IDeviceDriver.Health"/> is exempt from "must not report Connected with no device reachable"
     /// (see <see cref="Check_Health_OnlyTakesDocumentedValues_AndIsSaneWithNoDevice"/>). Defaults to
     /// <see langword="true"/> — every driver that models a connection to something outside the process.
+    ///
+    /// <para><b>This is an escape hatch, not a free parameter — flipping it to <see langword="false"/> guts
+    /// the Health check</b> (task-6-report.md "Fix round 1", IMPORTANT 2): the strong invariant ("never
+    /// transiently reports Connected while unreachable", checked throughout an active enumeration) is
+    /// replaced by the much weaker "Health equals <see cref="ExpectedConstantHealthWhenDeviceLess"/> at two
+    /// sample points". A subclass overriding this to <see langword="false"/> MUST have a genuine reason tied
+    /// to the driver's own documented behaviour (per <see cref="IDeviceDriver.Health"/>'s own doc comment:
+    /// claiming this exemption without documenting it is itself a conformance violation) — never merely to
+    /// make an inconvenient assertion go away. A harness with no real "device" concept at all (a
+    /// negative-control fake whose <see cref="IDeviceDriver.Health"/> is irrelevant to what it exists to
+    /// prove) should simply leave this at its default rather than override it to <see langword="false"/> for
+    /// no stated reason.</para>
     /// </summary>
     protected virtual bool ModelsExternalDeviceConnection => true;
+
+    /// <summary>
+    /// Only consulted when <see cref="ModelsExternalDeviceConnection"/> is <see langword="false"/> — the
+    /// constant <see cref="DriverHealthState"/> value such a driver's own class doc comment documents Health
+    /// as always reporting (the default, <see cref="DriverHealthState.Connected"/>, matches every built-in
+    /// device-less driver so far). Comparing against an EXTERNALLY DECLARED expectation, rather than merely
+    /// comparing the getter to itself before/after some activity, is what makes the device-less branch of
+    /// <see cref="Check_Health_OnlyTakesDocumentedValues_AndIsSaneWithNoDevice"/> falsifiable (task-6-report.md
+    /// "Fix round 1", IMPORTANT 2) — a before-vs-after comparison is unfalsifiable for an implementation whose
+    /// <see cref="IDeviceDriver.Health"/> getter is a literal constant expression, since nothing could ever
+    /// make it differ from itself.
+    /// </summary>
+    protected virtual DriverHealthState ExpectedConstantHealthWhenDeviceLess => DriverHealthState.Connected;
 
     /// <summary>One driver instance plus a best-effort way to unstick it, for
     /// <see cref="Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable"/> — see
@@ -174,12 +209,91 @@ public abstract class DeviceDriverConformanceSuite
         return results;
     }
 
+    // ---- wiring enforcement (task-6-report.md "Fix round 1", IMPORTANT 3) --------------------------
+
+    private const string CheckMethodPrefix = "Check_";
+
+    /// <summary>
+    /// <see langword="false"/> only for a harness that exists purely to let a negative-control test manually
+    /// invoke ONE specific check method against a known-non-conforming fake (see
+    /// <c>tests/St4i.Connector.Conformance.Tests/Fakes/FakeDriverHarnesses.cs</c>) — such a harness is never
+    /// meant to wire every check as a <c>[Fact]</c> (most checks would incidentally also reject its fake,
+    /// which is not what it exists to prove, and <see cref="EveryCheckIsWiredOrAcknowledged"/> would
+    /// otherwise report a pile of "missing" checks that are not real conformance gaps). Every driver ACTUALLY
+    /// being conformance-tested (the default, and what every real-driver <c>*ConformanceTests</c> class is)
+    /// leaves this <see langword="true"/>, and full coverage is enforced for it.
+    /// </summary>
+    protected virtual bool IsConformanceTarget => true;
+
+    /// <summary>
+    /// Names (matching a <c>Check_*</c> method minus its "Check_" prefix — e.g.
+    /// "ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable") of checks this subclass deliberately does
+    /// NOT wire as a passing <c>[Fact]</c>. Use this ONLY for a genuine, reported finding (a <c>KnownGap_*</c>
+    /// test pinning real, currently-broken driver behaviour — see task-6-report.md §5) — never as a way to
+    /// quietly skip a check that is merely inconvenient. <see cref="EveryCheckIsWiredOrAcknowledged"/> still
+    /// requires every name here to correspond to a REAL <c>Check_*</c> method (a stale/misspelled entry is
+    /// itself a defect this could otherwise hide).
+    /// </summary>
+    protected virtual ISet<string> AcknowledgedGaps { get; } = new HashSet<string>();
+
+    /// <summary>
+    /// Pure function backing <see cref="EveryCheckIsWiredOrAcknowledged"/> — exposed separately so a
+    /// negative-control test can prove this detection logic has teeth without needing to instantiate a
+    /// "live", xunit-auto-discoverable, deliberately-incomplete conformance test class (which would itself
+    /// become a permanently-failing test the moment xunit discovered it).
+    /// </summary>
+    public static IReadOnlyList<string> FindUnwiredAndUnacknowledgedChecks(Type concreteType, IEnumerable<string> acknowledgedGaps)
+    {
+        var checkNames = typeof(DeviceDriverConformanceSuite)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => m.Name.StartsWith(CheckMethodPrefix, StringComparison.Ordinal) && m.GetParameters().Length == 0)
+            .Select(m => m.Name[CheckMethodPrefix.Length..]);
+
+        var wiredFactNames = concreteType
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Where(m => m.GetCustomAttribute<FactAttribute>() is not null)
+            .Select(m => m.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var acknowledged = acknowledgedGaps.ToHashSet(StringComparer.Ordinal);
+
+        return checkNames.Where(n => !wiredFactNames.Contains(n) && !acknowledged.Contains(n)).ToArray();
+    }
+
+    /// <summary>Enforces that THIS concrete subclass gives every check declared on the base class an
+    /// explicit fate (wired or acknowledged) — see this class's own doc comment's "third trap" remarks. A
+    /// negative-control harness (<see cref="IsConformanceTarget"/> = <see langword="false"/>) is exempt: it
+    /// exists to invoke individual checks manually, not to demonstrate full coverage.</summary>
+    [Fact]
+    public void EveryCheckIsWiredOrAcknowledged()
+    {
+        if (!IsConformanceTarget) return;
+
+        var missing = FindUnwiredAndUnacknowledgedChecks(GetType(), AcknowledgedGaps);
+
+        Assert.True(
+            missing.Count == 0,
+            $"{GetType().Name} silently omits conformance coverage for: {string.Join(", ", missing)}. Every " +
+            $"Check_* method on {nameof(DeviceDriverConformanceSuite)} must be wired as a [Fact] method named " +
+            "identically (minus the \"Check_\" prefix) or listed in AcknowledgedGaps with a reason (e.g. a " +
+            "KnownGap_* test pinning real, currently-broken behaviour).");
+    }
+
     // ---- checks -------------------------------------------------------------------------------------
 
     /// <summary>Enforces: "Construction is non-blocking and does not connect" — every real driver's own
     /// class doc comment documents this (e.g. <c>ModbusTcpDriver</c>/<c>OpcUaDriver</c>: "ctor never
     /// connects — non-blocking, like every other driver's ctor"). A slow constructor would stall
-    /// <c>FleetHost.StartLocked</c>, which runs under the SAME lock <c>Estop()</c> takes.</summary>
+    /// <c>FleetHost.StartLocked</c>, which runs under the SAME lock <c>Estop()</c> takes.
+    ///
+    /// <para>Two INDEPENDENT assertions, not one — task-6-report.md "Fix round 1" (the reviewer's own cheap
+    /// fold): elapsed-time alone only proves the constructor is FAST, not that it performed no I/O — a
+    /// constructor that dials a fast LOCAL device would pass a timing-only check. For a device-backed driver
+    /// (<see cref="ModelsExternalDeviceConnection"/>), a cheap-but-real proxy for "didn't already connect" is
+    /// that <see cref="IDeviceDriver.Health"/> is not yet <see cref="DriverHealthState.Connected"/> the
+    /// instant construction returns — a driver whose constructor already established a connection would fail
+    /// this even if it happened to do so quickly.</para>
+    /// </summary>
     public virtual async Task Check_Construction_IsNonBlocking_AndPerformsNoIO()
     {
         // Warm-up call, NOT measured — absorbs one-time JIT/static-initializer/cert-store cost so it can
@@ -201,6 +315,16 @@ public abstract class DeviceDriverConformanceSuite
                 "budget. IDeviceDriver's contract documents construction as non-blocking with no I/O — " +
                 "FleetHost.StartLocked constructs drivers under the same _gate lock Estop() takes, so a slow " +
                 "constructor blocks emergency-stop for as long as it takes.");
+
+            if (ModelsExternalDeviceConnection)
+            {
+                Assert.True(
+                    driver.Health != DriverHealthState.Connected,
+                    $"Health was already {driver.Health} the instant construction returned — a device-backed " +
+                    "driver's constructor must not establish a connection at all (see " +
+                    "ModelsExternalDeviceConnection), so Health must not already be Connected here, no matter " +
+                    "how fast that connection was made.");
+            }
         }
         finally
         {
@@ -245,7 +369,21 @@ public abstract class DeviceDriverConformanceSuite
     /// actual situation (a driver with no reachable device must not report Connected)." For a driver with NO
     /// external device concept at all (<see cref="ModelsExternalDeviceConnection"/> = <see
     /// langword="false"/>), that specific example doesn't apply — such a driver's own doc comment is expected
-    /// to document its actual (constant) Health contract instead, which this check verifies holds.</summary>
+    /// to document its actual (constant) Health contract instead, checked against
+    /// <see cref="ExpectedConstantHealthWhenDeviceLess"/> (falsifiably — see that property's own doc comment
+    /// for why a plain before/after comparison is NOT, per task-6-report.md "Fix round 1" IMPORTANT 2).
+    ///
+    /// <para><b>Device-backed branch, two independent mechanisms</b> (IMPORTANT 1 of the same review round —
+    /// this check previously drove <see cref="CreateDriver"/>'s FAST-failing target here, against which
+    /// neither real protocol driver ever yields a single reading, leaving the loop below dead code no
+    /// currently-wired test ever exercised): (1) <c>sawConnected</c>, checked on every yielded reading
+    /// throughout the whole drive — catches a driver that reports <see cref="DriverHealthState.Connected"/>
+    /// TRANSIENTLY and something else by the time enumeration ends; (2) the final single-sample assertion —
+    /// catches a driver that is simply, persistently wrong. Proven independently load-bearing in
+    /// task-6-report.md's negative controls (<c>ReusesReadingInstanceHarness</c>/
+    /// <c>MutatesSharedTelemetryListHarness</c>, both device-backed fakes that DO yield readings while
+    /// reporting Connected).</para>
+    /// </summary>
     public virtual async Task Check_Health_OnlyTakesDocumentedValues_AndIsSaneWithNoDevice()
     {
         await using var driver = CreateDriver();
@@ -256,7 +394,11 @@ public abstract class DeviceDriverConformanceSuite
 
         if (!ModelsExternalDeviceConnection)
         {
-            var before = driver.Health;
+            Assert.True(
+                driver.Health == ExpectedConstantHealthWhenDeviceLess,
+                $"a device-less driver's Health was {driver.Health}, not the {ExpectedConstantHealthWhenDeviceLess} " +
+                "its own class doc comment is expected to document as the constant value it always reports.");
+
             using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
             try
             {
@@ -265,10 +407,10 @@ public abstract class DeviceDriverConformanceSuite
             catch (OperationCanceledException) { }
 
             Assert.True(
-                before == driver.Health,
-                $"a device-less driver's Health changed from {before} to {driver.Health} — its own doc " +
-                "comment is expected to document Health as constant when there is no external device/link " +
-                "to lose at all.");
+                driver.Health == ExpectedConstantHealthWhenDeviceLess,
+                $"a device-less driver's Health drifted to {driver.Health} after some activity — its own " +
+                $"class doc comment is expected to document Health as the CONSTANT {ExpectedConstantHealthWhenDeviceLess}, " +
+                "with no external link to lose at all.");
             return;
         }
 
@@ -428,7 +570,15 @@ public abstract class DeviceDriverConformanceSuite
     /// a driver emits must round-trip losslessly through the contract's canonical options" — the
     /// sidecar-readiness gate (GP-2). Compares by VALUE (see <see cref="DeviceReadingEquality"/>'s own doc
     /// comment on why), not by CLR type, and allows the documented numeric widening (int→long,
-    /// float→double) rather than treating it as a failure.</summary>
+    /// float→double) rather than treating it as a failure.
+    ///
+    /// <para>Guards CONTENT, not just count (task-6-report.md "Fix round 1" cheap fold): a driver emitting
+    /// readings with every value-bearing collection empty would satisfy "N readings round-tripped" having
+    /// compared nothing meaningful — so this also requires at least one collected reading to actually carry
+    /// SOME value in <see cref="Models.DeviceReading.Telemetry"/>/<see cref="Models.DeviceReading.Metrics"/>/
+    /// <see cref="Models.DeviceReading.Measurements"/>/<see cref="Models.DeviceReading.Waveforms"/>/
+    /// <see cref="Models.DeviceReading.Genealogy"/>.</para>
+    /// </summary>
     public virtual async Task Check_Telemetry_RoundTripsLosslesslyThroughConnectorJson()
     {
         var readings = await CollectReadingsAsync(ReadingsRequiredForRoundTripCheck, ReadingsCollectionTimeout)
@@ -438,6 +588,12 @@ public abstract class DeviceDriverConformanceSuite
             readings.Count >= ReadingsRequiredForRoundTripCheck,
             $"only collected {readings.Count} readings (need >= {ReadingsRequiredForRoundTripCheck}) to make " +
             "this check meaningful.");
+
+        Assert.True(
+            readings.Any(HasAnyValueBearingContent),
+            "every collected reading's Telemetry/Metrics/Measurements/Waveforms/Genealogy was empty — " +
+            "round-tripping N readings with nothing in them would have compared no actual values, making " +
+            "this check a silent no-op despite \"passing\".");
 
         for (var i = 0; i < readings.Count; i++)
         {
@@ -499,6 +655,16 @@ public abstract class DeviceDriverConformanceSuite
             $"DisposeAsync took {sw.Elapsed}, exceeding the {DisposeBudget} budget — FleetHost's own teardown " +
             "only waits a bounded budget for a driver's DisposeAsync before giving up.");
     }
+
+    /// <summary>True if <paramref name="reading"/> carries at least one actual value in any of the
+    /// collections the round-trip check is meant to exercise — see
+    /// <see cref="Check_Telemetry_RoundTripsLosslesslyThroughConnectorJson"/>'s own doc comment.</summary>
+    private static bool HasAnyValueBearingContent(DeviceReading reading) =>
+        reading.Telemetry.Count > 0
+        || reading.Metrics.Count > 0
+        || reading.Measurements.Count > 0
+        || reading.Waveforms.Count > 0
+        || reading.Genealogy is { Count: > 0 };
 
     private static async Task SwallowAsync(Task task)
     {
