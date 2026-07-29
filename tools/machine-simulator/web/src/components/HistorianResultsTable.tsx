@@ -48,6 +48,34 @@ function formatKeyMetric(row: HistorianResultDto): string {
   return `${row.keyMetricName}: ${rounded}${unit}`
 }
 
+/**
+ * SM-2 fix round 1 (review IMPORTANT 1b) — this row's own data lineage, rendered right next to the
+ * verdict badge everywhere a historian row appears (this table AND `Historian.tsx`'s genealogy dialog,
+ * which imports this). `isFabricated === true` (explicitly demo/simulated data) and `=== null`/
+ * `undefined` (Unknown provenance — a pre-migration row, or an older engine build that omits the field)
+ * both get a visible tag; `false` (real) renders nothing, matching how the pass/fail verdict badge is the
+ * only thing shown for the common case. Exported so both historian surfaces use ONE tag, never two
+ * independently-invented labels.
+ */
+export function ProvenanceTag({ isFabricated }: { isFabricated: boolean | null | undefined }) {
+  const t = useT()
+  if (isFabricated === true) {
+    return (
+      <StatusBadge status="info" title={t("historian.table.fabricated")}>
+        {t("historian.table.fabricated")}
+      </StatusBadge>
+    )
+  }
+  if (isFabricated == null) {
+    return (
+      <StatusBadge status="neutral" title={t("historian.table.unknownProvenance")}>
+        {t("historian.table.unknownProvenance")}
+      </StatusBadge>
+    )
+  }
+  return null
+}
+
 /** Bilingual column header — same register `CycleLogTable.tsx`'s own `Th` uses (primary language on
  * top, small uppercase gloss beneath, `aria-hidden` since it's a visual register, not a second
  * accessible name). */
@@ -149,7 +177,10 @@ export function HistorianResultsTable({ items, isPending, isError, onViewGenealo
                     <TableCell className="font-numeric font-medium text-text-strong">{row.machineCode}</TableCell>
                     <TableCell className="font-numeric text-text-body">{row.serialNumber}</TableCell>
                     <TableCell>
-                      <StatusBadge status={meta.status}>{meta.label}</StatusBadge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <StatusBadge status={meta.status}>{meta.label}</StatusBadge>
+                        <ProvenanceTag isFabricated={row.isFabricated} />
+                      </div>
                     </TableCell>
                     <TableCell className="text-text-body">{formatKeyMetric(row)}</TableCell>
                     <TableCell className="font-numeric text-text-body">{`${row.ngCount}/${row.pointCount}`}</TableCell>

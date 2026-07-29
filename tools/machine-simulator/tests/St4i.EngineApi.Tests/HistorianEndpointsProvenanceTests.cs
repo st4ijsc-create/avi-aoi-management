@@ -122,8 +122,14 @@ public sealed class HistorianEndpointsProvenanceTests
         Assert.Contains(page.Items, i => i.SerialNumber == "SN-R1" && i.IsFabricated == false);
     }
 
+    /// <summary>Fix round 1 (review IMPORTANT 1a) — an explicitly-fabricated row is unambiguous and is
+    /// excluded from this default (non-opt-in) endpoint call unconditionally, whether or not anything real
+    /// exists elsewhere. Renamed/re-asserted from the pre-fix-round-1 version, which wrongly expected a
+    /// pure-demo period to pass through unfiltered — see
+    /// <see cref="Results_PureUnknownPeriod_DefaultStillReturnsEverything_LegacyContinuity"/> below for the
+    /// genuine legacy-continuity guarantee this endpoint still honors.</summary>
     [Fact]
-    public async Task Results_PureFabricatedPeriod_DefaultStillReturnsEverything_ExhibitionContinuity()
+    public async Task Results_PureFabricatedPeriod_DefaultReturnsNothing_ExplicitFabricatedAlwaysExcluded()
     {
         var store = NewStore();
         var now = DateTimeOffset.UtcNow;
@@ -139,7 +145,99 @@ public sealed class HistorianEndpointsProvenanceTests
 
         var page = ExpectOk<HistorianResultsPageDto>(result);
 
+        Assert.Equal(0, page.Total);
+    }
+
+    /// <summary>The genuine legacy-continuity guarantee at the API boundary: a period containing ONLY
+    /// Unknown-provenance (pre-migration-shaped) rows is not silently emptied by
+    /// <c>GET /v1/historian/results</c> merely because nothing in scope can prove them real.</summary>
+    [Fact]
+    public async Task Results_PureUnknownPeriod_DefaultStillReturnsEverything_LegacyContinuity()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+        InsertLegacyShapeRow(store.DbPath, "LEGACY-EP-01", "SN-OLD-1", now.AddMinutes(-2));
+        InsertLegacyShapeRow(store.DbPath, "LEGACY-EP-01", "SN-OLD-2", now.AddMinutes(-1));
+
+        var result = await HistorianEndpoints.GetResultsAsync(
+            machine: "LEGACY-EP-01", from: null, to: null, serial: null, verdict: null, kind: null,
+            limit: null, offset: null, store, CancellationToken.None);
+
+        var page = ExpectOk<HistorianResultsPageDto>(result);
+
         Assert.Equal(2, page.Total);
+        Assert.All(page.Items, i => Assert.Null(i.IsFabricated));
+    }
+
+    /// <summary>Same raw pre-SM-2-column INSERT convention as
+    /// <c>SqliteHistorianStoreProvenanceTests.InsertLegacyShapeRow</c> — the most faithful simulation of "a
+    /// row written before this column existed" available at the endpoint layer.</summary>
+    private static void InsertLegacyShapeRow(string dbPath, string machineCode, string serialNumber, DateTimeOffset eventTime)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO historian_results
+                (machine_code, device_class, machine_type, reading_kind, cycle_counter, serial_number, verdict,
+                 recipe_code, recipe_version, key_metric_name, key_metric_value, key_metric_unit,
+                 ng_count, point_count, ack_success, ack_duplicate, ack_queued,
+                 genealogy_json, measurements_json, event_time_utc, ingested_at_utc)
+            VALUES
+                (@machine_code, 'Automation', 'MODBUS_TCP', 'ProcessResult', 1, @serial_number, 'Pass',
+                 NULL, NULL, NULL, NULL, NULL,
+                 0, 0, 1, 0, 0,
+                 NULL, NULL, @event_time_utc, @event_time_utc);
+            """;
+        cmd.Parameters.AddWithValue("@machine_code", machineCode);
+        cmd.Parameters.AddWithValue("@serial_number", serialNumber);
+        cmd.Parameters.AddWithValue("@event_time_utc", eventTime.ToUniversalTime().ToString("O"));
+        cmd.ExecuteNonQuery();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GET /v1/historian/serial/{serial} — fix round 1 (review IMPORTANT 2): the "View genealogy" dialog's
+    // own data source, reachable from every historian row's row-action.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BySerial_MixedAcrossMachines_DefaultReturnsOnlyRealRows()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+        const string serial = "SN-GENEALOGY-EP-01";
+        await store.AppendResultsAsync(new[]
+        {
+            MakeResult("GENEALOGY-EP-DEMO-01", serial, "Pass", now.AddMinutes(-2), isFabricated: true),
+            MakeResult("GENEALOGY-EP-REAL-01", serial, "Pass", now.AddMinutes(-1), isFabricated: false),
+        }, CancellationToken.None);
+
+        var result = await HistorianEndpoints.GetBySerialAsync(serial, store, CancellationToken.None);
+
+        var rows = ExpectOk<HistorianResultDto[]>(result);
+        var row = Assert.Single(rows);
+        Assert.Equal("GENEALOGY-EP-REAL-01", row.MachineCode);
+        Assert.Equal(false, row.IsFabricated);
+    }
+
+    [Fact]
+    public async Task BySerial_MixedAcrossMachines_IncludeFabricatedTrue_ReturnsEverything_StillLabeledPerRow()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+        const string serial = "SN-GENEALOGY-EP-02";
+        await store.AppendResultsAsync(new[]
+        {
+            MakeResult("GENEALOGY-EP-DEMO-02", serial, "Pass", now.AddMinutes(-2), isFabricated: true),
+            MakeResult("GENEALOGY-EP-REAL-02", serial, "Pass", now.AddMinutes(-1), isFabricated: false),
+        }, CancellationToken.None);
+
+        var result = await HistorianEndpoints.GetBySerialAsync(serial, store, CancellationToken.None, includeFabricated: true);
+
+        var rows = ExpectOk<HistorianResultDto[]>(result);
+        Assert.Equal(2, rows.Length);
+        Assert.Contains(rows, r => r.MachineCode == "GENEALOGY-EP-DEMO-02" && r.IsFabricated == true);
+        Assert.Contains(rows, r => r.MachineCode == "GENEALOGY-EP-REAL-02" && r.IsFabricated == false);
     }
 
     // ─────────────────────────────────────────────────────────────────────

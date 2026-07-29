@@ -125,7 +125,16 @@ public sealed class HistorianRestartSurvivalTests
 
         // OEE computed post-"restart" is non-trivial — TotalCount matches what actually ran, RunTime > 0
         // (the Start/Stop run events persisted too), and the composite Oee score is > 0.
-        var aggregate = await store2.AggregateForOeeAsync(machineCode, windowStart, windowEndFinal, CancellationToken.None);
+        //
+        // SM-2 fix round 1 — this test's own SCRW-01 machine is the SHIPPED demo fleet's genuinely
+        // Simulated (fabricated) driver, so its rows are now correctly tagged `is_fabricated: true` and
+        // excluded from a default (non-opt-in) AggregateForOeeAsync call, same as every other fabricated
+        // row on any customer-facing surface — see SqliteHistorianStore.ApplyRealPresenceGateAsync's own
+        // doc comment. This test's OWN purpose (WS-A-T14: data + OEE survive a process restart) is
+        // orthogonal to SM-2's provenance filtering — it just happens to use the demo fleet as a
+        // convenient, already-wired real pipeline — so it opts into `includeFabricated: true` to keep
+        // proving restart-survival, not re-litigate provenance filtering.
+        var aggregate = await store2.AggregateForOeeAsync(machineCode, windowStart, windowEndFinal, CancellationToken.None, includeFabricated: true);
         Assert.True(aggregate.TotalCount > 0, "AggregateForOeeAsync should count the ProcessResult rows written before the restart");
         Assert.True(aggregate.RunTime > TimeSpan.Zero, "AggregateForOeeAsync should reconstruct a non-zero run-time from the persisted Start/Stop run events");
 

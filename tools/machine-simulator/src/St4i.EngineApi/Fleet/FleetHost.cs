@@ -478,14 +478,41 @@ public sealed class FleetHost
     public IReadOnlyList<ConnectorStatusDto> GetConfiguredConnectorIssues() =>
         _connectorStartIssues.Select(kv => new ConnectorStatusDto(kv.Key, kv.Value)).ToList();
 
-    /// <summary>GĐ3 sub-4 LC-2 — the raw cumulative fleet-wide KPI counters (added for
-    /// <see cref="Alarms.AlarmEvaluator"/>'s windowed NG-rate source, which diffs successive calls to
-    /// compute a DELTA rather than a fleet-lifetime rate). Pure read under <see cref="_kpiGate"/> — the
-    /// SAME lock/fields <see cref="Snapshot"/>'s own FPY computation already reads, just handed back raw
-    /// instead of pre-divided into a ratio.</summary>
+    /// <summary>SM-2 fix round 1 (review CRITICAL) — the SAME "not blend, not suppress" mode-aware rule
+    /// <see cref="Snapshot"/> applies to <see cref="FleetKpisDto"/>, factored out so both call sites can
+    /// never drift apart: a real (non-Simulated) machine ANYWHERE in the current roster means "there is
+    /// something to blend with," so a caller must use the real-only counters; no real machine (a pure demo
+    /// roster, or an empty product roster) means there is nothing to blend WITH, so the original blended
+    /// counters are correct AND byte-identical to before this task. Reads <see cref="Fleet"/> once (a
+    /// single <see cref="_gate"/> acquisition) rather than each caller re-deriving its own roster scan.</summary>
+    private (bool HasFabricatedMachine, bool HasRealMachine) ClassifyRoster()
+    {
+        var fleet = Fleet;
+        return (
+            fleet.Any(d => DriverKinds.IsFabricated(d.DriverKind)),
+            fleet.Any(d => !DriverKinds.IsFabricated(d.DriverKind)));
+    }
+
+    /// <summary>GĐ3 sub-4 LC-2 — the fleet-wide KPI counters <see cref="Alarms.AlarmEvaluator"/>'s windowed
+    /// NG-rate source polls (diffing successive calls to compute a DELTA rather than a fleet-lifetime
+    /// rate), which feeds a genuinely customer-facing alarm ("Fleet NG-rate X% ... exceeds the Y% limit").
+    ///
+    /// SM-2 fix round 1 (review CRITICAL) — this used to return the raw BLENDED
+    /// <see cref="_totalPass"/>/<see cref="_totalJudged"/> unconditionally, the one customer-facing surface
+    /// this task's own diff had left un-audited: in "demo fleet plus one real machine" — the brief's own
+    /// opening scenario — a healthy demo stream could mask a genuine quality problem on the real machine,
+    /// or a stable demo stream could trip/clear an alarm that has nothing to do with it. Now mode-aware via
+    /// the SAME <see cref="ClassifyRoster"/> rule <see cref="Snapshot"/> uses: a real machine anywhere in
+    /// the current roster returns the real-only counters instead — never blended, and computed under the
+    /// SAME <see cref="_kpiGate"/> lock either branch already used.</summary>
     public (long TotalPass, long TotalJudged) GetKpiCounters()
     {
-        lock (_kpiGate) { return (_totalPass, _totalJudged); }
+        var (_, hasRealMachine) = ClassifyRoster();
+
+        lock (_kpiGate)
+        {
+            return hasRealMachine ? (_totalPassReal, _totalJudgedReal) : (_totalPass, _totalJudged);
+        }
     }
 
     public Exception? LastError { get; private set; }
@@ -1261,9 +1288,7 @@ public sealed class FleetHost
         // demo roster, or an empty product roster) means there is nothing to blend WITH — the original
         // blended counters are reported unchanged, which is also what keeps the exhibition contract
         // (pure demo's own numbers) byte-identical to before this task.
-        var fleet = Fleet;
-        var hasFabricatedMachine = fleet.Any(d => DriverKinds.IsFabricated(d.DriverKind));
-        var hasRealMachine = fleet.Any(d => !DriverKinds.IsFabricated(d.DriverKind));
+        var (hasFabricatedMachine, hasRealMachine) = ClassifyRoster();
 
         long totalCycles;
         double fpy;

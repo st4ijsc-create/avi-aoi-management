@@ -1515,6 +1515,10 @@ export const en: Dictionary = {
       genealogyAction: "View genealogy",
       empty: "No historian records match the current filters.",
       loadFailed: "Couldn't load the historian.",
+      // SM-2 fix round 1 — per-row data-lineage tags (see HistorianResultDto.isFabricated). Rendered
+      // next to the verdict badge in both the results table and the genealogy dialog.
+      fabricated: "Demo",
+      unknownProvenance: "Unknown origin",
     },
     pagination: {
       showing: (vars: Vars) => `Showing ${vars.from}–${vars.to} of ${vars.total} records`,

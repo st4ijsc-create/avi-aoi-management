@@ -1578,6 +1578,9 @@ export const vi = {
       genealogyAction: "Xem phả hệ",
       empty: "Không có bản ghi lịch sử nào khớp với bộ lọc hiện tại.",
       loadFailed: "Không thể tải lịch sử dữ liệu.",
+      // SM-2 fix round 1 — nhãn nguồn gốc dữ liệu theo từng dòng (xem HistorianResultDto.isFabricated).
+      fabricated: "Demo",
+      unknownProvenance: "Không rõ nguồn gốc",
     },
     pagination: {
       showing: (vars: Vars) => `Hiển thị ${vars.from}–${vars.to} trên ${vars.total} bản ghi`,

@@ -365,28 +365,50 @@ public sealed class SqliteHistorianStore : IHistorianStore
     }
 
     /// <summary>
-    /// SM-2 — the "real-presence gate": the one rule every customer-facing historian query/aggregate in
-    /// this store applies so fabricated data is never silently blended with real data, while a pure-demo
-    /// (or pure-legacy) scope is never suppressed either. Given the SAME scope a caller already asked for
-    /// (<paramref name="whereClauses"/>/<paramref name="parameters"/> — machine/time/serial/etc., exactly
-    /// as filtered), this probes whether at least one row in that EXACT scope is explicitly known to be
-    /// real (<c>is_fabricated = 0</c>):
+    /// SM-2 fix round 1 (review IMPORTANT 1a) — the "real-presence gate": the one rule every
+    /// customer-facing historian query/aggregate in this store applies so fabricated data is never
+    /// silently blended with real data.
+    ///
+    /// <b>Round 1 correction:</b> the original version treated "explicitly fabricated" and "unknown
+    /// provenance" identically — both were excluded ONLY when at least one explicitly-real row was also
+    /// present in the exact same scope, and BOTH passed through unfiltered otherwise. That let a real
+    /// machine which simply cycles less often than the demo fleet (a slow assembly station, say) produce a
+    /// narrow historian/report window containing ZERO of its own rows but many demo rows — the gate would
+    /// then hand back the demo fleet's rows COMPLETELY UNFILTERED for that window, while
+    /// <see cref="FleetHost.Snapshot"/> was, at the very same moment, reporting <c>HasMixedProvenance:
+    /// true</c> and real-only live totals for the same fleet — two customer-facing screens disagreeing
+    /// about the same moment. <c>is_fabricated = 1</c> is unambiguous (this codebase wrote it itself, at
+    /// commit time — see <see cref="HistorianResultRecord.IsFabricated"/>) — there is never a legitimate
+    /// reason to show it on a customer-facing surface by default, so it is now EXCLUDED UNCONDITIONALLY.
+    /// The presence-gate heuristic below is reserved for what it actually exists to serve: deciding whether
+    /// <see langword="null"/> ("Unknown provenance," this project's honest label for a pre-migration row —
+    /// see <see cref="HistorianResultRecord.IsFabricated"/>'s own doc comment) is safe to include.
+    ///
+    /// Given the SAME scope a caller already asked for (<paramref name="whereClauses"/>/
+    /// <paramref name="parameters"/> — machine/time/serial/etc., exactly as filtered):
     ///
     ///  - If <paramref name="includeFabricated"/> is <see langword="true"/> (the explicit escape hatch —
     ///    see <see cref="HistorianResultQuery.IncludeFabricated"/>'s own doc comment), the gate is skipped
-    ///    entirely and <paramref name="whereClauses"/> is returned unchanged — every row in scope,
-    ///    regardless of provenance.
-    ///  - Else, if the probe finds at least one explicitly-real row in scope, the returned clause list
-    ///    additionally requires <c>is_fabricated = 0</c> — both explicitly-fabricated (1) AND
-    ///    unknown-provenance (pre-migration, <see langword="null"/>) rows are excluded, because once real
-    ///    data is known to exist in this exact scope, an uncertain row can no longer be trusted to belong
-    ///    with it (see <see cref="HistorianResultRecord.IsFabricated"/>'s own doc comment for why
-    ///    "Unknown" is a deliberate third state, not folded into "real").
-    ///  - Else (nothing explicitly real in scope — a pure-demo scope, or a scope containing only
-    ///    pre-migration/unknown rows), <paramref name="whereClauses"/> is returned unchanged: nothing is
-    ///    filtered, so a pure-demo historian/OEE view keeps showing its own numbers exactly as before this
-    ///    task, and a pre-migration row stays readable rather than silently vanishing the moment nothing
-    ///    in scope can prove it real.
+    ///    entirely — every row in scope, regardless of provenance.
+    ///  - Else, this probes whether at least one row in that EXACT scope is explicitly real
+    ///    (<c>is_fabricated = 0</c>). If so, the returned clause additionally requires
+    ///    <c>is_fabricated = 0</c> — both fabricated AND unknown rows are excluded, because once real data
+    ///    is known to exist in this exact scope, an uncertain row can no longer be trusted to belong with
+    ///    it.
+    ///  - Else (nothing explicitly real in scope), the returned clause requires
+    ///    <c>is_fabricated IS NULL OR is_fabricated = 0</c> — explicit fabricated rows are STILL excluded
+    ///    (never shown by default, demo or not), but Unknown rows pass through: a pre-migration row stays
+    ///    readable rather than silently vanishing the moment nothing in scope can prove it real.
+    ///
+    /// <b>Known residual limitation (accepted, written down rather than fixed):</b> once ANY explicitly-real
+    /// row exists in a scope, EVERY Unknown row in that same scope is excluded too — including a
+    /// legitimately-real pre-migration row that simply predates this column. Acceptable today because no
+    /// paying customer's historian data predates this migration (verified against this project's own
+    /// timeline — see the task report). If that premise is ever wrong for some install, upgrading a customer
+    /// whose real machine reappears post-upgrade would silently drop that machine's OWN pre-migration
+    /// history from a report the instant its first post-upgrade row lands. There is no way to distinguish
+    /// that case from "Unknown = actually fabricated" without a second column recording WHEN the row was
+    /// written relative to the migration, which this task does not add.
     /// </summary>
     private static async Task<List<string>> ApplyRealPresenceGateAsync(
         SqliteConnection connection, List<string> whereClauses, List<(string Name, object Value)> parameters,
@@ -403,20 +425,34 @@ public sealed class SqliteHistorianStore : IHistorianStore
         var hasReal = Convert.ToInt64(
             (await probeCmd.ExecuteScalarAsync(ct).ConfigureAwait(false))!, CultureInfo.InvariantCulture) != 0;
 
-        return hasReal ? probeClauses : whereClauses;
+        var effectiveClauses = new List<string>(whereClauses)
+        {
+            hasReal ? "is_fabricated = 0" : "(is_fabricated IS NULL OR is_fabricated = 0)",
+        };
+        return effectiveClauses;
     }
 
-    public async Task<IReadOnlyList<HistorianResultRow>> QueryBySerialAsync(string serialNumber, CancellationToken ct)
+    public async Task<IReadOnlyList<HistorianResultRow>> QueryBySerialAsync(string serialNumber, CancellationToken ct, bool includeFabricated = false)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+
+        // SM-2 fix round 1 (review IMPORTANT 2) — the web "View genealogy" dialog's own data source,
+        // reachable from every historian row's row-action, was left unfiltered by the original SM-2 pass.
+        // Gated with the SAME ApplyRealPresenceGateAsync rule QueryResultsAsync/AggregateForOeeAsync use —
+        // a fabricated reading can no longer silently present as a real unit's genealogy trace.
+        var whereClauses = new List<string> { "serial_number = @serial_number" };
+        var parameters = new List<(string Name, object Value)> { ("@serial_number", serialNumber) };
+        var effectiveClauses = await ApplyRealPresenceGateAsync(connection, whereClauses, parameters, includeFabricated, ct)
+            .ConfigureAwait(false);
+
         using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
             SELECT {ResultColumns}
             FROM historian_results
-            WHERE serial_number = @serial_number
+            WHERE {string.Join(" AND ", effectiveClauses)}
             ORDER BY event_time_utc;
             """;
-        cmd.Parameters.AddWithValue("@serial_number", serialNumber);
+        foreach (var (name, value) in parameters) cmd.Parameters.AddWithValue(name, value);
 
         var results = new List<HistorianResultRow>();
         using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);

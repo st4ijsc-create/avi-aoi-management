@@ -102,6 +102,14 @@ public sealed class FleetHostKpiHonestyTests
             Assert.Equal(3, kpis.TotalCycles);
             Assert.Equal(2.0 / 3.0, kpis.Fpy);
             Assert.True(kpis.HasMixedProvenance, "a demo fleet running alongside a real machine must surface as mixed provenance");
+
+            // Fix round 1 (review CRITICAL) — GetKpiCounters() is FleetHost's OTHER customer-facing KPI
+            // surface: AlarmEvaluatorService feeds it straight into AlarmEvaluator.EvaluateNgRateAsync,
+            // which raises a customer-facing "Fleet NG-rate X% ... exceeds the Y% limit" alarm. Before this
+            // fix it returned the raw blended (_totalPass, _totalJudged) unconditionally — the demo fleet's
+            // stream could mask or falsely trip a real quality alarm. Must match Snapshot().Kpis exactly:
+            // (2 pass, 3 judged), never blended with the demo fleet's own (much larger) counts.
+            Assert.Equal((2L, 3L), host.GetKpiCounters());
         }
         finally
         {
@@ -170,6 +178,11 @@ public sealed class FleetHostKpiHonestyTests
             Assert.Equal(4, kpis.TotalCycles);
             Assert.Equal(3.0 / 4.0, kpis.Fpy);
             Assert.False(kpis.HasMixedProvenance, "no fabricated machine exists in a product-mode roster");
+
+            // Fix round 1 (review CRITICAL) — GetKpiCounters() must agree with Snapshot().Kpis here too:
+            // nothing fabricated exists in this roster, so real-only and blended are the SAME numbers,
+            // but the accessor must not have quietly diverged from Snapshot()'s own computation.
+            Assert.Equal((3L, 4L), host.GetKpiCounters());
         }
         finally
         {

@@ -167,9 +167,9 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     // GET /v1/historian/serial/{serial}
     // ─────────────────────────────────────────────────────────────────────
-    internal static async Task<IResult> GetBySerialAsync(string serial, IHistorianStore store, CancellationToken ct)
+    internal static async Task<IResult> GetBySerialAsync(string serial, IHistorianStore store, CancellationToken ct, bool? includeFabricated = null)
     {
-        var rows = await store.QueryBySerialAsync(serial, ct).ConfigureAwait(false);
+        var rows = await store.QueryBySerialAsync(serial, ct, includeFabricated ?? false).ConfigureAwait(false);
         return Results.Ok(rows.Select(ToResultDto).ToArray());
     }
 

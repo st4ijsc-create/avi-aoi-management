@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/select"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { verdictMeta } from "@/components/CycleLogTable"
-import { HistorianResultsTable } from "@/components/HistorianResultsTable"
+import { HistorianResultsTable, ProvenanceTag } from "@/components/HistorianResultsTable"
 
 /**
  * Task 12 (WS-A, docs/plans/2026-07-26-ws-a-historian-blueprint.md) — `/historian`: a browse/filter/
@@ -151,7 +151,10 @@ function GenealogyDialog({ serial, onOpenChange }: { serial: string | null; onOp
                         {new Date(row.eventTimeUtc).toLocaleString()}
                       </span>
                     </div>
-                    <StatusBadge status={meta.status}>{meta.label}</StatusBadge>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                      <StatusBadge status={meta.status}>{meta.label}</StatusBadge>
+                      <ProvenanceTag isFabricated={row.isFabricated} />
+                    </div>
                   </li>
                 )
               })}

@@ -130,8 +130,17 @@ public sealed class SqliteHistorianStoreProvenanceTests : IDisposable
     // 2. The real-presence gate — QueryResultsAsync.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Fix round 1 (review IMPORTANT 1a) — an explicitly-fabricated row is unambiguous and is
+    /// ALWAYS excluded from a default (non-opt-in) customer-facing query, whether or not any real data
+    /// exists anywhere else in scope. This replaces the pre-fix-round-1 expectation ("pure demo scope,
+    /// nothing real anywhere ⇒ never suppressed") — that older rule conflated "explicitly fabricated" with
+    /// "Unknown provenance," and let a real machine that simply cycles less often than the demo fleet
+    /// produce a narrow window with zero of ITS rows but many unfiltered demo rows. The genuine legacy
+    /// continuity guarantee is <see cref="PureUnknownScope_DefaultQuery_ReturnsEverything_LegacyContinuity"/>
+    /// below — Unknown (not explicitly-fabricated) rows, which is the case the presence-gate exists to
+    /// serve.</summary>
     [Fact]
-    public async Task PureFabricatedScope_DefaultQuery_ReturnsEverything_Unfiltered()
+    public async Task PureFabricatedScope_DefaultQuery_ReturnsNothing_ExplicitFabricatedAlwaysExcluded()
     {
         var store = NewStore();
         var now = DateTimeOffset.UtcNow;
@@ -143,7 +152,26 @@ public sealed class SqliteHistorianStoreProvenanceTests : IDisposable
 
         var page = await store.QueryResultsAsync(new HistorianResultQuery(MachineCode: "DEMO-01"), CancellationToken.None);
 
-        Assert.Equal(2, page.Total); // pure demo scope — never suppressed
+        Assert.Equal(0, page.Total);
+    }
+
+    /// <summary>The ACTUAL legacy-continuity case the presence gate exists to serve: rows with no
+    /// provenance information at all (pre-migration, never explicitly tagged) are not silently dropped
+    /// merely because nothing else in scope can prove them real — see
+    /// <see cref="LegacyShapeRow_WithNoRealDataInScope_IsStillReadable_ClassifiedUnknown_AndIncluded"/> for
+    /// the single-row version of this same guarantee via a genuinely pre-migration-shaped INSERT.</summary>
+    [Fact]
+    public async Task PureUnknownScope_DefaultQuery_ReturnsEverything_LegacyContinuity()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+        InsertLegacyShapeRow(store.DbPath, "LEGACY-SCOPE-01", "SN-OLD-1", now.AddMinutes(-2));
+        InsertLegacyShapeRow(store.DbPath, "LEGACY-SCOPE-01", "SN-OLD-2", now.AddMinutes(-1));
+
+        var page = await store.QueryResultsAsync(new HistorianResultQuery(MachineCode: "LEGACY-SCOPE-01"), CancellationToken.None);
+
+        Assert.Equal(2, page.Total);
+        Assert.All(page.Items, i => Assert.Null(i.Record.IsFabricated));
     }
 
     [Fact]
@@ -219,7 +247,82 @@ public sealed class SqliteHistorianStoreProvenanceTests : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // 3. The real-presence gate — AggregateForOeeAsync (the OEE calculation surface).
+    // 3. The real-presence gate — QueryBySerialAsync (fix round 1, review IMPORTANT 2).
+    //
+    // GET /v1/historian/serial/{serial} — the "View genealogy" dialog's own data source — was left
+    // unfiltered in the original SM-2 pass. Reviewed as "unfiltered AND unlabeled simultaneously," worse
+    // than the results table, since it's reachable from every historian row's row-action. Now gated with
+    // the SAME ApplyRealPresenceGateAsync rule QueryResultsAsync/AggregateForOeeAsync use.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task QueryBySerial_MixedAcrossMachines_DefaultReturnsOnlyRealRows()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+        const string serial = "SN-SHARED-01";
+        await store.AppendResultsAsync(new[]
+        {
+            MakeResult("GENEALOGY-DEMO-01", serial, now.AddMinutes(-2), isFabricated: true),
+            MakeResult("GENEALOGY-REAL-01", serial, now.AddMinutes(-1), isFabricated: false),
+        }, CancellationToken.None);
+
+        var rows = await store.QueryBySerialAsync(serial, CancellationToken.None);
+
+        var row = Assert.Single(rows);
+        Assert.Equal("GENEALOGY-REAL-01", row.Record.MachineCode);
+        Assert.Equal(false, row.Record.IsFabricated);
+    }
+
+    [Fact]
+    public async Task QueryBySerial_MixedAcrossMachines_IncludeFabricatedTrue_ReturnsEverything()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+        const string serial = "SN-SHARED-02";
+        await store.AppendResultsAsync(new[]
+        {
+            MakeResult("GENEALOGY-DEMO-02", serial, now.AddMinutes(-2), isFabricated: true),
+            MakeResult("GENEALOGY-REAL-02", serial, now.AddMinutes(-1), isFabricated: false),
+        }, CancellationToken.None);
+
+        var rows = await store.QueryBySerialAsync(serial, CancellationToken.None, includeFabricated: true);
+
+        Assert.Equal(2, rows.Count);
+    }
+
+    [Fact]
+    public async Task QueryBySerial_PureFabricated_DefaultReturnsNothing()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+        const string serial = "SN-DEMO-ONLY-01";
+        await store.AppendResultsAsync(new[]
+        {
+            MakeResult("GENEALOGY-DEMO-03", serial, now, isFabricated: true),
+        }, CancellationToken.None);
+
+        var rows = await store.QueryBySerialAsync(serial, CancellationToken.None);
+
+        Assert.Empty(rows);
+    }
+
+    [Fact]
+    public async Task QueryBySerial_PureUnknownLegacy_DefaultReturnsEverything_LegacyContinuity()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+        const string serial = "SN-LEGACY-GENEALOGY-01";
+        InsertLegacyShapeRow(store.DbPath, "GENEALOGY-LEGACY-01", serial, now);
+
+        var rows = await store.QueryBySerialAsync(serial, CancellationToken.None);
+
+        var row = Assert.Single(rows);
+        Assert.Null(row.Record.IsFabricated);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 4. The real-presence gate — AggregateForOeeAsync (the OEE calculation surface).
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -240,8 +343,12 @@ public sealed class SqliteHistorianStoreProvenanceTests : IDisposable
         Assert.Equal(2, agg.GoodCount); // both real rows seeded as "Pass"
     }
 
+    /// <summary>Fix round 1 (review IMPORTANT 1a) — mirrors
+    /// <see cref="PureFabricatedScope_DefaultQuery_ReturnsNothing_ExplicitFabricatedAlwaysExcluded"/>: a
+    /// pure-demo OEE window is explicitly fabricated, unambiguous, and now excluded unconditionally by
+    /// default — never counted toward a customer-facing OEE figure, demo or not.</summary>
     [Fact]
-    public async Task AggregateForOee_PureFabricatedScope_DefaultCountsEverything_DemoContinuity()
+    public async Task AggregateForOee_PureFabricatedScope_DefaultExcludesEverything_ExplicitFabricatedNeverCounted()
     {
         var store = NewStore();
         var to = DateTimeOffset.UtcNow;
@@ -253,7 +360,27 @@ public sealed class SqliteHistorianStoreProvenanceTests : IDisposable
 
         var agg = await store.AggregateForOeeAsync("OEE-DEMO-01", from, to, CancellationToken.None);
 
-        Assert.Equal(4, agg.TotalCount); // pure-demo OEE view stays exactly as before this task
+        Assert.Equal(0, agg.TotalCount);
+    }
+
+    /// <summary>The ACTUAL legacy-continuity case for OEE — Unknown-provenance (pre-migration) rows are
+    /// still counted when nothing in scope can prove them fabricated, mirroring
+    /// <see cref="PureUnknownScope_DefaultQuery_ReturnsEverything_LegacyContinuity"/> for the OEE
+    /// aggregate.</summary>
+    [Fact]
+    public async Task AggregateForOee_PureUnknownScope_DefaultCountsEverything_LegacyContinuity()
+    {
+        var store = NewStore();
+        var to = DateTimeOffset.UtcNow;
+        var from = to.AddHours(-1);
+
+        InsertLegacyShapeRow(store.DbPath, "OEE-LEGACY-01", "SN-OLD-1", to.AddMinutes(-2));
+        InsertLegacyShapeRow(store.DbPath, "OEE-LEGACY-01", "SN-OLD-2", to.AddMinutes(-1));
+
+        var agg = await store.AggregateForOeeAsync("OEE-LEGACY-01", from, to, CancellationToken.None);
+
+        Assert.Equal(2, agg.TotalCount);
+        Assert.Equal(2, agg.GoodCount); // InsertLegacyShapeRow seeds verdict='Pass'
     }
 
     [Fact]

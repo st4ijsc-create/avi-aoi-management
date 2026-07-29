@@ -446,6 +446,13 @@ export interface HistorianResultDto {
   ackQueued: boolean
   eventTimeUtc: string
   ingestedAtUtc: string
+  /** SM-2 fix round 1 (review IMPORTANT 1b/2) — this row's own data lineage: `true` fabricated
+   * (simulated/demo), `false` real, `null` Unknown (written before the server's `is_fabricated` column
+   * existed). Every historian read surface (results table, genealogy dialog) must render this — a
+   * fabricated or Unknown row that looks identical to a real one is the exact failure mode SM-2 exists to
+   * close, and it stays reachable the moment a caller opts into `includeFabricated=true`. Optional so an
+   * older engine build (pre-SM-2) that omits the field simply never renders the tag. */
+  isFabricated?: boolean | null
 }
 
 /** `HistorianResultsPageDto` — one page of `QueryResultsAsync`'s frozen paginated result. */

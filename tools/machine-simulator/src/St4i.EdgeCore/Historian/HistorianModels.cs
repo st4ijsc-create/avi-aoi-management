@@ -99,10 +99,12 @@ public sealed record HistorianRunEvent(string EventType, DateTimeOffset AtUtc, s
 /// <param name="IncludeFabricated">SM-2 — the explicit opt-in escape hatch for a surface that
 /// legitimately wants to see fabricated data too (e.g. a demo/exhibition historian view), per the task-2
 /// brief: "the separation must be explicit, never an accident of aggregation." Default
-/// <see langword="false"/> is this project's real-data-by-default posture: see
-/// <see cref="SqliteHistorianStore.QueryResultsAsync"/>'s own doc comment for the exact "only filter to
-/// real rows when the SAME scope also contains at least one row explicitly known to be real" rule this
-/// flag gates — set <see langword="true"/> to bypass that rule entirely and see every row regardless of
+/// <see langword="false"/> is this project's real-data-by-default posture: EXPLICITLY-fabricated rows
+/// (<c>is_fabricated = 1</c>) are always excluded; Unknown-provenance rows (pre-migration,
+/// <see langword="null"/>) are excluded too only once the SAME scope also contains at least one row
+/// explicitly known to be real — see <see cref="SqliteHistorianStore"/>'s own
+/// <c>ApplyRealPresenceGateAsync</c> doc comment for the full rule (and its round-1 correction) this flag
+/// gates. Set <see langword="true"/> to bypass the whole rule and see every row regardless of
 /// provenance.</param>
 public sealed record HistorianResultQuery(
     string? MachineCode = null, DateTimeOffset? From = null, DateTimeOffset? To = null,

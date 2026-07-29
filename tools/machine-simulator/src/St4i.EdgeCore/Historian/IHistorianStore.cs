@@ -13,7 +13,14 @@ public interface IHistorianStore
 
     Task<HistorianResultsPage> QueryResultsAsync(HistorianResultQuery query, CancellationToken ct);
 
-    Task<IReadOnlyList<HistorianResultRow>> QueryBySerialAsync(string serialNumber, CancellationToken ct);
+    /// <param name="includeFabricated">SM-2 fix round 1 (review IMPORTANT 2) — same explicit opt-in
+    /// escape hatch as <see cref="HistorianResultQuery.IncludeFabricated"/>: default
+    /// <see langword="false"/> applies the real-presence gate documented on
+    /// <see cref="SqliteHistorianStore"/>'s own <c>ApplyRealPresenceGateAsync</c> (the web "View genealogy"
+    /// dialog's own data source — gated so a fabricated reading can never silently present as a real
+    /// unit's genealogy); <see langword="true"/> bypasses it and returns every row regardless of
+    /// provenance.</param>
+    Task<IReadOnlyList<HistorianResultRow>> QueryBySerialAsync(string serialNumber, CancellationToken ct, bool includeFabricated = false);
 
     Task<IReadOnlyList<TelemetrySamplePoint>> QueryTelemetryAsync(string machineCode, string metric, DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
 
