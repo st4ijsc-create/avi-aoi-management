@@ -25,6 +25,44 @@ namespace St4i.EngineApi.Fleet;
 /// <see cref="St4i.EngineApi.Safety.SafetySnapshot"/> for <see cref="FleetHost.GetSafetyStatus"/>.</summary>
 public sealed record DriverHealthSnapshot(string SlotLabel, string Kind, DriverHealthState Health);
 
+/// <summary>Task B-2 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-2-brief.md) — the four
+/// operator-meaningful situations a caller resolving "does machine code X have a live, writable driver right
+/// now" must be able to tell apart, returned by <see cref="FleetHost.GetMachineDriverAvailability"/> and
+/// echoed back by <see cref="FleetHost.TryWriteSetpointAsync"/>/<see cref="FleetHost.TryInvokeCommandAsync"/>.
+/// Collapsing these into one generic "not available" would produce an unhelpful error: an operator needs a
+/// DIFFERENT explanation for "you mistyped the machine code" than for "the fleet is stopped" than for "this
+/// driver can only be read, never written" — three different fixes, three different people who might need to
+/// act.
+///
+/// <para>Deliberately its OWN small enum, not a reuse/extension of <see cref="St4i.Connector.Abstractions.Models.WriteOutcome"/>
+/// — that vocabulary answers a different question ("what happened to one write attempt against an ALREADY-
+/// resolved driver") from this one ("is there a driver to attempt a write against at all"). Folding the two
+/// together would either duplicate <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Rejected"/>'s
+/// meaning under a new name or force a resolution failure to borrow an outcome that implies I/O was attempted
+/// when none was.</para></summary>
+public enum MachineDriverAvailability
+{
+    /// <summary>No <see cref="St4i.EdgeCore.Models.MachineDescriptor"/> in the CURRENT roster carries this
+    /// code (case-insensitive match against <see cref="St4i.EdgeCore.Models.MachineDescriptor.Code"/>) — an
+    /// operator typo, or a machine that was never onboarded at all.</summary>
+    MachineNotFound,
+
+    /// <summary>The roster knows this machine, but no live <c>PipelineSlot</c> currently drives it — the
+    /// fleet is stopped/<see cref="FleetHost.EstopEngaged"/>, or (for a connector-backed machine) its
+    /// connector failed to start this run (see <see cref="FleetHost.GetConfiguredConnectorIssues"/>).</summary>
+    NoLiveDriver,
+
+    /// <summary>A live driver exists for this machine right now, but it does not implement
+    /// <see cref="IWritableDeviceDriver"/> — every built-in driver today (the simulated fleet, HotFolderAoi,
+    /// Mqtt) until a Modbus/OPC-UA write implementation (B-4/B-5) lands.</summary>
+    ReadOnly,
+
+    /// <summary>A live driver implementing <see cref="IWritableDeviceDriver"/> exists for this machine right
+    /// now — a write MAY be attempted (still subject to that driver's own point/command validation, and to
+    /// the disposal race documented on <see cref="FleetHost.TryWriteSetpointAsync"/>).</summary>
+    Writable,
+}
+
 /// <summary>
 /// Task 3 — the headless composition root: builds + runs the simulated fleet with NO UI, reusing
 /// exactly the same EdgeCore driver→normalize→transport pipeline the WPF app's <c>FleetService</c>
@@ -498,6 +536,167 @@ public sealed class FleetHost
     /// <see cref="StartLocked"/> attempt has run yet, so nothing has had a chance to fail).</para></summary>
     public IReadOnlyList<ConnectorStatusDto> GetConfiguredConnectorIssues() =>
         _connectorStartIssues.Select(kv => new ConnectorStatusDto(kv.Key, kv.Value)).ToList();
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MACHINE-CODE -> LIVE DRIVER RESOLUTION (Task B-2) — the path that did not exist before this task:
+    // GetDriverHealth above is keyed by SLOT LABEL (an implementation detail — "simulated"/"modbus"/"opcua"/
+    // a connector id, never a machine code), and nothing else in this class ever handed back a live
+    // IDeviceDriver reference outside a test seam. This section is the ONLY place a machine code resolves to
+    // a live driver, and it deliberately never exposes the raw driver beyond this class — a caller gets
+    // either a MachineDriverAvailability (discovery, no I/O) or the RESULT of an attempted write (I/O already
+    // done, driver reference already discarded), never the driver itself.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>Resolves <paramref name="machineCode"/> to its slot's driver, entirely UNDER <see cref="_gate"/>
+    /// (a list scan + string compares — no I/O, so this is cheap to hold the lock for, same as
+    /// <see cref="GetDriverHealth"/>). Mirrors <see cref="StartLocked"/>'s OWN slot-label derivation exactly
+    /// (the built-in simulated group is always labeled the literal <c>"simulated"</c>; Modbus/OPC-UA use their
+    /// legacy lowercase labels; everything else uses <see cref="ResolveConnectorSlotLabel"/> on the normalized
+    /// <see cref="St4i.EdgeCore.Models.MachineDescriptor.DriverKind"/>, exactly as the connector loop there
+    /// does for <see cref="_connectorRegistry"/>'s registered ids) — this is <see cref="DriverKinds.Normalize"/>'s
+    /// SAME canonical id-comparison rule, reused rather than re-derived a second time.
+    ///
+    /// <para>Returns the live <see cref="IWritableDeviceDriver"/> reference ONLY when
+    /// <see cref="MachineDriverAvailability.Writable"/> — every other case returns <see langword="null"/>. The
+    /// caller (<see cref="TryWriteSetpointAsync"/>/<see cref="TryInvokeCommandAsync"/>) MUST release
+    /// <see cref="_gate"/> (this method already has, by the time it returns) before doing anything with that
+    /// reference other than a capability check — see those methods' own doc comments for the disposal race
+    /// this resolution step does NOT, by itself, protect a caller from.</para></summary>
+    private (MachineDriverAvailability Availability, IWritableDeviceDriver? Driver) ResolveWritableDriver(string machineCode)
+    {
+        lock (_gate)
+        {
+            var descriptor = _fleet.FirstOrDefault(d => string.Equals(d.Code, machineCode, StringComparison.OrdinalIgnoreCase));
+            if (descriptor is null)
+            {
+                return (MachineDriverAvailability.MachineNotFound, null);
+            }
+
+            var normalizedKind = DriverKinds.Normalize(descriptor.DriverKind);
+            var expectedLabel = normalizedKind == DriverKinds.Simulated ? "simulated" : ResolveConnectorSlotLabel(normalizedKind);
+
+            var slot = _slots.FirstOrDefault(s => string.Equals(s.Label, expectedLabel, StringComparison.Ordinal));
+            if (slot is null)
+            {
+                return (MachineDriverAvailability.NoLiveDriver, null);
+            }
+
+            return slot.Driver is IWritableDeviceDriver writable
+                ? (MachineDriverAvailability.Writable, writable)
+                : (MachineDriverAvailability.ReadOnly, null);
+        }
+    }
+
+    /// <summary>Pure discovery — answers "does machine code X have a live, writable driver right now" with NO
+    /// I/O and no side effect, so a caller (a future write endpoint, B-6) can show an operator the right
+    /// explanation BEFORE ever attempting a write. See <see cref="MachineDriverAvailability"/> for what each
+    /// value means.</summary>
+    public MachineDriverAvailability GetMachineDriverAvailability(string machineCode)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(machineCode);
+        return ResolveWritableDriver(machineCode).Availability;
+    }
+
+    /// <summary>
+    /// Resolves <paramref name="machineCode"/> to a live <see cref="IWritableDeviceDriver"/> UNDER
+    /// <see cref="_gate"/>, releases the lock, and only THEN calls <see cref="IWritableDeviceDriver.WriteSetpointAsync"/>
+    /// — never the other way round, and never both at once. This is the one non-negotiable shape this task
+    /// exists to build: no I/O ever runs while <see cref="_gate"/> — the same lock <see cref="Estop"/> takes —
+    /// is held, so a slow/hung write can never delay HALT.
+    ///
+    /// <para>Returns <c>(Availability, null)</c> without touching any driver when <see cref="MachineDriverAvailability"/>
+    /// is anything other than <see cref="MachineDriverAvailability.Writable"/> — <see cref="MachineDriverAvailability.MachineNotFound"/>/
+    /// <see cref="MachineDriverAvailability.NoLiveDriver"/>/<see cref="MachineDriverAvailability.ReadOnly"/> are
+    /// resolution-level facts, never a write attempt, so no <see cref="St4i.Connector.Abstractions.Models.WriteOutcome"/>
+    /// applies (that vocabulary describes a write that was actually attempted against a live driver).</para>
+    ///
+    /// <para><b>The disposal race, solved deliberately.</b> Between this method resolving a live driver
+    /// reference and <see cref="IWritableDeviceDriver.WriteSetpointAsync"/> returning, the SAME slot can be
+    /// torn down by <see cref="Stop"/>, <see cref="Estop"/>, a <see cref="RegisterMachine"/>-triggered
+    /// restart, or a per-slot fault (<c>StartSlot</c>'s own catch) — all four run the identical
+    /// off-<see cref="_gate"/> teardown (cancel the slot's token, best-effort <c>DisposeAsync</c> the driver,
+    /// bounded by <c>RestartTeardownTimeout</c>), and NONE of them wait for an in-flight write: teardown
+    /// disposes the driver unconditionally, on its own schedule, never checking whether a
+    /// <see cref="WriteSetpointAsync"/>/<see cref="InvokeCommandAsync"/> call is still in flight against it.
+    /// This is a deliberate choice (a lease/reference-count that made disposal WAIT for a write was
+    /// considered and rejected): waiting, even boundedly, would coup HALT's latency to however slow the write
+    /// is up to that bound, which is precisely the class of bug this project already shipped once (the
+    /// orphaned-connector-driver Critical). Tearing down unconditionally instead means <see cref="Estop"/>'s
+    /// own latency is COMPLETELY independent of any in-flight write — not just bounded, never coupled at
+    /// all.</para>
+    ///
+    /// <para>What an in-flight write observes when this happens: <see cref="IWritableDeviceDriver"/>'s own
+    /// contract already requires an implementation to catch whatever a concurrently-torn-down connection
+    /// produces (an <see cref="OperationCanceledException"/>, an <see cref="IOException"/>, an
+    /// <see cref="ObjectDisposedException"/>) and return <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Indeterminate"/>
+    /// itself — never let it propagate. This method adds a DEFENSIVE backstop on top of that contract, the
+    /// same "never trust a driver's own promise alone" doubling <see cref="ConnectorRegistry.TryCreateDriver"/>/
+    /// <see cref="StartLocked"/> already apply to third-party code: if the call throws ANY exception anyway
+    /// (a driver written before this race was accounted for, or one that simply gets it wrong), this method
+    /// catches it here and returns <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Indeterminate"/>
+    /// — never a crash out to the caller, and never a false <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Applied"/>.
+    /// See <c>FleetHostMachineDriverResolutionTests</c>'s disposal-race tests for the genuinely-concurrent
+    /// proof of this.</para>
+    /// </summary>
+    public async Task<(MachineDriverAvailability Availability, SetpointWriteResult? Result)> TryWriteSetpointAsync(
+        string machineCode, SetpointWriteRequest request, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(machineCode);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var (availability, driver) = ResolveWritableDriver(machineCode);
+        if (driver is null)
+        {
+            return (availability, null);
+        }
+
+        try
+        {
+            var result = await driver.WriteSetpointAsync(request, ct).ConfigureAwait(false);
+            return (availability, result);
+        }
+        catch (Exception ex)
+        {
+            return (availability, new SetpointWriteResult(
+                request.Point,
+                WriteOutcome.Indeterminate,
+                Detail: $"WriteSetpointAsync did not complete cleanly — the driver may have been disposed " +
+                        $"concurrently by Stop/Estop/a restart/a per-slot fault: {ex.Message}"));
+        }
+    }
+
+    /// <summary>Mirrors <see cref="TryWriteSetpointAsync"/> exactly — same resolve-under-<see cref="_gate"/>/
+    /// I/O-off-<see cref="_gate"/> shape, same disposal-race handling, same defensive backstop — for
+    /// <see cref="IWritableDeviceDriver.InvokeCommandAsync"/> instead. Kept as a genuinely separate method
+    /// (not a shared private helper parameterized by delegate) for the same reason B-1 kept
+    /// <see cref="SetpointWriteRequest"/>/<see cref="CommandRequest"/> as two distinct types: setpoint and
+    /// command are never conflated anywhere in this contract, including here.</summary>
+    public async Task<(MachineDriverAvailability Availability, CommandResult? Result)> TryInvokeCommandAsync(
+        string machineCode, CommandRequest request, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(machineCode);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var (availability, driver) = ResolveWritableDriver(machineCode);
+        if (driver is null)
+        {
+            return (availability, null);
+        }
+
+        try
+        {
+            var result = await driver.InvokeCommandAsync(request, ct).ConfigureAwait(false);
+            return (availability, result);
+        }
+        catch (Exception ex)
+        {
+            return (availability, new CommandResult(
+                request.Command,
+                WriteOutcome.Indeterminate,
+                Detail: $"InvokeCommandAsync did not complete cleanly — the driver may have been disposed " +
+                        $"concurrently by Stop/Estop/a restart/a per-slot fault: {ex.Message}"));
+        }
+    }
 
     /// <summary>SM-2 fix round 1 (review CRITICAL) — the SAME "not blend, not suppress" mode-aware rule
     /// <see cref="Snapshot"/> applies to <see cref="FleetKpisDto"/>, factored out so both call sites can
