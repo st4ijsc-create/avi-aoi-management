@@ -384,8 +384,13 @@ export default function Machines() {
           </h1>
           <p className="hmi-micro mt-1">{gloss("machines.title")}</p>
           {/* `max-w-3xl` (not `max-w-2xl`) — at 1600px the row still had plenty of free width, but a
-              672px cap wrapped "…để xem chi tiết." onto its own line regardless (H3c leftover fix). */}
-          <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("machines.description")}</p>
+              672px cap wrapped "…để xem chi tiết." onto its own line regardless (H3c leftover fix).
+              SM-3 fix round 1 (review IMPORTANT 1) — same Demo-vs-not split as Dashboard.tsx's own
+              subtitleBaseDemo/Live: this rendered unconditionally, so a standalone customer's own real
+              roster was being called "simulated" on every load. */}
+          <p className="mt-1 max-w-3xl text-sm text-text-muted">
+            {t(ecosystem.mode === "Demo" ? "machines.descriptionDemo" : "machines.descriptionLive")}
+          </p>
         </div>
         {!isPending && !isError ? (
           // I-12: a fleet mid-start (0 < online < total) is a NORMAL transient boot state, not a

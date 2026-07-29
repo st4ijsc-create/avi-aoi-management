@@ -143,7 +143,10 @@ export default function Dashboard() {
         </h1>
         <p className="hmi-micro mt-1">{gloss("dashboard.title")}</p>
         <p className="mt-1 text-sm text-text-muted">
-          {t("dashboard.subtitleBase")}
+          {/* SM-3 fix round 1 (review IMPORTANT 1) — Demo is the ONLY mode that guarantees a fabricated
+              roster (see FleetHost.LoadFleet's own SM-1 remarks); every other mode (Live/Auto — the
+              product default) must not tell a customer their own real machine's live data is "simulated." */}
+          {t(ecosystem.mode === "Demo" ? "dashboard.subtitleBaseDemo" : "dashboard.subtitleBaseLive")}
           {roster > 0 ? t("dashboard.subtitleRoster", { roster }) : "."}
         </p>
       </div>

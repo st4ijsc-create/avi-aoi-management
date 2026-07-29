@@ -184,7 +184,13 @@ export const en: Dictionary = {
 
   dashboard: {
     title: "Dashboard",
-    subtitleBase: "Live read on the simulated fleet",
+    // SM-3 fix round 1 (review IMPORTANT 1) — this rendered UNCONDITIONALLY, so before the ecosystem
+    // gate's removal a standalone customer never got far enough to see it; after that fix every product
+    // install sees its own real machine's live data sitting directly under a label calling it a
+    // simulated fleet, every load. Split by transport mode (the one condition that actually guarantees a
+    // fabricated roster — see FleetHost.LoadFleet's own SM-1 remarks) rather than kept as one string.
+    subtitleBaseDemo: "Live read on the simulated fleet",
+    subtitleBaseLive: "Live read on your fleet",
     subtitleRoster: (vars: Vars) => ` — ${vars.roster} machines across Automation, IoT and AOI/AVI.`,
     kpi: {
       machinesOnline: "Machines online",
@@ -211,14 +217,18 @@ export const en: Dictionary = {
       // destination — same copy/CTA shape as `machines.empty.noMachinesTitle/Description` below, so the
       // two screens agree on what "no machines yet" means.
       noMachinesTitle: "No machines yet",
-      noMachinesDescription: "No machines are registered yet. Add one through Onboarding to get started.",
+      noMachinesDescription: "No machines are registered yet. Add one through Onboarding to get started — note Onboarding currently needs a reachable ST4I ecosystem server.",
     },
   },
 
   machines: {
     title: "Machines",
-    description:
+    // SM-3 fix round 1 (review IMPORTANT 1) — same "was always rendered, now on a real customer's own
+    // machine" fix as dashboard.subtitleBaseDemo/Live above.
+    descriptionDemo:
       "The full simulated fleet — search and filter by device class, driver, or status. Click a row to see its detail.",
+    descriptionLive:
+      "Your machine roster — search and filter by device class, driver, or status. Click a row to see its detail.",
     onlineCount: (vars: Vars) => `${vars.online} / ${vars.total} online`,
     search: {
       label: "Search machines",
@@ -245,7 +255,7 @@ export const en: Dictionary = {
     },
     empty: {
       noMachinesTitle: "No machines yet",
-      noMachinesDescription: "No machines are registered yet. Add one through Onboarding to get started.",
+      noMachinesDescription: "No machines are registered yet. Add one through Onboarding to get started — note Onboarding currently needs a reachable ST4I ecosystem server.",
       noMatchTitle: "No matching machines",
       noMatchDescription: "No machine matches the current search or filters — try clearing them.",
     },

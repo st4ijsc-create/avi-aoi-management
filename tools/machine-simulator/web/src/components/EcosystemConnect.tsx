@@ -50,6 +50,7 @@ export interface EcosystemConnectPanelProps {
  */
 export function EcosystemConnectPanel({ ecosystem, className }: EcosystemConnectPanelProps) {
   const t = useT()
+  const gloss = useGloss()
   const [, navigate] = useLocation()
   const updateSettings = useUpdateSettings()
 
@@ -108,6 +109,7 @@ export function EcosystemConnectPanel({ ecosystem, className }: EcosystemConnect
 
       <FormField
         label={t("settings.connection.serverUrlLabel")}
+        labelEn={gloss("settings.connection.serverUrlLabel")}
         htmlFor="ecosystem-connect-server-url"
         hint={
           ecosystem.status === "standalone"

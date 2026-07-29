@@ -190,7 +190,8 @@ export const vi = {
 
   dashboard: {
     title: "Bảng điều khiển",
-    subtitleBase: "Theo dõi trực tiếp đội máy mô phỏng",
+    subtitleBaseDemo: "Theo dõi trực tiếp đội máy mô phỏng",
+    subtitleBaseLive: "Theo dõi trực tiếp đội máy của bạn",
     subtitleRoster: (vars: Vars) => ` — ${vars.roster} máy thuộc Automation, IoT và AOI/AVI.`,
     kpi: {
       machinesOnline: "Máy đang hoạt động",
@@ -213,14 +214,16 @@ export const vi = {
       cta: "Chạy Fleet",
       ctaPending: "Đang chạy…",
       noMachinesTitle: "Chưa có máy nào",
-      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy mới qua Onboarding để bắt đầu.",
+      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy mới qua Onboarding để bắt đầu — lưu ý Onboarding hiện cần kết nối được một máy chủ hệ sinh thái ST4I.",
     },
   },
 
   machines: {
     title: "Danh sách máy",
-    description:
+    descriptionDemo:
       "Toàn bộ đội máy mô phỏng — tìm và lọc theo nhóm thiết bị, driver hoặc trạng thái. Bấm vào một dòng để xem chi tiết.",
+    descriptionLive:
+      "Danh sách máy của bạn — tìm và lọc theo nhóm thiết bị, driver hoặc trạng thái. Bấm vào một dòng để xem chi tiết.",
     onlineCount: (vars: Vars) => `${vars.online} / ${vars.total} đang hoạt động`,
     search: {
       label: "Tìm máy",
@@ -247,7 +250,7 @@ export const vi = {
     },
     empty: {
       noMachinesTitle: "Chưa có máy nào",
-      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy mới qua Onboarding để bắt đầu.",
+      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy mới qua Onboarding để bắt đầu — lưu ý Onboarding hiện cần kết nối được một máy chủ hệ sinh thái ST4I.",
       noMatchTitle: "Không tìm thấy máy phù hợp",
       noMatchDescription: "Không có máy nào khớp với tìm kiếm hoặc bộ lọc hiện tại — thử xóa bộ lọc.",
     },
@@ -1035,10 +1038,11 @@ export const vi = {
     clean: "Đã lưu.",
   },
 
-  // WS2-T2 (docs/PRODUCTION_UI_DESIGN.md §2.4) — the Live-mode "connect to ecosystem" gate that
-  // Dashboard/Machines show instead of an empty/meaningless local fleet grid whenever this deployment
-  // hasn't reached a real ST4I server yet. Never rendered in Demo mode (see `useEcosystemConnection`
-  // in `lib/api.ts`) — Demo's fabricated fleet is legitimately populated, nothing to connect to.
+  // SM-3 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-3-brief.md) — vocabulary
+  // for the Live-mode ecosystem connection STATUS Dashboard/Machines show (`EcosystemStatusWidget` in
+  // `EcosystemConnect.tsx`): a small, collapsed-by-default badge + connect/diagnose form, never a gate
+  // that replaces the page's real content. Never rendered in Demo mode (see `useEcosystemConnection` in
+  // `lib/api.ts`) — Demo's fabricated fleet is legitimately populated, nothing to connect to.
   ecosystemConnect: {
     title: "Kết nối hệ sinh thái",
     description:
