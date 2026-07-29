@@ -15,7 +15,17 @@ namespace St4i.Connector.Abstractions.Models;
 /// <param name="Arguments">Optional named arguments, in the same value domain
 /// <see cref="DeviceReading.Genealogy"/> already uses (string|int|double — see
 /// <see cref="Json.ConnectorObjectConverter"/>'s own doc comment). <see langword="null"/> for a command that
-/// takes none.</param>
+/// takes none.
+///
+/// <para>Fix round 1 (task-1-report.md, Minor) — this contract carries NO argument-type schema (which
+/// arguments a command expects, and their declared types, is the map's job — a later task). The shared
+/// object? converter's actual accepted write-domain is WIDER than the string|int|double documented above
+/// (see <see cref="Json.ConnectorObjectConverter"/>'s own doc comment: every CLR integral primitive widens
+/// to <see langword="long"/>, and <see langword="float"/> widens to <see langword="double"/>), and an
+/// implementation must expect to RE-NARROW a value against whatever type the map actually declares for that
+/// argument — e.g. an OPC-UA argument typed <c>UInt16</c> on the wire arrives here as a boxed
+/// <see langword="long"/> (decision (a)'s integral-widening rule) and must be range-checked and narrowed by
+/// the implementation before use, not assumed to already be the target type.</para></param>
 public sealed record CommandRequest(string Command, Dictionary<string, object>? Arguments = null);
 
 /// <summary>
@@ -49,4 +59,20 @@ public sealed record CommandResult(
     string Command,
     WriteOutcome Outcome,
     CommandRejectionReason? RejectionReason = null,
-    string? Detail = null);
+    string? Detail = null)
+{
+    /// <summary>
+    /// Fix round 1 (task-1-report.md, IMPORTANT) — same enforcement, and the same reason for this exact
+    /// shape (a redeclared property with a validating initializer, not a nonexistent parameterless
+    /// "constructor body"), as <see cref="SetpointWriteResult.RejectionReason"/>'s own doc comment; see
+    /// there for the full rationale. Applies to every construction path, including deserialization.
+    /// </summary>
+    public CommandRejectionReason? RejectionReason { get; init; } =
+        (Outcome == WriteOutcome.Rejected) == (RejectionReason is not null)
+            ? RejectionReason
+            : throw new ArgumentException(
+                $"{nameof(RejectionReason)} must be non-null if and only if {nameof(Outcome)} is " +
+                $"{nameof(WriteOutcome.Rejected)} (got Outcome={Outcome}, RejectionReason=" +
+                $"{(RejectionReason is null ? "null" : RejectionReason.ToString())}).",
+                nameof(RejectionReason));
+}

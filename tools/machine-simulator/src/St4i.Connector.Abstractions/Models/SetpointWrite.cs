@@ -32,7 +32,7 @@ public enum SetpointRejectionReason
     /// all.</summary>
     UnknownPoint,
 
-    /// <summary>The point exists but is declared read-only — writing to it was never authorized.</summary>
+    /// <summary>The point exists but the map declares it read-only.</summary>
     NotWritable,
 
     /// <summary><see cref="SetpointWriteRequest.Value"/> falls outside the point's declared min/max range —
@@ -59,4 +59,30 @@ public sealed record SetpointWriteResult(
     string Point,
     WriteOutcome Outcome,
     SetpointRejectionReason? RejectionReason = null,
-    string? Detail = null);
+    string? Detail = null)
+{
+    /// <summary>
+    /// Fix round 1 (task-1-report.md, IMPORTANT) — re-declared (rather than left as the plain
+    /// compiler-generated positional property) purely to attach a validating initializer: enforces
+    /// "<see cref="RejectionReason"/> is non-null if and only if <see cref="Outcome"/> is
+    /// <see cref="WriteOutcome.Rejected"/>" for EVERY construction path, not just a convenience layer a
+    /// caller could bypass. A property initializer on a redeclared positional-record property runs as part
+    /// of the SAME primary constructor <see cref="System.Text.Json.JsonSerializer"/> calls when
+    /// deserializing, so a malformed wire payload describing an impossible combination (e.g.
+    /// <see cref="WriteOutcome.Applied"/> carrying an <see cref="SetpointRejectionReason.OutOfRange"/>
+    /// reason, or <see cref="WriteOutcome.Rejected"/> with no reason at all) fails loudly at construction —
+    /// the same "reject rather than silently accept nonsense" discipline
+    /// <see cref="Json.ConnectorObjectConverter"/>'s own decision (b) already applies to the
+    /// <see langword="object"/>? domain. (Confirmed empirically before relying on it: a record's
+    /// PARAMETERLESS <c>public TypeName { ... }</c> constructor-body syntax does not exist in C# — this
+    /// redeclared-property-initializer shape is the actual, compiling mechanism.)
+    /// </summary>
+    public SetpointRejectionReason? RejectionReason { get; init; } =
+        (Outcome == WriteOutcome.Rejected) == (RejectionReason is not null)
+            ? RejectionReason
+            : throw new ArgumentException(
+                $"{nameof(RejectionReason)} must be non-null if and only if {nameof(Outcome)} is " +
+                $"{nameof(WriteOutcome.Rejected)} (got Outcome={Outcome}, RejectionReason=" +
+                $"{(RejectionReason is null ? "null" : RejectionReason.ToString())}).",
+                nameof(RejectionReason));
+}

@@ -83,8 +83,16 @@ public class WritableDeviceDriverContractTests
     }
 
     [Fact]
-    public async Task WriteSetpointAsync_SimulatedTimeout_ReturnsIndeterminate_AndIsNeverRetriedByTheDriverItself()
+    public async Task WriteSetpointAsync_SimulatedTimeout_ReturnsIndeterminate()
     {
+        // Fix round 1 (IMPORTANT) — this test originally also asserted driver.WriteAttemptCount == 1 under
+        // a title claiming to prove "never retried by the driver itself". That assertion was vacuous: the
+        // fake increments its own counter, the test calls it once, and there is no mechanism anywhere (this
+        // task ships doc comments, not a driver implementation) that COULD retry — so the assertion could
+        // only ever pass, proving nothing beyond "xunit called this method once". Removed; this test now
+        // only claims what it actually shows: a simulated timeout is reachable and reports Indeterminate
+        // with a non-null Detail. The no-retry RULE itself lives in IWritableDeviceDriver's doc comment;
+        // enforcing it against a real implementation is a later task's conformance work (B-7), not this one.
         var driver = new ThirdPartyStyleWritableDriver { SimulateTimeout = true };
 
         var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
@@ -92,9 +100,6 @@ public class WritableDeviceDriverContractTests
         Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
         Assert.Null(result.RejectionReason);
         Assert.NotNull(result.Detail);
-        // The no-retry rule, made concrete: this test double records how many times it was actually asked
-        // to touch the device — a single call in, a single attempt out, never a driver-internal retry loop.
-        Assert.Equal(1, driver.WriteAttemptCount);
     }
 
     [Fact]
@@ -110,16 +115,19 @@ public class WritableDeviceDriverContractTests
     }
 
     [Fact]
-    public async Task InvokeCommandAsync_KnownCommand_Applied_AndCanTriggerMotion()
+    public async Task InvokeCommandAsync_KnownCommand_Applied()
     {
+        // Fix round 1 (IMPORTANT) — originally titled "...AndCanTriggerMotion" and asserted a dedicated
+        // MotionTriggered flag, but that flag was set by this same fake's own method and asserted by the
+        // same test that called it — the same over-titling pattern as the timeout test above, just lower
+        // stakes. Removed; this now mirrors WriteSetpointAsync_KnownPoint_Applied exactly (Outcome +
+        // DeviceWasTouched), which is what it actually proves.
         var driver = new ThirdPartyStyleWritableDriver();
 
         var result = await driver.InvokeCommandAsync(new CommandRequest("start-cycle"), CancellationToken.None);
 
         Assert.Equal(WriteOutcome.Applied, result.Outcome);
-        // The product owner's own framing for why this batch exists: a command can trigger real motion,
-        // unlike a setpoint write — this test double models that as a distinct observable flag.
-        Assert.True(driver.MotionTriggered);
+        Assert.True(driver.DeviceWasTouched);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -132,10 +140,6 @@ public class WritableDeviceDriverContractTests
         public bool SimulateTimeout { get; set; }
 
         public bool DeviceWasTouched { get; private set; }
-
-        public bool MotionTriggered { get; private set; }
-
-        public int WriteAttemptCount { get; private set; }
 
         public string Id => "widget:1";
 
@@ -154,8 +158,6 @@ public class WritableDeviceDriverContractTests
 
         public Task<SetpointWriteResult> WriteSetpointAsync(SetpointWriteRequest request, CancellationToken ct)
         {
-            WriteAttemptCount++;
-
             if (!WritablePoints.Contains(request.Point))
             {
                 return Task.FromResult(new SetpointWriteResult(request.Point, WriteOutcome.Rejected, SetpointRejectionReason.UnknownPoint));
@@ -179,7 +181,6 @@ public class WritableDeviceDriverContractTests
             }
 
             DeviceWasTouched = true;
-            MotionTriggered = true;
             return Task.FromResult(new CommandResult(request.Command, WriteOutcome.Applied));
         }
     }

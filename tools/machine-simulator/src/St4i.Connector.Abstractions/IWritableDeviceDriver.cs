@@ -46,6 +46,22 @@ namespace St4i.Connector.Abstractions;
 /// contract — NModbus will silently ignore it, and the write can then run to whatever its own transport
 /// timeout is, unbounded by anything the caller asked for.</para>
 ///
+/// <para><b>Fix round 1 (task-1-report.md, IMPORTANT) — neither write method may let cancellation propagate
+/// as an exception.</b> This is DIFFERENT from <see cref="IDeviceDriver.ReadAsync"/>, which explicitly
+/// PERMITS throwing <see cref="OperationCanceledException"/> from its enumerator when <c>ct</c> is
+/// cancelled — that is fine there because a cancelled read has nothing left to report. A write is not the
+/// same shape: the whole reason <see cref="Models.WriteOutcome.Indeterminate"/> exists is to tell the caller
+/// "the device's state is now unknown", and that information can ONLY reach the caller through the returned
+/// <see cref="Models.SetpointWriteResult"/>/<see cref="Models.CommandResult"/> — never through a thrown
+/// exception, which hands back no result object, no <c>Detail</c>, and no outcome at all. Concretely: when
+/// the <c>ct.Register(DisposeConnection)</c>-style force-teardown described above fires (or <c>ct</c> is
+/// otherwise cancelled) before a definitive applied/failed answer arrives, this method MUST catch whatever
+/// that produces (an <see cref="OperationCanceledException"/>, an <see cref="System.IO.IOException"/> from
+/// the torn-down connection, or similar) and RETURN a result with
+/// <see cref="Models.WriteOutcome.Indeterminate"/> — never let it propagate. A caller awaiting
+/// <c>Task&lt;SetpointWriteResult&gt;</c> that instead receives a thrown exception on cancellation gets
+/// exactly the silent-failure-mode this whole contract exists to prevent.</para>
+///
 /// <para><b>No implicit retries, ever, for any reason, including a timeout.</b> A failed READ can be retried
 /// harmlessly — the next poll just tries again. A failed or indeterminate WRITE cannot: retrying a setpoint
 /// that may already have applied can leave a device holding the wrong value with no one the wiser, and
@@ -74,14 +90,41 @@ public interface IWritableDeviceDriver : IDeviceDriver
     /// no writable points). This is exactly the vocabulary <see cref="WriteSetpointAsync"/> accepts: points
     /// are named, never raw addresses, and resolving a name to a real device address is entirely this
     /// driver's own job — never the caller's, and never something this list itself needs to describe.
+    ///
+    /// <para>Fix round 1 (task-1-report.md, IMPORTANT) — lifetime, mutability, and thread-safety, spelled out
+    /// the way <see cref="IDeviceDriver.Id"/>/<see cref="IDeviceDriver.Kind"/> already spell theirs out:</para>
+    /// <list type="bullet">
+    /// <item><description><b>Fixed for the lifetime of this instance</b> — same "unchanging for the lifetime
+    /// of this instance" contract <see cref="IDeviceDriver.Id"/>/<see cref="IDeviceDriver.Kind"/> already
+    /// carry. A driver whose writable configuration changes (an operator edits the map) gets a FRESH instance
+    /// via a new <see cref="IConnectorFactory.TryCreate"/> call — exactly how every other reconfiguration in
+    /// this codebase already works — never a live mutation of this property on a driver instance that is
+    /// already running.</description></item>
+    /// <item><description><b>Advisory, not authoritative.</b> A caller must not skip
+    /// <see cref="WriteSetpointAsync"/>'s own validation on the strength of this list alone, and an
+    /// implementation must not skip its own point-name validation on the assumption a caller already
+    /// consulted this list. The write method's own <see cref="Models.WriteOutcome.Rejected"/> +
+    /// <see cref="Models.SetpointRejectionReason.UnknownPoint"/> outcome is what is authoritative, never this
+    /// property — this is what resolves the TOCTOU window between a caller reading this list and later
+    /// calling <see cref="WriteSetpointAsync"/> (the two calls may not even be racing the SAME instance,
+    /// since a configuration change replaces it).</description></item>
+    /// <item><description><b>Must be safe to read concurrently with every other member of this driver</b>,
+    /// including a concurrently-enumerating <see cref="IDeviceDriver.ReadAsync"/> — a future HTTP lookup path
+    /// reads this from its own thread while the driver's background poll loop may be running on another.
+    /// The returned list itself must never mutate after being handed out (same discipline
+    /// <see cref="IDeviceDriver.ReadAsync"/>'s own doc comment already requires of a yielded
+    /// <see cref="Models.DeviceReading"/>'s mutable collections) — return a stable, effectively-immutable
+    /// list, never a live view over internal state a caller could observe changing mid-read.</description></item>
+    /// </list>
     /// </summary>
     IReadOnlyList<string> WritablePoints { get; }
 
     /// <summary>
     /// The names of the commands a caller may currently pass as <see cref="Models.CommandRequest.Command"/>
     /// to <see cref="InvokeCommandAsync"/> — capability discovery, mirroring
-    /// <see cref="WritablePoints"/>'s own contract exactly, for commands instead of setpoints. An empty list
-    /// is valid.
+    /// <see cref="WritablePoints"/>'s own contract EXACTLY (including its lifetime/advisory/thread-safety
+    /// rules — see that property's own doc comment), for commands instead of setpoints. An empty list is
+    /// valid.
     /// </summary>
     IReadOnlyList<string> Commands { get; }
 
@@ -95,7 +138,10 @@ public interface IWritableDeviceDriver : IDeviceDriver
     /// and a rejection this cheap belongs before any I/O, never after.</para>
     ///
     /// <para>See this interface's own doc comment for the <c>_gate</c>, cancellation, and no-retry rules
-    /// that govern every call to this method — they are not repeated here.</para>
+    /// that govern every call to this method — they are not repeated here. In particular: if <paramref
+    /// name="ct"/> is cancelled before a definitive answer arrives, RETURN
+    /// <see cref="Models.WriteOutcome.Indeterminate"/> — do not let the cancellation propagate as an
+    /// exception (see the interface doc comment's "Fix round 1" paragraph).</para>
     /// </summary>
     /// <param name="request">Which point to write, and what value.</param>
     /// <param name="ct">Honoured promptly — see this interface's own doc comment for what that requires of a
@@ -114,7 +160,9 @@ public interface IWritableDeviceDriver : IDeviceDriver
     ///
     /// <para>See this interface's own doc comment for the <c>_gate</c>, cancellation, and no-retry rules —
     /// the no-retry rule matters MOST here: a retried command can physically re-fire whatever it just
-    /// triggered.</para>
+    /// triggered. Same cancellation obligation as <see cref="WriteSetpointAsync"/>: if <paramref name="ct"/>
+    /// is cancelled before a definitive answer arrives, RETURN
+    /// <see cref="Models.WriteOutcome.Indeterminate"/> — never let it propagate as an exception.</para>
     /// </summary>
     /// <param name="request">Which command to invoke, and its arguments.</param>
     /// <param name="ct">Honoured promptly — see this interface's own doc comment.</param>

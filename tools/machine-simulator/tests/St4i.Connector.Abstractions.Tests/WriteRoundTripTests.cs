@@ -17,6 +17,98 @@ namespace St4i.Connector.Abstractions.Tests;
 public class WriteRoundTripTests
 {
     // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1 (task-1-report.md, CRITICAL) — WriteOutcome.Applied used to be ordinal 0
+    // (default(WriteOutcome)), so a missing/absent "outcome" field deserialized to "the device took it".
+    // These pin the empirical scenarios the review reproduced against the real types before the fix, and
+    // prove they now resolve to the safe (Indeterminate) reading instead.
+    // ─────────────────────────────────────────────────────────────────────
+    [Fact]
+    public void DefaultWriteOutcome_IsIndeterminate_NotApplied()
+    {
+        // The single most load-bearing assertion in this whole file: default(WriteOutcome) — what ANY
+        // uninitialized field, FirstOrDefault() over an empty sequence, or missing-JSON-field resolves to
+        // — must be the pessimistic outcome, never the optimistic one.
+        Assert.Equal(WriteOutcome.Indeterminate, default(WriteOutcome));
+        Assert.NotEqual(WriteOutcome.Applied, default(WriteOutcome));
+    }
+
+    [Fact]
+    public void SetpointWriteResult_MissingOutcomeField_DeserializesToIndeterminate_NotApplied()
+    {
+        // Reproduces the review's exact empirical finding: {"point":"p"} with no "outcome" key at all.
+        const string json = """{"point":"p"}""";
+
+        var back = JsonSerializer.Deserialize<SetpointWriteResult>(json, ConnectorJson.Options);
+
+        Assert.NotNull(back);
+        Assert.Equal(WriteOutcome.Indeterminate, back!.Outcome);
+        Assert.NotEqual(WriteOutcome.Applied, back.Outcome);
+        Assert.Null(back.RejectionReason);
+    }
+
+    [Fact]
+    public void SetpointWriteResult_EmptyJsonObject_DeserializesToIndeterminate_NotApplied()
+    {
+        // Reproduces the review's second empirical finding: {} — every field absent, including "point".
+        const string json = "{}";
+
+        var back = JsonSerializer.Deserialize<SetpointWriteResult>(json, ConnectorJson.Options);
+
+        Assert.NotNull(back);
+        Assert.Equal(WriteOutcome.Indeterminate, back!.Outcome);
+        Assert.NotEqual(WriteOutcome.Applied, back.Outcome);
+    }
+
+    [Fact]
+    public void SetpointWriteResult_OutOfRangeIntegerOutcome_ThrowsLoudly_NoLongerSilentlyAccepted()
+    {
+        // Reproduces the review's third empirical finding: {"outcome":99} used to bind to an undefined enum
+        // value with Enum.IsDefined == false and NO exception anywhere. allowIntegerValues: false
+        // (ConnectorJson's fix round 1) means an integer token is rejected outright now, defined or not.
+        const string json = """{"point":"p","outcome":99}""";
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<SetpointWriteResult>(json, ConnectorJson.Options));
+    }
+
+    [Fact]
+    public void SetpointWriteResult_ValidOrdinalAsInteger_AlsoThrows_IntegersAreNeverAcceptedAtAll()
+    {
+        // Not just out-of-range integers — allowIntegerValues: false rejects EVERY integer form, including
+        // one that happens to name a real, defined member (Rejected = 1). The wire format is camelCase
+        // strings only, full stop; a byte-for-byte valid ordinal is not a backdoor around that.
+        const string json = """{"point":"p","outcome":1,"rejectionReason":"outOfRange"}""";
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<SetpointWriteResult>(json, ConnectorJson.Options));
+    }
+
+    [Fact]
+    public void SetpointWriteResult_UnknownStringOutcome_StillThrowsLoudly_UnchangedBehavior()
+    {
+        // Positive control: an unknown STRING already threw before this fix round (only the integer path
+        // was silently permissive) — confirms this fix didn't accidentally change that already-correct
+        // behavior.
+        const string json = """{"point":"p","outcome":"not-a-real-outcome"}""";
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<SetpointWriteResult>(json, ConnectorJson.Options));
+    }
+
+    [Fact]
+    public void DeviceReading_Enums_StillRoundTripAfterAllowIntegerValuesChange()
+    {
+        // The allowIntegerValues:false change is on the SHARED ConnectorJson.Options, so it applies to
+        // every enum on this wire format, not just the new write-contract ones. Confirms DeviceReading's own
+        // enums (ReadingKind/Verdict) still round-trip exactly as ConnectorRoundTripTests already pins —
+        // this is a second, targeted check specifically on the enum-string path this fix touched.
+        var reading = new DeviceReading { Kind = ReadingKind.Inspection, Verdict = Verdict.Warn };
+
+        var json = JsonSerializer.Serialize(reading, ConnectorJson.Options);
+        var back = JsonSerializer.Deserialize<DeviceReading>(json, ConnectorJson.Options);
+
+        Assert.Equal(ReadingKind.Inspection, back!.Kind);
+        Assert.Equal(Verdict.Warn, back.Verdict);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // SetpointWriteRequest — Value reuses TelemetrySample.Value's object? domain.
     // ─────────────────────────────────────────────────────────────────────
     [Fact]
@@ -130,15 +222,50 @@ public class WriteRoundTripTests
     [Fact]
     public void SetpointWriteResult_Enums_SerializeAsCamelCaseStrings_NeverBareIntegers()
     {
-        var result = new SetpointWriteResult("p", WriteOutcome.Indeterminate, SetpointRejectionReason.OutOfRange);
+        // Fix round 1: Outcome must be Rejected here — RejectionReason is only legal alongside Rejected
+        // (enforced by the record's own validating initializer; see SetpointWriteResult_IllegalCombination_*
+        // below), so Indeterminate+OutOfRange (the original combination this test used) is no longer a
+        // constructible value at all.
+        var result = new SetpointWriteResult("p", WriteOutcome.Rejected, SetpointRejectionReason.OutOfRange);
 
         var json = JsonSerializer.Serialize(result, ConnectorJson.Options);
 
-        Assert.Contains("\"outcome\":\"indeterminate\"", json);
+        Assert.Contains("\"outcome\":\"rejected\"", json);
         Assert.Contains("\"rejectionReason\":\"outOfRange\"", json);
-        // A bare-int enum wire format would contain e.g. "outcome":3 — assert that shape is entirely absent.
-        Assert.DoesNotContain("\"outcome\":3", json);
+        // A bare-int enum wire format would contain e.g. "outcome":1 — assert that shape is entirely absent.
+        Assert.DoesNotContain("\"outcome\":1", json);
         Assert.DoesNotContain("\"rejectionReason\":2", json);
+    }
+
+    [Fact]
+    public void SetpointWriteResult_IllegalCombination_AppliedWithRejectionReason_ThrowsAtConstruction()
+    {
+        // Fix round 1 (IMPORTANT) — "RejectionReason non-null iff Outcome is Rejected" is now enforced by
+        // the record itself, not just documented. Applied carrying a reason is exactly the illegal state
+        // the two-enum split was supposed to make impossible one level up; this proves it is now impossible
+        // at THIS level too.
+        var ex = Assert.Throws<ArgumentException>(() =>
+            new SetpointWriteResult("p", WriteOutcome.Applied, SetpointRejectionReason.OutOfRange));
+        Assert.Contains("RejectionReason", ex.Message);
+    }
+
+    [Fact]
+    public void SetpointWriteResult_IllegalCombination_RejectedWithNoReason_ThrowsAtConstruction()
+    {
+        Assert.Throws<ArgumentException>(() => new SetpointWriteResult("p", WriteOutcome.Rejected));
+    }
+
+    [Fact]
+    public void SetpointWriteResult_IllegalCombination_ThrowsOnDeserialize_NotJustOnDirectConstruction()
+    {
+        // The record's validating initializer runs as part of the SAME constructor System.Text.Json calls
+        // when deserializing a record — proves a malformed wire payload (exactly the sidecar/third-party
+        // producer scenario this assembly exists for) is rejected too, not only a caller using `new` directly.
+        // Empirically confirmed the thrown type: System.Text.Json lets the ArgumentException from the
+        // property initializer propagate UNWRAPPED here (not re-wrapped as JsonException), so this asserts
+        // the real, observed type rather than a generic Exception.
+        const string badJson = """{"point":"p","outcome":"applied","rejectionReason":"outOfRange"}""";
+        Assert.Throws<ArgumentException>(() => JsonSerializer.Deserialize<SetpointWriteResult>(badJson, ConnectorJson.Options));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -228,13 +355,28 @@ public class WriteRoundTripTests
     [Fact]
     public void CommandResult_Enums_SerializeAsCamelCaseStrings_NeverBareIntegers()
     {
-        var result = new CommandResult("c", WriteOutcome.Indeterminate, CommandRejectionReason.InvalidArgument);
+        // Fix round 1: Outcome must be Rejected — see the equivalent SetpointWriteResult test's own comment.
+        var result = new CommandResult("c", WriteOutcome.Rejected, CommandRejectionReason.InvalidArgument);
 
         var json = JsonSerializer.Serialize(result, ConnectorJson.Options);
 
-        Assert.Contains("\"outcome\":\"indeterminate\"", json);
+        Assert.Contains("\"outcome\":\"rejected\"", json);
         Assert.Contains("\"rejectionReason\":\"invalidArgument\"", json);
-        Assert.DoesNotContain("\"outcome\":3", json);
+        Assert.DoesNotContain("\"outcome\":1", json);
+    }
+
+    [Fact]
+    public void CommandResult_IllegalCombination_AppliedWithRejectionReason_ThrowsAtConstruction()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            new CommandResult("c", WriteOutcome.Applied, CommandRejectionReason.InvalidArgument));
+        Assert.Contains("RejectionReason", ex.Message);
+    }
+
+    [Fact]
+    public void CommandResult_IllegalCombination_RejectedWithNoReason_ThrowsAtConstruction()
+    {
+        Assert.Throws<ArgumentException>(() => new CommandResult("c", WriteOutcome.Rejected));
     }
 
     // ─────────────────────────────────────────────────────────────────────

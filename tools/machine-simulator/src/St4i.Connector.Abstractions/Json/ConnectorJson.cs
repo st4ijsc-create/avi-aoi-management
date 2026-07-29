@@ -70,7 +70,26 @@ public static class ConnectorJson
             // System.Text.Json consults it for any property/dictionary-value slot typed exactly `object`.
             Converters =
             {
-                new JsonStringEnumConverter(JsonNamingPolicy.CamelCase),
+                // Fix round 1 (task-1-report.md, task-1-brief.md's write contract) — allowIntegerValues:
+                // false, explicitly. JsonStringEnumConverter defaults to allowIntegerValues: true, which
+                // means an integer JSON token binds to an enum BY ORDINAL even though this options instance
+                // never intentionally emits one (every write path here is the camelCase-string converter
+                // above) — {"outcome":1} silently becomes WriteOutcome.Rejected, and worse, an out-of-range
+                // ordinal like {"outcome":99} deserializes into a defined-looking enum value that
+                // Enum.IsDefined reports false for and no switch arm matches, with NO exception anywhere.
+                // An unknown STRING already throws correctly; an unknown/out-of-range INTEGER did not. This
+                // is exactly the same "reject loudly, never silently accept" discipline
+                // ConnectorObjectConverter's own decision (b) already applies to the object? domain, now
+                // applied to every enum on this wire format — DeviceReading's own ReadingKind/Verdict/
+                // DriverHealthState/DeviceClass enums were already NEVER intentionally serialized as bare
+                // ints (GP-2's own doc comment: "a wire format serializing ReadingKind.Telemetry as the bare
+                // int 1 would silently reinterpret every value"), so this closes a gap in behavior that
+                // contradicted an already-stated design intent — it does not change what this options
+                // instance produces or accepts for any currently-passing round trip (re-confirmed: the full
+                // existing ConnectorRoundTripTests suite for DeviceReading passes unchanged after this
+                // change, because no existing payload — hand-written or round-tripped — ever encodes an
+                // enum as an integer).
+                new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false),
                 new ConnectorObjectConverter(),
             },
         };
