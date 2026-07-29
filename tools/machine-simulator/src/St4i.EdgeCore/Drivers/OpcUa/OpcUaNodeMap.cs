@@ -19,32 +19,102 @@ public enum OpcUaSecurityMode { None }
 /// whatever <see cref="object"/>? domain the value arrived in — the same re-narrowing concern
 /// <see cref="CommandArgumentDeclaration"/> exists for on the command-argument side).
 ///
-/// <para><b><see cref="ValueType"/> is restricted to a NUMERIC <see cref="CommandArgumentType"/></b>
-/// (<see cref="CommandArgumentType.Bool"/>/<see cref="CommandArgumentType.String"/> are rejected by
-/// <see cref="OpcUaNodeMap.FromJson"/> at parse time) — a writable SETPOINT is, by this task's own scope, a
-/// numeric value with a declared range (see <see cref="Min"/>/<see cref="Max"/>'s own remarks); a boolean/
-/// string writable node is a documented, deferred follow-up, not built here.</para>
+/// <para><b><see cref="ValueType"/> is nullable and mandatory</b> — Fix round 1 (minor, closing a gap the
+/// review flagged while overruling the original Bool restriction below): an OMITTED <c>"valueType"</c> JSON
+/// key used to bind silently to its CLR default, <see cref="CommandArgumentType.Bool"/> (ordinal 0) — under
+/// the ORIGINAL "Bool is always rejected" rule this happened to still fail loudly (for the wrong reason), but
+/// now that <see cref="CommandArgumentType.Bool"/> is a legitimately ACCEPTED value type (see below), an
+/// omitted <c>valueType"</c> could otherwise silently become a valid-looking Bool declaration. <see cref="OpcUaNodeMap.FromJson"/>
+/// now rejects a <see langword="null"/> <see cref="ValueType"/> explicitly, so a forgotten field still cannot
+/// arm anything — including a numeric write, which is exactly the property Fix round 1's own review comment
+/// asked to preserve.</para>
 ///
-/// <para><see cref="Min"/>/<see cref="Max"/> are nullable for the same reason
-/// <see cref="Modbus.ModbusWritableRange"/>'s own are — see that type's doc comment for why mandatory-ness is
-/// enforced by an explicit post-deserialize check in <see cref="OpcUaNodeMap.FromJson"/> (so the rejection
-/// message can name the specific point) rather than by <see langword="required"/> members here.</para>
+/// <para><b><see cref="CommandArgumentType.Bool"/> is ACCEPTED — Fix round 1, overruling the original
+/// Bool/String rejection.</b> The original design treated <see cref="Min"/>/<see cref="Max"/> as the
+/// DEFINITION of a setpoint rather than a MEANS of bounding one — but a boolean's domain
+/// <c>{false,true}</c> is exhaustively enumerable, a STRONGER bound than any numeric range, not a missing
+/// one. Enable/disable, auto/manual, and mode-select bits are among the most common real OPC-UA writes, and
+/// the two workarounds this original restriction forced (declare it as <c>UInt16 [0,1]</c> and hope the
+/// server coerces, or express it as a COMMAND, which B-6 gates at a STRICTER RBAC role) both push an ordinary
+/// boolean write into a higher-privilege lane than it needs — a safety regression dressed up as caution.
+/// <see cref="CommandArgumentType.String"/> remains rejected (unchanged) — a boolean's exhaustive domain is
+/// what makes this override safe; a string's domain is not similarly bounded, and nothing in the review
+/// asked for that one to move.</para>
+///
+/// <para>For <see cref="CommandArgumentType.Bool"/> specifically, <see cref="Min"/>/<see cref="Max"/> must
+/// be ABSENT (both <see langword="null"/>) — mirroring <see cref="CommandArgumentDeclaration.ValidateSelf"/>'s
+/// own "bounds are only meaningful for a numeric type" rule exactly. For every numeric
+/// <see cref="CommandArgumentType"/>, <see cref="Min"/>/<see cref="Max"/> remain MANDATORY, unchanged.</para>
+///
+/// <para><b>Fix round 1 — "consider" item, resolved: <see cref="TryNarrowForWrite"/> stays
+/// <see langword="bool"/> + <see langword="string"/>?, not <see cref="Models.SetpointRejectionReason"/>.</b>
+/// Every failure it can produce corresponds to EXACTLY ONE <see cref="Models.SetpointRejectionReason"/> member
+/// — <see cref="Models.SetpointRejectionReason.OutOfRange"/> — for the identical reasoning
+/// <see cref="Modbus.ModbusRegister.TryComputeRawWordForWrite"/>'s own doc comment gives (which name/writability
+/// question this method is never asked to answer). See <see cref="CommandArgumentDeclaration"/>'s own doc
+/// comment for the same call on the command-argument side.</para>
 /// </summary>
-public sealed record OpcUaWritableSetpoint(CommandArgumentType ValueType, double? Min, double? Max)
+public sealed record OpcUaWritableSetpoint(CommandArgumentType? ValueType, double? Min, double? Max)
 {
     /// <summary>
-    /// The write-side narrowing this setpoint declaration exists to drive: given an engineering-unit
-    /// <paramref name="engineeringValue"/> ALREADY known to be within <see cref="Min"/>/<see cref="Max"/>
-    /// (that check is <see cref="Models.SetpointRejectionReason.OutOfRange"/>'s own job, upstream of this
-    /// method), narrows it to the exact CLR value <see cref="ValueType"/> declares — mirroring
-    /// <see cref="Modbus.ModbusRegister.TryComputeRawWordForWrite"/>'s role for Modbus, minus the Scale step
-    /// (an OPC-UA server already reports/accepts engineering-unit values — see
-    /// <see cref="OpcUaNode"/>'s own class doc comment). Never silently truncates: an integral
+    /// The write-side narrowing this setpoint declaration exists to drive: given the raw value a caller
+    /// supplied (<see langword="bool"/> for a <see cref="CommandArgumentType.Bool"/> setpoint;
+    /// <see langword="double"/>/<see langword="long"/> for a numeric one — the same widened domain
+    /// <see cref="CommandArgumentDeclaration.TryNarrow"/> accepts), narrows it to the exact CLR value
+    /// <see cref="ValueType"/> declares — mirroring <see cref="Modbus.ModbusRegister.TryComputeRawWordForWrite"/>'s
+    /// role for Modbus, minus the Scale step (an OPC-UA server already reports/accepts engineering-unit values
+    /// — see <see cref="OpcUaNode"/>'s own class doc comment). Never silently truncates: an integral
     /// <see cref="ValueType"/> that would overflow its own representable range is rejected, same "assert the
-    /// failure" discipline as the Modbus side.
+    /// failure" discipline as the Modbus side; a non-finite numeric value (<see cref="double.NaN"/>/±Infinity)
+    /// is rejected too — Fix round 1 (Critical #2) — NaN previously failed every declared-range/physical-range
+    /// comparison silently and then narrowed to a live 0.
     /// </summary>
-    public bool TryNarrowForWrite(double engineeringValue, out object? narrowed, out string? error)
+    public bool TryNarrowForWrite(object? rawValue, out object? narrowed, out string? error)
     {
+        if (ValueType is null)
+        {
+            narrowed = null;
+            error = "this setpoint has no declared value type (should have been rejected at parse time)";
+            return false;
+        }
+
+        if (ValueType == CommandArgumentType.Bool)
+        {
+            if (rawValue is bool boolValue)
+            {
+                narrowed = boolValue;
+                error = null;
+                return true;
+            }
+
+            narrowed = null;
+            error = $"expected Bool, got {DescribeRuntimeType(rawValue)}";
+            return false;
+        }
+
+        double engineeringValue;
+        if (rawValue is double d)
+        {
+            engineeringValue = d;
+        }
+        else if (rawValue is long l)
+        {
+            engineeringValue = l;
+        }
+        else
+        {
+            narrowed = null;
+            error = $"expected a numeric value for {ValueType}, got {DescribeRuntimeType(rawValue)}";
+            return false;
+        }
+
+        if (!double.IsFinite(engineeringValue))
+        {
+            narrowed = null;
+            error = $"value {engineeringValue} is not finite";
+            return false;
+        }
+
         if ((Min is { } min && engineeringValue < min) || (Max is { } max && engineeringValue > max))
         {
             narrowed = null;
@@ -60,7 +130,7 @@ public sealed record OpcUaWritableSetpoint(CommandArgumentType ValueType, double
         }
 
         var rounded = Math.Round(engineeringValue, MidpointRounding.AwayFromZero);
-        var (rangeMin, rangeMax) = CommandArgumentDeclaration.IntegralRange(ValueType);
+        var (rangeMin, rangeMax) = CommandArgumentDeclaration.IntegralRange(ValueType.Value);
         if (rounded < rangeMin || rounded > rangeMax)
         {
             narrowed = null;
@@ -80,6 +150,16 @@ public sealed record OpcUaWritableSetpoint(CommandArgumentType ValueType, double
         error = null;
         return true;
     }
+
+    private static string DescribeRuntimeType(object? value) => value switch
+    {
+        null => "null",
+        bool => "Bool",
+        string => "String",
+        long => "an integral number",
+        double => "a floating-point number",
+        _ => value.GetType().Name,
+    };
 }
 
 /// <summary>
@@ -197,6 +277,50 @@ public sealed class OpcUaNodeMap
         }
     }
 
+    /// <summary>
+    /// Task B-3 fix round 1 (Important #1) — the RICHER counterpart to <see cref="WritablePointNames"/>,
+    /// mirroring <see cref="Modbus.ModbusRegisterMap.WritablePointBounds"/> exactly: not just which points are
+    /// writable, but the declared bounds (<see langword="null"/> for a <see cref="CommandArgumentType.Bool"/>
+    /// setpoint, which has none by design) AND the NodeId it actually targets. Consumed by
+    /// <c>St4i.EngineApi.Fleet.ConnectorConfigValidation</c> to build the deliberate-save-gate's confirmation
+    /// fingerprint, so widening a limit or RE-POINTING a writable node to a different NodeId also changes the
+    /// required confirmation.
+    /// </summary>
+    public IReadOnlyList<(string Metric, string Target, double? Min, double? Max)> WritablePointBounds
+    {
+        get
+        {
+            var bounds = new List<(string, string, double?, double?)>();
+            foreach (var node in Nodes)
+            {
+                if (node.Writable is not null)
+                {
+                    bounds.Add((node.Metric, node.NodeId, node.Writable.Min, node.Writable.Max));
+                }
+            }
+
+            return bounds;
+        }
+    }
+
+    /// <summary>Task B-3 fix round 1 (Important #1) — the RICHER counterpart to <see cref="CommandNames"/>:
+    /// each method's name AND the object/method NodeId pair it actually calls, formatted as one
+    /// human-readable, deterministic string — so RE-POINTING a method to a different object/method also
+    /// changes the confirmation fingerprint, not just adding/removing a command by name.</summary>
+    public IReadOnlyList<(string Name, string Target)> CommandTargets
+    {
+        get
+        {
+            var targets = new List<(string, string)>(Commands.Count);
+            foreach (var command in Commands)
+            {
+                targets.Add((command.Name, $"{command.ObjectNodeId} -> {command.MethodNodeId}"));
+            }
+
+            return targets;
+        }
+    }
+
     /// <summary>Parses a node-map JSON document. Throws <see cref="JsonException"/>/
     /// <see cref="InvalidOperationException"/> straight through on malformed JSON, a missing required field
     /// (<see cref="MachineCode"/>/<see cref="EndpointUrl"/>/<see cref="Nodes"/>), a blank/whitespace-only
@@ -233,6 +357,27 @@ public sealed class OpcUaNodeMap
             throw new InvalidOperationException("OPC-UA node map: 'nodes' must contain at least one entry.");
         }
 
+        // Fix round 1 (minor) — an explicit JSON `"commands": null` (which OVERRIDES this property's
+        // initializer default, unlike an omitted key) used to bind Commands to a genuine null, so
+        // ValidateCommands's own foreach threw a bare NullReferenceException instead of a named parse error.
+        // Same "explicit null treated as omitted" precedent as Modbus's own equivalent fix. OpcUaNodeMap is a
+        // plain class (not a record — no `with` expression available), so a null Commands is normalized by
+        // reconstructing rather than mutating an init-only property post-construction.
+        if (map.Commands is null)
+        {
+            map = new OpcUaNodeMap
+            {
+                MachineCode = map.MachineCode,
+                EndpointUrl = map.EndpointUrl,
+                SecurityMode = map.SecurityMode,
+                Username = map.Username,
+                Password = map.Password,
+                PollIntervalMs = map.PollIntervalMs,
+                Nodes = map.Nodes,
+                Commands = Array.Empty<OpcUaCommand>(),
+            };
+        }
+
         ValidateWritableNodes(map.Nodes);
         ValidateCommands(map.Commands);
 
@@ -258,12 +403,67 @@ public sealed class OpcUaNodeMap
 
             var pointLabel = $"'{node.Metric}' ({node.NodeId})";
 
-            if (node.Writable.ValueType is CommandArgumentType.Bool or CommandArgumentType.String)
+            // Fix round 1, I4 — the write identity itself (Metric/NodeId) must be non-blank; a blank NodeId
+            // in particular would leave a future driver with no address to actually write to at all.
+            if (string.IsNullOrWhiteSpace(node.Metric))
             {
                 throw new InvalidOperationException(
-                    $"OPC-UA node map: writable node {pointLabel} declares value type '{node.Writable.ValueType}' — " +
-                    "a writable SETPOINT must declare a numeric value type (Int16/UInt16/Int32/UInt32/Double); " +
-                    "a boolean/string writable node is not supported by this map version.");
+                    $"OPC-UA node map: a writable node ({node.NodeId}) has a blank 'metric' — a writable point's " +
+                    "name must be non-blank; it is the identity a write targets by name.");
+            }
+
+            if (string.IsNullOrWhiteSpace(node.NodeId))
+            {
+                throw new InvalidOperationException(
+                    $"OPC-UA node map: writable node {pointLabel} has a blank 'nodeId' — a writable point needs a " +
+                    "real NodeId to actually address a write to.");
+            }
+
+            // Fix round 1 (minor) — ValueType is nullable specifically so an OMITTED "valueType" is
+            // detectable and rejected, rather than silently binding to its CLR default
+            // (CommandArgumentType.Bool, ordinal 0) and looking like a deliberate (and, since the Bool
+            // override below, now legitimately acceptable) Bool declaration.
+            if (node.Writable.ValueType is null)
+            {
+                throw new InvalidOperationException(
+                    $"OPC-UA node map: writable node {pointLabel} is missing mandatory 'valueType' — never " +
+                    "defaulted to Bool (or anything else).");
+            }
+
+            var valueType = node.Writable.ValueType.Value;
+
+            // Fix round 1 (overruling the original design) — Bool is ACCEPTED: a boolean's domain
+            // {false,true} is exhaustively enumerable, a STRONGER bound than any numeric range, not a
+            // missing one. Min/Max must be ABSENT for Bool (mirrors CommandArgumentDeclaration.ValidateSelf's
+            // own "bounds are only meaningful for a numeric type" rule). String remains rejected — its
+            // domain isn't similarly bounded.
+            if (valueType == CommandArgumentType.String)
+            {
+                throw new InvalidOperationException(
+                    $"OPC-UA node map: writable node {pointLabel} declares value type 'String' — a writable " +
+                    "SETPOINT must declare Bool or a numeric value type (Int16/UInt16/Int32/UInt32/Double); a " +
+                    "string writable node is not supported by this map version.");
+            }
+
+            if (valueType == CommandArgumentType.Bool)
+            {
+                if (node.Writable.Min is not null || node.Writable.Max is not null)
+                {
+                    throw new InvalidOperationException(
+                        $"OPC-UA node map: writable node {pointLabel} declares 'min'/'max' with value type 'Bool' — " +
+                        "bounds are only meaningful for a numeric type; a boolean's domain is already exhaustively " +
+                        "{false,true}. Omit 'min'/'max' for a Bool writable node.");
+                }
+
+                if (!writableMetrics.Add(node.Metric))
+                {
+                    throw new InvalidOperationException(
+                        $"OPC-UA node map: more than one writable node declares metric '{node.Metric}' — a writable " +
+                        "point's name must be unique (it is the identity a write targets by name, and two nodes " +
+                        "sharing it would make a write's target ambiguous).");
+                }
+
+                continue;
             }
 
             if (node.Writable.Min is null || node.Writable.Max is null)
@@ -288,14 +488,14 @@ public sealed class OpcUaNodeMap
                     $"OPC-UA node map: writable node {pointLabel} declares min ({min}) greater than max ({max}).");
             }
 
-            if (node.Writable.ValueType != CommandArgumentType.Double)
+            if (valueType != CommandArgumentType.Double)
             {
-                var (rangeMin, rangeMax) = CommandArgumentDeclaration.IntegralRange(node.Writable.ValueType);
+                var (rangeMin, rangeMax) = CommandArgumentDeclaration.IntegralRange(valueType);
                 if (min < rangeMin || min > rangeMax || max < rangeMin || max > rangeMax)
                 {
                     throw new InvalidOperationException(
                         $"OPC-UA node map: writable node {pointLabel} declares a [{min},{max}] range that overflows " +
-                        $"its own value type {node.Writable.ValueType}'s representable range [{rangeMin},{rangeMax}].");
+                        $"its own value type {valueType}'s representable range [{rangeMin},{rangeMax}].");
                 }
             }
 

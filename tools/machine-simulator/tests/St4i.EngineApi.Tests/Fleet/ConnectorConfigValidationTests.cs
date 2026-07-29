@@ -257,8 +257,14 @@ public sealed class ConnectorConfigValidationTests
 
         Assert.True(ok, error);
         Assert.True(result!.WriteCapability.GrantsCapability);
-        Assert.Equal(new[] { "speed" }, result.WriteCapability.WritablePoints);
-        Assert.Equal(new[] { "StartCycle" }, result.WriteCapability.Commands);
+        var point = Assert.Single(result.WriteCapability.WritablePoints);
+        Assert.Equal("speed", point.Name);
+        Assert.Equal("address:1", point.Target);
+        Assert.Equal(0, point.Min);
+        Assert.Equal(5000, point.Max);
+        var command = Assert.Single(result.WriteCapability.Commands);
+        Assert.Equal("StartCycle", command.Name);
+        Assert.Equal("coil:5", command.Target);
     }
 
     [Fact]
@@ -293,8 +299,14 @@ public sealed class ConnectorConfigValidationTests
 
         Assert.True(ok, error);
         Assert.True(result!.WriteCapability.GrantsCapability);
-        Assert.Equal(new[] { "speed" }, result.WriteCapability.WritablePoints);
-        Assert.Equal(new[] { "Start" }, result.WriteCapability.Commands);
+        var point = Assert.Single(result.WriteCapability.WritablePoints);
+        Assert.Equal("speed", point.Name);
+        Assert.Equal("ns=2;s=Speed", point.Target);
+        Assert.Equal(0, point.Min);
+        Assert.Equal(5000, point.Max);
+        var command = Assert.Single(result.WriteCapability.Commands);
+        Assert.Equal("Start", command.Name);
+        Assert.Contains("ns=2;s=Machine", command.Target);
     }
 
     [Fact]

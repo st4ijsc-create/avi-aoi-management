@@ -62,6 +62,19 @@ public sealed class CommandArgumentDeclarationTests
         Assert.Null(declaration.ValidateSelf());
     }
 
+    /// <summary>Fix round 1 (minor) — an omitted 'type' JSON key used to bind <c>Type</c> to its CLR default,
+    /// <see cref="CommandArgumentType.Bool"/> (ordinal 0), silently indistinguishable from a genuinely declared
+    /// Bool. <c>Type</c> is nullable specifically so this case is detectable and rejected.</summary>
+    [Fact]
+    public void ValidateSelf_MissingType_Rejected_NeverDefaultsToBool()
+    {
+        var declaration = new CommandArgumentDeclaration("mode", Type: null);
+        var error = declaration.ValidateSelf();
+        Assert.NotNull(error);
+        Assert.Contains("mode", error);
+        Assert.Contains("type", error, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // TryNarrow — the re-narrowing itself.
     // ─────────────────────────────────────────────────────────────────────
@@ -90,6 +103,29 @@ public sealed class CommandArgumentDeclarationTests
         var declaration = new CommandArgumentDeclaration("recipe", CommandArgumentType.String);
         Assert.True(declaration.TryNarrow("Recipe-A", out var narrowed, out _));
         Assert.Equal("Recipe-A", narrowed);
+    }
+
+    /// <summary>Defensive: a declaration that skipped <see cref="CommandArgumentDeclaration.ValidateSelf"/>
+    /// (a null Type) must never silently narrow to some assumed type.</summary>
+    [Fact]
+    public void TryNarrow_NullType_NeverNarrows_RejectedDefensively()
+    {
+        var declaration = new CommandArgumentDeclaration("mode", Type: null);
+        Assert.False(declaration.TryNarrow(1L, out var narrowed, out var error));
+        Assert.Null(narrowed);
+        Assert.NotNull(error);
+    }
+
+    /// <summary>Fix round 1 (Critical #2) — NaN fails every &lt;/&gt; comparison, so a naive declared-range
+    /// check alone would let it straight through, then the caller's own numeric conversion would silently
+    /// produce something (typically 0) instead of a rejection.</summary>
+    [Fact]
+    public void TryNarrow_Double_NaN_Rejected_NeverSilentlyPassed()
+    {
+        var declaration = new CommandArgumentDeclaration("setpoint", CommandArgumentType.Double, Min: 100, Max: 400);
+        Assert.False(declaration.TryNarrow(double.NaN, out var narrowed, out var error));
+        Assert.Null(narrowed);
+        Assert.NotNull(error);
     }
 
     /// <summary>The exact scenario B-1's own doc comment describes: an OPC-UA <c>UInt16</c> argument arrives

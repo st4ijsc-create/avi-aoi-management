@@ -445,12 +445,99 @@ public class ModbusRegisterMapTests
     public void TryComputeRawWordForWrite_RoundTrips_InverseOfTheReadSideDecode(
         double engineeringValue, double scale, ModbusDataType dataType, ushort expectedRaw)
     {
-        var register = new ModbusRegister(0, ModbusRegisterType.Holding, dataType, scale, "m",
-            Writable: new ModbusWritableRange(-40000, 40000));
+        // Deliberately no Writable at all (pure physical-decode math, independent of any declared range —
+        // Fix round 1's Critical #1 makes TryComputeRawWordForWrite ALSO enforce a declared range when one
+        // exists, so a register WITH Writable set here would need a range wide enough to cover every
+        // [InlineData] value, which is exactly what the declared-range-specific tests below cover instead).
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, dataType, scale, "m");
 
         Assert.True(register.TryComputeRawWordForWrite(engineeringValue, out var raw, out var error));
         Assert.Null(error);
         Assert.Equal(expectedRaw, raw);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, Critical #1 — TryComputeRawWordForWrite must ALSO enforce Writable's own declared
+    // Min/Max, not only the register's physical DataType range. Before this fix, a register declared
+    // [0,500] happily computed a raw word for 60000 (fits UInt16) and for -0.4 (rounds to 0, "succeeds").
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void TryComputeRawWordForWrite_EnforcesDeclaredRange_NotOnlyThePhysicalType()
+    {
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, ModbusDataType.UInt16, 1.0, "speed",
+            Writable: new ModbusWritableRange(0, 500));
+
+        // 60000 fits comfortably inside UInt16's own physical range (0..65535) but is WAY outside the
+        // register's own declared [0,500] — the exact reviewer-reproduced defect.
+        Assert.False(register.TryComputeRawWordForWrite(60000, out var raw, out var error));
+        Assert.Equal(default, raw);
+        Assert.Contains("declared", error);
+    }
+
+    [Fact]
+    public void TryComputeRawWordForWrite_BelowDeclaredMin_Rejected_EvenWhenPhysicallyRepresentable()
+    {
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, ModbusDataType.Int16, 1.0, "speed",
+            Writable: new ModbusWritableRange(0, 500));
+
+        // -0.4 rounds to raw 0, which fits Int16 fine — but the ENGINEERING value -0.4 is below the
+        // declared min of 0 and must be rejected on that basis, not silently accepted because its rounded
+        // raw word happens to look in-range.
+        Assert.False(register.TryComputeRawWordForWrite(-0.4, out var raw, out var error));
+        Assert.Equal(default, raw);
+        Assert.Contains("declared", error);
+    }
+
+    [Fact]
+    public void TryComputeRawWordForWrite_WithinDeclaredRange_StillSucceeds()
+    {
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, ModbusDataType.UInt16, 1.0, "speed",
+            Writable: new ModbusWritableRange(0, 500));
+
+        Assert.True(register.TryComputeRawWordForWrite(250, out var raw, out var error));
+        Assert.Null(error);
+        Assert.Equal((ushort)250, raw);
+    }
+
+    [Fact]
+    public void TryComputeRawWordForWrite_NoWritableDeclared_DeclaredRangeCheckSkipped_OnlyPhysicalTypeApplies()
+    {
+        // A register that was never declared writable at all has no declared range to enforce — this
+        // method still applies its own physical-type check (a caller reaching this method on a non-writable
+        // register is itself a caller error the driver's own NotWritable check should have already caught).
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, ModbusDataType.UInt16, 1.0, "speed");
+
+        Assert.True(register.TryComputeRawWordForWrite(60000, out var raw, out var error));
+        Assert.Null(error);
+        Assert.Equal((ushort)60000, raw);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, Critical #2 — NaN fails every </> comparison, so it silently sailed past both the
+    // declared-range and physical-range checks, then (ushort)double.NaN produced a live raw 0.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void TryComputeRawWordForWrite_NaN_Rejected_NeverSilentlyWritesZero()
+    {
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, ModbusDataType.UInt16, 1.0, "speed",
+            Writable: new ModbusWritableRange(100, 400));
+
+        Assert.False(register.TryComputeRawWordForWrite(double.NaN, out var raw, out var error));
+        Assert.Equal(default, raw);
+        Assert.Contains("not finite", error);
+    }
+
+    [Theory]
+    [InlineData(ModbusDataType.UInt16)]
+    [InlineData(ModbusDataType.Int16)]
+    public void TryComputeRawWordForWrite_NaN_Rejected_BothDataTypes(ModbusDataType dataType)
+    {
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, dataType, 1.0, "speed");
+
+        Assert.False(register.TryComputeRawWordForWrite(double.NaN, out var raw, out _));
+        Assert.Equal(default, raw);
     }
 
     [Fact]
@@ -522,8 +609,17 @@ public class ModbusRegisterMapTests
         Assert.Equal(new[] { "StartCycle" }, map.CommandNames);
     }
 
+    /// <summary>Fix round 1, scope call (a) (accepted, with a gap closed) — a Modbus command that declares
+    /// ANY argument is now rejected outright at parse time: a map that could otherwise pass the gate, be
+    /// confirmed, be persisted, and be listed as granted capability while being un-executable by any driver
+    /// this codebase could ship is exactly the "declares a capability the product cannot honour" dishonesty
+    /// this batch exists to remove. See <see cref="ModbusRegisterMap"/>'s own <c>ValidateCommands</c> remarks.
+    /// (Argument narrowing itself is proven directly against <see cref="CommandArgumentDeclaration"/> in
+    /// <c>CommandArgumentDeclarationTests</c>, and end-to-end through a real map via OPC-UA's own
+    /// <c>Commands_WithDeclaredArgument_NarrowsCorrectly_TheExactGapB1Names</c> — OPC-UA commands are NOT
+    /// restricted this way.)</summary>
     [Fact]
-    public void Commands_WithDeclaredArgument_NarrowsCorrectly()
+    public void Commands_WithAnyDeclaredArgument_Rejected_NotYetSupportedForModbus()
     {
         const string json = """
         { "machineCode": "PLC-CMD-ARGS", "registers": [
@@ -532,17 +628,24 @@ public class ModbusRegisterMapTests
             "arguments": [ { "name": "mode", "type": "UInt16", "min": 0, "max": 3 } ] } ] }
         """;
 
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("SetMode", ex.Message);
+    }
+
+    /// <summary>An explicit empty <c>arguments: []</c> (as opposed to one or more entries) is NOT rejected —
+    /// only a NON-empty declaration trips the "not yet supported" rule.</summary>
+    [Fact]
+    public void Commands_EmptyArgumentsArray_Accepted()
+    {
+        const string json = """
+        { "machineCode": "PLC-CMD-EMPTYARGS", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "StartCycle", "coilAddress": 6, "arguments": [] } ] }
+        """;
+
         var map = ModbusRegisterMap.FromJson(json);
-
         var command = Assert.Single(map.Commands);
-        var argument = Assert.Single(command.Arguments!);
-        Assert.Equal("mode", argument.Name);
-        Assert.Equal(CommandArgumentType.UInt16, argument.Type);
-
-        Assert.True(argument.TryNarrow(2L, out var narrowed, out _));
-        Assert.Equal((ushort)2, narrowed);
-        Assert.False(argument.TryNarrow(10L, out _, out var error)); // outside declared [0,3].
-        Assert.NotNull(error);
+        Assert.Empty(command.Arguments!);
     }
 
     [Fact]
@@ -570,8 +673,13 @@ public class ModbusRegisterMapTests
         Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
     }
 
+    /// <summary>Fix round 1 — a Modbus command's blanket "any argument at all" rejection fires regardless of
+    /// whether the argument itself would ALSO have failed its own schema-shape check; the per-argument
+    /// validation loop below it is dead code for Modbus today (kept in place, ready to reactivate, for when
+    /// B-4 defines the wire-mapping convention and this restriction is relaxed — see <see cref="ModbusCommand"/>'s
+    /// own doc comment) but this test pins that the BLANKET check is what actually fires first.</summary>
     [Fact]
-    public void Commands_ArgumentWithMinMaxOnBoolType_Rejected_SchemaShapeCheck()
+    public void Commands_ArgumentWithMinMaxOnBoolType_Rejected_ByTheBlanketArgumentsRule()
     {
         const string json = """
         { "machineCode": "PLC-BADARG", "registers": [
@@ -582,21 +690,226 @@ public class ModbusRegisterMapTests
 
         var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
         Assert.Contains("Start", ex.Message);
-        Assert.Contains("enable", ex.Message);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, Critical #3 — a Modbus command with no coilAddress used to parse and silently target
+    // REAL coil 0 (a live, valid address, not a sentinel) — the exact "forgotten field arms a live default"
+    // defect class this task's own headline rule already closed for setpoint limits, just relocated to a
+    // command's write TARGET, which is worse (commands trigger real motion).
+    // ─────────────────────────────────────────────────────────────────────
+
     [Fact]
-    public void Commands_DuplicateArgumentNameWithinOneCommand_Rejected()
+    public void Commands_MissingCoilAddress_Rejected_NeverDefaultsToCoilZero()
     {
         const string json = """
-        { "machineCode": "PLC-DUPARG", "registers": [
+        { "machineCode": "PLC-NOCOIL", "registers": [
             { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
-          "commands": [ { "name": "Start", "coilAddress": 1,
-            "arguments": [ { "name": "mode", "type": "UInt16" }, { "name": "mode", "type": "Int16" } ] } ] }
+          "commands": [ { "name": "StartCycle" } ] }
         """;
 
         var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
-        Assert.Contains("Start", ex.Message);
-        Assert.Contains("mode", ex.Message);
+        Assert.Contains("StartCycle", ex.Message);
+        Assert.Contains("coilAddress", ex.Message);
+    }
+
+    [Fact]
+    public void Commands_ExplicitCoilZero_Accepted_ADistinctCaseFromOmitted()
+    {
+        // Coil 0 is a genuinely valid address — this must NOT be confused with "omitted".
+        const string json = """
+        { "machineCode": "PLC-COILZERO", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "StartCycle", "coilAddress": 0 } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+        Assert.Equal((ushort)0, Assert.Single(map.Commands).CoilAddress);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, Critical #3 (writable-register half) — a writable register with an omitted
+    // address/type/dataType used to silently bind to 0/Holding/UInt16, all of which happen to look like a
+    // perfectly legitimate writable point.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Writable_MissingAddress_Rejected_NeverDefaultsToZero()
+    {
+        const string json = """
+        { "machineCode": "PLC-NOADDR", "registers": [
+            { "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 500 } } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+        Assert.Contains("address", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Writable_MissingType_Rejected_NeverDefaultsToHolding()
+    {
+        const string json = """
+        { "machineCode": "PLC-NOTYPE", "registers": [
+            { "address": 10, "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 500 } } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+        Assert.Contains("'type'", ex.Message);
+    }
+
+    [Fact]
+    public void Writable_MissingDataType_Rejected_NeverDefaultsToUInt16()
+    {
+        const string json = """
+        { "machineCode": "PLC-NODATATYPE", "registers": [
+            { "address": 10, "type": "Holding", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 500 } } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+        Assert.Contains("'dataType'", ex.Message);
+    }
+
+    /// <summary>A NON-writable register missing address/type/dataType is unaffected by this new rule
+    /// (pre-existing, unrelated behavior — the presence probe only runs for writable registers) — proven
+    /// against the exact same omitted-address shape that IS rejected above, just without <c>writable</c>.</summary>
+    [Fact]
+    public void NonWritableRegister_MissingAddress_StillDefaultsSilently_UnaffectedByThisTask()
+    {
+        const string json = """
+        { "machineCode": "PLC-READONLY-NOADDR", "registers": [
+            { "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "temperature" } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+        Assert.Equal((ushort)0, Assert.Single(map.Registers).Address);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, I4 — a writable point's own name (Metric) is the write identity per B-1; it must not be
+    // blank.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Writable_BlankMetric_Rejected(string blankMetric)
+    {
+        var json = $$"""
+        { "machineCode": "PLC-BLANKMETRIC", "registers": [
+            { "address": 10, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "{{blankMetric}}",
+              "writable": { "min": 0, "max": 500 } } ] }
+        """;
+
+        Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, minor — explicit JSON "commands": null must not throw a bare NullReferenceException.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Commands_ExplicitJsonNull_TreatedSameAsOmitted_NoThrow()
+    {
+        const string json = """
+        { "machineCode": "PLC-NULLCMDS", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": null }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+        Assert.Empty(map.Commands);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1, I1 — WritablePointBounds/CommandTargets: the richer accessors the deliberate-save-gate's
+    // confirmation fingerprint is built from, so a widened limit or a re-pointed coil changes the required
+    // confirmation value.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void WritablePointBounds_ReflectsDeclaredMinMaxAndTargetAddress()
+    {
+        const string json = """
+        { "machineCode": "PLC-BOUNDS", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "temperature" },
+            { "address": 1, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 5000 } } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+        var bounds = Assert.Single(map.WritablePointBounds);
+        Assert.Equal("speed", bounds.Metric);
+        Assert.Equal("address:1", bounds.Target);
+        Assert.Equal(0, bounds.Min);
+        Assert.Equal(5000, bounds.Max);
+    }
+
+    /// <summary>Re-pointing a writable register to a DIFFERENT address produces a DIFFERENT target string,
+    /// with the SAME declared bounds — the whole reason the target is folded into this accessor at all (so
+    /// the save-gate's confirmation fingerprint changes when a writable point is re-pointed, not only when
+    /// its limits are widened).</summary>
+    [Fact]
+    public void WritablePointBounds_DifferentAddress_ProducesDifferentTarget_SameBounds()
+    {
+        const string jsonAddr1 = """
+        { "machineCode": "PLC-A1", "registers": [
+            { "address": 1, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 5000 } } ] }
+        """;
+        const string jsonAddr9 = """
+        { "machineCode": "PLC-A9", "registers": [
+            { "address": 9, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 5000 } } ] }
+        """;
+
+        var bounds1 = Assert.Single(ModbusRegisterMap.FromJson(jsonAddr1).WritablePointBounds);
+        var bounds9 = Assert.Single(ModbusRegisterMap.FromJson(jsonAddr9).WritablePointBounds);
+
+        Assert.NotEqual(bounds1.Target, bounds9.Target);
+        Assert.Equal(bounds1.Min, bounds9.Min);
+        Assert.Equal(bounds1.Max, bounds9.Max);
+    }
+
+    [Fact]
+    public void CommandTargets_ReflectsCoilAddress_FormattedDeterministically()
+    {
+        const string json = """
+        { "machineCode": "PLC-TARGETS", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "StartCycle", "coilAddress": 5 } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+        var target = Assert.Single(map.CommandTargets);
+        Assert.Equal("StartCycle", target.Name);
+        Assert.Equal("coil:5", target.Target);
+    }
+
+    /// <summary>Re-pointing a command to a DIFFERENT coil produces a DIFFERENT target string — the whole
+    /// reason this accessor exists (so the save-gate's confirmation fingerprint changes too).</summary>
+    [Fact]
+    public void CommandTargets_DifferentCoilAddress_ProducesDifferentTarget()
+    {
+        const string json5 = """
+        { "machineCode": "PLC-T5", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "StartCycle", "coilAddress": 5 } ] }
+        """;
+        const string json99 = """
+        { "machineCode": "PLC-T99", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "StartCycle", "coilAddress": 99 } ] }
+        """;
+
+        var target5 = Assert.Single(ModbusRegisterMap.FromJson(json5).CommandTargets);
+        var target99 = Assert.Single(ModbusRegisterMap.FromJson(json99).CommandTargets);
+
+        Assert.NotEqual(target5.Target, target99.Target);
     }
 }

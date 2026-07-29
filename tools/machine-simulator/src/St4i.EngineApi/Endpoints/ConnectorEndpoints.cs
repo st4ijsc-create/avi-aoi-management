@@ -137,24 +137,29 @@ public static class ConnectorEndpoints
         if (validated.WriteCapability.GrantsCapability)
         {
             var requiredFingerprint = validated.WriteCapability.ComputeFingerprint();
+            // Fix round 1 (Important #1) — names the actual bounds/target for every grant, not just its
+            // name: the review found nothing anywhere (400 body, create response, summary, audit row) ever
+            // showed a writable point's limits or a command's wire target, for a task whose headline rule is
+            // "limits are mandatory". This is now the FIRST place an operator can see exactly what a save
+            // would grant, before it ever happens.
+            var grantSummary = DescribeGrantedCapability(validated.WriteCapability);
 
             if (string.IsNullOrWhiteSpace(body.ConfirmedWriteCapabilityFingerprint))
             {
                 return Results.BadRequest(new ApiErrorDto(
-                    "This map declares write/command capability — writable points: " +
-                    $"[{string.Join(", ", validated.WriteCapability.WritablePoints)}]; commands: " +
-                    $"[{string.Join(", ", validated.WriteCapability.Commands)}]. Saving a map that grants write " +
-                    "or command capability requires deliberate confirmation: resubmit this SAME request with " +
-                    $"confirmedWriteCapabilityFingerprint = \"{requiredFingerprint}\" to proceed."));
+                    $"This map declares write/command capability — {grantSummary}. Saving a map that grants " +
+                    "write or command capability requires deliberate confirmation: resubmit this SAME request " +
+                    $"with confirmedWriteCapabilityFingerprint = \"{requiredFingerprint}\" to proceed."));
             }
 
             if (!string.Equals(body.ConfirmedWriteCapabilityFingerprint, requiredFingerprint, StringComparison.Ordinal))
             {
                 return Results.Conflict(new ApiErrorDto(
-                    "confirmedWriteCapabilityFingerprint does not match what this map currently declares — it may " +
-                    "be stale (the map was edited after the fingerprint was computed) or copied from a different " +
-                    $"map. The current required value is \"{requiredFingerprint}\" — confirm the granted " +
-                    "capability shown in this response and retry with that exact value."));
+                    $"confirmedWriteCapabilityFingerprint does not match what this map currently declares — {grantSummary}. " +
+                    "It may be stale (the map was edited after the fingerprint was computed, e.g. a limit widened " +
+                    "or a target re-pointed) or copied from a different map. The current required value is " +
+                    $"\"{requiredFingerprint}\" — confirm the granted capability shown above and retry with that " +
+                    "exact value."));
             }
         }
 
@@ -340,5 +345,27 @@ public static class ConnectorEndpoints
         {
             await driver.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Task B-3 fix round 1 (Important #1) — a human-readable rendering of every grant
+    /// <paramref name="capability"/> carries, INCLUDING each writable point's declared bounds and each
+    /// command's actual wire target — never just names. Used by both the save-gate's 400 (missing
+    /// confirmation) and 409 (stale/mismatched confirmation) bodies, so an operator sees exactly what is
+    /// being granted before ever confirming it, not merely that "something" is.</summary>
+    private static string DescribeGrantedCapability(ConnectorWriteCapability capability)
+    {
+        var points = new List<string>(capability.WritablePoints.Count);
+        foreach (var point in capability.WritablePoints)
+        {
+            points.Add($"{point.Name}@{point.Target} [{point.Min?.ToString() ?? "n/a"},{point.Max?.ToString() ?? "n/a"}]");
+        }
+
+        var commands = new List<string>(capability.Commands.Count);
+        foreach (var command in capability.Commands)
+        {
+            commands.Add($"{command.Name}@{command.Target}");
+        }
+
+        return $"writable points: [{string.Join(", ", points)}]; commands: [{string.Join(", ", commands)}]";
     }
 }

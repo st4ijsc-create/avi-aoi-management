@@ -4,10 +4,10 @@ namespace St4i.Connector.Abstractions.Models;
 /// Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — the closed set of
 /// wire-level value types a map can declare for a <see cref="CommandArgumentDeclaration"/> (a
 /// <see cref="CommandRequest.Arguments"/> entry) or an OPC-UA writable node's own value type. Deliberately
-/// minimal — mirrors <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusDataType"/>'s own "deliberately minimal for
-/// G2-6" idiom: <see cref="Int64"/>/<see cref="UInt64"/>/<see cref="Single"/> are a documented, deferred
-/// follow-up, not built here, because nothing in this batch's scoped protocols (Modbus 16-bit registers,
-/// the OPC-UA MVP surface this codebase drives) needs them yet.
+/// minimal — mirrors the Modbus register map's own "deliberately minimal for G2-6" idiom for its own raw-word
+/// decode type: <see cref="long"/>/<see cref="ulong"/>/<see langword="float"/> equivalents are a documented,
+/// deferred follow-up, not built here, because nothing in this batch's scoped protocols (Modbus 16-bit
+/// registers, the OPC-UA MVP surface this codebase drives) needs them yet.
 /// </summary>
 public enum CommandArgumentType
 {
@@ -22,14 +22,16 @@ public enum CommandArgumentType
 
 /// <summary>
 /// Task B-3 — one named argument a <see cref="CommandRequest"/> may carry, and the type it must be narrowed
-/// to before a driver ever uses it. Existing separately from <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusCommand"/>/
-/// <see cref="St4i.EdgeCore.Drivers.OpcUa.OpcUaCommand"/> (which reference this type rather than each
-/// declaring their own argument shape) so the narrowing logic below is written, and tested, exactly once —
-/// shared by both protocols' command declarations, and by an OPC-UA writable setpoint's own value-type
-/// narrowing (<see cref="St4i.EdgeCore.Drivers.OpcUa.OpcUaWritableSetpoint.TryNarrowForWrite"/>), which needs
-/// the identical "narrow a declared numeric type, bounds-checked" logic for a different reason (the OPC-UA
-/// <c>Variant</c> the driver eventually writes needs an exact CLR type, not whatever <see cref="object"/>
-/// domain the value arrived in).
+/// to before a driver ever uses it. Deliberately declared HERE, once, rather than by each protocol's own
+/// command type separately, so the narrowing logic below is written and tested exactly once — shared by both
+/// protocols' command declarations, and by an OPC-UA writable setpoint's own value-type narrowing, which needs
+/// the identical "narrow a declared type, bounds-checked" logic for a related reason (the OPC-UA
+/// <c>Variant</c> a driver eventually writes needs an exact CLR type, not whatever <see cref="object"/> domain
+/// the value arrived in). This type intentionally has NO reference to any protocol-specific map type — this
+/// assembly is pinned at zero dependencies beyond the BCL (see <c>ZeroDependencyTests</c>), and a doc-comment
+/// <c>&lt;see cref&gt;</c> pointing at a type this assembly cannot even see would misrepresent that boundary
+/// even though it costs nothing at the IL level — protocol-specific consumers are named as plain <c>&lt;c&gt;</c>
+/// text below, never as a cref.
 ///
 /// <para><b>Why this exists at all — B-1's own documented gap.</b> <see cref="CommandRequest.Arguments"/>'s
 /// own doc comment says its value domain carries NO type information: an OPC-UA argument typed
@@ -41,29 +43,51 @@ public enum CommandArgumentType
 /// needed.</para>
 ///
 /// <para><b><see cref="Min"/>/<see cref="Max"/> are optional</b> — unlike a writable SETPOINT's own physical
-/// bounds (mandatory, enforced at parse time — see <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusWritableRange"/>/
-/// <see cref="St4i.EdgeCore.Drivers.OpcUa.OpcUaWritableSetpoint"/>), the task brief's mandatory-limits rule
-/// names "a writable point" specifically, not a command argument — <see cref="CommandRejectionReason.InvalidArgument"/>'s
-/// own doc comment covers "a missing required argument, or a value/type that does not match", which a bare
-/// type check already satisfies without a declared range. A range is still accepted, and enforced by
-/// <see cref="TryNarrow"/> when given, for a command whose author DOES want one (e.g. a "SetMode" command's
-/// numeric mode argument only having three legal values) — just never required.</para>
+/// bounds (mandatory, enforced at parse time by each protocol's own map — a Modbus register's <c>writable</c>
+/// declaration, an OPC-UA node's own), the task brief's mandatory-limits rule names "a writable point"
+/// specifically, not a command argument — <see cref="CommandRejectionReason.InvalidArgument"/>'s own doc
+/// comment covers "a missing required argument, or a value/type that does not match", which a bare type check
+/// already satisfies without a declared range. A range is still accepted, and enforced by <see cref="TryNarrow"/>
+/// when given, for a command whose author DOES want one (e.g. a "SetMode" command's numeric mode argument
+/// only having three legal values) — just never required.</para>
+///
+/// <para><b><see cref="Type"/> is nullable — Fix round 1 (Critical-class defect found by review, "commands"
+/// section, minor bullet).</b> An omitted <c>"type"</c> JSON key used to bind <see cref="Type"/> to its CLR
+/// default, <see cref="CommandArgumentType.Bool"/> (ordinal 0) — silently, indistinguishable from a map author
+/// who genuinely declared <c>Bool</c>. Exactly the "a forgotten field yields a live default" defect class this
+/// whole task exists to close, just relocated from a setpoint's limits to a command argument's type.
+/// <see cref="ValidateSelf"/> now rejects a <see langword="null"/> <see cref="Type"/> explicitly, naming the
+/// argument, so an omitted type fails loudly at parse time instead of silently becoming a (wrong) Bool.</para>
 ///
 /// <para><see cref="ValidateSelf"/> is a schema-shape check (is this declaration internally consistent —
-/// non-blank name, a range only where a range means something, <see cref="Min"/> ≤ <see cref="Max"/>), run
-/// explicitly by each map's own <c>FromJson</c> with full context (which command, which argument) rather than
-/// thrown from this record's own constructor — <c>System.Text.Json</c>'s exception-wrapping behavior for a
-/// throwing record constructor reached via nested-array deserialization is not something either map's
-/// <c>FromJson</c> wants to depend on to still name the offending point/command precisely (the brief's own
-/// "reject at parse time, with a message naming the point" requirement) — so this type is a plain, never-
-/// throwing data holder, and every map's <c>FromJson</c> is the one place validation failures turn into a
-/// contextualized <see cref="InvalidOperationException"/>.</para>
+/// non-blank name, a declared type, a range only where a range means something, <see cref="Min"/> ≤
+/// <see cref="Max"/>), run explicitly by each map's own <c>FromJson</c> with full context (which command,
+/// which argument) rather than thrown from this record's own constructor — <c>System.Text.Json</c>'s
+/// exception-wrapping behavior for a throwing record constructor reached via nested-array deserialization is
+/// not something either map's <c>FromJson</c> wants to depend on to still name the offending point/command
+/// precisely (the brief's own "reject at parse time, with a message naming the point" requirement) — so this
+/// type is a plain, never-throwing data holder, and every map's <c>FromJson</c> is the one place validation
+/// failures turn into a contextualized <see cref="InvalidOperationException"/>.</para>
+///
+/// <para><b>Fix round 1 — "consider" item, resolved: <see cref="TryNarrow"/> stays <see langword="bool"/> +
+/// <see langword="string"/>?, not <see cref="SetpointRejectionReason"/>/<see cref="CommandRejectionReason"/>.</b>
+/// Considered and rejected adding a rejection-reason out-parameter: every failure this method (and
+/// <see cref="TryNarrowAll"/>) can ever produce corresponds to EXACTLY ONE <see cref="CommandRejectionReason"/>
+/// member — <see cref="CommandRejectionReason.InvalidArgument"/> — never <see cref="CommandRejectionReason.UnknownCommand"/>
+/// (resolving whether a command NAME is known at all is the caller's/driver's own job, before it ever reaches an
+/// argument declaration). A future <c>InvokeCommandAsync</c> implementation therefore needs no translation
+/// step beyond "if this returns <see langword="false"/>, reject with <see cref="CommandRejectionReason.InvalidArgument"/>
+/// and this method's own <paramref name="error"/> as <c>Detail</c>" — adding a second out-parameter whose value
+/// is always the same constant would not remove any ambiguity, only add API surface. Documented here explicitly
+/// so this is a considered decision, not an oversight.</para>
 /// </summary>
 /// <param name="Name">The argument's name — the key a caller supplies in <see cref="CommandRequest.Arguments"/>.</param>
-/// <param name="Type">The wire-level type this argument must narrow to before use.</param>
+/// <param name="Type">The wire-level type this argument must narrow to before use. <see langword="null"/>
+/// (an omitted <c>"type"</c> JSON key) is REJECTED by <see cref="ValidateSelf"/>, never silently treated as
+/// <see cref="CommandArgumentType.Bool"/> — see this record's own "Fix round 1" remarks above.</param>
 /// <param name="Min">Optional lower bound (inclusive), meaningful only for a numeric <paramref name="Type"/>.</param>
 /// <param name="Max">Optional upper bound (inclusive), meaningful only for a numeric <paramref name="Type"/>.</param>
-public sealed record CommandArgumentDeclaration(string Name, CommandArgumentType Type, double? Min = null, double? Max = null)
+public sealed record CommandArgumentDeclaration(string Name, CommandArgumentType? Type, double? Min = null, double? Max = null)
 {
     /// <summary>
     /// Schema-shape self-check — see this record's own class doc comment for why this is a plain method,
@@ -76,6 +100,11 @@ public sealed record CommandArgumentDeclaration(string Name, CommandArgumentType
         if (string.IsNullOrWhiteSpace(Name))
         {
             return "argument name must be non-blank";
+        }
+
+        if (Type is null)
+        {
+            return $"argument '{Name}': missing mandatory 'type' — never defaulted to Bool (or anything else)";
         }
 
         if ((Type is CommandArgumentType.Bool or CommandArgumentType.String) && (Min is not null || Max is not null))
@@ -117,7 +146,9 @@ public sealed record CommandArgumentDeclaration(string Name, CommandArgumentType
     /// range integral value, or a value outside a declared <see cref="Min"/>/<see cref="Max"/> all return
     /// <see langword="false"/> with an operator-readable <paramref name="error"/>, the same "cheap rejection,
     /// no I/O" shape <see cref="IWritableDeviceDriver.InvokeCommandAsync"/>'s own
-    /// <see cref="CommandRejectionReason.InvalidArgument"/> is for.
+    /// <see cref="CommandRejectionReason.InvalidArgument"/> is for. A <see langword="null"/> <see cref="Type"/>
+    /// (a declaration that skipped <see cref="ValidateSelf"/>) is rejected here too, defensively — never
+    /// silently treated as any particular type.
     ///
     /// <para><b>Deliberately strict, never coercive</b> — a JSON value that arrived as <see langword="double"/>
     /// (e.g. the caller sent <c>20.5</c>) is never truncated/rounded into an integral <see cref="Type"/>; only
@@ -125,16 +156,21 @@ public sealed record CommandArgumentDeclaration(string Name, CommandArgumentType
     /// own decision (a)) narrows to <see cref="CommandArgumentType.Int16"/>/<see cref="CommandArgumentType.UInt16"/>/
     /// <see cref="CommandArgumentType.Int32"/>/<see cref="CommandArgumentType.UInt32"/>. The reverse — a
     /// whole-number JSON value with no decimal marker arriving as <see langword="long"/> for a
-    /// <see cref="CommandArgumentType.Double"/>-typed argument — IS widened (losslessly; every <see langword="long"/>
-    /// this converter can produce fits exactly in a <see langword="double"/> mantissa... actually not exactly for
-    /// the full <see langword="long"/> range, but for any value a real command argument would plausibly carry,
-    /// and rejecting an ordinary whole-number setpoint like <c>"speed": 20</c> for a Double-typed argument would
-    /// be a worse surprise than the reverse) — this one widening direction is accepted deliberately, mirroring
-    /// why <see cref="Json.ConnectorObjectConverter"/> itself treats a whole-number double specially (decision
-    /// (a)).</para>
+    /// <see cref="CommandArgumentType.Double"/>-typed argument — IS widened (losslessly for any value a real
+    /// command argument would plausibly carry, and rejecting an ordinary whole-number setpoint like
+    /// <c>"speed": 20</c> for a Double-typed argument would be a worse surprise than the reverse) — this one
+    /// widening direction is accepted deliberately, mirroring why <see cref="Json.ConnectorObjectConverter"/>
+    /// itself treats a whole-number double specially (decision (a)).</para>
     /// </summary>
     public bool TryNarrow(object? rawValue, out object? narrowed, out string? error)
     {
+        if (Type is null)
+        {
+            narrowed = null;
+            error = $"argument '{Name}': has no declared type (should have been rejected by ValidateSelf at parse time)";
+            return false;
+        }
+
         switch (Type)
         {
             case CommandArgumentType.Bool:
@@ -176,6 +212,16 @@ public sealed record CommandArgumentDeclaration(string Name, CommandArgumentType
                     return false;
                 }
 
+                // Fix round 1 (Critical #2, mirrored here defensively) — NaN/Infinity fail every </>
+                // comparison below, so a declared range check alone would let a non-finite value straight
+                // through as "in range".
+                if (!double.IsFinite(asDouble))
+                {
+                    narrowed = null;
+                    error = $"argument '{Name}': value {asDouble} is not finite";
+                    return false;
+                }
+
                 if ((Min is { } minD && asDouble < minD) || (Max is { } maxD && asDouble > maxD))
                 {
                     narrowed = null;
@@ -198,7 +244,7 @@ public sealed record CommandArgumentDeclaration(string Name, CommandArgumentType
                     return false;
                 }
 
-                var (rangeMin, rangeMax) = IntegralRange(Type);
+                var (rangeMin, rangeMax) = IntegralRange(Type.Value);
                 if (rawIntegral < rangeMin || rawIntegral > rangeMax)
                 {
                     narrowed = null;

@@ -216,9 +216,21 @@ public sealed record ConnectorCreateRequest(string Kind, string? Host, int? Port
 /// <see cref="GrantsWriteCapability"/> is <see langword="false"/> and every list empty for the overwhelming
 /// majority of connectors (every map this build accepted before this task, and every map after it that simply
 /// declares neither). <see cref="Fingerprint"/> is <see langword="null"/> in that case too — there is nothing
-/// to confirm.</summary>
+/// to confirm.
+///
+/// <para><b>Fix round 1 (Important #1) — <see cref="WritablePoints"/>/<see cref="Commands"/> carry the FULL
+/// grant</b> (<see cref="ConnectorWritablePointGrant"/>'s own <c>Target</c>/<c>Min</c>/<c>Max</c>,
+/// <see cref="ConnectorCommandGrant"/>'s own <c>Target</c>) — not just a bare name — reusing the SAME shape
+/// <see cref="ConnectorWriteCapability"/> itself carries, the SAME shape <c>GET /v1/connectors/configured</c>'s
+/// own <see cref="ConnectorConfigSummary.WriteCapability"/> uses, so an operator can see EXACTLY what a save
+/// grants (which register/node, what bounds, which coil/method) directly in the 400/409/200 response body and
+/// in the configured-connectors list — the review's own finding that neither the limits nor the target ever
+/// appeared anywhere.</para></summary>
 public sealed record ConnectorWriteCapabilityDto(
-    bool GrantsWriteCapability, IReadOnlyList<string> WritablePoints, IReadOnlyList<string> Commands, string? Fingerprint)
+    bool GrantsWriteCapability,
+    IReadOnlyList<ConnectorWritablePointGrant> WritablePoints,
+    IReadOnlyList<ConnectorCommandGrant> Commands,
+    string? Fingerprint)
 {
     public static ConnectorWriteCapabilityDto From(ConnectorWriteCapability capability) => new(
         capability.GrantsCapability, capability.WritablePoints, capability.Commands,

@@ -146,11 +146,35 @@ public static class ConnectorConfigValidation
             MappingProfile: null,
             CycleSeconds: pollIntervalSeconds);
 
-        var writeCapability = new ConnectorWriteCapability(map.WritablePointNames, map.CommandNames);
+        var writeCapability = BuildWriteCapability(map.WritablePointBounds, map.CommandTargets);
 
         result = new ConnectorValidationResult(DriverKinds.Modbus, map.MachineCode, trimmedHost, p, pollIntervalSeconds, factory, descriptor, writeCapability);
         error = null;
         return true;
+    }
+
+    /// <summary>Task B-3 fix round 1 (Important #1) — adapts <see cref="ModbusRegisterMap.WritablePointBounds"/>/
+    /// <see cref="ModbusRegisterMap.CommandTargets"/> into the generic <see cref="ConnectorWriteCapability"/>
+    /// shape the store/save-gate share. Modbus's bounds are always non-null (mandatory at parse time) but
+    /// widen fine into <see cref="ConnectorWritablePointGrant"/>'s nullable <c>Min</c>/<c>Max</c> — the same
+    /// generic shape OPC-UA's Bool setpoints (genuinely bound-less) also use.</summary>
+    private static ConnectorWriteCapability BuildWriteCapability(
+        IReadOnlyList<(string Metric, string Target, double Min, double Max)> writablePoints,
+        IReadOnlyList<(string Name, string Target)> commands)
+    {
+        var points = new List<ConnectorWritablePointGrant>(writablePoints.Count);
+        foreach (var (metric, target, min, max) in writablePoints)
+        {
+            points.Add(new ConnectorWritablePointGrant(metric, target, min, max));
+        }
+
+        var grants = new List<ConnectorCommandGrant>(commands.Count);
+        foreach (var (name, target) in commands)
+        {
+            grants.Add(new ConnectorCommandGrant(name, target));
+        }
+
+        return new ConnectorWriteCapability(points, grants);
     }
 
     private static bool TryValidateOpcUa(
@@ -185,12 +209,34 @@ public static class ConnectorConfigValidation
             MappingProfile: null,
             CycleSeconds: pollIntervalSeconds);
 
-        var writeCapability = new ConnectorWriteCapability(map.WritablePointNames, map.CommandNames);
+        var writeCapability = BuildWriteCapability(map.WritablePointBounds, map.CommandTargets);
 
         // Host/Port are not part of this kind's persisted-store columns — the map's own EndpointUrl is
         // authoritative (see this class's doc comment).
         result = new ConnectorValidationResult(DriverKinds.OpcUa, map.MachineCode, Host: null, Port: null, pollIntervalSeconds, factory, descriptor, writeCapability);
         error = null;
         return true;
+    }
+
+    /// <summary>OPC-UA overload — <see cref="OpcUaNodeMap.WritablePointBounds"/>'s own bounds ARE nullable
+    /// (a <see cref="CommandArgumentType.Bool"/> setpoint genuinely has none), so this passes straight
+    /// through rather than widening like the Modbus overload does.</summary>
+    private static ConnectorWriteCapability BuildWriteCapability(
+        IReadOnlyList<(string Metric, string Target, double? Min, double? Max)> writablePoints,
+        IReadOnlyList<(string Name, string Target)> commands)
+    {
+        var points = new List<ConnectorWritablePointGrant>(writablePoints.Count);
+        foreach (var (metric, target, min, max) in writablePoints)
+        {
+            points.Add(new ConnectorWritablePointGrant(metric, target, min, max));
+        }
+
+        var grants = new List<ConnectorCommandGrant>(commands.Count);
+        foreach (var (name, target) in commands)
+        {
+            grants.Add(new ConnectorCommandGrant(name, target));
+        }
+
+        return new ConnectorWriteCapability(points, grants);
     }
 }

@@ -181,19 +181,98 @@ public sealed class ConnectorConfigStoreTests
     public async Task SaveAsync_WriteCapabilityGrantingSomething_RoundTrips()
     {
         var store = new ConnectorConfigStore(TempDir());
-        var capability = new ConnectorWriteCapability(new[] { "speed" }, new[] { "StartCycle" });
+        var capability = new ConnectorWriteCapability(
+            new[] { new ConnectorWritablePointGrant("speed", "address:1", 0, 500) },
+            new[] { new ConnectorCommandGrant("StartCycle", "coil:5") });
 
         var summary = await store.SaveAsync("Modbus", "MODBUS-01", "10.0.0.5", 502, "{}", capability);
 
         Assert.NotNull(summary.WriteCapability);
         Assert.True(summary.WriteCapability!.GrantsWriteCapability);
-        Assert.Equal(new[] { "speed" }, summary.WriteCapability.WritablePoints);
-        Assert.Equal(new[] { "StartCycle" }, summary.WriteCapability.Commands);
+        var point = Assert.Single(summary.WriteCapability.WritablePoints);
+        Assert.Equal("speed", point.Name);
+        Assert.Equal("address:1", point.Target);
+        Assert.Equal(0, point.Min);
+        Assert.Equal(500, point.Max);
+        var command = Assert.Single(summary.WriteCapability.Commands);
+        Assert.Equal("StartCycle", command.Name);
+        Assert.Equal("coil:5", command.Target);
         Assert.NotNull(summary.WriteCapability.Fingerprint);
 
         var record = await store.GetAsync("Modbus");
         Assert.NotNull(record!.WriteCapability);
-        Assert.Equal(new[] { "speed" }, record.WriteCapability!.WritablePoints);
+        Assert.Equal("speed", Assert.Single(record.WriteCapability!.WritablePoints).Name);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1 (Important #1) — ComputeFingerprint must bind to bounds/targets, not just names. This is
+    // the EXACT scenario the review reproduced: a map declaring "speed [0,500] + StartCycle@coil:5" and one
+    // declaring "speed [0,65535] + StartCycle@coil:99" used to produce the IDENTICAL fingerprint (names-only
+    // hash) — an operator's confirmation would have silently covered a widened limit and a re-pointed
+    // command.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ComputeFingerprint_WidenedLimit_ProducesDifferentFingerprint_SameNames()
+    {
+        var narrow = new ConnectorWriteCapability(
+            new[] { new ConnectorWritablePointGrant("speed", "address:1", 0, 500) },
+            new[] { new ConnectorCommandGrant("StartCycle", "coil:5") });
+        var widened = new ConnectorWriteCapability(
+            new[] { new ConnectorWritablePointGrant("speed", "address:1", 0, 65535) },
+            new[] { new ConnectorCommandGrant("StartCycle", "coil:5") });
+
+        Assert.NotEqual(narrow.ComputeFingerprint(), widened.ComputeFingerprint());
+    }
+
+    [Fact]
+    public void ComputeFingerprint_RepointedCommand_ProducesDifferentFingerprint_SameNames()
+    {
+        var original = new ConnectorWriteCapability(
+            new[] { new ConnectorWritablePointGrant("speed", "address:1", 0, 500) },
+            new[] { new ConnectorCommandGrant("StartCycle", "coil:5") });
+        var repointed = new ConnectorWriteCapability(
+            new[] { new ConnectorWritablePointGrant("speed", "address:1", 0, 500) },
+            new[] { new ConnectorCommandGrant("StartCycle", "coil:99") });
+
+        Assert.NotEqual(original.ComputeFingerprint(), repointed.ComputeFingerprint());
+    }
+
+    [Fact]
+    public void ComputeFingerprint_RepointedWritablePoint_ProducesDifferentFingerprint_SameNamesAndBounds()
+    {
+        var original = new ConnectorWriteCapability(
+            new[] { new ConnectorWritablePointGrant("speed", "address:1", 0, 500) },
+            Array.Empty<ConnectorCommandGrant>());
+        var repointed = new ConnectorWriteCapability(
+            new[] { new ConnectorWritablePointGrant("speed", "address:9", 0, 500) },
+            Array.Empty<ConnectorCommandGrant>());
+
+        Assert.NotEqual(original.ComputeFingerprint(), repointed.ComputeFingerprint());
+    }
+
+    [Fact]
+    public void ComputeFingerprint_IdenticalCapability_ProducesTheSameFingerprint_OrderIndependent()
+    {
+        var a = new ConnectorWriteCapability(
+            new[]
+            {
+                new ConnectorWritablePointGrant("speed", "address:1", 0, 500),
+                new ConnectorWritablePointGrant("temp", "address:2", -40, 200),
+            },
+            new[] { new ConnectorCommandGrant("StartCycle", "coil:5") });
+        // Same capability, writable points in a DIFFERENT order — the fingerprint must be order-independent
+        // (sorted before hashing) so JSON array order in a re-pasted map never breaks an otherwise-identical
+        // confirmation.
+        var b = new ConnectorWriteCapability(
+            new[]
+            {
+                new ConnectorWritablePointGrant("temp", "address:2", -40, 200),
+                new ConnectorWritablePointGrant("speed", "address:1", 0, 500),
+            },
+            new[] { new ConnectorCommandGrant("StartCycle", "coil:5") });
+
+        Assert.Equal(a.ComputeFingerprint(), b.ComputeFingerprint());
     }
 
     /// <summary>A <see cref="ConnectorWriteCapability"/> instance with EMPTY lists (constructed, but granting

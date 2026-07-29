@@ -91,8 +91,61 @@ public sealed record ModbusRegister(
     /// <param name="rawWord">The exact 16-bit word to write on success — <see langword="default"/> on
     /// failure.</param>
     /// <param name="error">Operator-readable failure detail on failure; <see langword="null"/> on success.</param>
+    /// <remarks>
+    /// <b>Fix round 1 (Critical #1) — this method now ALSO enforces <see cref="Writable"/>'s own declared
+    /// <see cref="ModbusWritableRange.Min"/>/<see cref="ModbusWritableRange.Max"/>, not only the register's
+    /// physical <see cref="DataType"/> range.</b> The doc comment above used to say the declared-range check
+    /// was "upstream of this method — this method does not repeat it" — reviewed and found wrong: NOTHING in
+    /// this task actually performs that check anywhere else (it was deferred, undocumented, straight onto
+    /// B-4), so a value like 60000 against a register declared <c>[0,500]</c> sailed through as
+    /// <c>Applied</c>-shaped (raw=60000, no error) purely because 60000 also happens to fit in a UInt16. This
+    /// method is now the ONE place that check lives, mirroring <see cref="OpcUa.OpcUaWritableSetpoint.TryNarrowForWrite"/>'s
+    /// own declared-range check exactly — the two sibling "write-side math a future driver calls" helpers no
+    /// longer disagree about who enforces the limit the whole task exists to make mandatory. If
+    /// <see cref="Writable"/> is <see langword="null"/> (this register was never declared writable in the
+    /// first place — a caller error the driver's own <see cref="Models.SetpointRejectionReason.NotWritable"/>
+    /// check should have already caught before ever reaching here), there is no declared range to enforce and
+    /// only the physical-type check below applies.
+    ///
+    /// <para><b>Fix round 1 (Critical #2) — <paramref name="engineeringValue"/> itself is now required to be
+    /// finite.</b> <see cref="double.NaN"/> fails every <c>&lt;</c>/<c>&gt;</c> comparison, so BOTH the
+    /// declared-range check above and the physical-range check below silently let it through — then
+    /// <c>(ushort)double.NaN</c> is 0 on this runtime, so a setpoint whose safe band is e.g. <c>[100,400]</c>
+    /// silently wrote (and reported success for) a raw 0. <see cref="double.PositiveInfinity"/>/
+    /// <see cref="double.NegativeInfinity"/> were already correctly rejected (they fail the physical-range
+    /// check honestly), so this is specifically the NaN gap.</para>
+    ///
+    /// <para><b>Fix round 1 — "consider" item, resolved: stays <see langword="bool"/> + <see langword="string"/>?,
+    /// not <see cref="Models.SetpointRejectionReason"/>.</b> Every failure this method can produce corresponds
+    /// to EXACTLY ONE <see cref="Models.SetpointRejectionReason"/> member —
+    /// <see cref="Models.SetpointRejectionReason.OutOfRange"/> — never <see cref="Models.SetpointRejectionReason.UnknownPoint"/>/
+    /// <see cref="Models.SetpointRejectionReason.NotWritable"/> (resolving whether a point NAME is known/writable
+    /// at all is the caller's/driver's own job, before it ever reaches a specific <see cref="ModbusRegister"/>
+    /// instance to call this method on). A future <c>WriteSetpointAsync</c> implementation therefore needs no
+    /// translation step beyond "if this returns <see langword="false"/>, reject with
+    /// <see cref="Models.SetpointRejectionReason.OutOfRange"/> and this method's own <paramref name="error"/> as
+    /// <c>Detail</c>" — see <see cref="CommandArgumentDeclaration"/>'s own doc comment for the identical
+    /// reasoning on the command-argument side.</para>
+    /// </remarks>
     public bool TryComputeRawWordForWrite(double engineeringValue, out ushort rawWord, out string? error)
     {
+        if (!double.IsFinite(engineeringValue))
+        {
+            rawWord = default;
+            error = $"register '{Metric}' (address {Address}): value {engineeringValue} is not finite.";
+            return false;
+        }
+
+        if (Writable is not null &&
+            ((Writable.Min is { } declaredMin && engineeringValue < declaredMin) ||
+             (Writable.Max is { } declaredMax && engineeringValue > declaredMax)))
+        {
+            rawWord = default;
+            error = $"register '{Metric}' (address {Address}): value {engineeringValue} is outside the declared " +
+                     $"[{Writable.Min},{Writable.Max}] range.";
+            return false;
+        }
+
         if (Scale == 0 || !double.IsFinite(Scale))
         {
             rawWord = default;
@@ -152,10 +205,20 @@ public sealed record ModbusRegister(
 /// this map only declares the argument's name/type/bounds and proves it narrows correctly.</para>
 /// </summary>
 /// <param name="Name">The command's name — see <see cref="Models.IWritableDeviceDriver.Commands"/>.</param>
-/// <param name="CoilAddress">The single coil this command pulses.</param>
+/// <param name="CoilAddress">The single coil this command pulses. Nullable — Fix round 1 (Critical #3) — an
+/// omitted <c>"coilAddress"</c> used to bind silently to <see langword="default"/>(<see cref="ushort"/>) = 0,
+/// a REAL, valid coil address, indistinguishable from a map author who genuinely targets coil 0. Since
+/// commands trigger real motion, "forgotten field arms a live wire target" is strictly worse than the
+/// equivalent hazard for a setpoint's limits — <see cref="ModbusRegisterMap.FromJson"/> now rejects a command
+/// with no <see cref="CoilAddress"/> at parse time, naming the command; a validated map's <see cref="CoilAddress"/>
+/// is therefore always non-null.</param>
 /// <param name="Arguments">Optional named arguments this command accepts — <see langword="null"/>/empty for a
-/// command that takes none (the common case).</param>
-public sealed record ModbusCommand(string Name, ushort CoilAddress, IReadOnlyList<CommandArgumentDeclaration>? Arguments = null);
+/// command that takes none (the common case). Fix round 1 — <see cref="ModbusRegisterMap.FromJson"/> now
+/// REJECTS a Modbus command that declares any argument at all (see that method's own remarks): this property
+/// is retained on the type for schema symmetry with OPC-UA and so <see cref="CommandArgumentDeclaration"/>'s
+/// narrowing stays exercised/tested against a Modbus-shaped declaration, but a map that actually tries to use
+/// it is rejected until B-4 defines where a Modbus command's argument value would be written on the wire.</param>
+public sealed record ModbusCommand(string Name, ushort? CoilAddress, IReadOnlyList<CommandArgumentDeclaration>? Arguments = null);
 
 /// <summary>A minimal Modbus register map for one machine: its equipment code, unit id (the Modbus slave
 /// address on the wire, NOT related to <see cref="MachineCode"/>), poll cadence, and the ordered registers
@@ -235,6 +298,52 @@ public sealed class ModbusRegisterMap
             }
 
             return names;
+        }
+    }
+
+    /// <summary>
+    /// Task B-3 fix round 1 (Important #1) — the RICHER counterpart to <see cref="WritablePointNames"/>: not
+    /// just which points are writable, but the exact bounds each one is writable WITHIN (in the same
+    /// engineering-unit domain as <see cref="ModbusRegister.Scale"/>'s own reads) AND which register address
+    /// it actually targets, formatted deterministically (<c>"address:&lt;n&gt;"</c>). Consumed by
+    /// <c>St4i.EngineApi.Fleet.ConnectorConfigValidation</c> to build the deliberate-save-gate's confirmation
+    /// fingerprint, so WIDENING a limit or RE-POINTING a writable register to a different address (not just
+    /// adding/removing a point by name) produces a different, un-confirmable fingerprint — the exact gap the
+    /// review found: a name-only fingerprint let either kind of edit silently ride through an
+    /// already-confirmed save.
+    /// </summary>
+    public IReadOnlyList<(string Metric, string Target, double Min, double Max)> WritablePointBounds
+    {
+        get
+        {
+            var bounds = new List<(string, string, double, double)>();
+            foreach (var register in Registers)
+            {
+                if (register.Writable is { Min: { } min, Max: { } max })
+                {
+                    bounds.Add((register.Metric, $"address:{register.Address}", min, max));
+                }
+            }
+
+            return bounds;
+        }
+    }
+
+    /// <summary>Task B-3 fix round 1 (Important #1) — the RICHER counterpart to <see cref="CommandNames"/>:
+    /// each command's name AND the coil it actually pulses, formatted as one human-readable, deterministic
+    /// string (<c>"coil:&lt;address&gt;"</c>) — so RE-POINTING a command to a different coil also changes the
+    /// confirmation fingerprint, not just adding/removing a command by name.</summary>
+    public IReadOnlyList<(string Name, string Target)> CommandTargets
+    {
+        get
+        {
+            var targets = new List<(string, string)>(Commands.Count);
+            foreach (var command in Commands)
+            {
+                targets.Add((command.Name, $"coil:{command.CoilAddress}"));
+            }
+
+            return targets;
         }
     }
 
@@ -339,8 +448,27 @@ public sealed class ModbusRegisterMap
             throw new InvalidOperationException("Modbus register map: 'registers' must contain at least one entry.");
         }
 
-        ValidateWritableRegisters(map.Registers);
-        ValidateCommands(map.Commands);
+        // Fix round 1 (minor) — an explicit JSON `"commands": null` used to bind Commands to a genuine null
+        // (an explicit JSON null OVERRIDES a property's initializer default, unlike an OMITTED key), so
+        // ValidateCommands's own `foreach (var command in commands)` threw a bare NullReferenceException —
+        // the one parse failure in this method that didn't name what was wrong. Treated identically to
+        // omitted, same precedent as ReadTimeoutMs/Retries's own "omitted and explicit null are the same"
+        // rule elsewhere in this class.
+        var commands = map.Commands ?? Array.Empty<ModbusCommand>();
+
+        // Fix round 1 (Critical #3) — a writable register's own address/type/dataType must actually be
+        // PRESENT in the JSON, not merely bound to whatever CLR default an omitted key produces (ushort 0 /
+        // ModbusRegisterType.Holding / ModbusDataType.UInt16 — Holding and UInt16 are BOTH ordinal 0, so an
+        // omitted type/dataType looks identical, once bound, to a register that explicitly declared the
+        // writable-capable Holding/UInt16 combination). Needs the RAW JSON alongside the already-bound
+        // objects because the strongly-typed Registers list has no way to tell "explicitly 0/Holding/UInt16"
+        // from "never mentioned" — see ValidateWritableRegisters's own remarks.
+        var rawRegistersElement = document.RootElement.TryGetProperty("registers", out var registersElement)
+            ? registersElement
+            : default;
+
+        ValidateWritableRegisters(map.Registers, rawRegistersElement);
+        ValidateCommands(commands);
 
         return new ModbusRegisterMap
         {
@@ -348,11 +476,21 @@ public sealed class ModbusRegisterMap
             UnitId = map.UnitId,
             PollIntervalMs = map.PollIntervalMs,
             Registers = map.Registers,
-            Commands = map.Commands,
+            Commands = commands,
             ReadTimeoutMs = ParseOptionalPositiveInt(document.RootElement, "readTimeoutMs", MaxReadTimeoutMs, logWarning),
             Retries = ParseOptionalPositiveInt(document.RootElement, "retries", MaxRetries, logWarning),
         };
     }
+
+    /// <summary>Task B-3 fix round 1 (Critical #3) — a nullable-everything mirror of <see cref="ModbusRegister"/>'s
+    /// own address/type/dataType fields, deserialized from ONE raw register's <see cref="JsonElement"/> using
+    /// the SAME <see cref="JsonOptions"/> (case-insensitive names, the same enum converter) as the main
+    /// strongly-typed bind — so this reuses the identical case/enum-parsing rules rather than hand-rolling a
+    /// second, potentially-inconsistent property-name matcher. A <see langword="null"/> field here means the
+    /// JSON key was genuinely absent (or explicit JSON <c>null</c>) — the ONLY thing the strongly-typed
+    /// <see cref="ModbusRegister"/> binding cannot tell apart from an explicitly-given value that happens to
+    /// equal the CLR default.</summary>
+    private sealed record RegisterFieldPresenceProbe(ushort? Address, ModbusRegisterType? Type, ModbusDataType? DataType);
 
     /// <summary>Tolerantly reads an optional positive-integer field directly off the raw JSON element —
     /// see <see cref="FromJson"/>'s own remarks for why <see cref="ReadTimeoutMs"/>/<see cref="Retries"/>
@@ -396,19 +534,67 @@ public sealed class ModbusRegisterMap
     /// below throws <see cref="InvalidOperationException"/> naming the offending register's
     /// <see cref="ModbusRegister.Metric"/> and <see cref="ModbusRegister.Address"/>, so this is
     /// deliberately NOT folded into a single generic "invalid writable register" message.
+    ///
+    /// <para><paramref name="rawRegisters"/> — Fix round 1 (Critical #3) — the SAME JSON array, unparsed,
+    /// walked in lockstep with <paramref name="registers"/> (JSON array order is preserved by
+    /// <see cref="System.Text.Json.JsonSerializer"/>, so the Nth raw element always corresponds to the Nth
+    /// bound <see cref="ModbusRegister"/>) purely to detect whether a WRITABLE register's own
+    /// <c>address</c>/<c>type</c>/<c>dataType</c> were actually present, rather than silently bound to a CLR
+    /// default that happens to look like a legitimate writable Holding/UInt16 register at address 0.</para>
     /// </summary>
-    private static void ValidateWritableRegisters(IReadOnlyList<ModbusRegister> registers)
+    private static void ValidateWritableRegisters(IReadOnlyList<ModbusRegister> registers, JsonElement rawRegisters)
     {
         var writableMetrics = new HashSet<string>(StringComparer.Ordinal);
+        var rawIndex = 0;
+        var hasRawRegisters = rawRegisters.ValueKind == JsonValueKind.Array;
 
         foreach (var register in registers)
         {
+            JsonElement? rawRegister = null;
+            if (hasRawRegisters && rawIndex < rawRegisters.GetArrayLength())
+            {
+                rawRegister = rawRegisters[rawIndex];
+            }
+            rawIndex++;
+
             if (register.Writable is null)
             {
                 continue;
             }
 
             var pointLabel = $"'{register.Metric}' (address {register.Address})";
+
+            if (string.IsNullOrWhiteSpace(register.Metric))
+            {
+                throw new InvalidOperationException(
+                    $"Modbus register map: a writable register at address {register.Address} has a blank " +
+                    "'metric' — a writable point's name must be non-blank; it is the identity a write targets by name.");
+            }
+
+            if (rawRegister is { } raw)
+            {
+                var probe = raw.Deserialize<RegisterFieldPresenceProbe>(JsonOptions);
+                if (probe?.Address is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Modbus register map: writable register {pointLabel} is missing mandatory 'address' — " +
+                        "never defaulted to 0 for a writable point (commands trigger real writes to this address).");
+                }
+
+                if (probe.Type is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Modbus register map: writable register {pointLabel} is missing mandatory 'type' — " +
+                        "never defaulted to 'Holding' for a writable point.");
+                }
+
+                if (probe.DataType is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Modbus register map: writable register {pointLabel} is missing mandatory 'dataType' — " +
+                        "never defaulted to 'UInt16' for a writable point.");
+                }
+            }
 
             if (register.Type != ModbusRegisterType.Holding)
             {
@@ -480,7 +666,21 @@ public sealed class ModbusRegisterMap
     }
 
     /// <summary>Task B-3 — command-declaration validation: unique names, and every declared argument's own
-    /// schema-shape check (<see cref="CommandArgumentDeclaration.ValidateSelf"/>).</summary>
+    /// schema-shape check (<see cref="CommandArgumentDeclaration.ValidateSelf"/>).
+    ///
+    /// <para><b>Fix round 1 (Critical #3) — <see cref="ModbusCommand.CoilAddress"/> is now mandatory,
+    /// enforced here.</b> An omitted <c>"coilAddress"</c> used to parse successfully and target REAL coil 0 —
+    /// see <see cref="ModbusCommand"/>'s own doc comment.</para>
+    ///
+    /// <para><b>Fix round 1 (scope call (a), accepted) — a Modbus command with any declared <c>Arguments</c>
+    /// is now REJECTED outright.</b> The review agreed inventing an unproven wire-mapping convention for a
+    /// Modbus command argument would be worse than deferring it — but a map that declares one, gets confirmed
+    /// through the save gate, and is listed as GRANTED capability, while being un-executable by any driver
+    /// this codebase could plausibly ship, is exactly the "map declares a capability the product cannot
+    /// honour" dishonesty this whole batch exists to remove. So: not a hole to leave half-open — a Modbus
+    /// command with one or more declared arguments fails the whole map at parse time, naming the command,
+    /// until B-4 defines the convention and this rule is relaxed.</para>
+    /// </summary>
     private static void ValidateCommands(IReadOnlyList<ModbusCommand> commands)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
@@ -496,6 +696,21 @@ public sealed class ModbusRegisterMap
             {
                 throw new InvalidOperationException(
                     $"Modbus register map: more than one command declares name '{command.Name}' — command names must be unique.");
+            }
+
+            if (command.CoilAddress is null)
+            {
+                throw new InvalidOperationException(
+                    $"Modbus register map: command '{command.Name}' is missing mandatory 'coilAddress' — never " +
+                    "defaulted to coil 0; commands trigger real writes to this address.");
+            }
+
+            if (command.Arguments is not null && command.Arguments.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Modbus register map: command '{command.Name}' declares {command.Arguments.Count} argument(s) — " +
+                    "argument-taking Modbus commands are not yet supported (the wire mapping for where an " +
+                    "argument's value would be written is deferred to B-4); remove 'arguments' or leave it empty.");
             }
 
             if (command.Arguments is null)

@@ -1665,12 +1665,32 @@ export interface ConnectorConfigSummary {
   writeCapability?: ConnectorWriteCapability | null
 }
 
+/** `ConnectorWritablePointGrant` (`Fleet/ConnectorConfigStore.cs`) — Fix round 1 (Important #1): carries the
+ * declared bounds and wire TARGET (a Modbus `"address:<n>"`, an OPC-UA NodeId), not just a bare name — a
+ * name-only shape let the confirmation fingerprint below stay unchanged across a widened limit or a
+ * re-pointed register/node. `min`/`max` are `null` only for an OPC-UA `Bool` setpoint, which has no bounds
+ * by design. */
+export interface ConnectorWritablePointGrant {
+  name: string
+  target: string
+  min: number | null
+  max: number | null
+}
+
+/** `ConnectorCommandGrant` (`Fleet/ConnectorConfigStore.cs`) — Fix round 1 (Important #1): carries the wire
+ * target a command actually fires (a Modbus `"coil:<n>"`, an OPC-UA `"<objectNodeId> -> <methodNodeId>"`),
+ * not just its name — same reasoning as `ConnectorWritablePointGrant` above. */
+export interface ConnectorCommandGrant {
+  name: string
+  target: string
+}
+
 /** `ConnectorWriteCapabilityDto` (`Fleet/Dtos.cs`). `fingerprint` is `null` unless `grantsWriteCapability`
  * is `true` — see `POST /v1/connectors`'s own `confirmedWriteCapabilityFingerprint` echo-back gate below. */
 export interface ConnectorWriteCapability {
   grantsWriteCapability: boolean
-  writablePoints: string[]
-  commands: string[]
+  writablePoints: ConnectorWritablePointGrant[]
+  commands: ConnectorCommandGrant[]
   fingerprint: string | null
 }
 

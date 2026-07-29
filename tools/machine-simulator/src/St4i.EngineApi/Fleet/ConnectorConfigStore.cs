@@ -39,13 +39,79 @@ namespace St4i.EngineApi.Fleet;
 /// every row written before this task existed: no schema before Task B-3 had any way to declare a writable
 /// point or command at all, so every pre-existing persisted map is, in fact, read-only.</para>
 /// </summary>
-public sealed record ConnectorWriteCapability(IReadOnlyList<string> WritablePoints, IReadOnlyList<string> Commands)
+/// <summary>Task B-3 fix round 1 (Important #1) — one writable point's grant: its name, the wire TARGET it
+/// actually points at (a Modbus register's <c>"address:&lt;n&gt;"</c>, an OPC-UA node's own NodeId), and its
+/// declared bounds (<see langword="null"/> for a <c>Bool</c> OPC-UA setpoint, which has none by design — see
+/// <see cref="St4i.EdgeCore.Drivers.OpcUa.OpcUaWritableSetpoint"/>'s own remarks; always populated for
+/// Modbus). Originally this carried only <see cref="Name"/> — the review proved that let a map's bounds be
+/// WIDENED, or a point RE-POINTED to a different address/NodeId, under an already-confirmed fingerprint,
+/// which defeats the entire point of the confirmation for a task whose headline rule is "limits are
+/// mandatory".</summary>
+public sealed record ConnectorWritablePointGrant(string Name, string Target, double? Min, double? Max);
+
+/// <summary>Task B-3 fix round 1 (Important #1) — one command's grant: its name and the wire target it
+/// actually fires (a Modbus coil address, an OPC-UA object/method NodeId pair), formatted as one
+/// human-readable string by the protocol-specific map itself (never re-parsed here) — so a RE-POINTED
+/// command also changes the confirmation fingerprint, not just whether a command by this name exists.</summary>
+public sealed record ConnectorCommandGrant(string Name, string Target);
+
+/// <summary>
+/// Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — what a parsed map
+/// declares it grants, in the ONE shape shared by both protocols (a
+/// <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap"/>'s own <c>WritablePointBounds</c>/<c>CommandTargets</c>,
+/// or an <see cref="St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap"/>'s own, adapted into this generic shape by
+/// <see cref="ConnectorConfigValidation"/> — the same place that already adapts either protocol's own parsed
+/// map into the generic <see cref="ConnectorConfigValidation.ConnectorValidationResult"/>).
+///
+/// <para><b>Why this surfaces as its own <see cref="ConnectorConfigStore"/> COLUMN, not left inside the
+/// opaque <see cref="ConnectorConfigRecord.MapJson"/> blob</b> (the brief's own "decide, and justify"
+/// question): <see cref="ConnectorConfigStore"/>'s whole design point is that <c>map_json</c> is NEVER even
+/// <c>SELECT</c>ed by <see cref="ConnectorConfigStore.ListAsync"/> — it may embed OPC-UA credentials, so the
+/// credential-free projection structurally cannot include it. If write-capability info lived only inside that
+/// blob, <c>GET /v1/connectors/configured</c> (the one place an operator/engineer can see what is
+/// CONFIGURED, credential-free) could never show "this connector can write to a device" at all — the exact
+/// visibility the batch's own safety framing calls for ("the map file is the entire safety boundary" argues
+/// FOR maximum visibility of what a map grants, not less). Re-parsing the protocol-specific map JSON on every
+/// list call is also a non-option: <see cref="ConnectorConfigStore"/> is deliberately protocol-agnostic (it
+/// has never referenced <c>St4i.EdgeCore</c>'s Modbus/OPC-UA types, and doing so here would break that
+/// layering just to recompute a fact the caller already computed once at save time). So the CALLER
+/// (<see cref="ConnectorConfigValidation"/>/the save endpoint) computes this once, from the map it already
+/// parsed, and <see cref="ConnectorConfigStore.SaveAsync"/> simply persists what it's told — mirroring exactly
+/// how <c>machine_code</c>/<c>host</c>/<c>port</c> already work (also caller-computed facts about the opaque
+/// blob, stored as their own columns for exactly this reason).</para>
+///
+/// <para><b>What a pre-existing row means</b> (the <c>PRAGMA user_version</c> ladder's own required
+/// question): <c>write_capability_json</c> is added by migration version 2 as a nullable column with NO
+/// default expression — SQLite's own <c>ALTER TABLE ... ADD COLUMN</c> rule for a nullable column with no
+/// <c>DEFAULT</c> sets every EXISTING row's new column to <c>NULL</c>. <see langword="null"/> here means
+/// exactly "declares no write/command capability" — which is CORRECT, not merely a safe placeholder, for
+/// every row written before this task existed: no schema before Task B-3 had any way to declare a writable
+/// point or command at all, so every pre-existing persisted map is, in fact, read-only.</para>
+///
+/// <para><b>Known gap, deliberately not fixed this round (Fix round 1, I2) — <c>ST4I_MODBUS_MAP</c>/
+/// <c>ST4I_OPCUA_MAP</c> and <c>connectors.json</c>-configured connectors bypass this column entirely.</b>
+/// Program.cs's startup wiring parses those maps through the SAME <c>FromJson</c> (so mandatory limits ARE
+/// enforced identically — no bypass of the safety rule itself), but seeds the fleet roster directly, without
+/// ever going through <see cref="ConnectorConfigValidation"/>/this store — a pre-existing SM-5 architecture
+/// choice, unchanged by this task. Consequence: <c>GET /v1/connectors/configured</c> cannot show write
+/// capability for that deployment shape (the one a machine builder driving a fixed-hardware line is MOST
+/// likely to use, versus an operator pasting JSON through the UI). Considered and rejected fixing this here:
+/// extending Program.cs's startup wiring to also populate a store row for an env/file-configured connector
+/// (purely for visibility — no gate applies, since there is no interactive save to gate) is a real, bounded
+/// follow-up, but it reaches into the fleet-seeding startup path this task's own brief scoped OUT of ("the
+/// save-gate touches the existing POST /v1/connectors ... coordinate: change what that route requires, not
+/// where writes are authorised"). Deferred rather than expanded into here — flagged explicitly rather than
+/// left silent, per the review's own instruction.</para>
+/// </summary>
+public sealed record ConnectorWriteCapability(
+    IReadOnlyList<ConnectorWritablePointGrant> WritablePoints, IReadOnlyList<ConnectorCommandGrant> Commands)
 {
     /// <summary>The value every read-only connector (every map before this task, and every map after it that
     /// simply never declares a writable point/command) is stored and reported as — equivalent to, but
     /// distinguishable in code from, a bare <see langword="null"/> reference for callers that want to always
     /// have a non-null instance in hand.</summary>
-    public static readonly ConnectorWriteCapability None = new(Array.Empty<string>(), Array.Empty<string>());
+    public static readonly ConnectorWriteCapability None = new(
+        Array.Empty<ConnectorWritablePointGrant>(), Array.Empty<ConnectorCommandGrant>());
 
     /// <summary><see langword="true"/> if and only if this map declares at least one writable point or
     /// command — the ONE structural (never semantic — no name is ever inspected) check the save gate and the
@@ -56,29 +122,48 @@ public sealed record ConnectorWriteCapability(IReadOnlyList<string> WritablePoin
     /// Task B-3 — the value a caller must echo back to <c>POST /v1/connectors</c> to confirm a write/command
     /// grant, mirroring <c>POST /v1/site/identity/rotate</c>'s own echo-back pattern
     /// (<see cref="St4i.EngineApi.Endpoints.SiteEndpoints.RotateIdentityAsync"/>): deterministic (the SAME
-    /// capability always produces the SAME fingerprint, order-independent — <see cref="WritablePoints"/>/
-    /// <see cref="Commands"/> are sorted ordinally before hashing, so JSON array order in the pasted map
-    /// never changes the required confirmation value), and a SHA-256 hex digest (uppercase, via
+    /// capability always produces the SAME fingerprint, order-independent — every grant is formatted to a
+    /// string and the two lists sorted ordinally before hashing, so JSON array order in the pasted map never
+    /// changes the required confirmation value), and a SHA-256 hex digest (uppercase, via
     /// <see cref="Convert.ToHexString(byte[])"/>) of "what would be granted" rather than the granted names
     /// themselves — the same "opaque token that can only be obtained by having just seen the real thing"
     /// shape a fingerprint already is elsewhere in this codebase (<c>DeviceIdentity.Fingerprint</c>,
     /// <c>SiteEndpoints.PemFingerprint</c>).
+    ///
+    /// <para><b>Fix round 1 (Important #1) — binds to <see cref="ConnectorWritablePointGrant.Target"/>/
+    /// <see cref="ConnectorWritablePointGrant.Min"/>/<see cref="ConnectorWritablePointGrant.Max"/> and
+    /// <see cref="ConnectorCommandGrant.Target"/>, not just names.</b> The original version hashed ONLY
+    /// <see cref="ConnectorWritablePointGrant.Name"/>/<see cref="ConnectorCommandGrant.Name"/> — proven by the
+    /// review to produce the IDENTICAL fingerprint for <c>speed [0,500] + StartCycle@coil:5</c> and
+    /// <c>speed [0,65535] + StartCycle@coil:99</c>: an operator's confirmation survived a widened limit and a
+    /// re-pointed command untouched. Every field of both grant types is now part of the hashed material.</para>
     /// </summary>
     public string ComputeFingerprint()
     {
-        var sortedPoints = new List<string>(WritablePoints);
-        sortedPoints.Sort(StringComparer.Ordinal);
-        var sortedCommands = new List<string>(Commands);
-        sortedCommands.Sort(StringComparer.Ordinal);
+        var pointMaterial = new List<string>(WritablePoints.Count);
+        foreach (var point in WritablePoints)
+        {
+            pointMaterial.Add($"{point.Name}@{point.Target}[{FormatBound(point.Min)},{FormatBound(point.Max)}]");
+        }
+        pointMaterial.Sort(StringComparer.Ordinal);
 
-        var material = "points:" + string.Join(",", sortedPoints) + "|commands:" + string.Join(",", sortedCommands);
+        var commandMaterial = new List<string>(Commands.Count);
+        foreach (var command in Commands)
+        {
+            commandMaterial.Add($"{command.Name}@{command.Target}");
+        }
+        commandMaterial.Sort(StringComparer.Ordinal);
+
+        var material = "points:" + string.Join(",", pointMaterial) + "|commands:" + string.Join(",", commandMaterial);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
     }
 
+    private static string FormatBound(double? bound) => bound?.ToString("R", CultureInfo.InvariantCulture) ?? "null";
+
     /// <summary>The exact JSON this type is persisted as in <c>write_capability_json</c> — deliberately a
     /// plain <see cref="JsonSerializer.Serialize{TValue}(TValue, System.Text.Json.JsonSerializerOptions)"/> of
-    /// this record (point/command names are never credentials, so no redaction concern applies here the way
-    /// it does for <see cref="ConnectorConfigRecord.MapJson"/>).</summary>
+    /// this record (point/command names and wire targets are never credentials, so no redaction concern
+    /// applies here the way it does for <see cref="ConnectorConfigRecord.MapJson"/>).</summary>
     public string ToJson() => JsonSerializer.Serialize(this);
 
     public static ConnectorWriteCapability FromJson(string json) =>
@@ -329,7 +414,20 @@ public sealed class ConnectorConfigStore
     /// why this store never derives it itself). <see langword="null"/> (the default) is stored and reported
     /// identically to <see cref="ConnectorWriteCapability.None"/> — every call site that predates this task
     /// (and every test of this method that never passes it) keeps saving a plain read-only connector, byte
-    /// for byte.</param>
+    /// for byte.
+    ///
+    /// <para><b>Fix round 1, I3 — acknowledged design tension, deliberately NOT resolved by removing this
+    /// default.</b> The review correctly flags that a FUTURE second call site could pass a genuinely
+    /// write-capable map while omitting this parameter, silently persisting it as read-only. Making it a
+    /// required (non-optional, non-nullable) parameter would close that risk — but every PRE-EXISTING test of
+    /// this method (predating Task B-3, and this task's own additions to those same files) calls it with
+    /// exactly the five original positional arguments, and the brief's own "extend, never weaken" instruction
+    /// forbids editing those call sites' source. Today there is exactly ONE production call site
+    /// (<see cref="Endpoints.ConnectorEndpoints.CreateConnectorAsync"/>), and it always passes this argument
+    /// explicitly and correctly — the risk is real but currently contained, not exercised. Left as a
+    /// documented tension rather than a code change; a future task adding a second call site should treat this
+    /// paragraph as the reminder to get it right, since the type system will not catch an omission here.</para>
+    /// </param>
     public async Task<ConnectorConfigSummary> SaveAsync(
         string kind, string machineCode, string? host, int? port, string mapJson,
         ConnectorWriteCapability? writeCapability = null, CancellationToken ct = default)

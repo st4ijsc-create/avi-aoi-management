@@ -750,8 +750,10 @@ public sealed class ConnectorEndpointsTests
         }
         """;
 
-    private static string ExpectedFingerprintFor(string[] writablePoints, string[] commands) =>
-        new St4i.EngineApi.Fleet.ConnectorWriteCapability(writablePoints, commands).ComputeFingerprint();
+    private static string ExpectedFingerprintForWritableModbusMap() =>
+        new St4i.EngineApi.Fleet.ConnectorWriteCapability(
+            new[] { new St4i.EngineApi.Fleet.ConnectorWritablePointGrant("speed", "address:1", 0, 5000) },
+            new[] { new St4i.EngineApi.Fleet.ConnectorCommandGrant("StartCycle", "coil:5") }).ComputeFingerprint();
 
     [Fact]
     public async Task Engineer_AddsWritableModbusConnector_WithoutConfirmation_400_NamesGrantedCapability_NothingPersisted()
@@ -798,6 +800,53 @@ public sealed class ConnectorEndpointsTests
         }
     }
 
+    /// <summary>Fix round 1 (Important #1), end-to-end proof — the exact reviewer-found gap: confirming with
+    /// a fingerprint computed against a NARROWER version of the map (before a limit was widened) must NOT
+    /// successfully confirm the WIDENED map. Before this fix, both maps' names-only fingerprint was identical,
+    /// so this exact request would have wrongly succeeded (200) with the wider, unconfirmed limit silently
+    /// applied.</summary>
+    [Fact]
+    public async Task Engineer_AddsWritableModbusConnector_ConfirmationFromANarrowerVersionOfTheMap_409_NotAccepted()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            var code = "SM5-WRITEGATE-STALE-" + Guid.NewGuid().ToString("N")[..8];
+
+            // The fingerprint an operator would have seen from the map BEFORE its limit was widened
+            // (max=500), computed independently against that original capability.
+            var staleFingerprint = new St4i.EngineApi.Fleet.ConnectorWriteCapability(
+                new[] { new St4i.EngineApi.Fleet.ConnectorWritablePointGrant("speed", "address:1", 0, 500) },
+                new[] { new St4i.EngineApi.Fleet.ConnectorCommandGrant("StartCycle", "coil:5") }).ComputeFingerprint();
+
+            // The ACTUAL map being submitted has since been widened to max=65535.
+            var widenedMap = $$"""
+                {
+                  "machineCode": "{{code}}",
+                  "unitId": 1,
+                  "pollIntervalMs": 50,
+                  "registers": [
+                    { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "temperature" },
+                    { "address": 1, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+                      "writable": { "min": 0, "max": 65535 } } ],
+                  "commands": [ { "name": "StartCycle", "coilAddress": 5 } ]
+                }
+                """;
+
+            using var create = await engineer.PostAsJsonAsync(
+                "/v1/connectors",
+                new ConnectorCreateRequest("Modbus", "10.20.30.40", 502, widenedMap, staleFingerprint),
+                JsonOptions);
+
+            Assert.Equal(HttpStatusCode.Conflict, create.StatusCode);
+
+            using var configured = await operatorClient.GetAsync("/v1/connectors/configured");
+            var summaries = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+            Assert.Empty(summaries!);
+        }
+    }
+
     [Fact]
     public async Task Engineer_AddsWritableModbusConnector_CorrectConfirmation_200_ResponseSurfacesGrantedCapability_Persisted()
     {
@@ -806,7 +855,7 @@ public sealed class ConnectorEndpointsTests
         using (admin) using (engineer) using (operatorClient)
         {
             var code = "SM5-WRITEGATE-OK-" + Guid.NewGuid().ToString("N")[..8];
-            var expectedFingerprint = ExpectedFingerprintFor(new[] { "speed" }, new[] { "StartCycle" });
+            var expectedFingerprint = ExpectedFingerprintForWritableModbusMap();
 
             using var create = await engineer.PostAsJsonAsync(
                 "/v1/connectors",
@@ -817,8 +866,14 @@ public sealed class ConnectorEndpointsTests
             var result = await create.Content.ReadFromJsonAsync<ConnectorCreateResultDto>(JsonOptions);
             Assert.NotNull(result);
             Assert.True(result!.WriteCapability.GrantsWriteCapability);
-            Assert.Equal(new[] { "speed" }, result.WriteCapability.WritablePoints);
-            Assert.Equal(new[] { "StartCycle" }, result.WriteCapability.Commands);
+            var resultPoint = Assert.Single(result.WriteCapability.WritablePoints);
+            Assert.Equal("speed", resultPoint.Name);
+            Assert.Equal("address:1", resultPoint.Target);
+            Assert.Equal(0, resultPoint.Min);
+            Assert.Equal(5000, resultPoint.Max);
+            var resultCommand = Assert.Single(result.WriteCapability.Commands);
+            Assert.Equal("StartCycle", resultCommand.Name);
+            Assert.Equal("coil:5", resultCommand.Target);
             Assert.Equal(expectedFingerprint, result.WriteCapability.Fingerprint);
 
             using var configured = await operatorClient.GetAsync("/v1/connectors/configured");
@@ -826,7 +881,7 @@ public sealed class ConnectorEndpointsTests
             var summary = Assert.Single(summaries!, s => s.MachineCode == code);
             Assert.NotNull(summary.WriteCapability);
             Assert.True(summary.WriteCapability!.GrantsWriteCapability);
-            Assert.Equal(new[] { "speed" }, summary.WriteCapability.WritablePoints);
+            Assert.Equal("speed", Assert.Single(summary.WriteCapability.WritablePoints).Name);
         }
     }
 
