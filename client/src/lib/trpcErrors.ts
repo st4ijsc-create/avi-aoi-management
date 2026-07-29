@@ -12,6 +12,8 @@
 import { TRPCClientError } from "@trpc/client";
 import { toast } from "sonner";
 
+import { translateAppError } from "./errorCodes";
+
 const MAX_MESSAGE_LENGTH = 200;
 const GENERIC_ERROR = "Lỗi hệ thống, vui lòng thử lại";
 
@@ -77,6 +79,20 @@ function getErrorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+/** Sprint 5 §4.3 — mã ứng dụng do appError() gắn, nếu router đã di trú. */
+function getAppError(error: unknown): { appCode: string; appParams?: Record<string, string | number> } | null {
+  if (!error || typeof error !== "object") return null;
+  const data = (error as { data?: { appCode?: unknown; appParams?: unknown } }).data;
+  if (!data || typeof data.appCode !== "string") return null;
+  return {
+    appCode: data.appCode,
+    appParams:
+      data.appParams && typeof data.appParams === "object"
+        ? (data.appParams as Record<string, string | number>)
+        : undefined,
+  };
+}
+
 // ── Doc 44 G5.4 — 403 KHÔNG nuốt reason cụ thể ────────────────────────────────
 const FORBIDDEN_GENERIC = "Bạn không có quyền thực hiện thao tác này";
 
@@ -127,6 +143,15 @@ function mapForbidden(error: unknown, message: string): string {
 export function mapTrpcError(error: unknown): string {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const code = getErrorCode(error);
+
+  // Sprint 5 §4.3 — mã máy-đọc-được thắng mọi luật đoán-theo-chuỗi bên dưới.
+  // Fallback KHÔNG dùng `message` thô: nếu message có dấu hiệu leak nội bộ thì
+  // câu generic vẫn phải thắng, y như luật đã có từ doc 42.
+  const appErr = getAppError(error);
+  if (appErr) {
+    const safeFallback = !message || looksLikeInternalLeak(message) ? GENERIC_ERROR : message;
+    return translateAppError(appErr.appCode, appErr.appParams, safeFallback);
+  }
 
   switch (code) {
     case "FORBIDDEN":

@@ -1,7 +1,31 @@
 /** Doc 42 Đợt 0.5 — unit tests for the shared tRPC error mapper. */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
 
 import { mapTrpcError } from "./trpcErrors";
+
+// Sprint 5 §4.3 — bộ test dưới đây (describe "mã lỗi máy-đọc-được") thực sự đi
+// qua `translateAppError` → `i18n.t(...)`, nên cần i18n THẬT đã có bản dịch, KHÔNG
+// được stub `i18n.t` để trả nguyên khoá (test sẽ xanh giả trong khi người dùng
+// thật thấy "errors.ENTITY_NOT_FOUND" trên màn hình).
+//
+// `../i18n` là file khởi tạo i18n thật của dự án (fallbackLng 'vi', interpolation
+// escapeValue:false, …) — import nó để chạy đúng cấu hình production. Nhưng phần
+// nạp nội dung dịch của nó dùng fetch/dynamic-import (bootstrap cho trình duyệt),
+// không chạy được trong môi trường test Node — nên nạp thẳng 3 file JSON dịch
+// THẬT từ đĩa qua `addResourceBundle` (API công khai của i18next, không phải
+// stub `t`) để `i18n.t()` phân giải đúng nội dung production.
+import "../i18n";
+import i18n from "i18next";
+
+const localeJson = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
+
+beforeAll(async () => {
+  i18n.addResourceBundle("vi", "translation", localeJson("../i18n/locales/vi.json"), true, true);
+  i18n.addResourceBundle("en", "translation", localeJson("../i18n/locales/en.json"), true, true);
+  i18n.addResourceBundle("zh", "translation", localeJson("../i18n/locales/zh.json"), true, true);
+  await i18n.changeLanguage("vi");
+});
 
 function fakeTrpcError(message: string, code?: string) {
   const err = new Error(message) as Error & { data?: { code?: string } };
@@ -91,5 +115,41 @@ describe("mapTrpcError", () => {
     expect(mapTrpcError(fakeTrpcError("Không tìm thấy sản phẩm"))).toBe("Không tìm thấy sản phẩm");
     expect(mapTrpcError(null)).toBe("Lỗi hệ thống, vui lòng thử lại");
     expect(mapTrpcError("boom")).toBe("boom");
+  });
+});
+
+describe("mapTrpcError — mã lỗi máy-đọc-được (Sprint 5 §4.3)", () => {
+  function withAppCode(code: string, appCode: string, appParams?: any, message = "raw english") {
+    const err: any = new Error(message);
+    err.data = { code, appCode, appParams };
+    return err;
+  }
+
+  it("có appCode + khoá i18n ⇒ dịch, KHÔNG hiện chuỗi tiếng Anh", () => {
+    const out = mapTrpcError(withAppCode("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, "Product not found"));
+    expect(out).not.toContain("Product not found");
+    expect(out).toContain("sản phẩm");
+  });
+
+  it("appCode LẠ (client cũ, server mới) ⇒ rơi về message máy chủ, KHÔNG hiện mã trần", () => {
+    const out = mapTrpcError(withAppCode("NOT_FOUND", "MÃ_CHƯA_TỪNG_CÓ", undefined, "Widget not found"));
+    expect(out).toBe("Widget not found");
+    expect(out).not.toContain("MÃ_CHƯA_TỪNG_CÓ");
+  });
+
+  it("KHÔNG có appCode (router chưa di trú) ⇒ hành vi y hệt trước đây", () => {
+    const err: any = new Error("Product not found");
+    err.data = { code: "NOT_FOUND" };
+    expect(mapTrpcError(err)).toBe("Product not found");
+  });
+
+  it("appCode nhưng message có dấu hiệu leak SQL ⇒ vẫn dịch theo mã, không lộ SQL", () => {
+    const out = mapTrpcError(withAppCode("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Failed query: SELECT * FROM users"));
+    expect(out).not.toContain("SELECT");
+  });
+
+  it("thực thể chưa có trong từ điển ⇒ dùng nguyên văn khoá, không sập", () => {
+    const out = mapTrpcError(withAppCode("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "flux_capacitor" }, "Flux capacitor not found"));
+    expect(out).toContain("flux_capacitor");
   });
 });

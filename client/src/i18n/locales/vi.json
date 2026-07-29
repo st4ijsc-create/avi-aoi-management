@@ -3532,7 +3532,28 @@
     "occurred": "Đã xảy ra lỗi",
     "generic": "Đã xảy ra lỗi",
     "goHome": "Về trang chủ",
-    "error": "Lỗi"
+    "error": "Lỗi",
+    "DB_UNAVAILABLE": "Không kết nối được cơ sở dữ liệu. Vui lòng thử lại sau ít phút.",
+    "ENTITY_NOT_FOUND": "Không tìm thấy {{entity}}.",
+    "ENTITY_DUPLICATE": "{{entity}} này đã tồn tại.",
+    "SCOPE_MISMATCH": "{{entity}} không thuộc {{parent}} đang chọn.",
+    "FIELD_REQUIRED": "Thiếu thông tin bắt buộc: {{field}}.",
+    "INVALID_VALUE": "Giá trị không hợp lệ ở {{field}}.",
+    "FEATURE_DISABLED": "Tính năng {{feature}} chưa được bật trên hệ thống này.",
+    "OPERATION_FAILED": "Không thực hiện được: {{operation}}.",
+    "PERMISSION_DENIED": "Bạn không có quyền thực hiện thao tác này.",
+    "entity": {
+      "product": "sản phẩm",
+      "machine": "máy",
+      "line": "chuyền",
+      "factory": "nhà máy",
+      "user": "người dùng",
+      "workOrder": "lệnh sản xuất",
+      "alert": "cảnh báo",
+      "recipe": "công thức",
+      "measurementPoint": "điểm đo",
+      "productModel": "mã sản phẩm"
+    }
   },
   "export": {
     "reportMenu": {
