@@ -41,6 +41,13 @@ function criticalCooldownMs(): number {
   return minutes * 60_000;
 }
 
+/** Sprint 5 §2.5 — VAN AN TOÀN, không phải cổng chặn. Chỉ để một vòng lặp hỏng
+ *  phía phát (detector chạy mỗi giây) không bơm vô hạn vào bảng nhật ký. */
+function maxPerWindow(): number {
+  const raw = Number(process.env.ROUTE_ALERT_MAX_PER_WINDOW);
+  return Number.isFinite(raw) && raw > 0 ? raw : 200;
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type AlertType =
@@ -148,15 +155,25 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     const nextCount = existing.count + 1;
     await setConsolidationEntry(consolidationKey, { timestamp: existing.timestamp, count: nextCount });
     consolidated = true;
-    // Don't send duplicate alerts within window, just update count
-    if (nextCount > 3) {
+    // Sprint 5 §2.5 — trần cũ là `nextCount > 3` và return sớm TRƯỚC cả đường
+    // ghi DB lẫn nhật ký ⇒ lần tái diễn thứ 4+ biến mất không dấu vết: KPI đếm
+    // thiếu ngay tại cửa, và flood ISA-18.2 (>10/10 phút) không kích hoạt được
+    // cho MỘT máy (3/5 phút = 6/10 phút, dưới ngưỡng).
+    // Việc gộp THÔNG BÁO nay do decideNotify lo — đây chỉ còn là van an toàn.
+    const cap = maxPerWindow();
+    if (nextCount > cap) {
+      console.warn(
+        `[SmartAlert] VAN AN TOÀN: khoá ${consolidationKey} đã ${nextCount} lượt trong ` +
+          `${CONSOLIDATION_WINDOW_MS / 1000}s (trần ROUTE_ALERT_MAX_PER_WINDOW=${cap}) — bỏ lượt này. ` +
+          `Nghi vấn vòng lặp hỏng ở phía phát cảnh báo.`,
+      );
       return {
         alertType: event.type,
         targets: [],
         consolidated: true,
         consolidationGroup: consolidationKey,
         escalationLevel: "L1",
-        suggestedAction: `${nextCount} similar alerts consolidated. Root cause investigation recommended.`,
+        suggestedAction: `Vượt trần ${cap} lượt/cửa sổ — nghi vấn vòng lặp hỏng ở phía phát.`,
       };
     }
   } else {
