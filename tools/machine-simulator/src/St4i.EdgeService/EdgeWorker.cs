@@ -22,9 +22,13 @@ namespace St4i.EdgeService;
 /// project or any WPF assembly.
 ///
 /// Fleet source: <c>--fleet &lt;path&gt;</c> via <see cref="FleetConfig.Load"/> if
-/// <see cref="EdgeServiceOptions.FleetPath"/> is given AND the file exists, else the small fixed
-/// in-code default (<see cref="BuildDefaultFleet"/>) covering all 8 <see cref="IMachineSimulator"/>
-/// types across all 3 <see cref="DeviceClass"/> values.
+/// <see cref="EdgeServiceOptions.FleetPath"/> is given AND the file exists AND parses with entries — see
+/// <see cref="LoadFleet"/>. Falling back to the small fixed in-code default (<see cref="BuildDefaultFleet"/>,
+/// 8 <see cref="IMachineSimulator"/> types across all 3 <see cref="DeviceClass"/> values) for a blank/
+/// missing/malformed/empty <c>--fleet</c> is now demo-mode-ONLY (SM-1b,
+/// .superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1b-brief.md): a real product
+/// deployment (the default — <c>ST4I_DEMO_ENABLED</c> unset) gets an EMPTY roster in that same situation
+/// instead, never fabricated machines piped to a real Live transport endpoint.
 ///
 /// <c>--smoke N</c>: <see cref="EdgeServiceOptions.SmokeCount"/> counts
 /// <see cref="EdgePipeline.Committed"/> events; once N is reached, this cancels the pipeline's own
@@ -64,12 +68,53 @@ public sealed class EdgeWorker : BackgroundService
     private readonly IHostApplicationLifetime _lifetime;
     private readonly EdgeServiceOptions _options;
 
-    public EdgeWorker(ILogger<EdgeWorker> logger, IHostApplicationLifetime lifetime, EdgeServiceOptions options)
+    /// <summary>SM-1b (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1b-brief.md)
+    /// — the SAME demo/product decision <see cref="BuildLiveOrDemoTransport"/> already made for the
+    /// Live/Demo TRANSPORT choice, now ALSO consulted by <see cref="LoadFleet"/> for the fleet SOURCE:
+    /// before this task, <see cref="LoadFleet"/> had no gate at all and unconditionally fabricated 8
+    /// machines whenever <c>--fleet</c> was blank/missing/malformed — worse than St4i.EngineApi's
+    /// pre-SM-1 <c>FleetHost</c>, because nothing here sandboxed that fabricated data from a real Live
+    /// transport endpoint.
+    ///
+    /// Optional (defaults <see langword="null"/>) so every pre-existing test/call site that constructs
+    /// <see cref="EdgeWorker"/> directly without one keeps compiling and behaving byte-for-byte
+    /// unchanged: <see langword="null"/> is treated as demo mode by <see cref="LoadFleet"/>, exactly like
+    /// <see cref="St4i.EngineApi.Fleet.FleetHost"/>'s own <c>_demoModeGate</c> field treats a null
+    /// <c>DemoModeGate</c> as demo. Production (<c>Program.cs</c>) never leaves this null: it registers
+    /// the fully-resolved gate (raw <c>ST4I_DEMO_ENABLED</c> + <see cref="ResolveGate"/>'s own
+    /// <c>--smoke</c> CI-path default) as a DI singleton, so a bare <c>--smoke N</c> run (README §9, no
+    /// env var set) keeps getting the demo fleet it always has, while a real product deployment (env var
+    /// absent, no <c>--smoke</c>) never fabricates one.
+    ///
+    /// Reused (not duplicated) by <see cref="BuildLiveOrDemoTransport"/> too, so the fleet source and the
+    /// transport can never disagree about demo-vs-product for a single run — see that method's own
+    /// remarks.
+    ///
+    /// This project reuses its OWN <see cref="TransportModeGate"/> rather than
+    /// <c>St4i.EngineApi.Config.DemoModeGate</c> — a real ProjectReference in that direction was tried and
+    /// fails at restore (NU1605 package-downgrade: EdgeService pins <c>Microsoft.Extensions.Hosting</c>
+    /// 9.0.0, EngineApi transitively requires &gt;= 10.0.10 via its Windows-service package, and EngineApi
+    /// is also an ASP.NET Core <c>Microsoft.NET.Sdk.Web</c> host with a hard publish-time dependency on the
+    /// built web UI) — see <see cref="TransportModeGate"/>'s own doc comment for the full writeup.</summary>
+    private readonly TransportModeGate? _demoModeGate;
+
+    public EdgeWorker(
+        ILogger<EdgeWorker> logger,
+        IHostApplicationLifetime lifetime,
+        EdgeServiceOptions options,
+        TransportModeGate? demoModeGate = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _demoModeGate = demoModeGate;
     }
+
+    /// <summary>SM-1b — the process exit code when a <c>--smoke N</c> run's roster is empty (see
+    /// <see cref="ExecuteAsync"/>'s early-return branch): distinct from 0 (success) so CI notices a broken
+    /// smoke run instead of reading either a hang or a false pass. Not claimed to match any external
+    /// convention — just "not zero."</summary>
+    internal const int SmokeEmptyRosterExitCode = 1;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -82,7 +127,33 @@ public sealed class EdgeWorker : BackgroundService
 
         if (fleet.Count == 0)
         {
+            if (_options.SmokeCount is int smokeTarget)
+            {
+                // SM-1b — a --smoke run's whole contract is "commit N readings, then exit 0" (README §9's
+                // CI path); with zero machines nothing can ever commit, so that bound can never be
+                // reached. Hanging until externally killed would wedge a CI job forever, and silently
+                // returning (exit 0) would report a smoke test as PASSED when it never actually exercised
+                // the pipeline at all — both worse than a loud, immediate, non-zero failure naming exactly
+                // why.
+                _logger.LogError(
+                    "--smoke {N} requires at least one machine to ever commit a reading, but the roster is " +
+                    "empty (product mode with no usable --fleet configured) — exiting with a non-zero code " +
+                    "instead of hanging indefinitely or reporting a false pass.",
+                    smokeTarget);
+                Environment.ExitCode = SmokeEmptyRosterExitCode;
+                _lifetime.StopApplication();
+                return;
+            }
+
+            // SM-1b — an empty roster is a genuine, supported running state (a product deployment with no
+            // machine configured yet), not an error. StopApplication() is required here even though
+            // nothing failed: a BackgroundService's ExecuteAsync completing on its own does NOT stop the
+            // Generic Host by itself — nothing else in an empty-roster run ever calls StopApplication
+            // (the smoke branch above is the only other caller, and OnCommitted below never fires with no
+            // pipeline to run) — without this the process would hang forever waiting for an external
+            // Ctrl-C/service-stop that a headless empty-roster deployment may never receive in time.
             _logger.LogWarning("Fleet is empty — nothing to run. EdgeWorker exiting.");
+            _lifetime.StopApplication();
             return;
         }
 
@@ -145,7 +216,14 @@ public sealed class EdgeWorker : BackgroundService
     /// decision (gate/queuePath/logging) lives in the static method the test project exercises directly.</summary>
     private ITransport BuildLiveOrDemoTransport()
     {
-        var gate = ResolveGate(_options.SmokeCount, Environment.GetEnvironmentVariable(TransportModeGate.EnvVarName));
+        // SM-1b — reuse the SAME resolved gate _demoModeGate already threads through LoadFleet
+        // (constructor-injected in production, see that field's own remarks) rather than recomputing it
+        // from scratch, so the transport and the fleet source can never disagree about demo-vs-product
+        // for a single run. Falls back to resolving fresh only when no gate was supplied — no production
+        // or test call site does that today, but every pre-existing EdgeWorker construction still
+        // compiles/behaves unchanged either way.
+        var gate = _demoModeGate
+            ?? ResolveGate(_options.SmokeCount, Environment.GetEnvironmentVariable(TransportModeGate.EnvVarName));
 
         var serverUrlRaw = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
         var serverUrl = string.IsNullOrWhiteSpace(serverUrlRaw) ? DefaultServerUrl : serverUrlRaw;
@@ -238,19 +316,51 @@ public sealed class EdgeWorker : BackgroundService
     /// <c>catch (FleetConfigException)</c> — every other <see cref="FleetConfig.Load"/> caller in this
     /// codebase already had one; this was the one loader that could still take the whole process down
     /// over a hand-editing mistake) has a direct regression test instead of only being
-    /// integration-covered by a full process run.</summary>
+    /// integration-covered by a full process run.
+    ///
+    /// <para>SM-1b (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1b-brief.md) —
+    /// <see cref="_demoModeGate"/> now decides what happens when <c>--fleet</c> is blank, missing,
+    /// malformed, or parses to zero entries: <see langword="null"/> (every pre-existing call site) or an
+    /// ENABLED gate keeps this method's ORIGINAL behavior byte-identical (falls back to
+    /// <see cref="BuildDefaultFleet"/>) — the demo fleet must never regress. A non-null, DISABLED gate (a
+    /// real product deployment) makes that same situation yield an EMPTY roster instead — never the
+    /// fabricated fleet, which is exactly the defect this task exists to close (see the class doc comment:
+    /// unlike this fabricated fleet, a real Live transport endpoint is not sandboxed the way
+    /// St4i.EngineApi's Demo/Live split sandboxes <c>FleetHost</c>'s own roster).</para>
+    ///
+    /// <para>Deliberately DIFFERENT from <c>FleetHost.ResolveFleet</c> in one respect: a <c>--fleet</c>
+    /// file that actually PARSES and has entries is honored in EITHER mode, not demo-only. <c>FleetHost</c>
+    /// can afford to treat a valid fleet.json as demo-only because St4i.EngineApi has a SECOND,
+    /// genuinely-real-machine path (connectors.json + <c>RegisterMachine</c>) that product mode uses
+    /// instead. EdgeService has no such second path — <c>--fleet</c> is the ONLY roster input this project
+    /// has — so making it demo-only too would leave a product deployment permanently unable to run any
+    /// machine at all, the opposite of this task's goal. Only the FABRICATION fallback
+    /// (blank/missing/malformed/empty) is gated by <see cref="_demoModeGate"/>; a real, valid file's
+    /// content never is.</para></summary>
     internal IReadOnlyList<MachineDescriptor> LoadFleet()
     {
+        var demoMode = _demoModeGate is null || _demoModeGate.Enabled;
         var path = _options.FleetPath;
+
         if (string.IsNullOrWhiteSpace(path))
         {
-            return BuildDefaultFleet();
+            return demoMode ? BuildDefaultFleet() : Array.Empty<MachineDescriptor>();
         }
 
         if (!File.Exists(path))
         {
-            _logger.LogWarning("--fleet path {Path} not found — falling back to default in-code fleet", path);
-            return BuildDefaultFleet();
+            if (demoMode)
+            {
+                _logger.LogWarning("--fleet path {Path} not found — falling back to default in-code fleet", path);
+                return BuildDefaultFleet();
+            }
+
+            _logger.LogWarning(
+                "Product mode: --fleet path '{Path}' not found — the roster starts empty rather than " +
+                "substituting the fabricated demo fleet. Point --fleet at a real fleet.json-shaped file " +
+                "describing your machine(s).",
+                path);
+            return Array.Empty<MachineDescriptor>();
         }
 
         _logger.LogInformation("Loading fleet from {Path}", path);
@@ -265,13 +375,31 @@ public sealed class EdgeWorker : BackgroundService
             // a hand-editing mistake. logWarning (per-entry tolerance — a malformed INDIVIDUAL machine
             // entry, as opposed to the whole file) is wired the same way FleetHost wires it to its own
             // ILogger.
-            return FleetConfig.Load(path, logWarning: msg => _logger.LogWarning("{FleetConfigWarning}", msg));
+            var loaded = FleetConfig.Load(path, logWarning: msg => _logger.LogWarning("{FleetConfigWarning}", msg));
+
+            // SM-1b — a file that parses and has entries is real configuration in EITHER mode; see this
+            // method's own doc comment for why (EdgeService has no connectors.json-equivalent second
+            // path).
+            if (loaded.Count > 0) return loaded;
         }
         catch (FleetConfigException ex)
         {
-            _logger.LogWarning(ex, "Malformed fleet.json at '{Path}' — falling back to the in-code default fleet", path);
-            return BuildDefaultFleet();
+            if (demoMode)
+            {
+                _logger.LogWarning(ex, "Malformed fleet.json at '{Path}' — falling back to the in-code default fleet", path);
+                return BuildDefaultFleet();
+            }
+
+            _logger.LogWarning(
+                ex,
+                "Product mode: --fleet at '{Path}' is malformed — the roster starts empty rather than " +
+                "substituting the fabricated demo fleet. Fix the file or point --fleet elsewhere.",
+                path);
+            return Array.Empty<MachineDescriptor>();
         }
+
+        // Parsed fine but zero entries — same "no real content" outcome as a missing file.
+        return demoMode ? BuildDefaultFleet() : Array.Empty<MachineDescriptor>();
     }
 
     /// <summary>The headless default roster — one machine per <see cref="IMachineSimulator"/> type

@@ -31,6 +31,14 @@ public sealed class EdgeWorkerLoadFleetTests
     private static EdgeWorker NewWorker(string? fleetPath) =>
         new(NullLogger<EdgeWorker>.Instance, new NoOpHostApplicationLifetime(), new EdgeServiceOptions(SmokeCount: null, FleetPath: fleetPath));
 
+    /// <summary>SM-1b (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1b-brief.md)
+    /// — overload accepting an explicit demo/product gate, for the product-mode tests below. The
+    /// no-gate overload above keeps every pre-existing test's implicit "demo" behavior byte-identical
+    /// (see EdgeWorker's own <c>_demoModeGate</c> remarks).</summary>
+    private static EdgeWorker NewWorker(string? fleetPath, TransportModeGate? demoModeGate) =>
+        new(NullLogger<EdgeWorker>.Instance, new NoOpHostApplicationLifetime(),
+            new EdgeServiceOptions(SmokeCount: null, FleetPath: fleetPath), demoModeGate);
+
     [Fact]
     public void LoadFleet_NoFleetPath_ReturnsTheInCodeDefaultFleet()
     {
@@ -96,6 +104,148 @@ public sealed class EdgeWorkerLoadFleetTests
             Assert.Equal(new[] { "CUSTOM-01", "CUSTOM-02" }, fleet.Select(d => d.Code));
             Assert.DoesNotContain(fleet, d => EdgeWorker.BuildDefaultFleet().Select(def => def.Code).Contains(d.Code));
             Assert.Equal(DriverKinds.Mqtt, fleet.Single(d => d.Code == "CUSTOM-02").DriverKind);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // ── SM-1b: product mode never fabricates machines ──────────────────────────────────────────────
+
+    [Fact]
+    public void LoadFleet_ProductMode_NoFleetPath_ReturnsEmptyRoster_NoFabricatedMachine()
+    {
+        var worker = NewWorker(fleetPath: null, demoModeGate: new TransportModeGate("false"));
+
+        var fleet = worker.LoadFleet();
+
+        Assert.Empty(fleet);
+    }
+
+    [Fact]
+    public void LoadFleet_ProductMode_FleetPathDoesNotExist_ReturnsEmptyRoster_NoFabricatedMachine()
+    {
+        var missingPath = Path.Combine(Path.GetTempPath(), "st4i-edgeservice-does-not-exist-" + Guid.NewGuid().ToString("N") + ".json");
+        var worker = NewWorker(missingPath, demoModeGate: new TransportModeGate("false"));
+
+        var fleet = worker.LoadFleet();
+
+        Assert.Empty(fleet);
+    }
+
+    [Fact]
+    public void LoadFleet_ProductMode_MalformedJson_ReturnsEmptyRoster_NoFabricatedMachine()
+    {
+        var path = FreshTempFile();
+        File.WriteAllText(path, "{ this is not [ valid json");
+        try
+        {
+            var worker = NewWorker(path, demoModeGate: new TransportModeGate("false"));
+
+            var fleet = worker.LoadFleet();
+
+            Assert.Empty(fleet);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void LoadFleet_ProductMode_ValidFleetFileWithEntries_IsHonored_NotIgnored()
+    {
+        // SM-1b — deliberately DIFFERENT from St4i.EngineApi's FleetHost, which treats a valid fleet.json
+        // as demo-only in product mode because it has a second, genuinely-real-machine path
+        // (connectors.json + RegisterMachine). EdgeService has no such second path — --fleet is the ONLY
+        // roster input this project has — so a real, valid --fleet file must still be honored in product
+        // mode, or a product deployment could never run any machine at all. Only the FABRICATION
+        // fallback (blank/missing/malformed/empty) is gated by demo mode; real content never is.
+        var path = FreshTempFile();
+        File.WriteAllText(path, """
+        [
+          { "code": "REAL-01", "serialSeed": "R1", "deviceClass": "Automation", "machineType": "screwdriver",
+            "stepType": "screw_tightening", "driverKind": "Simulated", "recipeCode": null,
+            "mappingProfile": null, "cycleSeconds": 1.0 }
+        ]
+        """);
+        try
+        {
+            var worker = NewWorker(path, demoModeGate: new TransportModeGate("false"));
+
+            var fleet = worker.LoadFleet();
+
+            Assert.Equal(new[] { "REAL-01" }, fleet.Select(d => d.Code));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void LoadFleet_ProductMode_ValidFleetFileWithZeroEntries_ReturnsEmptyRoster()
+    {
+        var path = FreshTempFile();
+        File.WriteAllText(path, "[]");
+        try
+        {
+            var worker = NewWorker(path, demoModeGate: new TransportModeGate("false"));
+
+            var fleet = worker.LoadFleet();
+
+            Assert.Empty(fleet);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // ── SM-1b: demo mode stays byte-identical — strict regression, exact codes in file order ───────
+
+    [Fact]
+    public void LoadFleet_DemoModeExplicit_NoFleetPath_ReturnsExactlyTheEightFabricatedMachines_InFileOrder()
+    {
+        var worker = NewWorker(fleetPath: null, demoModeGate: new TransportModeGate("true"));
+
+        var fleet = worker.LoadFleet();
+
+        Assert.Equal(
+            new[] { "SCRW-01", "DISP-01", "WELD-01", "ASSY-01", "LEAK-01", "FCT-01", "IOT-01", "AOI-01" },
+            fleet.Select(d => d.Code));
+    }
+
+    [Fact]
+    public void LoadFleet_DemoModeNullGate_NoFleetPath_ReturnsExactlyTheEightFabricatedMachines_InFileOrder()
+    {
+        // Same assertion as LoadFleet_NoFleetPath_ReturnsTheInCodeDefaultFleet above, but pinned against
+        // the literal codes (not BuildDefaultFleet() itself) so a future accidental change to
+        // BuildDefaultFleet can't silently satisfy a tautological comparison.
+        var worker = NewWorker(fleetPath: null);
+
+        var fleet = worker.LoadFleet();
+
+        Assert.Equal(
+            new[] { "SCRW-01", "DISP-01", "WELD-01", "ASSY-01", "LEAK-01", "FCT-01", "IOT-01", "AOI-01" },
+            fleet.Select(d => d.Code));
+    }
+
+    [Fact]
+    public void LoadFleet_DemoMode_MalformedJson_StillFallsBackToTheInCodeDefaultFleet()
+    {
+        var path = FreshTempFile();
+        File.WriteAllText(path, "{ this is not [ valid json");
+        try
+        {
+            var worker = NewWorker(path, demoModeGate: new TransportModeGate("true"));
+
+            var fleet = worker.LoadFleet();
+
+            Assert.Equal(
+                new[] { "SCRW-01", "DISP-01", "WELD-01", "ASSY-01", "LEAK-01", "FCT-01", "IOT-01", "AOI-01" },
+                fleet.Select(d => d.Code));
         }
         finally
         {
