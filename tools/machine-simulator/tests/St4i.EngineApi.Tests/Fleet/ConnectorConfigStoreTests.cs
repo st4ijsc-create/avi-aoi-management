@@ -160,6 +160,75 @@ public sealed class ConnectorConfigStoreTests
         Assert.EndsWith(Path.Combine("ST4I", "sim", "connector-config"), root);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — the
+    // write_capability_json column: its own migration, what a pre-existing row means, and round-tripping.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SaveAsync_NoWriteCapabilityArgument_StoresNull_ByteIdenticalToBeforeThisTask()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+
+        var summary = await store.SaveAsync("Modbus", "MODBUS-01", "10.0.0.5", 502, "{}");
+
+        Assert.Null(summary.WriteCapability);
+        var record = await store.GetAsync("Modbus");
+        Assert.Null(record!.WriteCapability);
+    }
+
+    [Fact]
+    public async Task SaveAsync_WriteCapabilityGrantingSomething_RoundTrips()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        var capability = new ConnectorWriteCapability(new[] { "speed" }, new[] { "StartCycle" });
+
+        var summary = await store.SaveAsync("Modbus", "MODBUS-01", "10.0.0.5", 502, "{}", capability);
+
+        Assert.NotNull(summary.WriteCapability);
+        Assert.True(summary.WriteCapability!.GrantsWriteCapability);
+        Assert.Equal(new[] { "speed" }, summary.WriteCapability.WritablePoints);
+        Assert.Equal(new[] { "StartCycle" }, summary.WriteCapability.Commands);
+        Assert.NotNull(summary.WriteCapability.Fingerprint);
+
+        var record = await store.GetAsync("Modbus");
+        Assert.NotNull(record!.WriteCapability);
+        Assert.Equal(new[] { "speed" }, record.WriteCapability!.WritablePoints);
+    }
+
+    /// <summary>A <see cref="ConnectorWriteCapability"/> instance with EMPTY lists (constructed, but granting
+    /// nothing) must be normalized to <see langword="null"/> on read-back — <see cref="ConnectorWriteCapability.None"/>
+    /// and <see langword="null"/> are the SAME fact ("read-only connector") and must round-trip identically.</summary>
+    [Fact]
+    public async Task SaveAsync_WriteCapabilityThatGrantsNothing_NormalizedToNull()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+
+        var summary = await store.SaveAsync("Modbus", "MODBUS-01", "10.0.0.5", 502, "{}", ConnectorWriteCapability.None);
+
+        Assert.Null(summary.WriteCapability);
+    }
+
+    [Fact]
+    public async Task AFreshStore_PointedAtTheSameDirectory_MigratesExistingRowsToVersion2_ExistingRowsReadAsNull()
+    {
+        // A row written by "version 1" schema logic (no write_capability_json column at all yet) — proven by
+        // constructing the FIRST store instance (which runs the migration ladder up to whatever version this
+        // build currently declares) and saving without ever mentioning write capability, then re-opening a
+        // fresh store instance pointed at the SAME directory (the same "restart survival" technique every
+        // other test in this file already uses) and confirming the read-back is NULL, never some other
+        // placeholder — the exact fact this migration's own doc comment promises for a pre-existing row.
+        var dir = TempDir();
+        var store1 = new ConnectorConfigStore(dir);
+        await store1.SaveAsync("Modbus", "MODBUS-PRE-B3", "10.0.0.5", 502, "{}");
+
+        var store2 = new ConnectorConfigStore(dir);
+        var record = await store2.GetAsync("Modbus");
+
+        Assert.NotNull(record);
+        Assert.Null(record!.WriteCapability);
+    }
+
     [Fact]
     public void ResolveRoot_PrefersExplicitDirectory_OverEnvVar_OverDefault()
     {

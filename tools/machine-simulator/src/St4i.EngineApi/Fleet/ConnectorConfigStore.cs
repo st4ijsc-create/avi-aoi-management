@@ -1,7 +1,90 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace St4i.EngineApi.Fleet;
+
+/// <summary>
+/// Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — what a parsed map
+/// declares it grants, in the ONE shape shared by both protocols (a
+/// <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap"/>'s own <c>WritablePointNames</c>/<c>CommandNames</c>,
+/// or an <see cref="St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap"/>'s own, adapted into this generic shape by
+/// <see cref="ConnectorConfigValidation"/> — the same place that already adapts either protocol's own parsed
+/// map into the generic <see cref="ConnectorConfigValidation.ConnectorValidationResult"/>).
+///
+/// <para><b>Why this surfaces as its own <see cref="ConnectorConfigStore"/> COLUMN, not left inside the
+/// opaque <see cref="ConnectorConfigRecord.MapJson"/> blob</b> (the brief's own "decide, and justify"
+/// question): <see cref="ConnectorConfigStore"/>'s whole design point is that <c>map_json</c> is NEVER even
+/// <c>SELECT</c>ed by <see cref="ConnectorConfigStore.ListAsync"/> — it may embed OPC-UA credentials, so the
+/// credential-free projection structurally cannot include it. If write-capability info lived only inside that
+/// blob, <c>GET /v1/connectors/configured</c> (the one place an operator/engineer can see what is
+/// CONFIGURED, credential-free) could never show "this connector can write to a device" at all — the exact
+/// visibility the batch's own safety framing calls for ("the map file is the entire safety boundary" argues
+/// FOR maximum visibility of what a map grants, not less). Re-parsing the protocol-specific map JSON on every
+/// list call is also a non-option: <see cref="ConnectorConfigStore"/> is deliberately protocol-agnostic (it
+/// has never referenced <c>St4i.EdgeCore</c>'s Modbus/OPC-UA types, and doing so here would break that
+/// layering just to recompute a fact the caller already computed once at save time). So the CALLER
+/// (<see cref="ConnectorConfigValidation"/>/the save endpoint) computes this once, from the map it already
+/// parsed, and <see cref="ConnectorConfigStore.SaveAsync"/> simply persists what it's told — mirroring exactly
+/// how <c>machine_code</c>/<c>host</c>/<c>port</c> already work (also caller-computed facts about the opaque
+/// blob, stored as their own columns for exactly this reason).</para>
+///
+/// <para><b>What a pre-existing row means</b> (the <c>PRAGMA user_version</c> ladder's own required
+/// question): <c>write_capability_json</c> is added by migration version 2 as a nullable column with NO
+/// default expression — SQLite's own <c>ALTER TABLE ... ADD COLUMN</c> rule for a nullable column with no
+/// <c>DEFAULT</c> sets every EXISTING row's new column to <c>NULL</c>. <see langword="null"/> here means
+/// exactly "declares no write/command capability" — which is CORRECT, not merely a safe placeholder, for
+/// every row written before this task existed: no schema before Task B-3 had any way to declare a writable
+/// point or command at all, so every pre-existing persisted map is, in fact, read-only.</para>
+/// </summary>
+public sealed record ConnectorWriteCapability(IReadOnlyList<string> WritablePoints, IReadOnlyList<string> Commands)
+{
+    /// <summary>The value every read-only connector (every map before this task, and every map after it that
+    /// simply never declares a writable point/command) is stored and reported as — equivalent to, but
+    /// distinguishable in code from, a bare <see langword="null"/> reference for callers that want to always
+    /// have a non-null instance in hand.</summary>
+    public static readonly ConnectorWriteCapability None = new(Array.Empty<string>(), Array.Empty<string>());
+
+    /// <summary><see langword="true"/> if and only if this map declares at least one writable point or
+    /// command — the ONE structural (never semantic — no name is ever inspected) check the save gate and the
+    /// persisted-column decision both hinge on.</summary>
+    public bool GrantsCapability => WritablePoints.Count > 0 || Commands.Count > 0;
+
+    /// <summary>
+    /// Task B-3 — the value a caller must echo back to <c>POST /v1/connectors</c> to confirm a write/command
+    /// grant, mirroring <c>POST /v1/site/identity/rotate</c>'s own echo-back pattern
+    /// (<see cref="St4i.EngineApi.Endpoints.SiteEndpoints.RotateIdentityAsync"/>): deterministic (the SAME
+    /// capability always produces the SAME fingerprint, order-independent — <see cref="WritablePoints"/>/
+    /// <see cref="Commands"/> are sorted ordinally before hashing, so JSON array order in the pasted map
+    /// never changes the required confirmation value), and a SHA-256 hex digest (uppercase, via
+    /// <see cref="Convert.ToHexString(byte[])"/>) of "what would be granted" rather than the granted names
+    /// themselves — the same "opaque token that can only be obtained by having just seen the real thing"
+    /// shape a fingerprint already is elsewhere in this codebase (<c>DeviceIdentity.Fingerprint</c>,
+    /// <c>SiteEndpoints.PemFingerprint</c>).
+    /// </summary>
+    public string ComputeFingerprint()
+    {
+        var sortedPoints = new List<string>(WritablePoints);
+        sortedPoints.Sort(StringComparer.Ordinal);
+        var sortedCommands = new List<string>(Commands);
+        sortedCommands.Sort(StringComparer.Ordinal);
+
+        var material = "points:" + string.Join(",", sortedPoints) + "|commands:" + string.Join(",", sortedCommands);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
+    }
+
+    /// <summary>The exact JSON this type is persisted as in <c>write_capability_json</c> — deliberately a
+    /// plain <see cref="JsonSerializer.Serialize{TValue}(TValue, System.Text.Json.JsonSerializerOptions)"/> of
+    /// this record (point/command names are never credentials, so no redaction concern applies here the way
+    /// it does for <see cref="ConnectorConfigRecord.MapJson"/>).</summary>
+    public string ToJson() => JsonSerializer.Serialize(this);
+
+    public static ConnectorWriteCapability FromJson(string json) =>
+        JsonSerializer.Deserialize<ConnectorWriteCapability>(json)
+        ?? throw new InvalidOperationException("ConnectorWriteCapability.FromJson: JSON deserialized to null.");
+}
 
 /// <summary>
 /// SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-5-brief.md) — the WRITE
@@ -66,17 +149,28 @@ public sealed record ConnectorConfigRecord(
     int? Port,
     string MapJson,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    ConnectorWriteCapability? WriteCapability = null);
 
 /// <summary>The credential-free projection every caller OUTSIDE startup wiring gets — see
 /// <see cref="ConnectorConfigStore"/>'s own doc comment for why <c>MapJson</c> (which may embed OPC-UA
-/// credentials) is never part of this shape at all, not merely omitted at the DTO layer.</summary>
+/// credentials) is never part of this shape at all, not merely omitted at the DTO layer.
+///
+/// <para><see cref="WriteCapability"/> is safe to include here, unlike <c>MapJson</c> — a point/command
+/// NAME is never a credential — see <see cref="ConnectorWriteCapability"/>'s own doc comment for why this is
+/// its own column rather than staying locked inside the opaque map blob.</para></summary>
+/// <param name="WriteCapability"><see cref="ConnectorWriteCapabilityDto"/> — deliberately the SAME shape
+/// <c>POST /v1/connectors</c>'s own response uses (see that DTO's own doc comment), rather than the raw
+/// <see cref="ConnectorWriteCapability"/> persistence record, so a caller reads one consistent capability
+/// shape regardless of which endpoint it came from. <see langword="null"/> for a read-only connector — every
+/// connector this build accepted before this task, and any map that simply declares neither.</param>
 public sealed record ConnectorConfigSummary(
     string Kind,
     string MachineCode,
     string? Host,
     int? Port,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    ConnectorWriteCapabilityDto? WriteCapability = null);
 
 public sealed class ConnectorConfigStore
 {
@@ -107,6 +201,15 @@ public sealed class ConnectorConfigStore
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL);
             """,
+        }),
+        // Task B-3 — see ConnectorWriteCapability's own doc comment for why this is its own column (never
+        // folded into the opaque map_json blob) and what a pre-existing (pre-migration) row's NULL means:
+        // SQLite's ADD COLUMN with no DEFAULT sets every existing row's new column to NULL, which is the
+        // CORRECT value for a row written before this task — no schema before it could ever declare a
+        // writable point or command, so every such row is, in fact, read-only.
+        (2, new[]
+        {
+            "ALTER TABLE connector_configs ADD COLUMN write_capability_json TEXT NULL;",
         }),
     };
 
@@ -221,25 +324,35 @@ public sealed class ConnectorConfigStore
     /// <summary>Inserts or replaces the ONE persisted row for <paramref name="kind"/> (already normalized by
     /// the caller — see <see cref="St4i.Connector.Abstractions.Models.DriverKinds.Normalize"/>). Returns the
     /// credential-free summary of what was just saved.</summary>
+    /// <param name="writeCapability">Task B-3 — what the map being saved declares (already computed by the
+    /// caller, which already parsed the map — see <see cref="ConnectorWriteCapability"/>'s own doc comment for
+    /// why this store never derives it itself). <see langword="null"/> (the default) is stored and reported
+    /// identically to <see cref="ConnectorWriteCapability.None"/> — every call site that predates this task
+    /// (and every test of this method that never passes it) keeps saving a plain read-only connector, byte
+    /// for byte.</param>
     public async Task<ConnectorConfigSummary> SaveAsync(
-        string kind, string machineCode, string? host, int? port, string mapJson, CancellationToken ct = default)
+        string kind, string machineCode, string? host, int? port, string mapJson,
+        ConnectorWriteCapability? writeCapability = null, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
         ArgumentException.ThrowIfNullOrWhiteSpace(machineCode);
         ArgumentNullException.ThrowIfNull(mapJson);
 
         var nowIso = ToIso(DateTimeOffset.UtcNow);
+        var normalizedCapability = (writeCapability is not null && writeCapability.GrantsCapability) ? writeCapability : null;
+        var writeCapabilityJson = normalizedCapability?.ToJson();
 
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO connector_configs (kind, machine_code, host, port, map_json, created_at, updated_at)
-            VALUES (@kind, @machine_code, @host, @port, @map_json, @now, @now)
+            INSERT INTO connector_configs (kind, machine_code, host, port, map_json, write_capability_json, created_at, updated_at)
+            VALUES (@kind, @machine_code, @host, @port, @map_json, @write_capability_json, @now, @now)
             ON CONFLICT(kind) DO UPDATE SET
                 machine_code = excluded.machine_code,
                 host = excluded.host,
                 port = excluded.port,
                 map_json = excluded.map_json,
+                write_capability_json = excluded.write_capability_json,
                 updated_at = excluded.updated_at;
             """;
         cmd.Parameters.AddWithValue("@kind", kind);
@@ -247,19 +360,22 @@ public sealed class ConnectorConfigStore
         cmd.Parameters.AddWithValue("@host", (object?)host ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@port", (object?)port ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@map_json", mapJson);
+        cmd.Parameters.AddWithValue("@write_capability_json", (object?)writeCapabilityJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@now", nowIso);
 
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
-        return new ConnectorConfigSummary(kind, machineCode, host, port, ParseIso(nowIso));
+        return new ConnectorConfigSummary(
+            kind, machineCode, host, port, ParseIso(nowIso),
+            normalizedCapability is null ? null : ConnectorWriteCapabilityDto.From(normalizedCapability));
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // Read
     // ─────────────────────────────────────────────────────────────────────
 
-    private const string FullColumns = "kind, machine_code, host, port, map_json, created_at, updated_at";
-    private const string SummaryColumns = "kind, machine_code, host, port, updated_at";
+    private const string FullColumns = "kind, machine_code, host, port, map_json, created_at, updated_at, write_capability_json";
+    private const string SummaryColumns = "kind, machine_code, host, port, updated_at, write_capability_json";
 
     /// <summary>The FULL row (including <see cref="ConnectorConfigRecord.MapJson"/>, which may embed OPC-UA
     /// credentials) for one kind — engine-internal use only (validating an update targets the same machine,
@@ -340,14 +456,31 @@ public sealed class ConnectorConfigStore
         Port: GetNullableInt(reader, "port"),
         MapJson: reader.GetString(reader.GetOrdinal("map_json")),
         CreatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("created_at"))),
-        UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))));
+        UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))),
+        WriteCapability: GetWriteCapability(reader));
 
-    private static ConnectorConfigSummary ReadSummary(SqliteDataReader reader) => new(
-        Kind: reader.GetString(reader.GetOrdinal("kind")),
-        MachineCode: reader.GetString(reader.GetOrdinal("machine_code")),
-        Host: GetNullableString(reader, "host"),
-        Port: GetNullableInt(reader, "port"),
-        UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))));
+    private static ConnectorConfigSummary ReadSummary(SqliteDataReader reader)
+    {
+        var rawCapability = GetWriteCapability(reader);
+        return new ConnectorConfigSummary(
+            Kind: reader.GetString(reader.GetOrdinal("kind")),
+            MachineCode: reader.GetString(reader.GetOrdinal("machine_code")),
+            Host: GetNullableString(reader, "host"),
+            Port: GetNullableInt(reader, "port"),
+            UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))),
+            WriteCapability: rawCapability is null ? null : ConnectorWriteCapabilityDto.From(rawCapability));
+    }
+
+    /// <summary>Task B-3 — <see langword="null"/> (a pre-existing row, or a map that declares no write/command
+    /// capability — see <see cref="ConnectorWriteCapability"/>'s own doc comment for why the two are stored
+    /// identically) reads back as <see langword="null"/>, never as <see cref="ConnectorWriteCapability.None"/>
+    /// — a caller that wants a non-null instance can fall back to that constant itself; this store reports
+    /// exactly what is persisted.</summary>
+    private static ConnectorWriteCapability? GetWriteCapability(SqliteDataReader reader)
+    {
+        var ordinal = reader.GetOrdinal("write_capability_json");
+        return reader.IsDBNull(ordinal) ? null : ConnectorWriteCapability.FromJson(reader.GetString(ordinal));
+    }
 
     private static string? GetNullableString(SqliteDataReader reader, string column)
     {

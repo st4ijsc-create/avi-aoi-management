@@ -126,6 +126,38 @@ public static class ConnectorEndpoints
             return Results.BadRequest(new ApiErrorDto(error!));
         }
 
+        // Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — the
+        // deliberate-save gate. Runs BEFORE any store/roster mutation, and before the cross-kind/same-kind
+        // conflict checks below (this request is not going to save at all if the gate fails, so there is no
+        // reason to spend a DB round-trip checking conflicts first). Mirrors POST /v1/site/identity/rotate's
+        // own echo-back pattern exactly: 400 when the confirmation is missing/blank, 409 when it does not
+        // match what THIS map currently declares (stale, or copied from a different paste) — see
+        // RotateIdentityAsync's own doc comment for why an echo, not a bare boolean flag, is what makes this
+        // deliberate rather than merely reachable.
+        if (validated.WriteCapability.GrantsCapability)
+        {
+            var requiredFingerprint = validated.WriteCapability.ComputeFingerprint();
+
+            if (string.IsNullOrWhiteSpace(body.ConfirmedWriteCapabilityFingerprint))
+            {
+                return Results.BadRequest(new ApiErrorDto(
+                    "This map declares write/command capability — writable points: " +
+                    $"[{string.Join(", ", validated.WriteCapability.WritablePoints)}]; commands: " +
+                    $"[{string.Join(", ", validated.WriteCapability.Commands)}]. Saving a map that grants write " +
+                    "or command capability requires deliberate confirmation: resubmit this SAME request with " +
+                    $"confirmedWriteCapabilityFingerprint = \"{requiredFingerprint}\" to proceed."));
+            }
+
+            if (!string.Equals(body.ConfirmedWriteCapabilityFingerprint, requiredFingerprint, StringComparison.Ordinal))
+            {
+                return Results.Conflict(new ApiErrorDto(
+                    "confirmedWriteCapabilityFingerprint does not match what this map currently declares — it may " +
+                    "be stale (the map was edited after the fingerprint was computed) or copied from a different " +
+                    $"map. The current required value is \"{requiredFingerprint}\" — confirm the granted " +
+                    "capability shown in this response and retry with that exact value."));
+            }
+        }
+
         // "No unregister" guard (brief's own explicit concern): this build supports exactly ONE live
         // connector per kind (see ConnectorRegistry's own "one factory per kind" invariant), so re-pointing
         // an ALREADY-CONFIGURED kind at a DIFFERENT machine code would either strand the old roster entry
@@ -174,7 +206,9 @@ public static class ConnectorEndpoints
             ? null
             : new { existing.MachineCode, existing.Host, existing.Port };
 
-        var saved = await store.SaveAsync(validated.Kind, validated.MachineCode, validated.Host, validated.Port, body.MapJson, ct)
+        var saved = await store.SaveAsync(
+                validated.Kind, validated.MachineCode, validated.Host, validated.Port, body.MapJson,
+                validated.WriteCapability, ct)
             .ConfigureAwait(false);
 
         // Live-register BEFORE RegisterMachine — a restart-if-running triggered below must always see the
@@ -187,10 +221,18 @@ public static class ConnectorEndpoints
         // connector's settings), which this call intentionally does NOT restart — see the message below.
         var added = fleetHost.RegisterMachine(validated.Descriptor);
 
+        // Task B-3 — the audit row itself names exactly what was granted (never just "a map was saved"),
+        // mirroring RotateIdentityAsync's own audit row recording both the old and new fingerprint: a
+        // point/command NAME is never a credential (see ConnectorWriteCapability's own doc comment), so this
+        // is safe to record verbatim, same as MachineCode/Host/Port already are.
         await recorder.RecordAsync(
             ctx, "connector.save", "connector", validated.Kind,
             before,
-            new { validated.MachineCode, validated.Host, validated.Port },
+            new
+            {
+                validated.MachineCode, validated.Host, validated.Port,
+                validated.WriteCapability.WritablePoints, validated.WriteCapability.Commands,
+            },
             ct).ConfigureAwait(false);
 
         // English, deliberately — like every other server-generated message in this codebase (SiteEndpoints,
@@ -202,7 +244,8 @@ public static class ConnectorEndpoints
             : "Saved. This machine was already in the roster — the change applies on the next Stop/Start " +
               "(or a full application restart), not immediately to an already-running fleet.";
 
-        return Results.Ok(new ConnectorCreateResultDto(saved, AppliedLive: added, message));
+        return Results.Ok(new ConnectorCreateResultDto(
+            ConnectorWriteCapabilityDto.From(validated.WriteCapability), saved, AppliedLive: added, message));
     }
 
     // ─────────────────────────────────────────────────────────────────────

@@ -1657,6 +1657,21 @@ export interface ConnectorConfigSummary {
   host: string | null
   port: number | null
   updatedAtUtc: string
+  /** Task B-3 (`.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md`) —
+   * `ConnectorWriteCapability` (`Fleet/ConnectorConfigStore.cs`). `null` for every connector this build has
+   * ever accepted before this task, and for any map that simply declares no writable point/command — safe
+   * to show here (unlike `mapJson`) because a point/command NAME is never a credential. No driver executes
+   * a write yet (B-4/B-5) — this is visibility into what a map DECLARES, not a live capability. */
+  writeCapability?: ConnectorWriteCapability | null
+}
+
+/** `ConnectorWriteCapabilityDto` (`Fleet/Dtos.cs`). `fingerprint` is `null` unless `grantsWriteCapability`
+ * is `true` — see `POST /v1/connectors`'s own `confirmedWriteCapabilityFingerprint` echo-back gate below. */
+export interface ConnectorWriteCapability {
+  grantsWriteCapability: boolean
+  writablePoints: string[]
+  commands: string[]
+  fingerprint: string | null
 }
 
 /** `ConnectorCreateRequest`/`ConnectorTestRequest` (`Fleet/Dtos.cs`) — the SAME shape serves both
@@ -1669,17 +1684,27 @@ export interface ConnectorRequestInput {
   host?: string
   port?: number
   mapJson: string
+  /** Task B-3 — the deliberate-save gate's echo-back. Omitted for the overwhelming majority of saves (any
+   * map that declares no writable point/command). When a pasted map DOES declare one, `create()` first
+   * gets rejected (400, naming exactly what would be granted and the fingerprint to echo back); resubmitting
+   * with this field set to that exact value confirms the grant and lets the save proceed. There is no
+   * confirmation UI wired up in this build yet (B-6's job) — this field exists so a caller CAN confirm, not
+   * so this form does today. */
+  confirmedWriteCapabilityFingerprint?: string
 }
 
 /** `ConnectorCreateResultDto` (`Fleet/Dtos.cs`). `appliedLive` distinguishes the two honest outcomes a
  * save can have — see `Connectors.tsx`'s own success-banner copy, which is derived from THIS boolean
  * (client-side i18n), never from the server's own English `message` field verbatim (that field is a
  * diagnostic/API-Inspector-facing string, same posture as every other server-generated message in this
- * codebase — see `ConnectorEndpoints.CreateConnectorAsync`'s own doc comment). */
+ * codebase — see `ConnectorEndpoints.CreateConnectorAsync`'s own doc comment). `writeCapability` is
+ * deliberately the FIRST field server-side (see that DTO's own doc comment) — listed last here purely
+ * because TypeScript interface field order carries no such meaning. */
 export interface ConnectorCreateResult {
   config: ConnectorConfigSummary
   appliedLive: boolean
   message: string
+  writeCapability: ConnectorWriteCapability
 }
 
 /** `ConnectorDeleteResultDto` (`Fleet/Dtos.cs`). */

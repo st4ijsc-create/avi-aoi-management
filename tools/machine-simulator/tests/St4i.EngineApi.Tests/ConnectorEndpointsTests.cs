@@ -731,6 +731,131 @@ public sealed class ConnectorEndpointsTests
     // are never touched on this path at all.
     // ─────────────────────────────────────────────────────────────────────
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — the
+    // deliberate-save gate: a map granting write/command capability is refused without confirmation,
+    // accepted with it, and the response surfaces exactly what was granted.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private static string WritableModbusMap(string machineCode) => $$"""
+        {
+          "machineCode": "{{machineCode}}",
+          "unitId": 1,
+          "pollIntervalMs": 50,
+          "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "temperature" },
+            { "address": 1, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 5000 } } ],
+          "commands": [ { "name": "StartCycle", "coilAddress": 5 } ]
+        }
+        """;
+
+    private static string ExpectedFingerprintFor(string[] writablePoints, string[] commands) =>
+        new St4i.EngineApi.Fleet.ConnectorWriteCapability(writablePoints, commands).ComputeFingerprint();
+
+    [Fact]
+    public async Task Engineer_AddsWritableModbusConnector_WithoutConfirmation_400_NamesGrantedCapability_NothingPersisted()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            var code = "SM5-WRITEGATE-" + Guid.NewGuid().ToString("N")[..8];
+            using var create = await engineer.PostAsJsonAsync(
+                "/v1/connectors",
+                new ConnectorCreateRequest("Modbus", "10.20.30.40", 502, WritableModbusMap(code)),
+                JsonOptions);
+
+            Assert.Equal(HttpStatusCode.BadRequest, create.StatusCode);
+            var error = await create.Content.ReadFromJsonAsync<ApiErrorDto>(JsonOptions);
+            Assert.Contains("speed", error!.Error);
+            Assert.Contains("StartCycle", error.Error);
+
+            using var configured = await operatorClient.GetAsync("/v1/connectors/configured");
+            var summaries = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+            Assert.Empty(summaries!);
+        }
+    }
+
+    [Fact]
+    public async Task Engineer_AddsWritableModbusConnector_WrongConfirmation_409_NothingPersisted()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            var code = "SM5-WRITEGATE-WRONG-" + Guid.NewGuid().ToString("N")[..8];
+            using var create = await engineer.PostAsJsonAsync(
+                "/v1/connectors",
+                new ConnectorCreateRequest("Modbus", "10.20.30.40", 502, WritableModbusMap(code), "not-the-real-fingerprint"),
+                JsonOptions);
+
+            Assert.Equal(HttpStatusCode.Conflict, create.StatusCode);
+
+            using var configured = await operatorClient.GetAsync("/v1/connectors/configured");
+            var summaries = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+            Assert.Empty(summaries!);
+        }
+    }
+
+    [Fact]
+    public async Task Engineer_AddsWritableModbusConnector_CorrectConfirmation_200_ResponseSurfacesGrantedCapability_Persisted()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            var code = "SM5-WRITEGATE-OK-" + Guid.NewGuid().ToString("N")[..8];
+            var expectedFingerprint = ExpectedFingerprintFor(new[] { "speed" }, new[] { "StartCycle" });
+
+            using var create = await engineer.PostAsJsonAsync(
+                "/v1/connectors",
+                new ConnectorCreateRequest("Modbus", "10.20.30.40", 502, WritableModbusMap(code), expectedFingerprint),
+                JsonOptions);
+
+            Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+            var result = await create.Content.ReadFromJsonAsync<ConnectorCreateResultDto>(JsonOptions);
+            Assert.NotNull(result);
+            Assert.True(result!.WriteCapability.GrantsWriteCapability);
+            Assert.Equal(new[] { "speed" }, result.WriteCapability.WritablePoints);
+            Assert.Equal(new[] { "StartCycle" }, result.WriteCapability.Commands);
+            Assert.Equal(expectedFingerprint, result.WriteCapability.Fingerprint);
+
+            using var configured = await operatorClient.GetAsync("/v1/connectors/configured");
+            var summaries = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+            var summary = Assert.Single(summaries!, s => s.MachineCode == code);
+            Assert.NotNull(summary.WriteCapability);
+            Assert.True(summary.WriteCapability!.GrantsWriteCapability);
+            Assert.Equal(new[] { "speed" }, summary.WriteCapability.WritablePoints);
+        }
+    }
+
+    /// <summary>The additive contract itself: a plain read-only map (every existing map/fixture) never even
+    /// reaches the gate — <c>GrantsWriteCapability</c> is <see langword="false"/>, no confirmation is asked
+    /// for, and the response's <c>writeCapability</c> field reports empty lists, never null-reference or
+    /// throw.</summary>
+    [Fact]
+    public async Task Engineer_AddsPlainReadOnlyModbusConnector_ResponseReportsNoGrantedCapability_NeverAsksForConfirmation()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            var code = "SM5-READONLY-GATE-" + Guid.NewGuid().ToString("N")[..8];
+            using var create = await engineer.PostAsJsonAsync(
+                "/v1/connectors",
+                new ConnectorCreateRequest("Modbus", "10.20.30.40", 502, ValidModbusMap(code)),
+                JsonOptions);
+
+            Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+            var result = await create.Content.ReadFromJsonAsync<ConnectorCreateResultDto>(JsonOptions);
+            Assert.False(result!.WriteCapability.GrantsWriteCapability);
+            Assert.Empty(result.WriteCapability.WritablePoints);
+            Assert.Empty(result.WriteCapability.Commands);
+            Assert.Null(result.WriteCapability.Fingerprint);
+        }
+    }
+
     [Fact]
     public async Task TestConnector_OpcUa_UnreachableTarget_NeverLeaksCredentialsInResponse()
     {

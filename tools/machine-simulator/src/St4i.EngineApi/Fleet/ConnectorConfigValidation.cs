@@ -45,9 +45,15 @@ public static class ConnectorConfigValidation
     /// <paramref name="Host"/>/<paramref name="Port"/>/<paramref name="MachineCode"/> to persist via
     /// <see cref="ConnectorConfigStore.SaveAsync"/> (already normalized/trimmed — never re-derived a second
     /// time from the raw request by the caller).</summary>
+    /// <param name="WriteCapability">Task B-3 — what THIS map declares (adapted from whichever protocol's own
+    /// parsed map — <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap.WritablePointNames"/>/<c>CommandNames</c>
+    /// or <see cref="St4i.EdgeCore.Drivers.OpcUa.OpcUaNodeMap.WritablePointNames"/>/<c>CommandNames</c> — into
+    /// the one generic shape <see cref="ConnectorConfigStore"/>/the save gate share). Never <see langword="null"/>
+    /// — <see cref="ConnectorWriteCapability.None"/> for a map that declares neither, matching every map this
+    /// build has ever accepted before this task.</param>
     public sealed record ConnectorValidationResult(
         string Kind, string MachineCode, string? Host, int? Port, double PollIntervalSeconds,
-        IConnectorFactory Factory, MachineDescriptor Descriptor);
+        IConnectorFactory Factory, MachineDescriptor Descriptor, ConnectorWriteCapability WriteCapability);
 
     /// <returns><see langword="true"/> with <paramref name="result"/> populated on success;
     /// <see langword="false"/> with an operator-readable <paramref name="error"/> otherwise. Never throws —
@@ -140,7 +146,9 @@ public static class ConnectorConfigValidation
             MappingProfile: null,
             CycleSeconds: pollIntervalSeconds);
 
-        result = new ConnectorValidationResult(DriverKinds.Modbus, map.MachineCode, trimmedHost, p, pollIntervalSeconds, factory, descriptor);
+        var writeCapability = new ConnectorWriteCapability(map.WritablePointNames, map.CommandNames);
+
+        result = new ConnectorValidationResult(DriverKinds.Modbus, map.MachineCode, trimmedHost, p, pollIntervalSeconds, factory, descriptor, writeCapability);
         error = null;
         return true;
     }
@@ -177,9 +185,11 @@ public static class ConnectorConfigValidation
             MappingProfile: null,
             CycleSeconds: pollIntervalSeconds);
 
+        var writeCapability = new ConnectorWriteCapability(map.WritablePointNames, map.CommandNames);
+
         // Host/Port are not part of this kind's persisted-store columns — the map's own EndpointUrl is
         // authoritative (see this class's doc comment).
-        result = new ConnectorValidationResult(DriverKinds.OpcUa, map.MachineCode, Host: null, Port: null, pollIntervalSeconds, factory, descriptor);
+        result = new ConnectorValidationResult(DriverKinds.OpcUa, map.MachineCode, Host: null, Port: null, pollIntervalSeconds, factory, descriptor, writeCapability);
         error = null;
         return true;
     }

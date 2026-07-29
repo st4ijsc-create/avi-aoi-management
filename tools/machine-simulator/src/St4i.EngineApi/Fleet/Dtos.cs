@@ -200,7 +200,30 @@ public sealed record ConnectorStatusDto(string Id, string Error);
 /// exactly like a <c>connectors.json</c> entry's own <c>settings</c> value. <c>Host</c>/<c>Port</c> only
 /// apply to <see cref="DriverKinds.Modbus"/> — ignored (not an error) for <see cref="DriverKinds.OpcUa"/>,
 /// whose endpoint/credentials already live inside <c>MapJson</c> itself.</summary>
-public sealed record ConnectorCreateRequest(string Kind, string? Host, int? Port, string MapJson);
+/// <param name="ConfirmedWriteCapabilityFingerprint">Task B-3 — the deliberate-save gate, mirroring
+/// <c>POST /v1/site/identity/rotate</c>'s own echo-back pattern
+/// (<see cref="St4i.EngineApi.Endpoints.SiteEndpoints.RotateIdentityAsync"/>). <see langword="null"/>/omitted
+/// is fine for a map that declares no write/command capability — the overwhelming majority of saves, and
+/// every save this build ever accepted before this task. When <c>MapJson</c> DOES declare a writable point or
+/// command, this must echo <see cref="ConnectorWriteCapability.ComputeFingerprint"/>'s own value for that
+/// EXACT map — <see cref="Endpoints.ConnectorEndpoints.CreateConnectorAsync"/> returns 400 (missing/blank) or
+/// 409 (present but not matching what this specific map currently declares) rather than silently arming the
+/// capability on a bare, unconfirmed POST.</param>
+public sealed record ConnectorCreateRequest(string Kind, string? Host, int? Port, string MapJson, string? ConfirmedWriteCapabilityFingerprint = null);
+
+/// <summary>Task B-3 — the write/command capability a saved (or about-to-be-saved) map declares, shaped for
+/// direct display: never omit <see cref="Fingerprint"/> only because it's inconvenient to compute twice —
+/// <see cref="GrantsWriteCapability"/> is <see langword="false"/> and every list empty for the overwhelming
+/// majority of connectors (every map this build accepted before this task, and every map after it that simply
+/// declares neither). <see cref="Fingerprint"/> is <see langword="null"/> in that case too — there is nothing
+/// to confirm.</summary>
+public sealed record ConnectorWriteCapabilityDto(
+    bool GrantsWriteCapability, IReadOnlyList<string> WritablePoints, IReadOnlyList<string> Commands, string? Fingerprint)
+{
+    public static ConnectorWriteCapabilityDto From(ConnectorWriteCapability capability) => new(
+        capability.GrantsCapability, capability.WritablePoints, capability.Commands,
+        capability.GrantsCapability ? capability.ComputeFingerprint() : null);
+}
 
 /// <summary><c>AppliedLive</c> is true only when this was a genuinely NEW machine code
 /// (<see cref="FleetHost.RegisterMachine"/> added it — which restarts the pipeline itself if it was already
@@ -208,8 +231,14 @@ public sealed record ConnectorCreateRequest(string Kind, string? Host, int? Port
 /// under the SAME machine code, so only the persisted store + the live <c>ConnectorRegistry</c> entry were
 /// updated — an already-running fleet does not pick up the change until it is stopped/started again (or the
 /// process restarts). <c>Message</c> is the operator-facing sentence saying exactly which of those two
-/// happened — never leave the operator guessing why nothing visibly changed.</summary>
-public sealed record ConnectorCreateResultDto(ConnectorConfigSummary Config, bool AppliedLive, string Message);
+/// happened — never leave the operator guessing why nothing visibly changed.
+///
+/// <para><b>Task B-3 — <see cref="WriteCapability"/> is deliberately the FIRST field</b>, the same reason
+/// <c>POST /v1/site/identity/rotate</c>'s own response returns the new fingerprint first (see
+/// <see cref="St4i.EngineApi.Endpoints.SiteEndpoints.RotateIdentityAsync"/>'s own doc comment): whatever a
+/// save just granted must be impossible to miss in the response, not a field a caller has to know to go
+/// looking for.</para></summary>
+public sealed record ConnectorCreateResultDto(ConnectorWriteCapabilityDto WriteCapability, ConnectorConfigSummary Config, bool AppliedLive, string Message);
 
 /// <summary>The <c>DELETE /v1/connectors/{kind}</c> response. <c>Message</c> states plainly that this only
 /// removes the PERSISTED configuration — <see cref="FleetHost.RegisterMachine"/> has no unregister, so a

@@ -1,3 +1,4 @@
+using St4i.Connector.Abstractions.Models;
 using St4i.EdgeCore.Drivers.Modbus;
 using Xunit;
 
@@ -293,5 +294,309 @@ public class ModbusRegisterMapTests
         var actual = decoded * scale;
 
         Assert.Equal(expected, actual, precision: 10);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — writable
+    // setpoints: mandatory limits enforced at parse time, Holding-only, inverse-scaling + its overflow trap.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Writable_DeclaredWithMinMax_Parses_AppearsInWritablePointNames()
+    {
+        const string json = """
+        { "machineCode": "PLC-WRITE", "registers": [
+            { "address": 10, "type": "Holding", "dataType": "UInt16", "scale": 0.1, "metric": "speed",
+              "writable": { "min": 0, "max": 500 } } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+
+        var register = Assert.Single(map.Registers);
+        Assert.NotNull(register.Writable);
+        Assert.Equal(0, register.Writable!.Min);
+        Assert.Equal(500, register.Writable.Max);
+        Assert.Equal(new[] { "speed" }, map.WritablePointNames);
+    }
+
+    [Fact]
+    public void NonWritableRegister_WritableIsNull_NotInWritablePointNames_ByteIdenticalToBeforeThisTask()
+    {
+        var map = ModbusRegisterMap.FromJson(SampleJson);
+
+        Assert.All(map.Registers, r => Assert.Null(r.Writable));
+        Assert.Empty(map.WritablePointNames);
+        Assert.Empty(map.Commands);
+        Assert.Empty(map.CommandNames);
+    }
+
+    [Fact]
+    public void Writable_MissingMinAndMax_RejectedAtParseTime_MessageNamesThePoint()
+    {
+        const string json = """
+        { "machineCode": "PLC-NOLIMIT", "registers": [
+            { "address": 10, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { } } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+        Assert.Contains("min", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("""{ "min": 0 }""")]
+    [InlineData("""{ "max": 500 }""")]
+    public void Writable_MissingEitherBound_RejectedAtParseTime(string writableJson)
+    {
+        var json = $$"""
+        { "machineCode": "PLC-HALFLIMIT", "registers": [
+            { "address": 10, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": {{writableJson}} } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+    }
+
+    [Fact]
+    public void Writable_MinGreaterThanMax_Rejected()
+    {
+        const string json = """
+        { "machineCode": "PLC-BADRANGE", "registers": [
+            { "address": 10, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 500, "max": 0 } } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+        Assert.Contains("greater than", ex.Message);
+    }
+
+    [Fact]
+    public void Writable_OnInputRegister_Rejected_InputHasNoWriteFunctionCode()
+    {
+        const string json = """
+        { "machineCode": "PLC-INPUTWRITE", "registers": [
+            { "address": 10, "type": "Input", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 500 } } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+        Assert.Contains("Holding", ex.Message);
+    }
+
+    [Fact]
+    public void Writable_ZeroScale_Rejected_CannotBeInverted()
+    {
+        const string json = """
+        { "machineCode": "PLC-ZEROSCALE", "registers": [
+            { "address": 10, "type": "Holding", "dataType": "UInt16", "scale": 0.0, "metric": "speed",
+              "writable": { "min": 0, "max": 500 } } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+        Assert.Contains("scale", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Writable_DuplicateMetricAmongWritableRegisters_Rejected_AmbiguousWriteTarget()
+    {
+        const string json = """
+        { "machineCode": "PLC-DUP", "registers": [
+            { "address": 10, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 500 } },
+            { "address": 11, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+              "writable": { "min": 0, "max": 100 } } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+    }
+
+    /// <summary>Two non-writable registers sharing a metric is pre-existing, unaffected behavior — this new
+    /// uniqueness rule applies ONLY to writable points (the new identity this task introduces).</summary>
+    [Fact]
+    public void DuplicateMetricAmongNonWritableRegisters_StillAllowed_UnaffectedByThisTask()
+    {
+        const string json = """
+        { "machineCode": "PLC-DUP-READONLY", "registers": [
+            { "address": 10, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed" },
+            { "address": 11, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed" } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+        Assert.Equal(2, map.Registers.Count);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Inverse scaling — TryComputeRawWordForWrite, including the overflow trap.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(23.5, 0.1, ModbusDataType.UInt16, (ushort)235)]
+    [InlineData(0.0, 1.0, ModbusDataType.Int16, (ushort)0)]
+    [InlineData(-0.1, 0.1, ModbusDataType.Int16, (ushort)0xFFFF)] // -1 raw, bit-cast to its UInt16 pattern.
+    [InlineData(32767.0, 1.0, ModbusDataType.Int16, (ushort)32767)]
+    [InlineData(-32768.0, 1.0, ModbusDataType.Int16, (ushort)32768)]
+    [InlineData(65535.0, 1.0, ModbusDataType.UInt16, (ushort)65535)]
+    public void TryComputeRawWordForWrite_RoundTrips_InverseOfTheReadSideDecode(
+        double engineeringValue, double scale, ModbusDataType dataType, ushort expectedRaw)
+    {
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, dataType, scale, "m",
+            Writable: new ModbusWritableRange(-40000, 40000));
+
+        Assert.True(register.TryComputeRawWordForWrite(engineeringValue, out var raw, out var error));
+        Assert.Null(error);
+        Assert.Equal(expectedRaw, raw);
+    }
+
+    [Fact]
+    public void TryComputeRawWordForWrite_RoundsToNearest_AwayFromZero()
+    {
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, ModbusDataType.UInt16, 0.1, "m",
+            Writable: new ModbusWritableRange(0, 100));
+
+        // 23.46 / 0.1 = 234.6 -> rounds to 235.
+        Assert.True(register.TryComputeRawWordForWrite(23.46, out var raw, out _));
+        Assert.Equal((ushort)235, raw);
+    }
+
+    /// <summary>The exact trap the task brief calls out by name: a value that passes a (hypothetical, wide)
+    /// declared min/max can still overflow the register's own physical type once inverse-scaled — this must
+    /// be asserted as a failure, never silently wrapped/truncated by a naive numeric cast.</summary>
+    [Theory]
+    [InlineData(ModbusDataType.UInt16, 70000.0, 1.0)] // 70000 raw > ushort.MaxValue (65535).
+    [InlineData(ModbusDataType.UInt16, -1.0, 1.0)] // -1 raw < ushort.MinValue (0).
+    [InlineData(ModbusDataType.Int16, 40000.0, 1.0)] // 40000 raw > short.MaxValue (32767).
+    [InlineData(ModbusDataType.Int16, -40000.0, 1.0)] // -40000 raw < short.MinValue (-32768).
+    public void TryComputeRawWordForWrite_OverflowsThePhysicalType_Rejected_NeverWraps(
+        ModbusDataType dataType, double engineeringValue, double scale)
+    {
+        var register = new ModbusRegister(0, ModbusRegisterType.Holding, dataType, scale, "m");
+
+        Assert.False(register.TryComputeRawWordForWrite(engineeringValue, out var raw, out var error));
+        Assert.Equal(default, raw);
+        Assert.Contains("representable range", error);
+    }
+
+    /// <summary>The parse-time side of the same overflow trap: a declared min/max range that, once
+    /// inverse-scaled, would overflow the register's own DataType must be rejected at MAP-LOAD time — never
+    /// deferred to a future write attempt that could otherwise silently wrap/truncate.</summary>
+    [Fact]
+    public void Writable_DeclaredRangeOverflowsPhysicalTypeOnceInverseScaled_RejectedAtParseTime()
+    {
+        // scale 0.1, UInt16 (max raw 65535) => max representable engineering value is 6553.5. Declaring
+        // max=7000 requests a raw of 70000, which overflows UInt16.
+        const string json = """
+        { "machineCode": "PLC-OVERFLOW", "registers": [
+            { "address": 10, "type": "Holding", "dataType": "UInt16", "scale": 0.1, "metric": "speed",
+              "writable": { "min": 0, "max": 7000 } } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("speed", ex.Message);
+        Assert.Contains("overflow", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Commands.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Commands_DeclaredWithCoilAddress_Parses_AppearsInCommandNames()
+    {
+        const string json = """
+        { "machineCode": "PLC-CMD", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "StartCycle", "coilAddress": 5 } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+
+        var command = Assert.Single(map.Commands);
+        Assert.Equal("StartCycle", command.Name);
+        Assert.Equal((ushort)5, command.CoilAddress);
+        Assert.Equal(new[] { "StartCycle" }, map.CommandNames);
+    }
+
+    [Fact]
+    public void Commands_WithDeclaredArgument_NarrowsCorrectly()
+    {
+        const string json = """
+        { "machineCode": "PLC-CMD-ARGS", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "SetMode", "coilAddress": 6,
+            "arguments": [ { "name": "mode", "type": "UInt16", "min": 0, "max": 3 } ] } ] }
+        """;
+
+        var map = ModbusRegisterMap.FromJson(json);
+
+        var command = Assert.Single(map.Commands);
+        var argument = Assert.Single(command.Arguments!);
+        Assert.Equal("mode", argument.Name);
+        Assert.Equal(CommandArgumentType.UInt16, argument.Type);
+
+        Assert.True(argument.TryNarrow(2L, out var narrowed, out _));
+        Assert.Equal((ushort)2, narrowed);
+        Assert.False(argument.TryNarrow(10L, out _, out var error)); // outside declared [0,3].
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void Commands_DuplicateName_Rejected()
+    {
+        const string json = """
+        { "machineCode": "PLC-DUPCMD", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "Start", "coilAddress": 1 }, { "name": "Start", "coilAddress": 2 } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("Start", ex.Message);
+    }
+
+    [Fact]
+    public void Commands_BlankName_Rejected()
+    {
+        const string json = """
+        { "machineCode": "PLC-BLANKCMD", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "  ", "coilAddress": 1 } ] }
+        """;
+
+        Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+    }
+
+    [Fact]
+    public void Commands_ArgumentWithMinMaxOnBoolType_Rejected_SchemaShapeCheck()
+    {
+        const string json = """
+        { "machineCode": "PLC-BADARG", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "Start", "coilAddress": 1,
+            "arguments": [ { "name": "enable", "type": "Bool", "min": 0, "max": 1 } ] } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("Start", ex.Message);
+        Assert.Contains("enable", ex.Message);
+    }
+
+    [Fact]
+    public void Commands_DuplicateArgumentNameWithinOneCommand_Rejected()
+    {
+        const string json = """
+        { "machineCode": "PLC-DUPARG", "registers": [
+            { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "m" } ],
+          "commands": [ { "name": "Start", "coilAddress": 1,
+            "arguments": [ { "name": "mode", "type": "UInt16" }, { "name": "mode", "type": "Int16" } ] } ] }
+        """;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ModbusRegisterMap.FromJson(json));
+        Assert.Contains("Start", ex.Message);
+        Assert.Contains("mode", ex.Message);
     }
 }

@@ -218,6 +218,85 @@ public sealed class ConnectorConfigValidationTests
         Assert.Contains("mapJson", error);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — WriteCapability
+    // adapted from whichever protocol's own parsed map.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Modbus_PlainReadOnlyMap_WriteCapability_GrantsNothing()
+    {
+        var ok = ConnectorConfigValidation.TryValidate(
+            "Modbus", host: "10.0.0.5", port: 502, mapJson: ValidModbusMap, pkiDir: null,
+            out var result, out _);
+
+        Assert.True(ok);
+        Assert.False(result!.WriteCapability.GrantsCapability);
+        Assert.Empty(result.WriteCapability.WritablePoints);
+        Assert.Empty(result.WriteCapability.Commands);
+    }
+
+    [Fact]
+    public void Modbus_MapWithWritableRegisterAndCommand_WriteCapability_ReflectsBoth()
+    {
+        const string mapWithWrite = """
+            {
+              "machineCode": "MODBUS-WRITE",
+              "unitId": 1,
+              "registers": [
+                { "address": 0, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "temperature" },
+                { "address": 1, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed",
+                  "writable": { "min": 0, "max": 5000 } } ],
+              "commands": [ { "name": "StartCycle", "coilAddress": 5 } ]
+            }
+            """;
+
+        var ok = ConnectorConfigValidation.TryValidate(
+            "Modbus", host: "10.0.0.5", port: 502, mapJson: mapWithWrite, pkiDir: null,
+            out var result, out var error);
+
+        Assert.True(ok, error);
+        Assert.True(result!.WriteCapability.GrantsCapability);
+        Assert.Equal(new[] { "speed" }, result.WriteCapability.WritablePoints);
+        Assert.Equal(new[] { "StartCycle" }, result.WriteCapability.Commands);
+    }
+
+    [Fact]
+    public void OpcUa_PlainReadOnlyMap_WriteCapability_GrantsNothing()
+    {
+        var ok = ConnectorConfigValidation.TryValidate(
+            "OpcUa", host: null, port: null, mapJson: ValidOpcUaMap, pkiDir: null,
+            out var result, out _);
+
+        Assert.True(ok);
+        Assert.False(result!.WriteCapability.GrantsCapability);
+    }
+
+    [Fact]
+    public void OpcUa_MapWithWritableNodeAndCommand_WriteCapability_ReflectsBoth()
+    {
+        const string mapWithWrite = """
+            {
+              "machineCode": "OPCUA-WRITE",
+              "endpointUrl": "opc.tcp://10.0.0.9:4840",
+              "nodes": [
+                { "nodeId": "ns=2;s=Temperature", "metric": "temperature" },
+                { "nodeId": "ns=2;s=Speed", "metric": "speed",
+                  "writable": { "valueType": "UInt16", "min": 0, "max": 5000 } } ],
+              "commands": [ { "name": "Start", "objectNodeId": "ns=2;s=Machine", "methodNodeId": "ns=2;s=Machine.Start" } ]
+            }
+            """;
+
+        var ok = ConnectorConfigValidation.TryValidate(
+            "OpcUa", host: null, port: null, mapJson: mapWithWrite, pkiDir: null,
+            out var result, out var error);
+
+        Assert.True(ok, error);
+        Assert.True(result!.WriteCapability.GrantsCapability);
+        Assert.Equal(new[] { "speed" }, result.WriteCapability.WritablePoints);
+        Assert.Equal(new[] { "Start" }, result.WriteCapability.Commands);
+    }
+
     [Fact]
     public void MissingKind_Rejected()
     {

@@ -1569,6 +1569,27 @@ Register-map JSON shape (`ModbusRegisterMap.FromJson` — property names matched
   `readTimeoutMs`/`retries` are the ONE deliberate exception to that "malformed input throws" rule — see
   above.
 
+**Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — declarative
+write/command capability, no driver executes any of it yet (that's B-4).** Two OPTIONAL additions, both
+absent from every register-map ever accepted before this task and both a no-op for a map that never sets
+them (a map with neither is a read-only connector exactly as before):
+
+- A `Holding` register may add `"writable": { "min": <number>, "max": <number> }` — declares that register
+  as a writable setpoint named by its own `metric`, with **mandatory** physical bounds (engineering units,
+  the same domain `scale` already reads in): a writable register missing either bound, an `"Input"` register
+  declared writable, a zero/non-finite `scale`, or a declared range that overflows the register's own
+  `dataType` once inverse-scaled (÷`scale`, rounded) is **rejected at parse time**, naming the offending
+  point — never silently treated as unbounded.
+- A top-level `"commands": [ { "name": "...", "coilAddress": <ushort>, "arguments": [ { "name": "...",
+  "type": "UInt16" | "Int16" | "Int32" | "UInt32" | "Bool" | "Double", "min"?: <number>, "max"?: <number> }
+  ] } ]` declares a named coil-pulse command (mirroring a real vendor's "start cycle" button) and its
+  argument types — every argument value a future driver receives is narrowed against the declared type
+  (an OPC-UA-style boxed integer is re-narrowed to the exact declared width) before it could ever reach a
+  device.
+
+Neither declaration performs any I/O by itself — `ModbusRegisterMap`/`ModbusTcpDriver` still only ever
+**read** — this is the map format B-4's future write driver will consume.
+
 When Modbus is enabled and its map loads successfully, the Modbus machine is wired in as a
 **first-class roster member** — it gets a fleet snapshot tile, a historian row per poll, and (via
 Asset Registry auto-upsert, §16.5) an asset row, not just an invisible telemetry stream — and its
@@ -1749,6 +1770,17 @@ Node-map JSON shape (`OpcUaNodeMap.FromJson` — property names matched case-ins
   straight into an `Opc.Ua.NodeId`) plus the `metric`/`unit` it becomes on the resulting telemetry sample.
 - A blank `machineCode`/`endpointUrl` or an empty `nodes` list is rejected at load (throws), which
   Program.cs catches — it logs a warning and disables OPC-UA for the run rather than crashing startup.
+
+**Task B-3 — declarative write/command capability** (same posture as the Modbus section above — no driver
+executes any of this yet; `OpcUaDriver` still only ever **reads**): a node may add `"writable": {
+"valueType": "UInt16" | "Int16" | "Int32" | "UInt32" | "Double", "min": <number>, "max": <number> }` —
+`valueType` must be numeric (a boolean/string writable node is a documented, deferred follow-up),
+`min`/`max` are **mandatory** and must fit within `valueType`'s own representable range, and are validated
+at parse time exactly like Modbus's `writable` above. A top-level `"commands": [ { "name": "...",
+"objectNodeId": "...", "methodNodeId": "...", "arguments": [ ... same shape as Modbus's command arguments
+... ] } ]` declares an OPC-UA method by BOTH the NodeId of the object it is called on and the method's own
+NodeId (the `Call` service needs both), so a future driver never has to re-derive which object owns a
+method.
 
 **Value decoding + Verdict.Skip semantics:** every signed/unsigned integer and floating-point OPC-UA type
 widens to `double` (one uniform numeric representation, same posture as Modbus's `TelemetrySample`
@@ -3410,10 +3442,26 @@ routes on `ConnectorEndpoints.cs`:
 **Only Modbus TCP and OPC-UA are offered** — the two protocols this build has a working driver for
 (§20.5). **The "map JSON"** is the exact same shape the `ST4I_MODBUS_MAP`/`ST4I_OPCUA_MAP` environment
 variables already used: for Modbus, `{ machineCode, unitId, pollIntervalMs, registers: [{ address,
-type, dataType, scale, metric, unit? }] }` (`ModbusRegisterMap.cs`); for OPC-UA, `{ machineCode,
-endpointUrl, securityMode, username?, password?, pollIntervalMs, nodes: [{ nodeId, metric, unit? }] }`
-(`OpcUaNodeMap.cs`). It is entered by pasting or uploading a `.json` file into a plain `<textarea>` —
-**there is no visual/graphical map builder** (§20.5).
+type, dataType, scale, metric, unit?, writable? }], commands?: [...] }` (`ModbusRegisterMap.cs`); for
+OPC-UA, `{ machineCode, endpointUrl, securityMode, username?, password?, pollIntervalMs, nodes: [{
+nodeId, metric, unit?, writable? }], commands?: [...] }` (`OpcUaNodeMap.cs`) — `writable`/`commands` are
+Task B-3's declarative write/command capability (§16.4/§16.6 have the full field-level writeup); every
+map that omits both parses and behaves exactly as it always has. It is entered by pasting or uploading a
+`.json` file into a plain `<textarea>` — **there is no visual/graphical map builder** (§20.5).
+
+**Task B-3 — the deliberate-save gate.** A map that declares ANY writable point or command cannot be
+saved on a bare `POST /v1/connectors`: the request also needs `confirmedWriteCapabilityFingerprint`, a
+value only obtainable by having already seen what this EXACT map grants (mirrors `POST
+/v1/site/identity/rotate`'s own current-fingerprint echo, §12). Omitted/blank → `400`, naming every
+writable point/command this map would grant and the fingerprint required to confirm; present but not
+matching what the map currently declares (e.g. the JSON was edited after the fingerprint was copied) →
+`409`. A map declaring neither never needs this field at all — every existing map, and every map an
+operator pastes without ever touching `writable`/`commands`, saves exactly as before. The response's
+`writeCapability` field (deliberately its first field) always reports what was just granted, even
+`{ grantsWriteCapability: false, writablePoints: [], commands: [], fingerprint: null }` for a plain
+read-only save — never a field the caller has to know to go looking for. Commands are not setpoints: B-6
+gates them at a stricter RBAC role, using this SAME structural split (a `commands` entry vs. a register/
+node's own `writable`) rather than inspecting any name.
 
 **A fresh add applies live; re-saving an existing one does not.** `FleetHost.RegisterMachine` only
 ever **adds** — it has no "unregister"/"update in place." So `POST /v1/connectors` for a **new**
