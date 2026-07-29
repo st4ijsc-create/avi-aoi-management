@@ -138,6 +138,9 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
   // (SLO burn-rate alerts carry their catalogue runbook) — never fabricated.
   runbookRef: text("runbook_ref"),
   recommendationRef: text("recommendation_ref"),
+  // Wave 3 §3 — số lần tình trạng này tái diễn khi cảnh báo vẫn đang mở.
+  occurrenceCount: integer("occurrenceCount").notNull().default(1),
+  lastOccurredAt: timestamp("lastOccurredAt", { withTimezone: true }),
   // Timestamps
   expiresAt: timestamp("expiresAt"), // Alert expiration
   createdAt: timestamp("createdAt").defaultNow().notNull(),
