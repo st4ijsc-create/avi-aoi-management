@@ -51,10 +51,10 @@ import PollFreshness from "@/components/PollFreshness";
 import AgeLabel from "@/components/opsconsole/AgeLabel";
 import AlertGroupCard from "@/components/opsconsole/AlertGroupCard";
 import {
-  type AlertGroup, type AlertSource, type DecoratedAlert, type NormalAlert, type Severity,
+  type AlertGroup, type AlertSource, type ClosedAlertRow, type DecoratedAlert, type NormalAlert, type Severity,
   SEVERITY_DOT, SEVERITY_RANK, SEVERITY_TILE_SOLID, SOURCE_ICON,
   OVERDUE_AFTER_MS,
-  compareEscalation, isAckOnly, isResolveOnly, isForecastExpired,
+  closedReasonText, compareEscalation, isAckOnly, isResolveOnly, isForecastExpired,
 } from "@/components/opsconsole/model";
 // doc 67 W7 GĐ2 — formatter/empty-state chuẩn GĐ1 thay bản tự chế.
 import { fmtNum } from "@/lib/format";
@@ -157,6 +157,18 @@ export default function OpsConsole() {
   const predictiveQuery = trpc.predictiveAlert.list.useQuery(
     { status: "ACTIVE", limit: 100 },
     { refetchInterval: 30_000 },
+  );
+  // Task 6 (Wave 4) — "cảnh báo vừa đóng" (predictive status=EXPIRED). Wave 3's
+  // alertExpirySweeper auto-closes alerts that stopped recurring and writes a
+  // human reason into resolutionNotes, but the console only ever queried
+  // status=ACTIVE — a closed alert simply vanished with nobody able to read
+  // why. `enabled: showRecentlyClosed` — opt-in toggle, OFF by default (no
+  // background polling for a section nobody opened, and the open-alert list
+  // stays quiet by default).
+  const [showRecentlyClosed, setShowRecentlyClosed] = useState(false);
+  const closedPredictiveQuery = trpc.predictiveAlert.list.useQuery(
+    { status: "EXPIRED", limit: 50 },
+    { enabled: showRecentlyClosed, refetchInterval: showRecentlyClosed ? 30_000 : false },
   );
   const interlockEvents = trpc.interlock.events.useQuery({ limit: 100 }, { refetchInterval: 30_000 });
   const mqttUnresolved = trpc.mqttAlert.unresolved.useQuery(undefined, { refetchInterval: 30_000 });
@@ -405,6 +417,29 @@ export default function OpsConsole() {
 
     return out;
   }, [andonQuery.data, predictiveQuery.data, interlockEvents.data, mqttUnresolved.data, thresholdHistory.data, t]);
+
+  // ── Task 6 (Wave 4): "cảnh báo vừa đóng" — DANH SÁCH PHỤ, cố ý KHÔNG đi qua
+  // `alerts`/`decorated`/`groups` (đó là nguồn cho War Room + KPI đếm "đang
+  // mở"). Trộn vào đó sẽ khiến một dòng EXPIRED bị đếm/hiện như đang mở — đúng
+  // lỗi brief cảnh báo tránh. Chỉ tính khi công tắc bật (query cũng chỉ enabled
+  // lúc đó) nên không tốn gì khi tắt.
+  const closedRows = useMemo<ClosedAlertRow[]>(() => {
+    if (!showRecentlyClosed) return [];
+    return (closedPredictiveQuery.data ?? []).map((a) => ({
+      key: `predictive-closed:${a.id}`,
+      id: a.id,
+      title: a.title,
+      message: a.description ?? "",
+      severity: predictiveSeverity(a.severity),
+      group: a.machineCode ? `Machine ${a.machineCode}` : t("opsConsole.unassigned", "Unassigned"),
+      raisedAt: new Date(a.createdAt),
+      // updatedAt là mốc gần nhất được ghi khi sweeper đóng dòng (EXPIRED không
+      // có resolvedAt) — dùng nó để "vừa đóng" phản ánh đúng độ mới của việc đóng,
+      // không phải tuổi của lần dự báo đầu tiên.
+      closedAt: a.updatedAt ? new Date(a.updatedAt) : new Date(a.createdAt),
+      resolutionNotes: a.resolutionNotes ?? null,
+    }));
+  }, [showRecentlyClosed, closedPredictiveQuery.data, t]);
 
   // ── W3 (việc 3): escalation flags + sort ────────────────────────────────────
   // critical chưa-ack >10' → quá hạn (nổi đầu); predictive >5 ngày → hết hạn dự
@@ -1059,8 +1094,21 @@ export default function OpsConsole() {
                         <SelectItem value="acked">{t("opsConsole.ackAcked", "Acknowledged")}</SelectItem>
                       </SelectContent>
                     </Select>
+                    {/* Task 6 (Wave 4) — công tắc "cảnh báo vừa đóng" (EXPIRED), MẶC ĐỊNH
+                        TẮT để không làm ồn danh sách đang mở. */}
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        className="size-5"
+                        checked={showRecentlyClosed}
+                        onCheckedChange={(v) => setShowRecentlyClosed(v === true)}
+                      />
+                      {t("alerts.showRecentlyClosed", "Hiện cảnh báo vừa đóng")}
+                    </label>
                     <span className="ml-auto text-sm text-muted-foreground">
                       {t("opsConsole.showing", "Showing {{n}}", { n: filtered.length })}
+                      {showRecentlyClosed && closedRows.length > 0 && (
+                        <> · +{closedRows.length} {t("alerts.closedBadge", "đã đóng")}</>
+                      )}
                     </span>
                   </CardContent>
                 </Card>
@@ -1089,7 +1137,10 @@ export default function OpsConsole() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filtered.length === 0 && (
+                        {/* Task 6 (Wave 4) — khi công tắc bật và có dòng vừa đóng để hiện,
+                            đừng nói "không có cảnh báo" (đang có, chỉ là ở phần đã đóng bên
+                            dưới). */}
+                        {filtered.length === 0 && closedRows.length === 0 && (
                           <TableRow>
                             <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                               {t("opsConsole.noAlerts", "No alerts match the filters")}
@@ -1187,6 +1238,58 @@ export default function OpsConsole() {
                             </TableCell>
                           </TableRow>
                         ))}
+                        {/* Task 6 (Wave 4) — "cảnh báo vừa đóng" (predictive EXPIRED), chỉ hiện
+                            khi công tắc bật. Hàng riêng biệt, KHÔNG dùng chung render với hàng
+                            đang mở ở trên: mờ hơn (opacity), nhãn "đã đóng" thay ACK/Open, KHÔNG
+                            checkbox chọn/nút hành động (đã ở trạng thái cuối, không có mutation
+                            nào để gọi ở đây) — không thể nhầm là còn đang mở. */}
+                        {showRecentlyClosed && closedRows.length > 0 && (
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={8} className="py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              {t("alerts.showRecentlyClosed", "Hiện cảnh báo vừa đóng")} ({closedRows.length})
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {showRecentlyClosed && closedRows.map((c) => {
+                          const reason = closedReasonText(c.resolutionNotes);
+                          return (
+                            <TableRow key={c.key} className="opacity-60">
+                              <TableCell />
+                              <TableCell>
+                                <span className="flex items-center gap-2">
+                                  <span className={`inline-block h-3 w-3 rounded-full ${SEVERITY_DOT[c.severity]}`} />
+                                  <span className="capitalize">{c.severity}</span>
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="gap-1">
+                                  {SOURCE_ICON.predictive} predictive
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[280px]">
+                                <div className="truncate font-medium">{c.title}</div>
+                                <div className="truncate text-xs text-muted-foreground">{c.message}</div>
+                                {/* resolutionNotes có thể rỗng (dòng đóng bằng đường khác) — KHÔNG
+                                    hiện dòng lý do khi rỗng, tuyệt đối không "Lý do: undefined". */}
+                                {reason && (
+                                  <div className="mt-1 truncate text-xs italic text-muted-foreground" title={reason}>
+                                    {t("alerts.closedReason", "Lý do: {{reason}}", { reason })}
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">{c.group}</TableCell>
+                              <TableCell className="text-sm tabular-nums">
+                                <AgeLabel raisedAt={c.closedAt} />
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-muted-foreground">
+                                  {t("alerts.closedBadge", "đã đóng")}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right" />
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                     {/* W3 (việc 1/perf): slice tăng dần thay virtualization — không thêm dep npm. */}

@@ -1628,7 +1628,10 @@
     "confidenceMedium": "证据较充分（{{n}}%）",
     "confidenceHigh": "证据充分（{{n}}%）",
     "confidenceUnknown": "置信度未知",
-    "recurrence": "已重复 {{n}} 次"
+    "recurrence": "已重复 {{n}} 次",
+    "showRecentlyClosed": "显示最近关闭的告警",
+    "closedBadge": "已关闭",
+    "closedReason": "原因：{{reason}}"
   },
   "annotation": {
     "zoomOut": "缩小",

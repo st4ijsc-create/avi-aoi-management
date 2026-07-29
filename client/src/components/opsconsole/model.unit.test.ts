@@ -13,7 +13,7 @@
  * (nguồn khác, hoặc dòng chưa từng tái diễn) — không làm vỡ dòng cũ.
  */
 import { describe, it, expect } from "vitest";
-import { isForecastExpired, FORECAST_EXPIRE_MS } from "./model";
+import { isForecastExpired, FORECAST_EXPIRE_MS, closedReasonText } from "./model";
 
 const NOW = Date.parse("2026-07-29T12:00:00.000Z");
 const DAY = 24 * 60 * 60_000;
@@ -54,5 +54,28 @@ describe("isForecastExpired", () => {
   it("nguồn KHÔNG PHẢI predictive ⇒ không bao giờ hết hạn dự báo, dù raisedAt/lastOccurredAt rất cũ", () => {
     const a = { source: "andon" as const, raisedAt: new Date(NOW - 30 * DAY), lastOccurredAt: new Date(NOW - 30 * DAY) };
     expect(isForecastExpired(a, NOW)).toBe(false);
+  });
+});
+
+/**
+ * Task 6 (Wave 4) — cảnh báo tự đóng (alertExpirySweeper) ghi lý do vào
+ * resolutionNotes, nhưng dòng đóng bằng đường khác (ack thủ công cũ, resolve
+ * qua AI tool...) có thể để trường này null/rỗng. UI dùng closedReasonText()
+ * để QUYẾT ĐỊNH có render dòng "Lý do: …" hay không — sai ở đây sẽ in ra
+ * "Lý do: undefined" y hệt lỗi badge tái diễn của Wave 3.
+ */
+describe("closedReasonText", () => {
+  it("có nội dung thật ⇒ trả về nguyên văn (đã trim)", () => {
+    expect(closedReasonText("Tự đóng: tình trạng đã thôi tái diễn trước khi hết hạn cảnh báo.")).toBe(
+      "Tự đóng: tình trạng đã thôi tái diễn trước khi hết hạn cảnh báo.",
+    );
+    expect(closedReasonText("  có khoảng trắng bao quanh  ")).toBe("có khoảng trắng bao quanh");
+  });
+
+  it("null/undefined/rỗng/toàn khoảng-trắng ⇒ null (KHÔNG hiện dòng lý do, không in 'undefined')", () => {
+    expect(closedReasonText(null)).toBeNull();
+    expect(closedReasonText(undefined)).toBeNull();
+    expect(closedReasonText("")).toBeNull();
+    expect(closedReasonText("   ")).toBeNull();
   });
 });

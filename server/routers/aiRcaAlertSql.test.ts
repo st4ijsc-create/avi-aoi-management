@@ -33,6 +33,7 @@ import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { predictiveAlerts, rootCauseAnalysis } from "../../drizzle/schema";
 import { rootCauseRouter, predictiveAlertRouter } from "./aiRouters";
+import { isMissingColumn, isMissingTable } from "../_core/dbErrors";
 
 const TEST_USER_ID = 990_101;
 const RUN_TAG = `W0-1-${Date.now()}`;
@@ -122,6 +123,68 @@ describe("predictiveAlert.resolve — W0-1 fix (integration)", () => {
     expect(row.resolvedBy).toBe(TEST_USER_ID);
     expect(row.resolvedAt).toBeInstanceOf(Date);
     expect(row.resolutionNotes).toBe("Fixed sensor calibration");
+  });
+});
+
+describe("predictiveAlert.list — Task 6 (Wave 4): resolutionNotes/status contract (integration)", () => {
+  // Wave 3 lesson repeated in the Task 6 brief: `list`'s `.map()` hand-lists
+  // columns, so occurrenceCount/lastOccurredAt were silently `undefined` on
+  // the client even though the DB row had them (fixed in Wave 3 Task 7). The
+  // same bug class hit resolutionNotes here — alertExpirySweeper.ts writes a
+  // human-readable close reason into it, but `list` never returned the field
+  // at all, so a closed alert's reason was unreadable from any client. This
+  // test seeds a row exactly the way the sweeper leaves one (status=EXPIRED +
+  // resolutionNotes set) and asserts the router now actually returns it —
+  // not just that the query runs.
+  it("returns resolutionNotes + status for an EXPIRED alert, and the status filter is not hardcoded to ACTIVE", async () => {
+    if (!db) return; // soft-skip: no DB reachable in this environment
+    try {
+      const closeReason = `${RUN_TAG}: Tự đóng — đã thôi tái diễn`;
+      const expiredId = await seedAlert({
+        status: "EXPIRED" as any,
+        resolutionNotes: closeReason,
+        title: `${RUN_TAG}-expired`,
+      });
+      const activeId = await seedAlert({ status: "ACTIVE", title: `${RUN_TAG}-active` });
+
+      // status=EXPIRED must actually be honoured (not silently forced to ACTIVE).
+      const expiredRows = await alertCaller.list({ status: "EXPIRED", limit: 100 });
+      const expiredIds = expiredRows.map((r) => r.id);
+      expect(expiredIds).toContain(expiredId);
+      expect(expiredIds).not.toContain(activeId);
+
+      const row = expiredRows.find((r) => r.id === expiredId);
+      expect(row?.status).toBe("EXPIRED");
+      expect(row?.resolutionNotes).toBe(closeReason);
+
+      // The default ACTIVE-only query used elsewhere must not leak the expired row.
+      const activeRows = await alertCaller.list({ status: "ACTIVE", limit: 100 });
+      expect(activeRows.map((r) => r.id)).not.toContain(expiredId);
+    } catch (err) {
+      // Soft-skip: this local/CI test DB may be behind on an unrelated migration
+      // (e.g. 0308's occurrenceCount, which predates Task 6 and this task is
+      // explicitly forbidden from running). Mirrors the isMissingColumn/
+      // isMissingTable degrade pattern used in server/services/alertExpirySweeper.ts
+      // rather than hard-failing on environment drift unrelated to the
+      // resolutionNotes/status contract this test actually verifies.
+      if (isMissingColumn(err) || isMissingTable(err)) return;
+      throw err;
+    }
+  });
+
+  it("resolutionNotes is null (not a missing key) for a row that was never closed", async () => {
+    if (!db) return;
+    try {
+      const id = await seedAlert({ status: "ACTIVE", title: `${RUN_TAG}-no-notes` });
+      const rows = await alertCaller.list({ status: "ACTIVE", limit: 100 });
+      const row = rows.find((r) => r.id === id);
+      expect(row).toBeDefined();
+      expect(row).toHaveProperty("resolutionNotes");
+      expect(row?.resolutionNotes).toBeNull();
+    } catch (err) {
+      if (isMissingColumn(err) || isMissingTable(err)) return;
+      throw err;
+    }
   });
 });
 

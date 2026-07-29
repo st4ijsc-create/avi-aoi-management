@@ -160,6 +160,38 @@ export function isForecastExpired(
   return now - anchor.getTime() > FORECAST_EXPIRE_MS;
 }
 
+/**
+ * Task 6 (Wave 4) — "cảnh báo vừa đóng" (predictive status=EXPIRED). Đây KHÔNG
+ * phải NormalAlert: nó không đi qua `alerts`/`decorated`/`groups` (War Room +
+ * KPI đếm) — trộn vào đó sẽ khiến một dòng đã đóng bị tính là đang mở (đúng lỗi
+ * bài học nêu trong brief: "không trộn lẫn khiến người ta tưởng còn đang mở").
+ * Đây là một danh sách phụ, chỉ hiện ở Alert Center khi bật công tắc, với hàng
+ * được đánh dấu "đã đóng" tách bạch.
+ */
+export interface ClosedAlertRow {
+  key: string;
+  id: number;
+  title: string;
+  message: string;
+  severity: Severity;
+  group: string;
+  raisedAt: Date;   // predictive_alerts.createdAt — khi cảnh báo lần đầu xuất hiện
+  closedAt: Date;   // predictive_alerts.updatedAt — khi bị đóng (EXPIRED không có resolvedAt)
+  resolutionNotes: string | null;
+}
+
+/**
+ * Task 6 (Wave 4) — `resolutionNotes` có thể null/rỗng/toàn khoảng-trắng (dòng
+ * đóng bằng đường khác, không qua alertExpirySweeper). Trả về chuỗi ĐÃ TRIM khi
+ * có nội dung thật, ngược lại `null` — nơi gọi dùng giá trị này để QUYẾT ĐỊNH có
+ * render dòng "Lý do: …" hay không. Tuyệt đối không được render khi giá trị này
+ * là null (sẽ in ra "Lý do: undefined"/"Lý do: null"/"Lý do: " rỗng).
+ */
+export function closedReasonText(resolutionNotes: string | null | undefined): string | null {
+  const trimmed = (resolutionNotes ?? "").trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function escalationRank(a: { severity: Severity; overdue: boolean; expired: boolean }): number {
   if (a.expired) return 100;               // hết hạn dự báo → đáy
   if (a.overdue) return -1;                // critical quá hạn ack → đỉnh

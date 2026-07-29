@@ -471,6 +471,19 @@ export const predictiveAlertRouter = router({
         occurrenceCount: row.occurrenceCount,
         lastOccurredAt: row.lastOccurredAt,
         createdAt: row.createdAt,
+        // Task 6 (Wave 4) — same class of bug as occurrenceCount/lastOccurredAt
+        // above (Wave 3 Task 7): the `.map()` here re-lists columns by hand, so
+        // anything not spelled out is `undefined` on the client FOREVER even
+        // though the DB row has it. alertExpirySweeper.ts writes a human reason
+        // into resolutionNotes when it auto-closes a no-longer-recurring alert
+        // (status → EXPIRED) — without this field the reason is unreadable from
+        // any client that calls `list` (the single-row `get` query below already
+        // had it). resolutionNotes can be null (row closed some other way, or
+        // still open) — client must treat null/empty as "no reason", never print
+        // "undefined". updatedAt lets the UI order/label "recently closed" rows
+        // by when they actually closed (EXPIRED rows have no resolvedAt set).
+        resolutionNotes: row.resolutionNotes,
+        updatedAt: row.updatedAt,
       }));
     }),
 

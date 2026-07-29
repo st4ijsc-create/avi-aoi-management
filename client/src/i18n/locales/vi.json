@@ -1629,7 +1629,10 @@
     "confidenceMedium": "bằng chứng khá ({{n}}%)",
     "confidenceHigh": "bằng chứng vững ({{n}}%)",
     "confidenceUnknown": "chưa rõ độ tin cậy",
-    "recurrence": "đã tái diễn {{n}} lần"
+    "recurrence": "đã tái diễn {{n}} lần",
+    "showRecentlyClosed": "Hiện cảnh báo vừa đóng",
+    "closedBadge": "đã đóng",
+    "closedReason": "Lý do: {{reason}}"
   },
   "annotation": {
     "comparison": {
