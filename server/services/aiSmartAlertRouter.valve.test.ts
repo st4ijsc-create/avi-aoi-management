@@ -78,7 +78,10 @@ describe("routeAlert — cửa sổ gộp không còn nuốt lần tái diễn",
     for (let i = 0; i < 4; i++) {
       await routeAlert({ type: "MACHINE_FAILURE", machineId: 8202, severity: "HIGH", message: "x", data: {} } as any);
     }
-    expect(calls.filter((c) => c.kind === "occ").length).toBeLessThan(4);
+    // Vòng sửa cuối, mục 3 — trần=2: lượt 1,2 ghi được (count 1,2 ≤ trần), lượt 3,4
+    // chạm van (count 3,4 > trần) và bị bỏ. Đây là assertion DUY NHẤT canh biên
+    // nextCount > cap; lỏng thành toBeLessThan(4) sẽ không bắt được lỗi off-by-one.
+    expect(calls.filter((c) => c.kind === "occ").length).toBe(2);
     expect(warn).toHaveBeenCalled();
     expect(String(warn.mock.calls[0][0])).toContain("VAN AN TOÀN");
     warn.mockRestore();

@@ -17,6 +17,9 @@ const notified: { userId: number }[] = [];
 let seedOpenAlertRows: any[] = [];
 let seedUserRows: any[] = [];
 let patternQueried = false;
+// I-1 (vòng sửa cuối) — cho checkPatterns() (db.execute) NÉM lỗi thật, để test chạm
+// đúng đường I/O không bọc giữa quyết-định và đường-ghi.
+let patternExecuteThrows = false;
 // Finding 1 (review round 1) — driver THẬT ném lỗi ở đúng điểm await cuối chuỗi
 // (.returning() thật thi hành query). Không push vào `calls` khi hỏng — dòng
 // chưa từng thực sự được ghi, giữ đúng quy ước đã dùng cho occurrence ở
@@ -74,6 +77,9 @@ vi.mock("../db/connection", () => ({
     // checkPatterns() gọi db.execute — dùng để khẳng định nó KHÔNG chạy khi im lặng.
     execute: async (_q: any) => {
       patternQueried = true;
+      if (patternExecuteThrows) {
+        throw new Error("truy vấn pattern 30 ngày LỖI (giả lập Postgres time-out tải cao)");
+      }
       return { rows: [] };
     },
   }),
@@ -95,6 +101,7 @@ beforeEach(() => {
   seedOpenAlertRows = [];
   seedUserRows = [];
   patternQueried = false;
+  patternExecuteThrows = false;
   alertInsertThrows = false;
   generateText.mockClear();
   process.env.ALERT_RENOTIFY_COOLDOWN_MINUTES = "240";
@@ -208,5 +215,24 @@ describe("routeAlert — tách gửi thông báo khỏi ghi nhật ký", () => {
     expect(upd).toBeTruthy();
     expect(upd.payload.notificationSentAt).toBeUndefined();
     expect(upd.payload.notificationSent).toBeUndefined();
+  });
+
+  // Vòng sửa cuối, I-1 — `determineTargets`/`checkPatterns` (:270-271) là I/O DB
+  // KHÔNG bọc lỗi, nằm GIỮA quyết-định và đường-ghi. checkPatterns chạy GROUP BY
+  // 30 ngày trên predictive_alerts — dễ time-out nhất trong hàm, đúng lúc tải cao
+  // là đúng lúc KPI cần đếm nhất. Trước khi sửa: lỗi ở đây ném thẳng ra ngoài
+  // routeAlert() ⇒ KHÔNG dòng cảnh báo, KHÔNG dòng nhật ký, KPI mất một lần, không
+  // dấu vết — đúng luận điểm cốt lõi của sprint bị thủng ngay tại đây.
+  it("checkPatterns (truy vấn pattern 30 ngày) NÉM lỗi ⇒ fail-open: KHÔNG ném ra ngoài, VẪN ghi cảnh báo + nhật ký", async () => {
+    seedUserRows = MAINTENANCE;
+    patternExecuteThrows = true;
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+
+    await expect(
+      routeAlert({ type: "MACHINE_FAILURE", machineId: 8108, severity: "HIGH", message: "x", data: {} } as any),
+    ).resolves.toBeTruthy();
+
+    expect(calls.some((c) => c.kind === "insert")).toBe(true); // dòng cảnh báo vẫn được ghi
+    expect(calls.some((c) => c.kind === "insert-occurrence")).toBe(true); // nhật ký lần-tái-diễn vẫn được ghi
   });
 });

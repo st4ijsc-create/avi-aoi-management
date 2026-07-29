@@ -142,6 +142,12 @@ function escalationLevelToLabel(level: number): EscalationLevel {
 export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult> {
   const db = await getDb();
   if (!db) {
+    // Vòng sửa cuối, mục 2 — đường thoát IM LẶNG TUYỆT ĐỐI cuối cùng còn lại: không
+    // dòng cảnh báo, không dòng nhật ký, KHÔNG cả một dòng log. Mọi lỗi I/O khác
+    // trong hàm này giờ đều fail-open CÓ dấu vết (console.error/warn); DB không kết
+    // nối được thì không có gì để nối vào cả, nhưng ít nhất phải THẤY được sự kiện
+    // này đã xảy ra — khép nốt bất biến "không lần tái diễn nào biến mất im lặng".
+    console.warn(`[SmartAlert] KHÔNG CÓ DB — bỏ cảnh báo "${event.type}" mà không ghi được gì (máy #${event.machineId ?? "?"})`);
     return { alertType: event.type, targets: [], consolidated: false, escalationLevel: "L1" };
   }
 
@@ -267,8 +273,27 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
 
   // Chỉ trả giá cho những thứ ĐẮT khi thật sự sắp làm phiền ai đó: một truy vấn
   // pattern 30 ngày + một lượt gọi LLM. Trước đây chạy MỌI lượt lọt (≤3/5 phút).
-  const targets = notifyDecision.notify ? await determineTargets(db, event) : [];
-  const suggestedAction = notifyDecision.notify ? await checkPatterns(db, event) : null;
+  //
+  // I-1 (vòng sửa cuối) — CẢ HAI là I/O DB nằm GIỮA quyết-định và đường-ghi, cùng
+  // fail-open như tra-cứu-hỏng (:236) / ghi-hỏng (:393) / nhật-ký-hỏng (:414):
+  // đường PHỤ (thông báo: ai nhận + gợi ý pattern) không được phép giết đường
+  // CHÍNH (ghi sổ). checkPatterns() chạy GROUP BY 30 ngày trên predictive_alerts —
+  // dễ time-out nhất trong hàm này, và nó time-out đúng lúc tải cao, tức đúng lúc
+  // KPI cần đếm nhất. Không bọc ⇒ routeAlert() ném ra ngoài ⇒ không dòng cảnh báo,
+  // không dòng nhật ký, KPI mất một lần, không dấu vết — đúng bệnh Wave 4 sinh ra
+  // để chữa.
+  const targets = notifyDecision.notify
+    ? await determineTargets(db, event).catch((e) => {
+        console.error("[SmartAlert] tra người nhận HỎNG — vẫn ghi sổ:", (e as Error)?.message ?? e);
+        return [];
+      })
+    : [];
+  const suggestedAction = notifyDecision.notify
+    ? await checkPatterns(db, event).catch((e) => {
+        console.error("[SmartAlert] truy vấn pattern HỎNG — vẫn ghi sổ:", (e as Error)?.message ?? e);
+        return null;
+      })
+    : null;
   const aiReasoning = notifyDecision.notify
     ? await enrichRoutingWithAI(event, targets, suggestedAction).catch(() => null)
     : null;
@@ -320,7 +345,6 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
 
   let alertRecord: { id: number } | undefined;
 
-  let writeFailed = false;
   try {
     if (decision.action === "update") {
       await db
@@ -390,7 +414,6 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     // báo trùng còn hơn im lặng về một máy sắp hỏng. Trước đây thông báo gửi
     // TRƯỚC khi ghi nên lỗi ghi không ảnh hưởng; nay thông báo đi sau, nên phải
     // nói rõ ra ở đây thay vì để hành vi thay đổi lặng lẽ.
-    writeFailed = true;
     console.error("[SmartAlert] GHI cảnh báo THẤT BẠI — vẫn gửi thông báo để không bỏ sót:", (err as Error)?.message ?? err);
   }
 

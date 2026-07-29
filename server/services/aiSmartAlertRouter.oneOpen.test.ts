@@ -167,10 +167,12 @@ describe("routeAlert — một-cảnh-báo-mở", () => {
     //
     // machineId RIÊNG (không phải 2) — bộ đếm consolidation trong routeAlert() sống
     // trong redisService (in-memory fallback) là SINGLETON không reset giữa các test
-    // trong cùng file; các case khác trong file này đã dùng đúng 3 lượt gọi cho khoá
-    // "MACHINE_FAILURE:2:all" (vừa chạm ngưỡng `nextCount > 3` là bỏ qua ghi DB hẳn —
-    // xem :134). Dùng machineId khác để không cộng dồn vào cùng khoá và vô tình phá
-    // các test khác chạy sau nó trong cùng file.
+    // trong cùng file; các case khác trong file này đã cộng dồn nhiều lượt gọi vào
+    // khoá "MACHINE_FAILURE:2:all". Sprint 5 §2.5 đã bỏ trần cứng cũ (`nextCount > 3`)
+    // — cửa sổ gộp Redis giờ chỉ còn là van an toàn (ROUTE_ALERT_MAX_PER_WINDOW, mặc
+    // định 200), không còn chặn ghi ở quy mô vài lượt gọi trong test. Dùng machineId
+    // khác vẫn giữ nguyên tắc: không cộng dồn vào cùng khoá và vô tình phá các test
+    // khác chạy sau nó trong cùng file.
     seedOpenAlertRows = [{ id: 7, severity: "HIGH", occurrenceCount: 22 }];
     const { routeAlert } = await import("./aiSmartAlertRouter");
     await routeAlert({ type: "MACHINE_FAILURE", machineId: 4242, severity: "HIGH", message: "x", data: {} } as any);
