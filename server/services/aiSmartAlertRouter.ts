@@ -336,7 +336,7 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     // tự chuẩn hoá chuỗi số về lại number nên kết quả không đổi.
     const occ = buildOccurrence(alertRecord?.id, { severity: event.severity, confidence }, new Date());
     if (occ) {
-      await db.insert(predictiveAlertOccurrences).values(occ as any);
+      await db.insert(predictiveAlertOccurrences).values(occ);
     }
   } catch (err) {
     // Log to ERROR, không phải warn: mất một dòng nhật ký nghĩa là KPI đếm

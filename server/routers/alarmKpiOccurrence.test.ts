@@ -285,6 +285,100 @@ describe("alarmKpi — đọc từ nhật ký lần-tái-diễn", () => {
    * VỀ đúng mức cha, alarm rơi vào bucket "high" (gồm critical); nếu bỏ sót
    * `?? r.severity`, normalizePredictiveSeverity(null) mặc định về "low" sai.
    */
+  /**
+   * Vòng sửa cuối (review toàn nhánh, mục 1) — hồi quy do CHÍNH Wave 4 gây ra.
+   * computeStanding() (alarmKpiMath.ts) lọc `resolvedAt == null && tuổi ≥ 24h`
+   * trên TOÀN BỘ sự kiện — nó đếm LƯỢT KÍCH HOẠT, trong khi ISA-18.2 "standing
+   * alarm" đếm BÁO ĐỘNG. Trước sửa này, mọi lần tái diễn của một cảnh báo còn
+   * mở đều giữ `resolvedAt=null` (vì `isResolved` chỉ nhìn TRẠNG THÁI CỦA DÒNG
+   * CHA — dòng cha còn mở thì mọi lần tái diễn cũ cũng "còn mở") ⇒ N lần tái
+   * diễn = N dòng "tồn đọng" cho MỘT cảnh báo.
+   *
+   * Reviewer đo bằng probe thật: 1 cảnh báo chưa xử lý, tái diễn ~22 lần/ngày ×
+   * 3 ngày, cửa sổ 72h ⇒ CŨ (trước Wave 4, 1 dòng/cảnh báo) standing.count=1
+   * status=ok; SAU Wave 4 (lỗi) standing.count=43 status=warning. Sự thật vẫn
+   * là 1 cảnh báo tồn đọng — không phải 43.
+   *
+   * Kịch bản dựng ở đây: 66 lần tái diễn (~22/ngày × 3 ngày) trải từ now-70h
+   * đến now-26h (đều nằm trong cửa sổ 72h VÀ đều cũ hơn ngưỡng 24h) — tức
+   * TRƯỚC sửa, cả 66 dòng sẽ bị đếm là "tồn đọng" cho một cảnh báo.
+   */
+  it("TỒN ĐỌNG ĐẾM THEO CẢNH BÁO: chuỗi 66 lần tái diễn (3 ngày) của MỘT cảnh báo ⇒ standing.count===1, không phải 66", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 72 * 3600_000);
+    seedAlertRows = [{
+      id: 601,
+      severity: "MEDIUM",
+      createdAt: new Date(now - 90 * 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null,
+      status: "ACTIVE",
+      machineId: 21,
+      machineCode: "M21",
+      title: "rung bất thường kéo dài",
+    }];
+    const N = 66;
+    const spanMs = 44 * 3600_000; // now-70h .. now-26h
+    seedOccurrenceRows = Array.from({ length: N }, (_, i) => ({
+      id: 9600 + i,
+      alertId: 601,
+      occurredAt: new Date(now - 70 * 3600_000 + (i * spanMs) / (N - 1)),
+      severity: "MEDIUM",
+    }));
+
+    const res = await caller.summary({ windowHours: 72 });
+
+    // ★ Cạm bẫy chính: KHÔNG được bỏ bớt sự kiện để "sửa" ca này. rate/flood/
+    // badActors vẫn phải đếm đủ 66 lần — đây là chính điều Wave 4 vừa sửa.
+    expect(res.sourceCounts.predictive).toBe(N);
+    expect(res.totalAlarms).toBe(N);
+    expect(res.rate.count).toBe(N);
+    expect(res.badActors.find((b) => b.actorKey === "machine:21")?.count).toBe(N);
+
+    // ★ Đây là chỗ hồi quy: standing phải đếm THEO CẢNH BÁO (1), không theo
+    // LƯỢT KÍCH HOẠT (66).
+    expect(res.standing.count).toBe(1);
+    expect(res.standing.status).toBe("ok");
+    expect(res.standing.worst).toHaveLength(1);
+    expect(res.standing.worst[0].title).toBe("rung bất thường kéo dài");
+    // Không có breach "standing" giả — chỉ 1 cảnh báo tồn đọng, dưới ngưỡng 5.
+    expect(res.breaches).not.toContain("standing");
+  });
+
+  /**
+   * Vòng sửa cuối, mục 1 — "cùng khối" với ca trên: `isResolved` (router) thiếu
+   * `status === "EXPIRED"`. `alertExpirySweeper` (Wave 3, sweepExpiredAlerts)
+   * đóng cảnh báo bằng status='EXPIRED' và KHÔNG set resolvedAt ⇒ trước sửa,
+   * mọi cảnh báo tự hết hạn vẫn bị coi là "đang mở" và có thể lộ ra như
+   * standing giả nếu đủ tuổi.
+   */
+  it("EXPIRED (tự đóng, không set resolvedAt) KHÔNG được tính là tồn đọng", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 72 * 3600_000);
+    seedAlertRows = [{
+      id: 602,
+      severity: "LOW",
+      createdAt: new Date(now - 40 * 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null, // sweepExpiredAlerts KHÔNG set resolvedAt khi tự đóng
+      status: "EXPIRED",
+      machineId: 22,
+      machineCode: "M22",
+      title: "cảnh báo đã tự hết hạn",
+    }];
+    seedOccurrenceRows = [{
+      id: 9700,
+      alertId: 602,
+      occurredAt: new Date(now - 30 * 3600_000), // 30h tuổi — quá ngưỡng 24h nếu tính nhầm là "mở"
+      severity: "LOW",
+    }];
+
+    const res = await caller.summary({ windowHours: 72 });
+
+    expect(res.sourceCounts.predictive).toBe(1); // vẫn đếm đủ sự kiện
+    expect(res.standing.count).toBe(0); // nhưng KHÔNG được tính là tồn đọng
+  });
+
   it("thiếu occurrenceSeverity (nhật ký không ghi mức) ⇒ lùi về mức của dòng cha", async () => {
     const now = Date.now();
     sinceForTest = new Date(now - 8 * 3600_000);

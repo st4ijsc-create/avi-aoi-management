@@ -14,6 +14,7 @@ import { and, eq, gte, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { andonEvents, predictiveAlerts, predictiveAlertOccurrences, machines, users } from "../../drizzle/schema";
+import { isMissingTable } from "../_core/dbErrors";
 import {
   summarizeAlarmKpi,
   normalizeAndonState,
@@ -73,23 +74,38 @@ export const alarmKpiRouter = router({
       // Wave 4 §4 — KPI đếm theo LẦN TÁI DIỄN, không theo dòng cảnh báo.
       // Wave 3 gộp trùng ⇒ đếm theo dòng làm KPI báo thiếu và làm cảnh báo
       // đang sống rơi khỏi cửa sổ (vì createdAt được cố ý giữ nguyên).
-      const predRows = await db
-        .select({
-          occurrenceId: predictiveAlertOccurrences.id,
-          occurredAt: predictiveAlertOccurrences.occurredAt,
-          occurrenceSeverity: predictiveAlertOccurrences.severity,
-          id: predictiveAlerts.id,
-          severity: predictiveAlerts.severity,
-          acknowledgedAt: predictiveAlerts.acknowledgedAt,
-          resolvedAt: predictiveAlerts.resolvedAt,
-          status: predictiveAlerts.status,
-          machineId: predictiveAlerts.machineId,
-          machineCode: predictiveAlerts.machineCode,
-          title: predictiveAlerts.title,
-        })
-        .from(predictiveAlertOccurrences)
-        .innerJoin(predictiveAlerts, eq(predictiveAlerts.id, predictiveAlertOccurrences.alertId))
-        .where(gte(predictiveAlertOccurrences.occurredAt, since));
+      const loadPredRows = async () => {
+        return db
+          .select({
+            occurrenceId: predictiveAlertOccurrences.id,
+            occurredAt: predictiveAlertOccurrences.occurredAt,
+            occurrenceSeverity: predictiveAlertOccurrences.severity,
+            id: predictiveAlerts.id,
+            severity: predictiveAlerts.severity,
+            acknowledgedAt: predictiveAlerts.acknowledgedAt,
+            resolvedAt: predictiveAlerts.resolvedAt,
+            status: predictiveAlerts.status,
+            machineId: predictiveAlerts.machineId,
+            machineCode: predictiveAlerts.machineCode,
+            title: predictiveAlerts.title,
+          })
+          .from(predictiveAlertOccurrences)
+          .innerJoin(predictiveAlerts, eq(predictiveAlerts.id, predictiveAlertOccurrences.alertId))
+          .where(gte(predictiveAlertOccurrences.occurredAt, since));
+      };
+      // Vòng sửa cuối §2 — bảng nhật ký (predictive_alert_occurrences, mig
+      // 0308/0309) có thể CHƯA tồn tại nếu mã được deploy trước khi migration
+      // chạy trên một môi trường nào đó. Không guard ⇒ 42P01 lọt tới tRPC ⇒
+      // 500 sập CẢ /alarm-kpi lẫn panel alarmHealth ở Control Tower — kể cả
+      // phần Andon vốn không liên quan gì tới bảng này. Theo đúng mẫu
+      // isMissingTable đã dùng ở pruneOldOccurrences (alertExpirySweeper.ts).
+      let predRows: Awaited<ReturnType<typeof loadPredRows>> = [];
+      try {
+        predRows = await loadPredRows();
+      } catch (err) {
+        if (!isMissingTable(err)) throw err;
+        console.warn("[alarmKpi] bảng nhật ký lần-tái-diễn chưa có (migration 0309 chưa chạy?) — coi predictive alerts là rỗng.");
+      }
 
       // ── Nhãn máy (bad-actor readable) — tra code cho các machineId liên quan ────
       const machineIds = Array.from(
@@ -125,24 +141,57 @@ export const alarmKpiRouter = router({
           title: r.title,
         });
       }
+      // Vòng sửa cuối §1 — hồi quy do CHÍNH Wave 4 gây ra: computeStanding()
+      // (alarmKpiMath.ts, KHÔNG đụng ở đây) lọc `resolvedAt==null && tuổi≥24h`
+      // trên TOÀN BỘ sự kiện — nó đếm LƯỢT KÍCH HOẠT, còn ISA-18.2 "standing
+      // alarm" đếm BÁO ĐỘNG. Trước sửa, MỌI lần tái diễn của một cảnh báo còn
+      // mở đều giữ resolvedAt=null (vì chỉ nhìn trạng thái dòng CHA) ⇒ N lần
+      // tái diễn = N dòng "tồn đọng" cho MỘT cảnh báo (đo được: 1 cảnh báo
+      // tái diễn 22 lần/ngày × 3 ngày, cửa sổ 72h ⇒ 43, đúng ra là 1).
+      //
+      // Sửa — KHÔNG bỏ bớt sự kiện (sẽ phá lại đúng thứ Wave 4 vừa sửa: đếm đủ
+      // N lần + phát hiện ngập). Gom theo cảnh báo cha (r.id), sắp theo
+      // occurredAt: mỗi lần tái diễn (trừ lần MỚI NHẤT) coi như "kết thúc" tại
+      // thời điểm lần kế tiếp xảy ra — resolvedAt = occurredAt của lần sau.
+      // Chỉ lần MỚI NHẤT giữ resolvedAt theo trạng thái thật của dòng cha (null
+      // nếu còn mở) ⇒ computeStanding() không còn cách nào đếm >1 dòng "còn
+      // mở" cho cùng một cảnh báo — standing trở lại đếm THEO CẢNH BÁO.
+      type PredRow = (typeof predRows)[number];
+      const predRowsByAlert = new Map<number, PredRow[]>();
       for (const r of predRows) {
         if (input?.machineId && r.machineId !== input.machineId) continue;
-        const label = r.machineId != null ? machineMap.get(r.machineId) ?? r.machineCode ?? `#${r.machineId}` : (r.machineCode ?? null);
-        const isResolved = r.resolvedAt != null || r.status === "RESOLVED" || r.status === "DISMISSED";
-        events.push({
-          // id phải DUY NHẤT mỗi lần tái diễn, nếu không summarize sẽ gộp nhầm.
-          id: `pred:${r.id}:${r.occurrenceId}`,
-          source: "predictive",
-          // Mức độ của CHÍNH LẦN NÀY; thiếu thì lùi về mức của dòng cha.
-          priority: normalizePredictiveSeverity(r.occurrenceSeverity ?? r.severity),
-          // raisedAt = thời điểm LẦN NÀY xảy ra — đây là thứ sửa cả 3 lỗi.
-          raisedAt: ms(r.occurredAt) ?? now,
-          acknowledgedAt: ms(r.acknowledgedAt),
-          resolvedAt: isResolved ? ms(r.resolvedAt) ?? now : null,
-          actorKey: r.machineId != null ? `machine:${r.machineId}` : label ? `code:${label}` : null,
-          actorLabel: label,
-          title: r.title,
-        });
+        const arr = predRowsByAlert.get(r.id);
+        if (arr) arr.push(r);
+        else predRowsByAlert.set(r.id, [r]);
+      }
+      for (const rows of predRowsByAlert.values()) {
+        rows.sort((a, b) => (ms(a.occurredAt) ?? 0) - (ms(b.occurredAt) ?? 0));
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          const label = r.machineId != null ? machineMap.get(r.machineId) ?? r.machineCode ?? `#${r.machineId}` : (r.machineCode ?? null);
+          // EXPIRED (alertExpirySweeper, Wave 3) tự đóng cảnh báo và KHÔNG set
+          // resolvedAt — thiếu nhánh này thì cảnh báo tự hết hạn vẫn bị coi là
+          // "đang mở" (Task 6 đã sửa đúng status này ở `list`; chỗ này bỏ sót).
+          const isResolved = r.resolvedAt != null || r.status === "RESOLVED" || r.status === "DISMISSED" || r.status === "EXPIRED";
+          const isLatest = i === rows.length - 1;
+          const resolvedAt = isLatest
+            ? (isResolved ? ms(r.resolvedAt) ?? now : null)
+            : ms(rows[i + 1].occurredAt) ?? now;
+          events.push({
+            // id phải DUY NHẤT mỗi lần tái diễn, nếu không summarize sẽ gộp nhầm.
+            id: `pred:${r.id}:${r.occurrenceId}`,
+            source: "predictive",
+            // Mức độ của CHÍNH LẦN NÀY; thiếu thì lùi về mức của dòng cha.
+            priority: normalizePredictiveSeverity(r.occurrenceSeverity ?? r.severity),
+            // raisedAt = thời điểm LẦN NÀY xảy ra — đây là thứ sửa cả 3 lỗi Wave 4.
+            raisedAt: ms(r.occurredAt) ?? now,
+            acknowledgedAt: ms(r.acknowledgedAt),
+            resolvedAt,
+            actorKey: r.machineId != null ? `machine:${r.machineId}` : label ? `code:${label}` : null,
+            actorLabel: label,
+            title: r.title,
+          });
+        }
       }
 
       // ── operatorCount: input > số operator active > 1 ─────────────────────────
