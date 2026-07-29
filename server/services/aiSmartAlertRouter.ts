@@ -4,14 +4,24 @@ import {
   users,
   dailyStatistics,
   predictiveAlerts,
+  machines,
 } from "../../drizzle/schema";
-import { eq, and, gte, sql, inArray, lt, isNull } from "drizzle-orm";
+import { eq, and, gte, sql, inArray, lt, isNull, desc } from "drizzle-orm";
 import { sendAlertNotification } from "./notificationService";
 import { sendAlertEmail } from "./emailService";
 import { redisService } from "./redisService";
 // doc69 W1 "modelfix" — shared env→GGUF-basename resolver; the AI routing rationale below must PIN
 // a text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
 import { resolveLogicalModel } from "./ai/modelResolver";
+import { decideAlertWrite, type AlertSeverity } from "./alerts/decideAlertWrite";
+
+/** Wave 3 §4.2 — hạn dùng cảnh báo. Gia hạn mỗi lần tái diễn, nên hết hạn
+ *  nghĩa là "tình trạng đã THÔI tái diễn", không phải "đã quá N ngày". */
+function alertTtlMs(): number {
+  const raw = Number(process.env.ALERT_TTL_HOURS);
+  const hours = Number.isFinite(raw) && raw > 0 ? raw : 72;
+  return hours * 3600_000;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -192,29 +202,117 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
       ? event.data.recommendationRef.trim()
       : null;
 
-  // Step 5: Record in predictive_alerts table
-  const [alertRecord] = await db
-    .insert(predictiveAlerts)
-    .values({
-      alertType: event.type,
-      severity: event.severity,
-      title: `${event.type.replace(/_/g, " ")}: ${event.severity}`,
-      description: event.message,
-      machineId: event.machineId ?? null,
-      factoryId: event.factoryId ?? null,
-      productModelId: event.productModelId ?? null,
-      currentValue: event.data.currentValue ? String(event.data.currentValue) : null,
-      threshold: event.data.threshold ? String(event.data.threshold) : null,
-      confidenceScore: event.data.confidence != null ? String(event.data.confidence) : null,
-      predictedTimeframe: event.data.predictedTimeframe ? String(event.data.predictedTimeframe) : null,
-      aiAnalysis: aiAnalysisPayload,
-      status: "ACTIVE",
-      notificationSent: true,
-      notificationSentAt: new Date(),
-      ...(runbookRef ? { runbookRef } : {}),
-      ...(recommendationRef ? { recommendationRef } : {}),
-    } as any)
-    .returning({ id: predictiveAlerts.id });
+  // Wave 3 §3 — MỘT-CẢNH-BÁO-MỞ cho mỗi (machineId, alertType).
+  let existingOpen: { id: number; severity: AlertSeverity; occurrenceCount: number } | null = null;
+  let lookupFailed = false;
+  if (event.machineId != null) {
+    try {
+      const rows = await db
+        .select({
+          id: predictiveAlerts.id,
+          severity: predictiveAlerts.severity,
+          occurrenceCount: predictiveAlerts.occurrenceCount,
+        })
+        .from(predictiveAlerts)
+        .where(and(
+          eq(predictiveAlerts.machineId, event.machineId),
+          eq(predictiveAlerts.alertType, event.type),
+          eq(predictiveAlerts.status, "ACTIVE" as any),
+          isNull(predictiveAlerts.acknowledgedAt),
+        ))
+        .orderBy(desc(predictiveAlerts.createdAt))
+        .limit(1);
+      existingOpen = rows[0]
+        ? { id: rows[0].id, severity: String(rows[0].severity) as AlertSeverity, occurrenceCount: Number(rows[0].occurrenceCount ?? 1) }
+        : null;
+    } catch (err) {
+      // FAIL-OPEN có chủ ý (spec §3d): thà một dòng trùng còn hơn mất một cảnh báo hỏng máy.
+      lookupFailed = true;
+      console.error("[SmartAlert] tra cứu cảnh báo mở THẤT BẠI — ghi mới để không bỏ sót:", (err as Error)?.message ?? err);
+    }
+  }
+
+  // Mã máy: cột phi chuẩn hoá trước đây KHÔNG BAO GIỜ được ghi (spec §2 nguyên nhân 3).
+  let machineCode: string | null = null;
+  if (event.machineId != null) {
+    try {
+      const m = await db.select({ code: machines.code }).from(machines).where(eq(machines.id, event.machineId)).limit(1);
+      machineCode = m[0]?.code ?? null;
+    } catch { machineCode = null; }
+  }
+
+  const decision = decideAlertWrite(
+    existingOpen,
+    { machineId: event.machineId ?? null, alertType: event.type, severity: event.severity as AlertSeverity },
+    lookupFailed,
+  );
+
+  const expiresAt = new Date(Date.now() + alertTtlMs());
+  const confidence = event.data.confidence != null ? String(event.data.confidence) : null;
+  const timeframe = event.data.predictedTimeframe ? String(event.data.predictedTimeframe) : null;
+
+  // Tiêu đề: trước đây là "MACHINE FAILURE: HIGH" lặp y hệt trên 49 dòng.
+  // Có máy ⇒ nêu máy + rủi ro + khung thời gian. Không có máy ⇒ giữ khuôn cũ,
+  // KHÔNG bịa mã máy rỗng vào chuỗi (spec §4.1).
+  const readableTitle = machineCode
+    ? `${event.type.replace(/_/g, " ")} · ${machineCode}` +
+      (event.data.currentValue != null ? ` · ${event.data.currentValue}%` : "") +
+      (timeframe ? ` · ${timeframe}` : "")
+    : `${event.type.replace(/_/g, " ")}: ${event.severity}`;
+
+  let alertRecord: { id: number } | undefined;
+
+  if (decision.action === "update") {
+    await db
+      .update(predictiveAlerts)
+      .set({
+        severity: decision.severity as any,
+        occurrenceCount: decision.occurrenceCount,
+        lastOccurredAt: new Date(),
+        title: readableTitle.slice(0, 255),
+        description: event.message,
+        machineCode,
+        currentValue: event.data.currentValue != null ? String(event.data.currentValue) : null,
+        threshold: event.data.threshold != null ? String(event.data.threshold) : null,
+        confidenceScore: confidence,
+        predictedTimeframe: timeframe,
+        aiAnalysis: aiAnalysisPayload,
+        expiresAt,
+        updatedAt: new Date(),
+        // KHÔNG đụng createdAt: processAutoEscalation() đo tuổi dòng để leo thang.
+        // Reset createdAt ⇒ tình trạng kéo dài VĨNH VIỄN không bao giờ leo thang.
+      } as any)
+      .where(eq(predictiveAlerts.id, decision.id));
+    alertRecord = { id: decision.id };
+  } else {
+    const [row] = await db
+      .insert(predictiveAlerts)
+      .values({
+        alertType: event.type,
+        severity: event.severity,
+        title: readableTitle.slice(0, 255),
+        description: event.message,
+        machineId: event.machineId ?? null,
+        machineCode,
+        factoryId: event.factoryId ?? null,
+        productModelId: event.productModelId ?? null,
+        currentValue: event.data.currentValue ? String(event.data.currentValue) : null,
+        threshold: event.data.threshold ? String(event.data.threshold) : null,
+        confidenceScore: confidence,
+        predictedTimeframe: timeframe,
+        aiAnalysis: aiAnalysisPayload,
+        status: "ACTIVE",
+        notificationSent: true,
+        notificationSentAt: new Date(),
+        occurrenceCount: 1,
+        lastOccurredAt: new Date(),
+        expiresAt,
+        ...(runbookRef ? { runbookRef } : {}),
+        ...(recommendationRef ? { recommendationRef } : {}),
+      } as any)
+      .returning({ id: predictiveAlerts.id });
+    alertRecord = row;
+  }
 
   // Auto-escalation is now tracked via the predictive_alerts row itself
   // (status=ACTIVE, acknowledgedAt=null, escalationLevel). processAutoEscalation()
