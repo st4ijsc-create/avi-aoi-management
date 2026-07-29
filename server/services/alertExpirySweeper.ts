@@ -26,8 +26,17 @@ export async function sweepExpiredAlerts(): Promise<{ expired: number }> {
         eq(predictiveAlerts.status, "ACTIVE" as any),
         isNull(predictiveAlerts.acknowledgedAt),
         lt(predictiveAlerts.expiresAt, new Date()),
-      ));
-    const expired = Array.isArray(rows) ? rows.length : Number(rows?.rowCount ?? 0);
+      ))
+      // Vòng sửa 1 (code review): KHÔNG có .returning(), drizzle đi thẳng
+      // client.unsafe(...) và postgres.js trả về `Result` — kế thừa Array (nên
+      // Array.isArray luôn true) NHƯNG không có DataRow nào được đẩy vào khi
+      // không RETURNING ⇒ .length luôn = 0. `Result` cũng KHÔNG có .rowCount
+      // (tên đúng là .count) nên nhánh dự phòng cũ không bao giờ chạm tới.
+      // .returning() buộc drizzle map đúng những hàng bị UPDATE thành mảng
+      // thật — đếm .length lúc này ĐÚNG THEO ĐỊNH NGHĨA, không phụ thuộc chi
+      // tiết nội bộ driver.
+      .returning({ id: predictiveAlerts.id });
+    const expired = Array.isArray(rows) ? rows.length : 0;
     if (expired > 0) console.log(`[alertExpiry] đã đóng ${expired} cảnh báo hết hạn (kèm lý do).`);
     return { expired };
   } catch (err) {
