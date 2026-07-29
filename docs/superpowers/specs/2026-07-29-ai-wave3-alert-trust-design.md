@@ -98,6 +98,26 @@ Khoá chống trùng `(source, title)` — tiêu đề đã chứa sẵn kỳ v�
 
 KPI toàn 0, không rủi ro, không điểm nhấn ⇒ **không ghi**, chỉ log lý do. Một báo cáo không nói gì mà vẫn chiếm chỗ trong hòm chờ đọc chính là thứ dạy người ta bỏ qua cả hòm.
 
+### 4.5 Độ tin cậy: hiện ra và đo được — KHÔNG đổi ngưỡng
+
+Mục này được **gộp vào theo yêu cầu chủ dự án**. Khảo sát mã + dữ liệu cho kết quả **khác hẳn** giả thiết ban đầu ("mức độ HIGH gắn cho cảnh báo 52% tin cậy là sai"):
+
+**(i) Mức độ lấy từ rủi ro là ĐÚNG.** `confidenceScore` = dữ-liệu-nhiều (≤50) + đặc-trưng-đồng-thuận (≤30) + khoảng-tin-cậy-hẹp (≤20) — nó đo **độ vững của bằng chứng**, không phải xác suất hỏng. `failureRisk` mới là khả năng/mức độ hỏng, và `urgencyFromRisk` (`predictiveMaintenanceService.ts:148-153`) map ≥75→CRITICAL, ≥55→HIGH. 49 cảnh báo có rủi ro 62–70 ⇒ HIGH **đúng công thức**. Đây là hai trục khác nhau, không phải một trục bị tính sai.
+
+**(ii) Các đặc trưng CÓ đồng thuận.** Đo `aiAnalysis.factors`: 4–5 yếu tố mỗi cảnh báo, đóng góp thật — `reliability 48`, `trend 100` ("health slope −4.38/step, projected danger in ~6h"), `anomaly 16`, `temperature 75`. Giả thiết "không đặc trưng nào xác nhận lẫn nhau" **bị bác bỏ**.
+
+**(iii) Thiên lệch chọn mẫu — lỗi suy luận phải tránh.** Độ tin cậy tụm ở đúng 50/51/55/56, tức ngay sát ngưỡng phát `CONFIDENCE_ALERT_THRESHOLD = 50` (`:46`). Kết luận "toàn cảnh báo yếu" là **sai**: cảnh báo dưới 50 không bao giờ được phát, nên tập quan sát được **bắt buộc** bắt đầu từ 50. Đó là đo cái thước, không phải đo cái được đo.
+
+**Vấn đề thật:** ứng viên bị loại **biến mất không để lại dấu vết**. Không ai biết ngưỡng 50 đang chặn 3 hay 3000 cảnh báo ⇒ **không ai hiệu chỉnh được nó**. Đổi ngưỡng lúc này là đoán mò.
+
+**Phạm vi gộp thêm — ba việc, không đụng ngưỡng:**
+
+1. **Hiện độ tin cậy thành trục riêng.** `HIGH · bằng chứng vừa đủ (52%)` phải khác `HIGH · bằng chứng vững (88%)` trên màn hình. Dữ liệu đã có sẵn trong cột `confidenceScore`; phân dải (thấp/trung bình/cao) tính **phía client** theo đúng ranh giới ngôn ngữ ở §4.1.
+2. **Ghi lại thứ bị loại.** Đếm ứng viên bị chặn theo từng điều kiện (rủi ro thấp / tin cậy thấp / ngoài khung thời gian) — **chỉ số đếm + log, KHÔNG tạo dòng cảnh báo**, không bảng mới. Đây là dữ liệu để wave sau quyết ngưỡng bằng bằng chứng.
+3. **Số lần tái diễn là tín hiệu tin cậy tốt hơn.** Sau khi gộp trùng, "máy này đã báo 22 lần trong 1 ngày" mạnh hơn hẳn con số tin cậy do chính mô hình tự chấm — và Wave 3 tạo ra nó miễn phí. Phải hiện nó cạnh mức độ.
+
+**KHÔNG làm:** không đổi `urgencyFromRisk`, không đổi `RISK_ALERT_THRESHOLD`/`CONFIDENCE_ALERT_THRESHOLD`/`TIMEFRAME_ALERT_HOURS`, không đổi công thức `confidenceScore`. Lý do ghi rõ ở (iii).
+
 ---
 
 ## 5. Đống tồn 52 + 111 — GỘP, KHÔNG XOÁ
@@ -142,6 +162,8 @@ Bài học Wave 2 (Task 4): logic rủi ro nằm lẫn trong hàm có I/O thì *
 | Dòng báo cáo / nội dung khác nhau | 111 / 36 | **1 : 1** với báo cáo mới |
 | Báo cáo rỗng mới sinh | có | **0** |
 | Cảnh báo quá hạn còn `ACTIVE` | 52 | **0**, và mỗi cái `EXPIRED` có lý do |
+| Ứng viên bị loại (§4.5) | **không đo được** | đếm được theo từng điều kiện chặn |
+| Độ tin cậy hiện trên màn hình | không hiện | hiện dải + số lần tái diễn cạnh mức độ |
 
 **Nghiệm thu live bắt buộc** (bài học Wave 2 — F4 lọt qua lượt live đầu vì tôi chỉ mở một loại điểm đo): phải kiểm **cả hai nhánh** — máy có `machineId` (gộp) **và** `PATTERN_ANOMALY` không có `machineId` (không gộp). Không được chỉ kiểm nhánh thuận.
 
@@ -150,5 +172,5 @@ Bài học Wave 2 (Task 4): logic rủi ro nằm lẫn trong hàm có I/O thì *
 ## 9. Ngoài phạm vi (YAGNI có chủ đích)
 
 - **Không dựng hòm việc / màn phân loại mới.** Sửa nguồn trước, đo lại, rồi mới quyết có cần không. Nếu sau khi sửa chỉ còn ~3 cảnh báo thật thì cả một mảng giao diện là thừa.
-- **Không đụng ngưỡng độ tin cậy hay công thức rủi ro.** 49 cảnh báo đều ở mức 50–56% tin cậy nhưng bị gắn nhãn `HIGH` (mức lấy từ `maintenanceUrgency`, không từ độ tin cậy). Đây là câu hỏi đáng đặt nhưng là **thay đổi ngữ nghĩa cảnh báo**, cần dữ liệu thật sau khi hết nhiễu mới quyết được.
+- **Không đổi ngưỡng phát hay công thức rủi ro/tin cậy** — nay đã thành mục §4.5 (được gộp vào theo yêu cầu chủ dự án), với kết luận: mức-độ-từ-rủi-ro là đúng thiết kế, và ngưỡng **không thể** hiệu chỉnh cho tới khi có dữ liệu phía bị-loại mà Wave 3 sinh ra.
 - **Không đụng đường thị giác** (990 ảnh nhúng, 49 mẫu bất thường) — để wave sau.
