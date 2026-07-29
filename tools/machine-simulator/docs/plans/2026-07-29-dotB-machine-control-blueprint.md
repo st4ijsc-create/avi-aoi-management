@@ -43,8 +43,23 @@ Ghép lại, **file map trở thành toàn bộ ranh giới an toàn**, và map 
 - **Không có hạ tầng rate-limit/debounce nào trong repo.**
 - Tiền lệ cho thao tác nguy hiểm: cert rotation — `Policies.Admin`, echo-back fingerprint, audit cũ→mới, response không thể bỏ sót.
 
-### Khẳng định "không có đường ghi" nằm ở SÁU chỗ
-README §1, README §12, `EstopGuardRule.cs:14-15`, `FleetHost.cs:451/653-654`, `LineController.cs:53-55`, `IConnectorFactory.cs:76-77`. Chính công việc trung thực của Đợt A dệt nó thành bất biến kiến trúc. **Đợt này vô hiệu hoá nó ở cả sáu chỗ cùng lúc** và phải sửa đồng bộ — bỏ sót một chỗ là để lại một lời nói dối.
+### Khẳng định "không có đường ghi" nằm ở ~15 chỗ, KHÔNG phải sáu
+
+*(Đính chính — bản census đầu tiên của blueprint này ghi "sáu chỗ" và **sai**. Review B-1 quét lại và tìm ra khoảng 15, trong đó có những bề mặt **hiện ra cho người vận hành lúc chạy** mà tôi bỏ sót hoàn toàn. B-8 được định phạm vi theo danh sách này, nên nó phải đúng.)*
+
+**Hiện ra cho người vận hành lúc chạy — nguy hiểm nhất nếu bỏ sót:**
+- `src/St4i.EngineApi/Safety/SafetyEndpoints.cs:18` — `XcR40Advisory`, **ship trong body của một API response**
+- `src/St4i.EngineApi/Policy/Rules/EstopGuardRule.cs:39` — thông điệp từ chối **hiện cho người vận hành**
+- `web/src/i18n/en.ts:1392`, `web/src/i18n/en.ts:2118`, `web/src/lib/api.ts:771` *(và bản `vi.ts` tương ứng — kiểm tra)*
+
+**Trong mã C#:**
+- `EstopGuardRule.cs:14-15` · `FleetHost.cs:451/653-654` · `FleetHost.cs:687` · `LineController.cs:53-55`
+- `IConnectorFactory.cs:76-77` · `PolicyResults.cs:36` · `SafetySnapshot.cs:6`
+- `ModbusRegisterMap.cs:8` — *"writing is out of scope for this driver"*, **thành sai ngay tại B-4**
+
+**README:** ba chỗ — dòng 1471, 1473 (*"read-only by design"*), 3543 — cộng §1 và §12.
+
+Chính công việc trung thực của Đợt A dệt nó thành bất biến kiến trúc. **Đợt này vô hiệu hoá nó ở tất cả các chỗ cùng lúc** và phải sửa đồng bộ — bỏ sót một chỗ là để lại một lời nói dối, và những chỗ tệ nhất là ba dòng đầu vì chúng đi thẳng tới người vận hành.
 
 ## Ràng buộc toàn cục
 
