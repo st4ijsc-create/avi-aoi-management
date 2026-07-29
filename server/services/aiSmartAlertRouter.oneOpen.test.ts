@@ -30,6 +30,9 @@ const calls: { kind: "insert" | "update"; payload?: any }[] = [];
 // Dữ liệu seed cho từng bảng — test set lại trong beforeEach/từng case.
 let seedOpenAlertRows: any[] = [];
 let seedMachineRows: any[] = [];
+// Vòng sửa 1 — [Important]: cho tra-cứu-cảnh-báo-mở NÉM lỗi thật, để test chạm
+// đúng nhánh try/catch nối dây ở aiSmartAlertRouter.ts (không chỉ ở decideAlertWrite thuần).
+let existingOpenLookupThrows = false;
 
 /** Một "chuỗi" chịu được .where()/.orderBy()/.limit() theo bất kỳ thứ tự nào,
  *  và tự resolve khi await ở BẤT KỲ điểm nào trong chuỗi (giống drizzle thật:
@@ -49,7 +52,16 @@ vi.mock("../db/connection", () => ({
   getDb: async () => ({
     select: (_cols?: any) => ({
       from: (table: any) => {
-        if (table === predictiveAlerts) return chain(() => seedOpenAlertRows);
+        if (table === predictiveAlerts) {
+          if (existingOpenLookupThrows) {
+            // async () => getRows() bên trong chain() bọc throw này thành Promise
+            // REJECT thật — đúng thứ mà await trong production code gặp khi Postgres lỗi.
+            return chain(() => {
+              throw new Error("tra cứu cảnh báo mở LỖI (giả lập Postgres tra cứu hỏng)");
+            });
+          }
+          return chain(() => seedOpenAlertRows);
+        }
         if (table === machines) return chain(() => seedMachineRows);
         // determineTargets() truy vấn users — không quan tâm nội dung, luôn rỗng
         // để routeAlert không cố gửi thông báo/email thật.
@@ -83,6 +95,7 @@ beforeEach(() => {
   calls.length = 0;
   seedOpenAlertRows = [];
   seedMachineRows = [];
+  existingOpenLookupThrows = false;
 });
 
 describe("routeAlert — một-cảnh-báo-mở", () => {
@@ -91,6 +104,10 @@ describe("routeAlert — một-cảnh-báo-mở", () => {
     await routeAlert({ type: "MACHINE_FAILURE", machineId: 2, severity: "HIGH", message: "x", data: {} } as any);
     expect(calls.some((c) => c.kind === "insert")).toBe(true);
     expect(calls.some((c) => c.kind === "update")).toBe(false);
+    // Vòng sửa 1 — [Minor]: expiresAt phải có mặt ở nhánh INSERT (nếu ai xoá, dòng mới
+    // không bao giờ tự dọn dù tình trạng đã hết tái diễn).
+    const ins = calls.find((c) => c.kind === "insert");
+    expect(ins!.payload.expiresAt).toBeInstanceOf(Date);
   });
 
   it("đã có cảnh báo mở ⇒ UPDATE, KHÔNG insert, và KHÔNG đụng createdAt", async () => {
@@ -102,13 +119,33 @@ describe("routeAlert — một-cảnh-báo-mở", () => {
     expect(calls.some((c) => c.kind === "insert")).toBe(false);
     expect(upd!.payload.occurrenceCount).toBe(23);
     expect(upd!.payload).not.toHaveProperty("createdAt");
+    // Vòng sửa 1 — [Minor]: expiresAt phải ĐƯỢC GIA HẠN ở nhánh UPDATE. Nếu ai xoá,
+    // một cảnh báo vẫn đang tái diễn sẽ tự hết hạn — ngược ý đồ "hết hạn = đã thôi tái diễn".
+    expect(upd!.payload.expiresAt).toBeInstanceOf(Date);
   });
 
-  it("không có machineId ⇒ luôn INSERT (PATTERN_ANOMALY)", async () => {
+  it("tra cứu cảnh báo mở NÉM lỗi thật ⇒ fail-OPEN: vẫn INSERT, KHÔNG UPDATE (spec §3d)", async () => {
+    // Vòng sửa 1 — [Important]: khác 2 case decideAlertWrite.test.ts (hàm thuần, tự
+    // truyền lookupFailed=true) — case này chạm ĐÚNG dây try/catch nối trong routeAlert
+    // (aiSmartAlertRouter.ts:208-233). Nếu ai lỡ xoá try/catch đó, test này phải đỏ vì
+    // routeAlert() sẽ throw thẳng thay vì trả về.
+    existingOpenLookupThrows = true;
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    await routeAlert({ type: "MACHINE_FAILURE", machineId: 2, severity: "HIGH", message: "x", data: {} } as any);
+    expect(calls.some((c) => c.kind === "insert")).toBe(true);
+    expect(calls.some((c) => c.kind === "update")).toBe(false);
+  });
+
+  it("không có machineId ⇒ luôn INSERT (PATTERN_ANOMALY), tiêu đề giữ khuôn cũ, không bịa mã máy", async () => {
     seedOpenAlertRows = [{ id: 7, severity: "HIGH", occurrenceCount: 22 }];
     const { routeAlert } = await import("./aiSmartAlertRouter");
     await routeAlert({ type: "PATTERN_ANOMALY", severity: "MEDIUM", message: "x", data: {} } as any);
     expect(calls.some((c) => c.kind === "insert")).toBe(true);
+    // Vòng sửa 1 — [Minor]: không machineId ⇒ không tra machineCode ⇒ readableTitle
+    // phải rơi vào nhánh khuôn cũ "TYPE: SEVERITY", không chèn mã máy rỗng vào chuỗi.
+    const ins = calls.find((c) => c.kind === "insert");
+    expect(ins!.payload.title).toBe("PATTERN ANOMALY: MEDIUM");
+    expect(ins!.payload.machineCode).toBeNull();
   });
 
   it("có máy + có mã máy ⇒ tiêu đề nêu mã máy, KHÔNG dùng khuôn cũ 'TYPE: SEVERITY'", async () => {
