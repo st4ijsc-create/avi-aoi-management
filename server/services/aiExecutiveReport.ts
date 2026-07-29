@@ -586,13 +586,31 @@ function summaryTitle(s: ExecutiveSummaryStructured): string {
  * Wave 3 §4.4 — một báo cáo không nói gì mà vẫn chiếm chỗ trong hòm chờ đọc
  * chính là thứ dạy người ta bỏ qua cả hòm. Đo được: 111 dòng chỉ mang 36 nội
  * dung khác nhau, nhiều bản `fpy: 0, ngRate: 0`, thân bài 129 ký tự.
+ *
+ * Vòng sửa 1 (code review) — KHÔNG được kiểm `s.highlights`/`s.risks`/`s.recommendations`:
+ * `offlineSummary()` (:368-423) tô ĐẦY cả ba mảng đó bằng câu "không có gì để nói" một
+ * cách VÔ ĐIỀU KIỆN — highlights luôn có dòng "Sản lượng: 0 (OK 0/NG 0)", risks luôn rơi
+ * về "Không phát hiện rủi ro nghiêm trọng trong kỳ." khi không có rủi ro cụ thể, và
+ * recommendations luôn kết bằng "Tiếp tục theo dõi...". `generateExecutiveSummary` chỉ
+ * ghi đè một mảng khi LLM THỰC SỰ cung cấp nội dung cho đúng mảng đó (:542-548) — mảng
+ * nào LLM không cung cấp thì giữ nguyên bản offline. Do đó `s.highlights.length >= 1`
+ * (và risks, recommendations) LUÔN đúng ở MỌI lời gọi thật, khiến 3 nhánh kiểm tra đó là
+ * mã chết — báo cáo `fpy:0, ngRate:0` vẫn được lưu y như cũ. Vị từ phải dựa vào tín hiệu
+ * KPI THÔ (`s.kpis`), không dựa vào tường thuật đã được tô vẽ TỪ CHÍNH KPI đó.
  */
 export function hasReportableContent(s: ExecutiveSummaryStructured): boolean {
-  if (s.highlights?.length) return true;
-  if (s.risks?.length) return true;
-  if (s.recommendations?.length) return true;
-  const k = s.kpis as unknown as Record<string, unknown>;
-  return Object.values(k ?? {}).some((v) => typeof v === "number" && Number.isFinite(v) && v !== 0);
+  const k = s.kpis as unknown as Partial<KpiBundle> | undefined;
+  // Có lượt kiểm tra thật trong kỳ ⇒ có dữ liệu thật để báo cáo (fpy/ngRate/okCount/
+  // ngCount đều bằng 0 chính xác khi totalInspections = 0 — xem gatherKpis :202-203 —
+  // nên đây là tín hiệu THÔ duy nhất cần cho "có sản lượng hay không").
+  if (typeof k?.totalInspections === "number" && k.totalInspections > 0) return true;
+  // Không có lượt kiểm tra nào trong kỳ, nhưng có rủi ro máy THẬT (PdM chấm điểm độc
+  // lập với sản lượng trong kỳ, dựa trên lịch sử/telemetry máy) ⇒ vẫn đáng báo dù sản
+  // lượng bằng 0 — khác với `s.risks` (tường thuật), đây đọc thẳng dữ liệu PdM thô.
+  if (Array.isArray(k?.pdmRiskMachines) && k.pdmRiskMachines.some((m) => m?.urgency === "HIGH" || m?.urgency === "CRITICAL")) {
+    return true;
+  }
+  return false;
 }
 
 /**

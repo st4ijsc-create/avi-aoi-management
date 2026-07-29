@@ -148,9 +148,30 @@ describe("generateExecutiveSummary — skipLlm (doc 69 T9)", () => {
 });
 
 describe("persistExecutiveSummary / getExecutiveSummaries — factory tagging (doc 69 T9)", () => {
+  /**
+   * Vòng sửa 1 (Wave 3 §4.4, task 5) — `getDb` phải trả về CẢ `select` lẫn `insert` now:
+   * (a) `generateExecutiveSummary` bên trong gọi `gatherKpis` → `collectInspectionTotals`
+   *     dùng `db.select().from().where()` — thiếu `select` khiến totals rơi về 0, và với
+   *     `hasReportableContent` mới (dựa KPI thô) một kỳ 0-lượt-kiểm-tra KHÔNG được lưu,
+   *     nên hai test này (vốn muốn kiểm tra CONTEXT JSON của một lần lưu THÀNH CÔNG) cần
+   *     totals thật khác 0.
+   * (b) `persistExecutiveSummary` tự nó cũng dùng `db.select(...).limit(1)` để chống
+   *     trùng trước khi insert — thiếu `.limit()` khiến lệnh bị ném lỗi, nuốt bởi
+   *     try/catch, và trả `null` mà không bao giờ tới `insert`.
+   * Tổng thời gian: `values` (spy insert) chỉ được gọi khi CẢ hai đường trên đều có thật.
+   */
+  function makeInsertSpyDbStub(values: any, totals = { total: 100, ok: 90, ng: 10 }) {
+    const whereResult: any = {
+      then: (resolve: any, reject?: any) => Promise.resolve([totals]).then(resolve, reject),
+      limit: () => Promise.resolve([]), // không có bản trùng sẵn có trong các test này
+    };
+    const selectBuilder: any = { from: () => selectBuilder, where: () => whereResult };
+    return { select: () => selectBuilder, insert: () => ({ values }) };
+  }
+
   it("persists reportFactoryCode from kpis.factoryCode when scoped", async () => {
     const values = vi.fn(() => ({ returning: () => Promise.resolve([{ id: 1 }]) }));
-    getDb.mockResolvedValue({ insert: () => ({ values }) });
+    getDb.mockResolvedValue(makeInsertSpyDbStub(values));
 
     const s = await generateExecutiveSummary("day", "vi", undefined, "F01", { skipLlm: true });
     await persistExecutiveSummary(s);
@@ -164,7 +185,7 @@ describe("persistExecutiveSummary / getExecutiveSummaries — factory tagging (d
 
   it("persists reportFactoryCode: null for a global (unscoped) summary", async () => {
     const values = vi.fn(() => ({ returning: () => Promise.resolve([{ id: 2 }]) }));
-    getDb.mockResolvedValue({ insert: () => ({ values }) });
+    getDb.mockResolvedValue(makeInsertSpyDbStub(values));
 
     const s = await generateExecutiveSummary("day", "vi", undefined, undefined, { skipLlm: true });
     await persistExecutiveSummary(s);
