@@ -741,6 +741,7 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
   let alertsEmitted = 0;
   let workOrdersCreated = 0;
   let errors = 0;
+  const suppressionTally: Record<string, number> = {};
 
   const activeMachines = await db
     .select({ id: machines.id, code: machines.code })
@@ -801,6 +802,19 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
         }
       }
 
+      // Wave 3 §4.5 — CHỈ QUAN SÁT: phân loại vì sao ứng viên bị chặn.
+      // KHÔNG đổi ngưỡng, KHÔNG đổi điều kiện phát bên dưới.
+      const { classifySuppression } = await import("./alerts/classifySuppression");
+      const suppression = classifySuppression(
+        {
+          failureRisk: risk.failureRisk,
+          confidenceScore: risk.confidenceScore,
+          predictedTimeframeHours: risk.predictedTimeframeHours,
+        },
+        { risk: RISK_ALERT_THRESHOLD, confidence: CONFIDENCE_ALERT_THRESHOLD, timeframeHours: TIMEFRAME_ALERT_HOURS },
+      );
+      suppressionTally[suppression] = (suppressionTally[suppression] ?? 0) + 1;
+
       // Alert gating: avoid false positives on sparse/low-confidence data.
       const timeframeOk =
         risk.predictedTimeframeHours != null && risk.predictedTimeframeHours <= TIMEFRAME_ALERT_HOURS;
@@ -855,6 +869,8 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
       console.error(`[PredictiveMaintenance] machine ${m.id} failed:`, (err as Error)?.message ?? err);
     }
   }
+
+  console.log(`[PredictiveMaintenance] ứng viên theo kết cục: ${JSON.stringify(suppressionTally)} (ngưỡng: rủi ro ${RISK_ALERT_THRESHOLD}, tin cậy ${CONFIDENCE_ALERT_THRESHOLD}, khung ${TIMEFRAME_ALERT_HOURS}h)`);
 
   return { evaluated, alertsEmitted, workOrdersCreated, errors };
 }
