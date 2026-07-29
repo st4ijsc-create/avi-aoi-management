@@ -1351,7 +1351,13 @@ export const en: Dictionary = {
     },
 
     status: {
-      estop: "E-STOP ENGAGED",
+      // SM-4 — renamed from "E-STOP ENGAGED": this is a supervisory software latch (`FleetHost.Estop`),
+      // not a safety device. It stops this software's own read pipeline / disconnects from the
+      // configured device(s) — it does not, and cannot, stop any machine (see README §1's safety note).
+      // Deliberately distinct text from `controls.estopBanner` below ("HALT ENGAGED") — both render on
+      // screen at once (nameplate lamp + control-rail banner) and a Playwright `exact: true` text match
+      // (`11-hmi.spec.ts`) depends on them not colliding.
+      estop: "HALTED",
       sub: {
         run: "Running",
         fault: "Stopped",
@@ -1370,18 +1376,23 @@ export const en: Dictionary = {
       start: "START",
       pause: "PAUSE",
       reset: "RESET",
-      estop: "E-STOP",
-      estopBanner: "E-STOP ENGAGED",
+      // SM-4 — this control is NOT an emergency stop and must never be labeled as one: it is a
+      // supervisory software latch that stops this software's own read pipeline and disconnects from
+      // the configured device(s). It has no write path to any device and cannot stop a machine — see
+      // README §1. "HALT" describes what it actually does without borrowing the authority of a safety
+      // term; a real E-STOP is a hardwired, safety-rated circuit per ISO 13849, never a software control.
+      estop: "HALT",
+      estopBanner: "HALT ENGAGED",
       estopHint: "Press RESET to unlock the controls",
     },
 
     log: {
       title: "SYSTEM LOG",
       empty: "No events yet.",
-      estopEngaged: "E-STOP — fleet stopped, controls locked",
-      estopFailed: "E-STOP FAILED — engine did not confirm the stop",
-      estopReset: "RESET — E-STOP cleared",
-      estopResetFailed: "RESET FAILED — E-STOP still latched",
+      estopEngaged: "HALT — fleet stopped, controls locked",
+      estopFailed: "HALT FAILED — engine did not confirm the stop",
+      estopReset: "RESET — HALT cleared",
+      estopResetFailed: "RESET FAILED — HALT still latched",
       fleetStarted: "Fleet started",
       fleetPaused: "Fleet paused",
     },
@@ -1985,7 +1996,9 @@ export const en: Dictionary = {
   // machine: a live state badge (`GET /v1/line`, polled) + transition-gated command buttons
   // (`POST /v1/line/{command}`) mirroring `LineController.Execute`'s own transition table, so the UI
   // never offers a command the server would reject. Abort is the one deliberate exception — styled as
-  // the always-enabled emergency action, same as a real E-STOP control never being greyed out.
+  // the always-enabled, always-reachable stop action, mirroring the physical convention that a real
+  // emergency-stop control is never greyed out. SM-4: Abort is a software abort of THIS software's own
+  // pipeline, not a safety device — see README §1.
   line: {
     title: "Line Control",
     description:
@@ -1996,7 +2009,9 @@ export const en: Dictionary = {
       pipelineLabel: "Pipeline",
       running: "Running",
       notRunning: "Not running",
-      estopLabel: "E-STOP",
+      // SM-4 — was "E-STOP": this reads `FleetHost.EstopEngaged`, a supervisory software latch, not a
+      // safety device — see README §1.
+      estopLabel: "Halt latch (software)",
       estopEngaged: "Engaged",
       estopClear: "Not engaged",
       loadFailed: "Couldn't load the line status.",
@@ -2024,7 +2039,10 @@ export const en: Dictionary = {
       holdAria: "Hold the line",
       unholdAria: "Unhold the line",
       stopAria: "Stop the line",
-      abortAria: "Abort (emergency stop) the line",
+      // SM-4 — was "Abort (emergency stop) the line": describes what actually happens instead of
+      // borrowing the authority of a safety term. See README §1 — this product has no write path to
+      // any device and cannot stop a machine.
+      abortAria: "Abort (stops data collection immediately) the line",
       resetAria: "Reset the line",
     },
     errors: {

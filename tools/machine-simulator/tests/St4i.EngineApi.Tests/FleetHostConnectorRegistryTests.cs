@@ -394,8 +394,8 @@ public sealed class FleetHostConnectorRegistryTests
         // Estop() before it latches EstopEngaged or before it cancels every OTHER slot.
         // ThrowsFromCancellationRegistrationDriver below reproduces that exact shape. Before fix 1, this
         // test fails: Estop() propagates the callback's exception straight out to the caller, EstopEngaged
-        // never latches, and _slots is never cleared (machinery kept "running" even though the caller
-        // believes E-STOP failed).
+        // never latches, and _slots is never cleared (a pipeline slot kept "running" even though the caller
+        // believes the halt failed).
         var throwingDriver = new ThrowsFromCancellationRegistrationDriver("vendor.acme.throws-on-cancel");
         var siblingDriver = new CountingDriver("vendor.acme.sibling-of-throws", "SIBLING-01");
         var registry = new ConnectorRegistry();

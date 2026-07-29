@@ -7,11 +7,18 @@ import { cn } from "@/lib/utils"
  * gloss"), not the active-language-swap `t()`/`gloss()` pairing `Readout`'s `label`/`labelEn` use —
  * omitted only once the label itself is already English (`useLanguage().language === "en"`), per that
  * prop's own doc comment. */
+// SM-4 — the "estop" variant's own gloss is deliberately "HALT", not "E-STOP": this control is a
+// supervisory software latch (`FleetHost.Estop`) that stops this software's own read pipeline and
+// disconnects from the configured device(s). It is not, and cannot be, a safety device — there is no
+// write path to any device anywhere in this codebase (README §1). The internal identifier ("estop",
+// `FleetHost.Estop()`, the `/v1/fleet/estop` route) is kept unchanged; only the operator-facing text
+// changed. A real E-STOP is a hardwired, safety-rated circuit per ISO 13849 — software must never
+// borrow that name.
 const EN_LABEL: Record<"start" | "pause" | "reset" | "estop", string> = {
   start: "START",
   pause: "PAUSE",
   reset: "RESET",
-  estop: "E-STOP",
+  estop: "HALT",
 }
 
 interface ControlColumnProps {
@@ -19,7 +26,7 @@ interface ControlColumnProps {
   isRunning: boolean
   startPending: boolean
   pausePending: boolean
-  /** In-flight E-STOP request, not yet confirmed by the server (C-3) — grey the button out (classic
+  /** In-flight HALT request, not yet confirmed by the server (C-3) — grey the button out (classic
    * `disabled` skin) only for this brief transient window, distinct from `estopEngaged` itself. */
   estopPending: boolean
   resetPending: boolean
@@ -31,7 +38,7 @@ interface ControlColumnProps {
 }
 
 /**
- * The physical control column (spec §6): START / PAUSE / E-STOP, plus RESET once latched. Locking is
+ * The physical control column (spec §6): START / PAUSE / HALT, plus RESET once latched. Locking is
  * total while `estopEngaged` — START and PAUSE both disable, so the only way off this screen's fault
  * state is the RESET button.
  */
@@ -56,20 +63,20 @@ export function ControlColumn({
   return (
     <Sheet className={className} compact title={t("hmi.controls.title")} titleEn={gloss("hmi.controls.title")} bodyClassName="flex flex-1 min-h-0 flex-col p-0">
       {/*
-        H5 — layout gap 2: this rail is FULL HEIGHT (spec §8), RESET sits BESIDE E-STOP (same row,
+        H5 — layout gap 2: this rail is FULL HEIGHT (spec §8), RESET sits BESIDE HALT (same row,
         same idiom Start/Pause already use), not stacked below it.
 
-        H5b — Start/Pause anchors to the TOP of the rail (`shrink-0`); the E-STOP/RESET/banner cluster
+        H5b — Start/Pause anchors to the TOP of the rail (`shrink-0`); the HALT/RESET/banner cluster
         anchors to the BOTTOM via `mt-auto` on its own wrapper, so it always sits the same distance
         from the rail's bottom edge.
 
         H5c — layout gap 5 (SAFETY REGRESSION, twice): H5b's own claim that mt-auto alone keeps
-        E-STOP's position stable was WRONG under two conditions it didn't account for. (1) `mt-auto`
+        HALT's position stable was WRONG under two conditions it didn't account for. (1) `mt-auto`
         only holds a fixed offset from the bottom edge while the block actually FITS the container —
         live-measured at 1280×800: unlatched the rail was `scrollHeight === clientHeight` (0px slack,
         already a hair-trigger fit), latched it needed the banner's extra height on top, overflowed by
         41px, and `mt-auto` on an overflowing flex child collapses to 0, so the block silently
-        re-anchored to the TOP of its container instead of the bottom — E-STOP moved AND the rail
+        re-anchored to the TOP of its container instead of the bottom — HALT moved AND the rail
         became a scrolling region (the specific defect this pass fixes). (2) Even where the banner did
         fit, conditionally rendering it (and RESET) meant the bottom cluster's own height literally
         differed between states by construction — "the same distance from the bottom" was true only
@@ -80,7 +87,7 @@ export function ControlColumn({
         content; unlatched, a same-size invisible/`aria-hidden` placeholder (RESET's placeholder pulls
         its size from `CONTROL_BUTTON_SIZE_CLASS.reset`, the same map `ControlButton` itself renders
         from, so the two can never drift apart) — so the cluster's total height never changes and
-        `mt-auto` never has anything to collapse. E-STOP's own `getBoundingClientRect()` is now
+        `mt-auto` never has anything to collapse. HALT's own `getBoundingClientRect()` is now
         provably identical whether idle/running/paused/latched, at a given viewport+class (regression
         test: `tests/12-hmi-safety-rail.spec.ts`).
 
@@ -121,14 +128,14 @@ export function ControlColumn({
             />
           </div>
 
-          {/* Bottom-anchored cluster — E-STOP (+ RESET) always ends up the same distance from the
+          {/* Bottom-anchored cluster — HALT (+ RESET) always ends up the same distance from the
               rail's bottom edge: every state now reserves the SAME height (banner + RESET slots are
               always present, real or placeholder — see the H5c comment above), so there is nothing
               left for `mt-auto` to collapse differently between states. */}
           <div className="mt-auto flex w-full flex-col items-center gap-1 pt-1">
             {/* H5 — `estopHint` (the RESET-instruction sub-line) stays defined in the i18n
                 dictionaries for now but is no longer rendered here: with RESET itself visible right
-                below this banner (beside E-STOP, not a separate stacked row), a second line spelling
+                below this banner (beside HALT, not a separate stacked row), a second line spelling
                 out "press RESET" is redundant with the button it's describing. */}
             <div
               className={cn(

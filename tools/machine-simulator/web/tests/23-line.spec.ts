@@ -18,7 +18,7 @@ import { vi as viDict } from "../src/i18n/vi"
  * Kept intentionally minimal per the brief ("Playwright best-effort... keep it minimal and
  * deterministic") — asserts the state badge renders with the deterministic `Stopped` state, that
  * `Start` (legal from Idle/Stopped) is enabled while `Hold`/`Unhold`/`Stop` (illegal from Stopped) are
- * disabled, that the always-enabled `Abort` emergency action is enabled, and the usual English-gloss
+ * disabled, that the always-enabled `Abort` stop action is enabled, and the usual English-gloss
  * no-leaked-key check every other screen's own spec ends on.
  */
 
@@ -47,7 +47,7 @@ test.describe("line — PackML state badge + transition-gated command buttons", 
     await expect(page.getByRole("button", { name: viDict.line.commands.unholdAria, exact: true })).toBeDisabled()
     // Legal from {Execute, Held} — illegal from Stopped, disabled.
     await expect(page.getByRole("button", { name: viDict.line.commands.stopAria, exact: true })).toBeDisabled()
-    // The always-enabled emergency action — brief: never greyed out.
+    // The always-enabled stop action — brief: never greyed out (SM-4: a software abort, not a safety device).
     await expect(page.getByRole("button", { name: viDict.line.commands.abortAria, exact: true })).toBeEnabled()
 
     await assertNoSeriousA11yViolations(page)

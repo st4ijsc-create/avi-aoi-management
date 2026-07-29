@@ -34,7 +34,7 @@ namespace St4i.EngineApi.Auth;
 /// there is logged (<see cref="ILogger{TCategoryName}"/>, category <see cref="AuditRecorder"/>) and
 /// swallowed. Principle "never stop production for a support subsystem" — an audit log is a support/
 /// compliance concern, not a safety interlock; a local SQLite hiccup writing <c>security.db</c> must never
-/// itself become the reason a real mutation (an E-STOP, a settings change, a recipe upsert) fails to
+/// itself become the reason a real mutation (a HALT, a settings change, a recipe upsert) fails to
 /// commit or reports a false failure to the caller. Every mutating handler therefore just
 /// <c>await recorder.RecordAsync(ctx, ...)</c> with NO try/catch of its own — this method is the ONE place
 /// that decision is implemented, so every call site gets it for free.

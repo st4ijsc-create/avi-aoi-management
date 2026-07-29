@@ -35,9 +35,10 @@ public interface IConnectorFactory
     /// <para><b>MUST return promptly and MUST NOT perform I/O</b> — no network probe, no filesystem read
     /// beyond what <paramref name="config"/> already handed you, no blocking wait of any kind. Review
     /// finding (fix round 1): a host's connector registry is looked up from inside the SAME lock its
-    /// emergency-stop path acquires (<c>FleetHost.StartLocked</c>/<c>Estop</c> both take <c>_gate</c>), so a
-    /// slow <see cref="TryCreate"/> call holds that lock for its full duration — <b>blocking E-STOP</b> for
-    /// as long as this call takes. This is the ONE place third-party code runs while that lock is held. Any
+    /// halt path acquires (<c>FleetHost.StartLocked</c>/<c>Estop</c> both take <c>_gate</c>), so a
+    /// slow <see cref="TryCreate"/> call holds that lock for its full duration — <b>blocking the host's
+    /// <c>Estop()</c> call from returning</b> for as long as this call takes. This is the ONE place
+    /// third-party code runs while that lock is held. Any
     /// connection/session establishment — the part of "getting online" that can genuinely take time or fail
     /// on a live network — belongs entirely in <see cref="IDeviceDriver.ReadAsync"/>, never here; this is
     /// exactly how both built-in factories (Modbus, OPC-UA) already behave: their <c>TryCreate</c> only
@@ -70,8 +71,11 @@ public interface IConnectorFactory
     /// interface does not require that.</para>
     ///
     /// <para><b>MUST NOT throw for a bad/malformed <paramref name="config"/>.</b> A third-party driver
-    /// must never be able to take down a host that controls machinery with an E-STOP merely because its
-    /// factory method threw. Return <see langword="false"/> instead, with <paramref name="error"/> set to
+    /// must never be able to take down a host whose own <c>Estop()</c> halt call depends on this same
+    /// lock (see the promptness rule above) merely because its factory method threw. (SM-4: this
+    /// interface has no write path to any device at all — <see cref="IDeviceDriver"/> only reads — so
+    /// "take down a host" here means crash the process, never disable a safety function; there is no
+    /// safety function here to disable.) Return <see langword="false"/> instead, with <paramref name="error"/> set to
     /// an operator-readable message describing what was wrong; the caller's contract is to log it and
     /// treat this connector as disabled for the run, never to crash. This interface cannot structurally
     /// force a third-party implementation to honor this — a badly-behaved factory can still throw — which

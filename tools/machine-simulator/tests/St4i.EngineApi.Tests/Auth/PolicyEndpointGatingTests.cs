@@ -12,7 +12,7 @@ using Xunit;
 namespace St4i.EngineApi.Tests.Auth;
 
 /// <summary>
-/// G2-4 (WS-G Policy-core, SAFETY-CRITICAL) — real-pipeline proof that the E-STOP latch now turns
+/// G2-4 (WS-G Policy-core, SAFETY-CRITICAL) — real-pipeline proof that the halt latch now turns
 /// <c>POST /v1/fleet/start</c> into an explicit, audited 409 <c>SAFETY_BLOCKED</c> denial instead of
 /// yesterday's silent 200 no-op, and that the permitted path (not estopped) is completely unaffected.
 /// Also formalizes XC-R40: <c>GET /v1/safety</c> is read-only — this class asserts there is no

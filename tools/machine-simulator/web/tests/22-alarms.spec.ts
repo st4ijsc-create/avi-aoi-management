@@ -15,7 +15,7 @@ import { vi as viDict } from "../src/i18n/vi"
  * a REAL run against this repo's shared/reused engine process (`webServer`'s `reuseExistingServer:
  * !process.env.CI`, same statefulness `00-visual-and-a11y.spec.ts`'s own WS3-T3 doc comment describes
  * for `FleetHost`) surfaced a genuine carried-over alarm: a `SAFETY_BLOCKED` Critical Policy alarm from
- * an earlier session's E-STOP-engaged Start attempt was still active. So this spec asserts on WHICHEVER
+ * an earlier session's HALT-engaged Start attempt was still active. So this spec asserts on WHICHEVER
  * of the two states is actually true (past the loading skeleton either way) rather than assuming a
  * pristine engine — the same "establish what you can actually prove, don't assume an ordering/history
  * you don't control" discipline that file's own fix already applies.

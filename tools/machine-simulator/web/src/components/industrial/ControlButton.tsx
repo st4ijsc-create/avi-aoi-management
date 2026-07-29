@@ -12,9 +12,10 @@ export interface ControlButtonProps extends Omit<React.ComponentProps<"button">,
   /** English gloss, shown beneath the label — omit only if `label` is already English. */
   labelEn?: React.ReactNode
   /**
-   * Branch-review I-7 — true once a LATCHED control (currently only the E-STOP variant) has already
-   * been engaged. Unlike `disabled` (the flat, neutral "not applicable right now" skin — e.g. START
-   * while running) a pressed E-STOP IS the active fault condition itself: it must keep its full red
+   * Branch-review I-7 — true once a LATCHED control (currently only the "estop"/HALT variant — SM-4:
+   * a supervisory software latch, not a safety device, see `ControlColumn.tsx`'s own remarks) has
+   * already been engaged. Unlike `disabled` (the flat, neutral "not applicable right now" skin — e.g.
+   * START while running) a pressed HALT IS the active fault condition itself: it must keep its full red
    * dome (a latched mushroom on real hardware stays red and stays visible), stay keyboard-focusable
    * (native `disabled` removes an element from the tab order entirely — exactly the control an
    * operator most needs to still be able to find), and read as "already pressed" via `aria-pressed`
@@ -53,7 +54,7 @@ const ICON_SIZE: Record<ControlButtonVariant, string> = {
 
 /**
  * A physical control — the operator reaches for these, so they must feel like hardware, not a web
- * button (spec §6). Square (radius 0, ground rule §1); the E-STOP dome is the one place in the
+ * button (spec §6). Square (radius 0, ground rule §1); the HALT dome is the one place in the
  * whole system a `box-shadow` is allowed, simulating a raised physical base that collapses on
  * press. Honors `prefers-reduced-motion` (the press collapse still happens instantly, just without
  * the eased transition) and is fully keyboard operable — a native `<button>`, not a styled `<div>`.
@@ -82,7 +83,7 @@ export function ControlButton({ variant, label, labelEn, className, disabled, pr
         // depth on controls (real-but-soft shadows via --elevation)". START/PAUSE/RESET pick up
         // `--elevation` directly (a whisper shadow on Glass, cyan-ring+deep-shadow on Console, a
         // real-but-soft contact shadow on Warmth) so they read as raised hardware, not flat web
-        // buttons. E-STOP keeps its OWN dedicated inline dome shadow below (the one sanctioned
+        // buttons. HALT keeps its OWN dedicated inline dome shadow below (the one sanctioned
         // shadow exception, spec §6) — this utility class is intentionally never applied to it.
         variant !== "estop" && !flatSkin && "shadow-[var(--elevation)]",
         variant === "start" &&
@@ -97,7 +98,7 @@ export function ControlButton({ variant, label, labelEn, className, disabled, pr
         estopArmedOrLatched && !pressed && "cursor-pointer border-[3px] text-white active:translate-y-1",
         // H5c — SAFETY FIX: this branch used to also carry `translate-y-1`, a permanent 4px transform
         // meant to read as "the dome physically collapsed." Live-measured, that transform shifted the
-        // E-STOP button's own `getBoundingClientRect()` by exactly 4px the instant it latched — the
+        // HALT button's own `getBoundingClientRect()` by exactly 4px the instant it latched — the
         // opposite of what a safety control must do (spec §8.6: never move between states, an operator
         // reaching for it by muscle memory must find it in the SAME place whether it's armed or
         // latched). The "pressed in" cue now comes entirely from the box-shadow collapsing (`style`
@@ -143,8 +144,8 @@ export function ControlButton({ variant, label, labelEn, className, disabled, pr
           on reset) reads correctly at every variant without a per-variant contrast exception. */}
       {/* M-10 (mc-feature-review.md) — `aria-hidden`, same visual-gloss-register-not-a-second-accessible-name
           pattern every other bilingual gloss in this project already follows (FormField/Readout/
-          CycleLogTable/TraceTable). Without this, E-STOP's accessible name computed as
-          "DỪNG KHẨN E-STOP" / RESET's as "ĐẶT LẠI RESET" — the inverse of the gloss-hiding this project
+          CycleLogTable/TraceTable). Without this, HALT's accessible name computed as
+          "NGỪNG HALT" / RESET's as "ĐẶT LẠI RESET" — the inverse of the gloss-hiding this project
           otherwise enforces everywhere else — which is also why 13-machine-settings.spec.ts's RESET
           locator had to defensively scope itself (a substring-matching accessible name). */}
       {labelEn ? <span aria-hidden="true" className="text-[9px] leading-none font-medium tracking-wider uppercase">{labelEn}</span> : null}

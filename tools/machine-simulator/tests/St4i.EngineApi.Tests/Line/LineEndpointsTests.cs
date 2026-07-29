@@ -19,7 +19,7 @@ namespace St4i.EngineApi.Tests.Line;
 /// <c>/v1/line</c> HTTP surface: <c>GET /v1/line</c> reports the fresh (never-commanded) Stopped state;
 /// <c>POST /v1/line/start</c> drives a real transition to Execute and writes a <c>line.start</c> audit
 /// row; an illegal transition 409s with no audit row; an unknown command 400s; <c>line.start</c> while
-/// E-STOPped is denied by the SAME policy layer <c>/v1/fleet/start</c> already goes through (409
+/// halted is denied by the SAME policy layer <c>/v1/fleet/start</c> already goes through (409
 /// SAFETY_BLOCKED, which ALSO raises a Critical Policy alarm — LC-1's <c>PolicyResults.DenyAsync</c> hook,
 /// unchanged by this task); RBAC (401 unauthenticated, 403 for a role with no obligation). Same
 /// env-var-swap-then-eager-build factory recipe as <c>AlarmEndpointsTests</c>/<c>RbacPolicyTests</c>
@@ -50,7 +50,7 @@ public sealed class LineEndpointsTests
         var settingsDir = Directory.CreateTempSubdirectory("st4i-line-ep-settings-").FullName;
         var assetsDir = Directory.CreateTempSubdirectory("st4i-line-ep-assets-").FullName;
         // GĐ3 sub-4 LC-1/LC-3 — isolated the same way as every other per-concern directory here: without
-        // this, this class's real Policy DENYs (the E-STOP-while-line.start case below) would resolve
+        // this, this class's real Policy DENYs (the halt-while-line.start case below) would resolve
         // AlarmStore against the REAL %ProgramData%\ST4I\sim\alarms\alarms.db instead of a throwaway dir.
         var alarmsDir = Directory.CreateTempSubdirectory("st4i-line-ep-alarms-").FullName;
         // EC-3 review follow-up — see SiteEndpointsTests' own doc comment: without these, every
@@ -279,7 +279,7 @@ public sealed class LineEndpointsTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // line.start while E-STOPped is denied by the SAME policy layer fleet.start already goes through —
+    // line.start while halted is denied by the SAME policy layer fleet.start already goes through —
     // 409 SAFETY_BLOCKED, and that denial ALSO raises a Critical Policy alarm (LC-1's DenyAsync hook,
     // unchanged by this task).
     // ─────────────────────────────────────────────────────────────────────

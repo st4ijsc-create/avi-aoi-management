@@ -230,7 +230,7 @@ test.describe("Machine settings — HMI tab + machine detail panel", () => {
     await expect(settingRow(page, "matchThreshold")).toContainText(viDict.machineSettings.provenance.baseline)
   })
 
-  test("safety rail holds on the settings tab: control rail never scrolls, E-STOP position identical to the operation tab, even latched", async ({
+  test("safety rail holds on the settings tab: control rail never scrolls, HALT position identical to the operation tab, even latched", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
@@ -244,7 +244,7 @@ test.describe("Machine settings — HMI tab + machine detail panel", () => {
         // (ControlColumn.tsx) selects the control rail directly, regardless of how many other
         // `.hmi-scroll` regions exist on the page.
         const controlRail = document.querySelector('[data-testid="control-rail"]')!
-        const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("E-STOP"))
+        const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("HALT"))
         const r = btn?.getBoundingClientRect()
         return {
           scrollHeight: controlRail.scrollHeight,
@@ -269,10 +269,10 @@ test.describe("Machine settings — HMI tab + machine detail panel", () => {
     expect(settingsState.scrollHeight, "control rail scrollHeight on the Settings tab").toBeLessThanOrEqual(
       settingsState.clientHeight
     )
-    // The whole point of the safety invariant — switching tabs must not move E-STOP by a single pixel.
-    expect(settingsState.estopRect, "E-STOP rect: Settings tab vs Operation tab").toEqual(operationState.estopRect)
+    // The whole point of the safety invariant — switching tabs must not move HALT by a single pixel.
+    expect(settingsState.estopRect, "HALT rect: Settings tab vs Operation tab").toEqual(operationState.estopRect)
 
-    // Latch E-STOP WHILE on the settings tab — banner + RESET both present, the tallest the rail ever
+    // Latch HALT WHILE on the settings tab — banner + RESET both present, the tallest the rail ever
     // gets (spec §8.3) — must still not scroll or move, on this tab too.
     // Scoped to the physical-controls panel itself — "ĐẶT LẠI" (RESET's own accessible name is
     // "ĐẶT LẠI RESET", the label + its own English gloss) is otherwise a substring match against
@@ -285,10 +285,10 @@ test.describe("Machine settings — HMI tab + machine detail panel", () => {
     expect(latchedState.scrollHeight, "control rail scrollHeight while latched, on the Settings tab").toBeLessThanOrEqual(
       latchedState.clientHeight
     )
-    expect(latchedState.estopRect, "E-STOP rect: latched vs unlatched, on the Settings tab").toEqual(settingsState.estopRect)
+    expect(latchedState.estopRect, "HALT rect: latched vs unlatched, on the Settings tab").toEqual(settingsState.estopRect)
 
     const pageScrolls = await page.evaluate(() => document.documentElement.scrollHeight > document.documentElement.clientHeight)
-    expect(pageScrolls, "page scrolls while E-STOP is latched, on the Settings tab").toBe(false)
+    expect(pageScrolls, "page scrolls while HALT is latched, on the Settings tab").toBe(false)
 
     await resetBtn.click()
     await expect(page.getByText(viDict.hmi.controls.estopBanner)).toHaveCount(0)

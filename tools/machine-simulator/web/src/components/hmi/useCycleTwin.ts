@@ -37,7 +37,7 @@ export function usePrefersReducedMotion(): boolean {
  * plan's own `startedAt`/`durationSeconds`, exactly like the design brief's "engine sends the plan at
  * cycle start + cycle timing; the web animates locally" (§3.2).
  *
- * Returns `null` whenever there's nothing to animate — `animate` is false (idle, E-STOPped, or
+ * Returns `null` whenever there's nothing to animate — `animate` is false (idle, halted, or
  * `prefers-reduced-motion` — the caller decides which) or `plan` has no steps — so a caller's render
  * branch is a single null-check, not a second flag to keep in sync.
  */

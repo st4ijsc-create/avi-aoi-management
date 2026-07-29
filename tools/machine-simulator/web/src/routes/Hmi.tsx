@@ -113,7 +113,7 @@ export default function Hmi() {
   const fleetIsRunning = useFleetIsRunning()
   // C-2: server-owned, shared across every panel/tab — no longer this component instance's own React
   // state, so navigating to another machine's panel (or an F5) can no longer silently drop an active
-  // E-STOP the way local state did.
+  // HALT the way local state did.
   const estopEngaged = useFleetEstopEngaged()
   const startFleet = useStartFleet()
   const stopFleet = useStopFleet()
@@ -132,9 +132,10 @@ export default function Hmi() {
 
   // A fresh machine code (navigating from one HMI straight to another) must not inherit the previous
   // machine's LOCAL log — `wouter` reuses this component instance across a param change since it's the
-  // same route/component, so this doesn't happen for free. The E-STOP latch itself is intentionally
-  // NOT reset here anymore (C-2): it's fleet-wide state, and a real emergency stop on one machine's
-  // panel must still be in force when an operator switches to another machine's panel.
+  // same route/component, so this doesn't happen for free. The HALT latch itself is intentionally
+  // NOT reset here anymore (C-2): it's fleet-wide state (a software latch, not a safety device — SM-4),
+  // and an active HALT on one machine's panel must still be in force when an operator switches to
+  // another machine's panel.
   React.useEffect(() => {
     setLocalEvents([])
     setActiveTab("operation")
@@ -228,21 +229,23 @@ export default function Hmi() {
   }
 
   function handleEstop() {
-    // C-2/C-3 — a real, confirmed, server-latched stop (spec: "it really stops the engine"). The
-    // mutation's `onSuccess` firing IS the confirmation the machine actually stopped; the previous
-    // version latched and logged success unconditionally on a fire-and-forget POST with no `onError`,
-    // so a failed request still told the operator the machine was safely stopped.
+    // C-2/C-3 — a real, confirmed, server-latched stop of THIS SOFTWARE's read pipeline (spec: "it
+    // really stops the engine" — the engine, not the machine; SM-4: this is a supervisory software
+    // latch, not a safety device — see README §1). The mutation's `onSuccess` firing IS the
+    // confirmation the pipeline actually stopped; the previous version latched and logged success
+    // unconditionally on a fire-and-forget POST with no `onError`, so a failed request still told the
+    // operator the software was safely stopped.
     estopFleet.mutate(undefined, {
-      onSuccess: () => pushLocalEvent("error", t("hmi.log.estopEngaged"), "E-STOP — fleet stopped, controls locked"),
+      onSuccess: () => pushLocalEvent("error", t("hmi.log.estopEngaged"), "HALT — fleet stopped, controls locked"),
       onError: () =>
-        pushLocalEvent("error", t("hmi.log.estopFailed"), "E-STOP COMMAND FAILED — engine did not confirm the stop"),
+        pushLocalEvent("error", t("hmi.log.estopFailed"), "HALT COMMAND FAILED — engine did not confirm the stop"),
     })
   }
 
   function handleReset() {
     resetEstop.mutate(undefined, {
-      onSuccess: () => pushLocalEvent("ok", t("hmi.log.estopReset"), "RESET — E-STOP cleared"),
-      onError: () => pushLocalEvent("error", t("hmi.log.estopResetFailed"), "RESET FAILED — E-STOP still latched"),
+      onSuccess: () => pushLocalEvent("ok", t("hmi.log.estopReset"), "RESET — HALT cleared"),
+      onError: () => pushLocalEvent("error", t("hmi.log.estopResetFailed"), "RESET FAILED — HALT still latched"),
     })
   }
 
@@ -259,8 +262,10 @@ export default function Hmi() {
   if (!machine) return <LoadingKiosk />
 
   // H2c SAFETY FIX — spec §2: "Status colours are for state only." The nameplate lamp is the ONE
-  // glance-able safety indicator on the whole screen; it must reflect whether the MACHINE ITSELF is
-  // faulted (E-STOP), not the QUALITY VERDICT of whatever board/cycle it last judged. The previous
+  // glance-able indicator on the whole screen for this software's own run state; it must reflect
+  // whether the FLEET'S READ PIPELINE is halted (the HALT latch — a supervisory software condition,
+  // not a claim about the physical machine, SM-4), not the QUALITY VERDICT of whatever board/cycle it
+  // last judged. The previous
   // version keyed `lampState` off `machine.statusText` (Idle/OK/WARN/FAIL/TELEMETRY — the LAST
   // CYCLE'S pass/fail result, same enum the "Status" readout tile below uses) — a machine that just
   // judged one NG board wore the fault-red dome and the label "Lỗi" while its own sub-line correctly
@@ -310,7 +315,7 @@ export default function Hmi() {
         H5b — row:log ratio changed 5:1 → 5:1.5 (spec §8.1's own note: "do not shrink the row's share
         below this without re-verifying the control rail's worst-case fit" — this pass DID
         re-verify, live, with an engine `evaluate()` measuring `ControlColumn`'s own `scrollHeight` vs
-        `clientHeight` at 1280×800: 5:2 left the rail short by 45px even BEFORE the E-STOP-engaged
+        `clientHeight` at 1280×800: 5:2 left the rail short by 45px even BEFORE the HALT-engaged
         banner added more, i.e. it broke §8.3's fit in the NORMAL state, not just the latched one —
         5:1.5, combined with `ControlColumn.tsx`'s own trimmed padding, is the loosest ratio that keeps
         the rail's unlatched content fitting with real margin at the 1280×800 floor. The old 5:1 log
@@ -322,7 +327,7 @@ export default function Hmi() {
       <div className="flex min-h-0 flex-[6.5] gap-3 p-3 pb-0">
         {/* Task 4 — the two tabs share this row's flexible left region; the physical control rail
             (below, in the fixed 336px column) stays mounted UNCHANGED regardless of which tab is
-            active — spec §8.6's safety invariant ("E-STOP never moves/disappears") only holds if
+            active — spec §8.6's safety invariant ("HALT never moves/disappears") only holds if
             switching tabs never touches that column at all, so this conditional is scoped to ONLY
             the schematic+readouts vs. settings region, never the rail beside it. */}
         {activeTab === "operation" ? (

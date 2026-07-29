@@ -326,7 +326,7 @@ public sealed class AuditWiringTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // fleet.estop — "who pressed E-STOP", even though Operator-reachable.
+    // fleet.estop — "who pressed HALT", even though Operator-reachable.
     // ─────────────────────────────────────────────────────────────────────
 
     [Fact]

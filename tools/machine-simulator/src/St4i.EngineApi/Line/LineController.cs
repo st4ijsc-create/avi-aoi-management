@@ -24,7 +24,7 @@ public sealed record LineTransitionResult(bool Accepted, PackMlState State, stri
 /// logic itself. This class owns exactly one extra piece of state FleetHost doesn't have: the operator's
 /// COMMANDED PackML state (<see cref="PackMlState"/>), which is richer than FleetHost's own plain
 /// running/stopped/estopped booleans (e.g. it distinguishes an operator HOLD, a resumable pause, from a
-/// STOP, and from an ABORT/E-STOP).
+/// STOP, and from an ABORT/HALT).
 ///
 /// FleetHost mapping (HOLD is a resumable pause, not FleetHost's own STOP-as-in-"line stopped for the
 /// day"): <c>Start</c> → <see cref="FleetHost.Start"/>; <c>Hold</c>/<c>Stop</c> → <see cref="FleetHost.Stop"/>
@@ -47,8 +47,12 @@ public sealed record LineTransitionResult(bool Accepted, PackMlState State, stri
 /// no new state to report here (the line was already Held), so this is naturally a rejection, not a
 /// redirect. Otherwise → Execute + <see cref="FleetHost.Start"/>.</description></item>
 /// <item><description><b>Stop</b>: legal from {Execute, Held} → Stopped + <see cref="FleetHost.Stop"/>.</description></item>
-/// <item><description><b>Abort</b>: legal from any state except Aborted (an E-STOP must always be
-/// reachable) → Aborted + <see cref="FleetHost.Estop"/>.</description></item>
+/// <item><description><b>Abort</b>: legal from any state except Aborted (a halt must always be
+/// reachable) → Aborted + <see cref="FleetHost.Estop"/>. SM-4: despite the ISA-88/PackML name, this is
+/// a software abort of THIS SOFTWARE's own read pipeline — it stops data collection and disconnects
+/// from the configured device(s), and has no write path to, and no effect on, any physical machine. A
+/// real emergency stop is a hardwired, safety-rated circuit (ISO 13849); this is not one and must never
+/// be presented as one.</description></item>
 /// <item><description><b>Reset</b>: legal from {Stopped, Aborted} → Idle + <see cref="FleetHost.ResetEstop"/>
 /// (a no-op on the latch if it wasn't actually engaged, e.g. resetting from a plain Stopped — ResetEstop
 /// is idempotent).</description></item>

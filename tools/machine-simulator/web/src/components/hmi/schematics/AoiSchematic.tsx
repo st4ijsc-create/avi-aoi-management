@@ -75,7 +75,7 @@ function clamp01(n: number): number {
  * present, each dot's fill IS its own step's real `result`, and the camera head genuinely travels to
  * each point in cycle order, paced by the plan's own `startedAt`/`durationSeconds` (`useCycleTwin`) —
  * never a fixed-cadence CSS loop. `points` (the product's static configured positions, no live result)
- * remains the fallback for the two honest "nothing live to show" cases: no plan yet (idle/E-STOPped)
+ * remains the fallback for the two honest "nothing live to show" cases: no plan yet (idle/halted)
  * or no product ever linked.
  */
 export function AoiSchematic({ plan, animate, points, className }: AoiSchematicProps) {
@@ -239,7 +239,7 @@ export function AoiSchematic({ plan, animate, points, className }: AoiSchematicP
             measurement points, plotted at their true configured positions; whenever a real `CyclePlan`
             is in hand, each dot's colour is ITS OWN real result (revealed progressively in step order
             while animating, all-at-once when static/reduced-motion — never a fabricated match). With
-            no plan (idle, E-STOPped, or no product ever linked), every dot is the neutral idle outline
+            no plan (idle, halted, or no product ever linked), every dot is the neutral idle outline
             plotting position only — exactly the pre-WS3-T2 honest fallback. */}
         <g className="hmi-aoi-points-group">
           {hasLiveSteps

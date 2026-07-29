@@ -17,10 +17,11 @@ export async function setFleetRunning(request: APIRequestContext, running: boole
   if (!res.ok()) throw new Error(`POST ${path} failed: ${res.status()}`)
 }
 
-/** C-2 — clears the engine-owned E-STOP latch (`FleetHost.ResetEstop`), idempotent (a no-op if
- * nothing is latched). `StartLocked` refuses to start the fleet while latched (defense in depth, see
- * `FleetHost.cs`), so any spec that engages E-STOP MUST clear it before `setFleetRunning(true)` can
- * work again — used defensively in `afterEach` hooks for that reason. */
+/** C-2 — clears the engine-owned HALT latch (`FleetHost.ResetEstop`; SM-4: a supervisory software
+ * latch, not a safety device — see README §1), idempotent (a no-op if nothing is latched).
+ * `StartLocked` refuses to start the fleet while latched (defense in depth, see `FleetHost.cs`), so
+ * any spec that engages HALT MUST clear it before `setFleetRunning(true)` can work again — used
+ * defensively in `afterEach` hooks for that reason. */
 export async function resetEstop(request: APIRequestContext): Promise<void> {
   const res = await request.post(`${ENGINE_URL}/v1/fleet/estop/reset`)
   if (!res.ok()) throw new Error(`POST /v1/fleet/estop/reset failed: ${res.status()}`)

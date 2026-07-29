@@ -5,7 +5,7 @@ import { useGloss } from "@/components/hmi/bilingual"
 import { useLanguage, useT } from "@/i18n"
 import { traceStatusTone, type StatusTone, type StreamConnectionState, type TraceRow } from "@/lib/inspector"
 
-/** A locally-originated log row (control actions — Start/Pause/E-STOP/Reset) — these carry a REAL
+/** A locally-originated log row (control actions — Start/Pause/HALT/Reset) — these carry a REAL
  * bilingual message pair (unlike the trace rows below, which mirror raw HTTP method/path/status —
  * language-agnostic wire data, not prose). */
 export interface HmiLocalLogEvent {
@@ -52,7 +52,7 @@ interface SystemLogProps {
 /**
  * System log (spec §8: full-width band under the schematic/readouts/output row): monospace, `LogTag`
  * level column, newest-first, fed live by the shared WS trace stream (filtered to this machine's own
- * events) merged with local control-action events (E-STOP/Reset/Start/Pause). Scrolls internally
+ * events) merged with local control-action events (HALT/Reset/Start/Pause). Scrolls internally
  * (`hmi-scroll`) — newest rows land at the top, so no explicit "scroll to bottom" logic is needed to
  * keep the latest event in view.
  */

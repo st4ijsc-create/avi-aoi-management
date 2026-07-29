@@ -54,7 +54,7 @@ function RequireRole({ role, children }: { role: string; children: React.ReactNo
  * tone" discipline `LIFECYCLE_TONE` (`AssetRegistry.tsx`)/`BRIDGE_STATUS_BADGE` (`Site.tsx`) already
  * use elsewhere: `Execute` is the one genuinely-`ok` state (line actually running); `Held`/`Aborted`
  * are the two that must visually "stand out" (brief) — `warn`/`danger` respectively, matching their
- * real severity (a resumable pause vs. a commanded E-STOP); `Idle` (nothing commanded yet) is
+ * real severity (a resumable pause vs. a commanded software halt); `Idle` (nothing commanded yet) is
  * `neutral`; `Stopped` (a deliberate, non-alarming halt) is `info`. */
 const STATE_TONE: Record<PackMlState, BadgeStatus> = {
   Idle: "neutral",
@@ -69,10 +69,12 @@ const STATE_TONE: Record<PackMlState, BadgeStatus> = {
  * here is the exact same {from-states} → command legality that class's doc comment documents, so the
  * UI never offers a command the server would 409-reject. `abort` is the one deliberate exception: the
  * backend itself rejects an Abort from an already-`Aborted` line (`ExecuteAbort`'s own guard — "the
- * line is already Aborted"), but a real E-STOP control is conventionally NEVER greyed out (an operator
- * must never wonder why the panic button is disabled) — brief: "Abort styled as the prominent emergency
- * action (always enabled)". The one harmless redundant-Abort 409 surfaces as the same inline message
- * every other rejected command does, rather than being hidden behind a disabled button.
+ * line is already Aborted"), but this always-enabled styling mirrors the physical convention that a
+ * real emergency-stop control is never greyed out (an operator must never wonder why a stop control is
+ * disabled) — brief: "Abort styled as the prominent, always-enabled stop action". SM-4: Abort itself is
+ * a software abort of this software's own pipeline (`FleetHost.Estop`), not a safety device — see
+ * README §1. The one harmless redundant-Abort 409 surfaces as the same inline message every other
+ * rejected command does, rather than being hidden behind a disabled button.
  */
 const VALID_FROM: Record<LineCommand, PackMlState[] | "always"> = {
   start: ["Idle", "Stopped"],

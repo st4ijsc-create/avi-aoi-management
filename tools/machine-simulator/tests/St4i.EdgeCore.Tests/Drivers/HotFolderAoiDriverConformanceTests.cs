@@ -43,7 +43,7 @@ namespace St4i.EdgeCore.Tests.Drivers;
 /// trace: the timing-only first assertion is all that actually protects this driver's constructor today.
 /// Deliberately NOT fixed by changing <see cref="HotFolderAoiDriver"/> itself here — that is a separate
 /// decision (this task's scope is the conformance-suite/documentation seam, not this driver's behaviour),
-/// and the practical E-STOP-blocking risk the "no I/O in the constructor" rule exists to prevent does not
+/// and the practical halt-call-blocking risk the "no I/O in the constructor" rule exists to prevent does not
 /// apply to this SPECIFIC driver today: <c>Program.cs</c> only ever constructs it off <c>FleetHost</c>'s
 /// <c>_gate</c> (unlike Modbus/OPC-UA connectors, which <c>ConnectorRegistry.TryCreateDriver</c> constructs
 /// WITH <c>_gate</c> held).</para>

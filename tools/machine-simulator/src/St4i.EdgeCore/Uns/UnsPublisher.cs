@@ -183,7 +183,7 @@ public sealed class UnsPublisher : IUnsPublisher, IAsyncDisposable
         long bd;
         lock (_lifecycleGate)
         {
-            if (!_nodeBorn) return; // no NDEATH without a matching NBIRTH — idempotent stop / E-STOP-while-idle no-op
+            if (!_nodeBorn) return; // no NDEATH without a matching NBIRTH — idempotent stop / halt-while-idle no-op
             _nodeBorn = false;
             bd = _bdSeq;
         }

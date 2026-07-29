@@ -162,7 +162,10 @@ public sealed class AlarmEndpointsTests
             Assert.Equal("fleet.start", alarm.TargetId);
             Assert.True(alarm.ClearOnAck);
             Assert.False(string.IsNullOrWhiteSpace(alarm.Runbook));
-            Assert.Contains("E-STOP", alarm.Runbook, StringComparison.OrdinalIgnoreCase);
+            // SM-4 — the runbook text was reworded to stop saying "E-STOP"/implying a machine-level
+            // effect (it now says plainly this only stopped this software's own data collection, not
+            // any machine); this assertion follows that wording, not the old literal string.
+            Assert.Contains("halt", alarm.Runbook, StringComparison.OrdinalIgnoreCase);
         }
 
         using (var ack = await operatorClient.PostAsync($"/v1/alarms/{alarm.Id}/ack", null))

@@ -27,6 +27,32 @@ contract doc 61). Vừa là app trình diễn tại gian hàng (dashboard, chi t
 chế độ kiosk), vừa là hạt giống của middleware edge sản xuất thật — `St4i.EdgeCore` không phụ thuộc
 WPF nên cùng pipeline đó cũng chạy headless qua `St4i.EdgeService`.
 
+> ### ⚠ Safety notice — read this before connecting a real machine / Cảnh báo an toàn — đọc trước khi kết nối máy thật
+>
+> **EN** — The control this product calls **HALT** on the HMI panel (fleet-level `FleetHost.Estop()`
+> / `POST /v1/fleet/estop`) and **Abort** on the Line Control page is a **supervisory software latch**,
+> not a safety device. Pressing it cancels this software's own read pipeline and disconnects from the
+> configured device(s) — nothing more. It cannot stop a machine, because **this product has no write
+> path to any device anywhere in this codebase**: `IDeviceDriver` has exactly one data-producing
+> member (`ReadAsync`); there is no `WriteAsync`/`SendCommand`/`Actuate` on any driver contract, no
+> Modbus `Write*` call, no OPC-UA `WriteAsync`/`CallAsync`, and Sparkplug NCMD is never received
+> anywhere. A real emergency stop is a hardwired, safety-rated circuit per **ISO 13849** (Cat 3/4) —
+> software is never permitted to be the safety path, and this product does not attempt to be one. Do
+> not rely on any control in this product as a safety function, and do not connect a real machine's
+> actual emergency-stop circuit to anything this software does.
+>
+> **VI** — Điều khiển mà sản phẩm này gọi là **NGỪNG** trên bảng HMI (mức fleet, `FleetHost.Estop()` /
+> `POST /v1/fleet/estop`) và **Hủy** trên trang Line Control là một **chốt phần mềm giám sát**, không
+> phải thiết bị an toàn. Nhấn nút này chỉ hủy pipeline đọc dữ liệu của phần mềm này và ngắt kết nối tới
+> thiết bị đã cấu hình — không hơn không kém. Nó không thể dừng máy thật, vì **sản phẩm này không có
+> đường ghi lệnh tới bất kỳ thiết bị nào trong toàn bộ mã nguồn**: `IDeviceDriver` chỉ có đúng một
+> thành viên tạo dữ liệu (`ReadAsync`); không hợp đồng driver nào có `WriteAsync`/`SendCommand`/
+> `Actuate`, không có lệnh Modbus `Write*`, không có OPC-UA `WriteAsync`/`CallAsync`, và Sparkplug
+> NCMD không bao giờ được nhận ở bất kỳ đâu. Một hệ thống dừng khẩn cấp thật là mạch cứng đạt chuẩn an
+> toàn theo **ISO 13849** (Cat 3/4) — phần mềm không bao giờ được phép là đường an toàn, và sản phẩm
+> này không cố trở thành như vậy. Đừng dựa vào bất kỳ điều khiển nào trong sản phẩm này như một chức
+> năng an toàn, và đừng đấu mạch dừng khẩn cấp thật của máy vào bất cứ thứ gì phần mềm này làm.
+
 ---
 
 ## 2. Requirements / Yêu cầu
@@ -300,7 +326,7 @@ P2/P3 items below have since landed — see the **Status** column and **§16** f
 | P5 | SECS/GEM + Zmotion (koffi FFI) + HA/buffering + security hardening + OTA config | SECS/GEM, Zmotion | Future. |
 
 **Also delivered this build, not originally scoped as its own P1-P5 phase above** — a default-deny
-Policy layer + the XC-R40 `/v1/safety` supervisory E-STOP endpoint (§16.2), per-pipeline fault
+Policy layer + the XC-R40 `/v1/safety` supervisory halt-status endpoint (§16.2), per-pipeline fault
 isolation (§16.3), and a persistent ISA-95 Asset Registry (§16.5, the "canonical model" piece of
 this roadmap). See **§16** for all five middleware-backbone features together.
 
@@ -706,7 +732,7 @@ it carries exactly its intended policy (or `AllowAnonymous`) — not a sampled s
 
 | Role | Can do |
 |---|---|
-| **Operator** (least-privileged) | View everything (fleet/machine/product/recipe/config/machine-settings/scenario/historian/OEE), start/stop/e-stop the fleet, manage their own session (logout / me / change-password). No configuration writes. |
+| **Operator** (least-privileged) | View everything (fleet/machine/product/recipe/config/machine-settings/scenario/historian/OEE), start/stop/halt the fleet, manage their own session (logout / me / change-password). No configuration writes. |
 | **Engineer** | Everything Operator can, **plus** configure: edit products/points/recipes, machine-config & machine-settings pull/push + sync, `Settings` (server URL / language / machine code), scenario mutations + presets/burst, onboarding (register/claim), OEE settings, the Inspector WebSocket stream. |
 | **Admin** | Everything Engineer can, **plus** administer: user management (`/users` — create, change role, disable/enable, reset password), the `/audit` log (read + verify chain integrity), historian prune, and one in-handler escalation — see §14.4. |
 
@@ -1349,16 +1375,19 @@ CI nào.)*
 
 **EN** — Giai đoạn 2 (pass 1 + pass 2, "SYNAPSE connect") adds five features that turn this exhibition
 simulator into real edge middleware: a local Unified Namespace spine, a default-deny Policy layer with
-a supervisory E-STOP safety endpoint, per-pipeline fault isolation, a first real field-protocol driver
-(Modbus TCP), and a persistent Asset Registry. Everything below is **additive** — the existing ST4I
-HTTP ingest path, `EdgePipeline.Committed`, and every pre-existing endpoint/behavior are unchanged
-unless explicitly called out.
+a supervisory halt-status endpoint (SM-4: renamed from "E-STOP safety endpoint" — see §1's safety
+notice; this endpoint reports a software latch, never a safety function), per-pipeline fault isolation,
+a first real field-protocol driver (Modbus TCP), and a persistent Asset Registry. Everything below is
+**additive** — the existing ST4I HTTP ingest path, `EdgePipeline.Committed`, and every pre-existing
+endpoint/behavior are unchanged unless explicitly called out.
 
 *(VI: Giai đoạn 2 (pass 1+2, "SYNAPSE connect") thêm 5 tính năng biến trình mô phỏng triển lãm này
 thành middleware edge thật: một xương sống Unified Namespace (UNS) cục bộ, lớp Policy mặc định-từ-chối
-kèm endpoint an toàn E-STOP giám sát, cách ly lỗi theo từng pipeline, driver giao thức trường đầu tiên
-(Modbus TCP), và một Asset Registry bền vững. Tất cả đều là THÊM VÀO — đường ingest HTTP ST4I hiện có,
-`EdgePipeline.Committed`, và mọi endpoint/hành vi trước đó không đổi trừ khi nói rõ.)*
+kèm endpoint trạng thái ngừng giám sát (SM-4: đổi tên từ "endpoint an toàn E-STOP" — xem cảnh báo an
+toàn ở §1; endpoint này báo cáo một chốt phần mềm, không bao giờ là chức năng an toàn), cách ly lỗi
+theo từng pipeline, driver giao thức trường đầu tiên (Modbus TCP), và một Asset Registry bền vững. Tất
+cả đều là THÊM VÀO — đường ingest HTTP ST4I hiện có, `EdgePipeline.Committed`, và mọi endpoint/hành vi
+trước đó không đổi trừ khi nói rõ.)*
 
 **Update (Giai đoạn 3, sub-3 — OPC-UA client driver):** §16.6 below is a later addition, filed as a
 sibling of this section rather than under §17 — a SECOND real field-protocol driver (mirrors Modbus
@@ -1419,7 +1448,7 @@ bind cổng hay hàng đợi đầy đều chỉ log cảnh báo, KHÔNG BAO GI�
 INSIDE the existing RBAC gate for every fleet-actuating command (`fleet.start`, `fleet.stop`,
 `fleet.estop`, `fleet.estop_reset`, `scenario.burst`): rules are evaluated safety-first, any explicit
 **Deny wins over any Permit**, and an action no rule explicitly permits is denied. The
-operator-visible behavior change: **`POST /v1/fleet/start` while the E-STOP latch is engaged now
+operator-visible behavior change: **`POST /v1/fleet/start` while the halt latch is engaged now
 returns `409 Conflict` with reason `SAFETY_BLOCKED`** (plus an audited `fleet.start.denied` row) —
 before this, the same call silently no-op'd with a `200`.
 
@@ -1433,22 +1462,31 @@ New read-only endpoint:
 |---|---|---|---|
 | `/v1/safety` | GET | Operator | Returns `{ estopEngaged, isRunning, safetyClass: "SupervisorySoftwareLatch", advisory }` |
 
-**The XC-R40 boundary** — read this before treating the E-STOP latch as more than it is: it is a
-**SUPERVISORY software control**, not a substitute for a machine's independent, safety-rated
-emergency-stop circuit, and must never be relied on as a protective safety function; `/v1/safety`
-itself carries this advisory string verbatim in its response. `GET /v1/safety` is **read-only by
-design** — there is deliberately no write route here. The only two ways to change the underlying latch
-remain the pre-existing operator actions: `POST /v1/fleet/estop` (engage) and
-`POST /v1/fleet/estop/reset` (clear) — both still Operator-role, both still audited, both still always
-reachable even while the latch is engaged (the policy rule never blocks stop/estop/estop-reset/reads).
+**The XC-R40 boundary** — read this before treating the halt latch as more than it is (SM-4: see §1's
+safety notice for the full statement): it is a **SUPERVISORY software latch**, not a substitute for a
+machine's independent, safety-rated emergency-stop circuit (a hardwired circuit per ISO 13849), and
+must never be relied on as a protective safety function — **this product has no write path to any
+device at all**; `/v1/safety` itself carries this advisory string verbatim in its response
+(`SafetyEndpoints.XcR40Advisory`). `GET /v1/safety` is **read-only by design** — there is deliberately
+no write route here. The only two ways to change the underlying latch remain the pre-existing operator
+actions: `POST /v1/fleet/estop` (engage) and `POST /v1/fleet/estop/reset` (clear) — both still
+Operator-role, both still audited, both still always reachable even while the latch is engaged (the
+policy rule never blocks stop/estop/estop-reset/reads). The operator-facing label for these actions is
+**HALT**/**NGỪNG** (HMI panel) and **Abort**/**Hủy** (Line Control) — not "E-STOP"; the identifiers
+(`FleetHost.Estop()`, the `/v1/fleet/estop` route, `EstopGuardRule`) are kept unchanged for API/code
+stability, but no operator-facing surface calls this an emergency stop.
 
 *(VI: `St4i.EngineApi.Policy` thêm một lớp policy mặc định-từ-chối, đánh giá BÊN TRONG cổng RBAC hiện
 có cho mọi lệnh tác động lên fleet — bất kỳ Deny nào cũng THẮNG mọi Permit. Thay đổi hành vi người vận
-hành thấy được: `POST /v1/fleet/start` khi E-STOP đang cài giờ trả về `409` lý do `SAFETY_BLOCKED` (kèm
-dòng audit `fleet.start.denied`) thay vì im lặng no-op trả 200 như trước. Endpoint mới `GET /v1/safety`
-(vai trò Operator, CHỈ ĐỌC) trả trạng thái chốt E-STOP giám sát + cảnh báo XC-R40. **Ranh giới XC-R40**:
-chốt này là điều khiển phần mềm GIÁM SÁT, KHÔNG thay thế mạch dừng khẩn cấp an toàn độc lập của máy —
-không bao giờ được coi là chức năng an toàn bảo vệ. Chỉ có 2 cách ghi vào chốt: `POST /v1/fleet/estop`
+hành thấy được: `POST /v1/fleet/start` khi chốt ngừng đang cài giờ trả về `409` lý do `SAFETY_BLOCKED`
+(kèm dòng audit `fleet.start.denied`) thay vì im lặng no-op trả 200 như trước. Endpoint mới
+`GET /v1/safety` (vai trò Operator, CHỈ ĐỌC) trả trạng thái chốt ngừng giám sát + cảnh báo XC-R40.
+**Ranh giới XC-R40**: chốt này là điều khiển phần mềm GIÁM SÁT, KHÔNG thay thế mạch dừng khẩn cấp an
+toàn độc lập của máy (mạch cứng theo ISO 13849) — không bao giờ được coi là chức năng an toàn bảo vệ,
+và **sản phẩm này không có đường ghi lệnh tới bất kỳ thiết bị nào**. Tên gọi mà người vận hành nhìn
+thấy là **NGỪNG** (bảng HMI) và **Hủy** (Line Control) — không phải "E-STOP"; các định danh trong mã
+nguồn (`FleetHost.Estop()`, route `/v1/fleet/estop`, `EstopGuardRule`) vẫn giữ nguyên để ổn định API,
+nhưng không có bề mặt nào hướng tới người vận hành còn gọi đây là dừng khẩn cấp. Chỉ có 2 cách ghi vào chốt: `POST /v1/fleet/estop`
 và `POST /v1/fleet/estop/reset` — cả hai vẫn như cũ, vẫn Operator, vẫn được audit, vẫn luôn gọi được kể
 cả khi chốt đang cài.)*
 
@@ -2554,14 +2592,15 @@ hai lớp này lại: một cảnh báo Critical đang hoạt động sẽ chặ
 
 | Source | Raised by | Priority | `ClearOnAck` | Clears when |
 |---|---|---|---|---|
-| **Policy DENY** | `PolicyResults.DenyAsync` — every policy denial across the policy-gated fleet/scenario/line mutation routes (`FleetEndpoints`, `ScenarioEndpoints`, `LineEndpoints`) | `Critical` for `SAFETY_BLOCKED` (the E-STOP guard); `High` for every other denial reason | `true` (EVENT) | The operator's own Ack (both acks and clears it in one step) |
+| **Policy DENY** | `PolicyResults.DenyAsync` — every policy denial across the policy-gated fleet/scenario/line mutation routes (`FleetEndpoints`, `ScenarioEndpoints`, `LineEndpoints`) | `Critical` for `SAFETY_BLOCKED` (the halt guard, `EstopGuardRule`); `High` for every other denial reason | `true` (EVENT) | The operator's own Ack (both acks and clears it in one step) |
 | **DriverHealth** | `AlarmEvaluator`'s periodic per-slot health pass (`FleetHost.GetDriverHealth`) | `High` for `Degraded`; `Critical` for `Down` | `false` (CONDITION) | The evaluator sees the slot `Connected` again, or the slot is removed from the fleet |
 | **NG-rate** | `AlarmEvaluator`'s periodic windowed fleet-wide NG-rate pass (`FleetHost.GetKpiCounters`) | `High` | `false` (CONDITION) | The evaluator's next windowed rate falls back at/under the threshold |
 | **Identity** (GĐ3 closeout WI-4, §17.10) | `AlarmEvaluator`'s periodic check of this device's own certificate `NotAfter` (`DeviceIdentityProvider.Current`) | **`High` only — capped, never `Critical`** (a `Critical` alarm feeds the alarm→hold gate, §18.7; an expiring credential must never stop production) | `false` (CONDITION) | A rotation (§17.10) pushes the expiry back out past the warn threshold |
 
-Only the Policy source carries a **`Runbook`** hint: `SAFETY_BLOCKED` gets an E-STOP-specific one ("...
-reset the E-STOP latch (`POST /v1/fleet/estop/reset`) before starting"); every other denial reason gets
-a generic one. DriverHealth/NgRate/Identity alarms carry no runbook.
+Only the Policy source carries a **`Runbook`** hint: `SAFETY_BLOCKED` gets a halt-specific one ("The
+halt latch is engaged — this stopped this software's own data collection only, not any machine. Reset
+the latch (`POST /v1/fleet/estop/reset`) before starting."); every other denial reason gets a generic
+one. DriverHealth/NgRate/Identity alarms carry no runbook.
 
 The NG-rate source is a **windowed DELTA since the evaluator's last pass**, never a lifetime-cumulative
 rate: if the judged-unit delta since the last pass is below **`ST4I_ALARM_NGRATE_MINSAMPLE`**, the
@@ -2580,7 +2619,7 @@ nó (Active→Acked), CHỈ bộ đánh giá định kỳ mới thực sự xoá
 file SQLite riêng `alarms.db`, mặc định `%ProgramData%\ST4I\sim\alarms`, dời chỗ qua
 **`ST4I_ALARMS_DIR`**. Hai bảng: `active_alarms` (tập sống) và `alarm_history` (log chỉ-ghi-thêm).
 `RaiseAsync`/`ClearAsync` KHÔNG BAO GIỜ throw. Bốn nguồn: **Policy DENY** (mọi lần từ chối policy trên
-các route fleet/scenario/line — `SAFETY_BLOCKED` = Critical + runbook E-STOP, còn lại = High + runbook
+các route fleet/scenario/line — `SAFETY_BLOCKED` = Critical + runbook chốt ngừng, còn lại = High + runbook
 chung; sự kiện, Ack tự xoá); **DriverHealth** (đánh giá định kỳ theo từng slot — Degraded=High,
 Down=Critical; tự xoá khi slot Connected lại hoặc bị gỡ khỏi fleet); **NG-rate** (đánh giá NG-rate CỬA
 SỔ theo delta kể từ lần trước, không phải tỷ lệ cộng dồn trọn đời — dưới `ST4I_ALARM_NGRATE_MINSAMPLE`
@@ -2676,8 +2715,8 @@ actually observe between commands:
   `Held`, reason `"critical alarm active"`) — unlike Start's redirect, there's no NEW state to report
   here. Otherwise → `Execute` + `FleetHost.Start`.
 - **Stop** — legal from `{Execute, Held}` → `Stopped` + `FleetHost.Stop`.
-- **Abort** — legal from any state except `Aborted` (an E-STOP must always be reachable) → `Aborted` +
-  `FleetHost.Estop`.
+- **Abort** — legal from any state except `Aborted` (a halt must always be reachable) → `Aborted` +
+  `FleetHost.Estop` (SM-4: a software abort of this software's own pipeline, not a safety device — §1).
 - **Reset** — legal from `{Stopped, Aborted}` → `Idle` + `FleetHost.ResetEstop`.
 
 `Snapshot` reports the **effective** state, which can diverge from the raw commanded state: a commanded
@@ -2700,7 +2739,7 @@ thì chuyển hướng sang `Held` (lý do "critical alarm active") mà KHÔNG g
 chuyển trạng thái ĐƯỢC CHẤP NHẬN); **Hold** chỉ hợp lệ từ Execute → Held ("operator hold"); **Unhold**
 chỉ hợp lệ từ Held — nếu Critical đang hoạt động thì BỊ TỪ CHỐI (không phải chuyển hướng, vì không có
 trạng thái mới để báo); **Stop** hợp lệ từ {Execute, Held} → Stopped; **Abort** hợp lệ từ MỌI trạng
-thái trừ Aborted (E-STOP luôn phải với tới được) → Aborted; **Reset** hợp lệ từ {Stopped, Aborted} →
+thái trừ Aborted (chốt ngừng luôn phải với tới được) → Aborted; **Reset** hợp lệ từ {Stopped, Aborted} →
 Idle. `Snapshot` trả về trạng thái HIỆU LỰC (có thể khác trạng thái đã lệnh) — Execute + Critical đang
 hoạt động đọc về thành Held (§18.7). Trạng thái lệnh ban đầu là `Stopped`. An toàn luồng (khoá riêng).
 Publish lên UNS (§18.6) mỗi khi trạng thái LỆNH đổi — không bao giờ khi bị từ chối hay khi Snapshot tự
@@ -2713,16 +2752,16 @@ ghi đè lúc đọc.)*
 | Path | Verb | Role | Behavior |
 |---|---|---|---|
 | `/v1/line` | GET | Operator | The effective `LineStatus` — `{state, holdReason, isRunning, estopEngaged}`. `holdReason` is non-null only when `state` is `Held`; `isRunning`/`estopEngaged` are read straight off `FleetHost` (the ACTUAL truth), never cached. |
-| `/v1/line/{command}` | POST | Operator, policy-gated + audited | Policy-evaluated as `line.{command}` (derived from the PARSED enum, never the raw route text, so casing never matters) — same `policy.Evaluate` → `PolicyResults.DenyAsync` → mutate → `recorder.RecordAsync` template `/v1/fleet/*` already uses. `line.start`/`line.unhold` are **`EstopGuardRule`**-blocked while E-STOPped (`SAFETY_BLOCKED`, same guard `fleet.start` already has) — a denial here is what raises the Critical Policy alarm (§18.1). A REJECTED `LineController` transition (illegal state, or an Unhold blocked by a Critical alarm) returns `409` and writes NO audit row (only the Policy-deny path is audited pre-mutation); an ACCEPTED transition audits before/after `LineStatus` snapshots. |
+| `/v1/line/{command}` | POST | Operator, policy-gated + audited | Policy-evaluated as `line.{command}` (derived from the PARSED enum, never the raw route text, so casing never matters) — same `policy.Evaluate` → `PolicyResults.DenyAsync` → mutate → `recorder.RecordAsync` template `/v1/fleet/*` already uses. `line.start`/`line.unhold` are **`EstopGuardRule`**-blocked while the halt latch is engaged (`SAFETY_BLOCKED`, same guard `fleet.start` already has) — a denial here is what raises the Critical Policy alarm (§18.1). A REJECTED `LineController` transition (illegal state, or an Unhold blocked by a Critical alarm) returns `409` and writes NO audit row (only the Policy-deny path is audited pre-mutation); an ACCEPTED transition audits before/after `LineStatus` snapshots. |
 
 *(VI: `LineEndpoints` có 2 route: **`GET /v1/line`** (Operator) — trạng thái hiệu lực
 `{state, holdReason, isRunning, estopEngaged}`; `holdReason` chỉ khác null khi `state` là Held;
 `isRunning`/`estopEngaged` đọc thẳng từ FleetHost (sự thật THỰC), không cache. **`POST
 /v1/line/{command}`** (Operator, có policy-gate + audit) — đánh giá policy dưới tên `line.{command}`
 (lấy từ enum đã parse, không phải chữ route thô); `line.start`/`line.unhold` bị **`EstopGuardRule`**
-chặn khi đang E-STOP (`SAFETY_BLOCKED`, cùng guard mà `fleet.start` đã có) — một lần từ chối ở đây
-chính là thứ nâng cảnh báo Policy Critical (§18.1). Chuyển trạng thái BỊ TỪ CHỐI trả `409`, KHÔNG ghi
-audit; chuyển trạng thái ĐƯỢC CHẤP NHẬN thì có audit trước/sau.)*
+chặn khi chốt ngừng đang cài (`SAFETY_BLOCKED`, cùng guard mà `fleet.start` đã có) — một lần từ chối ở
+đây chính là thứ nâng cảnh báo Policy Critical (§18.1). Chuyển trạng thái BỊ TỪ CHỐI trả `409`, KHÔNG
+ghi audit; chuyển trạng thái ĐƯỢC CHẤP NHẬN thì có audit trước/sau.)*
 
 ### 18.6 UNS `_line/state` / UNS `_line/state`
 
@@ -2814,8 +2853,10 @@ XUẤT THẬT (FleetHost.IsRunning vẫn true) cho tới khi operator (hay một
   **Commands** card (Start/Hold/Unhold/Stop/Abort/Reset buttons, each disabled unless legal from the
   current state per §18.4's own transition table — mirrored client-side so the UI never offers a
   command the server would `409`-reject; **Abort is the one deliberate exception, always enabled**,
-  since a real E-STOP control should never be greyed out — a redundant Abort-from-`Aborted` still 409s
-  and surfaces the same inline error every other rejected command does). This is a dedicated route,
+  mirroring the physical convention that a real emergency-stop control should never be greyed out
+  (SM-4: Abort itself is a software abort of this software's own pipeline, not a safety device — §1) —
+  a redundant Abort-from-`Aborted` still 409s and surfaces the same inline error every other rejected
+  command does). This is a dedicated route,
   distinct from `TopBar.tsx`'s own separate fleet-level Start/Stop pair (the whole simulated fleet's
   power switch) — shoehorning this PackML-level surface into the KPI strip would conflate the two.
 
@@ -2825,7 +2866,9 @@ là quyền Operator (thấp nhất — mọi người dùng đăng nhập); nú
 client chỉ mang tính hình thức, thực thi thật nằm ở server (`Policies.Operator`). **`/line` — Line
 Control** — thẻ **Status** (badge PackML sống, banner `holdReason`, `isRunning`/`estopEngaged`) và thẻ
 **Commands** (nút Start/Hold/Unhold/Stop/Abort/Reset, disable theo đúng bảng chuyển trạng thái §18.4 —
-riêng **Abort LUÔN BẬT** vì nút E-STOP thật không bao giờ nên bị xám; Abort dư thừa từ Aborted vẫn 409
+riêng **Abort LUÔN BẬT** — theo quy ước của một nút dừng khẩn cấp vật lý thật, không bao giờ nên bị xám
+(SM-4: bản thân Abort là một lệnh hủy phần mềm của pipeline phần mềm này, không phải thiết bị an toàn —
+§1); Abort dư thừa từ Aborted vẫn 409
 như bình thường). Đây là route RIÊNG, khác với cặp Start/Stop cấp-fleet của `TopBar.tsx`.)*
 
 ### 18.9 Honest deferrals / Những gì CHƯA làm
@@ -2924,8 +2967,9 @@ copy project), không `dotnet add package` được. `src/St4i.Connector.Conform
 (§19.5 enforces every line below):
 
 - **Construction is non-blocking and performs no I/O.** `FleetHost.StartLocked` constructs drivers under
-  the SAME lock `Estop()` takes — a slow/blocking constructor stalls emergency-stop for as long as it
-  takes. Any connect/session work belongs entirely inside `ReadAsync`, never the constructor.
+  the SAME lock `Estop()` takes — a slow/blocking constructor stalls the `Estop()` call itself (a
+  supervisory software halt of this software's own pipeline — SM-4, §1 — not a machine safety function)
+  for as long as it takes. Any connect/session work belongs entirely inside `ReadAsync`, never the constructor.
 - **`ReadAsync`'s cancellation must be honoured promptly — including when no device is reachable at
   all.** The realistic failure mode this exists for: a device that's off, disconnected, or that accepts
   a connection but never responds. `FleetHost`'s own teardown only waits a bounded few seconds before
@@ -2956,7 +3000,9 @@ copy project), không `dotnet add package` được. `src/St4i.Connector.Conform
 
 *(VI: GP-6 biến các doc comment XML của `IDeviceDriver` thành hợp đồng tuân thủ THẬT SỰ (§19.5 thực thi
 từng dòng): **Khởi tạo (constructor) không chặn và không I/O** — `FleetHost.StartLocked` khởi tạo driver
-dưới CÙNG lock mà `Estop()` giữ, constructor chậm/chặn sẽ làm E-STOP treo lâu tương ứng. **Huỷ
+dưới CÙNG lock mà `Estop()` giữ, constructor chậm/chặn sẽ làm chính lệnh gọi `Estop()` treo lâu tương
+ứng (SM-4: đây là một chốt ngừng phần mềm giám sát của pipeline phần mềm này, không phải chức năng an
+toàn của máy — §1). **Huỷ
 (cancellation) của `ReadAsync` phải được tôn trọng NGAY LẬP TỨC — kể cả khi không có thiết bị nào tiếp
 cận được** — teardown của `FleetHost` chỉ chờ vài giây có giới hạn rồi bỏ cuộc, để lại task nền mồ côi.
 **`DisposeAsync` phải idempotent** — gọi nhiều lần, sau khi huỷ, sau khi enumerate xong, hoặc chưa từng
@@ -3012,9 +3058,9 @@ comment sets three hard rules any implementation — first- or third-party — m
 
 - **MUST return promptly and MUST NOT perform I/O.** `ConnectorRegistry` is consulted from inside the
   SAME `_gate` lock `FleetHost.Estop()` takes — this is the one place third-party code runs while that
-  lock is held, so a slow `TryCreate` blocks E-STOP for as long as it takes. Both built-in factories
-  (Modbus, OPC-UA) only ever parse a small in-memory JSON blob here; the actual socket/session opens
-  lazily inside `ReadAsync`.
+  lock is held, so a slow `TryCreate` blocks the halt call (`Estop()`) for as long as it takes. Both
+  built-in factories (Modbus, OPC-UA) only ever parse a small in-memory JSON blob here; the actual
+  socket/session opens lazily inside `ReadAsync`.
 - **MUST NOT throw for a bad/malformed config** — return `false` with an operator-readable `error`
   instead. `ConnectorRegistry.TryCreateDriver` doubly guards this anyway (catches a throwing factory)
   precisely because a third party cannot be forced to honor its own contract.
@@ -3231,11 +3277,11 @@ hardcode chỉ mới huỷ được, chưa cấu hình được.)*
   **must reject third-party registration under any built-in id.**
 - **A second, narrower hazard for the same future loader (batch review, fix 1):** a cancellation callback
   a third-party driver registers on the token `ReadAsync` receives (`CancellationToken.Register`, per
-  `IDeviceDriver.ReadAsync`'s own doc comment) runs SYNCHRONOUSLY, on the E-STOP caller's thread, while
-  `FleetHost` holds `_gate` — `FleetHost.StopLocked` now catches a THROWING callback per-slot so it can
-  never abort the `EstopEngaged` latch or any sibling slot's cancellation, but a callback that is merely
-  SLOW (never throws) still stalls that same E-STOP transition for as long as it runs; there is no
-  independent timeout around the callback itself.
+  `IDeviceDriver.ReadAsync`'s own doc comment) runs SYNCHRONOUSLY, on the halt (`Estop()`) caller's
+  thread, while `FleetHost` holds `_gate` — `FleetHost.StopLocked` now catches a THROWING callback
+  per-slot so it can never abort the `EstopEngaged` latch or any sibling slot's cancellation, but a
+  callback that is merely SLOW (never throws) still stalls that same halt transition for as long as it
+  runs; there is no independent timeout around the callback itself.
 - **Conformance coverage gaps** (repeated from §19.5 for visibility here, corrected count — batch review):
   `Waveforms` is exercised by no real driver's output; 4 of the suite's 9 checks have no dedicated
   negative control (`Id`/`Kind` stability, plus all three `DisposeAsync` idempotency checks — `Health`'s
@@ -3272,10 +3318,10 @@ biết cho ai xây loader sau này:** carve-out cho simulated-fleet nghĩa là m
 làm hỏng số đếm chu kỳ. **KHÔNG THỂ xảy ra hôm nay** — không có đường dispatch nào đăng ký id tuỳ ý — **NHƯNG
 sẽ trở thành THẬT ngay khi có plugin loader**, và loader đó **PHẢI từ chối đăng ký bên thứ ba dưới bất kỳ id
 có sẵn nào.** **Rủi ro thứ hai, hẹp hơn, cho cùng loader tương lai (đợt review, fix 1):** một callback
-huỷ mà driver bên thứ ba đăng ký trên token `ReadAsync` nhận được chạy ĐỒNG BỘ, trên thread gọi E-STOP,
-trong khi `FleetHost` giữ `_gate` — `FleetHost.StopLocked` nay bắt callback THROW theo từng slot để không
-bao giờ chặn được latch `EstopEngaged` hay việc huỷ các slot khác, nhưng một callback chỉ CHẬM (không
-throw) vẫn làm chậm chính giao dịch E-STOP đó; chưa có timeout riêng cho bản thân callback.
+huỷ mà driver bên thứ ba đăng ký trên token `ReadAsync` nhận được chạy ĐỒNG BỘ, trên thread gọi lệnh
+ngừng (`Estop()`), trong khi `FleetHost` giữ `_gate` — `FleetHost.StopLocked` nay bắt callback THROW theo
+từng slot để không bao giờ chặn được latch `EstopEngaged` hay việc huỷ các slot khác, nhưng một callback
+chỉ CHẬM (không throw) vẫn làm chậm chính giao dịch ngừng đó; chưa có timeout riêng cho bản thân callback.
 **Khoảng trống coverage conformance** (nhắc lại từ §19.5 để dễ thấy ở đây, đã đếm lại cho đúng — đợt
 review toàn batch): `Waveforms` chưa được driver thật nào populate; 4 trong 9 bài kiểm tra của bộ suite
 chưa có negative-control riêng (độ ổn định `Id`/`Kind`, cộng cả ba bài idempotent của `DisposeAsync` —

@@ -18,8 +18,11 @@ namespace St4i.Connector.Abstractions;
 /// <item><description><b>Construction is non-blocking and performs no I/O.</b> A constructor MUST return
 /// promptly and must never open a socket/session/file or otherwise block on anything outside the process's
 /// own memory. <c>FleetHost.StartLocked</c> constructs drivers under the SAME lock <c>Estop()</c> takes, so a
-/// slow constructor blocks emergency-stop for as long as it takes. Any connection/session establishment
-/// belongs entirely inside <see cref="ReadAsync"/>, never in the constructor.</description></item>
+/// slow constructor blocks <c>Estop()</c> itself from returning for as long as it takes — note that
+/// <c>Estop()</c> is a supervisory software halt of this codebase's own read pipeline, not a machine
+/// safety function (see <c>FleetHost.Estop</c>'s own doc comment); this rule protects THAT call's
+/// latency, nothing more. Any connection/session establishment belongs entirely inside
+/// <see cref="ReadAsync"/>, never in the constructor.</description></item>
 /// <item><description><b><see cref="IAsyncDisposable.DisposeAsync"/> is idempotent.</b> It must be safe to
 /// call more than once, after cancellation, after a completed enumeration, and without
 /// <see cref="ReadAsync"/> ever having been enumerated at all — in every one of those cases it must not
@@ -79,8 +82,9 @@ public interface IDeviceDriver : IAsyncDisposable
     /// transition, because <see cref="System.Threading.CancellationTokenSource.Cancel()"/> itself invokes
     /// every registered callback inline and rethrows any exception one of them throws. Such a callback
     /// therefore MUST be prompt, MUST NOT throw, and MUST NOT perform blocking I/O — a slow or throwing
-    /// registration stalls or corrupts the SAME emergency-stop transition every other member of this
-    /// contract is written to protect. <c>ModbusTcpDriver.PollOnceAsync</c>'s own
+    /// registration stalls or corrupts the SAME halt transition (<c>FleetHost.Estop()</c> — a supervisory
+    /// software latch on this codebase's own read pipeline, not a machine safety function) every other
+    /// member of this contract is written to protect. <c>ModbusTcpDriver.PollOnceAsync</c>'s own
     /// <c>ct.Register(DisposeConnection)</c> is the one existing example: <c>DisposeConnection</c> wraps
     /// each disposal in its own try/catch specifically because of this rule.</para>
     ///

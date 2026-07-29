@@ -19,8 +19,8 @@ interface SettingsTabProps {
  *
  * Occupies the SAME region the schematic + readout columns fill on the OPERATION tab (`Hmi.tsx`
  * renders one or the other, never both) — the physical control rail (Output card + Start/Pause/
- * E-STOP/RESET) stays mounted UNCHANGED regardless of which tab is active, so the safety invariant
- * (spec §8.6: E-STOP never moves/disappears) holds on this tab exactly as it does on Operation.
+ * HALT/RESET) stays mounted UNCHANGED regardless of which tab is active, so the safety invariant
+ * (spec §8.6: HALT never moves/disappears) holds on this tab exactly as it does on Operation.
  */
 export function SettingsTab({ machineCode, deviceClass, machineType, className }: SettingsTabProps) {
   const t = useT()

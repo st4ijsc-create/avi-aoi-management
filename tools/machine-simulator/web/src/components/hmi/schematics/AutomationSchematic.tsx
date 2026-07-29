@@ -8,7 +8,7 @@ import type { CyclePlan } from "@/lib/api"
 interface AutomationSchematicProps {
   /** WS3-T2 — the machine's latest cycle plan (`MachineDetailDto.Plan`). Non-null implies the fleet is
    * running (`MachineState.ToDetail`'s own gate) — its steps are the REAL fastening positions/results
-   * this cycle drives, in visit order. Null (idle/E-STOPped) falls back to the pre-WS3-T2 static
+   * this cycle drives, in visit order. Null (idle/halted) falls back to the pre-WS3-T2 static
    * decorative pose (three un-lit points, carriage at rest). */
   plan: CyclePlan | null | undefined
   /** True while the twin should actually move — `isRunning && plan has steps && !prefers-reduced-motion`

@@ -1356,7 +1356,13 @@ export const vi = {
     },
 
     status: {
-      estop: "DỪNG KHẨN CẤP",
+      // SM-4 — đổi từ "DỪNG KHẨN CẤP": đây là chốt phần mềm giám sát (`FleetHost.Estop`), không phải
+      // thiết bị an toàn. Nó chỉ dừng việc phần mềm này đọc dữ liệu / ngắt kết nối tới thiết bị đã cấu
+      // hình — KHÔNG dừng được máy thật (xem ghi chú an toàn ở README §1). Cố tình khác chữ với
+      // `controls.estopBanner` bên dưới ("NGỪNG ĐÃ KÍCH HOẠT") — cả hai cùng hiển thị một lúc (nhãn
+      // trên bảng tên + banner trên cột điều khiển) và một khớp văn bản `exact: true` của Playwright
+      // (`11-hmi.spec.ts`) phụ thuộc vào việc hai chuỗi này không trùng nhau.
+      estop: "ĐÃ NGỪNG",
       // Nameplate lamp sub-line (H2b) — deliberately keyed off OPERATIONAL state (is the fleet
       // actually turning), not the lamp's own quality color, so a last-cycle FAIL result (which
       // colors the lamp "fault") doesn't misreport "Stopped" while the fleet keeps cycling. Only
@@ -1384,18 +1390,22 @@ export const vi = {
       start: "BẮT ĐẦU",
       pause: "TẠM DỪNG",
       reset: "ĐẶT LẠI",
-      estop: "DỪNG KHẨN",
-      estopBanner: "ĐANG DỪNG KHẨN CẤP",
+      // SM-4 — nút này KHÔNG phải là dừng khẩn cấp và không được gọi như vậy: đây là chốt phần mềm
+      // giám sát, chỉ dừng việc phần mềm này đọc dữ liệu và ngắt kết nối tới thiết bị đã cấu hình —
+      // không có đường ghi lệnh tới bất kỳ thiết bị nào, không thể dừng máy thật (xem README §1). Một
+      // E-STOP thật là mạch cứng đạt chuẩn an toàn theo ISO 13849, không bao giờ là phần mềm.
+      estop: "NGỪNG",
+      estopBanner: "NGỪNG ĐÃ KÍCH HOẠT",
       estopHint: "Nhấn ĐẶT LẠI để gỡ khóa điều khiển",
     },
 
     log: {
       title: "Nhật ký hệ thống",
       empty: "Chưa có sự kiện nào.",
-      estopEngaged: "DỪNG KHẨN — đã dừng fleet, khóa điều khiển",
-      estopFailed: "LỖI DỪNG KHẨN — máy chủ không xác nhận đã dừng",
-      estopReset: "ĐẶT LẠI — đã gỡ khóa dừng khẩn cấp",
-      estopResetFailed: "LỖI ĐẶT LẠI — dừng khẩn cấp vẫn đang khóa",
+      estopEngaged: "NGỪNG — đã dừng fleet, khóa điều khiển",
+      estopFailed: "LỖI NGỪNG — máy chủ không xác nhận đã dừng",
+      estopReset: "ĐẶT LẠI — đã gỡ khóa ngừng",
+      estopResetFailed: "LỖI ĐẶT LẠI — ngừng vẫn đang khóa",
       fleetStarted: "Đã khởi động fleet",
       fleetPaused: "Đã tạm dừng fleet",
     },
@@ -2044,18 +2054,22 @@ export const vi = {
   // machine: a live state badge (`GET /v1/line`, polled) + transition-gated command buttons
   // (`POST /v1/line/{command}`) mirroring `LineController.Execute`'s own transition table, so the UI
   // never offers a command the server would reject. Abort is the one deliberate exception — styled as
-  // the always-enabled emergency action, same as a real E-STOP control never being greyed out.
+  // the always-enabled, always-reachable stop action, mirroring the physical convention that a real
+  // emergency-stop control is never greyed out. SM-4: Abort is a software abort of THIS software's own
+  // pipeline, not a safety device — see README §1.
   line: {
     title: "Điều khiển dây chuyền",
     description:
-      "Trạng thái PackML hiện tại của dây chuyền và các lệnh điều khiển (Chạy/Tạm dừng/Tiếp tục/Dừng/Dừng khẩn cấp/Đặt lại) — chỉ những lệnh hợp lệ từ trạng thái hiện tại mới có thể bấm được.",
+      "Trạng thái PackML hiện tại của dây chuyền và các lệnh điều khiển (Chạy/Tạm dừng/Tiếp tục/Dừng/Hủy/Đặt lại) — chỉ những lệnh hợp lệ từ trạng thái hiện tại mới có thể bấm được.",
     status: {
       title: "Trạng thái dây chuyền",
       holdReason: (vars: Vars) => `Lý do tạm dừng: ${vars.reason}`,
       pipelineLabel: "Pipeline",
       running: "Đang chạy",
       notRunning: "Không chạy",
-      estopLabel: "Dừng khẩn cấp (E-STOP)",
+      // SM-4 — đổi từ "Dừng khẩn cấp (E-STOP)": trường này đọc `FleetHost.EstopEngaged`, một chốt phần
+      // mềm giám sát, không phải thiết bị an toàn (xem README §1).
+      estopLabel: "Chốt ngừng (phần mềm)",
       estopEngaged: "Đã kích hoạt",
       estopClear: "Chưa kích hoạt",
       loadFailed: "Không thể tải trạng thái dây chuyền.",
@@ -2065,7 +2079,9 @@ export const vi = {
       Execute: "Đang chạy",
       Held: "Tạm dừng",
       Stopped: "Đã dừng",
-      Aborted: "Đã dừng khẩn cấp",
+      // SM-4 — đổi từ "Đã dừng khẩn cấp": trạng thái PackML "Aborted" là một lệnh hủy phần mềm, không
+      // phải dừng khẩn cấp an toàn.
+      Aborted: "Đã hủy",
     },
     commands: {
       title: "Lệnh điều khiển",
@@ -2073,7 +2089,9 @@ export const vi = {
       hold: "Tạm dừng",
       unhold: "Tiếp tục",
       stop: "Dừng",
-      abort: "Dừng khẩn cấp",
+      // SM-4 — đổi từ "Dừng khẩn cấp": lệnh PackML "Abort" hủy pipeline phần mềm ngay lập tức, không
+      // phải một thiết bị dừng khẩn cấp an toàn — xem README §1.
+      abort: "Hủy",
       reset: "Đặt lại",
       // Full accessible names (`aria-label`, not the visible button text) — the visible labels above
       // are deliberately short PackML terms, but "Dừng" alone is IDENTICAL to `shell.topBar.stop`
@@ -2085,7 +2103,7 @@ export const vi = {
       holdAria: "Tạm dừng dây chuyền",
       unholdAria: "Tiếp tục dây chuyền",
       stopAria: "Dừng dây chuyền",
-      abortAria: "Dừng khẩn cấp dây chuyền",
+      abortAria: "Hủy dây chuyền — dừng thu thập dữ liệu ngay lập tức",
       resetAria: "Đặt lại dây chuyền",
     },
     errors: {

@@ -17,8 +17,8 @@ public static class PolicyResults
             null, new { reason = code, message = decision.Message }, ct).ConfigureAwait(false);
 
         // GĐ3 sub-4 LC-1 — the FIRST alarm SOURCE: every policy DENY raises a latched Policy alarm.
-        // SAFETY_BLOCKED (the E-STOP guard) is Critical + an E-STOP-specific runbook; every other denial
-        // reason is High + a generic one. ClearOnAck=true — a DENY has no lingering condition of its own
+        // SAFETY_BLOCKED (the halt guard, EstopGuardRule) is Critical + a halt-specific runbook; every
+        // other denial reason is High + a generic one. ClearOnAck=true — a DENY has no lingering condition of its own
         // (see Alarm's doc comment for the EVENT-vs-CONDITION distinction); it's a point-in-time event an
         // operator resolves by acknowledging it, so AckAsync both acks AND clears it in one step. Resolved
         // from ctx.RequestServices (NOT a ctor-injected parameter) so this method's signature — and every
@@ -32,8 +32,12 @@ public static class PolicyResults
             var priority = decision.Reason == PolicyReasonCode.SafetyBlocked ? AlarmPriority.Critical : AlarmPriority.High;
             var runbook = decision.Reason switch
             {
+                // SM-4 — this only stopped THIS SOFTWARE's own data collection, never any machine (the
+                // product has no write path to any device). Say so, rather than telling the operator to
+                // "verify the machine is safe" as if this control had any bearing on that.
                 PolicyReasonCode.SafetyBlocked =>
-                    "E-STOP is engaged. Verify the machine is safe, then reset the E-STOP latch (POST /v1/fleet/estop/reset) before starting.",
+                    "The halt latch is engaged — this stopped this software's own data collection only, not any " +
+                    "machine. Reset the latch (POST /v1/fleet/estop/reset) before starting.",
                 _ => "The action was denied by policy. Check the operator's role and the current fleet state.",
             };
             await alarms.RaiseAsync(

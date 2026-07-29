@@ -439,11 +439,18 @@ public sealed class FleetHost
     /// the last slot faulting flips this false exactly as before.</summary>
     public bool IsRunning { get { lock (_gate) return _running; } }
 
-    /// <summary>Branch-review C-2 — the E-STOP latch, now owned by the engine (not any one browser
+    /// <summary>Branch-review C-2 — the HALT latch, now owned by the engine (not any one browser
     /// tab's React state) so it's shared across every panel that polls <see cref="Snapshot"/> and
     /// survives a page reload. Only <see cref="Estop"/> sets it; only <see cref="ResetEstop"/> clears
     /// it — never touched implicitly by <see cref="Start"/>/<see cref="Stop"/>, so an operator/API
-    /// stop is never mistaken for an emergency one.</summary>
+    /// stop is never mistaken for this latch engaging.
+    ///
+    /// SM-4 — TRUTH, for anyone reading this property: it is a SUPERVISORY SOFTWARE latch. It reflects
+    /// only whether <see cref="Estop"/> has torn down this software's own read pipeline. It is NOT a
+    /// safety-rated device, has no bearing on the physical state of any real machine, and cannot have
+    /// one — this codebase has no write path to any device anywhere (<see cref="IDeviceDriver"/> only
+    /// reads). A real emergency stop is a hardwired, safety-rated circuit per ISO 13849; software must
+    /// never be the safety path. See <see cref="Estop"/>'s own doc comment and README §1.</summary>
     public bool EstopEngaged { get { lock (_gate) return _estopEngaged; } }
 
     private bool _estopEngaged;
@@ -635,12 +642,26 @@ public sealed class FleetHost
         WaitAndDisposeOldPipeline(handle);
     }
 
-    /// <summary>Branch-review C-2/C-3 — a real, confirmed emergency stop: tears the pipeline down (same
-    /// path <see cref="Stop"/> uses) and only THEN latches <see cref="EstopEngaged"/>, so a caller
-    /// awaiting this method genuinely knows the machine stopped before it reports success (C-3 — the
-    /// client used to latch and log a success banner on a fire-and-forget POST that could still fail).
-    /// The latch itself is engine-owned (not client React state), so it's visible on every subsequent
-    /// <see cref="Snapshot"/> to every panel/tab, and survives a page reload.</summary>
+    /// <summary>
+    /// SM-4 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-4-brief.md) —
+    /// READ THIS BEFORE CALLING: despite the name (kept for API/route stability — see the task-4 report
+    /// for why the identifier stays), this method does <b>not</b> stop a machine, and cannot. It tears
+    /// down THIS SOFTWARE's own read pipeline — cancels every <see cref="PipelineSlot"/>'s token,
+    /// disposes each slot's <see cref="IDeviceDriver"/> (closing whatever local connection it holds) —
+    /// then latches <see cref="EstopEngaged"/>. That is the entire effect. There is no
+    /// <c>WriteAsync</c>/<c>SendCommand</c>/<c>Actuate</c> anywhere in <see cref="IDeviceDriver"/>, no
+    /// Modbus/OPC-UA write call, and Sparkplug NCMD is never received — this codebase has no write path
+    /// to any device, so there is nothing here that could reach out and stop a real machine even if it
+    /// tried to. A real emergency stop is a hardwired, safety-rated circuit per ISO 13849 (Cat 3/4);
+    /// software is never permitted to be the safety path, and this method is not an attempt to be one.
+    ///
+    /// Branch-review C-2/C-3 — a real, confirmed stop OF THIS SOFTWARE'S PIPELINE: tears the pipeline
+    /// down (same path <see cref="Stop"/> uses) and only THEN latches <see cref="EstopEngaged"/>, so a
+    /// caller awaiting this method genuinely knows the read pipeline stopped before it reports success
+    /// (C-3 — the client used to latch and log a success banner on a fire-and-forget POST that could
+    /// still fail). The latch itself is engine-owned (not client React state), so it's visible on every
+    /// subsequent <see cref="Snapshot"/> to every panel/tab, and survives a page reload.
+    /// </summary>
     public void Estop()
     {
         PipelineHandle handle;
@@ -660,9 +681,11 @@ public sealed class FleetHost
         WaitAndDisposeOldPipeline(handle);
     }
 
-    /// <summary>Clears the E-STOP latch — an explicit, separate transition from <see cref="Start"/>
-    /// (spec/C-2: "RESET clears the latch but does NOT auto-restart the fleet"). The fleet stays
-    /// stopped until an operator presses START again.</summary>
+    /// <summary>Clears the HALT latch <see cref="Estop"/> sets — an explicit, separate transition from
+    /// <see cref="Start"/> (spec/C-2: "RESET clears the latch but does NOT auto-restart the fleet").
+    /// The fleet stays stopped until an operator presses START again. SM-4: like <see cref="Estop"/>,
+    /// this only ever touches this software's own supervisory latch/pipeline — it has no write path to,
+    /// and no effect on, any physical machine.</summary>
     public void ResetEstop()
     {
         lock (_gate)
@@ -710,8 +733,8 @@ public sealed class FleetHost
     /// driver (see the connector loop below) inline, synchronously, while <see cref="_gate"/> was held by
     /// every one of its callers. That is a hazard this class's own review has already named twice: a
     /// slow/hung third-party <see cref="IDeviceDriver.DisposeAsync"/> would delay <see cref="Estop"/> — the
-    /// exact "blocks E-STOP" class of bug <see cref="IConnectorFactory.TryCreate"/>'s own doc comment warns
-    /// against for <c>TryCreate</c> itself. <see cref="StartLocked"/> now only COLLECTS orphaned drivers
+    /// exact "blocks the halt call" class of bug <see cref="IConnectorFactory.TryCreate"/>'s own doc comment
+    /// warns against for <c>TryCreate</c> itself. <see cref="StartLocked"/> now only COLLECTS orphaned drivers
     /// into the returned list — every caller disposes them via <see cref="DisposeOrphanedConnectorDrivers"/>
     /// AFTER releasing <see cref="_gate"/>, the same "wait/dispose must happen OUTSIDE _gate" discipline
     /// <see cref="WaitAndDisposeOldPipeline"/> already documents for the restart-teardown path. An empty
@@ -722,7 +745,7 @@ public sealed class FleetHost
     {
         // Defense in depth: the client already disables START while latched, but the engine itself
         // must refuse too — a stale client, a second panel, or a direct API call must never be able to
-        // restart a machine that's still emergency-stopped.
+        // restart the read pipeline while the HALT latch is still engaged.
         if (IsRunning || _estopEngaged) return new List<IDeviceDriver>();
         LastError = null;
 
@@ -986,7 +1009,7 @@ public sealed class FleetHost
                     // Review fix round 2 — round 1 disposed this HERE, synchronously, inside StartLocked —
                     // which every caller invokes with `_gate` held. A slow/hung third-party DisposeAsync
                     // would then delay Estop() (which takes the same lock) for up to RestartTeardownTimeout
-                    // — precisely the "blocks E-STOP" hazard class IConnectorFactory.TryCreate's own doc
+                    // — precisely the "blocks the halt call" hazard class IConnectorFactory.TryCreate's own doc
                     // comment warns against for TryCreate itself, reopened by round 1's own leak fix. Fixed
                     // by only COLLECTING the orphan here — the actual bounded dispose now happens in
                     // DisposeOrphanedConnectorDrivers, called by every StartLocked caller AFTER _gate is
@@ -1014,8 +1037,9 @@ public sealed class FleetHost
     /// collection: every <see cref="StartLocked"/> caller invokes this AFTER releasing <see cref="_gate"/>,
     /// mirroring <see cref="WaitAndDisposeOldPipeline"/>'s own "wait/dispose must happen OUTSIDE _gate"
     /// discipline exactly (same reasoning: <see cref="Estop"/> takes <see cref="_gate"/> too, and a
-    /// slow/hung third-party <see cref="IDeviceDriver.DisposeAsync"/> must never delay an emergency stop).
-    /// Best-effort and per-driver BOUNDED (<see cref="RestartTeardownTimeout"/>, same budget
+    /// slow/hung third-party <see cref="IDeviceDriver.DisposeAsync"/> must never delay a caller's
+    /// <see cref="Estop"/> call from returning). Best-effort and per-driver BOUNDED
+    /// (<see cref="RestartTeardownTimeout"/>, same budget
     /// <see cref="WaitAndDisposeOldPipeline"/> uses) — a driver whose <c>DisposeAsync</c> throws or hangs
     /// past that bound cannot wedge this method or any other orphan's own disposal.</summary>
     private void DisposeOrphanedConnectorDrivers(IReadOnlyList<IDeviceDriver> orphans)
@@ -1127,7 +1151,7 @@ public sealed class FleetHost
     /// <see cref="_gate"/> HELD — an uncaught throw here, from a THIRD-PARTY driver mirroring that same
     /// <c>ct.Register</c> pattern with a misbehaving callback, would abort this entire loop before
     /// <c>_slots.Clear()</c> below ever runs and before <see cref="Estop"/> latches <see cref="_estopEngaged"/>
-    /// — machinery would keep running while the caller believes E-STOP succeeded (or the caller sees an
+    /// — a pipeline slot would keep running while the caller believes the halt succeeded (or the caller sees an
     /// exception instead of a clean stop). Caught PER-SLOT, not around the whole loop, so one misbehaving
     /// driver's callback can never also skip cancelling every OTHER slot — see
     /// <see cref="IDeviceDriver.ReadAsync"/>'s own doc comment for the contract this documents on the driver
@@ -1152,7 +1176,7 @@ public sealed class FleetHost
             }
             catch (Exception ex)
             {
-                // A driver's cancellation-registration callback threw — never let it abort E-STOP for every
+                // A driver's cancellation-registration callback threw — never let it abort the halt for every
                 // OTHER slot, or stop this method from reaching _slots.Clear()/the EstopEngaged latch below.
                 _logger?.LogError(
                     ex,

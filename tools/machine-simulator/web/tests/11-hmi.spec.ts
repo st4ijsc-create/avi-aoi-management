@@ -15,7 +15,7 @@ import { vi as viDict } from "../src/i18n/vi"
  * animation, the readout grid, or the live log at all).
  *
  * `beforeEach` unconditionally (re-)starts the fleet so every test in this file gets real live data
- * regardless of what the immediately-preceding test left behind (the E-STOP test below stops it);
+ * regardless of what the immediately-preceding test left behind (the HALT test below stops it);
  * `afterEach` restores that same running state so this file leaves the shared engine exactly as it
  * found it.
  *
@@ -44,7 +44,7 @@ test.describe("HMI operator panel", () => {
   })
   test.afterEach(async ({ request }) => {
     // Defensive: clear a latch BEFORE trying to restart — StartLocked refuses while EstopEngaged
-    // (see `FleetHost.cs`), so a test that leaves E-STOP engaged would otherwise silently leave the
+    // (see `FleetHost.cs`), so a test that leaves HALT engaged would otherwise silently leave the
     // fleet stopped for every test that runs after it.
     await resetEstop(request)
     await setFleetRunning(request, true)
@@ -63,7 +63,7 @@ test.describe("HMI operator panel", () => {
     await expect(page.getByRole("link", { name: viDict.hmi.back })).toBeVisible()
   })
 
-  test("physical controls: Start/Pause/E-STOP present and reflect real fleet state", async ({ page }) => {
+  test("physical controls: Start/Pause/HALT present and reflect real fleet state", async ({ page }) => {
     await gotoHmi(page, "SCRW-01")
     const start = page.getByRole("button", { name: viDict.hmi.controls.start })
     const pause = page.getByRole("button", { name: viDict.hmi.controls.pause })
@@ -135,7 +135,7 @@ test.describe("HMI operator panel", () => {
     }
   })
 
-  test("E-STOP latches a real fault: stops the fleet, locks controls, freezes the schematic; RESET clears it", async ({
+  test("HALT latches a real fault: stops the fleet, locks controls, freezes the schematic; RESET clears it", async ({
     page,
     request,
   }) => {
@@ -147,8 +147,10 @@ test.describe("HMI operator panel", () => {
 
     // The whole panel visibly goes to fault.
     await expect(page.getByText(viDict.hmi.controls.estopBanner)).toBeVisible()
-    // `exact: true` — "DỪNG KHẨN CẤP" (the StatusLamp label) is otherwise a substring match against
-    // the estop banner's own "ĐANG DỪNG KHẨN CẤP" text (`getByText` substring-matches by default).
+    // `exact: true` — the StatusLamp label ("ĐÃ NGỪNG") and the control-rail banner
+    // ("NGỪNG ĐÃ KÍCH HOẠT") are deliberately distinct strings (see `vi.ts`'s own `hmi.status.estop`
+    // comment) that both render at once; `exact: true` is defence-in-depth against `getByText`'s
+    // default substring matching in case a future wording change makes one contain the other again.
     await expect(page.getByText(viDict.hmi.status.estop, { exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeDisabled()
     await expect(page.getByRole("button", { name: viDict.hmi.controls.pause })).toBeDisabled()
@@ -209,7 +211,7 @@ test.describe("HMI operator panel", () => {
     await expect(page.getByRole("button", { name: viDict.hmi.controls.pause })).toBeEnabled()
   })
 
-  test("C-2: E-STOP latch is server-owned — survives navigating to another machine's panel AND a reload; only RESET clears it", async ({
+  test("C-2: HALT latch is server-owned — survives navigating to another machine's panel AND a reload; only RESET clears it", async ({
     page,
   }) => {
     await gotoHmi(page, "SCRW-01")
@@ -218,7 +220,7 @@ test.describe("HMI operator panel", () => {
 
     // Navigate to a DIFFERENT machine's panel — in a real cell, a second operator station. The
     // pre-fix bug (component-local React state) silently dropped the latch here: no banner, START
-    // enabled, as if the emergency never happened.
+    // enabled, as if the halt never happened.
     await gotoHmi(page, "AOI-01")
     await expect(page.getByText(viDict.hmi.controls.estopBanner)).toBeVisible()
     await expect(page.getByText(viDict.hmi.status.estop, { exact: true })).toBeVisible()
@@ -230,7 +232,7 @@ test.describe("HMI operator panel", () => {
     await expect(page.getByText(viDict.hmi.controls.estopBanner)).toBeVisible()
     await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeDisabled()
 
-    // RESET (from THIS panel — a different one than where E-STOP was pressed) is what actually
+    // RESET (from THIS panel — a different one than where HALT was pressed) is what actually
     // clears the shared, server-owned latch.
     await page.getByRole("button", { name: viDict.hmi.controls.reset }).click()
     await expect(page.getByText(viDict.hmi.controls.estopBanner)).toHaveCount(0)

@@ -36,8 +36,8 @@ public interface IUnsPublisher
 
     /// <summary>G2-3 — publishes the node-level <b>NDEATH</b> that terminates the most recent
     /// <see cref="PublishNodeBirth"/>, carrying the SAME <c>bdSeq</c>. A no-op if the node is not currently
-    /// "born" (no matching NBIRTH is outstanding) — so an E-STOP on an idle fleet, or a duplicate stop, never
-    /// emits a spurious or unpaired NDEATH.</summary>
+    /// "born" (no matching NBIRTH is outstanding) — so a halt (`FleetHost.Estop`) on an idle fleet, or a
+    /// duplicate stop, never emits a spurious or unpaired NDEATH.</summary>
     void PublishNodeDeath();
 
     /// <summary>GĐ3 sub-4 LC-3 — publishes the current PackML/ISA-88 line state (see

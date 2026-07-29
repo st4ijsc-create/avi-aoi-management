@@ -59,13 +59,15 @@ public static class FleetEndpoints
             return Results.Ok(new FleetActionResultDto(host.IsRunning, host.Mode.ToString()));
         }).RequireAuthorization(Policies.Operator);
 
-        // Branch-review C-2/C-3 — the E-STOP latch (FleetHost.EstopEngaged), engine-owned so it's
+        // Branch-review C-2/C-3 — the HALT latch (FleetHost.EstopEngaged), engine-owned so it's
         // shared across every panel/tab and survives a reload. Both return the FULL fleet snapshot
         // (not just the action-result shape /start and /stop use) so the client can update its shared
         // fleet-runtime state from ONE trustworthy, already-confirmed response — the mutation itself
-        // IS the "did the machine actually stop" confirmation (C-3), not a fire-and-forget.
+        // IS the "did this software's read pipeline actually stop" confirmation (C-3), not a
+        // fire-and-forget. SM-4: this is a supervisory software latch, not a machine safety function —
+        // see FleetHost.Estop's own doc comment and README §1.
         //
-        // WS-D-D4 — logged even though Operator-reachable ("who pressed E-STOP" is exactly the kind of
+        // WS-D-D4 — logged even though Operator-reachable ("who pressed HALT" is exactly the kind of
         // question this audit trail exists to answer, regardless of which role was allowed to press it).
         app.MapPost("/v1/fleet/estop", async (FleetHost host, HttpContext context, AuditRecorder recorder, PolicyEngine policy, CancellationToken ct) =>
         {

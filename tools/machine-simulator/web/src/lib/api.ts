@@ -110,9 +110,10 @@ export interface FleetSnapshot {
    * let the panel keep asserting "stopped" while the machine ran on, e.g. after another panel/tab/the
    * REST API changed fleet state). */
   isRunning: boolean
-  /** C-2: server-owned E-STOP latch (`FleetHost.EstopEngaged`) — shared across every panel/tab that
+  /** C-2: server-owned HALT latch (`FleetHost.EstopEngaged`) — shared across every panel/tab that
    * polls this same snapshot and survives a reload, replacing the old component-local React state a
-   * second panel or an F5 could silently forget. */
+   * second panel or an F5 could silently forget. SM-4: a supervisory software latch, not a safety
+   * device — see README §1. */
   estopEngaged: boolean
 }
 
@@ -593,11 +594,11 @@ const endpoints = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Fleet runtime context — "is the fleet actively running" / "is E-STOP
+// Fleet runtime context — "is the fleet actively running" / "is HALT
 // latched" are shared, shell-scoped state (not shoehorned into per-route
 // component state) so every consumer — Dashboard's empty state, the TopBar
 // Start/Stop buttons, every `/hmi/:code` panel — agrees, regardless of
-// route. Starting/stopping/E-STOPping the fleet is meaningful from ANY
+// route. Starting/stopping/halting the fleet is meaningful from ANY
 // route, so this lives above the router in App.tsx.
 //
 // Branch-review C-1 — this used to seed `isRunning` from only the FIRST
@@ -608,7 +609,7 @@ const endpoints = {
 // insisting a machine was stopped while its cycle counter kept climbing.
 // The polled snapshot (`data.isRunning`/`data.estopEngaged`) is now the
 // SOLE source of truth on every tick; a mutation's own result is applied
-// only as a short-lived OPTIMISTIC override (so Start/Pause/E-STOP/RESET
+// only as a short-lived OPTIMISTIC override (so Start/Pause/HALT/RESET
 // still feel instant) that the very next poll — at most ~1s later —
 // supersedes, exactly the "optimistic until the next poll lands" contract
 // the review asked for.
@@ -675,7 +676,7 @@ export function useFleetIsRunning(): boolean {
   return useFleetRuntime().isRunning
 }
 
-/** C-2 — whether E-STOP is currently latched, server-owned and shared across every panel/tab. */
+/** C-2 — whether HALT is currently latched, server-owned and shared across every panel/tab. */
 export function useFleetEstopEngaged(): boolean {
   return useFleetRuntime().estopEngaged
 }
@@ -762,14 +763,17 @@ export function useStopFleet() {
 }
 
 /**
- * C-2/C-3 — the E-STOP command. Unlike the old component-local `estopEngaged` React state, the latch
- * this seeds (`useFleetEstopEngaged`) is server-owned and mirrored on every `/v1/fleet` poll, so it's
- * shared across every panel/tab and survives a reload. `mutationFn` calls `FleetHost.Estop()`, which
- * tears the pipeline down BEFORE returning — so `onSuccess` firing is itself the confirmation the
- * machine actually stopped (C-3: the old code latched and logged a success banner on a fire-and-forget
- * POST with no `onError`, which could still fail silently). The full fleet snapshot the endpoint
- * returns is written straight into the query cache so every consumer (readouts, other panels) sees the
- * post-E-STOP state immediately, not after the next 1s poll.
+ * C-2/C-3 — the HALT command. SM-4: despite the identifier name (kept for stability), this is a
+ * supervisory software latch, not a safety device — it stops THIS SOFTWARE's own read pipeline and
+ * disconnects from the configured device(s); it has no write path to, and no effect on, any physical
+ * machine (see README §1). Unlike the old component-local `estopEngaged` React state, the latch this
+ * seeds (`useFleetEstopEngaged`) is server-owned and mirrored on every `/v1/fleet` poll, so it's shared
+ * across every panel/tab and survives a reload. `mutationFn` calls `FleetHost.Estop()`, which tears the
+ * pipeline down BEFORE returning — so `onSuccess` firing is itself the confirmation this software's own
+ * read pipeline actually stopped (C-3: the old code latched and logged a success banner on a
+ * fire-and-forget POST with no `onError`, which could still fail silently). The full fleet snapshot the
+ * endpoint returns is written straight into the query cache so every consumer (readouts, other panels)
+ * sees the post-HALT state immediately, not after the next 1s poll.
  */
 export function useEstopFleet() {
   const queryClient = useQueryClient()
@@ -784,7 +788,7 @@ export function useEstopFleet() {
   })
 }
 
-/** Clears the E-STOP latch server-side. Does NOT restart the fleet (spec/C-2: an explicit, separate
+/** Clears the HALT latch server-side. Does NOT restart the fleet (spec/C-2: an explicit, separate
  * transition) — START is enabled again but stays inert until pressed. */
 export function useResetEstop() {
   const queryClient = useQueryClient()
