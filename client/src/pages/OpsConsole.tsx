@@ -58,6 +58,9 @@ import {
 } from "@/components/opsconsole/model";
 // doc 67 W7 GĐ2 — formatter/empty-state chuẩn GĐ1 thay bản tự chế.
 import { fmtNum } from "@/lib/format";
+// Task 7 (Wave 3) — dải tin cậy là trục riêng với mức độ (severity); xem
+// client/src/lib/alertConfidence.ts cho lý do (decimal pg ⇒ chuỗi qua tRPC).
+import { confidenceBand } from "@/lib/alertConfidence";
 import EmptyState from "@/components/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -340,6 +343,11 @@ export default function OpsConsole() {
         raisedAt: new Date(a.createdAt),
         group: a.machineCode ? `Machine ${a.machineCode}` : t("opsConsole.unassigned", "Unassigned"),
         raisedBySystem: true,
+        // Task 7 — confidenceScore/occurrenceCount CHỈ có ở predictive. occurrenceCount
+        // có thể vắng mặt (migration 0308 chưa chạy) → giữ nguyên undefined, KHÔNG ép 1
+        // ở đây (việc "coi như 1" thuộc về nơi hiển thị, không phải nơi chuẩn hoá dữ liệu).
+        confidenceScore: a.confidenceScore ?? null,
+        occurrenceCount: typeof a.occurrenceCount === "number" ? a.occurrenceCount : undefined,
       });
     }
 
@@ -1101,6 +1109,31 @@ export default function OpsConsole() {
                                 <span className={`inline-block h-3 w-3 rounded-full ${SEVERITY_DOT[a.severity]}`} />
                                 <span className="capitalize">{a.severity}</span>
                               </span>
+                              {/* Task 7 (Wave 3 §4.5/§6) — dải tin cậy + số lần tái diễn CẠNH
+                                  mức độ (không giấu trong chi tiết): sau gộp, 52→6 ACTIVE, và
+                                  số-lần-tái-diễn là bằng chứng hệ vẫn hoạt động. CHỈ nguồn
+                                  predictive mang confidenceScore/occurrenceCount. */}
+                              {a.source === "predictive" && (() => {
+                                const band = confidenceBand(a.confidenceScore);
+                                const label =
+                                  band === "high" ? t("alerts.confidenceHigh", "bằng chứng vững ({{n}}%)", { n: a.confidenceScore }) :
+                                  band === "medium" ? t("alerts.confidenceMedium", "bằng chứng khá ({{n}}%)", { n: a.confidenceScore }) :
+                                  band === "low" ? t("alerts.confidenceLow", "bằng chứng vừa đủ ({{n}}%)", { n: a.confidenceScore }) :
+                                  t("alerts.confidenceUnknown", "chưa rõ độ tin cậy");
+                                // occurrenceCount có thể VẮNG (migration 0308 chưa chạy) → coi
+                                // như 1 và không hiện badge — tuyệt đối không lọt NaN/undefined.
+                                const times = Number(a.occurrenceCount ?? 1);
+                                return (
+                                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                                    <span className="text-xs text-muted-foreground">{label}</span>
+                                    {Number.isFinite(times) && times > 1 && (
+                                      <Badge variant="secondary" className="text-xs font-normal">
+                                        {t("alerts.recurrence", "đã tái diễn {{n}} lần", { n: times })}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="gap-1">

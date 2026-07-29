@@ -1624,7 +1624,12 @@
     "minutes": "Phút",
     "loading": "Đang tải",
     "paused": "Đã tạm dừng",
-    "title": "Quản lý cảnh báo"
+    "title": "Quản lý cảnh báo",
+    "confidenceLow": "bằng chứng vừa đủ ({{n}}%)",
+    "confidenceMedium": "bằng chứng khá ({{n}}%)",
+    "confidenceHigh": "bằng chứng vững ({{n}}%)",
+    "confidenceUnknown": "chưa rõ độ tin cậy",
+    "recurrence": "đã tái diễn {{n}} lần"
   },
   "annotation": {
     "comparison": {

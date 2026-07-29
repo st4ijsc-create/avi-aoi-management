@@ -1623,7 +1623,12 @@
     "alertNamePlaceholder": "警告名称placeholder",
     "alertName": "告警名称",
     "acknowledged": "已确认",
-    "acknowledge": "确认"
+    "acknowledge": "确认",
+    "confidenceLow": "证据勉强充分（{{n}}%）",
+    "confidenceMedium": "证据较充分（{{n}}%）",
+    "confidenceHigh": "证据充分（{{n}}%）",
+    "confidenceUnknown": "置信度未知",
+    "recurrence": "已重复 {{n}} 次"
   },
   "annotation": {
     "zoomOut": "缩小",

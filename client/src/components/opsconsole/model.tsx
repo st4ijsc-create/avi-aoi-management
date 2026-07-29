@@ -28,6 +28,11 @@ export interface NormalAlert {
   raisedAt: Date;
   group: string;          // line / station / machine label for grouping
   raisedBySystem?: boolean;
+  // Wave 3 §4.5/§7 — chỉ nguồn "predictive" mang hai trường này (bảng
+  // predictive_alerts). confidenceScore là decimal pg ⇒ tRPC trả CHUỖI.
+  // occurrenceCount có thể VẮNG MẶT nếu migration 0308 chưa chạy — coi như 1.
+  confidenceScore?: number | string | null;
+  occurrenceCount?: number | null;
 }
 
 /**

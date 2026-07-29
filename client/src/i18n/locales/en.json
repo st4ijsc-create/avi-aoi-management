@@ -1624,7 +1624,12 @@
     "alertNamePlaceholder": "Alert name placeholder",
     "alertName": "Alert Name",
     "acknowledged": "Acknowledged",
-    "acknowledge": "Acknowledge"
+    "acknowledge": "Acknowledge",
+    "confidenceLow": "sufficient evidence ({{n}}%)",
+    "confidenceMedium": "moderate evidence ({{n}}%)",
+    "confidenceHigh": "strong evidence ({{n}}%)",
+    "confidenceUnknown": "confidence unknown",
+    "recurrence": "recurred {{n}} times"
   },
   "annotation": {
     "zoomOut": "Zoom out",
