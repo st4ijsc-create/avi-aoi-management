@@ -13,7 +13,7 @@ import { z } from "zod";
 import { and, eq, gte, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
-import { andonEvents, predictiveAlerts, machines, users } from "../../drizzle/schema";
+import { andonEvents, predictiveAlerts, predictiveAlertOccurrences, machines, users } from "../../drizzle/schema";
 import {
   summarizeAlarmKpi,
   normalizeAndonState,
@@ -70,11 +70,16 @@ export const alarmKpiRouter = router({
         .where(and(...andonConds));
 
       // ── Predictive alerts (cảnh báo AI) ───────────────────────────────────────
+      // Wave 4 §4 — KPI đếm theo LẦN TÁI DIỄN, không theo dòng cảnh báo.
+      // Wave 3 gộp trùng ⇒ đếm theo dòng làm KPI báo thiếu và làm cảnh báo
+      // đang sống rơi khỏi cửa sổ (vì createdAt được cố ý giữ nguyên).
       const predRows = await db
         .select({
+          occurrenceId: predictiveAlertOccurrences.id,
+          occurredAt: predictiveAlertOccurrences.occurredAt,
+          occurrenceSeverity: predictiveAlertOccurrences.severity,
           id: predictiveAlerts.id,
           severity: predictiveAlerts.severity,
-          createdAt: predictiveAlerts.createdAt,
           acknowledgedAt: predictiveAlerts.acknowledgedAt,
           resolvedAt: predictiveAlerts.resolvedAt,
           status: predictiveAlerts.status,
@@ -82,8 +87,9 @@ export const alarmKpiRouter = router({
           machineCode: predictiveAlerts.machineCode,
           title: predictiveAlerts.title,
         })
-        .from(predictiveAlerts)
-        .where(gte(predictiveAlerts.createdAt, since));
+        .from(predictiveAlertOccurrences)
+        .innerJoin(predictiveAlerts, eq(predictiveAlerts.id, predictiveAlertOccurrences.alertId))
+        .where(gte(predictiveAlertOccurrences.occurredAt, since));
 
       // ── Nhãn máy (bad-actor readable) — tra code cho các machineId liên quan ────
       const machineIds = Array.from(
@@ -124,10 +130,13 @@ export const alarmKpiRouter = router({
         const label = r.machineId != null ? machineMap.get(r.machineId) ?? r.machineCode ?? `#${r.machineId}` : (r.machineCode ?? null);
         const isResolved = r.resolvedAt != null || r.status === "RESOLVED" || r.status === "DISMISSED";
         events.push({
-          id: `pred:${r.id}`,
+          // id phải DUY NHẤT mỗi lần tái diễn, nếu không summarize sẽ gộp nhầm.
+          id: `pred:${r.id}:${r.occurrenceId}`,
           source: "predictive",
-          priority: normalizePredictiveSeverity(r.severity),
-          raisedAt: ms(r.createdAt) ?? now,
+          // Mức độ của CHÍNH LẦN NÀY; thiếu thì lùi về mức của dòng cha.
+          priority: normalizePredictiveSeverity(r.occurrenceSeverity ?? r.severity),
+          // raisedAt = thời điểm LẦN NÀY xảy ra — đây là thứ sửa cả 3 lỗi.
+          raisedAt: ms(r.occurredAt) ?? now,
           acknowledgedAt: ms(r.acknowledgedAt),
           resolvedAt: isResolved ? ms(r.resolvedAt) ?? now : null,
           actorKey: r.machineId != null ? `machine:${r.machineId}` : label ? `code:${label}` : null,
