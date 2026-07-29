@@ -61,6 +61,26 @@ public enum MachineDriverAvailability
     /// now — a write MAY be attempted (still subject to that driver's own point/command validation, and to
     /// the disposal race documented on <see cref="FleetHost.TryWriteSetpointAsync"/>).</summary>
     Writable,
+
+    /// <summary>Review fix round 1 (Critical) — a live, writable driver exists for the SLOT this machine code
+    /// resolves to, but MORE THAN ONE roster member resolves to that SAME slot, so this method cannot verify
+    /// the resolved driver actually serves THIS machine code rather than a sibling's. <see cref="ConnectorRegistry"/>
+    /// keeps at most one live driver per protocol <c>Kind</c> for the WHOLE fleet (last-write-wins), and
+    /// neither <see cref="St4i.Connector.Abstractions.Models.SetpointWriteRequest"/> nor
+    /// <see cref="St4i.Connector.Abstractions.Models.CommandRequest"/> carries a machine code the driver could
+    /// cross-check its own binding against — so two roster members sharing a <c>DriverKind</c> (a hand-edited
+    /// <c>fleet.json</c> with two same-kind entries, or two <see cref="RegisterMachine"/> calls for the same
+    /// kind) are, from this method's point of view, INDISTINGUISHABLE: it has no way to know which of them the
+    /// single live driver instance is actually talking to. Reported instead of <see cref="Writable"/> — a
+    /// write reaching the wrong physical machine is the worst possible failure mode for this capability, worse
+    /// than refusing outright. This is deliberately the MINIMUM safe check (count of roster members sharing the
+    /// resolved slot label), not a full "does this specific driver instance serve code X" verification — that
+    /// requires a driver-to-machine binding this codebase does not have anywhere yet (a later task, B-3's map
+    /// work, is the first place such a binding could plausibly live). Never returned for
+    /// <see cref="ReadOnly"/>/<see cref="NoLiveDriver"/> resolutions — sharing a slot is completely safe when
+    /// nothing can be written through it at all (e.g. ten demo machines legitimately sharing the one
+    /// "simulated" slot).</summary>
+    AmbiguousDriver,
 }
 
 /// <summary>
@@ -548,13 +568,34 @@ public sealed class FleetHost
     // ─────────────────────────────────────────────────────────────────────
 
     /// <summary>Resolves <paramref name="machineCode"/> to its slot's driver, entirely UNDER <see cref="_gate"/>
-    /// (a list scan + string compares — no I/O, so this is cheap to hold the lock for, same as
-    /// <see cref="GetDriverHealth"/>). Mirrors <see cref="StartLocked"/>'s OWN slot-label derivation exactly
-    /// (the built-in simulated group is always labeled the literal <c>"simulated"</c>; Modbus/OPC-UA use their
-    /// legacy lowercase labels; everything else uses <see cref="ResolveConnectorSlotLabel"/> on the normalized
-    /// <see cref="St4i.EdgeCore.Models.MachineDescriptor.DriverKind"/>, exactly as the connector loop there
-    /// does for <see cref="_connectorRegistry"/>'s registered ids) — this is <see cref="DriverKinds.Normalize"/>'s
-    /// SAME canonical id-comparison rule, reused rather than re-derived a second time.
+    /// (list scans + string compares — no I/O, so this is cheap to hold the lock for, same as
+    /// <see cref="GetDriverHealth"/>). The slot label is derived by <see cref="ResolveSlotLabelFor"/> — the
+    /// SAME method <see cref="StartLocked"/> itself calls to decide which slot a roster machine's
+    /// <see cref="St4i.EdgeCore.Models.MachineDescriptor.DriverKind"/> belongs to. Review fix round 1
+    /// (Important, task-2-report.md) — this method used to re-derive its OWN, simpler approximation of that
+    /// rule inline (checking only <c>DriverKind == Simulated</c> before falling through to
+    /// <see cref="ResolveConnectorSlotLabel"/>), which disagreed with <see cref="StartLocked"/>'s REAL rule for
+    /// exactly the case that rule exists to handle: a third-party-kind machine with no connector currently
+    /// registered for its kind is driven by the simulated group (a real, tested, intentional fallback), but
+    /// the old inline approximation would compute that machine's OWN kind as its expected label instead of
+    /// <see cref="SimulatedSlotLabel"/>, find no such slot, and report <see cref="MachineDriverAvailability.NoLiveDriver"/>
+    /// for a machine that was actually live and cycling. Calling <see cref="ResolveSlotLabelFor"/> closes this
+    /// by construction — there is now exactly one place this decision is made, not two that can drift apart.
+    ///
+    /// <para>Review fix round 1 (Critical, task-2-report.md) — <b>a live, writable driver is reported ONLY
+    /// when exactly one roster member resolves to the same slot.</b> <see cref="ConnectorRegistry"/> keeps at
+    /// most one live driver per protocol <c>Kind</c> for the WHOLE fleet, and neither
+    /// <see cref="St4i.Connector.Abstractions.Models.SetpointWriteRequest"/> nor
+    /// <see cref="St4i.Connector.Abstractions.Models.CommandRequest"/> carries a machine code — so if TWO
+    /// roster members share a resolved slot (two same-kind entries in a hand-edited <c>fleet.json</c>, or two
+    /// <see cref="RegisterMachine"/> calls for the same kind), this method has no way to tell which of them the
+    /// one live driver instance actually talks to. Reporting <see cref="MachineDriverAvailability.Writable"/>
+    /// in that situation would risk delivering a write to the WRONG physical machine — the worst possible
+    /// failure mode for this capability — so <see cref="MachineDriverAvailability.AmbiguousDriver"/> is reported
+    /// instead, and no driver reference is handed back. This is deliberately the MINIMUM safe check (count
+    /// roster members sharing the resolved slot label); verifying that a specific driver INSTANCE serves
+    /// machine code X specifically is deferred to B-3's map work, which is the first place such a binding could
+    /// plausibly be declared — see <see cref="MachineDriverAvailability.AmbiguousDriver"/>'s own doc comment.</para>
     ///
     /// <para>Returns the live <see cref="IWritableDeviceDriver"/> reference ONLY when
     /// <see cref="MachineDriverAvailability.Writable"/> — every other case returns <see langword="null"/>. The
@@ -572,8 +613,7 @@ public sealed class FleetHost
                 return (MachineDriverAvailability.MachineNotFound, null);
             }
 
-            var normalizedKind = DriverKinds.Normalize(descriptor.DriverKind);
-            var expectedLabel = normalizedKind == DriverKinds.Simulated ? "simulated" : ResolveConnectorSlotLabel(normalizedKind);
+            var expectedLabel = ResolveSlotLabelFor(descriptor.DriverKind);
 
             var slot = _slots.FirstOrDefault(s => string.Equals(s.Label, expectedLabel, StringComparison.Ordinal));
             if (slot is null)
@@ -581,9 +621,22 @@ public sealed class FleetHost
                 return (MachineDriverAvailability.NoLiveDriver, null);
             }
 
-            return slot.Driver is IWritableDeviceDriver writable
-                ? (MachineDriverAvailability.Writable, writable)
-                : (MachineDriverAvailability.ReadOnly, null);
+            if (slot.Driver is not IWritableDeviceDriver writable)
+            {
+                return (MachineDriverAvailability.ReadOnly, null);
+            }
+
+            // C1 fix (review round 1) — see this method's own doc comment. Only evaluated in the Writable
+            // branch: sharing a slot is completely safe when nothing can be written through it at all (e.g.
+            // ten demo machines legitimately sharing the one "simulated" slot), so this must never downgrade
+            // ReadOnly/NoLiveDriver.
+            var sharingMachineCount = _fleet.Count(d => string.Equals(ResolveSlotLabelFor(d.DriverKind), expectedLabel, StringComparison.Ordinal));
+            if (sharingMachineCount > 1)
+            {
+                return (MachineDriverAvailability.AmbiguousDriver, null);
+            }
+
+            return (MachineDriverAvailability.Writable, writable);
         }
     }
 
@@ -613,17 +666,23 @@ public sealed class FleetHost
     /// <para><b>The disposal race, solved deliberately.</b> Between this method resolving a live driver
     /// reference and <see cref="IWritableDeviceDriver.WriteSetpointAsync"/> returning, the SAME slot can be
     /// torn down by <see cref="Stop"/>, <see cref="Estop"/>, a <see cref="RegisterMachine"/>-triggered
-    /// restart, or a per-slot fault (<c>StartSlot</c>'s own catch) — all four run the identical
-    /// off-<see cref="_gate"/> teardown (cancel the slot's token, best-effort <c>DisposeAsync</c> the driver,
-    /// bounded by <c>RestartTeardownTimeout</c>), and NONE of them wait for an in-flight write: teardown
-    /// disposes the driver unconditionally, on its own schedule, never checking whether a
-    /// <see cref="WriteSetpointAsync"/>/<see cref="InvokeCommandAsync"/> call is still in flight against it.
-    /// This is a deliberate choice (a lease/reference-count that made disposal WAIT for a write was
-    /// considered and rejected): waiting, even boundedly, would coup HALT's latency to however slow the write
-    /// is up to that bound, which is precisely the class of bug this project already shipped once (the
-    /// orphaned-connector-driver Critical). Tearing down unconditionally instead means <see cref="Estop"/>'s
-    /// own latency is COMPLETELY independent of any in-flight write — not just bounded, never coupled at
-    /// all.</para>
+    /// restart, or a per-slot fault (<c>StartSlot</c>'s own catch). Review fix round 1 correction: these four
+    /// do NOT all run identical code, and this method's correctness does not depend on them doing so.
+    /// <see cref="Stop"/>/<see cref="Estop"/>/a <see cref="RegisterMachine"/> restart funnel through
+    /// <c>WaitAndDisposeOldPipeline</c>, which runs SYNCHRONOUSLY on the calling thread and bounds both the
+    /// run-task wait and the driver's <c>DisposeAsync</c> at <c>RestartTeardownTimeout</c> via <c>.Wait(timeout)</c>.
+    /// A per-slot fault is structurally different: <c>StartSlot</c>'s own catch disposes the driver via an
+    /// UNBOUNDED <c>await driver.DisposeAsync().ConfigureAwait(false)</c>, running on the SLOT'S OWN background
+    /// task — not on any caller's thread at all. Both shapes independently guarantee NONE of them wait for an
+    /// in-flight write: the first two dispose the driver unconditionally, on their own bounded schedule, never
+    /// checking whether a <see cref="WriteSetpointAsync"/>/<see cref="InvokeCommandAsync"/> call is still in
+    /// flight; the third has no caller to delay in the first place, since it runs on its own background task
+    /// with nothing blocked waiting for it. A lease/reference-count that made disposal WAIT for a write was
+    /// considered and rejected for the first two paths: waiting, even boundedly, would couple HALT's latency to
+    /// however slow the write is up to that bound, which is precisely the class of bug this project already
+    /// shipped once (the orphaned-connector-driver Critical). Tearing down unconditionally instead means
+    /// <see cref="Estop"/>'s own latency is COMPLETELY independent of any in-flight write — not just bounded,
+    /// never coupled at all.</para>
     ///
     /// <para>What an in-flight write observes when this happens: <see cref="IWritableDeviceDriver"/>'s own
     /// contract already requires an implementation to catch whatever a concurrently-torn-down connection
@@ -633,10 +692,14 @@ public sealed class FleetHost
     /// same "never trust a driver's own promise alone" doubling <see cref="ConnectorRegistry.TryCreateDriver"/>/
     /// <see cref="StartLocked"/> already apply to third-party code: if the call throws ANY exception anyway
     /// (a driver written before this race was accounted for, or one that simply gets it wrong), this method
-    /// catches it here and returns <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Indeterminate"/>
-    /// — never a crash out to the caller, and never a false <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Applied"/>.
-    /// See <c>FleetHostMachineDriverResolutionTests</c>'s disposal-race tests for the genuinely-concurrent
-    /// proof of this.</para>
+    /// catches it here, LOGS it (a driver violating its own no-throw contract must leave more than an
+    /// operator-visible string behind), and returns <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Indeterminate"/>
+    /// with a generic, redacted <c>Detail</c> — never a crash out to the caller, never a false
+    /// <see cref="St4i.Connector.Abstractions.Models.WriteOutcome.Applied"/>, and never the driver's raw
+    /// <c>ex.Message</c> echoed verbatim to an operator (a map/connector config can carry credentials — see
+    /// <c>ConnectorConfigStore</c>'s own redaction — and an arbitrary driver exception is not a channel this
+    /// method controls the contents of). See <c>FleetHostMachineDriverResolutionTests</c>'s disposal-race
+    /// tests for the genuinely-concurrent proof of this.</para>
     /// </summary>
     public async Task<(MachineDriverAvailability Availability, SetpointWriteResult? Result)> TryWriteSetpointAsync(
         string machineCode, SetpointWriteRequest request, CancellationToken ct = default)
@@ -657,11 +720,18 @@ public sealed class FleetHost
         }
         catch (Exception ex)
         {
+            // Review fix round 1 (Important) — logged (full ex, server-side only) so a driver violating
+            // IWritableDeviceDriver's own no-throw contract leaves a diagnosable trace, not just an
+            // operator-visible string. Detail deliberately does NOT interpolate ex.Message: an arbitrary
+            // driver exception is not a channel this method controls the contents of (a map/connector config
+            // can carry credentials — same reasoning ConnectorConfigStore's own redaction already applies),
+            // so only the exception's TYPE name (safe, non-sensitive) reaches the operator-visible result.
+            _logger?.LogWarning(ex, "WriteSetpointAsync on machine '{MachineCode}' point '{Point}' did not complete cleanly", machineCode, request.Point);
             return (availability, new SetpointWriteResult(
                 request.Point,
                 WriteOutcome.Indeterminate,
-                Detail: $"WriteSetpointAsync did not complete cleanly — the driver may have been disposed " +
-                        $"concurrently by Stop/Estop/a restart/a per-slot fault: {ex.Message}"));
+                Detail: $"WriteSetpointAsync did not complete cleanly ({ex.GetType().Name}) — the driver may " +
+                        "have been disposed concurrently by Stop/Estop/a restart/a per-slot fault. See the log for detail."));
         }
     }
 
@@ -690,11 +760,14 @@ public sealed class FleetHost
         }
         catch (Exception ex)
         {
+            // Review fix round 1 (Important) — same reasoning as TryWriteSetpointAsync's own catch: logged
+            // server-side, redacted operator-visible Detail (type name only, never ex.Message verbatim).
+            _logger?.LogWarning(ex, "InvokeCommandAsync on machine '{MachineCode}' command '{Command}' did not complete cleanly", machineCode, request.Command);
             return (availability, new CommandResult(
                 request.Command,
                 WriteOutcome.Indeterminate,
-                Detail: $"InvokeCommandAsync did not complete cleanly — the driver may have been disposed " +
-                        $"concurrently by Stop/Estop/a restart/a per-slot fault: {ex.Message}"));
+                Detail: $"InvokeCommandAsync did not complete cleanly ({ex.GetType().Name}) — the driver may " +
+                        "have been disposed concurrently by Stop/Estop/a restart/a per-slot fault. See the log for detail."));
         }
     }
 
@@ -928,6 +1001,57 @@ public sealed class FleetHost
     private static string ResolveConnectorSlotLabel(string connectorId) =>
         LegacyConnectorSlotLabels.TryGetValue(connectorId, out var legacyLabel) ? legacyLabel : connectorId;
 
+    /// <summary>The literal, lowercase slot label the built-in simulated group always uses (see
+    /// <see cref="StartLocked"/>'s <c>groups.Add((SimulatedSlotLabel, driver, ...))</c> call). Review fix
+    /// round 1 (task-2-report.md, Minor) — named as a shared constant rather than a literal repeated at each
+    /// of its two use sites (<see cref="StartLocked"/>'s own group-building AND <see cref="ResolveSlotLabelFor"/>
+    /// below): a repeated literal is exactly the kind of "two places that can silently drift apart" hazard
+    /// this same fix round closed for the machine-&gt;slot-label RULE itself (see <see cref="ResolveSlotLabelFor"/>'s
+    /// own doc comment) — the label string deserves the identical guarantee.</summary>
+    private const string SimulatedSlotLabel = "simulated";
+
+    /// <summary>Review fix round 1 (Critical, task-2-report.md) — the ONE place this codebase decides which
+    /// pipeline slot a <see cref="St4i.EdgeCore.Models.MachineDescriptor.DriverKind"/> maps to. Extracted
+    /// verbatim (no behavior change) from <see cref="StartLocked"/>'s own <c>simFleet</c> filter — that method
+    /// now calls this instead of restating the same three-clause union inline — specifically so
+    /// <see cref="ResolveWritableDriver"/> could reuse the REAL rule rather than re-deriving its own,
+    /// different (and, as review round 1 proved with a running probe, WRONG) approximation: a third-party-kind
+    /// roster machine with NO connector currently registered for its kind falls back to being driven by the
+    /// <see cref="SimulatedSlotLabel"/> group below — a real, tested, intentional behavior
+    /// (<c>FleetHostThirdPartyRosterTests.ThirdPartyRosterMember_NoConnectorRegisteredForThatId_FallsBackToSimulation</c>)
+    /// that <see cref="ResolveWritableDriver"/>'s original approximation didn't account for, so it reported
+    /// <see cref="MachineDriverAvailability.NoLiveDriver"/> for a machine that was, in fact, live and cycling.
+    ///
+    /// <para>The rule itself (unchanged from <see cref="StartLocked"/>'s original inline expression — see the
+    /// large comment block just above that method's <c>simFleet</c> line for the full historical reasoning,
+    /// preserved there rather than duplicated here): Modbus/OPC-UA are excluded from the simulated group
+    /// UNCONDITIONALLY, regardless of whether either currently has a connector registered (mirroring
+    /// <see cref="ResolveConnectorSlotLabel"/>'s own legacy-label carve-out for exactly these two ids).
+    /// Everything else is driven by the simulated group UNLESS a connector is actually registered for its
+    /// (normalized) kind right now — <see cref="DriverKinds.Simulated"/> itself is checked FIRST, before ever
+    /// consulting the registry, which is what lets a third party register a connector under
+    /// <c>Kind="Simulated"</c> as a genuinely SEPARATE, additional slot without that registration silently
+    /// reclassifying every ordinary simulated roster machine (whose OWN <c>DriverKind</c> is also
+    /// <c>"Simulated"</c>) as "no longer simulated." <see cref="DriverKinds.Normalize"/> is applied once, up
+    /// front — the SAME canonical id-comparison rule every other comparison in this class already uses, never
+    /// re-derived a second time.</para></summary>
+    private string ResolveSlotLabelFor(string driverKind)
+    {
+        var normalizedKind = DriverKinds.Normalize(driverKind);
+
+        if (normalizedKind == DriverKinds.Modbus || normalizedKind == DriverKinds.OpcUa)
+        {
+            return ResolveConnectorSlotLabel(normalizedKind);
+        }
+
+        var registeredConnectorIds = _connectorRegistry?.RegisteredIds;
+        var isSimulated = normalizedKind == DriverKinds.Simulated
+            || registeredConnectorIds is null
+            || !registeredConnectorIds.Contains(normalizedKind);
+
+        return isSimulated ? SimulatedSlotLabel : ResolveConnectorSlotLabel(normalizedKind);
+    }
+
     /// <summary>Review fix round 2 — <see cref="StartLocked"/> USED to dispose an orphaned connector
     /// driver (see the connector loop below) inline, synchronously, while <see cref="_gate"/> was held by
     /// every one of its callers. That is a hazard this class's own review has already named twice: a
@@ -1020,14 +1144,16 @@ public sealed class FleetHost
         // would then exclude EVERY roster machine (all of them DriverKind=Simulated) from simFleet —
         // emptying it entirely and crashing SimulatedDriver's ctor ("at least one simulator is required").
         // The first draft of this fix did exactly that; this carve-out is what closes it.
-        var registeredConnectorIds = _connectorRegistry?.RegisteredIds;
-        var simFleet = effectiveFleet.Where(d =>
-            d.DriverKind != DriverKinds.Modbus
-            && d.DriverKind != DriverKinds.OpcUa
-            && (d.DriverKind == DriverKinds.Simulated
-                || registeredConnectorIds is null
-                || !registeredConnectorIds.Contains(DriverKinds.Normalize(d.DriverKind))))
-            .ToList();
+        //
+        // Review fix round 1 (task-2-report.md, Important) — this inline filter (everything documented in
+        // the comment block above) is now expressed as a call to ResolveSlotLabelFor rather than restated as
+        // a second, independently-maintained boolean expression: FleetHostMachineDriverResolutionTests'
+        // ResolveWritableDriver originally re-derived its OWN, simpler (and wrong) approximation of this
+        // exact rule, which misreported a live third-party-kind machine (simulated by fallback — see
+        // ResolveSlotLabelFor's own doc comment) as NoLiveDriver. Extracting this rule into one method is
+        // what makes that class of drift impossible going forward — every comment above still describes
+        // this SAME rule correctly, just now implemented once, not twice.
+        var simFleet = effectiveFleet.Where(d => ResolveSlotLabelFor(d.DriverKind) == SimulatedSlotLabel).ToList();
         var sims = simFleet.Select((d, i) => SimulatorFactory.Create(d, seed: 1000 + i, _configStore, CurrentProductFor, multiplier, _productConfigStore)).ToList();
 
         // SM-1 (task-1-brief.md) — a roster with no simulated machines (an empty product roster, or one
@@ -1104,7 +1230,9 @@ public sealed class FleetHost
         var groups = new List<(string Label, IDeviceDriver Driver, MappingProfile Profile, Func<string, MappingProfile?>? Resolver)>();
         if (driver is not null)
         {
-            groups.Add(("simulated", driver, profile, mappingResolver.Resolve));
+            // Review fix round 1 (task-2-report.md, Minor) — SimulatedSlotLabel, not a second "simulated"
+            // literal: see that constant's own doc comment for why a repeated literal was itself a hazard.
+            groups.Add((SimulatedSlotLabel, driver, profile, mappingResolver.Resolve));
         }
 
         var extra = AdditionalPipelinesForTests?.Invoke();
