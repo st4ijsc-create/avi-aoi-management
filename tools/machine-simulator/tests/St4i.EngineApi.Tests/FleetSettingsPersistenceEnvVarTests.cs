@@ -68,6 +68,7 @@ public sealed class FleetSettingsPersistenceEnvVarTests
         // GĐ3 closeout WI-3 — without this, every WebApplicationFactory<Program> boot below (UNS defaults
         // ON) has Program.cs construct a REAL BridgeSpool against %ProgramData%\ST4I\sim\bridge-spool\.
         var bridgeSpoolDir = Directory.CreateTempSubdirectory("st4i-ff1-bridgespool-").FullName;
+        var connectorConfigDir = Directory.CreateTempSubdirectory("st4i-ff1-connectorconfig-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -83,6 +84,7 @@ public sealed class FleetSettingsPersistenceEnvVarTests
         var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
         var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
         var prevBridgeSpoolDir = Environment.GetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR");
+        var prevConnectorConfigDir = Environment.GetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR");
         try
         {
             Environment.SetEnvironmentVariable("ST4I_SECURITY_DIR", securityDir);
@@ -98,6 +100,7 @@ public sealed class FleetSettingsPersistenceEnvVarTests
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
             Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", bridgeSpoolDir);
+            Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", connectorConfigDir);
 
             var factory = new WebApplicationFactory<Program>();
             _ = factory.Server; // force the host to build NOW, while the env vars above are still set.
@@ -118,6 +121,7 @@ public sealed class FleetSettingsPersistenceEnvVarTests
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
             Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", prevBridgeSpoolDir);
+            Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", prevConnectorConfigDir);
             EnvLock.Release();
         }
     }

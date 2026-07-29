@@ -78,6 +78,7 @@ export const vi = {
       users: "Người dùng",
       audit: "Nhật ký kiểm toán",
       assets: "Sổ đăng ký tài sản",
+      connectors: "Kết nối thiết bị",
       site: "Liên kết Site",
       alarms: "Trung tâm cảnh báo",
       line: "Điều khiển dây chuyền",
@@ -214,7 +215,10 @@ export const vi = {
       cta: "Chạy Fleet",
       ctaPending: "Đang chạy…",
       noMachinesTitle: "Chưa có máy nào",
-      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy mới qua Onboarding để bắt đầu — lưu ý Onboarding hiện cần kết nối được một máy chủ hệ sinh thái ST4I.",
+      // SM-5 — trước đây trỏ tới Onboarding (một trình hướng dẫn gia nhập hệ sinh thái, cần máy chủ khả
+      // dụng) — nay trỏ tới trang Kết nối thiết bị (`routes/Connectors.tsx`): thêm máy Modbus hoặc
+      // OPC-UA thật ngay trong sản phẩm, không cần máy chủ, biến môi trường hay chỉnh sửa tệp tay.
+      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy Modbus hoặc OPC-UA thật trong mục Kết nối thiết bị để bắt đầu.",
     },
   },
 
@@ -250,7 +254,10 @@ export const vi = {
     },
     empty: {
       noMachinesTitle: "Chưa có máy nào",
-      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy mới qua Onboarding để bắt đầu — lưu ý Onboarding hiện cần kết nối được một máy chủ hệ sinh thái ST4I.",
+      // SM-5 — trước đây trỏ tới Onboarding (một trình hướng dẫn gia nhập hệ sinh thái, cần máy chủ khả
+      // dụng) — nay trỏ tới trang Kết nối thiết bị (`routes/Connectors.tsx`): thêm máy Modbus hoặc
+      // OPC-UA thật ngay trong sản phẩm, không cần máy chủ, biến môi trường hay chỉnh sửa tệp tay.
+      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy Modbus hoặc OPC-UA thật trong mục Kết nối thiết bị để bắt đầu.",
       noMatchTitle: "Không tìm thấy máy phù hợp",
       noMatchDescription: "Không có máy nào khớp với tìm kiếm hoặc bộ lọc hiện tại — thử xóa bộ lọc.",
     },
@@ -1853,6 +1860,70 @@ export const vi = {
     itemAria: (vars: Vars) => `Connector ${vars.id} khởi động không thành công: ${vars.error}`,
   },
 
+  // SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-5-brief.md,
+  // `routes/Connectors.tsx`) — thêm/xem/xoá cấu hình kết nối Modbus TCP hoặc OPC-UA thật. Xem là quyền
+  // Operator; biểu mẫu thêm kết nối và nút Xoá theo từng dòng chỉ dành cho Engineer trở lên. Đặt tên
+  // `connectorConfig` (KHÔNG phải `connectors`) — khoá đó đã được dùng cho thẻ "trạng thái kết nối" của
+  // GP-7 ở trên (`AssetRegistry.tsx`, danh sách kết nối khởi động thất bại), một tính năng cũ, khác,
+  // không thuộc phạm vi task này.
+  connectorConfig: {
+    title: "Kết nối thiết bị",
+    description:
+      "Thêm một máy Modbus TCP hoặc OPC-UA thật và máy đó sẽ xuất hiện trong danh sách dây chuyền — không cần biến môi trường hay chỉnh sửa tệp tay. Chỉ hai giao thức mà bản build này thực sự chạy được mới được cung cấp; công cụ vẽ sơ đồ thanh ghi/nút bằng hình ảnh là một dự án riêng trong tương lai, nên hiện tại hãy dán hoặc tải lên JSON sơ đồ tại đây.",
+    list: {
+      title: "Kết nối đã cấu hình",
+      description: "Mọi cấu hình kết nối hiện đang được lưu trên máy này.",
+      empty: "Chưa có kết nối nào được cấu hình.",
+      loadFailed: "Không tải được danh sách kết nối đã cấu hình.",
+      table: {
+        kind: "Giao thức",
+        machineCode: "Mã máy",
+        hostPort: "Host : Port",
+        updated: "Cập nhật lần cuối",
+        remove: "Xoá",
+      },
+    },
+    removeConfirm: {
+      title: "Xoá cấu hình kết nối này?",
+      description:
+        "Thao tác này chỉ xoá cấu hình ĐÃ LƯU — không xoá máy khỏi danh sách dây chuyền. Nếu kết nối này đang chạy, nó vẫn tiếp tục chạy cho đến khi khởi động lại toàn bộ ứng dụng; hệ thống hiện chưa hỗ trợ gỡ máy khỏi danh sách khi đang chạy.",
+      submit: "Xoá",
+      removing: "Đang xoá…",
+      cancel: "Huỷ",
+    },
+    form: {
+      title: "Thêm một kết nối",
+      description: "Chọn giao thức, nhập thông số kết nối, rồi dán hoặc tải lên JSON sơ đồ thanh ghi/nút của máy này.",
+      kindModbus: "Modbus TCP",
+      kindOpcUa: "OPC-UA",
+      hostLabel: "Host / Địa chỉ IP",
+      hostPlaceholder: "10.0.0.5",
+      portLabel: "Cổng (Port)",
+      opcUaNote:
+        "Endpoint URL, chế độ bảo mật, và tên đăng nhập/mật khẩu (nếu có) của OPC-UA đều nằm trong JSON sơ đồ nút bên dưới — không cần nhập thêm gì ở đây.",
+      mapJsonLabel: "Sơ đồ thanh ghi / nút (JSON)",
+      mapJsonHint:
+        "Cùng định dạng JSON mà biến môi trường ST4I_MODBUS_MAP / ST4I_OPCUA_MAP đã dùng (xem tài liệu để biết đầy đủ các trường). Chưa có công cụ vẽ trực quan — hãy dán hoặc tải lên JSON trực tiếp.",
+      mapJsonPlaceholder: "Dán JSON sơ đồ thanh ghi/nút vào đây…",
+      uploadButton: "Tải lên tệp…",
+      test: "Kiểm tra kết nối",
+      testing: "Đang kiểm tra…",
+      testResultOk: "Đã kết nối — thiết bị đã phản hồi.",
+      save: "Lưu",
+      saving: "Đang lưu…",
+      appliedLive: "Đã lưu và thêm vào dây chuyền. Nếu dây chuyền đang chạy, hệ thống đã tự khởi động lại để áp dụng ngay.",
+      savedRestartNeeded:
+        "Đã lưu. Máy này đã có trong danh sách — thay đổi sẽ được áp dụng vào lần Dừng/Chạy lại tiếp theo (hoặc khi khởi động lại ứng dụng), không áp dụng ngay cho dây chuyền đang chạy.",
+      readOnlyNote: "Chỉ tài khoản Engineer (trở lên) mới có thể thêm hoặc xoá kết nối.",
+    },
+    errors: {
+      badRequest: "Thông số kết nối bị từ chối — kiểm tra lại các trường và JSON sơ đồ.",
+      conflict: "Đã có một kết nối cùng giao thức này được cấu hình cho một máy khác — hãy xoá kết nối đó trước.",
+      forbidden: "Bạn không có quyền cấu hình kết nối.",
+      generic: "Không lưu được kết nối.",
+    },
+  },
+
   // GĐ3 EC-4 (`routes/Site.tsx`, `.superpowers/sdd/2026-07-27-giaidoan3-ecosystem-connect-blueprint/
   // task-4-brief.md`) — the web page over EC-3's `/v1/site*` endpoints: this device's own identity
   // fingerprint + cert PEM (to register at a SYNAPSE Site), an Engineer-gated Site-link form (host/
@@ -2163,6 +2234,9 @@ export const vi = {
     logoutFailed: "Không thể đăng xuất.",
     assetLifecycleUpdated: (vars: Vars) => `Đã cập nhật vòng đời của ${vars.code}.`,
     assetLifecycleUpdateFailed: "Không thể cập nhật vòng đời tài sản.",
+    connectorSaveFailed: "Không lưu được kết nối.",
+    connectorRemoved: "Đã xoá cấu hình kết nối.",
+    connectorRemoveFailed: "Không xoá được kết nối.",
     siteLinkSaved: "Đã lưu kết nối Site.",
     siteLinkSaveFailed: "Không thể lưu kết nối Site.",
     fingerprintCopied: "Đã sao chép vân tay.",

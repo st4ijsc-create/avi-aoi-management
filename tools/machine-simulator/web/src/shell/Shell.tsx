@@ -17,6 +17,7 @@ import Settings from "@/routes/Settings"
 import Users from "@/routes/Users"
 import Audit from "@/routes/Audit"
 import AssetRegistry from "@/routes/AssetRegistry"
+import Connectors from "@/routes/Connectors"
 import Site from "@/routes/Site"
 import AlarmCenter from "@/routes/AlarmCenter"
 import LineControl from "@/routes/LineControl"
@@ -62,6 +63,7 @@ export function Shell() {
             <Route path="/users" component={Users} />
             <Route path="/audit" component={Audit} />
             <Route path="/assets" component={AssetRegistry} />
+            <Route path="/connectors" component={Connectors} />
             <Route path="/site" component={Site} />
             <Route path="/alarms" component={AlarmCenter} />
             <Route path="/line" component={LineControl} />

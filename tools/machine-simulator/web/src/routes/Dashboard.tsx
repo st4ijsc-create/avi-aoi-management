@@ -63,16 +63,18 @@ function EmptyState({
   )
 }
 
-/** SM-3 — the honest first-run destination for a fresh product install: SM-1 made a zero-machine
+/** SM-3/SM-5 — the honest first-run destination for a fresh product install: SM-1 made a zero-machine
  * roster a legitimate state, so this is what a brand-new, standalone (or not-yet-connected) install
  * shows INSTEAD of the old "press Start Fleet" copy (which talks about machines that don't exist) and
  * instead of the removed ecosystem connect gate. Same shape as `Machines.tsx`'s own `EmptyState` for
- * this identical condition — one honest message, not two independently-worded ones, pointing at the
- * same next step (Onboarding). SM-5 (not in this task's scope) is what actually builds a real machine
- * onboarding UX; today's `/onboarding` is the ecosystem register/claim/enroll wizard, which already
- * joins the claimed machine into this engine's own fleet roster (`OnboardingFleetJoin` ->
- * `FleetHost.RegisterMachine`) — a real, reachable destination, not a stub. */
-function NoMachinesEmptyState({ onOnboard }: { onOnboard: () => void }) {
+ * this identical condition — one honest message, not two independently-worded ones.
+ *
+ * SM-5 re-points this at `/connectors` (`routes/Connectors.tsx`), NOT `/onboarding` — SM-3 correctly
+ * labelled `/onboarding` as needing a reachable ST4I ecosystem server (an enrollment wizard, not a
+ * machine-onboarding tool), which is a dead end for the standalone customer this empty state is FOR.
+ * `/connectors` is the real, reachable destination this task built: add a Modbus/OPC-UA machine from
+ * the UI with no server, no environment variables, no hand-edited files. */
+function NoMachinesEmptyState({ onAddConnector }: { onAddConnector: () => void }) {
   const t = useT()
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="min-h-0 flex-1">
@@ -88,8 +90,8 @@ function NoMachinesEmptyState({ onOnboard }: { onOnboard: () => void }) {
           <p className="text-lg font-semibold text-text-strong">{t("dashboard.empty.noMachinesTitle")}</p>
           <p className="max-w-sm text-sm text-text-muted">{t("dashboard.empty.noMachinesDescription")}</p>
         </div>
-        <Button onClick={onOnboard} className="px-3">
-          {t("shell.nav.onboarding")}
+        <Button onClick={onAddConnector} className="px-3">
+          {t("shell.nav.connectors")}
         </Button>
       </Sheet>
     </motion.div>
@@ -169,7 +171,7 @@ export default function Dashboard() {
       ) : null}
 
       {showNoMachinesEmpty ? (
-        <NoMachinesEmptyState onOnboard={() => navigate("/onboarding")} />
+        <NoMachinesEmptyState onAddConnector={() => navigate("/connectors")} />
       ) : (
         <>
           <motion.div

@@ -1628,6 +1628,173 @@ export function useConnectorIssues(): UseQueryResult<ConnectorStatus[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Connector configuration (write path) — SM-5 (`.superpowers/sdd/2026-07-29-dotA-single-machine-
+// sellable-blueprint/task-5-brief.md`), `routes/Connectors.tsx`. The write path GP-7's read-only
+// `ConnectorStatus` above never had: add/view/remove a Modbus TCP or OPC-UA connector configuration from
+// the UI. Wire shapes mirror `St4i.EngineApi.Fleet.Dtos`'s `ConnectorConfigSummary`/
+// `ConnectorCreateRequest`/`ConnectorCreateResultDto`/`ConnectorDeleteResultDto`/`ConnectorTestResultDto`
+// exactly — see `ConnectorEndpoints.cs`'s own doc comment for the full RBAC/audit/apply-live-or-restart
+// write-up this UI surfaces.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Only the two protocols this build actually has a working driver for — deliberately NOT a wider union
+ * (Serial/RS-485, S7, EtherNet/IP, SECS/GEM have no driver at all): offering a kind the product can't
+ * honour would be exactly the dishonesty this whole batch removes (see `Connectors.tsx`'s own kind
+ * picker, which only ever renders these two options). */
+export type ConnectorKind = "Modbus" | "OpcUa"
+
+/** `ConnectorConfigSummary` (`Fleet/Dtos.cs`) — the credential-free projection `GET
+ * /v1/connectors/configured` returns. Deliberately has NO `mapJson`/settings field at all: the server's
+ * SQL projection never selects that column in the first place (it may embed an OPC-UA username/
+ * password) — there is nothing to accidentally render here even by mistake. `host`/`port` are `null` for
+ * an OPC-UA connector (its endpoint lives inside the map JSON itself, not a separate column). */
+export interface ConnectorConfigSummary {
+  kind: string
+  machineCode: string
+  host: string | null
+  port: number | null
+  updatedAtUtc: string
+}
+
+/** `ConnectorCreateRequest`/`ConnectorTestRequest` (`Fleet/Dtos.cs`) — the SAME shape serves both
+ * `POST /v1/connectors` (persist + apply) and `POST /v1/connectors/test` (throwaway connectivity probe,
+ * nothing persisted). `host`/`port` only apply to `"Modbus"` — sent as `undefined` for `"OpcUa"`, whose
+ * endpoint/credentials already live inside `mapJson` itself (see `ConnectorConfigValidation`'s own doc
+ * comment on the server side). */
+export interface ConnectorRequestInput {
+  kind: ConnectorKind
+  host?: string
+  port?: number
+  mapJson: string
+}
+
+/** `ConnectorCreateResultDto` (`Fleet/Dtos.cs`). `appliedLive` distinguishes the two honest outcomes a
+ * save can have — see `Connectors.tsx`'s own success-banner copy, which is derived from THIS boolean
+ * (client-side i18n), never from the server's own English `message` field verbatim (that field is a
+ * diagnostic/API-Inspector-facing string, same posture as every other server-generated message in this
+ * codebase — see `ConnectorEndpoints.CreateConnectorAsync`'s own doc comment). */
+export interface ConnectorCreateResult {
+  config: ConnectorConfigSummary
+  appliedLive: boolean
+  message: string
+}
+
+/** `ConnectorDeleteResultDto` (`Fleet/Dtos.cs`). */
+export interface ConnectorDeleteResult {
+  kind: string
+  message: string
+}
+
+/** `ConnectorTestResultDto` (`Fleet/Dtos.cs`) — always a `200` with the verdict IN the body for anything
+ * past request-shape validation (mirrors `useProbeSettings`'s own `ProbeResult` precedent exactly): `ok:
+ * false` covers both "the connector factory rejected this configuration" and "no response within the
+ * bounded window" — an operator does not need to know or care which, `error` is the one human-readable
+ * string either way. */
+export interface ConnectorTestResult {
+  ok: boolean
+  error: string | null
+}
+
+/** Mirrors `UsersApiError` above exactly — `Connectors.tsx`'s form needs the server's EXACT
+ * `ApiErrorDto.error` text for a malformed register-map/node-map JSON, a missing host/port, or the
+ * "already configured for a different machine" 409, rather than a generic "request failed" toast. */
+export class ConnectorConfigApiError extends Error {
+  status: number
+  /** The server's own `ApiErrorDto.error` text — undefined only for a genuinely unparseable body. */
+  serverMessage?: string
+
+  constructor(status: number, serverMessage?: string) {
+    super(serverMessage ?? `request failed: ${status}`)
+    this.name = "ConnectorConfigApiError"
+    this.status = status
+    this.serverMessage = serverMessage
+  }
+}
+
+async function connectorConfigRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  })
+  if (res.status === 401) unauthorizedHandler?.()
+  if (!res.ok) {
+    let serverMessage: string | undefined
+    try {
+      const body = (await res.json()) as { error?: string }
+      serverMessage = body?.error
+    } catch {
+      // Non-JSON body (rare — a proxy/500 page) — fall back to the generic message.
+    }
+    throw new ConnectorConfigApiError(res.status, serverMessage)
+  }
+  return (await res.json()) as T
+}
+
+const CONNECTOR_CONFIG_QUERY_KEY = ["connectors", "configured"] as const
+
+const connectorConfigEndpoints = {
+  configured: () => connectorConfigRequest<ConnectorConfigSummary[]>("/v1/connectors/configured"),
+  create: (input: ConnectorRequestInput) =>
+    connectorConfigRequest<ConnectorCreateResult>("/v1/connectors", { method: "POST", body: JSON.stringify(input) }),
+  remove: (kind: string) =>
+    connectorConfigRequest<ConnectorDeleteResult>(`/v1/connectors/${encodeURIComponent(kind)}`, { method: "DELETE" }),
+  test: (input: ConnectorRequestInput) =>
+    connectorConfigRequest<ConnectorTestResult>("/v1/connectors/test", { method: "POST", body: JSON.stringify(input) }),
+}
+
+/** `GET /v1/connectors/configured` (Operator) — same 5s poll cadence as `useConnectorIssues`. */
+export function useConfiguredConnectors(): UseQueryResult<ConnectorConfigSummary[]> {
+  return useQuery({
+    queryKey: CONNECTOR_CONFIG_QUERY_KEY,
+    queryFn: connectorConfigEndpoints.configured,
+    refetchInterval: 5000,
+  })
+}
+
+/** `POST /v1/connectors` (Engineer — `Connectors.tsx`'s own client-side `RequireRole` is only a UX gate;
+ * this is the real enforcement). On success, invalidates both the configured-connectors list AND the
+ * fleet snapshot (`useFleet` already polls every 1s, but invalidating means the newly-added machine's
+ * tile appears on the very next render instead of waiting out that poll). Rejected — 400 (bad kind/host/
+ * port/map), 409 (a connector of this kind is already configured for a DIFFERENT machine), 403
+ * (non-Engineer) — touches neither cache; the caller's own `onError` (reading `ConnectorConfigApiError.
+ * serverMessage`) is how the form surfaces that inline. */
+export function useCreateConnector() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: connectorConfigEndpoints.create,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CONNECTOR_CONFIG_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.fleet })
+    },
+  })
+}
+
+/** `DELETE /v1/connectors/{kind}` (Engineer). See `Connectors.tsx`'s own removal-confirmation copy for
+ * why this is presented as "remove from configuration, NOT from the roster" — `FleetHost` has no live
+ * unregister (see `ConnectorEndpoints.DeleteConnectorAsync`'s own doc comment); this call only ever
+ * affects `useConfiguredConnectors`' list, never `useFleet`'s. */
+export function useDeleteConnector() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: connectorConfigEndpoints.remove,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CONNECTOR_CONFIG_QUERY_KEY })
+    },
+  })
+}
+
+/** `POST /v1/connectors/test` (Engineer) — a read-only connectivity probe, same click-triggered
+ * ergonomics as `useSiteDiscover`/`useProbeSettings`: nothing persisted, nothing to invalidate on
+ * success. Bounded server-side (`ConnectorEndpoints.ConnectionTestTimeout`) — this call can never hang
+ * the form past that window regardless of how unreachable the target is. */
+export function useTestConnector() {
+  return useMutation({
+    mutationFn: connectorConfigEndpoints.test,
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Site / Ecosystem — GĐ3 EC-4 (`routes/Site.tsx`). Wire shapes mirror `St4i.EngineApi.Endpoints.
 // SiteEndpoints`'s `SiteStatusDto`/`SiteLinkRequest`/`SiteIdentityDto` exactly (EC-3,
 // `src/St4i.EngineApi/Endpoints/SiteEndpoints.cs`) — the HTTP surface over EC-2's `SiteBridgeManager`

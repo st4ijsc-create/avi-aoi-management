@@ -58,6 +58,7 @@ public sealed class ProductModeEmptyRosterBootTests
         var siteLinkDir = Directory.CreateTempSubdirectory("st4i-empty-roster-boot-sitelink-").FullName;
         var alarmsDir = Directory.CreateTempSubdirectory("st4i-empty-roster-boot-alarms-").FullName;
         var bridgeSpoolDir = Directory.CreateTempSubdirectory("st4i-empty-roster-boot-bridgespool-").FullName;
+        var connectorConfigDir = Directory.CreateTempSubdirectory("st4i-empty-roster-boot-connectorconfig-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -70,6 +71,7 @@ public sealed class ProductModeEmptyRosterBootTests
         var prevSiteLinkDir = Environment.GetEnvironmentVariable("ST4I_SITELINK_DIR");
         var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
         var prevBridgeSpoolDir = Environment.GetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR");
+        var prevConnectorConfigDir = Environment.GetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         var prevServerUrl = Environment.GetEnvironmentVariable("ST4I_SERVER_URL");
         var prevMachineCode = Environment.GetEnvironmentVariable("ST4I_MACHINE_CODE");
@@ -86,6 +88,7 @@ public sealed class ProductModeEmptyRosterBootTests
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", siteLinkDir);
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
             Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", bridgeSpoolDir);
+            Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", connectorConfigDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
             // Explicitly null (never set), not merely inherited — this is the fresh-install case: no
             // operator PUT has ever happened, no env-var floor either, so FleetHost's own built-in
@@ -111,6 +114,7 @@ public sealed class ProductModeEmptyRosterBootTests
             Environment.SetEnvironmentVariable("ST4I_SITELINK_DIR", prevSiteLinkDir);
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
             Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", prevBridgeSpoolDir);
+            Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", prevConnectorConfigDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             Environment.SetEnvironmentVariable("ST4I_SERVER_URL", prevServerUrl);
             Environment.SetEnvironmentVariable("ST4I_MACHINE_CODE", prevMachineCode);

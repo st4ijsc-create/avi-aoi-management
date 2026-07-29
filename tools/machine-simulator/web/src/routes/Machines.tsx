@@ -428,11 +428,15 @@ export default function Machines() {
       ) : isError ? (
         <p className="text-sm text-danger-text">{t("common.connectivityError")}</p>
       ) : roster.length === 0 ? (
+        // SM-5 — re-points at `/connectors` (`routes/Connectors.tsx`), NOT `/onboarding`: see
+        // Dashboard.tsx's own `NoMachinesEmptyState` doc comment for why `/onboarding` (an
+        // ecosystem-enrollment wizard needing a reachable server) was a dead end for this empty state,
+        // and `/connectors` is the real, reachable "add a Modbus/OPC-UA machine" destination instead.
         <EmptyState
           icon={Inbox}
           title={t("machines.empty.noMachinesTitle")}
           description={t("machines.empty.noMachinesDescription")}
-          action={<Button onClick={() => navigate("/onboarding")}>{t("shell.nav.onboarding")}</Button>}
+          action={<Button onClick={() => navigate("/connectors")}>{t("shell.nav.connectors")}</Button>}
         />
       ) : (
         <>

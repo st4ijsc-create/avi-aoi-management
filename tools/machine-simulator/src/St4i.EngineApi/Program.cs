@@ -798,6 +798,43 @@ catch (St4i.EngineApi.Config.ConnectorsConfigException ex)
     connectorConfigEntries = Array.Empty<St4i.EngineApi.Config.ConnectorConfigEntry>();
 }
 
+// SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-5-brief.md) — the
+// persisted-connector-configuration store: the write path connectors.json never had (POST /v1/connectors,
+// see ConnectorEndpoints' own doc comment). Constructed as a LOCAL (not just inside AddSingleton) for the
+// same reason `settingsStore`/`deviceIdentityStore` above are: this file needs to read its rows synchronously
+// (LoadAllAsync, immediately below) BEFORE `app.Build()`, and the SAME instance must also be the one
+// ConnectorEndpoints' handlers resolve via DI later — `builder.Services.AddSingleton(connectorConfigStore)`
+// (the raw-instance overload) is exactly what makes that the same object, not a second store pointed at the
+// same directory. Relocatable via ST4I_CONNECTOR_CONFIG_DIR, same ops/testability rationale as
+// ST4I_ASSETS_DIR/ST4I_ALARMS_DIR above.
+var connectorConfigDir = Environment.GetEnvironmentVariable(St4i.EngineApi.Fleet.ConnectorConfigStore.EnvVarDir);
+var connectorConfigStore = new St4i.EngineApi.Fleet.ConnectorConfigStore(
+    string.IsNullOrWhiteSpace(connectorConfigDir) ? null : connectorConfigDir);
+builder.Services.AddSingleton(connectorConfigStore);
+
+// Loaded here (blocking, same "read a startup-only store synchronously before Build()" idiom
+// `deviceIdentityStore.LoadOrCreate`/`unsBroker.StartAsync().GetAwaiter().GetResult()` already use above) so
+// a genuinely corrupt store logs a warning and falls back to "no persisted connectors" — additive, never a
+// startup crash — rather than a load failure ever preventing every OTHER config source (env vars,
+// connectors.json) from working. Dispatched into the registry AND validated inside the ConnectorRegistry
+// factory lambda below (same precedence-checking + Program.cs-owns-the-kind-dispatch shape connectors.json's
+// own resolution already uses); the resulting seed descriptors are collected into this list so the
+// roster-seed block after `app.Build()` can register each one, mirroring modbusSeedDescriptor/
+// opcUaSeedDescriptor's own "computed inside a conditional, consumed after Build()" shape exactly.
+IReadOnlyList<St4i.EngineApi.Fleet.ConnectorConfigRecord> persistedConnectorRows;
+try
+{
+    persistedConnectorRows = connectorConfigStore.LoadAllAsync().GetAwaiter().GetResult();
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine(
+        $"[startup] Failed to load persisted connector configuration — no operator-added connectors will be configured for this run: {ex.Message}");
+    persistedConnectorRows = Array.Empty<St4i.EngineApi.Fleet.ConnectorConfigRecord>();
+}
+
+var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>();
+
 // GP-4 — the ONE DI singleton both connector kinds resolve through now, replacing the two separate
 // registrations above (a bare `Func<IDeviceDriver>` for Modbus, `OpcUaDriverFactory` itself for OPC-UA).
 // Lazily built (same "needs `ILoggerFactory` from `sp`, so it can't be a plain pre-`Build()` local" reason
@@ -892,8 +929,62 @@ builder.Services.AddSingleton(sp =>
         }
     }
 
+    // SM-5 (task-5-brief.md) — the persisted-store layer (POST /v1/connectors), a THIRD config source
+    // layered on top of the two above with the SAME "an established source always wins" precedence rule
+    // ConnectorsConfig.ResolveEntries already applies between env vars and connectors.json — extended one
+    // level further rather than inventing a second rule. `alreadyConfiguredKinds` now also includes every
+    // kind connectors.json itself just accepted (resolvedConnectorEntries is already de-duplicated to at
+    // most one entry per kind — ConnectorsConfig.ResolveEntries' own "first entry per kind wins" contract),
+    // so a persisted row can ONLY ever fill a genuine gap — it can never shadow or silently reconfigure an
+    // env-var- or connectors.json-configured kind. This is what keeps "existing env-var and hand-edited-
+    // connectors.json deployments must keep working byte-identically" true even after this task.
+    alreadyConfiguredKinds.UnionWith(resolvedConnectorEntries.Select(e => e.Kind));
+
+    foreach (var row in persistedConnectorRows)
+    {
+        if (alreadyConfiguredKinds.Contains(row.Kind))
+        {
+            connectorsLogger.LogWarning(
+                "Persisted connector configuration for kind '{ConnectorKind}' (machine '{MachineCode}') ignored " +
+                "— an environment variable or a connectors.json entry already configures this connector kind " +
+                "for this run; that source takes precedence.",
+                row.Kind, row.MachineCode);
+            continue;
+        }
+
+        // Re-validated at startup exactly like a fresh POST would be (same ConnectorConfigValidation call) —
+        // a row that was valid when saved but can no longer be parsed (e.g. this build's driver contract
+        // changed) is skipped with a warning, never a startup crash, mirroring every other "a bad config
+        // source disables itself for this run" posture in this file.
+        if (!St4i.EngineApi.Fleet.ConnectorConfigValidation.TryValidate(
+                row.Kind, row.Host, row.Port, row.MapJson, opcUaOptions.PkiDir, out var validated, out var validationError))
+        {
+            connectorsLogger.LogWarning(
+                "Persisted connector configuration for kind '{ConnectorKind}' (machine '{MachineCode}') failed " +
+                "to validate at startup and was skipped: {Error}",
+                row.Kind, row.MachineCode, validationError);
+            continue;
+        }
+
+        if (!registry.Register(validated.Factory, row.MapJson))
+        {
+            connectorsLogger.LogWarning(
+                "Persisted connector configuration for kind '{ConnectorKind}' failed to register (unexpected).",
+                row.Kind);
+            continue;
+        }
+
+        persistedConnectorSeeds.Add(validated.Descriptor);
+    }
+
     return registry;
 });
+
+// SM-5 — the OpcUaOptions instance every ConnectorEndpoints handler needs (for its PkiDir — see
+// ConnectorConfigValidation's own doc comment on why OPC-UA's endpoint/credentials live inside the
+// node-map JSON while Modbus's host/port do not). The SAME instance the ConnectorRegistry factory lambda
+// above already closes over — registering it here just makes it DI-resolvable too.
+builder.Services.AddSingleton(opcUaOptions);
 
 // Task 9 (WS-A) — per-machine OEE settings (ideal-cycle override + planned-production ratio), a plain
 // JSON-file-backed store (WS-A-T5) that was never wired into DI until now. Pointed at the SAME resolved
@@ -1042,6 +1133,18 @@ if (modbusSeedDescriptor is not null)
 if (opcUaSeedDescriptor is not null)
 {
     fleetHost.RegisterMachine(opcUaSeedDescriptor);
+}
+
+// SM-5 (task-5-brief.md) — register every ACCEPTED persisted connector configuration (POST /v1/connectors,
+// stored via ConnectorConfigStore) as a first-class roster member, mirroring the Modbus/OPC-UA env-var seeds
+// immediately above exactly: MachineState (fleet Snapshot tile + historian) and, via the asset registry, an
+// Asset row classified real (DriverKind is Modbus/OpcUa, never Simulated — see ConnectorConfigValidation).
+// Idempotent: RegisterMachine returns false (benign) if the code is already present. Each descriptor here
+// was already validated + registered into the SAME ConnectorRegistry singleton above (see that factory
+// lambda's own persisted-store loop) — this is just the roster-seed half of that same source.
+foreach (var persistedSeed in persistedConnectorSeeds)
+{
+    fleetHost.RegisterMachine(persistedSeed);
 }
 
 // WS-F1 final-review fix F1 — apply the env-resolved (see the ST4I_SERVER_URL/ST4I_MACHINE_CODE/

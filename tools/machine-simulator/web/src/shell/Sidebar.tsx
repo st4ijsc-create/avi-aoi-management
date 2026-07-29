@@ -2,6 +2,7 @@ import * as React from "react"
 import {
   BarChart3,
   Boxes,
+  Cable,
   Database,
   Factory,
   LayoutDashboard,
@@ -63,6 +64,15 @@ export const NAV_ITEMS: NavItem[] = [
   // `minRole` — every authenticated role sees this entry, same as every other fleet-facing screen
   // above; only the lifecycle-transition control INSIDE the screen is Engineer+-gated.
   { labelKey: "shell.nav.assets", path: "/assets", icon: Package },
+  // SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-5-brief.md) —
+  // `/connectors` (`routes/Connectors.tsx`): add/view/remove a real Modbus TCP or OPC-UA connector
+  // configuration — the write path connectors.json/the ST4I_MODBUS_*/ST4I_OPCUA_* env vars never had.
+  // `Cable` reads as "a physical wired connection", distinct from `PlugZap`'s "join the wider ecosystem"
+  // reading (`onboarding`, above) and from `Package`'s "what's registered" reading (`assets`) — this
+  // screen is specifically about WIRING UP a real device. Reads are Operator (`ConnectorEndpoints.cs`),
+  // so no `minRole` — only the add-connector form + per-row Remove control inside the screen are
+  // Engineer+-gated, same shape `assets`'/`site`'s own mutating controls use.
+  { labelKey: "shell.nav.connectors", path: "/connectors", icon: Cable },
   // GĐ3 EC-4 (`routes/Site.tsx`) — the Site/Ecosystem link screen: device identity + Site-link form +
   // live bridge status, over EC-3's `/v1/site*` endpoints. `Network` reads as "federation/uplink to
   // another system", distinct from `PlugZap`'s "join THIS fleet" reading (`onboarding`, above) — this

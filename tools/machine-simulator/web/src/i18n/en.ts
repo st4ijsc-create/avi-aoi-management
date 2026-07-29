@@ -71,6 +71,7 @@ export const en: Dictionary = {
       users: "Users",
       audit: "Audit Log",
       assets: "Asset Registry",
+      connectors: "Connectors",
       site: "Site Link",
       alarms: "Alarm Center",
       line: "Line Control",
@@ -217,7 +218,12 @@ export const en: Dictionary = {
       // destination — same copy/CTA shape as `machines.empty.noMachinesTitle/Description` below, so the
       // two screens agree on what "no machines yet" means.
       noMachinesTitle: "No machines yet",
-      noMachinesDescription: "No machines are registered yet. Add one through Onboarding to get started — note Onboarding currently needs a reachable ST4I ecosystem server.",
+      // SM-5 — was "Add one through Onboarding... Onboarding currently needs a reachable ST4I ecosystem
+      // server", pointing at a dead end for a standalone customer (`/onboarding` is an ecosystem-
+      // enrollment wizard). Now points at `/connectors` (`routes/Connectors.tsx`), a real, reachable
+      // destination: add a Modbus TCP or OPC-UA machine with no server, no environment variables, no
+      // hand-edited files.
+      noMachinesDescription: "No machines are registered yet. Add a real Modbus or OPC-UA machine under Connectors to get started.",
     },
   },
 
@@ -255,7 +261,12 @@ export const en: Dictionary = {
     },
     empty: {
       noMachinesTitle: "No machines yet",
-      noMachinesDescription: "No machines are registered yet. Add one through Onboarding to get started — note Onboarding currently needs a reachable ST4I ecosystem server.",
+      // SM-5 — was "Add one through Onboarding... Onboarding currently needs a reachable ST4I ecosystem
+      // server", pointing at a dead end for a standalone customer (`/onboarding` is an ecosystem-
+      // enrollment wizard). Now points at `/connectors` (`routes/Connectors.tsx`), a real, reachable
+      // destination: add a Modbus TCP or OPC-UA machine with no server, no environment variables, no
+      // hand-edited files.
+      noMachinesDescription: "No machines are registered yet. Add a real Modbus or OPC-UA machine under Connectors to get started.",
       noMatchTitle: "No matching machines",
       noMatchDescription: "No machine matches the current search or filters — try clearing them.",
     },
@@ -1804,6 +1815,70 @@ export const en: Dictionary = {
   // port + paste the Site's trust PEM + enable), and a live northbound bridge-status badge. Reads are
   // Operator; only the PUT-driving form is Engineer+-gated (`site.form.readOnlyNote`), same "page open
   // to everyone, one control gated" shape `assets` above already established.
+  // SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-5-brief.md,
+  // `routes/Connectors.tsx`) — add/view/remove a real Modbus TCP or OPC-UA connector configuration.
+  // Reads are Operator; the add-connector form and per-row Remove are Engineer+-gated. Named
+  // `connectorConfig` (NOT `connectors`) — that key is already taken by the GP-7 "connector status"
+  // card above (`AssetRegistry.tsx`'s failed-to-start list), a distinct, older feature this task does
+  // not touch.
+  connectorConfig: {
+    title: "Connectors",
+    description:
+      "Add a real Modbus TCP or OPC-UA machine and it appears in the fleet roster — no environment variables or hand-edited files required. Only the two protocols this build can actually drive are offered; a graphical register/node-map builder is a separate future project, so paste or upload the map JSON here for now.",
+    list: {
+      title: "Configured connectors",
+      description: "Every connector configuration currently saved on this machine.",
+      empty: "No connector configured yet.",
+      loadFailed: "Couldn't load the configured connectors.",
+      table: {
+        kind: "Protocol",
+        machineCode: "Machine code",
+        hostPort: "Host : Port",
+        updated: "Last updated",
+        remove: "Remove",
+      },
+    },
+    removeConfirm: {
+      title: "Remove this connector configuration?",
+      description:
+        "This only removes the SAVED configuration — it does not remove the machine from the fleet roster. If this connector is currently running, it keeps running until the application is fully restarted; there is no way to remove a machine from a live roster yet.",
+      submit: "Remove",
+      removing: "Removing…",
+      cancel: "Cancel",
+    },
+    form: {
+      title: "Add a connector",
+      description: "Pick the protocol, enter the connection settings, and paste or upload the register/node map JSON for this machine.",
+      kindModbus: "Modbus TCP",
+      kindOpcUa: "OPC-UA",
+      hostLabel: "Host / IP address",
+      hostPlaceholder: "10.0.0.5",
+      portLabel: "Port",
+      opcUaNote:
+        "The OPC-UA endpoint URL, security mode, and any username/password all live inside the node-map JSON below — there is nothing extra to enter here.",
+      mapJsonLabel: "Register / node map (JSON)",
+      mapJsonHint:
+        "The same JSON shape the ST4I_MODBUS_MAP / ST4I_OPCUA_MAP environment variables already use (see the documentation for the exact fields). There is no visual mapper yet — paste or upload the JSON directly.",
+      mapJsonPlaceholder: "Paste the register/node map JSON here…",
+      uploadButton: "Upload a file…",
+      test: "Test connection",
+      testing: "Testing…",
+      testResultOk: "Connected — the device responded.",
+      save: "Save",
+      saving: "Saving…",
+      appliedLive: "Saved and added to the fleet. If the fleet was already running, it restarted to apply this immediately.",
+      savedRestartNeeded:
+        "Saved. This machine was already in the roster — the change applies on the next Stop/Start (or a full application restart), not immediately to an already-running fleet.",
+      readOnlyNote: "Only Engineer accounts (or above) can add or remove a connector.",
+    },
+    errors: {
+      badRequest: "The connector settings were rejected — check the fields and the map JSON.",
+      conflict: "A connector of this protocol is already configured for a different machine — remove it first.",
+      forbidden: "You don't have permission to configure connectors.",
+      generic: "Couldn't save the connector.",
+    },
+  },
+
   site: {
     title: "Site / Ecosystem",
     description:
@@ -2102,6 +2177,9 @@ export const en: Dictionary = {
     logoutFailed: "Couldn't log out.",
     assetLifecycleUpdated: (vars: Vars) => `Updated ${vars.code}'s lifecycle.`,
     assetLifecycleUpdateFailed: "Couldn't update the asset's lifecycle.",
+    connectorSaveFailed: "Couldn't save the connector.",
+    connectorRemoved: "Connector configuration removed.",
+    connectorRemoveFailed: "Couldn't remove the connector.",
     siteLinkSaved: "Site connection saved.",
     siteLinkSaveFailed: "Couldn't save the Site connection.",
     fingerprintCopied: "Fingerprint copied.",

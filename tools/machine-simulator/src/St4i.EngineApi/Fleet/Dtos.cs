@@ -187,3 +187,44 @@ public sealed record ApiErrorDto(string Error);
 // README §19.4 for the fuller writeup and why this is documented rather than renamed.
 // ─────────────────────────────────────────────────────────────────────────
 public sealed record ConnectorStatusDto(string Id, string Error);
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /v1/connectors, GET /v1/connectors/configured, DELETE /v1/connectors/{kind},
+// POST /v1/connectors/test — SM-5 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/
+// task-5-brief.md): the write path connectors.json never had. See ConnectorEndpoints' own doc comment for
+// the full RBAC/audit/apply-live-or-restart write-up.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// <summary><c>MapJson</c> is the register-map (Modbus) / node-map (OPC-UA) JSON text, pasted or uploaded
+/// verbatim by the operator — forwarded opaque to <see cref="St4i.Connector.Abstractions.IConnectorFactory.TryCreate"/>,
+/// exactly like a <c>connectors.json</c> entry's own <c>settings</c> value. <c>Host</c>/<c>Port</c> only
+/// apply to <see cref="DriverKinds.Modbus"/> — ignored (not an error) for <see cref="DriverKinds.OpcUa"/>,
+/// whose endpoint/credentials already live inside <c>MapJson</c> itself.</summary>
+public sealed record ConnectorCreateRequest(string Kind, string? Host, int? Port, string MapJson);
+
+/// <summary><c>AppliedLive</c> is true only when this was a genuinely NEW machine code
+/// (<see cref="FleetHost.RegisterMachine"/> added it — which restarts the pipeline itself if it was already
+/// running, see that method's own doc comment); false means a connector config for this kind already existed
+/// under the SAME machine code, so only the persisted store + the live <c>ConnectorRegistry</c> entry were
+/// updated — an already-running fleet does not pick up the change until it is stopped/started again (or the
+/// process restarts). <c>Message</c> is the operator-facing sentence saying exactly which of those two
+/// happened — never leave the operator guessing why nothing visibly changed.</summary>
+public sealed record ConnectorCreateResultDto(ConnectorConfigSummary Config, bool AppliedLive, string Message);
+
+/// <summary>The <c>DELETE /v1/connectors/{kind}</c> response. <c>Message</c> states plainly that this only
+/// removes the PERSISTED configuration — <see cref="FleetHost.RegisterMachine"/> has no unregister, so a
+/// machine already in the roster (and any currently-running connector for this kind) is unaffected until a
+/// full process restart, which is when Program.cs would next decide what to seed from a (now-empty) store.</summary>
+public sealed record ConnectorDeleteResultDto(string Kind, string Message);
+
+/// <summary>Same shape as <see cref="ConnectorCreateRequest"/> — a connection test never persists anything,
+/// so it takes exactly the fields needed to build a throwaway driver and nothing else.</summary>
+public sealed record ConnectorTestRequest(string Kind, string? Host, int? Port, string MapJson);
+
+/// <summary>Returned <c>200 OK</c> (never 4xx/5xx) for anything past request-shape validation — mirrors
+/// <c>POST /v1/settings/probe</c>'s own precedent exactly (a malformed REQUEST, e.g. a missing/blank
+/// <c>serverUrl</c>/kind/map, is a 400; a request that parses fine but can't actually reach a device is a
+/// 200 with the verdict IN the body, never an exception-shaped response) — <see cref="Ok"/> false covers
+/// both "the connector factory rejected this configuration" and "no response within the bounded window",
+/// since an operator does not need to know or care which.</summary>
+public sealed record ConnectorTestResultDto(bool Ok, string? Error);
