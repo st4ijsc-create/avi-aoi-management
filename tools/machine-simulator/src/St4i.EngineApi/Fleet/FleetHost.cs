@@ -53,8 +53,8 @@ public enum MachineDriverAvailability
     NoLiveDriver,
 
     /// <summary>A live driver exists for this machine right now, but it does not implement
-    /// <see cref="IWritableDeviceDriver"/> — every built-in driver today (the simulated fleet, HotFolderAoi,
-    /// Mqtt) until a Modbus/OPC-UA write implementation (B-4/B-5) lands.</summary>
+    /// <see cref="IWritableDeviceDriver"/> — every built-in driver other than <c>ModbusTcpDriver</c> (B-4) and
+    /// <c>OpcUaDriver</c> (B-5), which now both implement it: the simulated fleet, HotFolderAoi, Mqtt.</summary>
     ReadOnly,
 
     /// <summary>A live driver implementing <see cref="IWritableDeviceDriver"/> exists for this machine right
