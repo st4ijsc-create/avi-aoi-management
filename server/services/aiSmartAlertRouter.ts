@@ -15,6 +15,7 @@ import { redisService } from "./redisService";
 // a text model (un-pinned calls used to land on the 0.6B RAG embedder → repetition garbage).
 import { resolveLogicalModel } from "./ai/modelResolver";
 import { decideAlertWrite, type AlertSeverity } from "./alerts/decideAlertWrite";
+import { decideNotify } from "./alerts/decideNotify";
 
 /** Wave 3 §4.2 — hạn dùng cảnh báo. Gia hạn mỗi lần tái diễn, nên hết hạn
  *  nghĩa là "tình trạng đã THÔI tái diễn", không phải "đã quá N ngày". */
@@ -22,6 +23,22 @@ function alertTtlMs(): number {
   const raw = Number(process.env.ALERT_TTL_HOURS);
   const hours = Number.isFinite(raw) && raw > 0 ? raw : 72;
   return hours * 3600_000;
+}
+
+/** Sprint 5 §2.7 — cooldown im lặng cho cảnh báo ĐANG MỞ tái diễn. Mặc định 4h:
+ *  với nhịp đo được 22 lần/ngày ⇒ ≤6 lượt báo/ngày thay vì 22. */
+function renotifyCooldownMs(): number {
+  const raw = Number(process.env.ALERT_RENOTIFY_COOLDOWN_MINUTES);
+  const minutes = Number.isFinite(raw) && raw >= 0 ? raw : 240;
+  return minutes * 60_000;
+}
+
+/** 0 (mặc định) = CRITICAL luôn báo ngay, không bao giờ gộp. Van để khách chỉnh
+ *  nếu CRITICAL hoá ra mới là nguồn nhiễu thật ở nhà máy của họ. */
+function criticalCooldownMs(): number {
+  const raw = Number(process.env.ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES);
+  const minutes = Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  return minutes * 60_000;
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -146,20 +163,103 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     await setConsolidationEntry(consolidationKey, { timestamp: now, count: 1 });
   }
 
-  // Step 2: Determine targets based on alert type
-  const targets = await determineTargets(db, event);
+  // W0-F G5.5 (doc 44, mig 0249): persist runbook/recommendation pointers when the
+  // RAISER supplied one (e.g. SLO burn-rate alerts pass data.runbook from the SLO
+  // catalogue). Columns are included ONLY when present so alert paths that carry
+  // no reference keep the exact pre-0249 INSERT shape (safe on an un-migrated DB).
+  const runbookRef =
+    typeof event.data.runbookRef === "string" && event.data.runbookRef.trim()
+      ? event.data.runbookRef.trim()
+      : typeof event.data.runbook === "string" && event.data.runbook.trim()
+        ? event.data.runbook.trim()
+        : null;
+  const recommendationRef =
+    typeof event.data.recommendationRef === "string" && event.data.recommendationRef.trim()
+      ? event.data.recommendationRef.trim()
+      : null;
 
-  // Step 3: Check patterns for recurring alerts
-  const suggestedAction = await checkPatterns(db, event);
-
-  // Step 3.5: AI reasoning enrichment (non-blocking)
-  const aiReasoning = await enrichRoutingWithAI(event, targets, suggestedAction)
-    .catch(() => null);
-
-  // Step 4: Send notifications
-  for (const target of targets) {
-    await sendSmartNotification(target, event);
+  // Wave 3 §3 — MỘT-CẢNH-BÁO-MỞ cho mỗi (machineId, alertType).
+  let existingOpen: {
+    id: number;
+    severity: AlertSeverity;
+    occurrenceCount: number;
+    notificationSentAt: Date | null;
+  } | null = null;
+  let lookupFailed = false;
+  if (event.machineId != null) {
+    try {
+      const rows = await db
+        .select({
+          id: predictiveAlerts.id,
+          severity: predictiveAlerts.severity,
+          occurrenceCount: predictiveAlerts.occurrenceCount,
+          // Sprint 5 §2.4 — mốc gửi gần nhất. Cột đã có sẵn từ trước, chỉ chưa
+          // ai đọc và chưa ai cập nhật sau lần INSERT đầu tiên.
+          notificationSentAt: predictiveAlerts.notificationSentAt,
+        })
+        .from(predictiveAlerts)
+        .where(and(
+          eq(predictiveAlerts.machineId, event.machineId),
+          eq(predictiveAlerts.alertType, event.type),
+          eq(predictiveAlerts.status, "ACTIVE" as any),
+          isNull(predictiveAlerts.acknowledgedAt),
+        ))
+        .orderBy(desc(predictiveAlerts.createdAt))
+        .limit(1);
+      existingOpen = rows[0]
+        ? {
+            id: rows[0].id,
+            severity: String(rows[0].severity) as AlertSeverity,
+            occurrenceCount: Number(rows[0].occurrenceCount ?? 1),
+            notificationSentAt: rows[0].notificationSentAt ? new Date(rows[0].notificationSentAt) : null,
+          }
+        : null;
+    } catch (err) {
+      // FAIL-OPEN có chủ ý (spec §3d): thà một dòng trùng còn hơn mất một cảnh báo hỏng máy.
+      lookupFailed = true;
+      console.error("[SmartAlert] tra cứu cảnh báo mở THẤT BẠI — ghi mới để không bỏ sót:", (err as Error)?.message ?? err);
+    }
   }
+
+  // Mã máy: cột phi chuẩn hoá trước đây KHÔNG BAO GIỜ được ghi (spec §2 nguyên nhân 3).
+  let machineCode: string | null = null;
+  if (event.machineId != null) {
+    try {
+      const m = await db.select({ code: machines.code }).from(machines).where(eq(machines.id, event.machineId)).limit(1);
+      machineCode = m[0]?.code ?? null;
+    } catch { machineCode = null; }
+  }
+
+  const decision = decideAlertWrite(
+    existingOpen,
+    { machineId: event.machineId ?? null, alertType: event.type, severity: event.severity as AlertSeverity },
+    lookupFailed,
+  );
+
+  // Sprint 5 §2.2 — GỬI hay không là quyết định RIÊNG với GHI hay không.
+  const notifyDecision = decideNotify({
+    action: decision.action,
+    incomingSeverity: event.severity as AlertSeverity,
+    // ⚠ Mức của dòng ĐANG MỞ TRƯỚC update — KHÔNG dùng decision.severity (đã gộp).
+    previousSeverity: existingOpen?.severity ?? null,
+    lastNotifiedAt: existingOpen?.notificationSentAt?.getTime() ?? null,
+    now: Date.now(),
+    cooldownMs: renotifyCooldownMs(),
+    criticalCooldownMs: criticalCooldownMs(),
+  });
+
+  // Chỉ trả giá cho những thứ ĐẮT khi thật sự sắp làm phiền ai đó: một truy vấn
+  // pattern 30 ngày + một lượt gọi LLM. Trước đây chạy MỌI lượt lọt (≤3/5 phút).
+  const targets = notifyDecision.notify ? await determineTargets(db, event) : [];
+  const suggestedAction = notifyDecision.notify ? await checkPatterns(db, event) : null;
+  const aiReasoning = notifyDecision.notify
+    ? await enrichRoutingWithAI(event, targets, suggestedAction).catch(() => null)
+    : null;
+
+  // Chỉ đóng dấu "đã gửi" khi thật sự có người nhận. Nhà máy chưa cấu hình role
+  // nhận (không có user `maintenance`) mà vẫn stamp ⇒ cảnh báo im 4 giờ vì một
+  // lượt gửi không tồn tại.
+  const willStamp = notifyDecision.notify && targets.length > 0;
 
   // WS-4: allow callers (e.g. predictiveMaintenanceService) to pass through
   // predictedTimeframe, confidenceScore, and factors. Backward-compatible —
@@ -188,66 +288,6 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     aiAnalysisPayload.modelUsed = "smart-alert-router+gguf";
   }
 
-  // W0-F G5.5 (doc 44, mig 0249): persist runbook/recommendation pointers when the
-  // RAISER supplied one (e.g. SLO burn-rate alerts pass data.runbook from the SLO
-  // catalogue). Columns are included ONLY when present so alert paths that carry
-  // no reference keep the exact pre-0249 INSERT shape (safe on an un-migrated DB).
-  const runbookRef =
-    typeof event.data.runbookRef === "string" && event.data.runbookRef.trim()
-      ? event.data.runbookRef.trim()
-      : typeof event.data.runbook === "string" && event.data.runbook.trim()
-        ? event.data.runbook.trim()
-        : null;
-  const recommendationRef =
-    typeof event.data.recommendationRef === "string" && event.data.recommendationRef.trim()
-      ? event.data.recommendationRef.trim()
-      : null;
-
-  // Wave 3 §3 — MỘT-CẢNH-BÁO-MỞ cho mỗi (machineId, alertType).
-  let existingOpen: { id: number; severity: AlertSeverity; occurrenceCount: number } | null = null;
-  let lookupFailed = false;
-  if (event.machineId != null) {
-    try {
-      const rows = await db
-        .select({
-          id: predictiveAlerts.id,
-          severity: predictiveAlerts.severity,
-          occurrenceCount: predictiveAlerts.occurrenceCount,
-        })
-        .from(predictiveAlerts)
-        .where(and(
-          eq(predictiveAlerts.machineId, event.machineId),
-          eq(predictiveAlerts.alertType, event.type),
-          eq(predictiveAlerts.status, "ACTIVE" as any),
-          isNull(predictiveAlerts.acknowledgedAt),
-        ))
-        .orderBy(desc(predictiveAlerts.createdAt))
-        .limit(1);
-      existingOpen = rows[0]
-        ? { id: rows[0].id, severity: String(rows[0].severity) as AlertSeverity, occurrenceCount: Number(rows[0].occurrenceCount ?? 1) }
-        : null;
-    } catch (err) {
-      // FAIL-OPEN có chủ ý (spec §3d): thà một dòng trùng còn hơn mất một cảnh báo hỏng máy.
-      lookupFailed = true;
-      console.error("[SmartAlert] tra cứu cảnh báo mở THẤT BẠI — ghi mới để không bỏ sót:", (err as Error)?.message ?? err);
-    }
-  }
-
-  // Mã máy: cột phi chuẩn hoá trước đây KHÔNG BAO GIỜ được ghi (spec §2 nguyên nhân 3).
-  let machineCode: string | null = null;
-  if (event.machineId != null) {
-    try {
-      const m = await db.select({ code: machines.code }).from(machines).where(eq(machines.id, event.machineId)).limit(1);
-      machineCode = m[0]?.code ?? null;
-    } catch { machineCode = null; }
-  }
-
-  const decision = decideAlertWrite(
-    existingOpen,
-    { machineId: event.machineId ?? null, alertType: event.type, severity: event.severity as AlertSeverity },
-    lookupFailed,
-  );
-
   const expiresAt = new Date(Date.now() + alertTtlMs());
   const confidence = event.data.confidence != null ? String(event.data.confidence) : null;
   const timeframe = event.data.predictedTimeframe ? String(event.data.predictedTimeframe) : null;
@@ -263,65 +303,78 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
 
   let alertRecord: { id: number } | undefined;
 
-  if (decision.action === "update") {
-    await db
-      .update(predictiveAlerts)
-      .set({
-        severity: decision.severity as any,
-        occurrenceCount: decision.occurrenceCount,
-        lastOccurredAt: new Date(),
-        title: readableTitle.slice(0, 255),
-        description: event.message,
-        machineCode,
-        currentValue: event.data.currentValue != null ? String(event.data.currentValue) : null,
-        threshold: event.data.threshold != null ? String(event.data.threshold) : null,
-        confidenceScore: confidence,
-        predictedTimeframe: timeframe,
-        aiAnalysis: aiAnalysisPayload,
-        expiresAt,
-        updatedAt: new Date(),
-        // KHÔNG đụng createdAt: processAutoEscalation() đo tuổi dòng để leo thang.
-        // Reset createdAt ⇒ tình trạng kéo dài VĨNH VIỄN không bao giờ leo thang.
-      } as any)
-      // Vòng sửa cuối (review toàn nhánh, mục 5) — WHERE trước đây chỉ lọc theo id,
-      // không lọc lại status='ACTIVE'. Cửa sổ vài mili-giây giữa lượt tra-cứu-cảnh-báo-mở
-      // (:216-236, cũng lọc ACTIVE) và UPDATE này: nếu alertExpirySweeper đóng ĐÚNG dòng
-      // này trong khe đó, UPDATE vẫn khớp theo id (SET không đổi status) và dòng ở lại
-      // EXPIRED kèm resolutionNotes "đã thôi tái diễn" trong khi occurrenceCount/expiresAt
-      // vừa được gia hạn ngay sau đó — ghi chú nói dối. Thêm eq(status,'ACTIVE') khiến
-      // UPDATE là no-op (0 dòng khớp) nếu sweeper đã đóng nó trước; vòng quét kế tiếp của
-      // routeAlert() sẽ tra không thấy cảnh báo mở (đã EXPIRED) và tự INSERT dòng mới —
-      // tự lành, không kẹt trạng thái sai vĩnh viễn.
-      .where(and(eq(predictiveAlerts.id, decision.id), eq(predictiveAlerts.status, "ACTIVE" as any)));
-    alertRecord = { id: decision.id };
-  } else {
-    const [row] = await db
-      .insert(predictiveAlerts)
-      .values({
-        alertType: event.type,
-        severity: event.severity,
-        title: readableTitle.slice(0, 255),
-        description: event.message,
-        machineId: event.machineId ?? null,
-        machineCode,
-        factoryId: event.factoryId ?? null,
-        productModelId: event.productModelId ?? null,
-        currentValue: event.data.currentValue ? String(event.data.currentValue) : null,
-        threshold: event.data.threshold ? String(event.data.threshold) : null,
-        confidenceScore: confidence,
-        predictedTimeframe: timeframe,
-        aiAnalysis: aiAnalysisPayload,
-        status: "ACTIVE",
-        notificationSent: true,
-        notificationSentAt: new Date(),
-        occurrenceCount: 1,
-        lastOccurredAt: new Date(),
-        expiresAt,
-        ...(runbookRef ? { runbookRef } : {}),
-        ...(recommendationRef ? { recommendationRef } : {}),
-      } as any)
-      .returning({ id: predictiveAlerts.id });
-    alertRecord = row;
+  let writeFailed = false;
+  try {
+    if (decision.action === "update") {
+      await db
+        .update(predictiveAlerts)
+        .set({
+          severity: decision.severity as any,
+          occurrenceCount: decision.occurrenceCount,
+          lastOccurredAt: new Date(),
+          title: readableTitle.slice(0, 255),
+          description: event.message,
+          machineCode,
+          currentValue: event.data.currentValue != null ? String(event.data.currentValue) : null,
+          threshold: event.data.threshold != null ? String(event.data.threshold) : null,
+          confidenceScore: confidence,
+          predictedTimeframe: timeframe,
+          // Sprint 5 §2.6(3) — lượt IM LẶNG không gọi LLM, nên payload lúc này
+          // không có phần lý giải. Ghi đè sẽ XOÁ lý giải có từ lần báo trước.
+          ...(notifyDecision.notify ? { aiAnalysis: aiAnalysisPayload } : {}),
+          ...(willStamp ? { notificationSent: true, notificationSentAt: new Date() } : {}),
+          expiresAt,
+          updatedAt: new Date(),
+          // KHÔNG đụng createdAt: processAutoEscalation() đo tuổi dòng để leo thang.
+          // Reset createdAt ⇒ tình trạng kéo dài VĨNH VIỄN không bao giờ leo thang.
+        } as any)
+        // Vòng sửa cuối (review toàn nhánh, mục 5) — WHERE trước đây chỉ lọc theo id,
+        // không lọc lại status='ACTIVE'. Cửa sổ vài mili-giây giữa lượt tra-cứu-cảnh-báo-mở
+        // (:216-236, cũng lọc ACTIVE) và UPDATE này: nếu alertExpirySweeper đóng ĐÚNG dòng
+        // này trong khe đó, UPDATE vẫn khớp theo id (SET không đổi status) và dòng ở lại
+        // EXPIRED kèm resolutionNotes "đã thôi tái diễn" trong khi occurrenceCount/expiresAt
+        // vừa được gia hạn ngay sau đó — ghi chú nói dối. Thêm eq(status,'ACTIVE') khiến
+        // UPDATE là no-op (0 dòng khớp) nếu sweeper đã đóng nó trước; vòng quét kế tiếp của
+        // routeAlert() sẽ tra không thấy cảnh báo mở (đã EXPIRED) và tự INSERT dòng mới —
+        // tự lành, không kẹt trạng thái sai vĩnh viễn.
+        .where(and(eq(predictiveAlerts.id, decision.id), eq(predictiveAlerts.status, "ACTIVE" as any)));
+      alertRecord = { id: decision.id };
+    } else {
+      const [row] = await db
+        .insert(predictiveAlerts)
+        .values({
+          alertType: event.type,
+          severity: event.severity,
+          title: readableTitle.slice(0, 255),
+          description: event.message,
+          machineId: event.machineId ?? null,
+          machineCode,
+          factoryId: event.factoryId ?? null,
+          productModelId: event.productModelId ?? null,
+          currentValue: event.data.currentValue ? String(event.data.currentValue) : null,
+          threshold: event.data.threshold ? String(event.data.threshold) : null,
+          confidenceScore: confidence,
+          predictedTimeframe: timeframe,
+          aiAnalysis: aiAnalysisPayload,
+          status: "ACTIVE",
+          notificationSent: willStamp,
+          notificationSentAt: willStamp ? new Date() : null,
+          occurrenceCount: 1,
+          lastOccurredAt: new Date(),
+          expiresAt,
+          ...(runbookRef ? { runbookRef } : {}),
+          ...(recommendationRef ? { recommendationRef } : {}),
+        } as any)
+        .returning({ id: predictiveAlerts.id });
+      alertRecord = row;
+    }
+  } catch (err) {
+    // Sprint 5 §2.6(2) — FAIL-OPEN, cùng tinh thần với tra-cứu-hỏng ở trên: thà
+    // báo trùng còn hơn im lặng về một máy sắp hỏng. Trước đây thông báo gửi
+    // TRƯỚC khi ghi nên lỗi ghi không ảnh hưởng; nay thông báo đi sau, nên phải
+    // nói rõ ra ở đây thay vì để hành vi thay đổi lặng lẽ.
+    writeFailed = true;
+    console.error("[SmartAlert] GHI cảnh báo THẤT BẠI — vẫn gửi thông báo để không bỏ sót:", (err as Error)?.message ?? err);
   }
 
   // Wave 4 §3 — nhật ký LẦN-TÁI-DIỄN. Ghi cho CẢ hai nhánh (ghi mới và cập nhật):
@@ -347,6 +400,13 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
   // Auto-escalation is now tracked via the predictive_alerts row itself
   // (status=ACTIVE, acknowledgedAt=null, escalationLevel). processAutoEscalation()
   // scans the table — nothing to register in process memory.
+
+  // Sprint 5 §2.2 — Gửi SAU cùng: tới đây dòng cảnh báo và dòng nhật ký đã yên vị.
+  if (notifyDecision.notify) {
+    for (const target of targets) {
+      await sendSmartNotification(target, event);
+    }
+  }
 
   return {
     alertType: event.type,
