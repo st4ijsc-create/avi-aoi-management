@@ -4,6 +4,7 @@ import {
   users,
   dailyStatistics,
   predictiveAlerts,
+  predictiveAlertOccurrences,
   machines,
 } from "../../drizzle/schema";
 import { eq, and, gte, sql, inArray, lt, isNull, desc } from "drizzle-orm";
@@ -321,6 +322,26 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
       } as any)
       .returning({ id: predictiveAlerts.id });
     alertRecord = row;
+  }
+
+  // Wave 4 §3 — nhật ký LẦN-TÁI-DIỄN. Ghi cho CẢ hai nhánh (ghi mới và cập nhật):
+  // lần đầu tiên cũng là một lần tái diễn, không được bỏ sót.
+  // FAIL-OPEN: sổ sách hỏng KHÔNG được làm hỏng đường cảnh báo.
+  try {
+    const { buildOccurrence } = await import("./alerts/buildOccurrence");
+    // ⚠ event.severity = mức của LẦN NÀY. KHÔNG dùng decision.severity (đã gộp).
+    // Dùng lại `confidence` đã tính ở trên (String hoá từ event.data.confidence:
+    // unknown) thay vì đọc thẳng event.data.confidence — tsc từ chối gán `unknown`
+    // vào tham số đã định kiểu của buildOccurrence; cùng một giá trị, buildOccurrence
+    // tự chuẩn hoá chuỗi số về lại number nên kết quả không đổi.
+    const occ = buildOccurrence(alertRecord?.id, { severity: event.severity, confidence }, new Date());
+    if (occ) {
+      await db.insert(predictiveAlertOccurrences).values(occ as any);
+    }
+  } catch (err) {
+    // Log to ERROR, không phải warn: mất một dòng nhật ký nghĩa là KPI đếm
+    // thiếu một lần — im lặng ở đây chính là bệnh Wave 4 sinh ra để chữa.
+    console.error(`[SmartAlert] ghi nhật ký lần-tái-diễn THẤT BẠI cho cảnh báo #${alertRecord?.id} — KPI sẽ đếm thiếu lần này:`, err);
   }
 
   // Auto-escalation is now tracked via the predictive_alerts row itself

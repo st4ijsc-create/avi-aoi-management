@@ -22,7 +22,7 @@
  * enrichRoutingWithAI() vô điều kiện, dynamic-import "./aiGgufEngine").
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { predictiveAlerts, machines } from "../../drizzle/schema";
+import { predictiveAlerts, machines, predictiveAlertOccurrences } from "../../drizzle/schema";
 
 // ─── Ghi lại các lệnh insert/update thật sự gửi tới db giả ─────────────────
 const calls: { kind: "insert" | "update"; payload?: any }[] = [];
@@ -72,12 +72,21 @@ vi.mock("../db/connection", () => ({
         return chain(() => []);
       },
     }),
-    insert: (_table: any) => ({
-      values: (v: any) => {
-        calls.push({ kind: "insert", payload: v });
-        return { returning: async () => [{ id: 1 }] };
-      },
-    }),
+    insert: (table: any) => {
+      // Wave 4 §3 — routeAlert() giờ CŨNG insert vào predictive_alert_occurrences
+      // (nhật ký lần-tái-diễn) ngay sau nhánh insert/update chính. Bảng này KHÔNG
+      // liên quan tới các khẳng định "chỉ update, không insert" của các test dưới
+      // đây (đó là bảng predictive_alerts) — tách riêng để không lẫn kind.
+      if (table === predictiveAlertOccurrences) {
+        return { values: async (_v: any) => undefined };
+      }
+      return {
+        values: (v: any) => {
+          calls.push({ kind: "insert", payload: v });
+          return { returning: async () => [{ id: 1 }] };
+        },
+      };
+    },
     update: (_table: any) => ({
       set: (v: any) => {
         calls.push({ kind: "update", payload: v });
