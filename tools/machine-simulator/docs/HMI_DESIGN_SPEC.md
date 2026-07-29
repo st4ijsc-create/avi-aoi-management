@@ -12,7 +12,11 @@ Derived from an industrial HMI reference the client supplied (a screwdriving-cel
 - **Hairline borders, no drop shadows.** 1px `--color-divider`. The ONLY shadows are on physical control buttons (see §6).
 - **Tabular numerals on every number** (`font-variant-numeric: tabular-nums`).
 - **Bilingual labels.** Primary text in the active UI language; a small UPPERCASE gloss in the other language beneath/beside it. This is the industrial register, not decoration.
-- **Fills are flat.** No gradients except the E-STOP dome.
+- **Fills are flat. No exceptions.** (SM-4 fix round 1: this rule used to read "no gradients except the
+  E-STOP dome" — that dome was retired because a gradient/raised-shadow physical-button illusion is
+  precisely the fast, pre-cognitive, shape-based recognition a REAL ISO 13850 emergency stop is built
+  for, and HALT is a supervisory software latch, not a safety device — see §6/§8.3. There is no longer a
+  shadow exception anywhere in this spec.)
 - **Offline-only.** Fonts must be self-hosted/bundled — never fetch from a CDN. The app ships as a standalone offline .exe.
 
 ## 2. Colour tokens
@@ -47,7 +51,7 @@ Status ramp (identical in both themes — these carry safety meaning, keep them 
 ```
 --status-run:   #2f8f5a   /* running / OK / pass */
 --status-warn:  #c98a1a   /* warning / paused / drift */
---status-fault: #c0392b   /* fault / NG / E-STOP */
+--status-fault: #c0392b   /* fault / NG / HALT-engaged */
 --status-idle:  #7a7a7d   /* idle / stopped / no data */
 ```
 Status colours are for **state only**. Do not use them decoratively — that is what makes a real HMI readable at a glance.
@@ -101,7 +105,19 @@ Operators reach for these — they must feel like hardware.
 
 - **START**: ~96px tall, navy fill, large condensed label + English gloss, play glyph.
 - **PAUSE**: ~82px, amber-tinted surface with amber border/text.
-- **E-STOP**: ~150px, red radial dome `radial-gradient(circle at 50% 38%, #e0503f, #b5271a 62%, #8f1d12)`, 3px `#7d1f16` border, white octagon-warning glyph, and a physical base `box-shadow: 0 6px 0 #6d160d` that collapses to `0 2px 0` with `translateY(4px)` on `:active`. This is the one place a shadow is allowed.
+- **HALT** (`variant="estop"` internally — SM-4: this control is a supervisory software latch that stops
+  this software's own read pipeline and disconnects from the configured device(s); it is **not** a
+  safety device, it cannot stop a machine, and it must never be designed to look like one): ~150px, the
+  SAME flat, bordered, `--elevation`-shadowed treatment as every other control here — fault-red border/
+  tint (`border-status-fault` / `bg-status-fault` at increasing opacity while latched), a disconnect
+  glyph (`Unplug`, not a stop-sign/warning glyph), large and clearly danger-colored so it stays
+  prominent and easy to find. **No gradient, no radial dome, no raised physical-base shadow that
+  collapses on press.** (Fix round 1 — the prior treatment here *was* exactly that: a red radial dome
+  with a collapsing box-shadow, justified as "operator muscle memory, reach for it without looking."
+  That is precisely the human-factors design goal of a real ISO 13850 emergency stop — fast,
+  pre-cognitive, shape-based recognition under stress. A control that is not a certified safety device
+  must not be built to be found the same way a real one is; being large/distinct/easy-to-hit is fine,
+  looking identical to a certified E-STOP is not.)
 - Disabled = flat neutral, `cursor: not-allowed`, no shadow.
 - All must be keyboard-focusable with a visible focus ring, and honour `prefers-reduced-motion`.
 
@@ -151,7 +167,7 @@ a change to the region grid below requires updating this section in the same cha
 │  SCHEMATIC PANEL │  OPERATING         │  ── gap-3 ──                      │
 │  (flex-grow per  │  READOUTS          │  PHYSICAL CONTROLS                │
 │  device class)   │  (flex-grow per    │  (flex-1 — fills all REMAINING    │
-│  + caption/       │  device class)     │  height in this column; E-STOP   │
+│  + caption/       │  device class)     │  height in this column; HALT     │
 │  readout strip    │                    │  is the single largest control)  │
 │  under the        │                    │                                    │
 │  drawing          │                    │  fixed width: 336px, shrink-0     │
@@ -170,7 +186,7 @@ a **3-column flex row**. Implementation (`Hmi.tsx`):
   — **the `5:1.5` flex ratio between the main row and the log band is deliberate, not arbitrary**:
   H5b (this pass) loosened it from the original `5:1` — at `5:1` the log was ~2 visible rows at the
   1280×800 floor, not a "persistent band" an operator would glance at. `5:1.5` is the loosest ratio
-  that keeps the control rail's own worst-case (E-STOP-latched) content fitting **with real margin**
+  that keeps the control rail's own worst-case (HALT-latched) content fitting **with real margin**
   at 1280×800 — re-verified live via `scrollHeight`/`clientHeight` on `ControlColumn`'s scroll
   container, combined with trimming that column's own padding (§8.3). Do not loosen this further
   without re-running that same check.
@@ -188,24 +204,24 @@ after the fixed 336px rail (plus two 12px gaps). **Both need `min-w-0` AND `min-
 default to `min-width/min-height: auto`, which blocks shrinking below content size — omitting either
 reintroduces horizontal or vertical overflow).
 
-### 8.3 The control rail's own worst-case fit (why RESET sits beside E-STOP, not below it)
+### 8.3 The control rail's own worst-case fit (why RESET sits beside HALT, not below it)
 
 The control rail is the one region with a REAL "does it fit" constraint, because its content is a
 fixed set of physical-sized buttons (§6), not something that can reflow to a smaller viewport the way
 text or a grid can. Two states exist:
 
-- **Normal**: banner absent, `[START, PAUSE]` row, `[E-STOP]` row.
-- **E-STOP engaged**: a one-line fault banner, `[START, PAUSE]` row (both disabled — same DOM
-  presence as normal, just `disabled`), `[E-STOP, RESET]` row.
+- **Normal**: banner absent, `[START, PAUSE]` row, `[HALT]` row.
+- **HALT engaged**: a one-line fault banner, `[START, PAUSE]` row (both disabled — same DOM
+  presence as normal, just `disabled`), `[HALT, RESET]` row.
 
-**RESET renders BESIDE E-STOP, in the same row, not stacked below it as a fourth element.** An
-earlier build stacked banner + Start/Pause row + E-STOP + RESET as four separate vertical blocks; at
+**RESET renders BESIDE HALT, in the same row, not stacked below it as a fourth element.** An
+earlier build stacked banner + Start/Pause row + HALT + RESET as four separate vertical blocks; at
 the 1280×800 floor this overflowed the rail's available height by ~70–160px depending on how much
 other spacing was trimmed, and because nothing was clipping it, the overflow silently reflowed UNDER
 the system-log band below — RESET's own click target was there, geometrically, but a `SystemLog`
 element painted on top of it intercepted every pointer event (`test:e2e`'s RESET-click assertions
-caught this as a 45s timeout, not a visible bug in a screenshot). Putting RESET beside E-STOP instead
-of below it means the E-STOP-engaged state only ever adds the banner's height (~40px) over the normal
+caught this as a 45s timeout, not a visible bug in a screenshot). Putting RESET beside HALT instead
+of below it means the HALT-engaged state only ever adds the banner's height (~40px) over the normal
 state's, which fits.
 
 If a future change adds ANOTHER control, re-check this fit at 1280×800 before shipping — the rail's
@@ -216,23 +232,29 @@ checking; an operator should never have to scroll to find RESET.
 **H5b — anchoring, not centring.** The rail used to vertically CENTRE the whole button cluster
 (`m-auto`) inside its `flex-1` body. Two problems: at 1600×1000 the rail is tall (~500px) and the
 cluster only fills its middle third, reading as dead space above and below rather than a deliberately
-filled control column; and centring is not position-STABLE — growing the block by the E-STOP-latched
-banner's height shifts the whole centred block down, moving E-STOP by roughly half the banner's height
-every time it latches, which breaks the "operator builds muscle memory for E-STOP's position"
-convention this same section already argues for. Fix: `[START, PAUSE]` anchors to the TOP of the rail
-(`shrink-0`); `[E-STOP]`/`[E-STOP, RESET]` (+ the banner, when present) anchors to the BOTTOM via
-`mt-auto` on its own wrapper, with the banner rendered ABOVE the button row inside that same wrapper.
-Because the button row is the wrapper's last child, the banner appearing only grows the wrapper
-upward — **E-STOP's distance from the rail's bottom edge is now identical latched or not, on every
-machine class.** The gap this opens between the two clusters at tall viewports is real breathing room,
-not a leftover margin.
+filled control column; and centring is not position-STABLE — growing the block by the HALT-latched
+banner's height shifts the whole centred block down, moving HALT by roughly half the banner's height
+every time it latches, which breaks the "an operator relying on HALT mid-fault finds it in the exact
+same on-screen spot every time" convention this same section already argues for. Fix: `[START, PAUSE]`
+anchors to the TOP of the rail (`shrink-0`); `[HALT]`/`[HALT, RESET]` (+ the banner, when present)
+anchors to the BOTTOM via `mt-auto` on its own wrapper, with the banner rendered ABOVE the button row
+inside that same wrapper. Because the button row is the wrapper's last child, the banner appearing only
+grows the wrapper upward — **HALT's distance from the rail's bottom edge is now identical latched or
+not, on every machine class.** The gap this opens between the two clusters at tall viewports is real
+breathing room, not a leftover margin.
 
-**H5c — SAFETY RULE, made explicit (this area regressed twice before this rule existed):**
+**H5c — STABILITY RULE, made explicit (this area regressed twice before this rule existed).** SM-4
+fix round 1: this used to be headed "SAFETY RULE" and the blockquote below called HALT/RESET "safety
+controls" — HALT is a supervisory software latch, not a certified safety device (§6), so this section
+is renamed and reworded to state the real reason the rule exists: reliability of a control an operator
+depends on to stop this software's own pipeline mid-fault, not a safety-circuit requirement.
 
-> **Safety controls (E-STOP, RESET) never scroll into view, and never move position between states,
-> at 1280×800 or above.** A control an operator reaches for under pressure, with gloves, without
-> looking, must already be on-screen and must already be in the SAME place — "scroll to find it" or
-> "it moved 4px because a banner appeared" are both failures, not degraded-but-acceptable states.
+> **HALT and RESET never scroll into view, and never move position between states, at 1280×800 or
+> above.** A control an operator relies on mid-fault, possibly with gloves, must already be on-screen
+> and must already be in the SAME place — "scroll to find it" or "it moved 4px because a banner
+> appeared" are both failures, not degraded-but-acceptable states. This is a usability/reliability
+> requirement, not a safety-circuit one — HALT is software, not hardware, and this section does not
+> claim otherwise.
 
 H5 and H5b both believed they'd satisfied this and were both wrong in live-measurable ways:
 
@@ -240,16 +262,16 @@ H5 and H5b both believed they'd satisfied this and were both wrong in live-measu
   treated that as sufficient. Live-reproduced: loading `/hmi/:code` directly into an already-latched
   fleet left RESET below the visible area, un-scrolled by default, so `elementFromPoint` at RESET's own
   centre hit the wrong element — a passive fallback the operator has to discover on their own isn't a
-  fix for a safety control.
+  fix for a control this important.
 - H5b's follow-up added a `React.useEffect` that called `resetRef.current?.scrollIntoView()` the
-  instant the rail became latched, and separately claimed the `mt-auto` bottom-anchor kept E-STOP's
+  instant the rail became latched, and separately claimed the `mt-auto` bottom-anchor kept HALT's
   position stable. Both were wrong under measurement: `scrollIntoView` is itself an admission that the
   rail is a scrolling region — it does not stop the region FROM scrolling, it just automates the scroll
   a real operator would otherwise have to do by hand. And `mt-auto` only holds a fixed offset from the
   bottom edge while its content actually FITS the container; the instant the latched content (banner +
   RESET) overflowed, the auto margin collapsed to 0 and the whole cluster re-anchored to the TOP of the
   rail instead — live-measured at 1280×800: `clientHeight − scrollHeight = −41px` while latched, and
-  E-STOP's own `getBoundingClientRect()` shifted between states as a direct result.
+  HALT's own `getBoundingClientRect()` shifted between states as a direct result.
 
 **The structural fix (current build):** every element in the bottom-anchored cluster now has a
 CONSTANT footprint in every state, so there is nothing left for `mt-auto` to collapse differently
@@ -261,10 +283,15 @@ between states, and the rail's content height literally cannot depend on whether
 - The RESET slot is likewise always in the DOM at `CONTROL_BUTTON_SIZE_CLASS.reset`'s real footprint —
   latched, the real button; unlatched, a same-size `aria-hidden` placeholder `<div>`. (`ControlButton`
   exports that size map so the placeholder can never drift out of sync with the real button.)
-- `ControlButton`'s own `pressed` (latched) skin used to add a permanent `translate-y-1` transform to
-  read as "the dome physically collapsed" — live-measured, that alone moved E-STOP's own bounding box
-  4px the instant it latched. Removed; the "pressed in" cue now comes entirely from the box-shadow
-  collapsing (6px → 2px), a purely cosmetic change with zero geometry impact.
+- (SM-4 fix round 1 — superseding the paragraph that used to live here) `ControlButton`'s own `pressed`
+  (latched) skin used to add a permanent `translate-y-1` transform to read as "the dome physically
+  collapsed" — live-measured, that alone moved HALT's own bounding box 4px the instant it latched;
+  removed for that reason. The dome itself (and the box-shadow-collapse "pressed in" cue that
+  transform was trying to sell) is gone too now, retired entirely by the same fix round that replaced
+  the gradient/raised-shadow treatment with the flat, tinted register every other control already uses
+  (§6) — latched HALT is now cued by a stronger fill tint only (`bg-status-fault/35` vs `/15`), which
+  has zero geometry impact by construction (a flat background/border change never moves a
+  fixed-size element's own box).
 - With the cluster's height now constant, the remaining requirement is that the CONSTANT (always
   latched-size) content actually fits the 1280×800 floor with real margin, not just avoids negative
   slack — the row:log flex ratio (§8.1) and the rail/output-card's own padding (§8.5) were re-tuned so

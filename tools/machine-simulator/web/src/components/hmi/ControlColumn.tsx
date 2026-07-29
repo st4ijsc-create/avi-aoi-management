@@ -159,7 +159,8 @@ export function ControlColumn({
             </div>
 
             <div className="flex items-end justify-center gap-5">
-              {/* I-7: `pressed` (not `disabled`) once latched — keeps the dome red and the button
+              {/* I-7: `pressed` (not `disabled`) once latched — keeps the danger-tinted skin (SM-4 fix
+                  round 1: flat, no dome — see `ControlButton.tsx`'s own remarks) and the button
                   focusable; `onClick` is simply omitted while latched so a stray click/Enter/Space is
                   a no-op. */}
               <ControlButton

@@ -327,9 +327,10 @@ export default function Hmi() {
       <div className="flex min-h-0 flex-[6.5] gap-3 p-3 pb-0">
         {/* Task 4 — the two tabs share this row's flexible left region; the physical control rail
             (below, in the fixed 336px column) stays mounted UNCHANGED regardless of which tab is
-            active — spec §8.6's safety invariant ("HALT never moves/disappears") only holds if
-            switching tabs never touches that column at all, so this conditional is scoped to ONLY
-            the schematic+readouts vs. settings region, never the rail beside it. */}
+            active — spec §8.3's position-stability rule ("HALT never moves/disappears" — a
+            reliability requirement, not a safety-circuit one) only holds if switching tabs never
+            touches that column at all, so this conditional is scoped to ONLY the schematic+readouts
+            vs. settings region, never the rail beside it. */}
         {activeTab === "operation" ? (
           <div
             id="hmi-tabpanel-operation"

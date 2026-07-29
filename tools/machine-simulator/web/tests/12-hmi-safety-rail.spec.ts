@@ -6,7 +6,7 @@ import { primeAppStorage, type Theme } from "./support/theme"
 import { vi as viDict } from "../src/i18n/vi"
 
 /**
- * H5c — SAFETY REGRESSION TEST (twice-regressed area, spec §8.6). Two previous passes (H5/H5b) both
+ * H5c — POSITION-STABILITY REGRESSION TEST (twice-regressed area, spec §8.3). Two previous passes (H5/H5b) both
  * claimed "the control rail never scrolls" and "HALT never moves between states" and both were
  * WRONG in ways only a real `scrollHeight`/`getBoundingClientRect()`/`elementFromPoint()` measurement
  * catches — a screenshot baseline alone does not: a masked, pixel-diffed screenshot of the HALT

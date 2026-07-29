@@ -37,8 +37,9 @@ const TABS: TabEntry[] = [
  *
  * Deliberately renders OUTSIDE any `.hmi-scroll` region and touches no existing one — `Hmi.tsx` keeps
  * the physical control column mounted unconditionally regardless of which tab is active (spec's own
- * safety invariant: HALT never moves/disappears, "even on the CÀI ĐẶT tab"), so this rail only ever
- * swaps the CONTENT to its left, never removes or reorders the control rail itself.
+ * position-stability rule: HALT never moves/disappears, "even on the CÀI ĐẶT tab" — a reliability
+ * requirement, not a safety-circuit one; HALT is a software latch, not a safety device), so this rail
+ * only ever swaps the CONTENT to its left, never removes or reorders the control rail itself.
  */
 export function TabRail({ active, onChange, className }: TabRailProps) {
   const t = useT()

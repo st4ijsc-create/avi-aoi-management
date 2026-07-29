@@ -125,7 +125,9 @@ Mỗi WS: TDD/subagent-driven, review opus, tự kiểm chứng live (chụp+Rea
 
 ## §4 — Bất biến GIỮ NGUYÊN qua mọi theme (không thương lượng)
 - Màu trạng thái chỉ mang nghĩa trạng thái; không-có-dữ-liệu = màu chờ, không phải lỗi.
-- Nút an toàn (E-STOP/RESET) không bao giờ cuộn, không đổi chỗ giữa trạng thái/theme.
+- Nút NGỪNG/RESET không bao giờ cuộn, không đổi chỗ giữa trạng thái/theme — yêu cầu ổn định/thao tác
+  (operator phải luôn thấy đúng chỗ cũ), KHÔNG phải mạch an toàn: NGỪNG là chốt phần mềm giám sát
+  (`FleetHost.Estop`), không phải thiết bị an toàn — xem README §1.
 - Trang không cuộn; panel cuộn trong. Không cuộn ngang ở 1280px.
 - Nhãn song ngữ; gloss EN NGOÀI phần tử `<label>`. Tabular-nums mọi số.
 - Offline hoàn toàn (font đóng gói, 0 request ngoài). axe AA. Focus bàn phím hiện rõ. `prefers-reduced-motion`.
