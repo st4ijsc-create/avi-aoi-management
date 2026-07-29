@@ -27,6 +27,15 @@ let seedAlertRows: any[] = [];       // predictive_alerts (dòng cha)
 let seedOccurrenceRows: any[] = [];  // predictive_alert_occurrences (nhật ký lần-tái-diễn)
 let seedMachineRows: any[] = [];
 let lastPredWhereCond: any = null;
+// Vòng sửa 1 (review coordinator) — mock .innerJoin() ban đầu nhận (_joinTable, _on)
+// nhưng KHÔNG DÙNG chúng: joinedOccurrenceRows() tự áp cứng logic join đúng
+// (occ.alertId === parent.id) BẤT KỂ router truyền điều kiện JOIN gì. Reviewer
+// chứng minh: đổi router thành `eq(predictiveAlertOccurrences.id, predictiveAlerts.id)`
+// (join PK-với-PK, vô nghĩa) thì test vẫn XANH 3/3 vì mock không hề đọc `_on`.
+// Capture lastJoinTable/lastJoinCond để một test riêng duyệt cây điều kiện JOIN
+// thật — cùng kỹ thuật đã dùng cho lastPredWhereCond.
+let lastJoinTable: any = null;
+let lastJoinCond: any = null;
 let sinceForTest: Date = new Date();
 
 /** Duyệt cây SQL THẬT của drizzle-orm (queryChunks lồng nhau), gom tên cột
@@ -97,12 +106,21 @@ vi.mock("../db/connection", () => ({
         if (table === predictiveAlertOccurrences) {
           // Truy vấn MỚI (sau Step 3/4): .from(occurrences).innerJoin(predictiveAlerts, ...).where(...)
           return {
-            innerJoin: (_joinTable: any, _on: any) => ({
-              where: (cond: any) => {
-                lastPredWhereCond = cond;
-                return Promise.resolve(applyWindowFilter(joinedOccurrenceRows(), cond, sinceForTest));
-              },
-            }),
+            innerJoin: (joinTable: any, on: any) => {
+              // Vòng sửa 1 — GHI LẠI bảng + điều kiện JOIN thật (không bỏ qua như trước).
+              // joinedOccurrenceRows() dưới đây vẫn tự áp logic join đúng cứng (đơn
+              // giản hoá mock), nhưng giờ có một test riêng duyệt lastJoinCond để
+              // khẳng định router THẬT SỰ truyền đúng điều kiện — bắt được nếu ai
+              // đổi sang join sai cột (vd PK-với-PK).
+              lastJoinTable = joinTable;
+              lastJoinCond = on;
+              return {
+                where: (cond: any) => {
+                  lastPredWhereCond = cond;
+                  return Promise.resolve(applyWindowFilter(joinedOccurrenceRows(), cond, sinceForTest));
+                },
+              };
+            },
           };
         }
         if (table === predictiveAlerts) {
@@ -139,6 +157,8 @@ beforeEach(() => {
   seedOccurrenceRows = [];
   seedMachineRows = [];
   lastPredWhereCond = null;
+  lastJoinTable = null;
+  lastJoinCond = null;
   sinceForTest = new Date();
 });
 
@@ -216,5 +236,74 @@ describe("alarmKpi — đọc từ nhật ký lần-tái-diễn", () => {
     const names = columnNamesInCondition(lastPredWhereCond);
     expect(names).toContain("occurredAt"); // ★ đây là cái đổi sang createdAt sẽ làm ĐỎ
     expect(names).not.toContain("createdAt");
+  });
+
+  /**
+   * Vòng sửa 1 (review coordinator) — trước bản sửa này, mock .innerJoin() nhận
+   * (_joinTable, _on) nhưng KHÔNG DÙNG: joinedOccurrenceRows() tự áp cứng đúng
+   * logic join (alertId ↔ id) bất kể router truyền gì. Reviewer chứng minh: đổi
+   * router thành join PK-với-PK (`eq(predictiveAlertOccurrences.id, predictiveAlerts.id)`
+   * — vô nghĩa hoàn toàn) thì tsc không bắt được (kiểu `eq()` lỏng) và 3 test cũ
+   * vẫn XANH. Ca này duyệt cây điều kiện JOIN THẬT (đúng kỹ thuật đã dùng cho
+   * lastPredWhereCond) để khẳng định điều kiện tham chiếu ĐÚNG cột: "alertId"
+   * (khoá ngoại bên nhật ký) và "id" (khoá chính bên dòng cha) — và bảng thứ
+   * hai truyền vào .innerJoin() đúng là predictiveAlerts.
+   */
+  it("mệnh đề JOIN phải khớp alertId (nhật ký) với id (dòng cha) — không phải khoá khác", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 8 * 3600_000);
+    seedAlertRows = [{
+      id: 505,
+      severity: "LOW",
+      createdAt: new Date(now - 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null,
+      status: "ACTIVE",
+      machineId: 15,
+      machineCode: "M15",
+      title: "rò rỉ khí nén",
+    }];
+    seedOccurrenceRows = [{ id: 9400, alertId: 505, occurredAt: new Date(now - 60_000), severity: "LOW" }];
+
+    await caller.summary({ windowHours: 8 });
+
+    expect(lastJoinTable).toBe(predictiveAlerts); // bảng thứ hai của .innerJoin() phải là predictive_alerts
+    expect(lastJoinCond).toBeTruthy();
+    const names = columnNamesInCondition(lastJoinCond);
+    // ★ join PK-với-PK (predictiveAlertOccurrences.id ↔ predictiveAlerts.id) sẽ
+    // cho names = ["id","id"] — KHÔNG có "alertId" — nên assertion dưới sẽ ĐỎ.
+    expect(names).toContain("alertId");
+    expect(names).toContain("id");
+  });
+
+  /**
+   * Vòng sửa 1 (review coordinator) — nhánh lùi cấp `r.occurrenceSeverity ?? r.severity`
+   * (alarmKpiRouter.ts) chưa từng chạy: 3 ca trên đều seed occurrence.severity có
+   * giá trị. Cột này NULLABLE thật trong schema (predictive_alert_occurrences.severity
+   * varchar, không notNull) nên trường hợp thiếu là có thật. Ca này seed
+   * occurrence.severity = null với dòng cha severity="CRITICAL" — nếu code LÙI
+   * VỀ đúng mức cha, alarm rơi vào bucket "high" (gồm critical); nếu bỏ sót
+   * `?? r.severity`, normalizePredictiveSeverity(null) mặc định về "low" sai.
+   */
+  it("thiếu occurrenceSeverity (nhật ký không ghi mức) ⇒ lùi về mức của dòng cha", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 8 * 3600_000);
+    seedAlertRows = [{
+      id: 506,
+      severity: "CRITICAL",
+      createdAt: new Date(now - 3600_000),
+      acknowledgedAt: null,
+      resolvedAt: null,
+      status: "ACTIVE",
+      machineId: 16,
+      machineCode: "M16",
+      title: "quá nhiệt động cơ",
+    }];
+    seedOccurrenceRows = [{ id: 9500, alertId: 506, occurredAt: new Date(now - 60_000), severity: null }];
+
+    const res = await caller.summary({ windowHours: 8 });
+
+    expect(res.distribution.counts.high).toBe(1); // lùi về CRITICAL của dòng cha ⇒ bucket "high"
+    expect(res.distribution.counts.low).toBe(0);  // KHÔNG được rớt về mặc định "low" của severity=null
   });
 });
