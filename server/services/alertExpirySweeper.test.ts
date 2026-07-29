@@ -6,6 +6,13 @@ const updates: any[] = [];
 // and()/eq()/isNull()/lt() và cột predictiveAlerts.* trong alertExpirySweeper.ts
 // đều là hàng thật) truyền vào .where(), để kiểm nó lọc theo CỘT nào.
 let lastWhereCond: any = null;
+// Task 3 (Wave 4) — cùng kỹ thuật, cho nhánh .delete() của pruneOldOccurrences.
+let lastDeleteWhereCond: any = null;
+// Task 3 — bật cờ này để mô phỏng DELETE thất bại (DB lỗi) mà KHÔNG cần
+// vi.resetModules()/vi.doMock(): cách đó (dùng ở ca "lỗi DB" cuối file, xem
+// ghi chú bên dưới) làm hỏng mock cho MỌI test chạy SAU trong cùng file. Dùng
+// một cờ mutable đọc lại mỗi lần getDb() được gọi tránh hẳn cái bẫy thứ tự đó.
+let deleteShouldFail = false;
 // Hình dạng THẬT của postgres.js + drizzle khi UPDATE có .returning(): .where()
 // trả về một builder có .returning(), và CHỈ .returning() mới resolve ra mảng
 // hàng thật. Không có .returning(), postgres.js trả `Result` (kế thừa Array,
@@ -23,6 +30,18 @@ vi.mock("../db/connection", () => ({
             return {
               returning: async () => [{ id: 1 }, { id: 2 }],
             };
+          },
+        };
+      },
+    }),
+    // Task 3 — mirror của update() ở trên, cho db.delete(predictiveAlertOccurrences).
+    delete: () => ({
+      where: (cond: any) => {
+        lastDeleteWhereCond = cond;
+        return {
+          returning: async () => {
+            if (deleteShouldFail) throw new Error("delete failed (mock DB lỗi)");
+            return [{ id: 1 }, { id: 2 }];
           },
         };
       },
@@ -47,7 +66,61 @@ function columnNamesInCondition(cond: any): string[] {
   return names;
 }
 
-beforeEach(() => { updates.length = 0; lastWhereCond = null; });
+beforeEach(() => {
+  updates.length = 0;
+  lastWhereCond = null;
+  lastDeleteWhereCond = null;
+  deleteShouldFail = false;
+});
+
+/**
+ * Task 3 (Wave 4 §3c) — hạn lưu cho predictive_alert_occurrences. Đặt TRƯỚC
+ * describe("sweepExpiredAlerts", ...) có chủ ý: test "lỗi DB" cuối của khối đó
+ * dùng vi.resetModules()+vi.doMock() và (theo đúng ghi chú của nó) KHÔNG phục
+ * hồi mock gốc cho các test chạy sau trong cùng file. Khối này chỉ dựa vào
+ * vi.mock() ở đầu file (không đụng resetModules/doMock) nên đặt trước để
+ * không bao giờ lãnh mock hỏng của khối kia, bất kể khối kia còn sửa gì.
+ */
+describe("pruneOldOccurrences", () => {
+  it("xoá theo occurredAt và trả về ĐÚNG số dòng đã xoá", async () => {
+    const { pruneOldOccurrences } = await import("./alertExpirySweeper");
+    const res = await pruneOldOccurrences();
+    expect(res.deleted).toBe(2); // mock trả 2 dòng
+  });
+
+  /**
+   * Cùng lý do với ca "WHERE của UPDATE phải lọc theo cột expiresAt" ở khối
+   * sweepExpiredAlerts bên dưới: ca "xoá đúng số dòng" ở trên chỉ kiểm KẾT QUẢ
+   * (mock trả cố định 2 dòng bất kể lọc gì) — đổi `lt(occurredAt, cutoff)`
+   * thành `lt(createdAt, cutoff)` (hoặc bỏ điều kiện hẳn) trong
+   * pruneOldOccurrences() vẫn để ca trên XANH. Ca này duyệt cây điều kiện SQL
+   * THẬT truyền vào .where() để khẳng định nó thật sự tham chiếu cột
+   * "occurredAt" — dùng lại đúng hàm columnNamesInCondition() định nghĩa phía
+   * dưới cho ca expiresAt.
+   */
+  it("mệnh đề WHERE của DELETE phải lọc theo cột occurredAt, KHÔNG phải createdAt", async () => {
+    const { pruneOldOccurrences } = await import("./alertExpirySweeper");
+    await pruneOldOccurrences();
+
+    expect(lastDeleteWhereCond).toBeTruthy();
+    const names = columnNamesInCondition(lastDeleteWhereCond);
+    expect(names).toContain("occurredAt"); // ★ đây là cái đổi sang createdAt sẽ làm ĐỎ
+    expect(names).not.toContain("createdAt");
+  });
+
+  it("lỗi DB khi dọn nhật ký ⇒ KHÔNG ném ra ngoài, và KHÔNG làm ngừng việc đóng cảnh báo", async () => {
+    deleteShouldFail = true;
+    const { pruneOldOccurrences, sweepExpiredAlerts } = await import("./alertExpirySweeper");
+
+    // Dọn nhật ký hỏng: best-effort, trả deleted:0, không throw.
+    await expect(pruneOldOccurrences()).resolves.toEqual({ deleted: 0 });
+
+    // Ràng buộc độc lập của Task 3: một bên hỏng KHÔNG được làm bên kia ngừng.
+    // Đóng cảnh báo (update, không chạm delete) vẫn phải chạy bình thường
+    // trong CÙNG lượt — chứng minh hai việc không phụ thuộc lẫn nhau.
+    await expect(sweepExpiredAlerts()).resolves.toEqual({ expired: 2 });
+  });
+});
 
 describe("sweepExpiredAlerts", () => {
   it("chuyển sang EXPIRED và GHI RÕ LÝ DO (không biến mất im lặng)", async () => {
