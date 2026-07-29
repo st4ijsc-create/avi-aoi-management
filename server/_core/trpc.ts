@@ -5,6 +5,7 @@ import speakeasy from "speakeasy";
 import type { TrpcContext } from "./context";
 // Doc 37 P0-3 — server-side per-module license gate (flag-gated pass-through).
 import { moduleGate } from "./moduleGate";
+import { readAppErrorMeta } from "./appError";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -14,6 +15,9 @@ const t = initTRPC.context<TrpcContext>().create({
     // other error is unaffected. Lets the client show current values + a
     // reload/overwrite choice without a second round-trip.
     const mpConflict = (error.cause as { mpConflict?: unknown } | undefined)?.mpConflict;
+    // Sprint 5 §4.2 — mã lỗi máy-đọc-được. Chỉ có mặt khi lỗi được dựng bằng
+    // appError(); mọi lỗi khác giữ nguyên hình dạng phản hồi như trước.
+    const appMeta = readAppErrorMeta(error);
     return {
       ...shape,
       data: {
@@ -21,6 +25,7 @@ const t = initTRPC.context<TrpcContext>().create({
         // Strip stack traces in production to avoid leaking internals
         stack: process.env.NODE_ENV === 'production' ? undefined : shape.data.stack,
         ...(mpConflict ? { conflict: mpConflict } : {}),
+        ...(appMeta ? { appCode: appMeta.appCode, ...(appMeta.appParams ? { appParams: appMeta.appParams } : {}) } : {}),
       },
     };
   },
