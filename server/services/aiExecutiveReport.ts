@@ -583,6 +583,19 @@ function summaryTitle(s: ExecutiveSummaryStructured): string {
 }
 
 /**
+ * Wave 3 §4.4 — một báo cáo không nói gì mà vẫn chiếm chỗ trong hòm chờ đọc
+ * chính là thứ dạy người ta bỏ qua cả hòm. Đo được: 111 dòng chỉ mang 36 nội
+ * dung khác nhau, nhiều bản `fpy: 0, ngRate: 0`, thân bài 129 ký tự.
+ */
+export function hasReportableContent(s: ExecutiveSummaryStructured): boolean {
+  if (s.highlights?.length) return true;
+  if (s.risks?.length) return true;
+  if (s.recommendations?.length) return true;
+  const k = s.kpis as unknown as Record<string, unknown>;
+  return Object.values(k ?? {}).some((v) => typeof v === "number" && Number.isFinite(v) && v !== 0);
+}
+
+/**
  * Lưu summary vào ai_insights; trả về id (hoặc null nếu DB không sẵn sàng). Không ném.
  *
  * doc 69 T9 (security fast-follow) — tag `reportFactoryCode` vào contextJson (mirror
@@ -594,6 +607,26 @@ export async function persistExecutiveSummary(s: ExecutiveSummaryStructured): Pr
   try {
     const db = await getDb();
     if (!db) return null;
+
+    // Wave 3 §4.4 — không lưu báo cáo rỗng; nói rõ lý do thay vì im lặng.
+    if (!hasReportableContent(s)) {
+      console.log(`[aiExecutiveReport] bỏ qua báo cáo rỗng (${s.period}) — không có KPI khác 0, rủi ro hay điểm nhấn.`);
+      return null;
+    }
+
+    // Wave 3 §4.3 — chống trùng theo (source, title). Tiêu đề đã chứa sẵn kỳ và
+    // mốc thời gian, nên trùng tiêu đề = chạy lặp cùng một kỳ.
+    const title = summaryTitle(s);
+    const existing = await db
+      .select({ id: aiInsights.id })
+      .from(aiInsights)
+      .where(and(eq(aiInsights.source, EXEC_REPORT_SOURCE), eq(aiInsights.title, title)))
+      .limit(1);
+    if (existing[0]) {
+      console.log(`[aiExecutiveReport] đã có báo cáo cùng tiêu đề (#${existing[0].id}) — không tạo bản trùng.`);
+      return existing[0].id;
+    }
+
     const body = [s.headline, "", ...s.highlights.map((h) => `• ${h}`)].join("\n").slice(0, 8000);
     const recommendation = s.recommendations.map((r) => `• ${r}`).join("\n").slice(0, 8000);
     const severity = s.kpis.ngRate > 5 || s.risks.length > 2 ? "warning" : "info";
@@ -602,7 +635,7 @@ export async function persistExecutiveSummary(s: ExecutiveSummaryStructured): Pr
       .values({
         source: EXEC_REPORT_SOURCE,
         severity,
-        title: summaryTitle(s),
+        title,
         body,
         recommendation,
         contextJson: {
