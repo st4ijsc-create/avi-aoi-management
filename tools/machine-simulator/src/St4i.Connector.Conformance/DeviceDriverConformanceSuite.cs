@@ -336,7 +336,10 @@ public abstract class DeviceDriverConformanceSuite
                 $"constructing the driver took {sw.Elapsed}, exceeding the {ConstructionBudget} non-blocking " +
                 "budget. IDeviceDriver's contract documents construction as non-blocking with no I/O — " +
                 "FleetHost.StartLocked constructs drivers under the same _gate lock Estop() takes, so a slow " +
-                "constructor blocks emergency-stop for as long as it takes.");
+                "constructor blocks Estop() itself from returning for as long as it takes. (Estop() is a " +
+                "supervisory software halt of this codebase's own read pipeline, not a machine safety " +
+                "function — see FleetHost.Estop's own doc comment — so this rule protects THAT call's " +
+                "latency, nothing more.)");
 
             if (ModelsExternalDeviceConnection)
             {

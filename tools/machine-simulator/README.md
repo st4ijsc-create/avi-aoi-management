@@ -3447,45 +3447,71 @@ chạy (hoặc connector loại đó đang chạy) vẫn tiếp tục chạy t�
 **EN** — SM-2 added a nullable `is_fabricated` column to the historian schema (migration v2,
 `SqliteHistorianStore.cs`), set once at write time (`DriverKinds.IsFabricated`, keyed off the writing
 machine's `driverKind`) and never re-derived later. Every customer-facing historian/OEE/genealogy query
-(`ApplyRealPresenceGateAsync`) then applies one rule, unconditionally: **an explicitly-fabricated row
-(`is_fabricated = 1`) is EXCLUDED from every default query, full stop** — there is no scope in which a
-demo/simulated cycle is allowed to blend into a customer's pass-rate, OEE, or genealogy numbers by
-default. A **`null`** row — one written before this column existed — is labelled **"Unknown origin"**
-and is let through **only if no explicitly-real row exists in that same query's scope**; the moment a
-real (`is_fabricated = 0`) row is present, Unknown rows are excluded too (a documented, accepted
-residual: a genuinely-real pre-migration row would vanish from a report alongside the fabricated ones
-it can no longer be told apart from — accepted because no shipped customer's data predates this
-migration). Live fleet KPIs follow the same spirit via `FleetKpisDto.HasMixedProvenance`: once a real
-machine is present, the Dashboard's own KPI tiles count **only** that real machine, with a banner
-explaining fabricated machines running alongside are excluded, not blended in.
+(`ApplyRealPresenceGateAsync`) applies one rule GIVEN the caller's own `includeFabricated` boolean:
+**if `false`, an explicitly-fabricated row (`is_fabricated = 1`) is EXCLUDED, full stop** — there is no
+scope in which a demo/simulated cycle is allowed to blend into a customer's pass-rate, OEE, or
+genealogy numbers by default. A **`null`** row — one written before this column existed — is labelled
+**"Unknown origin"** and is let through **only if no explicitly-real row exists in that same query's
+scope**; the moment a real (`is_fabricated = 0`) row is present, Unknown rows are excluded too (a
+documented, accepted residual: a genuinely-real pre-migration row would vanish from a report alongside
+the fabricated ones it can no longer be told apart from — accepted because no shipped customer's data
+predates this migration). Live fleet KPIs follow the same spirit via `FleetKpisDto.HasMixedProvenance`:
+once a real machine is present, the Dashboard's own KPI tiles count **only** that real machine, with a
+banner explaining fabricated machines running alongside are excluded, not blended in.
+
+**Who decides that boolean — the Đợt A fix (task-7, whole-batch review, CRITICAL) this section now
+documents.** `HistorianEndpoints` used to hardcode `includeFabricated ?? false` on every route with no
+carve-out at all, and no web route ever sent `includeFabricated=true` — so on an exhibition/demo
+install (`DemoModeGate.Enabled`, where the ENTIRE roster is `Simulated`) the gate excluded **every**
+row, permanently: a fresh demo `historian.db` produced ZERO default-visible rows, so `/historian` and
+`/reports` rendered nothing, the PDF export was an empty shell, and genealogy was empty — on the exact
+packaging line the product's own opening brief describes. Fixed by resolving `includeFabricated` through
+`HistorianEndpoints.ResolveIncludeFabricated`: `false` (a real customer's product install — the shipped
+default, `DemoModeGate` disabled) reproduces the untouched rule above byte-for-byte; `true`
+(`DemoModeGate.Enabled`, an exhibition/demo-flagged deployment ONLY) flips the default so that
+deployment's own fabricated rows render instead of vanishing.
 
 **The `ProvenanceTag` badge** (`HistorianResultsTable.tsx`, reused by the genealogy dialog) renders
 next to every row's verdict: **"Demo"** for `isFabricated === true`, **"Unknown origin"** for `null`/
-`undefined`, nothing for a real (`false`) row. **Plain fact worth stating, not softening:** because the
-gate above excludes explicitly-fabricated rows from the query itself, and neither `Historian.tsx` nor
-`HistorianResultsTable.tsx` ever requests the `includeFabricated=true` escape hatch, the **"Demo"**
-badge cannot currently render through this shipped web UI — a caller would have to opt in via the raw
-API. What a customer's own screen can show is either nothing (a real row) or **"Unknown origin"** (a
-rare, pre-migration-only case) — which is the intended, honest outcome: a customer's Historian/Reports
-screens show their own real data, or nothing, never demo data dressed up with a badge.
+`undefined`, nothing for a real (`false`) row. **On a real customer's product install** (`DemoModeGate`
+disabled, the shipped default), the **"Demo"** badge still cannot render — there is no path to a
+fabricated row at all on that deployment (an empty or real-only roster never writes `is_fabricated = 1`
+in the first place), so what a customer's own screen can show is either nothing (a real row) or
+**"Unknown origin"** (a rare, pre-migration-only case), exactly as before. **On an exhibition/demo
+install**, the **"Demo"** badge now DOES render — deliberately: that deployment's whole roster is
+fabricated by design (§20.1/§2.5), and the fix above is what lets its own Historian/Reports screens show
+anything at all instead of a permanently-empty product.
 
 *(VI: SM-2 thêm cột `is_fabricated` (nullable) vào schema historian, gán MỘT LẦN lúc ghi (theo
 `driverKind` của máy), không bao giờ tính lại sau đó. Mọi truy vấn historian/OEE/genealogy khách hàng
-(`ApplyRealPresenceGateAsync`) áp một luật, VÔ ĐIỀU KIỆN: **dòng fabricated tường minh (`is_fabricated =
-1`) bị LOẠI khỏi mọi truy vấn mặc định** — không có phạm vi nào cho phép một chu kỳ demo/mô phỏng trộn
-vào tỷ lệ đạt/OEE/genealogy của khách theo mặc định. Dòng **`null`** (ghi trước khi có cột này) được gắn
-nhãn **"Không rõ nguồn gốc"** và chỉ lọt qua NẾU không có dòng thật tường minh nào trong cùng phạm vi
-truy vấn đó — hễ có dòng thật, dòng Unknown cũng bị loại (giới hạn đã biết, chấp nhận được vì chưa
-khách hàng nào có dữ liệu từ trước migration này). KPI đội hình sống theo cùng tinh thần qua
-`FleetKpisDto.HasMixedProvenance`: khi có máy thật, các thẻ KPI Dashboard chỉ đếm máy thật, kèm banner
-giải thích máy demo chạy song song bị LOẠI, không trộn. **`ProvenanceTag`** hiện cạnh mỗi verdict:
-**"Demo"** khi `isFabricated === true`, **"Không rõ nguồn gốc"** khi `null`/`undefined`, không hiện gì
-khi thật. **Sự thật cần nói thẳng, không mềm hoá:** vì cổng trên loại dòng fabricated NGAY TỪ TRUY VẤN,
-và không route web nào gửi `includeFabricated=true`, nhãn **"Demo"** hiện KHÔNG THỂ render qua UI web đã
-giao — chỉ một lời gọi API trực tiếp mới bật được. Màn hình của khách chỉ có thể hiện KHÔNG GÌ (dòng
-thật) hoặc **"Không rõ nguồn gốc"** (hiếm, chỉ dữ liệu trước migration) — đúng như chủ ý: màn Historian/
-Reports của khách hiện dữ liệu thật của họ, hoặc không hiện gì, không bao giờ hiện dữ liệu demo đội lốt
-nhãn.)*
+(`ApplyRealPresenceGateAsync`) áp một luật DỰA TRÊN cờ `includeFabricated` của bên gọi: **nếu `false`,
+dòng fabricated tường minh (`is_fabricated = 1`) bị LOẠI** — không có phạm vi nào cho phép một chu kỳ
+demo/mô phỏng trộn vào tỷ lệ đạt/OEE/genealogy của khách theo mặc định. Dòng **`null`** (ghi trước khi
+có cột này) được gắn nhãn **"Không rõ nguồn gốc"** và chỉ lọt qua NẾU không có dòng thật tường minh nào
+trong cùng phạm vi truy vấn đó — hễ có dòng thật, dòng Unknown cũng bị loại (giới hạn đã biết, chấp
+nhận được vì chưa khách hàng nào có dữ liệu từ trước migration này). KPI đội hình sống theo cùng tinh
+thần qua `FleetKpisDto.HasMixedProvenance`: khi có máy thật, các thẻ KPI Dashboard chỉ đếm máy thật, kèm
+banner giải thích máy demo chạy song song bị LOẠI, không trộn.
+
+**Ai quyết định cờ đó — bản sửa Đợt A (task-7, review toàn batch, CRITICAL) mục này nay ghi lại.**
+`HistorianEndpoints` từng gán cứng `includeFabricated ?? false` ở mọi route, không hề có ngoại lệ, và
+không route web nào từng gửi `includeFabricated=true` — nên trên bản triển lãm/demo (`DemoModeGate.Enabled`,
+đội hình 100% `Simulated`) cổng này loại TOÀN BỘ dòng, vĩnh viễn: một `historian.db` demo mới tinh
+không bao giờ cho ra dòng nào hiện mặc định, nên `/historian`/`/reports` trống trơn, PDF xuất ra rỗng,
+genealogy cũng rỗng — đúng trên chính dòng đóng gói mà bản tóm tắt sản phẩm này mô tả. Đã sửa bằng cách
+giải quyết `includeFabricated` qua `HistorianEndpoints.ResolveIncludeFabricated`: `false` (bản cài đặt
+sản phẩm thật của khách — mặc định khi giao, `DemoModeGate` tắt) tái tạo đúng luật trên, không đổi gì;
+`true` (`DemoModeGate.Enabled`, CHỈ bản triển lãm/demo) đổi mặc định để dòng fabricated của riêng bản đó
+hiện ra thay vì biến mất.
+
+**`ProvenanceTag`** hiện cạnh mỗi verdict: **"Demo"** khi `isFabricated === true`, **"Không rõ nguồn
+gốc"** khi `null`/`undefined`, không hiện gì khi thật. **Trên bản cài đặt sản phẩm thật của khách**
+(`DemoModeGate` tắt, mặc định khi giao), nhãn **"Demo"** vẫn KHÔNG THỂ hiện — không có đường nào dẫn tới
+dòng fabricated trên bản đó cả (đội hình rỗng hoặc toàn máy thật không bao giờ ghi `is_fabricated = 1`),
+nên màn của khách chỉ có thể hiện KHÔNG GÌ (dòng thật) hoặc **"Không rõ nguồn gốc"** (hiếm, chỉ dữ liệu
+trước migration), y như trước. **Trên bản triển lãm/demo**, nhãn **"Demo"** NAY hiện ra — có chủ đích:
+đội hình bản đó vốn 100% fabricated theo thiết kế (§20.1/§2.5), và bản sửa trên là thứ giúp màn
+Historian/Reports của chính bản đó hiện được gì đó thay vì một sản phẩm trống rỗng vĩnh viễn.)*
 
 ### 20.4 Standalone is a supported state / Standalone là trạng thái được hỗ trợ
 
@@ -3536,6 +3562,14 @@ KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi 
 - **Editing a connector requires the map JSON to be pasted or uploaded; there is no visual mapper.**
   `/connectors`' only input for the register/node map is a plain `<textarea>` (or a `.json` file picked
   into that same textarea) — see §20.2.
+- **Northbound UNS/Sparkplug publishing carries no provenance filter.** Unlike the historian/OEE/
+  genealogy/KPI surfaces §20.3 documents, nothing in `St4i.EdgeCore.Uns`/`UnsBridge` checks
+  `DriverKinds.IsFabricated` before publishing a machine's cycle onto the local `syn/{site}/...` spine
+  or the upstream Site bridge — a fabricated cycle is published exactly like a real one, with no
+  `is_fabricated` tag anywhere on the wire. This only matters at all if an operator deliberately runs a
+  mixed real+demo fleet (Demo mode alongside an onboarded real machine) — the standard "one real
+  machine" product path (an empty or all-real roster) has no fabricated cycles to leak, so this never
+  fires by accident. Recorded here as a known limitation, not fixed this batch.
 
 *(VI: Ghi rõ ràng, không mềm hoá: **KHÔNG có đường ghi lệnh tới bất kỳ thiết bị nào.** `IDeviceDriver`
 chỉ có đúng 4 thành viên — `Id`, `Kind`, `Health`, `ReadAsync` — không `WriteAsync`/`SendCommand`/
@@ -3550,4 +3584,11 @@ syslog/relay/tín hiệu âm thanh nào trong repo này. **Chỉ Modbus TCP và 
 Serial/RS-485, S7, EtherNet/IP, SECS/GEM chưa có driver. **Lưu lại cấu hình một connector ĐÃ CÓ trong
 khi đội hình đang chạy KHÔNG áp dụng sống; thêm máy MỚI thì có** — xem §20.2. **Sửa một connector đòi
 dán/tải JSON map; CHƯA có bộ dựng trực quan** — ô nhập duy nhất của `/connectors` là một `<textarea>`
-thường.)*
+thường. **Phát UNS/Sparkplug hướng lên KHÔNG có bộ lọc nguồn gốc.** Khác với các mặt
+historian/OEE/genealogy/KPI mà §20.3 ghi lại, không có gì trong `St4i.EdgeCore.Uns`/`UnsBridge` kiểm tra
+`DriverKinds.IsFabricated` trước khi phát chu kỳ của một máy lên nhánh `syn/{site}/...` cục bộ hay cầu
+Site phía trên — một chu kỳ fabricated được phát giống hệt một chu kỳ thật, không có nhãn
+`is_fabricated` nào trên dây. Việc này chỉ có ý nghĩa khi người vận hành CHỦ ĐỘNG chạy đội hình lẫn
+thật+demo (bật Demo song song một máy thật đã thêm) — đường đi chuẩn "một máy thật" (đội hình rỗng hoặc
+toàn máy thật) không có chu kỳ fabricated nào để rò rỉ, nên việc này không tự nhiên xảy ra. Ghi nhận ở
+đây như một giới hạn đã biết, chưa sửa trong đợt này.)*

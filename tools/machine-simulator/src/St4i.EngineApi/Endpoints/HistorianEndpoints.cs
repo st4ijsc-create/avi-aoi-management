@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.Rendering;
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Historian;
 using St4i.EdgeCore.Metrics;
 using St4i.EdgeCore.Models;
@@ -80,6 +81,17 @@ namespace St4i.EngineApi.Endpoints;
 /// WS-D-D2 — every GET here (read-only reporting) is Operator; <c>PUT /v1/historian/oee/settings</c>
 /// (changes the ideal-cycle override/planned-production ratio the OEE math itself uses) is Engineer;
 /// <c>POST /v1/historian/prune</c> (irreversibly deletes historian rows) is Admin.
+///
+/// Fix 1 (task-7 review, CRITICAL) — every route below used to default <c>includeFabricated</c> to a
+/// hardcoded <see langword="false"/> with no way for a caller to ask otherwise: no web route ever sends
+/// <c>includeFabricated=true</c>, and this file never resolved <see cref="DemoModeGate"/> at all. On an
+/// exhibition/demo install (<see cref="DemoModeGate.Enabled"/>) the ENTIRE roster is <c>Simulated</c>, so
+/// <see cref="SqliteHistorianStore"/>'s real-presence gate — which unconditionally excludes
+/// <c>is_fabricated = 1</c> — excluded every single row, permanently: a fresh demo <c>historian.db</c>
+/// could never produce one default-visible row, so <c>/historian</c>/<c>/reports</c> rendered nothing,
+/// the PDF report was empty, and genealogy was empty. See <see cref="ResolveIncludeFabricated"/> for the
+/// fix — every route that accepts <c>includeFabricated</c> now resolves it through that one helper
+/// instead of the old bare <c>?? false</c>.
 /// </summary>
 public static class HistorianEndpoints
 {
@@ -105,7 +117,8 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> GetResultsAsync(
         string? machine, string? from, string? to, string? serial, string? verdict, string? kind,
-        int? limit, int? offset, IHistorianStore store, CancellationToken ct, bool? includeFabricated = null)
+        int? limit, int? offset, IHistorianStore store, CancellationToken ct, bool? includeFabricated = null,
+        DemoModeGate? demoGate = null)
     {
         DateTimeOffset? fromParsed = null;
         if (from is not null)
@@ -132,7 +145,7 @@ public static class HistorianEndpoints
         var query = new HistorianResultQuery(
             MachineCode: machine, From: fromParsed, To: toParsed, SerialNumber: serial,
             Verdict: verdict, ReadingKind: kind, Limit: clampedLimit, Offset: clampedOffset,
-            IncludeFabricated: includeFabricated ?? false);
+            IncludeFabricated: ResolveIncludeFabricated(includeFabricated, demoGate));
 
         var page = await store.QueryResultsAsync(query, ct).ConfigureAwait(false);
         return Results.Ok(ToPageDto(page));
@@ -143,7 +156,7 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> ExportResultsCsvAsync(
         string? machine, string? from, string? to, string? serial, string? verdict, string? kind,
-        IHistorianStore store, CancellationToken ct, bool? includeFabricated = null)
+        IHistorianStore store, CancellationToken ct, bool? includeFabricated = null, DemoModeGate? demoGate = null)
     {
         DateTimeOffset? fromParsed = null;
         if (from is not null)
@@ -159,7 +172,7 @@ public static class HistorianEndpoints
             toParsed = parsed;
         }
 
-        var csvBytes = await BuildExportCsvAsync(machine, fromParsed, toParsed, serial, verdict, kind, store, ct, includeFabricated ?? false)
+        var csvBytes = await BuildExportCsvAsync(machine, fromParsed, toParsed, serial, verdict, kind, store, ct, ResolveIncludeFabricated(includeFabricated, demoGate))
             .ConfigureAwait(false);
         return new CsvFileResult(csvBytes, "historian-results.csv");
     }
@@ -167,9 +180,10 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     // GET /v1/historian/serial/{serial}
     // ─────────────────────────────────────────────────────────────────────
-    internal static async Task<IResult> GetBySerialAsync(string serial, IHistorianStore store, CancellationToken ct, bool? includeFabricated = null)
+    internal static async Task<IResult> GetBySerialAsync(
+        string serial, IHistorianStore store, CancellationToken ct, bool? includeFabricated = null, DemoModeGate? demoGate = null)
     {
-        var rows = await store.QueryBySerialAsync(serial, ct, includeFabricated ?? false).ConfigureAwait(false);
+        var rows = await store.QueryBySerialAsync(serial, ct, ResolveIncludeFabricated(includeFabricated, demoGate)).ConfigureAwait(false);
         return Results.Ok(rows.Select(ToResultDto).ToArray());
     }
 
@@ -231,14 +245,14 @@ public static class HistorianEndpoints
     internal static async Task<IResult> GetOeeAsync(
         string? machine, string? from, string? to,
         IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct,
-        bool? includeFabricated = null)
+        bool? includeFabricated = null, DemoModeGate? demoGate = null)
     {
         var descriptor = FindMachine(fleetHost, machine);
         if (descriptor is null) return MachineNotFound(machine);
 
         if (!TryResolveRange(from, to, out var fromParsed, out var toParsed, out var rangeError)) return rangeError!;
 
-        var dto = await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct, includeFabricated ?? false).ConfigureAwait(false);
+        var dto = await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct, ResolveIncludeFabricated(includeFabricated, demoGate)).ConfigureAwait(false);
         return Results.Ok(dto);
     }
 
@@ -247,14 +261,15 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> GetOeeFleetAsync(
         string? from, string? to, IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct,
-        bool? includeFabricated = null)
+        bool? includeFabricated = null, DemoModeGate? demoGate = null)
     {
         if (!TryResolveRange(from, to, out var fromParsed, out var toParsed, out var rangeError)) return rangeError!;
 
+        var effectiveIncludeFabricated = ResolveIncludeFabricated(includeFabricated, demoGate);
         var results = new List<OeeResultDto>();
         foreach (var descriptor in fleetHost.Fleet)
         {
-            results.Add(await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct, includeFabricated ?? false).ConfigureAwait(false));
+            results.Add(await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct, effectiveIncludeFabricated).ConfigureAwait(false));
         }
 
         return Results.Ok(results.ToArray());
@@ -378,6 +393,43 @@ public static class HistorianEndpoints
 
         return true;
     }
+
+    /// <summary>Fix 1 (task-7 review, CRITICAL) — the one place every route above decides what
+    /// <c>includeFabricated</c> actually means when a caller doesn't pass one explicitly. An explicit
+    /// <paramref name="explicitValue"/> (the web-API escape hatch — no shipped web route sends one today,
+    /// but a direct API caller can) always wins outright. Absent that, the default is
+    /// <see cref="DemoModeGate.Enabled"/>: <see langword="false"/> (the default for every product/customer
+    /// deployment — see <see cref="DemoModeGate"/>'s own doc comment) reproduces this file's entire
+    /// pre-fix behavior byte-for-byte, so nothing changes for a real customer's box.
+    /// <see langword="true"/> (an exhibition/demo-flagged deployment) flips the default to bypass
+    /// <see cref="SqliteHistorianStore"/>'s real-presence gate — the ONLY way a 100%-<c>Simulated</c> demo
+    /// roster can ever produce a single default-visible historian/OEE/report/genealogy row, since an
+    /// explicitly-fabricated row is otherwise excluded unconditionally (see
+    /// <c>SqliteHistorianStore.ApplyRealPresenceGateAsync</c>'s own doc comment).
+    ///
+    /// <para>Chosen over the alternative (defaulting on whether <see cref="FleetHost.Fleet"/> currently
+    /// contains zero real machines) for two reasons: it reuses the ONE flag <c>Program.cs</c>/
+    /// <c>ModeEndpoints</c>/<c>CapabilitiesEndpoints</c> already treat as "is Demo even possible on this
+    /// deployment" rather than inventing a second "is this fleet fabricated enough" rule; and it keeps
+    /// every pre-existing test in <c>HistorianEndpointsProvenanceTests</c>/<c>HistorianEndpointsReadTests</c>/
+    /// <c>HistorianEndpointsExportTests</c>/<c>HistorianEndpointsOeeTests</c> — several of which construct a
+    /// FleetHost seeded with the fully-<c>Simulated</c> demo roster (<c>BuildDefaultFleet</c>) purely as a
+    /// descriptor source, with NO <see cref="DemoModeGate"/> in the picture at all — compiling and passing
+    /// completely unchanged (they never pass one, so <paramref name="demoGate"/> defaults <see langword="null"/>
+    /// exactly like every other optional trailing DI-service parameter in this file, e.g. <c>AuditRecorder?</c>
+    /// on <see cref="PruneAsync"/>).</para>
+    ///
+    /// <para><b>Known residual (accepted, written down rather than fixed):</b> <see cref="DemoModeGate.Enabled"/>
+    /// is a process-lifetime flag read once at startup from an env var beside the packaged <c>.exe</c> — it
+    /// does NOT track whether the CURRENT roster still contains any fabricated machine, nor whether the
+    /// current <c>TransportMode</c> is actually Demo right now. An exhibition-flagged build that an operator
+    /// later switches to Live and onboards a real machine into (SM-5's own onboarding feature) would still
+    /// default to showing any fabricated rows recorded earlier under that same env-flagged process. Accepted
+    /// because <see cref="DemoModeGate.EnvVarName"/> is never set on a real customer's product install (see
+    /// that class's own doc comment and README §20.1) — this default only ever fires on an exhibition/demo
+    /// packaging line that no paying customer's "one real machine" deployment uses.</para></summary>
+    private static bool ResolveIncludeFabricated(bool? explicitValue, DemoModeGate? demoGate) =>
+        explicitValue ?? (demoGate?.Enabled ?? false);
 
     // ─────────────────────────────────────────────────────────────────────
     // CSV export helpers (Task 10)
@@ -517,14 +569,14 @@ public static class HistorianEndpoints
     internal static async Task<IResult> GetReportPdfAsync(
         string? machine, string? from, string? to,
         IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct,
-        bool? includeFabricated = null)
+        bool? includeFabricated = null, DemoModeGate? demoGate = null)
     {
         var descriptor = FindMachine(fleetHost, machine);
         if (descriptor is null) return MachineNotFound(machine);
 
         if (!TryResolveRange(from, to, out var fromParsed, out var toParsed, out var rangeError)) return rangeError!;
 
-        var effectiveIncludeFabricated = includeFabricated ?? false;
+        var effectiveIncludeFabricated = ResolveIncludeFabricated(includeFabricated, demoGate);
         var oee = await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct, effectiveIncludeFabricated).ConfigureAwait(false);
         var verdictCounts = await ComputeVerdictBreakdownAsync(descriptor.Code, fromParsed, toParsed, store, ct, effectiveIncludeFabricated).ConfigureAwait(false);
 

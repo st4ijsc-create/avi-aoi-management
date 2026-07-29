@@ -139,8 +139,19 @@ public sealed class AssetEndpointsTests
     // GET /v1/assets — Operator 200, default roster present.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Task-7 (whole-batch review) — renamed from <c>Operator_ListsAssets_...</c>: this test
+    /// authenticates as the auto-logged-in "demo-admin" (<c>Roles.Admin</c>), never an actual Operator
+    /// account, so the old name overclaimed which RBAC tier it exercises. See the body comment below for
+    /// why demo-admin is used here. <b>Known gap, said plainly rather than left silent:</b> this file has
+    /// NO test that logs in as a genuine Operator-role user and asserts the GET /v1/assets 200 positive
+    /// path — every test here that needs the demo roster seeded (AOI-01/SCRW-01) uses demo-admin instead,
+    /// because <c>demoEnabled: true</c> auto-signs-in demo-admin before this test's first request. Nothing
+    /// technically prevents ALSO calling <c>CreateUserAsync(..., Roles.Operator)</c> + <c>LoginAsAsync</c>
+    /// on top of a demo-enabled factory (that helper talks to <c>IUserStore</c> directly, not the
+    /// bootstrap endpoint the 409 concern below is actually about) — this task did not add that test;
+    /// flagging the gap here rather than silently leaving it unstated.</summary>
     [Fact]
-    public async Task Operator_ListsAssets_AndSeesTheDefaultRosterMachines()
+    public async Task DemoAdmin_ListsAssets_AndSeesTheDefaultRosterMachines()
     {
         // SM-1 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1-brief.md) —
         // "the default roster" this test names is now specifically the DEMO roster; a product
@@ -169,10 +180,13 @@ public sealed class AssetEndpointsTests
     // GET /v1/assets/{code} — 200 for a known code, 404 for an unknown one.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Task-7 — renamed from <c>Operator_GetsAssetDetail_...</c>; same demo-admin identity as
+    /// <see cref="DemoAdmin_ListsAssets_AndSeesTheDefaultRosterMachines"/>, not a genuine Operator
+    /// account.</summary>
     [Fact]
-    public async Task Operator_GetsAssetDetail_200ForKnownCode_404ForUnknownCode()
+    public async Task DemoAdmin_GetsAssetDetail_200ForKnownCode_404ForUnknownCode()
     {
-        // SM-1 — AOI-01 is a demo-fleet code; see Operator_ListsAssets_AndSeesTheDefaultRosterMachines
+        // SM-1 — AOI-01 is a demo-fleet code; see DemoAdmin_ListsAssets_AndSeesTheDefaultRosterMachines
         // for why this uses the auto-logged-in demo-admin directly instead of bootstrapping a separate
         // admin/operator.
         await using var factory = await CreateFactoryAsync(demoEnabled: true);
@@ -196,10 +210,17 @@ public sealed class AssetEndpointsTests
     // unknown code 404; Operator 403.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Task-7 — renamed from <c>Engineer_SetsLifecycle_...</c>: this authenticates as
+    /// demo-admin (<c>Roles.Admin</c>, which satisfies the Engineer-gated route too), not a genuine
+    /// bootstrapped Engineer account — unlike, e.g., <c>AuditWiringTests.ProductUpsert_AsEngineer_...</c>,
+    /// which does use a real Engineer login. The genuine Engineer-tier RBAC path is still covered
+    /// separately by <see cref="Engineer_SetLifecycle_BadState_Gets400"/>/<see cref="Engineer_SetLifecycle_UnknownCode_Gets404"/>
+    /// below (both log in as a real, bootstrapped Engineer) — only the "changes stored state and audits
+    /// it" happy path used demo-admin, because it also needed the demo roster's SCRW-01 to exist.</summary>
     [Fact]
-    public async Task Engineer_SetsLifecycle_ChangesStoredState_AndWritesAuditRow()
+    public async Task DemoAdmin_SetsLifecycle_ChangesStoredState_AndWritesAuditRow()
     {
-        // SM-1 — SCRW-01 is a demo-fleet code; see Operator_ListsAssets_AndSeesTheDefaultRosterMachines
+        // SM-1 — SCRW-01 is a demo-fleet code; see DemoAdmin_ListsAssets_AndSeesTheDefaultRosterMachines
         // for why this uses the auto-logged-in demo-admin directly instead of bootstrapping a separate
         // admin/engineer (demo-admin's Admin role satisfies the Engineer-gated route below too).
         await using var factory = await CreateFactoryAsync(demoEnabled: true);

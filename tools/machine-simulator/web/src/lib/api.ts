@@ -451,8 +451,11 @@ export interface HistorianResultDto {
    * (simulated/demo), `false` real, `null` Unknown (written before the server's `is_fabricated` column
    * existed). Every historian read surface (results table, genealogy dialog) must render this — a
    * fabricated or Unknown row that looks identical to a real one is the exact failure mode SM-2 exists to
-   * close, and it stays reachable the moment a caller opts into `includeFabricated=true`. Optional so an
-   * older engine build (pre-SM-2) that omits the field simply never renders the tag. */
+   * close, and it stays reachable the moment a caller opts into `includeFabricated=true` — OR, as of
+   * task-7 (whole-batch review, CRITICAL), whenever the server itself is running with `DemoModeGate`
+   * enabled (`HistorianEndpoints.ResolveIncludeFabricated`'s own default for exactly that case), with no
+   * client-side opt-in needed at all. Optional so an older engine build (pre-SM-2) that omits the field
+   * simply never renders the tag. */
   isFabricated?: boolean | null
 }
 

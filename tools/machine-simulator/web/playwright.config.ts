@@ -127,7 +127,7 @@ export default defineConfig({
       //
       // SM-6 — full audit of every `%ProgramData%\ST4I\sim\*` store `St4i.EngineApi` touches at
       // runtime (12 total: security, historian, assets, alarms, connector-config, settings, identity,
-      // sitelink, bridge-spool, wal, opcua-pki, creds). Before this fix NONE of them were isolated
+      // sitelink, bridge-spool, wal, opcua-pki, creds). Before that fix NONE of them were isolated
       // here — every `npm run test:e2e`/`npm run dev` wrote real data into the SAME directory a real
       // install uses, which is how this harness ended up creating real, login-capable "e2e-user-*"
       // Operator accounts (`18-users.spec.ts` mints one per run — its own comment notes "the roster
@@ -135,25 +135,35 @@ export default defineConfig({
       // by the time this was cleaned up (SM-6 report), not the 6 an earlier audit had counted.
       // (Several .NET xunit suites already isolate their OWN equivalents of these stores via
       // ST4I_*_DIR env vars set in test fixtures — a separate, already-working mechanism unrelated to
-      // this Playwright-launched engine process.)
+      // this Playwright-launched engine process.) task-7 (below) isolates the 11th (historian),
+      // leaving `creds` the only deliberate exception, for the structural reason explained there.
       //
-      // The 10 stores below are redirected under an isolated `../.e2e-data` root that
+      // All 11 stores below are redirected under an isolated `../.e2e-data` root that
       // `scripts/reset-engine-state.mjs` wipes in full before every boot — isolated AND disposable,
       // not merely relocated to accumulate somewhere else instead.
       //
-      // historian is DELIBERATELY the one store left pointed at its real default (no env var set
-      // here). `SqliteHistorianStore.ApplyRealPresenceGateAsync` unconditionally excludes every
-      // explicitly-fabricated row from the default (non-`includeFabricated`) query that every
-      // customer-facing surface uses, and this suite's whole fleet is 100% `driverKind: simulated` —
-      // so a genuinely pristine historian store could never produce a single default-visible row,
-      // which would hang `15-historian.spec.ts`'s and `16-reports.spec.ts`'s shared
-      // `waitForHistorianRows` helper (9 tests total) for its full 30s timeout on every run, forever.
-      // Today's suite only passes because the shared production historian.db still carries ~55k
-      // legacy rows written before the `is_fabricated` column existed (provenance NULL, "Unknown
-      // origin" — the one case the gate lets through when no explicitly-real row is in scope) — a
-      // real, separate, pre-existing product gap (a pure-Demo/exhibition install's Historian/Reports
-      // screens show nothing by default) that a hygiene task isolating a test harness is the wrong
-      // place to silently work around. Flagged in the SM-6 report, not fixed here.
+      // historian — task-7 (whole-batch review, CRITICAL) fix. SM-6 left this store DELIBERATELY
+      // unisolated and documented the reason at length right here: `SqliteHistorianStore.
+      // ApplyRealPresenceGateAsync` unconditionally excludes every explicitly-fabricated row from the
+      // default (non-`includeFabricated`) query, this suite's whole fleet is 100%
+      // `driverKind: simulated`, and no web route ever sent `includeFabricated=true` — so a genuinely
+      // pristine historian store could never produce a single default-visible row, which would hang
+      // `15-historian.spec.ts`'s and `16-reports.spec.ts`'s shared `waitForHistorianRows` helper for
+      // its full 30s timeout on every run, forever. SM-6's report called this "a genuine, pre-existing
+      // product characteristic" and left it alone — WRONG on both counts: `git show
+      // f6c4821d:.../SqliteHistorianStore.cs` (the commit before this whole batch) has no provenance
+      // filtering of any kind, so the zero-rows-by-default behavior was introduced BY this batch, not
+      // pre-existing; and it is not a separate, unrelated finding either — it is the batch's own
+      // Critical bug (a fresh demo/exhibition install's `/historian`/`/reports` render nothing,
+      // permanently), caught here as "the harness can't isolate this store" instead of "the product is
+      // broken on day one." Fixed at the root: `HistorianEndpoints.ResolveIncludeFabricated` now
+      // defaults `includeFabricated` to `true` whenever `DemoModeGate.Enabled` (true for this
+      // webServer, via `ST4I_DEMO_ENABLED` below) — the SAME default a real exhibition/demo install
+      // gets — so an isolated, pristine `historian.db` now DOES produce default-visible rows the
+      // moment the demo fleet cycles a few times, same as every other store here. Isolating it exposes
+      // exactly what a fresh demo box would show, rather than masking the bug behind this dev machine's
+      // ~55k pre-migration production rows (provenance NULL, "Unknown origin") the OLD unconditional
+      // gate happened to let through.
       //
       // `creds` (`CredentialStore`, one DPAPI-protected `mk_` key file per machine code) has NO
       // env-var override in the product at all — it's a static class with a hardcoded path. The
@@ -173,6 +183,7 @@ export default defineConfig({
         ST4I_BRIDGE_SPOOL_DIR: join(e2eDataDir, "bridge-spool"),
         ST4I_WAL_DIR: join(e2eDataDir, "wal"),
         ST4I_OPCUA_PKI_DIR: join(e2eDataDir, "opcua-pki"),
+        ST4I_HISTORIAN_DIR: join(e2eDataDir, "historian"),
       },
     },
   ],

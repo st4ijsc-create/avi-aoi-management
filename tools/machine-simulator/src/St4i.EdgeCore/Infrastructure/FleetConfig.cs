@@ -140,7 +140,17 @@ public static class FleetConfig
                     // the pre-GP-3 default HERE (the one shared entry point FleetHost/FleetService/
                     // EdgeWorker all load fleet.json through) rather than inside DriverKinds.Normalize
                     // itself keeps every other Normalize call site's null-passthrough intact.
-                    var driverKind = descriptor.DriverKind is null
+                    //
+                    // Task-7 (whole-batch review, small item) — widened from `is null` to
+                    // IsNullOrWhiteSpace: an EXPLICIT `"driverKind": ""` (or an all-whitespace value) is a
+                    // distinct JSON shape from an omitted key, but the review found it fell through this
+                    // check untouched, went to DriverKinds.Normalize("") unmatched (Normalize's own
+                    // IsNullOrEmpty short-circuit returns "" as-is — nothing to fold), and the machine kept
+                    // an empty DriverKind forever: DriverKinds.IsFabricated("") then silently fails open to
+                    // "real" (see that method's own doc comment) for what is, in every practical sense, the
+                    // SAME "no driverKind was meaningfully specified" case the omitted-key branch already
+                    // treats as Simulated. Blank now gets the identical treatment as omitted.
+                    var driverKind = string.IsNullOrWhiteSpace(descriptor.DriverKind)
                         ? DriverKinds.Simulated
                         : DriverKinds.Normalize(descriptor.DriverKind);
                     machines.Add(descriptor with { DriverKind = driverKind });

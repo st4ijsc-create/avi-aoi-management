@@ -147,8 +147,15 @@ export default function Dashboard() {
         <p className="mt-1 text-sm text-text-muted">
           {/* SM-3 fix round 1 (review IMPORTANT 1) — Demo is the ONLY mode that guarantees a fabricated
               roster (see FleetHost.LoadFleet's own SM-1 remarks); every other mode (Live/Auto — the
-              product default) must not tell a customer their own real machine's live data is "simulated." */}
-          {t(ecosystem.mode === "Demo" ? "dashboard.subtitleBaseDemo" : "dashboard.subtitleBaseLive")}
+              product default) must not tell a customer their own real machine's live data is "simulated."
+              Task-7 (whole-batch review, small item) — `ecosystem.mode` defaults to `"Live"` BEFORE
+              `useEcosystemConnection`'s own `/v1/mode` query resolves (see that hook's own doc comment),
+              so reading `.mode` without also checking `.loaded` briefly rendered the Live copy on every
+              cold load, including a genuine Demo one — the exact "Live read on your fleet" flash on a
+              demo box this fix closes. `EcosystemStatusWidget` already guards this correctly
+              (`if (!ecosystem.loaded || ecosystem.mode !== "Live") return null`); this copies that guard
+              rather than showing either subtitle on an unresolved mode. */}
+          {ecosystem.loaded ? t(ecosystem.mode === "Demo" ? "dashboard.subtitleBaseDemo" : "dashboard.subtitleBaseLive") : ""}
           {roster > 0 ? t("dashboard.subtitleRoster", { roster }) : "."}
         </p>
       </div>

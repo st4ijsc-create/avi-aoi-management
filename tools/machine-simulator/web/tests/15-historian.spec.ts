@@ -99,32 +99,40 @@ test.describe("historian — browse, filter, genealogy dialog, CSV export", () =
     }
   })
 
-  // SM-6 — HistorianResultsTable.ProvenanceTag ("Demo"/"Unknown origin", added by SM-2 to satisfy
-  // "the UI must not lie") had no assertion anywhere in this suite. Its "Demo" branch
-  // (isFabricated === true) is NOT reachable through this real UI: SqliteHistorianStore's own
-  // ApplyRealPresenceGateAsync unconditionally excludes every explicitly-fabricated row from the
-  // default (non-`includeFabricated`) query every customer-facing surface — including this page —
-  // uses, and HistorianResultsFilter/Historian.tsx never sends `includeFabricated=true`. This shared
-  // engine's fleet is 100% `driverKind: simulated`, so a real (isFabricated === false) row is
-  // impossible here too — the ONE branch a real render of this screen can ever show is "Unknown
-  // origin" (isFabricated === null), which the shared historian.db carries because it predates the
-  // `is_fabricated` column. That is what this test asserts against — a real render, not a seeded
-  // fixture.
-  test("every visible row and its genealogy entry carry the provenance tag (Unknown origin)", async ({ page }) => {
+  // SM-6 added this test to cover HistorianResultsTable.ProvenanceTag ("Demo"/"Unknown origin", added
+  // by SM-2 to satisfy "the UI must not lie") — but at the time, `historian` was the one store
+  // Playwright's webServer left pointed at its REAL, unisolated `%ProgramData%` default (see
+  // playwright.config.ts's own env-block comment), because SqliteHistorianStore's
+  // ApplyRealPresenceGateAsync unconditionally excluded every explicitly-fabricated row from the
+  // default query and no web route ever sent `includeFabricated=true` — so a genuinely pristine store
+  // could never show a row at all. The suite only worked because that shared, unisolated
+  // historian.db carried ~55k pre-migration legacy rows (provenance NULL — "Unknown origin"), which is
+  // the ONLY branch that test could reach.
+  //
+  // task-7 (whole-batch review, CRITICAL) fixed both halves: `historian` is now isolated (a pristine,
+  // empty historian.db every run, like every other store), and
+  // `HistorianEndpoints.ResolveIncludeFabricated` defaults `includeFabricated` to `true` on a
+  // Demo-enabled deployment (this webServer sets `ST4I_DEMO_ENABLED=true`) — the demo carve-out a real
+  // exhibition install needs to render `/historian`/`/reports` at all. On a pristine store, this
+  // suite's 100%-`driverKind: simulated` fleet now writes fresh `is_fabricated = 1` rows that render
+  // through by default — so "Demo" (isFabricated === true) is the branch a real render of this screen
+  // shows, and "Unknown origin" (a pre-migration-only case) is no longer reachable here at all, since
+  // there is no pre-migration history left to accumulate in an isolated, wiped-every-run store.
+  test("every visible row and its genealogy entry carry the provenance tag (Demo)", async ({ page }) => {
     await gotoHistorian(page)
 
     const provenanceCells = page.locator("tbody tr td:nth-child(4)")
     const count = await provenanceCells.count()
     expect(count).toBeGreaterThan(0)
     for (let i = 0; i < count; i++) {
-      await expect(provenanceCells.nth(i).getByText(viDict.historian.table.unknownProvenance)).toBeVisible()
+      await expect(provenanceCells.nth(i).getByText(viDict.historian.table.fabricated)).toBeVisible()
     }
 
     // Same tag, same text, rendered by the same exported ProvenanceTag inside the genealogy dialog.
     await page.locator("tbody tr").first().getByRole("button", { name: viDict.historian.table.genealogyAction }).click()
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByText(viDict.historian.table.unknownProvenance).first()).toBeVisible()
+    await expect(dialog.getByText(viDict.historian.table.fabricated).first()).toBeVisible()
     await dialog.getByRole("button", { name: "Close" }).click()
     await expect(dialog).not.toBeVisible()
   })

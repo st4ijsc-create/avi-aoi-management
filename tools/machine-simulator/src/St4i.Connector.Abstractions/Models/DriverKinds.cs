@@ -58,14 +58,24 @@ public static class DriverKinds
     /// byte-for-byte as given — never case-folded, never rejected: this method's whole job is
     /// normalization, not validation. <see langword="null"/>/empty is returned unchanged (nothing to
     /// normalize against).
+    ///
+    /// <para>Task-7 (whole-batch review, IMPORTANT) — the match itself is against
+    /// <paramref name="id"/><c>.Trim()</c>, not the raw string, so a whitespace-padded built-in
+    /// (e.g. <c>" Simulated "</c>, the shape <see cref="St4i.EdgeCore.Infrastructure.FleetConfig.Load"/>
+    /// can produce for an untrimmed <c>fleet.json</c> field) still folds to the canonical spelling instead
+    /// of silently missing every built-in comparison and passing through as if it were an unrecognized
+    /// third-party id. This affects ONLY whether a match is found — a non-matching id is still returned
+    /// exactly as given, untrimmed, same as before (a third-party id's own whitespace, if any, is its
+    /// author's concern, not this method's to silently strip).</para>
     /// </summary>
     public static string Normalize(string id)
     {
         if (string.IsNullOrEmpty(id)) return id;
 
+        var trimmed = id.Trim();
         foreach (var builtIn in BuiltIns)
         {
-            if (string.Equals(builtIn, id, StringComparison.OrdinalIgnoreCase)) return builtIn;
+            if (string.Equals(builtIn, trimmed, StringComparison.OrdinalIgnoreCase)) return builtIn;
         }
 
         return id;
@@ -79,8 +89,21 @@ public static class DriverKinds
     /// itself. <see cref="Simulated"/> is the ONLY built-in this codebase ever manufactures data for —
     /// every other built-in (<see cref="HotFolderAoi"/>/<see cref="Mqtt"/>/<see cref="Modbus"/>/
     /// <see cref="OpcUa"/>) and every third-party id names a driver that talks to a real device, so every
-    /// one of them is real by definition. Goes through <see cref="Normalize"/> first so any casing of
-    /// "simulated" is recognized, exactly like every other built-in comparison in this codebase.
+    /// one of them is real by definition. Goes through <see cref="Normalize"/> first so any casing (or,
+    /// since task-7, surrounding whitespace) of "simulated" is recognized, exactly like every other
+    /// built-in comparison in this codebase.
+    ///
+    /// <b>Task-7 (whole-batch review, IMPORTANT) — deliberate, tested behavior for <see langword="null"/>/
+    /// empty <paramref name="id"/>: returns <see langword="false"/> (fails open to "real"), not
+    /// <see langword="true"/>.</b> This method has no context to decide what a missing/blank id SHOULD
+    /// mean for whichever caller handed it one — that call-site-specific judgment already has exactly one
+    /// home: <see cref="St4i.EdgeCore.Infrastructure.FleetConfig.Load"/>, the one place an externally-
+    /// authored <c>fleet.json</c> value is resolved, treats an omitted/blank <c>driverKind</c> key as
+    /// <see cref="Simulated"/> (assume fabricated) BEFORE this method ever sees it — not by changing this
+    /// method's own default. Every other caller in this codebase (every built-in driver, every connector
+    /// added via <c>ConnectorConfigValidation</c>) always passes a concrete, non-empty kind, so this
+    /// default is not expected to be exercised in practice outside a malformed/legacy record — see
+    /// <c>DriverKindsTests.IsFabricated_NullEmptyOrWhitespacePaddedInput</c> for the pinned cases.
     /// </summary>
-    public static bool IsFabricated(string id) => Normalize(id) == Simulated;
+    public static bool IsFabricated(string? id) => Normalize(id ?? string.Empty) == Simulated;
 }

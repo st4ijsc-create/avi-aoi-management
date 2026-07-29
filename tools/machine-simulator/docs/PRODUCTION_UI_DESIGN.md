@@ -4,7 +4,7 @@
 
 **Nhánh:** `feat/machine-simulator` (worktree `D:/SOURCES/avi-aoi-sim`). Không đụng repo chính trong đợt này (phần server đã tách nhánh `feat/machine-operating-config`).
 
-Thiết kế này **sửa đổi** một phần HMI_DESIGN_SPEC.md: các quy tắc *thẩm mỹ* (radius 0, không đổ bóng, phẳng) trở thành **tham số theo theme**; các quy tắc *cấu trúc & an toàn* giữ nguyên (xem §4).
+Thiết kế này **sửa đổi** một phần HMI_DESIGN_SPEC.md: các quy tắc *thẩm mỹ* (radius 0, không đổ bóng, phẳng) trở thành **tham số theo theme**; các quy tắc *cấu trúc & thao tác* giữ nguyên (xem §4 — KHÔNG phải quy tắc an toàn thiết bị, xem chính §4).
 
 ---
 
@@ -46,7 +46,7 @@ Thiết kế này **sửa đổi** một phần HMI_DESIGN_SPEC.md: các quy t�
 
 ### 1.4 Phủ toàn app
 - Cả 11 route + mọi component (shell, dashboard, machines, detail, onboarding, inspector, scenario, settings, product/recipe config, HMI panel, BoardCanvas, các schematic) phải đọc đúng qua token → tự đúng ở cả 3 theme.
-- **Bất biến an toàn giữ nguyên** ở mọi theme (xem §4).
+- **Bất biến cấu trúc giữ nguyên** ở mọi theme (xem §4 — không phải bất biến an toàn thiết bị).
 
 ### 1.5 Nợ kỹ thuật thị giác
 - Baseline thị giác hiện gắn với light/dark → phải **dựng lại theo 3 theme** cho các màn chủ chốt (không nhân 3 mù quáng toàn bộ — chọn tập đại diện + các màn có rủi ro tương phản). Giữ ngưỡng `0.00002`, không nới.
@@ -121,7 +121,7 @@ Mỗi WS: TDD/subagent-driven, review opus, tự kiểm chứng live (chụp+Rea
 - **Khối lượng:** 3 theme × 11 màn + engine event là đợt nhiều ngày. Baseline thị giác tăng theo số theme.
 - **Tương phản Console/Warmth:** dễ trượt axe AA — phải đo, không tin mắt.
 - **WS3 cần engine phát thêm dữ liệu** — thay đổi giao kèu WS/fleet; phải giữ tương thích các màn khác đang đọc fleet.
-- **Bất biến an toàn** (§4) phải giữ qua mọi theme và qua twin mới — có test hồi quy sẵn (`12-hmi-safety-rail`), mở rộng cho đa theme.
+- **Bất biến cấu trúc** (§4 — không phải bất biến an toàn thiết bị, xem §4 tự nói rõ) phải giữ qua mọi theme và qua twin mới — có test hồi quy sẵn (`12-hmi-safety-rail`), mở rộng cho đa theme.
 
 ## §4 — Bất biến GIỮ NGUYÊN qua mọi theme (không thương lượng)
 - Màu trạng thái chỉ mang nghĩa trạng thái; không-có-dữ-liệu = màu chờ, không phải lỗi.

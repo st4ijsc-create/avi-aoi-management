@@ -134,6 +134,17 @@ public sealed class HistorianRestartSurvivalTests
         // orthogonal to SM-2's provenance filtering — it just happens to use the demo fleet as a
         // convenient, already-wired real pipeline — so it opts into `includeFabricated: true` to keep
         // proving restart-survival, not re-litigate provenance filtering.
+        //
+        // Fix 1 (task-7 review, CRITICAL) — this explicit opt-in was, in hindsight, the demo-carve-out
+        // signal in hand a full task early: this is the one pre-existing test combining a REAL FleetHost +
+        // REAL store + the demo fleet, and it needed `includeFabricated: true` for exactly the same reason
+        // a fresh exhibition install's `/historian`/`/reports` rendered nothing by default — a 100%-
+        // Simulated roster has no default-visible rows at all without it. This test calls
+        // `IHistorianStore.AggregateForOeeAsync` directly (store layer, bypassing
+        // `St4i.EngineApi.Endpoints.HistorianEndpoints` entirely), so it is UNAFFECTED by
+        // `HistorianEndpoints.ResolveIncludeFabricated`'s new `DemoModeGate`-keyed default and correctly
+        // keeps its own explicit opt-in — the fix that default needed landed one endpoint layer up, not
+        // here.
         var aggregate = await store2.AggregateForOeeAsync(machineCode, windowStart, windowEndFinal, CancellationToken.None, includeFabricated: true);
         Assert.True(aggregate.TotalCount > 0, "AggregateForOeeAsync should count the ProcessResult rows written before the restart");
         Assert.True(aggregate.RunTime > TimeSpan.Zero, "AggregateForOeeAsync should reconstruct a non-zero run-time from the persisted Start/Stop run events");

@@ -91,6 +91,31 @@ public class DriverKindsTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Task-7 (whole-batch review, IMPORTANT) — whitespace-padded built-ins must still fold: the bug this
+    // closes was that DriverKinds.IsFabricated(" Simulated ") (the exact shape an untrimmed fleet.json
+    // field can produce, since FleetConfig.Load never trimmed before this fix) silently failed open to
+    // "real" because Normalize's own OrdinalIgnoreCase comparison never matched an unequal-length padded
+    // string.
+    // ─────────────────────────────────────────────────────────────────────
+    [Theory]
+    [InlineData(" Simulated ", "Simulated")]
+    [InlineData("\tModbus\n", "Modbus")]
+    [InlineData("  opcua  ", "OpcUa")]
+    public void Normalize_WhitespacePaddedBuiltIn_TrimsThenFoldsToCanonicalSpelling(string input, string expectedCanonical)
+    {
+        Assert.Equal(expectedCanonical, DriverKinds.Normalize(input));
+    }
+
+    [Fact]
+    public void Normalize_WhitespacePaddedThirdPartyId_PassesThroughUntrimmed()
+    {
+        // A non-matching id's OWN whitespace is its author's concern — this method only trims to widen
+        // the built-in MATCH, it never launders an unrecognized id's surrounding whitespace away.
+        const string padded = "  vendor.acme.weld  ";
+        Assert.Equal(padded, DriverKinds.Normalize(padded));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-2-brief.md) —
     // IsFabricated: the single canonical "is this reading manufactured, never real process data" call
     // path, mirroring Normalize's own "one comparison rule" contract. Simulated is the ONLY built-in kind
@@ -117,5 +142,35 @@ public class DriverKindsTests
     public void IsFabricated_EveryOtherBuiltInAndAnyThirdPartyId_ReturnsFalse(string driverKind)
     {
         Assert.False(DriverKinds.IsFabricated(driverKind));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Task-7 (whole-batch review, small item) — three inputs the review found untested: IsFabricated
+    // silently "fails open" to false (real) for null/empty, and (before the Normalize trim fix above) for
+    // a whitespace-padded "Simulated" too. Pinned here as DELIBERATE, documented behavior (see
+    // IsFabricated's own doc comment for why null/empty resolving a call-site's own ambiguity is NOT this
+    // method's job), not an untested accident.
+    // ─────────────────────────────────────────────────────────────────────
+    [Fact]
+    public void IsFabricated_Null_ReturnsFalse_FailsOpenToReal_Deliberately()
+    {
+        Assert.False(DriverKinds.IsFabricated(null));
+    }
+
+    [Fact]
+    public void IsFabricated_Empty_ReturnsFalse_FailsOpenToReal_Deliberately()
+    {
+        Assert.False(DriverKinds.IsFabricated(""));
+    }
+
+    [Theory]
+    [InlineData(" Simulated ")]
+    [InlineData("\tSimulated\n")]
+    [InlineData("  simulated  ")]
+    public void IsFabricated_WhitespacePaddedSimulated_ReturnsTrue(string driverKind)
+    {
+        // The Normalize trim fix's own end-to-end proof: a padded "Simulated" must be recognized as
+        // fabricated, not silently pass through as an "unrecognized" (therefore real) third-party id.
+        Assert.True(DriverKinds.IsFabricated(driverKind));
     }
 }

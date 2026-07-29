@@ -387,9 +387,14 @@ export default function Machines() {
               672px cap wrapped "…để xem chi tiết." onto its own line regardless (H3c leftover fix).
               SM-3 fix round 1 (review IMPORTANT 1) — same Demo-vs-not split as Dashboard.tsx's own
               subtitleBaseDemo/Live: this rendered unconditionally, so a standalone customer's own real
-              roster was being called "simulated" on every load. */}
+              roster was being called "simulated" on every load.
+              Task-7 (whole-batch review, small item) — `ecosystem.mode` defaults to `"Live"` before
+              `useEcosystemConnection`'s own `/v1/mode` query resolves, so reading `.mode` without also
+              checking `.loaded` briefly showed the Live copy on every cold load, including a genuine Demo
+              one. Copies `EcosystemStatusWidget`'s own guard (`!ecosystem.loaded || ecosystem.mode !==
+              "Live"` ⇒ render nothing) instead of guessing. */}
           <p className="mt-1 max-w-3xl text-sm text-text-muted">
-            {t(ecosystem.mode === "Demo" ? "machines.descriptionDemo" : "machines.descriptionLive")}
+            {ecosystem.loaded ? t(ecosystem.mode === "Demo" ? "machines.descriptionDemo" : "machines.descriptionLive") : ""}
           </p>
         </div>
         {!isPending && !isError ? (

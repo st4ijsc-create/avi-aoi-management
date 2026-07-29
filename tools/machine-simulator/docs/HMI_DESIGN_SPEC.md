@@ -289,9 +289,12 @@ between states, and the rail's content height literally cannot depend on whether
   removed for that reason. The dome itself (and the box-shadow-collapse "pressed in" cue that
   transform was trying to sell) is gone too now, retired entirely by the same fix round that replaced
   the gradient/raised-shadow treatment with the flat, tinted register every other control already uses
-  (§6) — latched HALT is now cued by a stronger fill tint only (`bg-status-fault/35` vs `/15`), which
-  has zero geometry impact by construction (a flat background/border change never moves a
-  fixed-size element's own box).
+  (§6) — latched HALT is cued by a bolder BORDER only (`border-2` vs `border`, both states sharing the
+  SAME `bg-status-fault/15` fill — see `ControlButton.tsx`'s own comment: a stronger fill tint outside
+  the proven ~10-20% range risks losing the axe-verified AA contrast `text-danger-text` was tuned for,
+  so border width — contrast-neutral — is the safe dimension to add emphasis on instead), which has
+  zero geometry impact by construction (Tailwind's default border-box sizing keeps a fixed-size
+  element's own box identical regardless of border width).
 - With the cluster's height now constant, the remaining requirement is that the CONSTANT (always
   latched-size) content actually fits the 1280×800 floor with real margin, not just avoids negative
   slack — the row:log flex ratio (§8.1) and the rail/output-card's own padding (§8.5) were re-tuned so

@@ -63,6 +63,22 @@ public sealed class DemoModeGateTests
     }
 
     [Fact]
+    public void EnvVarName_IsSt4iDemoEnabled()
+    {
+        // Restored (task-7 whole-batch review, small item) — dropped during the SM-1b consolidation
+        // (this class's own doc comment: "there is no longer a second copy's 'same env var name, same
+        // rule' fact to cross-check"). That reasoning was right about ONE job this assertion did (proving
+        // two duplicate copies agreed with each other — genuinely obsolete once there was only one copy)
+        // but missed the OTHER, still-live job: pinning the literal string every launch script, README
+        // snippet, and `web/playwright.config.ts`'s own webServer env block (`ST4I_DEMO_ENABLED: "true"`)
+        // actually sets. None of those hardcode a reference to this constant, so nothing else in this
+        // solution would fail to compile — or fail loudly at all — if this constant's spelling ever
+        // drifted from what those call sites hardcode; a passing test suite would keep passing right up
+        // until an exhibition build silently stopped starting in Demo mode.
+        Assert.Equal("ST4I_DEMO_ENABLED", DemoModeGate.EnvVarName);
+    }
+
+    [Fact]
     public void RawValueCtor_IsPublic_BecauseEdgeServiceResolveGateIsAGenuineProductionCaller()
     {
         // SM-1b fix round 1 — pins the ctor's accessibility itself: EdgeWorker.ResolveGate (production

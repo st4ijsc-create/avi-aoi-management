@@ -186,6 +186,37 @@ public class FleetConfigTests
         }
     }
 
+    /// <summary>Task-7 (whole-batch review, small item) — the review found that
+    /// <see cref="Load_omittedDriverKind_DefaultsToSimulated_LikeThePreGP3EnumOrdinalZero"/> only covered
+    /// an OMITTED <c>driverKind</c> key; an EXPLICIT blank/whitespace-only value (a distinct JSON shape a
+    /// hand-edited <c>fleet.json</c> could easily produce) fell through untouched, left the machine with an
+    /// empty <c>DriverKind</c> forever, and made <see cref="DriverKinds.IsFabricated"/> silently fail open
+    /// to "real" for it (see that method's own doc comment). Blank now gets the identical Simulated default
+    /// as omitted.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Load_blankDriverKind_DefaultsToSimulated_SameAsOmitted(string blankDriverKind)
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), "fleet-blank-driverkind-" + Guid.NewGuid() + ".json");
+        File.WriteAllText(tmp, $$"""
+        [
+          { "code": "BLANKDRIVERKIND-01", "serialSeed": "B1", "deviceClass": "Automation", "machineType": "screwdriver",
+            "stepType": null, "driverKind": {{System.Text.Json.JsonSerializer.Serialize(blankDriverKind)}},
+            "recipeCode": null, "mappingProfile": null, "cycleSeconds": 1.0 }
+        ]
+        """);
+        try
+        {
+            var machine = Assert.Single(FleetConfig.Load(tmp));
+            Assert.Equal(DriverKinds.Simulated, machine.DriverKind);
+        }
+        finally
+        {
+            File.Delete(tmp);
+        }
+    }
+
     [Fact]
     public void Load_thirdPartyDriverKind_survivesByteForByte_notCaseFolded()
     {

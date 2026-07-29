@@ -255,8 +255,11 @@ public sealed class AuditWiringTests
     // machine.settings.set — the `by` replacement: actor is the AUTHENTICATED user, never body.by.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Task-7 (whole-batch review) — renamed from <c>MachineSettingsSet_AsEngineer_...</c>: this
+    /// authenticates as the auto-logged-in "demo-admin" (<c>Roles.Admin</c>), never a genuinely
+    /// bootstrapped Engineer account. See the body comment for why.</summary>
     [Fact]
-    public async Task MachineSettingsSet_AsEngineer_RecordsAuthenticatedActor_NotClientSuppliedBy()
+    public async Task MachineSettingsSet_AsDemoAdmin_RecordsAuthenticatedActor_NotClientSuppliedBy()
     {
         // SM-1 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1-brief.md) —
         // AOI-01 is a demo-fleet code; a product deployment's default roster is now empty (see
@@ -373,10 +376,13 @@ public sealed class AuditWiringTests
     // historian.oee_settings.update
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Task-7 — renamed from <c>OeeSettingsUpdate_AsEngineer_...</c>; same demo-admin identity as
+    /// <see cref="MachineSettingsSet_AsDemoAdmin_RecordsAuthenticatedActor_NotClientSuppliedBy"/>, not a
+    /// genuine Engineer account.</summary>
     [Fact]
-    public async Task OeeSettingsUpdate_AsEngineer_RecordsOldAndNewForTheMachine()
+    public async Task OeeSettingsUpdate_AsDemoAdmin_RecordsOldAndNewForTheMachine()
     {
-        // SM-1 — SCRW-01 is a demo-fleet code; see MachineSettingsSet_AsEngineer_... above for why this
+        // SM-1 — SCRW-01 is a demo-fleet code; see MachineSettingsSet_AsDemoAdmin_... above for why this
         // uses the auto-logged-in demo-admin directly instead of bootstrapping a separate admin/engineer.
         await using var factory = await CreateFactoryAsync(demoEnabled: true);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
@@ -476,10 +482,13 @@ public sealed class AuditWiringTests
     // machine.config.sync — the D4-review-flagged gap this task (D5) closes.
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>Task-7 — renamed from <c>MachineConfigSync_AsEngineer_...</c>; same demo-admin identity as
+    /// <see cref="MachineSettingsSet_AsDemoAdmin_RecordsAuthenticatedActor_NotClientSuppliedBy"/>, not a
+    /// genuine Engineer account.</summary>
     [Fact]
-    public async Task MachineConfigSync_AsEngineer_RecordsAuthenticatedActorAndResultSummary()
+    public async Task MachineConfigSync_AsDemoAdmin_RecordsAuthenticatedActorAndResultSummary()
     {
-        // SM-1 — AOI-01 is a demo-fleet code; see MachineSettingsSet_AsEngineer_... above for why this
+        // SM-1 — AOI-01 is a demo-fleet code; see MachineSettingsSet_AsDemoAdmin_... above for why this
         // uses the auto-logged-in demo-admin directly instead of bootstrapping a separate admin/engineer.
         await using var factory = await CreateFactoryAsync(demoEnabled: true);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });

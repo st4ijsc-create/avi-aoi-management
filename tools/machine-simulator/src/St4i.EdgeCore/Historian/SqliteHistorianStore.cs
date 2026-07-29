@@ -409,6 +409,19 @@ public sealed class SqliteHistorianStore : IHistorianStore
     /// history from a report the instant its first post-upgrade row lands. There is no way to distinguish
     /// that case from "Unknown = actually fabricated" without a second column recording WHEN the row was
     /// written relative to the migration, which this task does not add.
+    ///
+    /// <b>Fix 1 (task-7 review, CRITICAL) — this method's own "excluded UNCONDITIONALLY" behavior above is
+    /// still exactly true GIVEN <paramref name="includeFabricated"/> is <see langword="false"/>; what
+    /// changed is who decides that boolean.</b> <c>St4i.EngineApi.Endpoints.HistorianEndpoints</c> used to
+    /// hardcode <c>includeFabricated ?? false</c> on every route with no carve-out, which meant an
+    /// exhibition/demo install (100% <c>Simulated</c> roster) could never produce a single default-visible
+    /// row anywhere — not "narrower than intended," literally zero, permanently. That endpoint-layer default
+    /// now runs through <c>HistorianEndpoints.ResolveIncludeFabricated</c> instead, which flips to
+    /// <see langword="true"/> when <see cref="St4i.EdgeCore.Config.DemoModeGate.Enabled"/> (see that
+    /// method's own doc comment for why the default is keyed off that flag rather than the live roster).
+    /// This store method is unchanged and still the right place to enforce the rule once a caller HAS
+    /// decided what <paramref name="includeFabricated"/> should be — it does not itself know about Demo
+    /// mode, and should not.
     /// </summary>
     private static async Task<List<string>> ApplyRealPresenceGateAsync(
         SqliteConnection connection, List<string> whereClauses, List<(string Name, object Value)> parameters,

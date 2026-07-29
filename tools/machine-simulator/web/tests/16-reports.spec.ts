@@ -14,12 +14,15 @@ import { vi as viDict } from "../src/i18n/vi"
  * precondition — real historian rows on file — via a direct API wait before navigating, same idiom
  * that file already uses.
  *
- * `oee-settings.json` lives under `%ProgramData%\ST4I\sim\historian` (`OeeSettingsStore`'s own
- * default root) — NOT one of the files `scripts/reset-engine-state.mjs` deletes before each
- * `webServer` boot — so, unlike `products.json`/`recipes.json`/`machine-operating-config.json`, a
- * machine's OEE targets persist across Playwright sessions on this machine. Every test below
- * therefore sets its OWN known starting values via a direct `PUT` before asserting anything about
- * "overridden"/effective values, rather than assuming a pristine "never touched" baseline.
+ * `oee-settings.json` lives under `OeeSettingsStore`'s own root, alongside `historian.db` —
+ * task-7 (whole-batch review, CRITICAL) isolated that whole directory under `ST4I_HISTORIAN_DIR`
+ * (`web/.e2e-data/historian`), which `scripts/reset-engine-state.mjs` now wipes before every
+ * `webServer` boot, same as every other isolated store — so, unlike before that fix, OEE targets no
+ * longer persist across Playwright sessions on this machine either. Every test below still sets its
+ * OWN known starting values via a direct `PUT` before asserting anything about "overridden"/effective
+ * values, rather than assuming a pristine "never touched" baseline — that discipline no longer
+ * depends on cross-session persistence to matter, but stays exactly as written since it is still the
+ * correct, self-contained way to establish a precondition regardless of what an earlier run left.
  */
 
 async function waitForHistorianRows(request: APIRequestContext, minRows = 5): Promise<void> {
