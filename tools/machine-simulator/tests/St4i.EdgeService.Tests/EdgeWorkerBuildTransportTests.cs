@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Transport;
 using Xunit;
 
@@ -22,7 +23,7 @@ public sealed class EdgeWorkerBuildTransportTests
     [Fact]
     public void BuildTransport_GateEnabled_ReturnsDemoTransport()
     {
-        var gate = new TransportModeGate("true");
+        var gate = new DemoModeGate("true");
         var wal = new WalOptions { Directory = FreshTempDir(), Enabled = true };
 
         var transport = EdgeWorker.BuildTransport(
@@ -37,7 +38,7 @@ public sealed class EdgeWorkerBuildTransportTests
     [Fact]
     public void BuildTransport_GateDisabled_ReturnsLiveTransport()
     {
-        var gate = new TransportModeGate(null);
+        var gate = new DemoModeGate(null);
         var wal = new WalOptions { Directory = FreshTempDir(), Enabled = true };
 
         var transport = EdgeWorker.BuildTransport(
@@ -61,7 +62,7 @@ public sealed class EdgeWorkerBuildTransportTests
         // %ProgramData%\ST4I\sim\wal, and the vendored SDK's own Enqueue does NOT create missing parent
         // directories — BuildTransport MUST call EnsureDir() itself on the Live path, or the very first
         // offline write is lost instead of durably queued.
-        var gate = new TransportModeGate(null);
+        var gate = new DemoModeGate(null);
         var dir = FreshTempDir();
         var wal = new WalOptions { Directory = dir, Enabled = true };
         Assert.False(Directory.Exists(dir));
@@ -84,7 +85,7 @@ public sealed class EdgeWorkerBuildTransportTests
     [Fact]
     public void BuildTransport_GateDisabled_WalDisabled_NeverCreatesTheWalDirectory()
     {
-        var gate = new TransportModeGate(null);
+        var gate = new DemoModeGate(null);
         var dir = FreshTempDir();
         var wal = new WalOptions { Directory = dir, Enabled = false };
 
@@ -108,7 +109,7 @@ public sealed class EdgeWorkerBuildTransportTests
         // A not-yet-onboarded box (no CredentialStore.Load hit yet) must still boot into Live — it just
         // fails sends until a key exists (see LiveTransport's own St4iConfigException handling), rather
         // than silently falling back to a fabricated Demo fleet.
-        var gate = new TransportModeGate(null);
+        var gate = new DemoModeGate(null);
         var wal = new WalOptions { Directory = FreshTempDir(), Enabled = false };
 
         var transport = EdgeWorker.BuildTransport(

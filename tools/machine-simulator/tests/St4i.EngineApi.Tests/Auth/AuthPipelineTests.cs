@@ -22,8 +22,10 @@ namespace St4i.EngineApi.Tests.Auth;
 /// while they're still set, then restores the previous values immediately. Program.cs's composition root
 /// only ever reads them once (at that eager build), so narrowing the mutation window to "right before/
 /// during that one build call" keeps the already-accepted-elsewhere real-env-var risk (see
-/// <c>DemoModeGateTests.DefaultCtor_ReadsRealEnvironmentVariable</c>, which does the same kind of thing
-/// for a single env var) as small as it can be — and a process-wide <see cref="SemaphoreSlim"/> here
+/// <c>St4i.EdgeCore.Tests.Config.DemoModeGateTests.DefaultCtor_ReadsRealEnvironmentVariable</c>, which
+/// does the same kind of thing for a single env var — moved there from this project in SM-1b fix round 1,
+/// see <c>St4i.EdgeCore.Config.DemoModeGate</c>'s own doc comment) as small as it can be — and a
+/// process-wide <see cref="SemaphoreSlim"/> here
 /// additionally serializes every factory build in THIS class against each other (methods within one xUnit
 /// test class already run sequentially by default, but this also covers the (small, pre-existing) risk of
 /// racing a DIFFERENT test class that touches the same real env vars).

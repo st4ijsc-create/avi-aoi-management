@@ -178,7 +178,9 @@ public partial class MainWindow : Window
         return File.Exists(candidate) ? candidate : null;
     }
 
-    // St4i.EngineApi.Config.DemoModeGate.EnvVarName, kept in sync by convention (same reasoning as
+    // St4i.EdgeCore.Config.DemoModeGate.EnvVarName (SM-1b fix round 1 moved the canonical class from
+    // St4i.EngineApi.Config to St4i.EdgeCore.Config — see that class's own doc comment), kept in sync by
+    // convention here regardless of which project owns it (same reasoning as
     // EnginePort above — this project doesn't reference EngineApi as a library, only spawns its
     // published .exe as an opaque child process). WS2-T2 (docs/PRODUCTION_UI_DESIGN.md §2.5) —
     // exhibition packaging: an operator drops a tiny launcher script beside THIS shell's own .exe

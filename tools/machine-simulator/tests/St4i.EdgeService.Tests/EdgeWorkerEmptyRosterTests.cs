@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using St4i.EdgeCore.Config;
 using Xunit;
 
 namespace St4i.EdgeService.Tests;
@@ -34,7 +35,7 @@ public sealed class EdgeWorkerEmptyRosterTests
     private static EdgeWorker NewWorker(int? smokeCount, RecordingHostApplicationLifetime lifetime) =>
         new(NullLogger<EdgeWorker>.Instance, lifetime,
             new EdgeServiceOptions(SmokeCount: smokeCount, FleetPath: null),
-            demoModeGate: new TransportModeGate("false")); // explicit product mode, no --fleet ⇒ empty roster
+            demoModeGate: new DemoModeGate("false")); // explicit product mode, no --fleet ⇒ empty roster
 
     /// <summary>Runs <paramref name="worker"/> to completion (or fails the test if it hangs past
     /// <see cref="NoHangTimeout"/>) and returns the completed <see cref="BackgroundService.ExecuteTask"/>

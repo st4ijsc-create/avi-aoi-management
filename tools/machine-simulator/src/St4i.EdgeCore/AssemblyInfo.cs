@@ -4,3 +4,12 @@
 // (plus its test) moved to St4i.EngineApi/St4i.EngineApi.Tests in this same task (see SiteDiscovery.cs's
 // own doc comment for why). No other internal member of this assembly is consumed cross-assembly by
 // St4i.EdgeCore.Tests, so this file is intentionally left with no InternalsVisibleTo at all.
+//
+// SM-1b fix round 1 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1b-brief.md,
+// review) — St4i.EdgeCore.Config.DemoModeGate moved here from St4i.EngineApi.Config, collapsing two of
+// the three env-var-gate duplicates the codebase had accumulated (see that class's own doc comment for
+// the full history). Its explicit-raw-value ctor is `public` (not `internal`) specifically so this stays
+// true: St4i.EdgeService.EdgeWorker.ResolveGate is a genuine PRODUCTION caller of that ctor, not just a
+// test — granting a PEER PRODUCTION assembly InternalsVisibleTo access for a non-test reason would be the
+// wrong tool here, so no new InternalsVisibleTo entry was added for it (or for the three test projects
+// that also now construct DemoModeGate directly through the same public ctor).

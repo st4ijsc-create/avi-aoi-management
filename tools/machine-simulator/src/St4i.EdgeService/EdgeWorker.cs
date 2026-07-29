@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Drivers;
 using St4i.Connector.Abstractions;
 using St4i.EdgeCore.Drivers.Simulators;
@@ -45,7 +46,7 @@ public sealed class EdgeWorker : BackgroundService
 {
     /// <summary>Task F1-2 — Live-path connection settings, read directly from the process environment
     /// (no <see cref="EdgeServiceOptions"/> field: those are CLI-arg-driven, these are launch-env-driven,
-    /// same split as <see cref="TransportModeGate"/>/<see cref="St4i.EdgeCore.Transport.WalOptions"/>'s
+    /// same split as <see cref="DemoModeGate"/>/<see cref="St4i.EdgeCore.Transport.WalOptions"/>'s
     /// own <c>FromEnvironment</c> idiom).</summary>
     internal const string ServerUrlEnvVar = "ST4I_SERVER_URL";
     internal const string MachineCodeEnvVar = "ST4I_MACHINE_CODE";
@@ -90,19 +91,21 @@ public sealed class EdgeWorker : BackgroundService
     /// transport can never disagree about demo-vs-product for a single run — see that method's own
     /// remarks.
     ///
-    /// This project reuses its OWN <see cref="TransportModeGate"/> rather than
-    /// <c>St4i.EngineApi.Config.DemoModeGate</c> — a real ProjectReference in that direction was tried and
-    /// fails at restore (NU1605 package-downgrade: EdgeService pins <c>Microsoft.Extensions.Hosting</c>
-    /// 9.0.0, EngineApi transitively requires &gt;= 10.0.10 via its Windows-service package, and EngineApi
-    /// is also an ASP.NET Core <c>Microsoft.NET.Sdk.Web</c> host with a hard publish-time dependency on the
-    /// built web UI) — see <see cref="TransportModeGate"/>'s own doc comment for the full writeup.</summary>
-    private readonly TransportModeGate? _demoModeGate;
+    /// Fix round 1 (review) — this now reuses <see cref="St4i.EdgeCore.Config.DemoModeGate"/> directly
+    /// instead of a second, EdgeService-local <c>TransportModeGate</c> copy. A direct reference to
+    /// <c>St4i.EngineApi.Config.DemoModeGate</c> was tried and confirmed infeasible (NU1605 package
+    /// downgrade at restore, plus EngineApi's ASP.NET Core/web-UI-publish-gate dependency surface — see
+    /// that class's own doc comment for the full writeup) — but <see cref="St4i.EdgeCore.Config.DemoModeGate"/>
+    /// is a plain, dependency-free class in <c>St4i.EdgeCore</c>, a project THIS project already
+    /// <c>ProjectReference</c>s, so moving the canonical copy there (rather than referencing EngineApi
+    /// directly) collapses the duplicate with no new project-reference edge and no NU1605 risk.</summary>
+    private readonly DemoModeGate? _demoModeGate;
 
     public EdgeWorker(
         ILogger<EdgeWorker> logger,
         IHostApplicationLifetime lifetime,
         EdgeServiceOptions options,
-        TransportModeGate? demoModeGate = null)
+        DemoModeGate? demoModeGate = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
@@ -223,7 +226,7 @@ public sealed class EdgeWorker : BackgroundService
         // or test call site does that today, but every pre-existing EdgeWorker construction still
         // compiles/behaves unchanged either way.
         var gate = _demoModeGate
-            ?? ResolveGate(_options.SmokeCount, Environment.GetEnvironmentVariable(TransportModeGate.EnvVarName));
+            ?? ResolveGate(_options.SmokeCount, Environment.GetEnvironmentVariable(DemoModeGate.EnvVarName));
 
         var serverUrlRaw = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
         var serverUrl = string.IsNullOrWhiteSpace(serverUrlRaw) ? DefaultServerUrl : serverUrlRaw;
@@ -246,16 +249,16 @@ public sealed class EdgeWorker : BackgroundService
         return BuildTransport(gate, serverUrl, machineCode, verifyTls, wal, mkKey, _logger);
     }
 
-    /// <summary>Task F1-2 — the effective <see cref="TransportModeGate"/> for one run. An explicit
-    /// <see cref="TransportModeGate.EnvVarName"/> (any non-blank value, including an explicit "false")
+    /// <summary>Task F1-2 — the effective <see cref="DemoModeGate"/> for one run. An explicit
+    /// <see cref="DemoModeGate.EnvVarName"/> (any non-blank value, including an explicit "false")
     /// always wins. Only when the operator has NOT set it at all does a <c>--smoke</c> run (README §9's
     /// CI path) fall back to Demo — keeps `St4i.EdgeService --fleet fleet.json --smoke N` exactly as
     /// fast/deterministic as it always was (no real network dial-out, no CI script changes required)
     /// while a bare (no <c>--smoke</c>) launch gets this task's new product default of Live.</summary>
-    internal static TransportModeGate ResolveGate(int? smokeCount, string? demoEnabledRaw) =>
+    internal static DemoModeGate ResolveGate(int? smokeCount, string? demoEnabledRaw) =>
         smokeCount is not null && string.IsNullOrWhiteSpace(demoEnabledRaw)
-            ? new TransportModeGate("true")
-            : new TransportModeGate(demoEnabledRaw);
+            ? new DemoModeGate("true")
+            : new DemoModeGate(demoEnabledRaw);
 
     /// <summary>Task F1-2 — gate-driven Live/Demo selection, fully explicit-parameter (no
     /// <see cref="Environment"/> reads, no real credential-store I/O) so <c>St4i.EdgeService.Tests</c>
@@ -269,7 +272,7 @@ public sealed class EdgeWorker : BackgroundService
     /// St4iConfigException handling), which is fine for a not-yet-onboarded box. Logs the resolved mode +
     /// machineCode + WAL on/off — deliberately never logs <paramref name="mkKey"/> itself.</summary>
     internal static ITransport BuildTransport(
-        TransportModeGate gate,
+        DemoModeGate gate,
         string serverUrl,
         string machineCode,
         bool verifyTls,
@@ -281,7 +284,7 @@ public sealed class EdgeWorker : BackgroundService
         {
             logger.LogInformation(
                 "Transport mode: DEMO ({EnvVar} set) — machine={MachineCode}",
-                TransportModeGate.EnvVarName, machineCode);
+                DemoModeGate.EnvVarName, machineCode);
             return new DemoTransport();
         }
 
@@ -319,14 +322,17 @@ public sealed class EdgeWorker : BackgroundService
     /// integration-covered by a full process run.
     ///
     /// <para>SM-1b (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-1b-brief.md) —
-    /// <see cref="_demoModeGate"/> now decides what happens when <c>--fleet</c> is blank, missing,
-    /// malformed, or parses to zero entries: <see langword="null"/> (every pre-existing call site) or an
-    /// ENABLED gate keeps this method's ORIGINAL behavior byte-identical (falls back to
+    /// <see cref="_demoModeGate"/> now decides what happens when <c>--fleet</c> is blank, missing, or
+    /// malformed (a file that does not even parse): <see langword="null"/> (every pre-existing call site)
+    /// or an ENABLED gate keeps this method's ORIGINAL behavior byte-identical (falls back to
     /// <see cref="BuildDefaultFleet"/>) — the demo fleet must never regress. A non-null, DISABLED gate (a
     /// real product deployment) makes that same situation yield an EMPTY roster instead — never the
     /// fabricated fleet, which is exactly the defect this task exists to close (see the class doc comment:
     /// unlike this fabricated fleet, a real Live transport endpoint is not sandboxed the way
-    /// St4i.EngineApi's Demo/Live split sandboxes <c>FleetHost</c>'s own roster).</para>
+    /// St4i.EngineApi's Demo/Live split sandboxes <c>FleetHost</c>'s own roster). A file that PARSES
+    /// successfully — whether it has entries or legitimately parses to zero — is returned as-is in EITHER
+    /// mode; see the <c>try</c> block below (fix round 1, review Critical) for why zero-entries-but-valid
+    /// must never be treated the same as missing/malformed.</para>
     ///
     /// <para>Deliberately DIFFERENT from <c>FleetHost.ResolveFleet</c> in one respect: a <c>--fleet</c>
     /// file that actually PARSES and has entries is honored in EITHER mode, not demo-only. <c>FleetHost</c>
@@ -375,12 +381,19 @@ public sealed class EdgeWorker : BackgroundService
             // a hand-editing mistake. logWarning (per-entry tolerance — a malformed INDIVIDUAL machine
             // entry, as opposed to the whole file) is wired the same way FleetHost wires it to its own
             // ILogger.
-            var loaded = FleetConfig.Load(path, logWarning: msg => _logger.LogWarning("{FleetConfigWarning}", msg));
-
-            // SM-1b — a file that parses and has entries is real configuration in EITHER mode; see this
-            // method's own doc comment for why (EdgeService has no connectors.json-equivalent second
-            // path).
-            if (loaded.Count > 0) return loaded;
+            //
+            // Fix round 1 (review, Critical) — a file that PARSES successfully is returned AS-IS,
+            // whether it has entries or legitimately parses to zero (a literal "[]", a JSON `null` root,
+            // or every entry individually failing FleetConfig.Load's own per-entry tolerance — all real,
+            // non-throwing inputs; see FleetConfig.Load's own remarks) — in EITHER mode, never routed
+            // through BuildDefaultFleet(). This is byte-identical to this method's PRE-SM-1b behavior,
+            // which had no Count>0 check at all and simply `return`ed FleetConfig.Load's result directly
+            // — the first cut of this task wrongly added a Count>0 gate here that fabricated 8 machines
+            // for a validly-parsed-to-zero demo-mode file where none existed before. An operator whose
+            // file parses to zero entries has explicitly declared an empty roster, in either mode — only
+            // a MISSING or MALFORMED file (the branches above/below) ever substitutes the fabricated
+            // default.
+            return FleetConfig.Load(path, logWarning: msg => _logger.LogWarning("{FleetConfigWarning}", msg));
         }
         catch (FleetConfigException ex)
         {
@@ -397,9 +410,6 @@ public sealed class EdgeWorker : BackgroundService
                 path);
             return Array.Empty<MachineDescriptor>();
         }
-
-        // Parsed fine but zero entries — same "no real content" outcome as a missing file.
-        return demoMode ? BuildDefaultFleet() : Array.Empty<MachineDescriptor>();
     }
 
     /// <summary>The headless default roster — one machine per <see cref="IMachineSimulator"/> type

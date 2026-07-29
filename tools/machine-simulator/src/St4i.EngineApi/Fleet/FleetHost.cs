@@ -215,15 +215,21 @@ public sealed class FleetHost
     /// (<c>Program.cs</c>'s <c>TransportCoordinator</c>/auto-login wiring, <c>ModeEndpoints</c>) — deliberately
     /// NOT a second "am I in demo mode" flag invented for the fleet roster specifically. Consulted exactly
     /// once, by <see cref="LoadFleet"/>, from the constructor:
-    ///  - <see langword="null"/> (every pre-existing test) or <see cref="St4i.EngineApi.Config.DemoModeGate.Enabled"/>
+    ///  - <see langword="null"/> (every pre-existing test) or <see cref="St4i.EdgeCore.Config.DemoModeGate.Enabled"/>
     ///    keeps the ORIGINAL fleet.json/<see cref="BuildDefaultFleet"/> resolution byte-identical — the
     ///    exhibition/sales fleet must never regress.
     ///  - non-null and disabled means a real product deployment: the roster starts EMPTY. fleet.json and
     ///    <see cref="BuildDefaultFleet"/> become demo-only artifacts — see <see cref="ResolveFleet"/>.
-    /// Production (Program.cs) never has to pass this explicitly: <see cref="St4i.EngineApi.Config.DemoModeGate"/>
+    /// Production (Program.cs) never has to pass this explicitly: <see cref="St4i.EdgeCore.Config.DemoModeGate"/>
     /// is already registered as a DI singleton, so the container resolves it into this optional parameter
-    /// automatically, the same way <see cref="MachineConfigStore"/> already does.</summary>
-    private readonly St4i.EngineApi.Config.DemoModeGate? _demoModeGate;
+    /// automatically, the same way <see cref="MachineConfigStore"/> already does.
+    ///
+    /// SM-1b fix round 1 (task-1b-brief.md, review) — this class moved from
+    /// <c>St4i.EngineApi.Config.DemoModeGate</c> to <see cref="St4i.EdgeCore.Config.DemoModeGate"/> so
+    /// <c>St4i.EdgeService</c>'s own fleet-source gate could share it too, with no new project-reference
+    /// edge (both projects already <c>ProjectReference</c> <c>St4i.EdgeCore</c>) — see that class's own
+    /// doc comment for the full history. Every reference in this file updated; no behavior change.</summary>
+    private readonly St4i.EdgeCore.Config.DemoModeGate? _demoModeGate;
 
     /// <summary>SM-1 — the fleet is "running" (an operator has called <see cref="Start"/> and neither
     /// <see cref="Stop"/>/<see cref="Estop"/> nor a total runtime fault-out has happened since). This
@@ -301,7 +307,7 @@ public sealed class FleetHost
         IUnsPublisher? unsPublisher = null,
         IAssetRegistry? assetRegistry = null,
         ConnectorRegistry? connectorRegistry = null,
-        St4i.EngineApi.Config.DemoModeGate? demoModeGate = null)
+        St4i.EdgeCore.Config.DemoModeGate? demoModeGate = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _transportCoordinator = transportCoordinator ?? throw new ArgumentNullException(nameof(transportCoordinator));
@@ -1656,7 +1662,7 @@ public sealed class FleetHost
     /// demo-vs-product seam <c>Program.cs</c>/<c>ModeEndpoints</c> already key off, rather than inventing a
     /// second one:
     ///  - null (every pre-existing test/call site that constructs <see cref="FleetHost"/> directly) or
-    ///    <see cref="St4i.EngineApi.Config.DemoModeGate.Enabled"/> — byte-identical to this method's
+    ///    <see cref="St4i.EdgeCore.Config.DemoModeGate.Enabled"/> — byte-identical to this method's
     ///    pre-SM-1 behavior, handled by <see cref="ResolveFleet"/> with <c>demoMode: true</c>.
     ///  - non-null and disabled (a real product deployment) — the roster starts EMPTY. No fleet.json path
     ///    at all (nothing beside the exe, no <c>--fleet</c> arg) is simply an empty roster, same as before

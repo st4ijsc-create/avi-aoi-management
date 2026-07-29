@@ -190,18 +190,40 @@ fault-rate, network-outage toggle) plus 5 one-click presets and a **Burst** butt
 evolves into production middleware" proof. It never references the WPF project.
 
 ```powershell
-# Run until Ctrl-C, using its own small in-code default fleet (8 machines)
+# Run until Ctrl-C. Product mode (no ST4I_DEMO_ENABLED — the default, real-deployment behavior): the
+# roster starts EMPTY, never fabricated. Demo mode (ST4I_DEMO_ENABLED=true): its own small in-code
+# default fleet (8 machines), unchanged.
 dotnet run --project src/St4i.EdgeService
 
-# Load the packaged fleet.json instead, and stop automatically after 20 committed readings
-# (exit code 0) — good for CI smoke tests
+# Load a fleet.json-shaped file describing YOUR real machine(s), and stop automatically after 20
+# committed readings — good for CI smoke tests. See the ⚠️ below before pointing this at this repo's
+# own root fleet.json in anything but a demo/CI context.
 dotnet run --project src/St4i.EdgeService -- --fleet fleet.json --smoke 20
 ```
 
-- `--fleet <path>` — load the roster from a `fleet.json`-shaped file via `FleetConfig.Load` instead
-  of the built-in default; silently falls back to the default if the path doesn't exist.
-- `--smoke <N>` — stop the host itself after exactly N `EdgePipeline.Committed` events, exit 0. No
-  `--smoke` means it runs until externally cancelled, the normal Windows-Service shape.
+- `--fleet <path>` — load the roster from a `fleet.json`-shaped file via `FleetConfig.Load`. A file that
+  parses successfully (with entries, or validly empty — an operator's explicit empty declaration) is
+  honored **as-is, in either mode**: `--fleet` is the *only* roster input `EdgeService` has (unlike the
+  WPF app/EngineApi, which also accept `connectors.json`/env vars for a real machine), so a valid file's
+  content is never demo-gated. A **blank/missing/malformed** path falls back to the built-in 8-machine
+  default **only in demo mode** (`ST4I_DEMO_ENABLED=true`, or implicitly under a bare `--smoke N` with
+  the env var unset — see below); in **product mode** (the default) that same situation yields an
+  **empty roster** instead — never a fabricated one, and it starts/stops cleanly with no crash.
+  ⚠️ **The worked example above points at this repo's own root-level `fleet.json`, which ships 11
+  fabricated demo machines** (`"driverKind": "simulated"` throughout — see §10). That's fine for a demo/
+  CI run, but pointing a real product/Live deployment at it honors those 11 fabricated machines as real
+  configuration and pipes their fake readings to whatever real server `ST4I_SERVER_URL` names — `--fleet`
+  content is an explicit operator choice, not something this task's fabrication guard sandboxes. For a
+  real deployment, point `--fleet` at a file describing your own actual machine(s), not this repo's demo
+  fixture.
+- `--smoke <N>` — stop the host itself after exactly N `EdgePipeline.Committed` events, exit 0.
+  **Not universally exit 0**: if the roster ends up empty (product mode with no usable `--fleet`), N can
+  never be reached, so `EdgeService` exits fast with a non-zero code instead of hanging forever or
+  reporting a false pass. A bare `--smoke N` with `ST4I_DEMO_ENABLED` unset still defaults to demo mode
+  (so this worked example keeps behaving exactly as before, no script changes needed) — the non-zero
+  case only arises when an operator explicitly forces product mode with no machine configured. No
+  `--smoke` means it runs until externally cancelled, the normal Windows-Service shape — including an
+  empty product-mode roster, which now stops the host cleanly on its own rather than hanging.
 
 ---
 

@@ -1,6 +1,6 @@
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
 using St4i.EngineApi.Auth;
-using St4i.EngineApi.Config;
 using St4i.EngineApi.Fleet;
 
 namespace St4i.EngineApi.Endpoints;
@@ -19,7 +19,7 @@ namespace St4i.EngineApi.Endpoints;
 /// WS2-T1 (docs/PRODUCTION_UI_DESIGN.md §2.1) — a request that OMITS <c>isDemo</c> entirely no longer
 /// silently fabricates: <see cref="TryResolveIsDemo"/> now derives it from <see cref="FleetHost.Mode"/>,
 /// the engine's OWN active transport mode (Live by default post-WS2-T1, Demo on an exhibition/
-/// <c>ST4I_DEMO_ENABLED</c> deployment — see <c>St4i.EngineApi.Config.DemoModeGate</c>), the SAME
+/// <c>ST4I_DEMO_ENABLED</c> deployment — see <c>St4i.EdgeCore.Config.DemoModeGate</c>), the SAME
 /// FleetHost already injected here for the fleet-join glue above. The web wizard
 /// (<c>Onboarding.tsx</c>) always sends an explicit <c>isDemo</c> today, so this resolution only
 /// matters for OTHER callers (SDKs, curl, a future integration) that don't.

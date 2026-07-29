@@ -1,6 +1,6 @@
+using St4i.EdgeCore.Config;
 using St4i.EdgeCore.Models;
 using St4i.EngineApi.Auth;
-using St4i.EngineApi.Config;
 using St4i.EngineApi.Fleet;
 
 namespace St4i.EngineApi.Endpoints;

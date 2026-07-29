@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using St4i.EdgeCore.Config;
 using St4i.Connector.Abstractions.Models;
 using Xunit;
 
@@ -35,7 +36,7 @@ public sealed class EdgeWorkerLoadFleetTests
     /// — overload accepting an explicit demo/product gate, for the product-mode tests below. The
     /// no-gate overload above keeps every pre-existing test's implicit "demo" behavior byte-identical
     /// (see EdgeWorker's own <c>_demoModeGate</c> remarks).</summary>
-    private static EdgeWorker NewWorker(string? fleetPath, TransportModeGate? demoModeGate) =>
+    private static EdgeWorker NewWorker(string? fleetPath, DemoModeGate? demoModeGate) =>
         new(NullLogger<EdgeWorker>.Instance, new NoOpHostApplicationLifetime(),
             new EdgeServiceOptions(SmokeCount: null, FleetPath: fleetPath), demoModeGate);
 
@@ -116,7 +117,7 @@ public sealed class EdgeWorkerLoadFleetTests
     [Fact]
     public void LoadFleet_ProductMode_NoFleetPath_ReturnsEmptyRoster_NoFabricatedMachine()
     {
-        var worker = NewWorker(fleetPath: null, demoModeGate: new TransportModeGate("false"));
+        var worker = NewWorker(fleetPath: null, demoModeGate: new DemoModeGate("false"));
 
         var fleet = worker.LoadFleet();
 
@@ -127,7 +128,7 @@ public sealed class EdgeWorkerLoadFleetTests
     public void LoadFleet_ProductMode_FleetPathDoesNotExist_ReturnsEmptyRoster_NoFabricatedMachine()
     {
         var missingPath = Path.Combine(Path.GetTempPath(), "st4i-edgeservice-does-not-exist-" + Guid.NewGuid().ToString("N") + ".json");
-        var worker = NewWorker(missingPath, demoModeGate: new TransportModeGate("false"));
+        var worker = NewWorker(missingPath, demoModeGate: new DemoModeGate("false"));
 
         var fleet = worker.LoadFleet();
 
@@ -141,7 +142,7 @@ public sealed class EdgeWorkerLoadFleetTests
         File.WriteAllText(path, "{ this is not [ valid json");
         try
         {
-            var worker = NewWorker(path, demoModeGate: new TransportModeGate("false"));
+            var worker = NewWorker(path, demoModeGate: new DemoModeGate("false"));
 
             var fleet = worker.LoadFleet();
 
@@ -172,7 +173,7 @@ public sealed class EdgeWorkerLoadFleetTests
         """);
         try
         {
-            var worker = NewWorker(path, demoModeGate: new TransportModeGate("false"));
+            var worker = NewWorker(path, demoModeGate: new DemoModeGate("false"));
 
             var fleet = worker.LoadFleet();
 
@@ -191,7 +192,7 @@ public sealed class EdgeWorkerLoadFleetTests
         File.WriteAllText(path, "[]");
         try
         {
-            var worker = NewWorker(path, demoModeGate: new TransportModeGate("false"));
+            var worker = NewWorker(path, demoModeGate: new DemoModeGate("false"));
 
             var fleet = worker.LoadFleet();
 
@@ -208,7 +209,7 @@ public sealed class EdgeWorkerLoadFleetTests
     [Fact]
     public void LoadFleet_DemoModeExplicit_NoFleetPath_ReturnsExactlyTheEightFabricatedMachines_InFileOrder()
     {
-        var worker = NewWorker(fleetPath: null, demoModeGate: new TransportModeGate("true"));
+        var worker = NewWorker(fleetPath: null, demoModeGate: new DemoModeGate("true"));
 
         var fleet = worker.LoadFleet();
 
@@ -239,13 +240,83 @@ public sealed class EdgeWorkerLoadFleetTests
         File.WriteAllText(path, "{ this is not [ valid json");
         try
         {
-            var worker = NewWorker(path, demoModeGate: new TransportModeGate("true"));
+            var worker = NewWorker(path, demoModeGate: new DemoModeGate("true"));
 
             var fleet = worker.LoadFleet();
 
             Assert.Equal(
                 new[] { "SCRW-01", "DISP-01", "WELD-01", "ASSY-01", "LEAK-01", "FCT-01", "IOT-01", "AOI-01" },
                 fleet.Select(d => d.Code));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // ── Fix round 1 (review, Critical): a validly-parsed-to-zero --fleet file must NOT fabricate ────
+    // machines in demo mode either — pre-SM-1b, LoadFleet had no Count>0 check at all and simply
+    // returned FleetConfig.Load's result directly, so this exact case already yielded an empty roster
+    // before this task existed. The first cut of the SM-1b fix wrongly routed it through the same
+    // fallback as a missing/malformed file, regressing demo mode's byte-identical contract.
+
+    [Fact]
+    public void LoadFleet_DemoModeExplicit_ValidFleetFileWithZeroEntries_ReturnsEmptyRoster_NotFabricated()
+    {
+        var path = FreshTempFile();
+        File.WriteAllText(path, "[]");
+        try
+        {
+            var worker = NewWorker(path, demoModeGate: new DemoModeGate("true"));
+
+            var fleet = worker.LoadFleet();
+
+            Assert.Empty(fleet);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void LoadFleet_DemoModeNullGate_ValidFleetFileWithZeroEntries_ReturnsEmptyRoster_NotFabricated()
+    {
+        // Same scenario as above but with the implicit null gate (every pre-existing call site's
+        // default) — the exact combination the review's reflection-harness repro used to demonstrate
+        // the regression against the built DLL.
+        var path = FreshTempFile();
+        File.WriteAllText(path, "[]");
+        try
+        {
+            var worker = NewWorker(path); // null gate = demo
+
+            var fleet = worker.LoadFleet();
+
+            Assert.Empty(fleet);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void LoadFleet_DemoMode_JsonNullRoot_ReturnsEmptyRoster_NotFabricated()
+    {
+        // FleetConfig.Load's own documented legacy behavior: a literal JSON `null` root parses to an
+        // empty list without throwing (preserved for backward compatibility with the old
+        // JsonSerializer.Deserialize-based implementation) — another real, reachable "parses fine to
+        // zero entries" input distinct from "[]".
+        var path = FreshTempFile();
+        File.WriteAllText(path, "null");
+        try
+        {
+            var worker = NewWorker(path, demoModeGate: new DemoModeGate("true"));
+
+            var fleet = worker.LoadFleet();
+
+            Assert.Empty(fleet);
         }
         finally
         {

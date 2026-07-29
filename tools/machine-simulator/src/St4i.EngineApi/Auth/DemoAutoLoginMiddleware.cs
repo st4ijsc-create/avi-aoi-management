@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
-using St4i.EngineApi.Config;
+using St4i.EdgeCore.Config;
 
 namespace St4i.EngineApi.Auth;
 
