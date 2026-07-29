@@ -683,32 +683,33 @@ export const predictiveAlertRouter = router({
           const signal = deriveDefectSpikeSignal({ trend, forecast, pareto, correlationFactors });
           if (!signal) continue; // insufficient data / not a real rising trend — no fabricated alert
 
-          // Create alert — W0-1 fix (doc 69): was a raw INSERT with unquoted
-          // camelCase column names, silently failing to persist. The drizzle
-          // builder quotes identifiers correctly. Persistence path unchanged;
-          // only the SIGNAL feeding it is now real (doc69 A2).
-          await db.insert(predictiveAlerts).values({
-            alertType: signal.alertType,
-            severity: signal.severity,
-            title: `Predicted defect spike for ${machineCode}`,
-            description: `Analysis shows defect rate trending upward. Current rate: ${signal.currentValue.toFixed(1)}%, Predicted: ${signal.predictedValue.toFixed(1)}%`,
-            predictedValue: signal.predictedValue.toFixed(4),
-            currentValue: signal.currentValue.toFixed(4),
-            threshold: signal.alertThreshold.toFixed(4),
-            confidenceScore: signal.confidenceScore.toFixed(2),
-            predictedTimeframe: signal.predictedTimeframe,
+          // Wave 4 §5 — đi qua CÙNG MỘT CỬA với đường tự động (routeAlert): gộp
+          // một-cảnh-báo-mở theo (machineId, alertType), đặt hạn dùng (expiresAt),
+          // ghi nhật ký lần-tái-diễn (predictive_alert_occurrences). INSERT thẳng
+          // (trước đây) bỏ qua cả ba — bấm nút vài lần dựng lại đúng đống cảnh báo
+          // trùng lặp/không-hết-hạn mà Wave 3 vừa dọn, và bỏ sót lần-tái-diễn khỏi KPI.
+          //
+          // SmartAlertEvent.factoryId / .productModelId là `number | undefined`
+          // (KHÔNG `| null`) — dùng `?? undefined` để giữ đúng kiểu, không ép `as any`.
+          const { routeAlert } = await import("../services/aiSmartAlertRouter");
+          await routeAlert({
+            type: signal.alertType,
             machineId,
-            machineCode,
-            productModelId: lastRow.product_model_id ?? null,
-            productModelCode: lastRow.product_model_code ?? null,
-            factoryId: lastRow.factory_id ?? null,
-            aiAnalysis: {
+            factoryId: lastRow.factory_id ?? undefined,
+            productModelId: lastRow.product_model_id ?? undefined,
+            severity: signal.severity,
+            message: `Analysis shows defect rate trending upward. Current rate: ${signal.currentValue.toFixed(1)}%, Predicted: ${signal.predictedValue.toFixed(1)}%`,
+            data: {
+              confidence: signal.confidenceScore,
+              predictedTimeframe: signal.predictedTimeframe,
+              currentValue: signal.currentValue,
+              threshold: signal.alertThreshold,
               factors: signal.factors,
               recommendations: signal.recommendations,
+              // routeAlert đọc event.data.dataPoints để lấp aiAnalysisPayload.dataPoints —
+              // thiếu trường này thì cột luôn ghi 0 dù forecast thật có đủ điểm dữ liệu.
               dataPoints: signal.dataPoints,
-              modelUsed: signal.modelUsed,
             },
-            status: 'ACTIVE',
           });
           alertsCreated++;
         } catch (err) {
