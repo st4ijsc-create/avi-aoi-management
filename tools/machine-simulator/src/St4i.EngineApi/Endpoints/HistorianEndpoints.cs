@@ -105,7 +105,7 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> GetResultsAsync(
         string? machine, string? from, string? to, string? serial, string? verdict, string? kind,
-        int? limit, int? offset, IHistorianStore store, CancellationToken ct)
+        int? limit, int? offset, IHistorianStore store, CancellationToken ct, bool? includeFabricated = null)
     {
         DateTimeOffset? fromParsed = null;
         if (from is not null)
@@ -131,7 +131,8 @@ public static class HistorianEndpoints
 
         var query = new HistorianResultQuery(
             MachineCode: machine, From: fromParsed, To: toParsed, SerialNumber: serial,
-            Verdict: verdict, ReadingKind: kind, Limit: clampedLimit, Offset: clampedOffset);
+            Verdict: verdict, ReadingKind: kind, Limit: clampedLimit, Offset: clampedOffset,
+            IncludeFabricated: includeFabricated ?? false);
 
         var page = await store.QueryResultsAsync(query, ct).ConfigureAwait(false);
         return Results.Ok(ToPageDto(page));
@@ -142,7 +143,7 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> ExportResultsCsvAsync(
         string? machine, string? from, string? to, string? serial, string? verdict, string? kind,
-        IHistorianStore store, CancellationToken ct)
+        IHistorianStore store, CancellationToken ct, bool? includeFabricated = null)
     {
         DateTimeOffset? fromParsed = null;
         if (from is not null)
@@ -158,7 +159,7 @@ public static class HistorianEndpoints
             toParsed = parsed;
         }
 
-        var csvBytes = await BuildExportCsvAsync(machine, fromParsed, toParsed, serial, verdict, kind, store, ct)
+        var csvBytes = await BuildExportCsvAsync(machine, fromParsed, toParsed, serial, verdict, kind, store, ct, includeFabricated ?? false)
             .ConfigureAwait(false);
         return new CsvFileResult(csvBytes, "historian-results.csv");
     }
@@ -229,14 +230,15 @@ public static class HistorianEndpoints
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> GetOeeAsync(
         string? machine, string? from, string? to,
-        IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct)
+        IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct,
+        bool? includeFabricated = null)
     {
         var descriptor = FindMachine(fleetHost, machine);
         if (descriptor is null) return MachineNotFound(machine);
 
         if (!TryResolveRange(from, to, out var fromParsed, out var toParsed, out var rangeError)) return rangeError!;
 
-        var dto = await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct).ConfigureAwait(false);
+        var dto = await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct, includeFabricated ?? false).ConfigureAwait(false);
         return Results.Ok(dto);
     }
 
@@ -244,14 +246,15 @@ public static class HistorianEndpoints
     // GET /v1/historian/oee/fleet?from=&to=
     // ─────────────────────────────────────────────────────────────────────
     internal static async Task<IResult> GetOeeFleetAsync(
-        string? from, string? to, IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct)
+        string? from, string? to, IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct,
+        bool? includeFabricated = null)
     {
         if (!TryResolveRange(from, to, out var fromParsed, out var toParsed, out var rangeError)) return rangeError!;
 
         var results = new List<OeeResultDto>();
         foreach (var descriptor in fleetHost.Fleet)
         {
-            results.Add(await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct).ConfigureAwait(false));
+            results.Add(await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct, includeFabricated ?? false).ConfigureAwait(false));
         }
 
         return Results.Ok(results.ToArray());
@@ -310,13 +313,13 @@ public static class HistorianEndpoints
     /// counts/run-time from the historian → <see cref="OeeCalculator.Calculate"/>.</summary>
     private static async Task<OeeResultDto> ComputeOeeAsync(
         MachineDescriptor descriptor, DateTimeOffset from, DateTimeOffset to,
-        IHistorianStore store, OeeSettingsStore settingsStore, CancellationToken ct)
+        IHistorianStore store, OeeSettingsStore settingsStore, CancellationToken ct, bool includeFabricated = false)
     {
         var settings = settingsStore.Resolve(descriptor.Code, descriptor.CycleSeconds);
         var idealCycle = settings.IdealCycleSecondsOverride ?? descriptor.CycleSeconds;
         var planned = TimeSpan.FromSeconds((to - from).TotalSeconds * settings.PlannedProductionRatio);
 
-        var agg = await store.AggregateForOeeAsync(descriptor.Code, from, to, ct).ConfigureAwait(false);
+        var agg = await store.AggregateForOeeAsync(descriptor.Code, from, to, ct, includeFabricated).ConfigureAwait(false);
         var result = OeeCalculator.Calculate(agg, planned, idealCycle);
         return ToResultDto(result);
     }
@@ -403,7 +406,7 @@ public static class HistorianEndpoints
     /// <c>Results.Stream</c>) instead of building the whole CSV before the first byte is sent.</summary>
     private static async Task<byte[]> BuildExportCsvAsync(
         string? machine, DateTimeOffset? from, DateTimeOffset? to, string? serial, string? verdict, string? kind,
-        IHistorianStore store, CancellationToken ct)
+        IHistorianStore store, CancellationToken ct, bool includeFabricated = false)
     {
         var sb = new StringBuilder();
         sb.Append(string.Join(',', CsvHeaderColumns)).Append("\r\n");
@@ -413,7 +416,8 @@ public static class HistorianEndpoints
         {
             var query = new HistorianResultQuery(
                 MachineCode: machine, From: from, To: to, SerialNumber: serial,
-                Verdict: verdict, ReadingKind: kind, Limit: ExportPageSize, Offset: offset);
+                Verdict: verdict, ReadingKind: kind, Limit: ExportPageSize, Offset: offset,
+                IncludeFabricated: includeFabricated);
 
             var page = await store.QueryResultsAsync(query, ct).ConfigureAwait(false);
             foreach (var row in page.Items)
@@ -512,15 +516,17 @@ public static class HistorianEndpoints
     // GET /v1/historian/report.pdf?machine=&from=&to=
     internal static async Task<IResult> GetReportPdfAsync(
         string? machine, string? from, string? to,
-        IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct)
+        IHistorianStore store, OeeSettingsStore settingsStore, FleetHost fleetHost, CancellationToken ct,
+        bool? includeFabricated = null)
     {
         var descriptor = FindMachine(fleetHost, machine);
         if (descriptor is null) return MachineNotFound(machine);
 
         if (!TryResolveRange(from, to, out var fromParsed, out var toParsed, out var rangeError)) return rangeError!;
 
-        var oee = await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct).ConfigureAwait(false);
-        var verdictCounts = await ComputeVerdictBreakdownAsync(descriptor.Code, fromParsed, toParsed, store, ct).ConfigureAwait(false);
+        var effectiveIncludeFabricated = includeFabricated ?? false;
+        var oee = await ComputeOeeAsync(descriptor, fromParsed, toParsed, store, settingsStore, ct, effectiveIncludeFabricated).ConfigureAwait(false);
+        var verdictCounts = await ComputeVerdictBreakdownAsync(descriptor.Code, fromParsed, toParsed, store, ct, effectiveIncludeFabricated).ConfigureAwait(false);
 
         var pdfBytes = BuildReportPdf(descriptor, fromParsed, toParsed, oee, verdictCounts);
         return new PdfFileResult(pdfBytes, "historian-report.pdf");
@@ -536,7 +542,8 @@ public static class HistorianEndpoints
     /// dictionary — never a throw — which <see cref="BuildReportPdf"/> renders as an explicit
     /// "no data in this period" empty state.</summary>
     private static async Task<IReadOnlyDictionary<string, long>> ComputeVerdictBreakdownAsync(
-        string machineCode, DateTimeOffset from, DateTimeOffset to, IHistorianStore store, CancellationToken ct)
+        string machineCode, DateTimeOffset from, DateTimeOffset to, IHistorianStore store, CancellationToken ct,
+        bool includeFabricated = false)
     {
         var counts = new Dictionary<string, long>(StringComparer.Ordinal);
 
@@ -544,7 +551,8 @@ public static class HistorianEndpoints
         while (true)
         {
             var query = new HistorianResultQuery(
-                MachineCode: machineCode, From: from, To: to, Limit: ExportPageSize, Offset: offset);
+                MachineCode: machineCode, From: from, To: to, Limit: ExportPageSize, Offset: offset,
+                IncludeFabricated: includeFabricated);
 
             var page = await store.QueryResultsAsync(query, ct).ConfigureAwait(false);
             foreach (var row in page.Items)
@@ -697,7 +705,7 @@ public static class HistorianEndpoints
             row.Id, r.MachineCode, r.DeviceClass, r.MachineType, r.ReadingKind,
             r.CycleCounter, r.SerialNumber, r.Verdict, r.RecipeCode, r.RecipeVersion,
             r.KeyMetricName, r.KeyMetricValue, r.KeyMetricUnit, r.NgCount, r.PointCount,
-            r.AckSuccess, r.AckDuplicate, r.AckQueued, r.EventTimeUtc, r.IngestedAtUtc);
+            r.AckSuccess, r.AckDuplicate, r.AckQueued, r.EventTimeUtc, r.IngestedAtUtc, r.IsFabricated);
     }
 
     /// <summary>Invariant, round-trip ("O"-compatible) <see cref="DateTimeOffset"/> parse for the

@@ -120,6 +120,16 @@ export default function Dashboard() {
         <EcosystemConnectPanel ecosystem={ecosystem} />
       ) : (
         <>
+          {/* SM-2 — "the UI must not lie": whenever the fleet mixes fabricated (demo) machines with a
+              real one, the KPI tiles below already exclude the fabricated fleet from totalCycles/fpy (see
+              FleetHost.Snapshot's own remarks) even though the tile grid further down still lists it — this
+              banner is the visible tell an operator otherwise has no way to notice. */}
+          {data?.kpis.hasMixedProvenance ? (
+            <p className="hmi-micro shrink-0 border border-border-strong bg-surface-card px-3 py-2 text-text-muted">
+              {t("dashboard.mixedProvenance")}
+            </p>
+          ) : null}
+
           <motion.div
             initial="hidden"
             animate="visible"

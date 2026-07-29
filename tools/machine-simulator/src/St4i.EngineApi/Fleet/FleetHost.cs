@@ -289,6 +289,17 @@ public sealed class FleetHost
     private long _totalPass;
     private long _totalJudged;
 
+    /// <summary>SM-2 — the SAME three counters as <see cref="_totalCycles"/>/<see cref="_totalPass"/>/
+    /// <see cref="_totalJudged"/> above, ADDITIVELY tracked alongside them (never instead of — those three
+    /// stay exactly as they were, still read by <see cref="GetKpiCounters"/>/<see cref="Snapshot"/>'s own
+    /// pure-demo branch), counting ONLY readings from a non-fabricated (real) machine. See
+    /// <see cref="OnPipelineCommitted"/> for how each reading is classified (cheaply, on this same hot
+    /// path, from the already-resolved <see cref="MachineState.Descriptor"/> — never a second lookup) and
+    /// <see cref="Snapshot"/> for which of the two counter sets a caller actually sees.</summary>
+    private long _totalCyclesReal;
+    private long _totalPassReal;
+    private long _totalJudgedReal;
+
     private string _serverUrl = DefaultServerUrl;
     private bool _verifyTls = true;
     private string _language = DefaultLanguage;
@@ -1177,13 +1188,25 @@ public sealed class FleetHost
 
     private void OnPipelineCommitted(DeviceReading reading, TransportAck ack)
     {
+        // SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-2-brief.md) —
+        // data lineage, classified HERE, cheaply, on this hot path: from the SAME already-resolved
+        // MachineDescriptor.DriverKind every other classification in this codebase reads (via the ONE
+        // canonical DriverKinds.IsFabricated call path) — never a second/independently-invented rule, and
+        // never inferred later from the CURRENT roster at Snapshot()-read time (the roster can change
+        // between now and then). A reading whose machine code doesn't resolve to any MachineState (no
+        // descriptor to classify — not reached by any registered driver in practice) is conservatively
+        // treated as not-real for the real-only counters below, same "uncertain provenance never silently
+        // counts as real" posture SqliteHistorianStore's own real-presence gate documents.
+        var isFabricated = true;
         if (_states.TryGetValue(reading.MachineCode, out var state))
         {
             state.ApplyReading(reading, ack);
+            isFabricated = DriverKinds.IsFabricated(state.Descriptor.DriverKind);
             _historianWriter?.Enqueue(HistorianResultRecord.From(state.Descriptor, reading, ack, DateTimeOffset.UtcNow));
         }
 
         Interlocked.Increment(ref _totalCycles);
+        if (!isFabricated) Interlocked.Increment(ref _totalCyclesReal);
 
         if (reading.Verdict != Verdict.Skip)
         {
@@ -1191,6 +1214,12 @@ public sealed class FleetHost
             {
                 _totalJudged++;
                 if (reading.Verdict is Verdict.Pass or Verdict.Warn) _totalPass++;
+
+                if (!isFabricated)
+                {
+                    _totalJudgedReal++;
+                    if (reading.Verdict is Verdict.Pass or Verdict.Warn) _totalPassReal++;
+                }
             }
         }
     }
@@ -1223,14 +1252,41 @@ public sealed class FleetHost
         // E1 (health-truth): online must reflect the RUNNING state, not "ever produced a cycle" — the
         // pre-fix bug was a stopped fleet that stayed "N/N online" forever because Cycles never resets.
         var online = isRunning ? machines.Count(m => m.Cycles > 0) : 0;
-        var totalCycles = Interlocked.Read(ref _totalCycles);
+
+        // SM-2 — "not blend, not suppress": the CURRENT roster decides which counter set this call
+        // reports. A real machine present means _totalCycles/_totalJudged/_totalPass (blended across every
+        // slot, fabricated included) would silently blend fabricated cycles into a number a customer reads
+        // — so the real-only counters are reported instead, excluding the fabricated fleet entirely, even
+        // though Machines above still lists it (see HasMixedProvenance). No real machine present (a pure
+        // demo roster, or an empty product roster) means there is nothing to blend WITH — the original
+        // blended counters are reported unchanged, which is also what keeps the exhibition contract
+        // (pure demo's own numbers) byte-identical to before this task.
+        var fleet = Fleet;
+        var hasFabricatedMachine = fleet.Any(d => DriverKinds.IsFabricated(d.DriverKind));
+        var hasRealMachine = fleet.Any(d => !DriverKinds.IsFabricated(d.DriverKind));
+
+        long totalCycles;
         double fpy;
-        lock (_kpiGate)
+        if (hasRealMachine)
         {
-            fpy = _totalJudged == 0 ? 0.0 : (double)_totalPass / _totalJudged;
+            totalCycles = Interlocked.Read(ref _totalCyclesReal);
+            lock (_kpiGate)
+            {
+                fpy = _totalJudgedReal == 0 ? 0.0 : (double)_totalPassReal / _totalJudgedReal;
+            }
+        }
+        else
+        {
+            totalCycles = Interlocked.Read(ref _totalCycles);
+            lock (_kpiGate)
+            {
+                fpy = _totalJudged == 0 ? 0.0 : (double)_totalPass / _totalJudged;
+            }
         }
 
-        return new FleetSnapshotDto(machines, new FleetKpisDto(online, totalCycles, fpy), isRunning, estopEngaged);
+        var hasMixedProvenance = hasFabricatedMachine && hasRealMachine;
+
+        return new FleetSnapshotDto(machines, new FleetKpisDto(online, totalCycles, fpy, hasMixedProvenance), isRunning, estopEngaged);
     }
 
     /// <summary>Branch-review I-9 — gated exactly like <see cref="ToTile(bool)"/>: when the fleet

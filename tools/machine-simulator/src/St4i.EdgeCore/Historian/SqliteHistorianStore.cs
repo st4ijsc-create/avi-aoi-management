@@ -58,6 +58,20 @@ public sealed class SqliteHistorianStore : IHistorianStore
             """,
             "CREATE INDEX IF NOT EXISTS ix_run_events_time ON historian_run_events(at_utc);",
         }),
+
+        // SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-2-brief.md) —
+        // data lineage, durable: whether a result row came from a fabricated (simulated/demo) machine.
+        // NULLable, no DEFAULT, deliberately: a row written before this migration ran is left NULL by
+        // SQLite's own ALTER-TABLE-ADD-COLUMN semantics (no default = NULL for every pre-existing row),
+        // which is exactly this project's chosen "Unknown provenance" state for a pre-migration row —
+        // see HistorianResultRecord.IsFabricated's own doc comment for why that is a THIRD state, never
+        // silently folded into "real" or "fabricated". Every row appended from this task onward always
+        // supplies an explicit 0/1 (HistorianResultRecord.From always computes a concrete bool) — NULL
+        // only ever describes data this column did not exist to classify yet.
+        (2, new[]
+        {
+            "ALTER TABLE historian_results ADD COLUMN is_fabricated INTEGER NULL;",
+        }),
     };
 
     // Shared column list for historian_results SELECTs (QueryResultsAsync / QueryBySerialAsync) so both
@@ -66,7 +80,7 @@ public sealed class SqliteHistorianStore : IHistorianStore
         id, machine_code, device_class, machine_type, reading_kind, cycle_counter, serial_number, verdict,
         recipe_code, recipe_version, key_metric_name, key_metric_value, key_metric_unit,
         ng_count, point_count, ack_success, ack_duplicate, ack_queued,
-        genealogy_json, measurements_json, event_time_utc, ingested_at_utc
+        genealogy_json, measurements_json, event_time_utc, ingested_at_utc, is_fabricated
         """;
 
     public SqliteHistorianStore(string? directory = null)
@@ -181,12 +195,12 @@ public sealed class SqliteHistorianStore : IHistorianStore
                 (machine_code, device_class, machine_type, reading_kind, cycle_counter, serial_number, verdict,
                  recipe_code, recipe_version, key_metric_name, key_metric_value, key_metric_unit,
                  ng_count, point_count, ack_success, ack_duplicate, ack_queued,
-                 genealogy_json, measurements_json, event_time_utc, ingested_at_utc)
+                 genealogy_json, measurements_json, event_time_utc, ingested_at_utc, is_fabricated)
             VALUES
                 (@machine_code, @device_class, @machine_type, @reading_kind, @cycle_counter, @serial_number, @verdict,
                  @recipe_code, @recipe_version, @key_metric_name, @key_metric_value, @key_metric_unit,
                  @ng_count, @point_count, @ack_success, @ack_duplicate, @ack_queued,
-                 @genealogy_json, @measurements_json, @event_time_utc, @ingested_at_utc);
+                 @genealogy_json, @measurements_json, @event_time_utc, @ingested_at_utc, @is_fabricated);
             """;
 
         const string insertTelemetrySql = """
@@ -223,6 +237,12 @@ public sealed class SqliteHistorianStore : IHistorianStore
                 cmd.Parameters.AddWithValue("@measurements_json", (object?)record.MeasurementsJson ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@event_time_utc", eventTimeIso);
                 cmd.Parameters.AddWithValue("@ingested_at_utc", ToIso(record.IngestedAtUtc));
+                cmd.Parameters.AddWithValue("@is_fabricated", record.IsFabricated switch
+                {
+                    true => 1,
+                    false => 0,
+                    null => DBNull.Value,
+                });
                 await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -309,7 +329,9 @@ public sealed class SqliteHistorianStore : IHistorianStore
             parameters.Add(("@reading_kind", query.ReadingKind));
         }
 
-        var whereSql = whereClauses.Count > 0 ? " WHERE " + string.Join(" AND ", whereClauses) : string.Empty;
+        var effectiveWhereClauses = await ApplyRealPresenceGateAsync(connection, whereClauses, parameters, query.IncludeFabricated, ct)
+            .ConfigureAwait(false);
+        var whereSql = effectiveWhereClauses.Count > 0 ? " WHERE " + string.Join(" AND ", effectiveWhereClauses) : string.Empty;
 
         int total;
         using (var countCmd = connection.CreateCommand())
@@ -340,6 +362,48 @@ public sealed class SqliteHistorianStore : IHistorianStore
         }
 
         return new HistorianResultsPage(items, total, query.Limit, query.Offset);
+    }
+
+    /// <summary>
+    /// SM-2 — the "real-presence gate": the one rule every customer-facing historian query/aggregate in
+    /// this store applies so fabricated data is never silently blended with real data, while a pure-demo
+    /// (or pure-legacy) scope is never suppressed either. Given the SAME scope a caller already asked for
+    /// (<paramref name="whereClauses"/>/<paramref name="parameters"/> — machine/time/serial/etc., exactly
+    /// as filtered), this probes whether at least one row in that EXACT scope is explicitly known to be
+    /// real (<c>is_fabricated = 0</c>):
+    ///
+    ///  - If <paramref name="includeFabricated"/> is <see langword="true"/> (the explicit escape hatch —
+    ///    see <see cref="HistorianResultQuery.IncludeFabricated"/>'s own doc comment), the gate is skipped
+    ///    entirely and <paramref name="whereClauses"/> is returned unchanged — every row in scope,
+    ///    regardless of provenance.
+    ///  - Else, if the probe finds at least one explicitly-real row in scope, the returned clause list
+    ///    additionally requires <c>is_fabricated = 0</c> — both explicitly-fabricated (1) AND
+    ///    unknown-provenance (pre-migration, <see langword="null"/>) rows are excluded, because once real
+    ///    data is known to exist in this exact scope, an uncertain row can no longer be trusted to belong
+    ///    with it (see <see cref="HistorianResultRecord.IsFabricated"/>'s own doc comment for why
+    ///    "Unknown" is a deliberate third state, not folded into "real").
+    ///  - Else (nothing explicitly real in scope — a pure-demo scope, or a scope containing only
+    ///    pre-migration/unknown rows), <paramref name="whereClauses"/> is returned unchanged: nothing is
+    ///    filtered, so a pure-demo historian/OEE view keeps showing its own numbers exactly as before this
+    ///    task, and a pre-migration row stays readable rather than silently vanishing the moment nothing
+    ///    in scope can prove it real.
+    /// </summary>
+    private static async Task<List<string>> ApplyRealPresenceGateAsync(
+        SqliteConnection connection, List<string> whereClauses, List<(string Name, object Value)> parameters,
+        bool includeFabricated, CancellationToken ct)
+    {
+        if (includeFabricated) return whereClauses;
+
+        var probeClauses = new List<string>(whereClauses) { "is_fabricated = 0" };
+        var probeWhereSql = " WHERE " + string.Join(" AND ", probeClauses);
+
+        using var probeCmd = connection.CreateCommand();
+        probeCmd.CommandText = $"SELECT EXISTS(SELECT 1 FROM historian_results{probeWhereSql});";
+        foreach (var (name, value) in parameters) probeCmd.Parameters.AddWithValue(name, value);
+        var hasReal = Convert.ToInt64(
+            (await probeCmd.ExecuteScalarAsync(ct).ConfigureAwait(false))!, CultureInfo.InvariantCulture) != 0;
+
+        return hasReal ? probeClauses : whereClauses;
     }
 
     public async Task<IReadOnlyList<HistorianResultRow>> QueryBySerialAsync(string serialNumber, CancellationToken ct)
@@ -392,7 +456,8 @@ public sealed class SqliteHistorianStore : IHistorianStore
             MeasurementsJson: GetNullableString(reader, "measurements_json"),
             EventTimeUtc: ParseIso(reader.GetString(reader.GetOrdinal("event_time_utc"))),
             IngestedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("ingested_at_utc"))),
-            TelemetrySamples: Array.Empty<TelemetrySampleRecord>());
+            TelemetrySamples: Array.Empty<TelemetrySampleRecord>(),
+            IsFabricated: GetNullableBool(reader, "is_fabricated"));
 
         return new HistorianResultRow(id, record);
     }
@@ -453,21 +518,27 @@ public sealed class SqliteHistorianStore : IHistorianStore
     // OEE aggregate
     // ─────────────────────────────────────────────────────────────────────
 
-    public async Task<OeeInputAggregate> AggregateForOeeAsync(string machineCode, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    public async Task<OeeInputAggregate> AggregateForOeeAsync(
+        string machineCode, DateTimeOffset from, DateTimeOffset to, CancellationToken ct, bool includeFabricated = false)
     {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
 
         var fromIso = ToIso(from);
         var toIso = ToIso(to);
 
+        // SM-2 — the gate is probed over the SAME scope this aggregate counts from (machine + ProcessResult
+        // + window), deliberately WITHOUT the verdict slicing below: "is there real data in this window" is
+        // one question, independent of how the two counts below then slice it by verdict.
+        var scopeClauses = new List<string> { "machine_code = @machine_code", "reading_kind = 'ProcessResult'", "event_time_utc BETWEEN @from AND @to" };
+        var scopeParameters = new List<(string Name, object Value)> { ("@machine_code", machineCode), ("@from", fromIso), ("@to", toIso) };
+        var effectiveClauses = await ApplyRealPresenceGateAsync(connection, scopeClauses, scopeParameters, includeFabricated, ct)
+            .ConfigureAwait(false);
+        var scopeSql = string.Join(" AND ", effectiveClauses);
+
         long totalCount;
         using (var cmd = connection.CreateCommand())
         {
-            cmd.CommandText = """
-                SELECT COUNT(*) FROM historian_results
-                WHERE machine_code = @machine_code AND reading_kind = 'ProcessResult' AND verdict <> 'Skip'
-                  AND event_time_utc BETWEEN @from AND @to;
-                """;
+            cmd.CommandText = $"SELECT COUNT(*) FROM historian_results WHERE {scopeSql} AND verdict <> 'Skip';";
             cmd.Parameters.AddWithValue("@machine_code", machineCode);
             cmd.Parameters.AddWithValue("@from", fromIso);
             cmd.Parameters.AddWithValue("@to", toIso);
@@ -477,11 +548,7 @@ public sealed class SqliteHistorianStore : IHistorianStore
         long goodCount;
         using (var cmd = connection.CreateCommand())
         {
-            cmd.CommandText = """
-                SELECT COUNT(*) FROM historian_results
-                WHERE machine_code = @machine_code AND reading_kind = 'ProcessResult' AND verdict IN ('Pass', 'Warn')
-                  AND event_time_utc BETWEEN @from AND @to;
-                """;
+            cmd.CommandText = $"SELECT COUNT(*) FROM historian_results WHERE {scopeSql} AND verdict IN ('Pass', 'Warn');";
             cmd.Parameters.AddWithValue("@machine_code", machineCode);
             cmd.Parameters.AddWithValue("@from", fromIso);
             cmd.Parameters.AddWithValue("@to", toIso);
@@ -636,5 +703,11 @@ public sealed class SqliteHistorianStore : IHistorianStore
     {
         var ordinal = reader.GetOrdinal(column);
         return reader.IsDBNull(ordinal) ? null : reader.GetDouble(ordinal);
+    }
+
+    private static bool? GetNullableBool(SqliteDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt64(ordinal) != 0;
     }
 }

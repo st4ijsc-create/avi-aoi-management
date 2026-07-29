@@ -9,11 +9,18 @@ namespace St4i.EngineApi.Endpoints;
 // read surface; a client wanting telemetry hits GET /v1/historian/telemetry instead.
 // ─────────────────────────────────────────────────────────────────────────
 
+/// <param name="IsFabricated">SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/
+/// task-2-brief.md) — this row's data lineage, straight off <see cref="St4i.EdgeCore.Historian.HistorianResultRecord.IsFabricated"/>:
+/// <see langword="true"/> fabricated (simulated/demo), <see langword="false"/> real,
+/// <see langword="null"/> Unknown (a row written before this column existed). Every row this read
+/// surface returns already carries its own explicit label — a "must not lie" requirement even when a
+/// caller opts into seeing mixed data via <c>includeFabricated=true</c>.</param>
 public sealed record HistorianResultDto(
     long Id, string MachineCode, string DeviceClass, string MachineType, string ReadingKind,
     long CycleCounter, string SerialNumber, string Verdict, string? RecipeCode, string? RecipeVersion,
     string? KeyMetricName, double? KeyMetricValue, string? KeyMetricUnit, int NgCount, int PointCount,
-    bool AckSuccess, bool AckDuplicate, bool AckQueued, DateTimeOffset EventTimeUtc, DateTimeOffset IngestedAtUtc);
+    bool AckSuccess, bool AckDuplicate, bool AckQueued, DateTimeOffset EventTimeUtc, DateTimeOffset IngestedAtUtc,
+    bool? IsFabricated = null);
 
 public sealed record HistorianResultsPageDto(IReadOnlyList<HistorianResultDto> Items, int Total, int Limit, int Offset);
 

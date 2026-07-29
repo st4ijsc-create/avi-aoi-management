@@ -198,6 +198,8 @@ export const en: Dictionary = {
       fpyBelow: "Below target",
       fpyNoCycles: "No cycles yet",
     },
+    mixedProvenance:
+      "These figures reflect the real machine only — demo machines running alongside are excluded, not blended in.",
     empty: {
       title: "Press Start Fleet to begin",
       description: (vars: Vars) =>

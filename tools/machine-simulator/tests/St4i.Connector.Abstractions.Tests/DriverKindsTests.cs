@@ -89,4 +89,33 @@ public class DriverKindsTests
     {
         Assert.Equal(input, DriverKinds.Normalize(input!));
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-2-brief.md) —
+    // IsFabricated: the single canonical "is this reading manufactured, never real process data" call
+    // path, mirroring Normalize's own "one comparison rule" contract. Simulated is the ONLY built-in kind
+    // this codebase ever manufactures data for; every other built-in and every third-party id is real.
+    // ─────────────────────────────────────────────────────────────────────
+    [Theory]
+    [InlineData("Simulated")]
+    [InlineData("simulated")]
+    [InlineData("SIMULATED")]
+    public void IsFabricated_AnyCasingOfSimulated_ReturnsTrue(string driverKind)
+    {
+        Assert.True(DriverKinds.IsFabricated(driverKind));
+    }
+
+    [Theory]
+    [InlineData("HotFolderAoi")]
+    [InlineData("Mqtt")]
+    [InlineData("Modbus")]
+    [InlineData("modbus")]
+    [InlineData("OpcUa")]
+    [InlineData("opcua")]
+    [InlineData("vendor.acme.weld")]
+    [InlineData("Vendor.Acme.Weld")]
+    public void IsFabricated_EveryOtherBuiltInAndAnyThirdPartyId_ReturnsFalse(string driverKind)
+    {
+        Assert.False(DriverKinds.IsFabricated(driverKind));
+    }
 }

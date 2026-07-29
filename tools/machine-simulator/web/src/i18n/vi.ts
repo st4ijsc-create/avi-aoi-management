@@ -204,6 +204,8 @@ export const vi = {
       fpyBelow: "Dưới mục tiêu",
       fpyNoCycles: "Chưa có chu kỳ",
     },
+    mixedProvenance:
+      "Các số liệu này chỉ phản ánh máy thật — các máy demo đang chạy song song bị loại trừ, không bị trộn vào.",
     empty: {
       title: "Bấm Chạy Fleet để bắt đầu",
       description: (vars: Vars) =>

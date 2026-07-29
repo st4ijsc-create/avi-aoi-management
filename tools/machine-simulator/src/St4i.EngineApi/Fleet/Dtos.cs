@@ -22,7 +22,19 @@ public sealed record FleetTileDto(
     string LastCycleSummary,
     IReadOnlyList<double> Spark);
 
-public sealed record FleetKpisDto(int Online, long TotalCycles, double Fpy);
+/// <param name="HasMixedProvenance">SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/
+/// task-2-brief.md) — true exactly when the CURRENT roster contains at least one fabricated (Simulated)
+/// machine AND at least one real (non-Simulated) machine at the same time — "demo fleet plus a real
+/// machine," the scenario the brief calls out. Whenever this is true, <see cref="TotalCycles"/>/
+/// <see cref="Fpy"/> above already reflect ONLY the real machine(s) (see <see cref="FleetHost.Snapshot"/>'s
+/// own remarks) — the fabricated machines' cycles are deliberately excluded, never blended — even though
+/// <see cref="FleetSnapshotDto.Machines"/> still lists every one of them with their own per-tile
+/// Cycles/PassRate untouched. This is the "the UI must not lie" signal: without it, an operator watching a
+/// tile list that includes fabricated machines has no way to know the fleet-wide rollup above silently
+/// excludes some of what's on screen. False in a pure-demo roster (nothing real to blend with — the
+/// numbers ARE the fabricated fleet's own, exactly as before this task) and in a pure-product roster
+/// (nothing fabricated to blend with).</param>
+public sealed record FleetKpisDto(int Online, long TotalCycles, double Fpy, bool HasMixedProvenance);
 
 /// <summary><c>IsRunning</c> added for final-review M-3: before this, whether the fleet is actively
 /// running was only ever reported back by the start/stop POST responses, so a client that reloaded the

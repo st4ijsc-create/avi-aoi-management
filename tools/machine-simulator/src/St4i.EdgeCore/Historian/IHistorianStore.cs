@@ -17,7 +17,11 @@ public interface IHistorianStore
 
     Task<IReadOnlyList<TelemetrySamplePoint>> QueryTelemetryAsync(string machineCode, string metric, DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
 
-    Task<OeeInputAggregate> AggregateForOeeAsync(string machineCode, DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
+    /// <param name="includeFabricated">SM-2 — same explicit opt-in escape hatch as
+    /// <see cref="HistorianResultQuery.IncludeFabricated"/>: default <see langword="false"/> applies the
+    /// real-presence gate documented on <see cref="SqliteHistorianStore.AggregateForOeeAsync"/>;
+    /// <see langword="true"/> bypasses it and aggregates every row regardless of provenance.</param>
+    Task<OeeInputAggregate> AggregateForOeeAsync(string machineCode, DateTimeOffset from, DateTimeOffset to, CancellationToken ct, bool includeFabricated = false);
 
     Task<IReadOnlyList<HistorianRunEvent>> QueryRunEventsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
 

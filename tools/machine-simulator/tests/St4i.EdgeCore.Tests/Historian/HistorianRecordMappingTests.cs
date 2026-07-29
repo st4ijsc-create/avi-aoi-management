@@ -62,6 +62,42 @@ public class HistorianRecordMappingTests
         Assert.Equal(timestamp.ToUniversalTime(), record.EventTimeUtc);
         Assert.Equal(ingestedAt, record.IngestedAtUtc);
         Assert.Empty(record.TelemetrySamples);
+
+        // SM-2 — descriptor.DriverKind is Simulated here, so this reading is fabricated data.
+        Assert.Equal(true, record.IsFabricated);
+    }
+
+    /// <summary>SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-2-brief.md)
+    /// — data lineage must be explicit at the source, computed from the SAME descriptor.DriverKind every
+    /// other classification in this codebase already reads (via the ONE canonical
+    /// <see cref="DriverKinds.IsFabricated"/> call path), never inferred later. A real (non-Simulated)
+    /// driver kind must record <c>IsFabricated: false</c>.</summary>
+    [Theory]
+    [InlineData(DriverKinds.Modbus)]
+    [InlineData(DriverKinds.OpcUa)]
+    [InlineData(DriverKinds.Mqtt)]
+    [InlineData(DriverKinds.HotFolderAoi)]
+    [InlineData("vendor.acme.weld")]
+    public void From_ARealDriverKind_RecordsIsFabricatedFalse(string driverKind)
+    {
+        var descriptor = new MachineDescriptor(
+            "REAL-01", "SN-REAL-01", DeviceClass.Automation, "MODBUS_TCP", null,
+            driverKind, null, null, 1.0);
+
+        var reading = new DeviceReading
+        {
+            MachineCode = "REAL-01",
+            Kind = ReadingKind.ProcessResult,
+            SerialNumber = "SN-0001",
+            Verdict = Verdict.Pass,
+            CycleCounter = 1,
+            Timestamp = DateTimeOffset.UtcNow,
+        };
+        var ack = new TransportAck(Success: true);
+
+        var record = HistorianResultRecord.From(descriptor, reading, ack, DateTimeOffset.UtcNow);
+
+        Assert.Equal(false, record.IsFabricated);
     }
 
     [Fact]

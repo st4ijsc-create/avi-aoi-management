@@ -93,6 +93,12 @@ export interface FleetKpis {
   online: number
   totalCycles: number
   fpy: number
+  /** SM-2 — true exactly when the current roster mixes at least one fabricated (Simulated) machine with
+   * at least one real machine. Whenever true, totalCycles/fpy above already reflect ONLY the real
+   * machine(s) — this is the "the UI must not lie" signal a dashboard must render a visible note for,
+   * since the tile grid below still lists every fabricated machine too. Optional so an older engine build
+   * (pre-SM-2) that omits the field simply never shows the note. */
+  hasMixedProvenance?: boolean
 }
 
 export interface FleetSnapshot {

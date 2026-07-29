@@ -70,4 +70,17 @@ public static class DriverKinds
 
         return id;
     }
+
+    /// <summary>
+    /// SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-2-brief.md) — the
+    /// single canonical call path for "is a reading from this driver kind fabricated (manufactured, never
+    /// real process data)", mirroring <see cref="Normalize"/>'s own "one comparison rule" contract:
+    /// nothing else in this codebase should re-derive this by string-comparing driver kind literals
+    /// itself. <see cref="Simulated"/> is the ONLY built-in this codebase ever manufactures data for —
+    /// every other built-in (<see cref="HotFolderAoi"/>/<see cref="Mqtt"/>/<see cref="Modbus"/>/
+    /// <see cref="OpcUa"/>) and every third-party id names a driver that talks to a real device, so every
+    /// one of them is real by definition. Goes through <see cref="Normalize"/> first so any casing of
+    /// "simulated" is recognized, exactly like every other built-in comparison in this codebase.
+    /// </summary>
+    public static bool IsFabricated(string id) => Normalize(id) == Simulated;
 }

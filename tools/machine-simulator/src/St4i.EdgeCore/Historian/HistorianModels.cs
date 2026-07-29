@@ -9,6 +9,19 @@ namespace St4i.EdgeCore.Historian;
 /// historian); the metric/telemetry/measurement collections are reduced the SAME way the rest of the app
 /// already reduces them, never a second, independently-invented rule.
 /// </summary>
+/// <param name="IsFabricated">SM-2 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/
+/// task-2-brief.md) — data lineage, explicit at the source rather than inferred later: whether this
+/// reading came from a fabricated (simulated/demo) machine, computed ONCE, at write time, from the SAME
+/// <see cref="St4i.EdgeCore.Models.MachineDescriptor.DriverKind"/> every other classification in this
+/// codebase already reads (see <see cref="From"/> and the single canonical
+/// <see cref="St4i.Connector.Abstractions.Models.DriverKinds.IsFabricated"/> call path it uses) — never
+/// re-derived later by looking up a machine's CURRENT driver kind, which would be fragile (the roster
+/// changes, machines get re-registered under the same code, and a row written months ago must still be
+/// classifiable on its own). <see cref="From"/> ALWAYS sets a concrete <see langword="true"/>/
+/// <see langword="false"/> value here — <see langword="null"/> only ever arises from
+/// <see cref="SqliteHistorianStore"/> reading back a row written before this column existed (see that
+/// class's migration ladder), and is this project's deliberate "Unknown provenance" state — see
+/// <see cref="SqliteHistorianStore"/>'s own doc comment for what a query does with it.</param>
 public sealed record HistorianResultRecord(
     string MachineCode, string DeviceClass, string MachineType, string ReadingKind,
     long CycleCounter, string SerialNumber, string Verdict,
@@ -18,7 +31,8 @@ public sealed record HistorianResultRecord(
     bool AckSuccess, bool AckDuplicate, bool AckQueued,
     string? GenealogyJson, string? MeasurementsJson,
     DateTimeOffset EventTimeUtc, DateTimeOffset IngestedAtUtc,
-    IReadOnlyList<TelemetrySampleRecord> TelemetrySamples)
+    IReadOnlyList<TelemetrySampleRecord> TelemetrySamples,
+    bool? IsFabricated = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -71,7 +85,8 @@ public sealed record HistorianResultRecord(
             MeasurementsJson: reading.Measurements is { Count: > 0 } measurements ? JsonSerializer.Serialize(measurements, JsonOptions) : null,
             EventTimeUtc: reading.Timestamp.ToUniversalTime(),
             IngestedAtUtc: ingestedAtUtc,
-            TelemetrySamples: telemetrySamples);
+            TelemetrySamples: telemetrySamples,
+            IsFabricated: St4i.Connector.Abstractions.Models.DriverKinds.IsFabricated(descriptor.DriverKind));
     }
 }
 
@@ -81,10 +96,18 @@ public sealed record TelemetrySampleRecord(string Metric, double Value, string? 
 
 public sealed record HistorianRunEvent(string EventType, DateTimeOffset AtUtc, string? Note = null);
 
+/// <param name="IncludeFabricated">SM-2 — the explicit opt-in escape hatch for a surface that
+/// legitimately wants to see fabricated data too (e.g. a demo/exhibition historian view), per the task-2
+/// brief: "the separation must be explicit, never an accident of aggregation." Default
+/// <see langword="false"/> is this project's real-data-by-default posture: see
+/// <see cref="SqliteHistorianStore.QueryResultsAsync"/>'s own doc comment for the exact "only filter to
+/// real rows when the SAME scope also contains at least one row explicitly known to be real" rule this
+/// flag gates — set <see langword="true"/> to bypass that rule entirely and see every row regardless of
+/// provenance.</param>
 public sealed record HistorianResultQuery(
     string? MachineCode = null, DateTimeOffset? From = null, DateTimeOffset? To = null,
     string? SerialNumber = null, string? Verdict = null, string? ReadingKind = null,
-    int Limit = 200, int Offset = 0);
+    int Limit = 200, int Offset = 0, bool IncludeFabricated = false);
 
 public sealed record HistorianResultsPage(IReadOnlyList<HistorianResultRow> Items, int Total, int Limit, int Offset);
 
