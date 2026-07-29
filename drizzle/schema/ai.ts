@@ -160,6 +160,21 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
 export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
 export type InsertPredictiveAlert = typeof predictiveAlerts.$inferInsert;
 
+/** Wave 4 §3 — mỗi lần tình trạng tái diễn = một dòng có mốc thời gian riêng. */
+export const predictiveAlertOccurrences = pgTable("predictive_alert_occurrences", {
+  id: serial("id").primaryKey(),
+  alertId: integer("alertId").notNull().references(() => predictiveAlerts.id, { onDelete: "cascade" }),
+  occurredAt: timestamp("occurredAt", { withTimezone: true }).notNull().defaultNow(),
+  severity: varchar("severity", { length: 20 }),
+  confidenceScore: decimal("confidenceScore", { precision: 5, scale: 2 }),
+}, (table) => [
+  index("idx_alert_occurrences_time").on(table.occurredAt),
+  index("idx_alert_occurrences_alert").on(table.alertId),
+]);
+
+export type PredictiveAlertOccurrence = typeof predictiveAlertOccurrences.$inferSelect;
+export type InsertPredictiveAlertOccurrence = typeof predictiveAlertOccurrences.$inferInsert;
+
 /**
  * Alert Escalations - Audit log of all escalation events
  */
