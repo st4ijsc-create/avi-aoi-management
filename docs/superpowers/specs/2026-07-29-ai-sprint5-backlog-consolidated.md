@@ -100,6 +100,31 @@ Ba trường mà đường INSERT cũ có ghi. Không màn nào đọc chúng hi
 
 ---
 
+## 4b. NHÓM E — phát sinh KHI THI CÔNG nhóm A (2026-07-30)
+
+Do review tìm ra trong lúc làm nhóm A + B1, **không** thuộc phạm vi đã chốt nên cố ý để lại.
+
+- **E1. `-Infinity` bị chặn ở CỔNG, chưa chặn ở NGUỒN. ⚠ ƯU TIÊN CAO.**
+  B1 đã khiến `classifySuppression` chặn `predictedTimeframeHours = -Infinity`, nhưng giá trị đó vẫn được **sinh ra** ở `predictiveMaintenanceService.ts:505-523`: `Math.round(-Infinity)` giữ nguyên `-Infinity`, và `recommendedMaintenanceDate = new Date(-Infinity)` là **Invalid Date** vẫn đi vào `recordMachineHealthSnapshot`.
+  Reviewer cuối đánh giá nặng hơn dự tính ban đầu: Invalid Date đưa xuống drizzle/postgres-js có thể **ném `RangeError`**, tức đây có thể là đường sập chứ không chỉ dữ liệu bẩn. Cần task riêng chặn tại nguồn (`Number.isFinite` quanh phép chia ước lượng RUL).
+
+- **E2. Cảnh báo KHÔNG có `machineId` không được cooldown nào chi phối. CẦN CHỦ DỰ ÁN QUYẾT.**
+  `routeAlert` chỉ tra cảnh báo đang mở khi `machineId != null`, nên `decideAlertWrite` luôn trả `insert/no-machine` ⇒ `decideNotify` luôn trả `first` ⇒ **luôn báo**. Cooldown 4 giờ không áp dụng cho nhóm này (`YIELD_DROP` cấp nhà máy; `modelAutoRollback.ts:244` không có cả `machineId` lẫn `factoryId`).
+  Sprint 5 đã gỡ trần 3 lượt/5 phút vốn là throttle **duy nhất** của nhóm này ⇒ trần thực tế đi từ 3 lên 200 lượt/cửa sổ.
+  Chưa hồi quy thực tế vì `alertEvaluatorScheduler` chạy 2 phút/lượt (≈2-3 lượt/cửa sổ, gần như không chạm trần cũ), nhưng van đã mất nếu một nguồn bùng. **Đã tài liệu hoá trong `.env.example`; phần đổi hành vi chờ quyết.**
+
+- **E3. `notificationSentAt` đóng dấu TRƯỚC khi gửi.** Dấu nằm trong khối ghi, lượt gửi thật xảy ra sau. Tiến trình chết trong khe vài mili-giây đó ⇒ cảnh báo mang dấu "đã báo" mà không ai được báo ⇒ im 4 giờ về một máy sắp hỏng. Cùng lớp rủi ro mà §2.4 đã lo cho ca `targets = 0` nhưng bỏ sót ca này.
+
+- **E4. Sai chính tả biến môi trường rơi về mặc định trong im lặng.** `Number("abc")` → NaN ⇒ 240; `-1` ⇒ 240. Người vận hành gõ nhầm khi định **tắt** tính năng sẽ nhận đúng 4 giờ im lặng và không một dòng log. Nên `console.log` một lần lúc khởi động ba giá trị đang có hiệu lực.
+
+- **E5. Van an toàn kêu MỖI lượt khi chạm trần.** Vòng lặp hỏng 1000 lượt/phút sinh 1000 dòng warn/phút. Đánh đổi đúng hướng (log ồn hơn DB ồn) nhưng nên có throttle log.
+
+- **E6. Truy vấn `MIN(occurredAt)` của `occurrenceLog` là toàn bảng, không lọc `lineId`/`machineId`.** Nhất quán với `sourceCounts.predictive` (cũng chưa lọc) nên câu giải thích không sai, nhưng ở màn đã lọc theo máy, một máy im lặng vẫn không được giải thích nếu nhà máy có dữ liệu.
+
+- **E7. Khoảng trống test nhỏ:** khối `try/catch` quanh truy vấn `MIN` (`alarmKpiRouter.ts`) không cô lập test được bằng cơ chế mock hiện tại · nhánh `!input.generatedAt` (`alarmKpiEmptyState.ts`) chưa có test · assert nội dung `console.warn` của van chưa nêu khoá.
+
+---
+
 ## 5. KHÔNG phải nợ — ngoại lệ CÓ CHỦ Ý đã chốt
 
 **Đừng "sửa giúp" những mục này ở sprint sau mà không hỏi lại:**
