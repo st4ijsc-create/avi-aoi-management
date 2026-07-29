@@ -144,7 +144,11 @@ public sealed class ModbusTcpDriverWriteTests
 
         Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
         Assert.Null(result.RejectionReason);
-        Assert.NotNull(result.Detail);
+        // Fix round 1 (review) — content, not just non-null: a vacuity class one level down from the one
+        // the brief warned about (Detail could be ANY non-null string and this assertion would still pass).
+        // This exact string is what Critical #2's NullReferenceException used to destroy — asserting it here
+        // is what would have caught that regression directly, without needing the mutation test below too.
+        Assert.Contains("write did not complete", result.Detail, StringComparison.Ordinal);
 
         // The load-bearing assertion this test exists to make: it GENUINELY waited out the bound rather
         // than approximating/short-circuiting it. Retries are forced to 0 for a write (see the no-retry
@@ -189,7 +193,11 @@ public sealed class ModbusTcpDriverWriteTests
         stopwatch.Stop();
 
         Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
-        Assert.NotNull(result.Detail);
+        // Fix round 1 (review) — content, not just non-null (the same vacuity class one level down from the
+        // brief's own warning): this is the exact string Critical #2's NullReferenceException replaced with
+        // a generic "unexpected failure: Object reference not set..." message — asserting the real content
+        // here is what would have caught that regression directly.
+        Assert.Contains("cancelled before a definitive response arrived", result.Detail, StringComparison.Ordinal);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2),
             $"cancellation took {stopwatch.Elapsed} to unblock a write bounded by a 30s WriteTimeout — " +
             "ct.Register(DisposeConnection) should unblock it almost immediately (measured ~2ms on the read " +
@@ -239,8 +247,147 @@ public sealed class ModbusTcpDriverWriteTests
         Assert.Same(writeTask, completed);
         var result = await writeTask;
         Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+        // Fix round 1 (review) — content, not just the outcome enum. NOTE this write's own `ct` is
+        // CancellationToken.None (DisposeAsync(), not the write's token, is what tears the connection down),
+        // so `ct.IsCancellationRequested` is false throughout — this lands in the GENERIC failure catch, not
+        // the cancellation-shaped one, and must still produce the real message, not the outer backstop's
+        // generic "unexpected failure" (which is exactly what Critical #2's NullReferenceException produced
+        // instead, before this fix).
+        Assert.Contains("write did not complete", result.Detail, StringComparison.Ordinal);
 
         listener.Stop();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1 (review, Critical #1) — a timed-out write must not leave a desynced connection behind:
+    // the NEXT operation must reconnect from scratch, never reuse a connection whose in-flight response may
+    // still be pending on the wire. Proven by counting how many separate TCP connections the driver opens
+    // across two consecutive timed-out writes.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task WriteSetpointAsync_AfterATimeout_ForcesAFreshConnectionOnTheNextAttempt()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var acceptCount = 0;
+        var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var serverTask = Task.Run(async () =>
+        {
+            try
+            {
+                while (!deadline.IsCancellationRequested)
+                {
+                    var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
+                    Interlocked.Increment(ref acceptCount);
+                    // Never respond, never read further — hold EACH accepted connection open forever on its
+                    // OWN background task (never blocking this loop), so the driver's own write against it
+                    // times out client-side. If the driver (bug) reuses this SAME connection for its NEXT
+                    // write, no second accept ever happens here; if it (fix) reconnects from scratch, this
+                    // loop is free to accept a genuinely new one.
+                    _ = Task.Run(async () =>
+                    {
+                        try { await Task.Delay(Timeout.Infinite, deadline.Token).ConfigureAwait(false); }
+                        catch { /* deadline/teardown */ }
+                        finally { try { accepted.Dispose(); } catch { } }
+                    });
+                }
+            }
+            catch { /* deadline firing, or listener.Stop() below — both expected teardown */ }
+        });
+
+        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-DESYNC", readTimeoutMs: 300));
+
+        var r1 = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 111.0), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Indeterminate, r1.Outcome);
+
+        var r2 = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 222.0), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Indeterminate, r2.Outcome); // the server never responds to either — both time out.
+
+        listener.Stop();
+        try { await serverTask; } catch { /* teardown */ }
+
+        // The load-bearing assertion (Fix round 1, Critical #1): TWO separate connections, one per write —
+        // reusing a connection whose in-flight response may still arrive late is the exact desync hazard
+        // this fix closes. Mutation-tested: removing the DisposeConnection() calls this fix added reproduces
+        // acceptCount == 1 (see the task report's "Fix round 1" section).
+        Assert.Equal(2, Volatile.Read(ref acceptCount));
+        deadline.Dispose();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1 (review, Critical #2 + Important #1) — a command cancelled AFTER the coil is confirmed
+    // asserted but WHILE the reset write is stuck must report Indeterminate with a Detail that NAMES the
+    // coil and its unconfirmed rest state — never the generic backstop's "unexpected failure" text (which is
+    // what a NullReferenceException in the Transport.Retries restore used to produce instead).
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task InvokeCommandAsync_CancelledWhileResetWriteIsStuck_ReportsIndeterminate_NamingTheCoilAndUnconfirmedState()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var assertReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resetReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var serverTask = Task.Run(async () =>
+        {
+            // Bounded by its OWN internal deadline (not by the caller ever closing the connection) — see
+            // the "no retry" test's own remarks on the identical hazard: the driver's connection is
+            // deliberately left OPEN past the reset write's own attempt (disposed only when the `await using
+            // driver` at the end of this test method runs), so a wait with no deadline of its own would
+            // block forever, hanging this whole test.
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
+            var stream = accepted.GetStream();
+
+            // The ASSERT (coil = true) half: ack it immediately — the coil IS confirmed asserted.
+            var assertRequest = new byte[12];
+            await ReadExactAsync(stream, assertRequest, deadline.Token).ConfigureAwait(false);
+            assertReceived.TrySetResult();
+            await stream.WriteAsync(assertRequest, deadline.Token).ConfigureAwait(false); // FC05 ack = verbatim echo.
+
+            // The RESET (coil = false) half: signal it was RECEIVED (so the test knows the driver is now
+            // genuinely stuck waiting on ITS response), then go silent until the deadline — never ack it.
+            var resetRequest = new byte[12];
+            await ReadExactAsync(stream, resetRequest, deadline.Token).ConfigureAwait(false);
+            resetReceived.TrySetResult();
+            try { await Task.Delay(Timeout.Infinite, deadline.Token).ConfigureAwait(false); } catch { /* deadline */ }
+        });
+
+        // Deliberately a LONG bound (30s) — same reasoning as the setpoint cancellation test: if
+        // cancellation did NOT unblock the stuck reset write promptly, this test would hang for ~30s.
+        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-CMD-CANCEL-RESET", readTimeoutMs: 30_000));
+
+        using var cts = new CancellationTokenSource();
+        var commandTask = driver.InvokeCommandAsync(new CommandRequest("start-cycle"), cts.Token);
+
+        // Wait until the RESET write's own request has already reached the wire — i.e. the pre-reset
+        // `ct.IsCancellationRequested` check already passed, and the driver is now genuinely blocked waiting
+        // for a response that will never come — before cancelling.
+        await resetReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cts.Cancel();
+
+        var result = await commandTask;
+
+        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+        Assert.Null(result.RejectionReason);
+        // The load-bearing assertion (Fix round 1, Critical #2 + Important #1): the coil address and its
+        // UNCONFIRMED rest state must be named — the exact information a NullReferenceException in the
+        // Transport.Retries restore used to destroy, replacing it with a generic, useless message. Mutation-
+        // tested: removing the try/catch this fix added around that restore reproduces "unexpected failure:
+        // Object reference not set to an instance of an object." here instead (see the task report).
+        Assert.Contains("coil 3", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("unconfirmed", result.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("unexpected failure", result.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object reference", result.Detail, StringComparison.Ordinal);
+
+        listener.Stop();
+        try { await serverTask; } catch { /* teardown */ }
     }
 
     // ─────────────────────────────────────────────────────────────────────

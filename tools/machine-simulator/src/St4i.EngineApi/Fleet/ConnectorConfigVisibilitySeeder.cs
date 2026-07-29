@@ -30,6 +30,24 @@ namespace St4i.EngineApi.Fleet;
 /// for a deployment shape that is provisioned once, not iterated on live — the alternative (overwrite on every
 /// startup) risks silently destroying an operator's own persisted row the moment BOTH sources happen to name
 /// the same kind (see above), which is the worse failure mode of the two.</para>
+///
+/// <para><b>Fix round 1 (review, Important #2) — a skipped seed due to an existing row now ALWAYS warns
+/// loudly, naming exactly which endpoint is showing stale data.</b> Every call to <see cref="SeedAsync"/> is
+/// for a <paramref name="kind"/> THIS RUN's env-var/connectors.json source is ACTIVELY driving (see
+/// Program.cs's own call sites — <c>SeedAsync</c> is never called for a kind with no live non-store source
+/// this run) — which, per the pre-existing precedence rule, ALWAYS wins over a persisted row for the SAME
+/// kind at the live-registry level. So an existing row at this point is, BY CONSTRUCTION, ALREADY shadowed:
+/// the live driver may be able to write/command the machine while the persisted row (what
+/// <c>GET /v1/connectors/configured</c> actually shows) reports something else entirely — most dangerously,
+/// under-reporting a writable connector as read-only (an operator's earlier read-only <c>POST</c>, now
+/// shadowed by a WRITABLE env-var map). Silently skipping, as the original version of this fix did, preserves
+/// EXACTLY the false report the carried B-3 finding exists to close, in the safety-relevant direction. Every
+/// skip here is now reported via <paramref name="logWarning"/>, unconditionally — not just when a capability
+/// mismatch is detected, since ANY difference (a different machine code, host, or capability) means the same
+/// thing: the persisted row is not what is actually running. A proper fix would add a <c>source</c> column
+/// (<c>"env"</c>/<c>"connectors.json"</c>/<c>"operator"</c>) so a seeded row could be told apart from an
+/// operator's own and safely refreshed — scoped OUT of this task (B-4 has no endpoint-layer changes in scope);
+/// this warning is the accepted minimum instead.</para>
 /// </summary>
 public static class ConnectorConfigVisibilitySeeder
 {
@@ -61,8 +79,19 @@ public static class ConnectorConfigVisibilitySeeder
             var existing = await store.GetAsync(kind, ct).ConfigureAwait(false);
             if (existing is not null)
             {
-                // Insert-only — see this class's own doc comment for why an existing row (most likely an
-                // operator's own persisted configuration) is never overwritten here.
+                // Fix round 1 (review, Important #2) — insert-only still (never overwrite an operator's own
+                // persisted row — see this class's own doc comment), but no longer a SILENT skip: this call
+                // only ever happens for a kind THIS RUN's env-var/connectors.json source is actively
+                // driving, so an existing row here is, by construction, already shadowed and potentially
+                // reporting something other than what the live connector can actually do.
+                logWarning?.Invoke(
+                    $"GET /v1/connectors/configured is showing a PERSISTED row for kind '{kind}' (machine " +
+                    $"'{existing.MachineCode}'), but this run's environment-variable/connectors.json source " +
+                    "is the one actually driving this connector — it takes precedence over the persisted row " +
+                    "at the live-registry level. The persisted row's reported write capability may NOT " +
+                    "reflect what the live connector can actually do (most dangerously, it can under-report " +
+                    $"a writable connector as read-only). Delete the persisted row (DELETE /v1/connectors/{kind}) " +
+                    "and restart to let this run's own configuration be seeded and reported accurately.");
                 return;
             }
 

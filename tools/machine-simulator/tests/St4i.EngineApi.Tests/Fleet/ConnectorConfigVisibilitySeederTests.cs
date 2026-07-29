@@ -107,17 +107,27 @@ public sealed class ConnectorConfigVisibilitySeederTests
     /// <summary>The insert-only contract — the load-bearing safety property this class exists to uphold: an
     /// operator's OWN persisted row (as if saved earlier via <c>POST /v1/connectors</c>) for the SAME kind
     /// must never be silently overwritten by this visibility-only seeding pass, even though the env-var map
-    /// declares a DIFFERENT machine code and a DIFFERENT write capability entirely.</summary>
+    /// declares a DIFFERENT machine code and a DIFFERENT write capability entirely.
+    ///
+    /// <para>Fix round 1 (review, Important #2) — ALSO proves the skip is no longer SILENT: this is exactly
+    /// the "operator's read-only row shadowed by a now-active writable env-var map" scenario the review
+    /// flagged as the safety-relevant direction of this gap — GET /v1/connectors/configured would report
+    /// read-only for a connector that can actually write. A loud, specific warning is the accepted minimum
+    /// fix (a full provenance column is out of this task's scope) — asserted here by CONTENT, not just
+    /// non-empty, so a future regression that keeps warning but loses the actionable detail would still be
+    /// caught.</para></summary>
     [Fact]
-    public async Task SeedAsync_RowAlreadyExistsForKind_NeverOverwritten()
+    public async Task SeedAsync_RowAlreadyExistsForKind_NeverOverwritten_ButWarnsLoudly()
     {
         var store = new ConnectorConfigStore(TempDir());
+        var warnings = new List<string>();
 
         var operatorSaved = await store.SaveAsync(
             "Modbus", "OPERATOR-OWN-MACHINE", "192.168.1.50", 502, """{"machineCode":"OPERATOR-OWN-MACHINE"}""");
 
         await ConnectorConfigVisibilitySeeder.SeedAsync(
-            store, "Modbus", host: "10.0.0.5", port: 502, mapJson: WritableModbusMap, pkiDir: null);
+            store, "Modbus", host: "10.0.0.5", port: 502, mapJson: WritableModbusMap, pkiDir: null,
+            logWarning: warnings.Add);
 
         var configured = await store.ListAsync();
         var row = Assert.Single(configured); // still exactly one row — nothing was appended alongside it.
@@ -125,6 +135,13 @@ public sealed class ConnectorConfigVisibilitySeederTests
         Assert.Equal("192.168.1.50", row.Host);
         Assert.Null(row.WriteCapability); // the operator's own map declared no write capability — untouched.
         Assert.Equal(operatorSaved.UpdatedAtUtc, row.UpdatedAtUtc); // not merely unchanged data — never even re-written.
+
+        // The load-bearing assertion (Fix round 1, Important #2): the skip is no longer silent, and the
+        // warning names the exact endpoint/kind/hazard, not a generic "something happened" message.
+        var warning = Assert.Single(warnings);
+        Assert.Contains("GET /v1/connectors/configured", warning, StringComparison.Ordinal);
+        Assert.Contains("Modbus", warning, StringComparison.Ordinal);
+        Assert.Contains("may NOT reflect", warning, StringComparison.Ordinal);
     }
 
     [Fact]
