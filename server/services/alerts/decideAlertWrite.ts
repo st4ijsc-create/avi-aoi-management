@@ -28,6 +28,16 @@ export type AlertWriteDecision =
 
 const RANK: Record<AlertSeverity, number> = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
 
+/**
+ * Sprint 5 §2.3 — thứ hạng mức độ, export riêng vì câu hỏi "mức có TĂNG không"
+ * KHÔNG dùng được `maxSeverity()`: khi hai mức BẰNG nhau nó trả về tham số đầu,
+ * mà so chuỗi thì `maxSeverity(prev, incoming) === incoming` hoá thành true ⇒
+ * "đã tăng" sai. Phải so bằng SỐ.
+ */
+export function severityRank(s: AlertSeverity): number {
+  return RANK[s];
+}
+
 /** Mức độ chỉ đi LÊN — một tình trạng đã CRITICAL không được âm thầm tụt xuống. */
 export function maxSeverity(a: AlertSeverity, b: AlertSeverity): AlertSeverity {
   return RANK[a] >= RANK[b] ? a : b;
