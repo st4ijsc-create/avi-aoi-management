@@ -3542,6 +3542,12 @@
     "FEATURE_DISABLED": "Tính năng {{feature}} chưa được bật trên hệ thống này.",
     "OPERATION_FAILED": "Không thực hiện được: {{operation}}.",
     "PERMISSION_DENIED": "Bạn không có quyền thực hiện thao tác này.",
+    "KB_FILE_TOO_LARGE": "Tệp vượt quá giới hạn {{limitMb}} MB.",
+    "KB_UNSUPPORTED_TYPE": "Không hỗ trợ định dạng \"{{ext}}\". Định dạng nhận được: {{supported}}.",
+    "KB_CONTENT_TYPE_MISMATCH": "Nội dung tệp không khớp phần mở rộng: khai là {{claimed}} nhưng thực tế là {{detected}}.",
+    "KB_PARSE_FAILED": "Không đọc được nội dung tệp: {{reason}}",
+    "KB_NO_TEXT_EXTRACTED": "Tệp \"{{source}}\" không có chữ nào để nạp.",
+    "KB_FETCH_FAILED": "Không tải được nội dung từ {{url}}: {{reason}}",
     "entity": {
       "product": "sản phẩm",
       "machine": "máy",

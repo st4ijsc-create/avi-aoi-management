@@ -31,6 +31,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, roleProcedure, require2FA } from "../_core/trpc";
+import { appError } from "../_core/appError";
 import { normalizeSourceType, KbUnsupportedTypeError, KbParseError } from "../services/kbDocParser";
 import {
   ingestDocument,
@@ -55,6 +56,14 @@ import {
   SttValidationError,
   SttTranscribeError,
 } from "../services/kbVideoTranscriber";
+import {
+  buildTooLargeError,
+  buildUnsupportedTypeError,
+  buildParseFailedError,
+  buildNoTextError,
+  buildFetchFailedError,
+  KB_SUPPORTED_TYPES,
+} from "./kbErrors";
 
 const kbStudioProcedure = roleProcedure("admin", "engineer").use(require2FA);
 
@@ -84,7 +93,10 @@ function decodeBase64Payload(b64: string, maxBytes: number, label: string): Buff
     throw new TRPCError({ code: "BAD_REQUEST", message: `Empty ${label} payload` });
   }
   if (buf.length > maxBytes) {
-    throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `${label} exceeds ${maxBytes} bytes` });
+    // Sprint 5 §4 (Task 3) — trước đây "${label} exceeds ${maxBytes} bytes" (byte thô, không
+    // phải "20 MB"). Dùng CHUNG một mã cho cả nhánh "Document" lẫn "Video" (`label` chỉ còn ảnh
+    // hưởng tới 2 thông điệp validate phía trên — không đổi mã tRPC nào ở đây).
+    throw buildTooLargeError(maxBytes);
   }
   return buf;
 }
@@ -125,11 +137,12 @@ export const kbIngestRouter = router({
       }
 
       // MIME/extension allowlist, checked BEFORE decoding the (possibly large) payload.
+      // Sprint 5 §4 (Task 3) — trước đây `Unsupported document type: "pptx"` (tiếng Anh trần).
       try {
         normalizeSourceType(input.mimeOrExt);
       } catch (err) {
         if (err instanceof KbUnsupportedTypeError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
         }
         throw err;
       }
@@ -145,14 +158,23 @@ export const kbIngestRouter = router({
           userId: ctx.user?.id,
         });
       } catch (err) {
+        // KbIngestDisabledError KHÔNG nằm trong 7 nhóm Task 3 di trú (xem task-3-report.md
+        // Step 1) — giữ nguyên như cũ.
         if (err instanceof KbIngestDisabledError) {
           throw new TRPCError({ code: "FORBIDDEN", message: err.message });
         }
-        if (err instanceof KbUnsupportedTypeError || err instanceof KbIngestValidationError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        if (err instanceof KbUnsupportedTypeError) {
+          throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
+        }
+        // KbIngestValidationError chỉ còn thực sự tới được đây qua nhánh "không còn chữ để nạp"
+        // (`ingestDocument`'s "produced no extractable text"/"produced zero chunks"): zod đã bắt
+        // corpus/sourceRef/base64 rỗng ở input schema phía trên trước khi service được gọi — xem
+        // task-3-report.md mục Step 1 cho lý giải đầy đủ.
+        if (err instanceof KbIngestValidationError) {
+          throw buildNoTextError(input.sourceRef);
         }
         if (err instanceof KbParseError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw buildParseFailedError(err.message);
         }
         if (err instanceof KbEmbedError || err instanceof KbStoreError) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
@@ -186,19 +208,30 @@ export const kbIngestRouter = router({
       try {
         return await ingestUrl({ corpus: input.corpus, url: input.url, userId: ctx.user?.id });
       } catch (err) {
-        if (err instanceof WebIngestDisabledError || err instanceof KbIngestDisabledError) {
+        // KbIngestDisabledError KHÔNG nằm trong 7 nhóm Task 3 di trú — giữ nguyên như cũ.
+        if (err instanceof KbIngestDisabledError) {
           throw new TRPCError({ code: "FORBIDDEN", message: err.message });
         }
-        if (
-          err instanceof SsrfBlockedError ||
-          err instanceof FetchError ||
-          err instanceof KbUnsupportedTypeError ||
-          err instanceof KbIngestValidationError
-        ) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        // Sprint 5 §4 (Task 3) — "tính năng chưa bật" là mã họ phổ quát FEATURE_DISABLED (đã
+        // đăng ký ở Task 1), không phải một trong 6 mã KB tài liệu (theo gợi ý của brief).
+        if (err instanceof WebIngestDisabledError) {
+          throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "web_ingest" }, err.message);
+        }
+        // SsrfBlockedError (đích bị chặn) và FetchError (mọi lỗi fetch khác) đều là "không tải
+        // được nội dung từ URL này" dưới góc nhìn người vận hành — gộp vào MỘT mã.
+        if (err instanceof SsrfBlockedError || err instanceof FetchError) {
+          throw buildFetchFailedError(input.url, err.message);
+        }
+        if (err instanceof KbUnsupportedTypeError) {
+          throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
+        }
+        // Xem ghi chú tương tự ở uploadDocument: chỉ thực sự tới được đây qua nhánh "không còn
+        // chữ để nạp" (trang lấy về rỗng) — corpus/url đã được zod bắt ở input schema.
+        if (err instanceof KbIngestValidationError) {
+          throw buildNoTextError(input.url);
         }
         if (err instanceof KbParseError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw buildParseFailedError(err.message);
         }
         if (err instanceof KbEmbedError || err instanceof KbStoreError) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
@@ -248,21 +281,27 @@ export const kbIngestRouter = router({
           language: input.language,
         });
       } catch (err) {
+        // VideoIngestDisabledError/KbIngestDisabledError/SttUnavailableError/SttValidationError/
+        // SttTranscribeError KHÔNG nằm trong 7 nhóm Task 3 di trú — giữ nguyên như cũ.
         if (err instanceof VideoIngestDisabledError || err instanceof KbIngestDisabledError) {
           throw new TRPCError({ code: "FORBIDDEN", message: err.message });
         }
         if (err instanceof SttUnavailableError) {
           throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: err.message });
         }
-        if (
-          err instanceof SttValidationError ||
-          err instanceof KbUnsupportedTypeError ||
-          err instanceof KbIngestValidationError
-        ) {
+        if (err instanceof SttValidationError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
         }
+        if (err instanceof KbUnsupportedTypeError) {
+          throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
+        }
+        // Xem ghi chú ở uploadDocument/ingestUrl — chỉ thực sự tới được đây qua nhánh "không còn
+        // chữ để nạp" (transcript rỗng). `input.filename` là "source" gần nhất router có sẵn.
+        if (err instanceof KbIngestValidationError) {
+          throw buildNoTextError(input.filename);
+        }
         if (err instanceof KbParseError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw buildParseFailedError(err.message);
         }
         if (err instanceof SttTranscribeError || err instanceof KbEmbedError || err instanceof KbStoreError) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });

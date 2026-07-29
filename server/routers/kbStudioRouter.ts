@@ -39,6 +39,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, roleProcedure, require2FA } from "../_core/trpc";
+import { appError } from "../_core/appError";
 import { rethrowDbError } from "../_core/dbErrors";
 import { normalizeSourceType, KbUnsupportedTypeError, KbParseError } from "../services/kbDocParser";
 import {
@@ -59,6 +60,14 @@ import {
 import * as kbStudioService from "../services/kbStudioService";
 import { KbStudioTableUnavailableError, KbCorpusNotFoundError } from "../services/kbStudioService";
 import { startLoraFinetune, LoraFinetuneUnavailableError, LoraFinetuneError } from "../services/aiLlmFinetuneSidecar";
+import {
+  buildTooLargeError,
+  buildUnsupportedTypeError,
+  buildParseFailedError,
+  buildNoTextError,
+  buildFetchFailedError,
+  KB_SUPPORTED_TYPES,
+} from "./kbErrors";
 
 const kbStudioProcedure = roleProcedure("admin", "engineer").use(require2FA);
 /** deleteCorpus only — see module doc comment for why this is narrower than the rest. */
@@ -86,23 +95,31 @@ function decodeBase64Doc(b64: string): Buffer {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Empty document payload" });
   }
   if (buf.length > MAX_UPLOAD_BYTES) {
-    throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `Document exceeds ${MAX_UPLOAD_BYTES} bytes` });
+    // Sprint 5 §4 (Task 3) — trước đây "Document exceeds 20971520 bytes" (byte thô).
+    throw buildTooLargeError(MAX_UPLOAD_BYTES);
   }
   return buf;
 }
 
 /** Same typed-error → TRPCError mapping as kbIngestRouter.uploadDocument, reused for
- * ingestDocumentJob's catch path (after the job has already been marked failed). */
-function mapIngestDocumentError(err: unknown): never {
+ * ingestDocumentJob's catch path (after the job has already been marked failed).
+ * `sourceRef` is threaded through (this function is module-level, not a closure over the
+ * mutation's `input`) so KB_NO_TEXT_EXTRACTED can carry the real document/source name — see
+ * task-3-report.md Step 1 for why KbIngestValidationError is safe to treat as "no text" here. */
+function mapIngestDocumentError(err: unknown, sourceRef: string): never {
   if (err instanceof TRPCError) throw err;
+  // KbIngestDisabledError KHÔNG nằm trong 7 nhóm Task 3 di trú — giữ nguyên như cũ.
   if (err instanceof KbIngestDisabledError) {
     throw new TRPCError({ code: "FORBIDDEN", message: err.message });
   }
-  if (err instanceof KbUnsupportedTypeError || err instanceof KbIngestValidationError) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+  if (err instanceof KbUnsupportedTypeError) {
+    throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
+  }
+  if (err instanceof KbIngestValidationError) {
+    throw buildNoTextError(sourceRef);
   }
   if (err instanceof KbParseError) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+    throw buildParseFailedError(err.message);
   }
   if (err instanceof KbEmbedError || err instanceof KbStoreError) {
     throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
@@ -111,22 +128,29 @@ function mapIngestDocumentError(err: unknown): never {
 }
 
 /** Same typed-error → TRPCError mapping as kbIngestRouter.ingestUrl, reused for
- * ingestUrlJob's catch path. */
-function mapIngestUrlError(err: unknown): never {
+ * ingestUrlJob's catch path. `url` threaded through for the same reason as `sourceRef` above. */
+function mapIngestUrlError(err: unknown, url: string): never {
   if (err instanceof TRPCError) throw err;
-  if (err instanceof WebIngestDisabledError || err instanceof KbIngestDisabledError) {
+  // KbIngestDisabledError KHÔNG nằm trong 7 nhóm Task 3 di trú — giữ nguyên như cũ.
+  if (err instanceof KbIngestDisabledError) {
     throw new TRPCError({ code: "FORBIDDEN", message: err.message });
   }
-  if (
-    err instanceof SsrfBlockedError ||
-    err instanceof FetchError ||
-    err instanceof KbUnsupportedTypeError ||
-    err instanceof KbIngestValidationError
-  ) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+  // Sprint 5 §4 (Task 3) — "tính năng chưa bật" là mã họ phổ quát FEATURE_DISABLED, không phải
+  // một trong 6 mã KB tài liệu (theo gợi ý của brief).
+  if (err instanceof WebIngestDisabledError) {
+    throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "web_ingest" }, err.message);
+  }
+  if (err instanceof SsrfBlockedError || err instanceof FetchError) {
+    throw buildFetchFailedError(url, err.message);
+  }
+  if (err instanceof KbUnsupportedTypeError) {
+    throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
+  }
+  if (err instanceof KbIngestValidationError) {
+    throw buildNoTextError(url);
   }
   if (err instanceof KbParseError) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+    throw buildParseFailedError(err.message);
   }
   if (err instanceof KbEmbedError || err instanceof KbStoreError) {
     throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
@@ -232,7 +256,7 @@ export const kbStudioRouter = router({
         normalizeSourceType(input.mimeOrExt);
       } catch (err) {
         if (err instanceof KbUnsupportedTypeError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
         }
         throw err;
       }
@@ -259,7 +283,7 @@ export const kbStudioRouter = router({
         return { ...result, jobId };
       } catch (err) {
         await kbStudioService.markJobFailed(jobId, err instanceof Error ? err.message : String(err));
-        mapIngestDocumentError(err);
+        mapIngestDocumentError(err, input.sourceRef);
       }
     }),
 
@@ -296,7 +320,7 @@ export const kbStudioRouter = router({
         return { ...result, jobId };
       } catch (err) {
         await kbStudioService.markJobFailed(jobId, err instanceof Error ? err.message : String(err));
-        mapIngestUrlError(err);
+        mapIngestUrlError(err, input.url);
       }
     }),
 

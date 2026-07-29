@@ -3533,6 +3533,12 @@
     "FEATURE_DISABLED": "此系统尚未启用{{feature}}功能。",
     "OPERATION_FAILED": "操作失败：{{operation}}。",
     "PERMISSION_DENIED": "您没有权限执行此操作。",
+    "KB_FILE_TOO_LARGE": "文件超过 {{limitMb}} MB 限制。",
+    "KB_UNSUPPORTED_TYPE": "不支持的格式 \"{{ext}}\"。支持的格式：{{supported}}。",
+    "KB_CONTENT_TYPE_MISMATCH": "文件内容与扩展名不符：声称是 {{claimed}}，实际是 {{detected}}。",
+    "KB_PARSE_FAILED": "无法读取文件内容：{{reason}}",
+    "KB_NO_TEXT_EXTRACTED": "文件 \"{{source}}\" 没有可导入的文本。",
+    "KB_FETCH_FAILED": "无法从 {{url}} 获取内容：{{reason}}",
     "entity": {
       "product": "产品",
       "machine": "设备",
