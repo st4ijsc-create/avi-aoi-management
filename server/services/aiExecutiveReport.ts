@@ -621,15 +621,30 @@ export function hasReportableContent(s: ExecutiveSummaryStructured): boolean {
  * về một nhà máy). `null` = báo cáo TOÀN CỤC (mọi hàng trước task này, + mọi hàng do
  * scheduler/generateNow sinh — không đổi) — never conflated with a factory-scoped row.
  */
-export async function persistExecutiveSummary(s: ExecutiveSummaryStructured): Promise<number | null> {
+/**
+ * Vòng sửa cuối (review toàn nhánh, mục 3) — `id` không đủ để phân biệt "vừa lưu
+ * MỘT DÒNG MỚI" với "id của một dòng ĐÃ CÓ SẴN" (chống-trùng §4.3 trả về id CŨ) hay
+ * "không lưu gì cả" (báo cáo rỗng §4.4, id=null). `notifyExecutiveSummary` chỉ nên
+ * chạy ở trường hợp ĐẦU — bắn lại thông báo cho một báo cáo đã gửi rồi, hay bắn
+ * thông báo `reportId: undefined` cho một báo cáo không hề tồn tại, chính là thứ
+ * dạy người dùng bỏ qua CẢ hòm thông báo lẫn hòm chờ đọc mà §4.4 muốn dọn sạch.
+ */
+export interface PersistExecutiveSummaryResult {
+  /** id của dòng ai_insights (dòng mới HOẶC dòng trùng đã có sẵn); null nếu không lưu. */
+  id: number | null;
+  /** true CHỈ KHI một dòng MỚI vừa được insert ở lượt gọi NÀY. */
+  created: boolean;
+}
+
+export async function persistExecutiveSummary(s: ExecutiveSummaryStructured): Promise<PersistExecutiveSummaryResult> {
   try {
     const db = await getDb();
-    if (!db) return null;
+    if (!db) return { id: null, created: false };
 
     // Wave 3 §4.4 — không lưu báo cáo rỗng; nói rõ lý do thay vì im lặng.
     if (!hasReportableContent(s)) {
       console.log(`[aiExecutiveReport] bỏ qua báo cáo rỗng (${s.period}) — không có KPI khác 0, rủi ro hay điểm nhấn.`);
-      return null;
+      return { id: null, created: false };
     }
 
     // Wave 3 §4.3 — chống trùng theo (source, title). Tiêu đề đã chứa sẵn kỳ và
@@ -642,7 +657,7 @@ export async function persistExecutiveSummary(s: ExecutiveSummaryStructured): Pr
       .limit(1);
     if (existing[0]) {
       console.log(`[aiExecutiveReport] đã có báo cáo cùng tiêu đề (#${existing[0].id}) — không tạo bản trùng.`);
-      return existing[0].id;
+      return { id: existing[0].id, created: false };
     }
 
     const body = [s.headline, "", ...s.highlights.map((h) => `• ${h}`)].join("\n").slice(0, 8000);
@@ -663,10 +678,10 @@ export async function persistExecutiveSummary(s: ExecutiveSummaryStructured): Pr
         },
       })
       .returning({ id: aiInsights.id });
-    return row?.id ?? null;
+    return { id: row?.id ?? null, created: row?.id != null };
   } catch (err) {
     console.error("[aiExecutiveReport] persist failed:", (err as any)?.message || err);
-    return null;
+    return { id: null, created: false };
   }
 }
 
@@ -944,12 +959,18 @@ export async function runExecutiveReportNow(
   opts?: { notify?: boolean; skipLlm?: boolean },
 ): Promise<{ summary: ExecutiveSummaryStructured; insightId: number | null }> {
   const summary = await generateExecutiveSummary(period, lang, undefined, factoryCode, { skipLlm: opts?.skipLlm });
-  const insightId = await persistExecutiveSummary(summary);
+  const persisted = await persistExecutiveSummary(summary);
+  const insightId = persisted.id;
 
   // PUSH (in-app + optional email). Default ON; fail-safe (never throws).
   const notifyEnabled =
     (opts?.notify ?? true) && (process.env.EXEC_REPORT_NOTIFY_ENABLED || "true").toLowerCase() !== "false";
-  if (notifyEnabled) {
+  // Vòng sửa cuối (mục 3) — CHỈ bắn thông báo khi lượt gọi NÀY thực sự vừa lưu một
+  // dòng MỚI (persisted.created). id không-null KHÔNG đủ: có thể là id của một báo
+  // cáo trùng đã gửi rồi (§4.3), và id=null (báo cáo rỗng, §4.4) trước đây vẫn lọt
+  // qua vì notify chỉ gate theo notifyEnabled — bắn thông báo `reportId: undefined`
+  // cho một báo cáo không hề được lưu.
+  if (notifyEnabled && persisted.created) {
     await notifyExecutiveSummary(summary, insightId);
   }
   return { summary, insightId };

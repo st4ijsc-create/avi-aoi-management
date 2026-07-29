@@ -26,6 +26,10 @@ import { predictiveAlerts, machines } from "../../drizzle/schema";
 
 // ─── Ghi lại các lệnh insert/update thật sự gửi tới db giả ─────────────────
 const calls: { kind: "insert" | "update"; payload?: any }[] = [];
+// Vòng sửa cuối (mục 5) — ghi lại đối tượng điều kiện WHERE thật (SQL của
+// drizzle-orm THẬT, không mock) truyền vào .where() của nhánh UPDATE, để kiểm nó
+// có lọc lại status='ACTIVE' hay không (chống UPDATE ghi đè dòng vừa bị sweeper đóng).
+let lastUpdateWhereCond: any = null;
 
 // Dữ liệu seed cho từng bảng — test set lại trong beforeEach/từng case.
 let seedOpenAlertRows: any[] = [];
@@ -77,7 +81,12 @@ vi.mock("../db/connection", () => ({
     update: (_table: any) => ({
       set: (v: any) => {
         calls.push({ kind: "update", payload: v });
-        return { where: async () => undefined };
+        return {
+          where: (cond: any) => {
+            lastUpdateWhereCond = cond;
+            return Promise.resolve(undefined);
+          },
+        };
       },
     }),
     // checkPatterns() dùng db.execute(sql`...`) trực tiếp, không qua select().
@@ -91,8 +100,25 @@ vi.mock("./aiGgufEngine", () => ({
   isGgufAvailable: vi.fn(async () => false),
 }));
 
+/** Vòng sửa cuối (mục 5) — duyệt cây SQL THẬT của drizzle-orm (queryChunks lồng
+ *  nhau) và gom tên các cột Column được tham chiếu (mỗi Column thật có .name kiểu
+ *  chuỗi + .columnType — StringChunk/Param không có .columnType nên không lẫn). */
+function columnNamesInCondition(cond: any): string[] {
+  const names: string[] = [];
+  function walk(node: any, depth: number) {
+    if (node == null || depth > 12) return;
+    if (Array.isArray(node)) { for (const n of node) walk(n, depth); return; }
+    if (typeof node !== "object") return;
+    if (typeof node.name === "string" && typeof node.columnType === "string") names.push(node.name);
+    if (Array.isArray(node.queryChunks)) walk(node.queryChunks, depth + 1);
+  }
+  walk(cond, 0);
+  return names;
+}
+
 beforeEach(() => {
   calls.length = 0;
+  lastUpdateWhereCond = null;
   seedOpenAlertRows = [];
   seedMachineRows = [];
   existingOpenLookupThrows = false;
@@ -122,6 +148,28 @@ describe("routeAlert — một-cảnh-báo-mở", () => {
     // Vòng sửa 1 — [Minor]: expiresAt phải ĐƯỢC GIA HẠN ở nhánh UPDATE. Nếu ai xoá,
     // một cảnh báo vẫn đang tái diễn sẽ tự hết hạn — ngược ý đồ "hết hạn = đã thôi tái diễn".
     expect(upd!.payload.expiresAt).toBeInstanceOf(Date);
+  });
+
+  it("WHERE của UPDATE phải LỌC LẠI status='ACTIVE' (vòng sửa cuối, mục 5) — chống ghi đè dòng vừa bị sweeper đóng EXPIRED", async () => {
+    // Race lý thuyết: alertExpirySweeper có thể đóng ĐÚNG dòng này giữa lượt tra-cứu
+    // (đã lọc ACTIVE) và UPDATE này. Nếu WHERE của UPDATE chỉ lọc theo id, câu lệnh vẫn
+    // khớp dòng đã EXPIRED và ghi đè occurrenceCount/expiresAt lên nó mà KHÔNG đặt lại
+    // status — dòng ở lại EXPIRED kèm ghi chú "đã thôi tái diễn" trong khi vừa tái diễn.
+    //
+    // machineId RIÊNG (không phải 2) — bộ đếm consolidation trong routeAlert() sống
+    // trong redisService (in-memory fallback) là SINGLETON không reset giữa các test
+    // trong cùng file; các case khác trong file này đã dùng đúng 3 lượt gọi cho khoá
+    // "MACHINE_FAILURE:2:all" (vừa chạm ngưỡng `nextCount > 3` là bỏ qua ghi DB hẳn —
+    // xem :134). Dùng machineId khác để không cộng dồn vào cùng khoá và vô tình phá
+    // các test khác chạy sau nó trong cùng file.
+    seedOpenAlertRows = [{ id: 7, severity: "HIGH", occurrenceCount: 22 }];
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    await routeAlert({ type: "MACHINE_FAILURE", machineId: 4242, severity: "HIGH", message: "x", data: {} } as any);
+
+    expect(lastUpdateWhereCond).toBeTruthy();
+    const names = columnNamesInCondition(lastUpdateWhereCond);
+    expect(names).toContain("id");
+    expect(names).toContain("status"); // ★ đây là điều bị thiếu trước khi sửa mục 5
   });
 
   it("tra cứu cảnh báo mở NÉM lỗi thật ⇒ fail-OPEN: vẫn INSERT, KHÔNG UPDATE (spec §3d)", async () => {

@@ -38,6 +38,7 @@ import {
 import { recordMachineHealthSnapshot } from "../db/machine";
 import type { RulEstimate } from "./ai/rulEstimatorService";
 import type { FailureModeResult } from "./ai/failureModeClassifier";
+import type { SuppressionReason } from "./alerts/classifySuppression";
 
 // ─── Tunables (env-overridable) ──────────────────────────────────────────────
 
@@ -723,6 +724,18 @@ export async function computeFailureRisk(
 // ─── Cycle + background job ──────────────────────────────────────────────────
 
 /**
+ * Vòng sửa cuối (review toàn nhánh, mục 4) — khởi tạo đủ 4 nhãn `SuppressionReason`
+ * = 0, KHÔNG dùng object rỗng `{}`. `JSON.stringify({})` bỏ hẳn mọi nhãn có đếm = 0
+ * (JS không lặp qua key không tồn tại) — người đọc log sau này KHÔNG phân biệt được
+ * "đúng 0 ứng viên bị chặn vì low-risk" với "chưa đo được/log hỏng". Cả Task 6 tồn
+ * tại để sinh dữ liệu hiệu chỉnh ngưỡng — thiếu key đúng loại nhập nhằng làm hỏng
+ * quyết định mà Task 6 muốn ngăn. Xuất khẩu để test không cần dựng cả chu kỳ dự đoán.
+ */
+export function initSuppressionTally(): Record<SuppressionReason, number> {
+  return { emit: 0, "low-risk": 0, "low-confidence": 0, "out-of-timeframe": 0 };
+}
+
+/**
  * Run one predictive-maintenance cycle over active machines.
  * For each machine: compute risk, persist a health snapshot (updating the
  * predicted* fields), and emit a MACHINE_FAILURE alert when risk + confidence +
@@ -741,7 +754,7 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
   let alertsEmitted = 0;
   let workOrdersCreated = 0;
   let errors = 0;
-  const suppressionTally: Record<string, number> = {};
+  const suppressionTally: Record<SuppressionReason, number> = initSuppressionTally();
 
   const activeMachines = await db
     .select({ id: machines.id, code: machines.code })

@@ -33,6 +33,13 @@ export interface NormalAlert {
   // occurrenceCount có thể VẮNG MẶT nếu migration 0308 chưa chạy — coi như 1.
   confidenceScore?: number | string | null;
   occurrenceCount?: number | null;
+  // Vòng sửa cuối (review toàn nhánh, mục 2) — chỉ nguồn "predictive" mang trường
+  // này (predictive_alerts.lastOccurredAt, đã tới client từ Task 7). Dùng để tính
+  // "hết hạn dự báo" (xem isForecastExpired) — KHÔNG dùng raisedAt/createdAt, vì
+  // từ Task 3 một dòng predictive được UPDATE tại chỗ mỗi lần tái diễn thay vì
+  // insert dòng mới, nên createdAt có thể cũ hàng tuần trong khi máy vẫn đang tái
+  // diễn mỗi ngày. Vắng mặt (nguồn khác, hoặc chưa từng tái diễn) ⇒ null.
+  lastOccurredAt?: Date | null;
 }
 
 /**
@@ -130,6 +137,28 @@ export const isAckOnly = (s: AlertSource) => s === "predictive" || s === "thresh
 /** Escalation (việc 3). Critical-quá-hạn nổi trên critical thường; hết hạn dự báo chìm đáy. */
 export const OVERDUE_AFTER_MS = 10 * 60_000;
 export const FORECAST_EXPIRE_MS = 5 * 24 * 60 * 60_000;
+
+/**
+ * Vòng sửa cuối (review toàn nhánh, mục 2) — "hết hạn dự báo" phải đo theo LẦN TÁI
+ * DIỄN GẦN NHẤT (lastOccurredAt), không phải tuổi dòng (raisedAt = createdAt).
+ * Trước sửa này, công thức cũ `age(raisedAt) > FORECAST_EXPIRE_MS` coi tuổi dòng
+ * là "độ tươi" — đúng khi mỗi lần tái diễn từng là một dòng MỚI (trước Wave 3). Từ
+ * Task 3, routeAlert() UPDATE tại chỗ một dòng đang mở thay vì insert, nên một máy
+ * tái diễn liên tục 6 ngày vẫn giữ NGUYÊN createdAt của lần đầu — công thức cũ sẽ
+ * dán nhãn "HẾT HẠN DỰ BÁO" (mờ + chìm đáy) lên đúng cảnh báo đang sống động nhất,
+ * ngay cả khi Task 7 vừa hiện "đã tái diễn 23 lần" cạnh nó.
+ * `lastOccurredAt` vắng mặt (nguồn khác "predictive", hoặc dòng chưa từng tái diễn
+ * lần nào sau khi cột này tồn tại) ⇒ lùi về raisedAt như hành vi cũ — không làm vỡ
+ * dòng cũ.
+ */
+export function isForecastExpired(
+  a: { source: AlertSource; raisedAt: Date; lastOccurredAt?: Date | null },
+  now: number,
+): boolean {
+  if (a.source !== "predictive") return false;
+  const anchor = a.lastOccurredAt ?? a.raisedAt;
+  return now - anchor.getTime() > FORECAST_EXPIRE_MS;
+}
 
 export function escalationRank(a: { severity: Severity; overdue: boolean; expired: boolean }): number {
   if (a.expired) return 100;               // hết hạn dự báo → đáy

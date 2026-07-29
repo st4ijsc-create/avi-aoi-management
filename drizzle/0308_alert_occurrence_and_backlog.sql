@@ -109,6 +109,36 @@ FROM ranked r
 WHERE pa.id = r.id AND r.rn > 1;
 --> statement-breakpoint
 
+-- (ii-c) Vòng sửa cuối (review toàn nhánh, mục 1) — "expiresAt" IS NULL MIỄN NHIỄM
+-- sweeper (alertExpirySweeper.ts) VĨNH VIỄN. Trong SQL, "NULL < now()" cho ra NULL,
+-- không phải true, nên WHERE ... lt("expiresAt", now()) của sweeper KHÔNG BAO GIỜ
+-- khớp một dòng có "expiresAt" NULL. Phần (ii-a) ở trên chỉ ghi occurrenceCount/
+-- lastOccurredAt lên dòng giữ lại, KHÔNG đặt "expiresAt" — cột này chỉ được
+-- routeAlert() (aiSmartAlertRouter.ts) ghi khi CHÍNH nó tạo/cập nhật dòng; mọi dòng
+-- có từ TRƯỚC migration này (đo thực tế: NULL trên 52/52 dòng ACTIVE-và-đang-mở
+-- trước khi gộp) chưa từng đi qua đường đó nên vẫn NULL sau khi (ii-a)/(ii-b) chạy
+-- xong. Dòng nào CÒN tái diễn sẽ được routeAlert() vá "expiresAt" ở lần tái diễn kế
+-- tiếp — nhưng dòng đã THÔI tái diễn (đúng loại mà Phần (ii) sinh ra để đóng, và
+-- đúng lý do sweeper tồn tại) sẽ không bao giờ được routeAlert() chạm tới nữa ⇒ kẹt
+-- "ACTIVE" vĩnh viễn, không có đường nào tự đóng.
+--
+-- Sửa: gán "expiresAt" = now() + hạn dùng MẶC ĐỊNH của mã (ALERT_TTL_HOURS, đọc
+-- alertTtlMs() ở aiSmartAlertRouter.ts:18-24 — mặc định 72 giờ khi biến môi trường
+-- không được set/không hợp lệ). Neo theo now() (thời điểm migration chạy), KHÔNG neo
+-- theo "lastOccurredAt"/"createdAt" lịch sử — vì routeAlert() thật CŨNG luôn tính
+-- expiresAt = now() + ttl tại thời điểm ghi, không bao giờ neo theo một mốc quá khứ;
+-- coi migration này là "lượt chạm" đầu tiên của các dòng tồn đọng dưới quy tắc mới,
+-- cho chúng một cửa sổ đầy đủ để tự gia hạn tiếp (nếu còn tái diễn) hoặc tự đóng sau
+-- 72 giờ (nếu đã thôi). Đây chỉ là giá trị KHỞI TẠO một lần — nếu ALERT_TTL_HOURS
+-- được đặt khác 72 vào lúc chạy migration, câu này không đọc được biến môi trường
+-- (SQL thuần), nhưng không sao: lần routeAlert() tiếp theo chạm dòng (nếu còn tái
+-- diễn) sẽ ghi đè bằng TTL thật đang cấu hình.
+-- Tự idempotent nhờ điều kiện "expiresAt" IS NULL — chạy lại không đụng dòng đã gán.
+UPDATE "predictive_alerts"
+SET "expiresAt" = now() + INTERVAL '72 hours'
+WHERE "status" = 'ACTIVE' AND "acknowledgedAt" IS NULL AND "expiresAt" IS NULL;
+--> statement-breakpoint
+
 -- Phần (iii): báo cáo điều hành trùng — giữ bản CŨ NHẤT mỗi tiêu đề, không
 -- xoá, chỉ đổi status sang 'superseded' (ai_insights.status là varchar tự
 -- do, không ràng buộc enum).

@@ -245,4 +245,52 @@ describe("runExecutiveReportNow notify wiring", () => {
     await runExecutiveReportNow("day", "vi");
     expect(sendReportNotification).not.toHaveBeenCalled();
   });
+
+  /**
+   * Vòng sửa cuối (review toàn nhánh, mục 3) — trước sửa này, `runExecutiveReportNow`
+   * bắn notify vô điều kiện theo cờ `notifyEnabled`, không quan tâm `persistExecutiveSummary`
+   * có thực sự lưu MỘT DÒNG MỚI hay không. Hai case dưới đây từng ĐỎ:
+   *  (a) báo cáo RỖNG (§4.4 chặn lưu, id=null) — notify vẫn bắn với `reportId: undefined`.
+   *  (b) chống-trùng (§4.3 trả id CŨ) — notify vẫn bắn lại cho một báo cáo đã gửi rồi.
+   */
+  it("KHÔNG notify khi báo cáo RỖNG — persistExecutiveSummary chặn lưu (id=null, created=false)", async () => {
+    // Kỳ KHÔNG có lượt kiểm tra + KHÔNG có máy rủi ro ⇒ hasReportableContent=false.
+    const whereResult: any = {
+      then: (resolve: any, reject?: any) => Promise.resolve([{ total: 0, ok: 0, ng: 0 }]).then(resolve, reject),
+      limit: () => Promise.resolve([]), // không có bản trùng — không phải nhánh chống-trùng
+    };
+    const selectBuilder: any = { from: () => selectBuilder, where: () => whereResult };
+    getDb.mockResolvedValue({
+      select: () => selectBuilder,
+      insert: () => ({ values: () => ({ returning: () => Promise.resolve([{ id: 999 }]) }) }), // không được gọi nếu đúng
+    });
+    getYieldTrendData.mockResolvedValue([]);
+    paretoByDefectType.mockResolvedValue({ items: [] });
+    getMachines.mockResolvedValue([]);
+
+    const { insightId } = await runExecutiveReportNow("day", "vi");
+    expect(insightId).toBeNull();
+    expect(sendReportNotification).not.toHaveBeenCalled();
+  });
+
+  it("KHÔNG notify khi persistExecutiveSummary chống-trùng và trả về id CŨ (đã gửi rồi)", async () => {
+    // Kỳ CÓ dữ liệu thật (hasReportableContent=true) NHƯNG dedupe select tìm thấy
+    // một dòng trùng tiêu đề đã tồn tại — persistExecutiveSummary phải trả
+    // { id: <id cũ>, created: false }, KHÔNG insert dòng mới.
+    const whereResult: any = {
+      then: (resolve: any, reject?: any) => Promise.resolve([{ total: 100, ok: 90, ng: 10 }]).then(resolve, reject),
+      limit: () => Promise.resolve([{ id: 555 }]), // bản trùng đã có sẵn
+    };
+    const selectBuilder: any = { from: () => selectBuilder, where: () => whereResult };
+    const insertValues = vi.fn(() => ({ returning: () => Promise.resolve([{ id: 12345 }]) }));
+    getDb.mockResolvedValue({ select: () => selectBuilder, insert: () => ({ values: insertValues }) });
+    getYieldTrendData.mockResolvedValue([]);
+    paretoByDefectType.mockResolvedValue({ items: [] });
+    getMachines.mockResolvedValue([]);
+
+    const { insightId } = await runExecutiveReportNow("day", "vi");
+    expect(insightId).toBe(555); // id CŨ vẫn được trả về (không đổi hành vi đọc)
+    expect(insertValues).not.toHaveBeenCalled(); // KHÔNG tạo dòng mới
+    expect(sendReportNotification).not.toHaveBeenCalled(); // KHÔNG bắn lại cho báo cáo đã gửi
+  });
 });

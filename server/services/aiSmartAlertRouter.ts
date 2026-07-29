@@ -282,7 +282,16 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
         // KHÔNG đụng createdAt: processAutoEscalation() đo tuổi dòng để leo thang.
         // Reset createdAt ⇒ tình trạng kéo dài VĨNH VIỄN không bao giờ leo thang.
       } as any)
-      .where(eq(predictiveAlerts.id, decision.id));
+      // Vòng sửa cuối (review toàn nhánh, mục 5) — WHERE trước đây chỉ lọc theo id,
+      // không lọc lại status='ACTIVE'. Cửa sổ vài mili-giây giữa lượt tra-cứu-cảnh-báo-mở
+      // (:216-236, cũng lọc ACTIVE) và UPDATE này: nếu alertExpirySweeper đóng ĐÚNG dòng
+      // này trong khe đó, UPDATE vẫn khớp theo id (SET không đổi status) và dòng ở lại
+      // EXPIRED kèm resolutionNotes "đã thôi tái diễn" trong khi occurrenceCount/expiresAt
+      // vừa được gia hạn ngay sau đó — ghi chú nói dối. Thêm eq(status,'ACTIVE') khiến
+      // UPDATE là no-op (0 dòng khớp) nếu sweeper đã đóng nó trước; vòng quét kế tiếp của
+      // routeAlert() sẽ tra không thấy cảnh báo mở (đã EXPIRED) và tự INSERT dòng mới —
+      // tự lành, không kẹt trạng thái sai vĩnh viễn.
+      .where(and(eq(predictiveAlerts.id, decision.id), eq(predictiveAlerts.status, "ACTIVE" as any)));
     alertRecord = { id: decision.id };
   } else {
     const [row] = await db

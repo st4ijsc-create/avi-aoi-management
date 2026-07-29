@@ -53,8 +53,8 @@ import AlertGroupCard from "@/components/opsconsole/AlertGroupCard";
 import {
   type AlertGroup, type AlertSource, type DecoratedAlert, type NormalAlert, type Severity,
   SEVERITY_DOT, SEVERITY_RANK, SEVERITY_TILE_SOLID, SOURCE_ICON,
-  FORECAST_EXPIRE_MS, OVERDUE_AFTER_MS,
-  compareEscalation, isAckOnly, isResolveOnly,
+  OVERDUE_AFTER_MS,
+  compareEscalation, isAckOnly, isResolveOnly, isForecastExpired,
 } from "@/components/opsconsole/model";
 // doc 67 W7 GĐ2 — formatter/empty-state chuẩn GĐ1 thay bản tự chế.
 import { fmtNum } from "@/lib/format";
@@ -348,6 +348,8 @@ export default function OpsConsole() {
         // ở đây (việc "coi như 1" thuộc về nơi hiển thị, không phải nơi chuẩn hoá dữ liệu).
         confidenceScore: a.confidenceScore ?? null,
         occurrenceCount: typeof a.occurrenceCount === "number" ? a.occurrenceCount : undefined,
+        // Vòng sửa cuối (mục 2) — mốc "tái diễn gần nhất" cho isForecastExpired.
+        lastOccurredAt: a.lastOccurredAt ? new Date(a.lastOccurredAt) : null,
       });
     }
 
@@ -416,7 +418,7 @@ export default function OpsConsole() {
           ...a,
           overdue,
           overdueMin: overdue ? Math.max(1, Math.floor((age - OVERDUE_AFTER_MS) / 60_000)) : 0,
-          expired: a.source === "predictive" && age > FORECAST_EXPIRE_MS,
+          expired: isForecastExpired(a, coarseNow),
         };
       })
       .sort(compareEscalation);
