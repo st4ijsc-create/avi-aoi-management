@@ -141,6 +141,35 @@ public static class ConnectorEndpoints
                 $"(DELETE /v1/connectors/{validated.Kind}) before configuring a different machine of the same kind."));
         }
 
+        // Fix round 1 (review) — CROSS-KIND (or cross-SOURCE) machine-code collision. The check above only
+        // ever compared against OUR OWN store's row for the SAME kind; it said nothing about a machine code
+        // already used by a DIFFERENT kind (a second connector, e.g. an OPC-UA row reusing a Modbus row's
+        // code), or by ANY other roster source at all (an env-var-configured connector, a connectors.json
+        // entry, or even a demo-fabricated machine). `FleetHost.RegisterMachine`'s own duplicate-code guard
+        // is CASE-INSENSITIVE and KIND-AGNOSTIC — it silently returns `false` (discarded, by design, at
+        // every one of this method's OWN call sites too, until this fix) for ANY existing roster member with
+        // the same code, regardless of where that member came from. Without this check, an operator could
+        // create a config that is durably persisted, shown in "configured connectors", and PERMANENTLY never
+        // appears in the roster — not immediately, and not after any restart — while the response/UI told
+        // them it would apply on the next Stop/Start. Reject it here instead, so that broken state can never
+        // be created in the first place. Skipped only when the sole roster member with this code is the
+        // legitimate idempotent-update case just cleared above (same kind, same code — the one case where a
+        // roster hit is expected and correct, not a collision).
+        var isIdempotentUpdateOfOwnConnector =
+            existing is not null && string.Equals(existing.MachineCode, validated.MachineCode, StringComparison.OrdinalIgnoreCase);
+        if (!isIdempotentUpdateOfOwnConnector)
+        {
+            var conflictingRosterMachine = fleetHost.Fleet.FirstOrDefault(
+                d => string.Equals(d.Code, validated.MachineCode, StringComparison.OrdinalIgnoreCase));
+            if (conflictingRosterMachine is not null)
+            {
+                return Results.Conflict(new ApiErrorDto(
+                    $"Machine code '{validated.MachineCode}' is already used by another machine in the fleet " +
+                    $"roster (driver kind '{conflictingRosterMachine.DriverKind}'). Machine codes must be " +
+                    "unique across the whole fleet — use a different code in the register/node map and save again."));
+            }
+        }
+
         var before = existing is null
             ? null
             : new { existing.MachineCode, existing.Host, existing.Port };

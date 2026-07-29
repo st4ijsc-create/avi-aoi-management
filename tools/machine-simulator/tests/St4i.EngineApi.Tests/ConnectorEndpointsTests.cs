@@ -598,4 +598,174 @@ public sealed class ConnectorEndpointsTests
             }
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1 (review) — cross-kind machine-code collision. Before this fix, CreateConnectorAsync's
+    // 409 guard only compared against an existing row of the SAME kind; a Modbus connector and an OPC-UA
+    // connector could be saved under the identical machine code, and FleetHost.RegisterMachine's own
+    // duplicate-code guard (case-insensitive, kind-agnostic) would then silently discard the SECOND one —
+    // durably persisted, listed in "configured connectors", but permanently absent from the roster, with
+    // zero trace anywhere. See ConnectorEndpoints.CreateConnectorAsync's own remarks for the fix.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Engineer_AddsSecondKindWithSameMachineCodeAsAnExistingConnector_409_RosterNeverStranded()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            var sharedCode = "SM5-CROSSKIND-" + Guid.NewGuid().ToString("N")[..8];
+
+            using var createModbus = await engineer.PostAsJsonAsync(
+                "/v1/connectors", new ConnectorCreateRequest("Modbus", "10.7.7.7", 502, ValidModbusMap(sharedCode)), JsonOptions);
+            Assert.Equal(HttpStatusCode.OK, createModbus.StatusCode);
+
+            // The SAME machine code, a DIFFERENT kind — must be rejected, never silently accepted-and-lost.
+            using var createOpcUa = await engineer.PostAsJsonAsync(
+                "/v1/connectors", new ConnectorCreateRequest("OpcUa", null, null, ValidOpcUaMap(sharedCode)), JsonOptions);
+            Assert.Equal(HttpStatusCode.Conflict, createOpcUa.StatusCode);
+            var error = await createOpcUa.Content.ReadFromJsonAsync<ApiErrorDto>(JsonOptions);
+            Assert.Contains(sharedCode, error!.Error);
+            Assert.Contains("Modbus", error.Error); // names the conflicting connector's kind.
+
+            // Rejected means NOTHING persisted for OpcUa — only the original Modbus row exists.
+            using var configured = await operatorClient.GetAsync("/v1/connectors/configured");
+            var summaries = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+            Assert.Single(summaries!);
+            Assert.Equal("Modbus", summaries![0].Kind);
+
+            // And the roster has exactly ONE machine under this code (Modbus) — never stranded, never
+            // silently duplicated/discarded.
+            using var fleet = await operatorClient.GetAsync("/v1/fleet");
+            var snapshot = await fleet.Content.ReadFromJsonAsync<FleetSnapshotDto>(JsonOptions);
+            Assert.Single(snapshot!.Machines, m => m.Code == sharedCode);
+        }
+    }
+
+    [Fact]
+    public async Task CrossKindCollision_StillRejected_AfterASimulatedRestart_AgainstTheSamePersistedStore()
+    {
+        var sharedConnectorConfigDir = Directory.CreateTempSubdirectory("st4i-connectors-ep-crosskind-restart-").FullName;
+        var sharedCode = "SM5-CROSSKIND-RESTART-" + Guid.NewGuid().ToString("N")[..8];
+
+        await using (var factory1 = await CreateFactoryAsync(connectorConfigDirOverride: sharedConnectorConfigDir))
+        {
+            var (admin1, engineer1, _) = await SetUpAllRolesAsync(factory1);
+            using (admin1) using (engineer1)
+            {
+                using var create = await engineer1.PostAsJsonAsync(
+                    "/v1/connectors", new ConnectorCreateRequest("Modbus", "10.7.7.8", 502, ValidModbusMap(sharedCode)), JsonOptions);
+                Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+            }
+        }
+
+        // A FRESH WebApplicationFactory<Program> pointed at the SAME connector-config directory (the
+        // in-process analogue of a real process restart) — the Modbus row (and the roster machine it
+        // seeds) survives, so a same-code OPC-UA save must be rejected here too, not just in the
+        // still-running-in-memory case above.
+        await using var factory2 = await CreateFactoryAsync(connectorConfigDirOverride: sharedConnectorConfigDir);
+        var (admin2, engineer2, _) = await SetUpAllRolesAsync(factory2);
+        using (admin2) using (engineer2)
+        {
+            using var createOpcUa = await engineer2.PostAsJsonAsync(
+                "/v1/connectors", new ConnectorCreateRequest("OpcUa", null, null, ValidOpcUaMap(sharedCode)), JsonOptions);
+            Assert.Equal(HttpStatusCode.Conflict, createOpcUa.StatusCode);
+        }
+    }
+
+    /// <summary>Fix round 1 — the Program.cs seed-loop side of the same defect: a machine-code collision
+    /// introduced OUTSIDE the API (a hand-edited connectors.json/env var colliding with an already-persisted
+    /// UI connector, or vice versa) can't be caught by CreateConnectorAsync's new save-time check at all —
+    /// this proves the engine still boots safely and predictably (never crashes, exactly one connector wins
+    /// the roster slot) when that happens, which is what LogIfRegisterMachineCollided's startup trace is
+    /// the backstop for. Env vars are resolved into the roster BEFORE the persisted-store loop in
+    /// Program.cs, so the env-configured Modbus machine wins this particular collision — the persisted
+    /// OPC-UA row is silently (but now LOGGED, not silently) dropped from the roster.</summary>
+    [Fact]
+    public async Task SeedLoopCollision_EnvVarModbusAndPersistedOpcUa_SameCode_EngineStillBootsSafely_ExactlyOneWinsTheRosterSlot()
+    {
+        var connectorConfigDir = Directory.CreateTempSubdirectory("st4i-connectors-ep-seedcollision-").FullName;
+        var sharedCode = "SM5-SEEDCOLLISION-" + Guid.NewGuid().ToString("N")[..8];
+
+        // Pre-seed the persisted store directly (bypassing the API, which would now reject this at save
+        // time) with an OPC-UA row using the SAME code the env-var Modbus connector below will also use —
+        // simulating a collision introduced by hand-editing config outside the product's own guardrail.
+        var preSeedStore = new St4i.EngineApi.Fleet.ConnectorConfigStore(connectorConfigDir);
+        await preSeedStore.SaveAsync("OpcUa", sharedCode, host: null, port: null, ValidOpcUaMap(sharedCode));
+
+        var envMapPath = Path.Combine(Path.GetTempPath(), $"st4i-sm5-seedcollision-envmap-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(envMapPath, ValidModbusMap(sharedCode));
+        try
+        {
+            // Boots successfully — a collision must never crash startup.
+            await using var factory = await CreateFactoryAsync(connectorConfigDirOverride: connectorConfigDir, modbusEnvMapPath: envMapPath);
+            var (admin, _, operatorClient) = await SetUpAllRolesAsync(factory);
+            using (admin) using (operatorClient)
+            {
+                using var fleet = await operatorClient.GetAsync("/v1/fleet");
+                Assert.Equal(HttpStatusCode.OK, fleet.StatusCode);
+                var snapshot = await fleet.Content.ReadFromJsonAsync<FleetSnapshotDto>(JsonOptions);
+
+                // Exactly ONE machine holds this code — never duplicated, never crashed, never two tiles
+                // silently fighting over the same MachineState.
+                var tile = Assert.Single(snapshot!.Machines, m => m.Code == sharedCode);
+                // Env-var-configured Modbus is seeded first in Program.cs, so it wins this particular
+                // collision; the persisted OPC-UA row loses the roster slot (silently before this fix,
+                // now logged via LogIfRegisterMachineCollided).
+                Assert.Equal(St4i.Connector.Abstractions.Models.DriverKinds.Modbus, tile.DriverKind);
+            }
+        }
+        finally
+        {
+            File.Delete(envMapPath);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 1 (review) — the connection-test endpoint forwards factoryError/ex.Message verbatim on
+    // failure (an accepted, documented posture inherited from GET /v1/connectors — an unsanitized
+    // third-party-driver message). This proves that posture doesn't ALSO leak OPC-UA credentials for the
+    // most common real-world failure shape (an unreachable endpoint) — SelectEndpointAsync fails before
+    // OpcUaDriver.EnsureSessionAsync ever constructs the UserIdentity from Username/Password, so credentials
+    // are never touched on this path at all.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TestConnector_OpcUa_UnreachableTarget_NeverLeaksCredentialsInResponse()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, operatorClient) = await SetUpAllRolesAsync(factory);
+        using (admin) using (engineer) using (operatorClient)
+        {
+            var previousTimeout = ConnectorEndpoints.ConnectionTestTimeout;
+            ConnectorEndpoints.ConnectionTestTimeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                const string secretPassword = "test-connector-should-never-leak-this";
+                var mapWithCredentials = ValidOpcUaMap("SM5-OPCUA-CREDS-TEST", username: "produser", password: secretPassword)
+                    .Replace("opc.tcp://127.0.0.1:4840", "opc.tcp://127.0.0.1:1"); // deliberately unreachable
+
+                using var test = await engineer.PostAsJsonAsync(
+                    "/v1/connectors/test",
+                    new ConnectorTestRequest("OpcUa", null, null, mapWithCredentials),
+                    JsonOptions);
+
+                Assert.Equal(HttpStatusCode.OK, test.StatusCode);
+                var body = await test.Content.ReadAsStringAsync();
+                var result = System.Text.Json.JsonSerializer.Deserialize<ConnectorTestResultDto>(body, JsonOptions);
+                Assert.False(result!.Ok);
+                Assert.False(string.IsNullOrWhiteSpace(result.Error));
+
+                // The credential must never appear anywhere in the raw response body, whichever field the
+                // underlying OPC-UA SDK's exception message ended up in.
+                Assert.DoesNotContain(secretPassword, body);
+                Assert.DoesNotContain("produser", body);
+            }
+            finally
+            {
+                ConnectorEndpoints.ConnectionTestTimeout = previousTimeout;
+            }
+        }
+    }
 }

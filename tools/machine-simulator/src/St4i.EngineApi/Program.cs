@@ -1116,35 +1116,63 @@ app.MapFallbackToFile("index.html").AllowAnonymous();
 // actually useful, not silently on whichever request happens to hit it first.
 var fleetHost = app.Services.GetRequiredService<FleetHost>();
 
+// Fix round 1 (SM-5 review) — RegisterMachine returning false used to be discarded silently at every one
+// of the three call sites below: "benign" is true for the ordinary idempotent-restart case (this exact
+// descriptor was already registered earlier in THIS SAME startup, which cannot actually happen today since
+// each of the three seed sources below runs exactly once) but FALSE for a genuine machine-code collision
+// (this code already belongs to a DIFFERENT roster member — the demo fleet, another env-var/connectors.json/
+// persisted-store connector) — that case is silent, permanent data loss (the descriptor is discarded and
+// NEVER retried), exactly the failure mode the review found reachable via a cross-kind machineCode reuse
+// that POST /v1/connectors now rejects at save time (see ConnectorEndpoints.CreateConnectorAsync's own
+// remarks) — but connectors.json/env vars are hand-edited outside that endpoint entirely, so this
+// startup-time trace is the only backstop for a collision introduced that way. Logged, never thrown — a
+// bad seed must still leave every OTHER seed source (and the demo/product roster itself) completely
+// unaffected, same "one bad source disables only itself" posture every other startup config load in this
+// file already has.
+static void LogIfRegisterMachineCollided(ILogger logger, FleetHost host, St4i.EdgeCore.Models.MachineDescriptor descriptor, bool added, string sourceLabel)
+{
+    if (added) return;
+
+    var conflict = host.Fleet.FirstOrDefault(d => string.Equals(d.Code, descriptor.Code, StringComparison.OrdinalIgnoreCase));
+    logger.LogWarning(
+        "{Source} machine code '{Code}' was NOT added to the fleet roster — a machine with this exact code " +
+        "already exists in the roster (driver kind '{ConflictingKind}'). Machine codes must be unique across " +
+        "the whole fleet; this connector will never appear in the roster (not now, and not after any restart) " +
+        "until the code collision is resolved.",
+        sourceLabel, descriptor.Code, conflict?.DriverKind ?? "unknown");
+}
+
 // P2-3 — register the configured Modbus machine as a first-class roster member so it gets a MachineState
-// (fleet Snapshot tile + historian) and, via the asset registry, an Asset row. Idempotent: RegisterMachine
-// returns false (benign) if it's already present. StartLocked excludes DriverKinds.Modbus from simulation, so
-// this machine is driven ONLY by the real Modbus pipeline slot, never double-driven.
+// (fleet Snapshot tile + historian) and, via the asset registry, an Asset row. StartLocked excludes
+// DriverKinds.Modbus from simulation, so this machine is driven ONLY by the real Modbus pipeline slot,
+// never double-driven.
 if (modbusSeedDescriptor is not null)
 {
-    fleetHost.RegisterMachine(modbusSeedDescriptor);
+    LogIfRegisterMachineCollided(app.Logger, fleetHost, modbusSeedDescriptor, fleetHost.RegisterMachine(modbusSeedDescriptor), "ST4I_MODBUS_* env-var-configured");
 }
 
 // GĐ3 sub-3 OU-2 — register the configured OPC-UA machine as a first-class roster member, mirroring the
 // Modbus P2-3 seed immediately above: it gets a MachineState (fleet Snapshot tile + historian) and, via
-// the asset registry, an Asset row. Idempotent: RegisterMachine returns false (benign) if it's already
-// present. StartLocked excludes DriverKinds.OpcUa from simulation, so this machine is driven ONLY by the
-// real OPC-UA pipeline slot, never double-driven.
+// the asset registry, an Asset row. StartLocked excludes DriverKinds.OpcUa from simulation, so this
+// machine is driven ONLY by the real OPC-UA pipeline slot, never double-driven.
 if (opcUaSeedDescriptor is not null)
 {
-    fleetHost.RegisterMachine(opcUaSeedDescriptor);
+    LogIfRegisterMachineCollided(app.Logger, fleetHost, opcUaSeedDescriptor, fleetHost.RegisterMachine(opcUaSeedDescriptor), "ST4I_OPCUA_* env-var-configured");
 }
 
 // SM-5 (task-5-brief.md) — register every ACCEPTED persisted connector configuration (POST /v1/connectors,
 // stored via ConnectorConfigStore) as a first-class roster member, mirroring the Modbus/OPC-UA env-var seeds
 // immediately above exactly: MachineState (fleet Snapshot tile + historian) and, via the asset registry, an
 // Asset row classified real (DriverKind is Modbus/OpcUa, never Simulated — see ConnectorConfigValidation).
-// Idempotent: RegisterMachine returns false (benign) if the code is already present. Each descriptor here
-// was already validated + registered into the SAME ConnectorRegistry singleton above (see that factory
-// lambda's own persisted-store loop) — this is just the roster-seed half of that same source.
+// Each descriptor here was already validated + registered into the SAME ConnectorRegistry singleton above
+// (see that factory lambda's own persisted-store loop) — this is just the roster-seed half of that same
+// source. `POST /v1/connectors` itself now rejects a cross-kind machine-code collision at save time (fix
+// round 1), so this SHOULD be unreachable for anything saved through the API from now on — but a persisted
+// row saved before that fix existed, or one that now collides with a code freshly introduced via a hand-
+// edited connectors.json/env var on THIS restart, is still possible, hence the same logged trace here.
 foreach (var persistedSeed in persistedConnectorSeeds)
 {
-    fleetHost.RegisterMachine(persistedSeed);
+    LogIfRegisterMachineCollided(app.Logger, fleetHost, persistedSeed, fleetHost.RegisterMachine(persistedSeed), "Persisted (ConnectorConfigStore)");
 }
 
 // WS-F1 final-review fix F1 — apply the env-resolved (see the ST4I_SERVER_URL/ST4I_MACHINE_CODE/
