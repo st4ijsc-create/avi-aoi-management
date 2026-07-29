@@ -835,6 +835,56 @@ catch (Exception ex)
 
 var persistedConnectorSeeds = new List<St4i.EdgeCore.Models.MachineDescriptor>();
 
+// Task B-4 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-4-brief.md) — closes the carried
+// B-3 finding (fix round 1, I2, hard deadline): ST4I_MODBUS_MAP/ST4I_OPCUA_MAP and connectors.json enforce a
+// map's mandatory limits correctly (no safety bypass — same FromJson as everything else) but never touch
+// ConnectorConfigStore, so GET /v1/connectors/configured showed NOTHING for them — invisible today because
+// nothing wrote yet, a real false "nothing here" the moment this same build ships a real write (this task).
+// See ConnectorConfigVisibilitySeeder's own doc comment for the exact contract (insert-only — never
+// overwrites an operator's own persisted row; the one accepted residual gap). connectors.json's own
+// resolution (env-var-wins, first-entry-per-kind-wins) is recomputed here, purely for this seeding pass —
+// the REAL warning-worthy logging for that resolution already happens exactly once below, inside the
+// ConnectorRegistry DI factory lambda, so `logWarning: null` here avoids a duplicate warning without losing
+// any operator-visible signal.
+{
+    var alreadyConfiguredKindsForSeeding = new HashSet<string>(StringComparer.Ordinal);
+    if (modbusMapJson is not null) alreadyConfiguredKindsForSeeding.Add(St4i.Connector.Abstractions.Models.DriverKinds.Modbus);
+    if (opcUaMapJson is not null) alreadyConfiguredKindsForSeeding.Add(St4i.Connector.Abstractions.Models.DriverKinds.OpcUa);
+
+    var resolvedConnectorEntriesForSeeding = St4i.EngineApi.Config.ConnectorsConfig.ResolveEntries(
+        connectorConfigEntries, alreadyConfiguredKindsForSeeding, logWarning: null);
+
+    void SeedVisibility(string kind, string? seedHost, int? seedPort, string seedMapJson) =>
+        St4i.EngineApi.Fleet.ConnectorConfigVisibilitySeeder.SeedAsync(
+                connectorConfigStore, kind, seedHost, seedPort, seedMapJson, opcUaOptions.PkiDir,
+                logWarning: msg => Console.Error.WriteLine($"[startup] {msg}"))
+            .GetAwaiter().GetResult();
+
+    if (modbusMapJson is not null)
+    {
+        SeedVisibility(St4i.Connector.Abstractions.Models.DriverKinds.Modbus, modbusOptions.Host, modbusOptions.Port, modbusMapJson);
+    }
+
+    if (opcUaMapJson is not null)
+    {
+        SeedVisibility(St4i.Connector.Abstractions.Models.DriverKinds.OpcUa, null, null, opcUaMapJson);
+    }
+
+    foreach (var entry in resolvedConnectorEntriesForSeeding)
+    {
+        if (entry.Kind == St4i.Connector.Abstractions.Models.DriverKinds.Modbus)
+        {
+            SeedVisibility(entry.Kind, modbusOptions.Host, modbusOptions.Port, entry.SettingsJson);
+        }
+        else if (entry.Kind == St4i.Connector.Abstractions.Models.DriverKinds.OpcUa)
+        {
+            SeedVisibility(entry.Kind, null, null, entry.SettingsJson);
+        }
+        // Any other kind has no in-process factory/validator (same "no in-process constructor available"
+        // gap the DI lambda below already warns about for the live-registration path) — nothing to seed.
+    }
+}
+
 // GP-4 — the ONE DI singleton both connector kinds resolve through now, replacing the two separate
 // registrations above (a bare `Func<IDeviceDriver>` for Modbus, `OpcUaDriverFactory` itself for OPC-UA).
 // Lazily built (same "needs `ILoggerFactory` from `sp`, so it can't be a plain pre-`Build()` local" reason

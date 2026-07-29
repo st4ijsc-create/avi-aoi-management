@@ -30,8 +30,15 @@ internal static class ModbusLoopbackHarness
     /// <summary>A running slave plus everything needed to tear it down. Exposes its pieces individually
     /// (rather than only a single <see cref="DisposeAsync"/>) so a caller that needs to kill the slave OUT
     /// FROM UNDER a driver mid-test (as <see cref="ModbusTcpDriverLoopbackTests"/>'s fault-injection test
-    /// does) can still do so with the exact same sequencing it always used.</summary>
-    public sealed class RunningSlave(int port, TcpListener listener, IDisposable network, CancellationTokenSource listenCts, Task listenTask)
+    /// does) can still do so with the exact same sequencing it always used.
+    ///
+    /// <para>Task B-4 — <see cref="Slave"/> ADDED (a new positional parameter/property; every existing
+    /// caller of <see cref="Start"/> only ever read the other four members, so this is purely additive):
+    /// exposes the underlying <c>IModbusSlave</c>'s own <c>DataStore</c> so a write test can verify a value
+    /// genuinely reached the "device" (read straight off the slave's own storage, independent of whatever
+    /// <see cref="ModbusTcpDriver"/> itself reports) rather than trusting the driver's own return value
+    /// alone.</para></summary>
+    public sealed class RunningSlave(int port, TcpListener listener, IDisposable network, CancellationTokenSource listenCts, Task listenTask, IModbusSlave slave)
         : IAsyncDisposable
     {
         public int Port { get; } = port;
@@ -43,6 +50,8 @@ internal static class ModbusLoopbackHarness
         public CancellationTokenSource ListenCts { get; } = listenCts;
 
         public Task ListenTask { get; } = listenTask;
+
+        public IModbusSlave Slave { get; } = slave;
 
         public async ValueTask DisposeAsync()
         {
@@ -69,6 +78,6 @@ internal static class ModbusLoopbackHarness
         var cts = new CancellationTokenSource();
         var listenTask = network.ListenAsync(cts.Token);
 
-        return new RunningSlave(port, listener, network, cts, listenTask);
+        return new RunningSlave(port, listener, network, cts, listenTask, slave);
     }
 }
