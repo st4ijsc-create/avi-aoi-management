@@ -10,7 +10,7 @@
  * suy từ số user role 'operator' đang hoạt động (fallback 1) nếu client không truyền.
  */
 import { z } from "zod";
-import { and, eq, gte, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { andonEvents, predictiveAlerts, predictiveAlertOccurrences, machines, users } from "../../drizzle/schema";
@@ -100,11 +100,29 @@ export const alarmKpiRouter = router({
       // phần Andon vốn không liên quan gì tới bảng này. Theo đúng mẫu
       // isMissingTable đã dùng ở pruneOldOccurrences (alertExpirySweeper.ts).
       let predRows: Awaited<ReturnType<typeof loadPredRows>> = [];
+      let occurrenceTableAvailable = true;
       try {
         predRows = await loadPredRows();
       } catch (err) {
         if (!isMissingTable(err)) throw err;
+        occurrenceTableAvailable = false;
         console.warn("[alarmKpi] bảng nhật ký lần-tái-diễn chưa có (migration 0309 chưa chạy?) — coi predictive alerts là rỗng.");
+      }
+
+      // Sprint 5 §3.1 — mốc ĐẦU TIÊN của sổ nhật ký, để giao diện phân biệt
+      // "0 vì nhà máy yên tĩnh" với "0 vì sổ chưa có dòng nào". Dùng MIN (đi
+      // qua idx_alert_occurrences_time) chứ KHÔNG COUNT(*) quét bảng.
+      let firstOccurredAt: string | null = null;
+      if (occurrenceTableAvailable) {
+        try {
+          const [row] = await db
+            .select({ first: sql<Date | null>`MIN(${predictiveAlertOccurrences.occurredAt})` })
+            .from(predictiveAlertOccurrences);
+          firstOccurredAt = row?.first ? new Date(row.first).toISOString() : null;
+        } catch (err) {
+          if (!isMissingTable(err)) throw err;
+          occurrenceTableAvailable = false;
+        }
       }
 
       // ── Nhãn máy (bad-actor readable) — tra code cho các machineId liên quan ────
@@ -212,6 +230,8 @@ export const alarmKpiRouter = router({
       return {
         ...summarizeAlarmKpi(events, { windowMs: windowHours * 3600_000, now, operatorCount }),
         sourceCounts: { andon: andonRows.length, predictive: predRows.length },
+        // Sprint 5 §3.1 — available=false ⇒ bảng chưa có; available && !firstOccurredAt ⇒ sổ rỗng.
+        occurrenceLog: { available: occurrenceTableAvailable, firstOccurredAt },
         generatedAt: new Date(now).toISOString(),
       };
     }),

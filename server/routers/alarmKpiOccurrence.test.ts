@@ -105,7 +105,7 @@ vi.mock("../db/connection", () => ({
         }
         if (table === predictiveAlertOccurrences) {
           // Truy vấn MỚI (sau Step 3/4): .from(occurrences).innerJoin(predictiveAlerts, ...).where(...)
-          return {
+          const node: any = {
             innerJoin: (joinTable: any, on: any) => {
               // Vòng sửa 1 — GHI LẠI bảng + điều kiện JOIN thật (không bỏ qua như trước).
               // joinedOccurrenceRows() dưới đây vẫn tự áp logic join đúng cứng (đơn
@@ -121,7 +121,14 @@ vi.mock("../db/connection", () => ({
                 },
               };
             },
+            // Sprint 5 §3.1 (task 4) — cùng .from() nay còn phục vụ MIN(occurredAt)
+            // (await thẳng, không qua .innerJoin). Không ca nào ở đây assert
+            // occurrenceLog nên trả rỗng mặc định là mô tả trung thực đủ dùng —
+            // đúng bài học "mock phải mô tả thế giới CÓ THẬT" mà chính file
+            // alarmKpiMissingTable.test.ts (anh em của file này) vừa áp dụng.
+            then: (resolve: any) => resolve([{ first: null }]),
           };
+          return node;
         }
         if (table === predictiveAlerts) {
           // Truy vấn CŨ (trước sửa): .from(predictiveAlerts).where(...) — giữ nhánh

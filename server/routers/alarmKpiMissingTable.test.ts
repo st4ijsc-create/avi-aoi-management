@@ -30,14 +30,22 @@ vi.mock("../db/connection", () => ({
           return { where: async () => seedAndonRows };
         }
         if (table === predictiveAlertOccurrences) {
-          return {
+          const node: any = {
             innerJoin: (_joinTable: any, _on: any) => ({
               where: (_cond: any) => {
                 if (throwOnOccurrenceQuery) throwOnOccurrenceQuery();
                 return Promise.resolve([]);
               },
             }),
+            // Sprint 5 §3.1 — cùng .from() nay còn phục vụ MIN(occurredAt).
+            then: (resolve: any, reject: any) => {
+              if (throwOnOccurrenceQuery) {
+                try { throwOnOccurrenceQuery(); } catch (e) { return Promise.reject(e).catch(reject); }
+              }
+              return Promise.resolve([{ first: null }]).then(resolve, reject);
+            },
           };
+          return node;
         }
         // machines / users — không cần dữ liệu cho test này.
         return { where: async () => [] };
