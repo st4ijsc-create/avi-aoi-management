@@ -16814,6 +16814,11 @@
       "high": "Cao"
     },
     "sourceCounts": "Nguồn: {{andon}} Andon · {{pred}} cảnh báo AI",
+    "emptyLog": {
+      "tableMissing": "Nhật ký lần-tái-diễn chưa sẵn sàng (migration chưa chạy) — phần cảnh báo AI không được tính vào KPI.",
+      "empty": "Chưa ghi lần-tái-diễn nào kể từ khi bật tính năng. Số 0 nghĩa là chưa có dữ liệu, không phải nhà máy im lặng.",
+      "younger": "Nhật ký bắt đầu ghi từ {{date}} — cửa sổ {{h}} giờ này bắt đầu trước mốc đó, phần trước không tồn tại."
+    },
     "standing": {
       "title": "Báo động tồn đọng lâu nhất",
       "desc": "Chưa xử lý quá {{h}} giờ",

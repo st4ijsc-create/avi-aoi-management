@@ -16831,6 +16831,11 @@
       "high": "High"
     },
     "sourceCounts": "Sources: {{andon}} Andon · {{pred}} AI alerts",
+    "emptyLog": {
+      "tableMissing": "Recurrence log is not ready (migration has not run) — AI alerts are excluded from this KPI.",
+      "empty": "No recurrences have been logged since the feature was enabled. Zero here means no data yet, not a quiet factory.",
+      "younger": "The log starts at {{date}} — this {{h}}-hour window begins before that point, and the earlier part does not exist."
+    },
     "standing": {
       "title": "Longest-standing alarms",
       "desc": "Unresolved for over {{h}} hours",

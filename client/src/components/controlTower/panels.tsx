@@ -46,6 +46,7 @@ import {
   type SemanticTone,
 } from "@/components/patterns/isaStateBadges";
 import type { PanelKey } from "./personas";
+import { pickOccurrenceLogNotice } from "@/pages/alarmKpiEmptyState";
 
 // Shared poll cadences (socket invalidation from the page keeps these fresh; the
 // interval is only a fallback when the live stream is unavailable).
@@ -405,12 +406,39 @@ function AlarmHealthPanel(): React.JSX.Element {
           hint={d ? t("controlTower.alarmHealth.standingHint", "Unresolved > {{h}}h", { h: d.standing.thresholdHours }) : undefined}
         />
       </div>
-      {d && (d.sourceCounts.andon > 0 || d.sourceCounts.predictive > 0) && (
+      {d && (
         <div className="mt-2 text-[11px] text-muted-foreground">
-          {t("controlTower.alarmHealth.sources", "Sources: {{andon}} Andon · {{pred}} AI predictive", {
-            andon: d.sourceCounts.andon,
-            pred: d.sourceCounts.predictive,
-          })}
+          {(d.sourceCounts.andon > 0 || d.sourceCounts.predictive > 0) && (
+            <span>
+              {t("controlTower.alarmHealth.sources", "Sources: {{andon}} Andon · {{pred}} AI predictive", {
+                andon: d.sourceCounts.andon,
+                pred: d.sourceCounts.predictive,
+              })}
+            </span>
+          )}
+          {(() => {
+            // Sprint 5 §3 — thôi ẩn hẳn dòng nguồn khi cả hai bằng 0; đúng lúc
+            // cần giải thích nhất thì trước đây lại không nói gì.
+            const notice = pickOccurrenceLogNotice({
+              predictiveCount: d.sourceCounts.predictive,
+              occurrenceLog: d.occurrenceLog,
+              generatedAt: d.generatedAt,
+              windowHours: 24, // panel này gọi summary({ windowHours: 24 })
+            });
+            if (!notice) return null;
+            return (
+              <span className="block text-amber-600 dark:text-amber-400">
+                {notice.kind === "table-missing"
+                  ? t("alarmKpi.emptyLog.tableMissing", "Nhật ký lần-tái-diễn chưa sẵn sàng (migration chưa chạy) — phần cảnh báo AI không được tính vào KPI.")
+                  : notice.kind === "log-empty"
+                    ? t("alarmKpi.emptyLog.empty", "Chưa ghi lần-tái-diễn nào kể từ khi bật tính năng. Số 0 nghĩa là chưa có dữ liệu, không phải nhà máy im lặng.")
+                    : t("alarmKpi.emptyLog.younger", "Nhật ký bắt đầu ghi từ {{date}} — cửa sổ {{h}} giờ này bắt đầu trước mốc đó, phần trước không tồn tại.", {
+                        date: new Date(notice.firstOccurredAt).toLocaleString(),
+                        h: 24,
+                      })}
+              </span>
+            );
+          })()}
         </div>
       )}
       {/* Chú thích phân biệt hai phạm vi đếm (xem comment trên kpiQ). */}
