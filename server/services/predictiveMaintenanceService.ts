@@ -815,8 +815,12 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
         }
       }
 
-      // Wave 3 §4.5 — CHỈ QUAN SÁT: phân loại vì sao ứng viên bị chặn.
-      // KHÔNG đổi ngưỡng, KHÔNG đổi điều kiện phát bên dưới.
+      // Sprint 5 §5 (backlog B1) — HỢP NHẤT. Trước đây đây là hai bản sao: một
+      // để ĐẾM (classifySuppression, Wave 3 §4.5 chỉ-quan-sát), một để PHÁT
+      // (biểu thức inline). Không test nào so chúng, và chúng ĐÃ lệch thật:
+      // predictedTimeframeHours = -Infinity thì classify trả "out-of-timeframe"
+      // (đếm là đã chặn) trong khi `-Inf <= T` là true nên biểu thức vẫn PHÁT.
+      // Nay chỉ còn MỘT nguồn sự thật ⇒ số đếm không thể nói dối về việc phát.
       const { classifySuppression } = await import("./alerts/classifySuppression");
       const suppression = classifySuppression(
         {
@@ -829,13 +833,7 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
       suppressionTally[suppression] = (suppressionTally[suppression] ?? 0) + 1;
 
       // Alert gating: avoid false positives on sparse/low-confidence data.
-      const timeframeOk =
-        risk.predictedTimeframeHours != null && risk.predictedTimeframeHours <= TIMEFRAME_ALERT_HOURS;
-      if (
-        risk.failureRisk >= RISK_ALERT_THRESHOLD &&
-        risk.confidenceScore >= CONFIDENCE_ALERT_THRESHOLD &&
-        timeframeOk
-      ) {
+      if (suppression === "emit") {
         try {
           const { routeAlert } = await import("./aiSmartAlertRouter");
           await routeAlert({
