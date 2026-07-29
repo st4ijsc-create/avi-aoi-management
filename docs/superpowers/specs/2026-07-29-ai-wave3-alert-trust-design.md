@@ -171,6 +171,6 @@ Bài học Wave 2 (Task 4): logic rủi ro nằm lẫn trong hàm có I/O thì *
 
 ## 9. Ngoài phạm vi (YAGNI có chủ đích)
 
-- **Không dựng hòm việc / màn phân loại mới.** Sửa nguồn trước, đo lại, rồi mới quyết có cần không. Nếu sau khi sửa chỉ còn ~3 cảnh báo thật thì cả một mảng giao diện là thừa.
+- **Không dựng hòm việc / màn phân loại mới.** Sửa nguồn trước, đo lại, rồi mới quyết có cần không. Nếu sau khi sửa chỉ còn 6 cảnh báo mở thì cả một mảng giao diện là thừa.
 - **Không đổi ngưỡng phát hay công thức rủi ro/tin cậy** — nay đã thành mục §4.5 (được gộp vào theo yêu cầu chủ dự án), với kết luận: mức-độ-từ-rủi-ro là đúng thiết kế, và ngưỡng **không thể** hiệu chỉnh cho tới khi có dữ liệu phía bị-loại mà Wave 3 sinh ra.
 - **Không đụng đường thị giác** (990 ảnh nhúng, 49 mẫu bất thường) — để wave sau.
