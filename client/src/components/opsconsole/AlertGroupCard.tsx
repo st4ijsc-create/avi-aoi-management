@@ -22,6 +22,7 @@
  * Touch target: nút hành động chính h-11 (44px) — persona đeo găng, panel 10.1".
  */
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -95,8 +96,16 @@ export const AlertGroupCard = memo(function AlertGroupCard({
   /** doc 68 §3.4: mở chi tiết nhóm/bản-ghi trong ContextDrawer phải do trang sở hữu. */
   onOpenDetail: (g: AlertGroup) => void;
 }) {
+  const { t } = useTranslation();
   const anyPending = g.items.some((i) => pendingKeys.has(i.key));
   const single = g.count === 1;
+  // Vòng sửa 1 (Task 7) — War Room là tab MẶC ĐỊNH; trước đây chỉ Alert Center
+  // hiện số lần tái diễn nên người vận hành mở thẳng War Room không thấy gì
+  // giải thích vì sao 52 cảnh báo tụt còn 6. Chỉ nguồn predictive mang
+  // occurrenceCount (bảng predictive_alerts). Cùng quy tắc phòng thủ với Alert
+  // Center: thiếu/không phải số hữu hạn ⇒ không hiện gì, KHÔNG NaN/undefined.
+  const recurrenceTimes = g.source === "predictive" ? Number(g.latest.occurrenceCount ?? 1) : NaN;
+  const showRecurrence = Number.isFinite(recurrenceTimes) && recurrenceTimes > 1;
 
   return (
     <div
@@ -125,6 +134,13 @@ export const AlertGroupCard = memo(function AlertGroupCard({
               // doc 68 §3.4: hạ tông badge "×N lần" (muted, không font-bold/border-current).
               <Badge variant="secondary" className="shrink-0 font-normal">
                 ×{g.count} lần
+              </Badge>
+            )}
+            {/* Vòng sửa 1 (Task 7) — dấu hiệu gọn: đây là 1 dòng KẾT TINH của
+                nhiều lần tái diễn (dedup DB), không phải AI ngừng hoạt động. */}
+            {showRecurrence && (
+              <Badge variant="secondary" className="shrink-0 font-normal">
+                {t("alerts.recurrence", "đã tái diễn {{n}} lần", { n: recurrenceTimes })}
               </Badge>
             )}
             <EscalationBadges a={g} />

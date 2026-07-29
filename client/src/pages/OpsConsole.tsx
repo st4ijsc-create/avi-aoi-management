@@ -330,7 +330,7 @@ export default function OpsConsole() {
       });
     }
 
-    for (const a of (predictiveQuery.data as any[]) ?? []) {
+    for (const a of predictiveQuery.data ?? []) {
       out.push({
         key: `predictive:${a.id}`,
         source: "predictive",

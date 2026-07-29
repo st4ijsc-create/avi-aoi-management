@@ -463,6 +463,13 @@ export const predictiveAlertRouter = router({
         status: row.status,
         acknowledgedBy: row.acknowledgedBy,
         acknowledgedAt: row.acknowledgedAt,
+        // Wave 3 Task 7 fix — trước đây liệt kê tay thiếu 2 trường này nên
+        // client nhận `undefined` VĨNH VIỄN dù migration 0308 đã chạy và DB
+        // đã có occurrenceCount>1 thật. Không parseFloat/ép kiểu gì thêm —
+        // occurrenceCount là integer NOT NULL default 1 nên luôn là number;
+        // lastOccurredAt có thể null (chưa tái diễn lần nào).
+        occurrenceCount: row.occurrenceCount,
+        lastOccurredAt: row.lastOccurredAt,
         createdAt: row.createdAt,
       }));
     }),
