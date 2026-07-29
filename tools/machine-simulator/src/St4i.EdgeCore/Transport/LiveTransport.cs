@@ -24,6 +24,30 @@ namespace St4i.EdgeCore.Transport;
 /// </summary>
 public sealed class LiveTransport : ITransport, IDisposable
 {
+    /// <summary>SM-3 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-3-brief.md)
+    /// — the vendored <see cref="St4iDeviceClient"/> ctor (examples/device-client/csharp/St4iDeviceClient.cs,
+    /// linked into this project verbatim and never edited) throws <c>St4iConfigException</c> on a
+    /// null/empty <c>serverUrl</c> ("serverUrl là bắt buộc") — a correct guard for the SDK's own
+    /// contract, but SM-3 makes "no ecosystem configured" a genuine, first-class, EMPTY
+    /// <see cref="St4i.EngineApi.Fleet.FleetHost"/>-facing <c>serverUrl</c> (see that class's own
+    /// <c>DefaultServerUrl</c>, now <c>""</c> instead of the old dishonest <c>http://localhost:5000</c>
+    /// placeholder) — and that empty value flows straight into THIS method, unfiltered, from both
+    /// <c>TransportCoordinator.RebuildLive</c> (every Settings-driven rebuild) and every eager DI
+    /// registration in <c>Program.cs</c> that seeds the initial, unconfigured Live transport at process
+    /// startup, before any persisted settings/env var has had a chance to apply. Without this
+    /// substitution, a fresh install with nothing ever configured would crash at STARTUP, not just show
+    /// a "not connected" UI.
+    ///
+    /// <see cref="NoServerConfiguredPlaceholder"/> is deliberately non-dialable (port 0 — a client can
+    /// never successfully connect to it, unlike the old <c>http://localhost:5000</c> default, which
+    /// could accidentally succeed against some unrelated local dev server) — this only satisfies the
+    /// SDK's non-null contract; it changes nothing about SEND behavior. A send attempted against it
+    /// fails exactly like a send against any other unreachable server today (caught inside
+    /// <see cref="St4iDeviceClient"/>'s own retry/queue logic, never thrown) — see <see cref="SendAsync"/>
+    /// and this class's other unreachable-target tests. Applied once, here, so every caller (current and
+    /// future) is protected uniformly rather than requiring each call site to remember to sanitize.</summary>
+    private const string NoServerConfiguredPlaceholder = "http://127.0.0.1:0";
+
     private readonly St4iDeviceClient _client;
 
     public LiveTransport(St4iDeviceClient client)
@@ -31,7 +55,10 @@ public sealed class LiveTransport : ITransport, IDisposable
         _client = client ?? throw new ArgumentNullException(nameof(client));
     }
 
-    /// <summary>Builds the SDK client from raw connection parameters and wraps it. The normal entry point.</summary>
+    /// <summary>Builds the SDK client from raw connection parameters and wraps it. The normal entry
+    /// point. A blank <paramref name="serverUrl"/> (SM-3's "no ecosystem configured") is substituted with
+    /// <see cref="NoServerConfiguredPlaceholder"/> before ever reaching the vendored SDK's ctor — see that
+    /// constant's own remarks.</summary>
     public static LiveTransport ForMachine(
         string serverUrl,
         string mkKey,
@@ -40,8 +67,9 @@ public sealed class LiveTransport : ITransport, IDisposable
         bool verifyTls,
         HttpMessageHandler? handler = null)
     {
+        var effectiveServerUrl = string.IsNullOrWhiteSpace(serverUrl) ? NoServerConfiguredPlaceholder : serverUrl;
         var client = new St4iDeviceClient(
-            serverUrl: serverUrl,
+            serverUrl: effectiveServerUrl,
             mkKey: mkKey,
             machineCode: machineCode,
             queuePath: queuePath,

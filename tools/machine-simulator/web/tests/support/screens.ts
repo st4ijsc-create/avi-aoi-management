@@ -120,8 +120,14 @@ export async function gotoSettings(page: Page): Promise<void> {
   await page.goto("/settings")
   await expect(page.getByRole("heading", { name: viDict.settings.title, level: 1 })).toBeVisible()
   await waitForEngineConnected(page)
-  // Past the skeleton — the real Server URL field carries a real value once `useSettings()` resolves.
-  await expect(page.locator("#settings-server-url")).toHaveValue(/\S/, { timeout: 15_000 })
+  // Past the skeleton — Settings.tsx returns <SettingsSkeleton/> (a different component tree, no
+  // #settings-server-url anywhere in it) while `useSettings()` is pending, so this field's mere
+  // presence already proves the real query resolved. SM-3 (task-3-brief.md) — this used to assert a
+  // NON-EMPTY value instead (`toHaveValue(/\S/)`), which relied on `FleetHost.DefaultServerUrl` always
+  // being the `http://localhost:5000` placeholder; that default is now honestly blank ("no ecosystem
+  // configured"), so a resolved-but-empty field is the CORRECT state to wait for, not a signal to
+  // reject.
+  await expect(page.locator("#settings-server-url")).toBeVisible({ timeout: 15_000 })
 }
 
 /** WS-D-D7 — `/users` (Admin-only account management). Waits past the roster query's own loading

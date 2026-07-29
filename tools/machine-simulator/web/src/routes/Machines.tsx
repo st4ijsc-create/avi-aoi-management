@@ -10,7 +10,7 @@ import { useEcosystemConnection, useFleet, useFleetIsRunning, type DeviceClass, 
 import { driverKindLabel } from "@/lib/driverKind"
 import { fadeSlideUp } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
-import { EcosystemConnectPanel } from "@/components/EcosystemConnect"
+import { EcosystemStatusWidget } from "@/components/EcosystemConnect"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -370,12 +370,6 @@ export default function Machines() {
     setStatusFilter(ALL)
   }, [])
 
-  // WS2-T2 (docs/PRODUCTION_UI_DESIGN.md §2.4) — same gate `Dashboard.tsx` applies: Live mode with no
-  // reachable ecosystem replaces the whole roster body (and the header's online-count badge, which
-  // would otherwise read a locally-fabricated "0/N" alongside a "please connect" panel) with the
-  // connect gate instead of an empty/meaningless table.
-  const showConnectGate = !isPending && !isError && ecosystem.loaded && ecosystem.needsConnect
-
   return (
     <motion.div
       initial="hidden"
@@ -393,7 +387,7 @@ export default function Machines() {
               672px cap wrapped "…để xem chi tiết." onto its own line regardless (H3c leftover fix). */}
           <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("machines.description")}</p>
         </div>
-        {!isPending && !isError && !showConnectGate ? (
+        {!isPending && !isError ? (
           // I-12: a fleet mid-start (0 < online < total) is a NORMAL transient boot state, not a
           // warning — every fleet passes through it at every startup. `warn` here desensitizes the
           // operator to amber; `info` reads as "in progress", `ok` once fully online, `neutral` while
@@ -406,9 +400,12 @@ export default function Machines() {
         ) : null}
       </div>
 
-      {showConnectGate ? (
-        <EcosystemConnectPanel ecosystem={ecosystem} />
-      ) : isPending ? (
+      {/* SM-3 — same "status, not a prerequisite" widget as Dashboard.tsx: Live-mode-only, collapsed by
+          default, auto-expanded when a configured server is actually failing. See EcosystemConnect.tsx's
+          own remarks. */}
+      <EcosystemStatusWidget ecosystem={ecosystem} className="shrink-0" />
+
+      {isPending ? (
         <Sheet className="min-h-0 flex-1" bodyClassName="flex flex-1 min-h-0 flex-col p-0">
           <div className="hmi-scroll min-h-0 flex-1 overflow-y-auto">
             <Table>

@@ -55,7 +55,21 @@ public sealed class FleetHost
     /// stale task from corrupting shared state whenever it does eventually finish.</summary>
     private static readonly TimeSpan RestartTeardownTimeout = TimeSpan.FromSeconds(3);
 
-    public const string DefaultServerUrl = "http://localhost:5000";
+    /// <summary>SM-3 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-3-brief.md)
+    /// — deliberately BLANK, not a URL. The old value here (<c>"http://localhost:5000"</c>) LOOKED like
+    /// real configuration but was actually guaranteed to fail on every install that never overrode it —
+    /// a real ST4I ecosystem server is never running on an edge box's own loopback address by default,
+    /// so every fresh product install got a permanently-failing connection check dressed up as a typo'd
+    /// config. Blank is what makes "no ecosystem configured" a genuine, honest, non-crashing product
+    /// default: a customer who never connects to anything (a fully legitimate way to own this product —
+    /// see SM-1's empty-roster-is-first-class decision) gets a working standalone product.
+    /// <c>web/src/lib/api.ts</c>'s <c>useEcosystemConnection</c> now reads an empty <c>serverUrl</c> as
+    /// its own named <c>"standalone"</c> status — a complete, non-alarming state — never as a failure
+    /// requiring a blocking form. <see cref="St4i.EdgeCore.Transport.LiveTransport.ForMachine"/>'s own
+    /// substitution guard is what keeps this blank value from ever reaching the vendored
+    /// <c>St4iDeviceClient</c> ctor's "serverUrl is required" throw (see that method's own remarks) — this
+    /// class never needs to know about that; it just stores/reports the honest, possibly-empty value.</summary>
+    public const string DefaultServerUrl = "";
     public const string DefaultMachineCode = "ENGINE-API-01";
     public const string DefaultLanguage = "vi";
 

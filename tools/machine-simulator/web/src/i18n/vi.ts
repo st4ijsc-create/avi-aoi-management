@@ -212,6 +212,8 @@ export const vi = {
         `Đội máy mô phỏng có ${vars.roster} máy đang chờ. Nhấn “Chạy Fleet” để bắt đầu chu trình và xem dữ liệu trực tiếp trên bảng điều khiển.`,
       cta: "Chạy Fleet",
       ctaPending: "Đang chạy…",
+      noMachinesTitle: "Chưa có máy nào",
+      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy mới qua Onboarding để bắt đầu.",
     },
   },
 
@@ -245,7 +247,7 @@ export const vi = {
     },
     empty: {
       noMachinesTitle: "Chưa có máy nào",
-      noMachinesDescription: "Đội máy mô phỏng hiện chưa có máy nào. Thêm một máy mới qua Onboarding để bắt đầu.",
+      noMachinesDescription: "Chưa có máy nào được đăng ký. Thêm một máy mới qua Onboarding để bắt đầu.",
       noMatchTitle: "Không tìm thấy máy phù hợp",
       noMatchDescription: "Không có máy nào khớp với tìm kiếm hoặc bộ lọc hiện tại — thử xóa bộ lọc.",
     },
@@ -1040,10 +1042,12 @@ export const vi = {
   ecosystemConnect: {
     title: "Kết nối hệ sinh thái",
     description:
-      "Máy đang ở chế độ Live nhưng chưa nối được hệ sinh thái ST4I thật — nhập địa chỉ máy chủ bên dưới rồi kiểm tra kết nối để xem đội máy thật.",
+      "Kết nối máy này với một hệ sinh thái ST4I thật để đồng bộ cấu hình và gộp dữ liệu toàn đội máy. Hoàn toàn tùy chọn — máy vẫn hoạt động độc lập nếu không kết nối.",
+    descriptionFailed:
+      "Máy đã được cấu hình để kết nối một hệ sinh thái ST4I nhưng máy chủ không phản hồi — kiểm tra địa chỉ bên dưới, mạng, hoặc thử lại.",
     statusLabel: "Trạng thái kết nối",
     status: {
-      idle: "Chưa kiểm tra",
+      standalone: "Độc lập",
       testing: "Đang kiểm tra…",
       connected: "Đã kết nối",
       failed: "Không kết nối được",

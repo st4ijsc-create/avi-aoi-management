@@ -15,6 +15,18 @@ interface CollapsibleSectionProps {
    * record (see `PointForm.tsx`'s `hasThreeD`/image/lighting checks) and rely on the parent remounting
    * this component (via `key`) when the record changes, same pattern as the form itself. */
   defaultOpen?: boolean
+  /** SM-3 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-3-brief.md) —
+   * optional, additive escape hatch for a LONG-LIVED instance (no `key` remount) whose "worth surfacing
+   * without a click" condition can become true well AFTER mount, where `defaultOpen` alone can't help
+   * (it's only read once). Forces the section open the instant this flips to `true` — including every
+   * transition INTO `true`, not just the first — but never forces it closed: an operator's own manual
+   * collapse afterward (while this is still `true`) is respected, same as `defaultOpen`'s own
+   * "an operator's manual toggle always wins from then on" contract. Omitted (default `undefined`,
+   * every pre-existing caller) never fires the effect below — byte-identical to before this prop
+   * existed. See `EcosystemStatusWidget` (`EcosystemConnect.tsx`) for the motivating caller: a
+   * connection that starts failing well after this widget first mounted must still surface without
+   * requiring the operator to have already had it open. */
+  forceOpenWhen?: boolean
   badge?: React.ReactNode
   children: React.ReactNode
   className?: string
@@ -35,12 +47,19 @@ export function CollapsibleSection({
   titleEn,
   icon: Icon,
   defaultOpen = false,
+  forceOpenWhen,
   badge,
   children,
   className,
 }: CollapsibleSectionProps) {
   const [open, setOpen] = React.useState(defaultOpen)
   const panelId = React.useId()
+
+  // SM-3 — see forceOpenWhen's own doc comment above. Deliberately keyed on the VALUE (not e.g. a
+  // one-shot ref) so every fresh transition into `true` re-forces it open, not just the first.
+  React.useEffect(() => {
+    if (forceOpenWhen) setOpen(true)
+  }, [forceOpenWhen])
 
   return (
     <div className={cn("overflow-hidden rounded-[var(--radius-card)] border border-border-strong shadow-[var(--elevation)]", className)}>

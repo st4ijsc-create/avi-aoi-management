@@ -206,6 +206,12 @@ export const en: Dictionary = {
         `The simulated fleet has ${vars.roster} machines waiting. Press “Start Fleet” to begin cycling and see live data on the dashboard.`,
       cta: "Start Fleet",
       ctaPending: "Starting…",
+      // SM-3 — a fresh install has ZERO machines (SM-1 made that a legitimate product state), so
+      // "press Start Fleet" is nonsense here: there is nothing to cycle. This is the honest first-run
+      // destination — same copy/CTA shape as `machines.empty.noMachinesTitle/Description` below, so the
+      // two screens agree on what "no machines yet" means.
+      noMachinesTitle: "No machines yet",
+      noMachinesDescription: "No machines are registered yet. Add one through Onboarding to get started.",
     },
   },
 
@@ -239,7 +245,7 @@ export const en: Dictionary = {
     },
     empty: {
       noMachinesTitle: "No machines yet",
-      noMachinesDescription: "The simulated fleet doesn't have any machines yet. Add one through Onboarding to get started.",
+      noMachinesDescription: "No machines are registered yet. Add one through Onboarding to get started.",
       noMatchTitle: "No matching machines",
       noMatchDescription: "No machine matches the current search or filters — try clearing them.",
     },
@@ -1033,12 +1039,14 @@ export const en: Dictionary = {
   },
 
   ecosystemConnect: {
-    title: "Connect ecosystem",
+    title: "Ecosystem connection",
     description:
-      "This machine is in Live mode but hasn't reached a real ST4I ecosystem yet — enter the server address below and check the connection to see the real fleet.",
+      "Connect this machine to a real ST4I ecosystem to sync configuration and pool fleet-wide data. Entirely optional — this machine works standalone without it.",
+    descriptionFailed:
+      "This machine is configured to reach an ST4I ecosystem, but the server isn't responding — check the address below, the network, or retry.",
     statusLabel: "Connection status",
     status: {
-      idle: "Not tested",
+      standalone: "Standalone",
       testing: "Testing…",
       connected: "Connected",
       failed: "Connection failed",

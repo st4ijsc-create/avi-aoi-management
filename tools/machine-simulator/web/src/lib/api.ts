@@ -884,32 +884,41 @@ export function useProbeSettings() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// WS2-T2 (docs/PRODUCTION_UI_DESIGN.md §2.4) — ecosystem connect gate. WS2-T1 flipped the engine's
-// default to Live with nothing configured, so a fresh product install's fleet-dependent screens
-// (Dashboard/Machines) have nothing meaningful to show until this machine actually reaches a real
-// ST4I ecosystem. Rather than render an empty/meaningless local fleet grid, those screens gate their
-// normal content behind `useEcosystemConnection().needsConnect` and show `EcosystemConnectPanel`
-// instead — this hook is the single source of truth both for THAT decision and for the panel's own
-// live status readout.
+// SM-3 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-3-brief.md) — ecosystem
+// connection STATUS, no longer a gate. WS2-T2 originally had Dashboard/Machines replace their entire
+// content with `EcosystemConnectPanel` whenever `needsConnect` was true — but after SM-1 made an empty
+// product roster legitimate and this task killed the `http://localhost:5000` placeholder default, "no
+// server configured" is no longer a misconfiguration to nag about: it is what a customer who will never
+// connect to any ecosystem sees forever, and that customer must get a COMPLETE product, not a form.
+//
+// `"standalone"` is the SAME state whether an operator simply hasn't gotten to Settings yet or has
+// deliberately decided never to connect — there is no behavioral difference between those two intents
+// (both get a fully working product; both can reach the connect flow the same way, whenever they want
+// it), so this hook does not try to invent a second bit to distinguish them. The one state that DOES
+// need a caller's attention is `"failed"`: a server IS configured but not currently reachable — a real,
+// diagnosable problem (a typo, a network outage, a server that's down), surfaced via
+// `hasConnectionIssue` so a caller can show a small, visible-but-non-blocking indicator instead of
+// hiding the failure the way simply deleting the old gate would have.
 // ─────────────────────────────────────────────────────────────────────────
 
 const ECOSYSTEM_PROBE_INTERVAL_MS = 8000
 
-export type EcosystemConnectionStatus = "idle" | "testing" | "connected" | "failed"
+export type EcosystemConnectionStatus = "standalone" | "testing" | "connected" | "failed"
 
 export interface EcosystemConnectionState {
   /** False until `/v1/mode` AND `/v1/settings` have both resolved at least once — a caller should keep
-   * showing its OWN existing loading state until this flips true, rather than flash the connect gate
-   * open only to close it again the instant the real mode/URL are known. */
+   * showing its OWN existing loading state until this flips true, rather than flash a wrong status. */
   loaded: boolean
   mode: TransportMode
-  /** The currently-saved `Settings.serverUrl`, trimmed. */
+  /** The currently-saved `Settings.serverUrl`, trimmed. Empty means "no ecosystem configured" — a
+   * first-class, honest value (see `FleetHost.DefaultServerUrl`), not an empty string that happens to
+   * fail a probe. */
   serverUrl: string
   status: EcosystemConnectionStatus
-  /** True whenever a fleet-dependent screen should show the connect gate instead of its normal
-   * content — Live mode with no configured URL, or configured but not currently reachable. Always
-   * false outside Live: Demo's fabricated fleet is legitimately populated, nothing to connect to. */
-  needsConnect: boolean
+  /** True only for `status === "failed"` — a server IS configured but not currently reachable. This is
+   * the one state worth a caller's visible attention; `"standalone"` (no server configured, Live or
+   * not) is a legitimate, complete product state and must never read as a problem. */
+  hasConnectionIssue: boolean
   /** True while a probe triggered by `retry()` (or the background poll) is in flight — distinct from
    * `status === "testing"` (the FIRST probe, before any result has ever landed), so a retry click can
    * show its own pending spinner without the whole panel reverting to the "never tested" copy. */
@@ -921,9 +930,9 @@ export interface EcosystemConnectionState {
 
 /** Polls `POST /v1/settings/probe` against the CURRENTLY SAVED `serverUrl` while in Live mode — the
  * exact same connectivity check (`ResilienceProbe`) Settings' own "Check connection" button triggers
- * manually, reused here as the automatic signal deciding whether `needsConnect` is true. Never probes
- * in Demo mode or with an empty URL (`enabled` below), so the gate itself never activates outside the
- * one case it's meant for. */
+ * manually, reused here as the automatic signal behind `status`/`hasConnectionIssue`. Never probes in
+ * Demo mode or with an empty URL (`enabled` below) — Demo's fabricated fleet has nothing to connect to,
+ * and an empty `serverUrl` is `"standalone"` by definition, not something to probe against. */
 export function useEcosystemConnection(): EcosystemConnectionState {
   const modeQuery = useMode()
   const settingsQuery = useSettings()
@@ -946,19 +955,16 @@ export function useEcosystemConnection(): EcosystemConnectionState {
 
   const base = { loaded, mode, serverUrl, isRetrying: probeQuery.isFetching, retry }
 
-  if (!loaded || mode !== "Live") {
-    return { ...base, status: "idle", needsConnect: false }
-  }
-  if (!serverUrl) {
-    return { ...base, status: "idle", needsConnect: true }
+  if (!loaded || mode !== "Live" || !serverUrl) {
+    return { ...base, status: "standalone", hasConnectionIssue: false }
   }
   if (probeQuery.isPending) {
-    return { ...base, status: "testing", needsConnect: true }
+    return { ...base, status: "testing", hasConnectionIssue: false }
   }
   if (probeQuery.data?.reachable) {
-    return { ...base, status: "connected", needsConnect: false }
+    return { ...base, status: "connected", hasConnectionIssue: false }
   }
-  return { ...base, status: "failed", needsConnect: true }
+  return { ...base, status: "failed", hasConnectionIssue: true }
 }
 
 // ─────────────────────────────────────────────────────────────────────────

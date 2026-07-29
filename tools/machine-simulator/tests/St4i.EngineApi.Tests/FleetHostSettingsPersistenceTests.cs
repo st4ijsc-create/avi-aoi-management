@@ -115,4 +115,31 @@ public sealed class FleetHostSettingsPersistenceTests
         Assert.Equal(FleetHost.DefaultMachineCode, settings.MachineCode);
         Assert.True(settings.VerifyTls);
     }
+
+    // SM-3 — an operator explicitly clearing the Server URL field (or a brand-new install, whose
+    // in-memory default IS already "") must be a legitimate "standalone, no ecosystem" state, never a
+    // crash. Before SM-3's LiveTransport.ForMachine guard, an empty serverUrl reaching the vendored
+    // St4iDeviceClient ctor via RebuildLive threw St4iConfigException synchronously out of
+    // UpdateSettings — this proves that path is safe now, and that the empty value round-trips through
+    // persistence unmangled (never silently coerced back to some non-empty default).
+    [Fact]
+    public void UpdateSettings_ExplicitEmptyServerUrl_MeansStandalone_DoesNotThrow_AndPersists()
+    {
+        var settingsDir = TempDir();
+        var store = new FleetSettingsStore(settingsDir);
+        var (switchable, coordinator) = BuildTransport(TempDir());
+        var host = new FleetHost(switchable, coordinator, new EventBus(), settingsStore: store);
+
+        // Seed a real, non-empty serverUrl first, exactly like an operator who connects then later
+        // decides to disconnect — proves this is a genuine, reachable transition, not just "never set".
+        host.UpdateSettings(new SettingsUpdateRequest(
+            ServerUrl: "http://was-connected.example.test", VerifyTls: null, Language: null, MachineCode: null));
+
+        var updated = host.UpdateSettings(new SettingsUpdateRequest(
+            ServerUrl: "", VerifyTls: null, Language: null, MachineCode: null));
+
+        Assert.Equal("", updated.ServerUrl);
+        Assert.Equal("", host.GetSettings().ServerUrl);
+        Assert.Equal("", store.Load()!.ServerUrl);
+    }
 }

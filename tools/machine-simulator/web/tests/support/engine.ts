@@ -52,15 +52,17 @@ export async function resetSettingsLanguage(request: APIRequestContext): Promise
   if (!res.ok()) throw new Error(`reset settings language failed: ${res.status()}`)
 }
 
-/** WS2-T2 — restores the engine's transport mode to Demo and `Settings.serverUrl` to its hardcoded
- * default (`FleetHost.DefaultServerUrl`, "http://localhost:5000") — undoes what
- * `14-ecosystem-connect.spec.ts` deliberately flips to Live + an unreachable URL to exercise the
- * ecosystem connect gate, so nothing downstream (including a re-run of the pristine visual pass,
- * which assumes the webServer's own `ST4I_DEMO_ENABLED=true` Demo-mode boot state) inherits it. */
+/** SM-3 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-3-brief.md) — restores
+ * the engine's transport mode to Demo and `Settings.serverUrl` to its honest built-in default
+ * (`FleetHost.DefaultServerUrl`, now `""` — SM-3 killed the old `http://localhost:5000` placeholder, see
+ * that constant's own doc comment) — undoes what `14-ecosystem-connect.spec.ts` deliberately flips to
+ * Live + a configured-but-unreachable URL to exercise the "failed" ecosystem status, so nothing
+ * downstream (including a re-run of the pristine visual pass, which assumes the webServer's own
+ * `ST4I_DEMO_ENABLED=true` Demo-mode boot state) inherits it. */
 export async function resetEcosystemMode(request: APIRequestContext): Promise<void> {
   const modeRes = await request.put(`${ENGINE_URL}/v1/mode`, { data: { mode: "Demo" } })
   if (!modeRes.ok()) throw new Error(`reset mode to Demo failed: ${modeRes.status()}`)
-  const settingsRes = await request.put(`${ENGINE_URL}/v1/settings`, { data: { serverUrl: "http://localhost:5000" } })
+  const settingsRes = await request.put(`${ENGINE_URL}/v1/settings`, { data: { serverUrl: "" } })
   if (!settingsRes.ok()) throw new Error(`reset serverUrl failed: ${settingsRes.status()}`)
 }
 

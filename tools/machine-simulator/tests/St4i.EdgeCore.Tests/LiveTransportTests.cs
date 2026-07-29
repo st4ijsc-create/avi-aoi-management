@@ -102,6 +102,23 @@ public class LiveTransportTests
         Assert.DoesNotContain("\"defectCatalogCode\":\"\"", h.LastBody);
     }
 
+    // SM-3 (.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/task-3-brief.md) —
+    // FleetHost.DefaultServerUrl is now "" (no more http://localhost:5000 placeholder), and that blank
+    // value flows straight into ForMachine from both TransportCoordinator.RebuildLive and Program.cs's
+    // eager startup DI wiring, BEFORE any persisted settings/env var could ever override it. The vendored
+    // St4iDeviceClient ctor throws St4iConfigException synchronously for a null/empty serverUrl
+    // ("serverUrl là bắt buộc") — before this fix, that would have crashed the whole engine at STARTUP
+    // on every fresh install, not just shown a "not connected" UI. Proves ForMachine substitutes its own
+    // inert placeholder instead, for null/empty/whitespace alike, with zero network I/O (construction
+    // only — no SendAsync here), so this can never be slow/flaky.
+    [Fact]
+    public void ForMachine_WithBlankServerUrl_DoesNotThrow()
+    {
+        using var empty = LiveTransport.ForMachine("", "mk_test", "M1", null, true);
+        using var whitespace = LiveTransport.ForMachine("   ", "mk_test", "M1", null, true);
+        using var nullUrl = LiveTransport.ForMachine(null!, "mk_test", "M1", null, true);
+    }
+
     // Task 19a — Auto-mode-graceful-when-unconfigured fix. An empty mkKey makes the wrapped
     // St4iDeviceClient throw St4iConfigException SYNCHRONOUSLY out of HttpSendAsync — before it ever
     // touches the HttpMessageHandler (see St4iDeviceClient.HttpSendAsync's `if

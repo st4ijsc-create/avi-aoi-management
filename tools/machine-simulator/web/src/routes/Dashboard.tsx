@@ -1,6 +1,6 @@
 import * as React from "react"
 import { motion } from "framer-motion"
-import { PlayCircle } from "lucide-react"
+import { Inbox, PlayCircle } from "lucide-react"
 import { toast } from "sonner"
 import { useLocation } from "wouter"
 
@@ -10,7 +10,7 @@ import { useEcosystemConnection, useFleet, useFleetIsRunning, useStartFleet } fr
 import { fadeSlideUp, staggerContainer } from "@/theme/motion"
 import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
-import { EcosystemConnectPanel } from "@/components/EcosystemConnect"
+import { EcosystemStatusWidget } from "@/components/EcosystemConnect"
 import { KpiTile, KpiTileSkeleton } from "@/components/KpiTile"
 import { MachineCard, MachineCardSkeleton } from "@/components/MachineCard"
 import { Sparkline } from "@/components/Sparkline"
@@ -63,6 +63,39 @@ function EmptyState({
   )
 }
 
+/** SM-3 — the honest first-run destination for a fresh product install: SM-1 made a zero-machine
+ * roster a legitimate state, so this is what a brand-new, standalone (or not-yet-connected) install
+ * shows INSTEAD of the old "press Start Fleet" copy (which talks about machines that don't exist) and
+ * instead of the removed ecosystem connect gate. Same shape as `Machines.tsx`'s own `EmptyState` for
+ * this identical condition — one honest message, not two independently-worded ones, pointing at the
+ * same next step (Onboarding). SM-5 (not in this task's scope) is what actually builds a real machine
+ * onboarding UX; today's `/onboarding` is the ecosystem register/claim/enroll wizard, which already
+ * joins the claimed machine into this engine's own fleet roster (`OnboardingFleetJoin` ->
+ * `FleetHost.RegisterMachine`) — a real, reachable destination, not a stub. */
+function NoMachinesEmptyState({ onOnboard }: { onOnboard: () => void }) {
+  const t = useT()
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="min-h-0 flex-1">
+      <Sheet
+        graphPaper
+        className="h-full"
+        bodyClassName="flex h-full flex-col items-center justify-center gap-4 px-8 py-20 text-center"
+      >
+        <div className="flex size-14 items-center justify-center border border-border-strong bg-surface-card">
+          <Inbox className="size-7 text-primary-text" aria-hidden="true" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-lg font-semibold text-text-strong">{t("dashboard.empty.noMachinesTitle")}</p>
+          <p className="max-w-sm text-sm text-text-muted">{t("dashboard.empty.noMachinesDescription")}</p>
+        </div>
+        <Button onClick={onOnboard} className="px-3">
+          {t("shell.nav.onboarding")}
+        </Button>
+      </Sheet>
+    </motion.div>
+  )
+}
+
 export default function Dashboard() {
   const t = useT()
   const gloss = useGloss()
@@ -86,17 +119,16 @@ export default function Dashboard() {
   const openMachine = React.useCallback((code: string) => navigate(`/machines/${code}`), [navigate])
 
   const hasCycles = totalCycles > 0
-  const showEmpty = !isPending && !isError && !isRunning && !hasCycles
   const roster = data?.machines.length ?? 0
+  // SM-3 — a genuinely empty roster (SM-1's legitimate zero-machine product state) needs its OWN honest
+  // destination, distinct from "machines exist but the fleet hasn't been started yet": pressing "Start
+  // Fleet" with nothing registered has nothing to cycle, and the old shared copy ("N machines waiting")
+  // read as nonsense at N=0. `showNoMachinesEmpty` takes priority; `showPressStartEmpty` only applies
+  // once at least one machine is actually registered.
+  const showNoMachinesEmpty = !isPending && !isError && roster === 0
+  const showPressStartEmpty = !isPending && !isError && roster > 0 && !isRunning && !hasCycles
   const online = data?.kpis.online ?? 0
   const fpy = data?.kpis.fpy ?? 0
-
-  // WS2-T2 (docs/PRODUCTION_UI_DESIGN.md §2.4) — Live mode with no reachable ecosystem replaces the
-  // whole KPI+grid body below with the connect gate instead of a locally-fabricated 0/0 KPI row over
-  // an empty/meaningless grid. Gated on `!isPending && !isError` (same guards `showEmpty` already
-  // uses) so an engine that's merely still loading, or genuinely unreachable itself, keeps showing
-  // its EXISTING skeleton/error handling rather than being preempted by this.
-  const showConnectGate = !isPending && !isError && ecosystem.loaded && ecosystem.needsConnect
 
   return (
     <motion.div
@@ -112,24 +144,31 @@ export default function Dashboard() {
         <p className="hmi-micro mt-1">{gloss("dashboard.title")}</p>
         <p className="mt-1 text-sm text-text-muted">
           {t("dashboard.subtitleBase")}
-          {roster > 0 && !showConnectGate ? t("dashboard.subtitleRoster", { roster }) : "."}
+          {roster > 0 ? t("dashboard.subtitleRoster", { roster }) : "."}
         </p>
       </div>
 
-      {showConnectGate ? (
-        <EcosystemConnectPanel ecosystem={ecosystem} />
+      {/* SM-3 — connection state is a STATUS, not a prerequisite: this renders only in Live mode (never
+          in Demo, so the exhibition dashboard stays pixel-identical — see 14-ecosystem-connect.spec.ts),
+          collapsed by default so it's visible without ever blocking the real content below, and
+          auto-expanded the instant a configured server is actually failing to reach (see
+          EcosystemStatusWidget's own remarks). */}
+      <EcosystemStatusWidget ecosystem={ecosystem} className="shrink-0" />
+
+      {/* SM-2 — "the UI must not lie": whenever the fleet mixes fabricated (demo) machines with a
+          real one, the KPI tiles below already exclude the fabricated fleet from totalCycles/fpy (see
+          FleetHost.Snapshot's own remarks) even though the tile grid further down still lists it — this
+          banner is the visible tell an operator otherwise has no way to notice. */}
+      {data?.kpis.hasMixedProvenance ? (
+        <p className="hmi-micro shrink-0 border border-border-strong bg-surface-card px-3 py-2 text-text-muted">
+          {t("dashboard.mixedProvenance")}
+        </p>
+      ) : null}
+
+      {showNoMachinesEmpty ? (
+        <NoMachinesEmptyState onOnboard={() => navigate("/onboarding")} />
       ) : (
         <>
-          {/* SM-2 — "the UI must not lie": whenever the fleet mixes fabricated (demo) machines with a
-              real one, the KPI tiles below already exclude the fabricated fleet from totalCycles/fpy (see
-              FleetHost.Snapshot's own remarks) even though the tile grid further down still lists it — this
-              banner is the visible tell an operator otherwise has no way to notice. */}
-          {data?.kpis.hasMixedProvenance ? (
-            <p className="hmi-micro shrink-0 border border-border-strong bg-surface-card px-3 py-2 text-text-muted">
-              {t("dashboard.mixedProvenance")}
-            </p>
-          ) : null}
-
           <motion.div
             initial="hidden"
             animate="visible"
@@ -180,7 +219,7 @@ export default function Dashboard() {
             )}
           </motion.div>
 
-          {showEmpty ? (
+          {showPressStartEmpty ? (
             <EmptyState
               onStart={() =>
                 startFleet.mutate(undefined, { onSuccess: () => toast.success(t("toast.fleetStarted")) })
