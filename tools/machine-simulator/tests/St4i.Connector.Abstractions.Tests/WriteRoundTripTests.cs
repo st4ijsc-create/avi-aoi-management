@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using St4i.Connector.Abstractions.Json;
 using St4i.Connector.Abstractions.Models;
@@ -106,6 +107,70 @@ public class WriteRoundTripTests
 
         Assert.Equal(ReadingKind.Inspection, back!.Kind);
         Assert.Equal(Verdict.Warn, back.Verdict);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Fix round 2 (task-1-report.md, IMPORTANT) — a `with` expression bypasses fix round 1's validating
+    // `init` INITIALIZER entirely (it clones fields directly, then calls only the explicitly-listed
+    // properties' `init` ACCESSORS, which never re-run an initializer expression). Verified empirically
+    // (both here and independently by the reviewer) that this actually compiled and silently produced an
+    // inconsistent instance before this fix round. The real fix removes the `init` accessor from BOTH
+    // Outcome and RejectionReason entirely, which turns `with { Outcome = ... }` / `with { RejectionReason =
+    // ... }` into a COMPILE ERROR (CS0200) — there is no runtime code path left to test, because the whole
+    // point is that the vulnerable code no longer compiles. A source snippet proving that cannot live in
+    // this file (it would stop the entire test assembly from building), so the closest genuine
+    // runtime-checkable proxy for "a `with` expression cannot target this property" is reflection: a
+    // property has no accessor a `with` expression could invoke if and only if PropertyInfo.SetMethod is
+    // null. These tests assert exactly that — they would FAIL (SetMethod non-null) against fix round 1's
+    // code, and they pass now. See task-1-report.md's "Fix round 2" section for the exact three `with`
+    // expressions from the review, each confirmed via a standalone scratch build to now produce
+    // "error CS0200: Property or indexer '...' cannot be assigned to -- it is read only".
+    // ─────────────────────────────────────────────────────────────────────
+    [Theory]
+    [InlineData(typeof(SetpointWriteResult), nameof(SetpointWriteResult.Outcome))]
+    [InlineData(typeof(SetpointWriteResult), nameof(SetpointWriteResult.RejectionReason))]
+    [InlineData(typeof(CommandResult), nameof(CommandResult.Outcome))]
+    [InlineData(typeof(CommandResult), nameof(CommandResult.RejectionReason))]
+    public void OutcomeAndRejectionReason_HaveNoSetterOrInitAccessor_SoWithExpressionsCannotTargetThem(Type resultType, string propertyName)
+    {
+        var property = resultType.GetProperty(propertyName);
+        Assert.NotNull(property);
+        // No SetMethod at all (not even a non-public one) — this is precisely the condition that makes
+        // `with { <PropertyName> = ... }` a compiler error on this type. If this property ever regains an
+        // `init` accessor (SetMethod would then be non-null, decorated with IsExternalInit), this assertion
+        // is what catches the regression.
+        Assert.Null(property!.SetMethod);
+    }
+
+    [Fact]
+    public void SetpointWriteResult_PointAndDetail_RemainFreelyWithable_WithIsNotBrokenWholesale()
+    {
+        // Positive control: proves the fix is scoped to Outcome/RejectionReason specifically, not a side
+        // effect that accidentally disabled `with` for this whole record. Point/Detail keep ordinary `init`
+        // accessors and a legitimate `with` on either still compiles and works.
+        var original = new SetpointWriteResult("p", WriteOutcome.Applied, Detail: "original detail");
+
+        var renamed = original with { Point = "q" };
+        var redetailed = original with { Detail = "new detail" };
+
+        Assert.Equal("q", renamed.Point);
+        Assert.Equal(WriteOutcome.Applied, renamed.Outcome); // untouched by the `with`.
+        Assert.Equal("new detail", redetailed.Detail);
+        Assert.Equal("p", redetailed.Point); // untouched by the `with`.
+    }
+
+    [Fact]
+    public void CommandResult_CommandAndDetail_RemainFreelyWithable_WithIsNotBrokenWholesale()
+    {
+        var original = new CommandResult("start-cycle", WriteOutcome.Applied, Detail: "original detail");
+
+        var renamed = original with { Command = "stop-cycle" };
+        var redetailed = original with { Detail = "new detail" };
+
+        Assert.Equal("stop-cycle", renamed.Command);
+        Assert.Equal(WriteOutcome.Applied, renamed.Outcome);
+        Assert.Equal("new detail", redetailed.Detail);
+        Assert.Equal("start-cycle", redetailed.Command);
     }
 
     // ─────────────────────────────────────────────────────────────────────

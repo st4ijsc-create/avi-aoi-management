@@ -47,10 +47,13 @@ public enum SetpointRejectionReason
 /// </summary>
 /// <param name="Point">Echoes the request's <see cref="SetpointWriteRequest.Point"/>, so a caller can match a
 /// result back to its request without holding onto the original request object.</param>
-/// <param name="Outcome">Which of the four outcomes this attempt landed on — see <see cref="WriteOutcome"/>.</param>
+/// <param name="Outcome">Which of the four outcomes this attempt landed on — see <see cref="WriteOutcome"/>.
+/// Deliberately NOT settable via a <see langword="with"/> expression — see this property's own doc comment
+/// below.</param>
 /// <param name="RejectionReason">Non-null if and only if <paramref name="Outcome"/> is
 /// <see cref="WriteOutcome.Rejected"/> — which specific pre-flight check failed. <see langword="null"/> for
-/// every other outcome.</param>
+/// every other outcome. Deliberately NOT settable via a <see langword="with"/> expression — see this
+/// property's own doc comment below.</param>
 /// <param name="Detail">Optional operator-readable free text — e.g. what a Failed/Indeterminate attempt
 /// actually saw (a device error code, "timed out after 3000ms"). Never required, never machine-parsed by
 /// any caller — the same role <see cref="IConnectorFactory.TryCreate"/>'s own <c>error</c> parameter already
@@ -62,22 +65,43 @@ public sealed record SetpointWriteResult(
     string? Detail = null)
 {
     /// <summary>
-    /// Fix round 1 (task-1-report.md, IMPORTANT) — re-declared (rather than left as the plain
-    /// compiler-generated positional property) purely to attach a validating initializer: enforces
-    /// "<see cref="RejectionReason"/> is non-null if and only if <see cref="Outcome"/> is
-    /// <see cref="WriteOutcome.Rejected"/>" for EVERY construction path, not just a convenience layer a
-    /// caller could bypass. A property initializer on a redeclared positional-record property runs as part
-    /// of the SAME primary constructor <see cref="System.Text.Json.JsonSerializer"/> calls when
-    /// deserializing, so a malformed wire payload describing an impossible combination (e.g.
-    /// <see cref="WriteOutcome.Applied"/> carrying an <see cref="SetpointRejectionReason.OutOfRange"/>
-    /// reason, or <see cref="WriteOutcome.Rejected"/> with no reason at all) fails loudly at construction —
-    /// the same "reject rather than silently accept nonsense" discipline
-    /// <see cref="Json.ConnectorObjectConverter"/>'s own decision (b) already applies to the
-    /// <see langword="object"/>? domain. (Confirmed empirically before relying on it: a record's
-    /// PARAMETERLESS <c>public TypeName { ... }</c> constructor-body syntax does not exist in C# — this
-    /// redeclared-property-initializer shape is the actual, compiling mechanism.)
+    /// Fix round 2 (task-1-report.md, IMPORTANT) — <see langword="get"/>-only, deliberately with NO
+    /// <see langword="init"/> accessor. Fix round 1 gave <see cref="RejectionReason"/> a validating
+    /// <see langword="init"/> initializer, which correctly rejects an illegal combination through
+    /// <c>new SetpointWriteResult(...)</c> and through <see cref="System.Text.Json.JsonSerializer"/>
+    /// deserialization — but a <see langword="with"/> expression bypasses BOTH: it calls the
+    /// compiler-generated copy constructor (which clones existing field values directly, never re-running an
+    /// initializer expression) and then invokes ONLY the explicitly-listed properties' <see langword="init"/>
+    /// accessors directly, which for a property whose validation lives in its INITIALIZER (not its accessor)
+    /// never runs that check at all. Confirmed empirically (a reviewer, and independently re-confirmed here):
+    /// <c>result with { Outcome = WriteOutcome.Applied }</c> silently produced <c>Applied</c> carrying a
+    /// stale <see cref="RejectionReason"/> from the original instance. Removing the <see langword="init"/>
+    /// accessor from BOTH <see cref="Outcome"/> and <see cref="RejectionReason"/> closes this at COMPILE
+    /// TIME, not just at runtime: <c>with { Outcome = ... }</c> or <c>with { RejectionReason = ... }</c> is
+    /// now a compiler error (CS0200, "read only") on this type — there is no longer any code path, reasoned
+    /// about or not, that can produce an inconsistent instance. <see cref="Point"/>/<see cref="Detail"/> keep
+    /// their ordinary <see langword="init"/> accessors and remain freely <see langword="with"/>-able; only
+    /// the two properties that participate in the cross-field invariant are locked down. (An
+    /// <see langword="init"/>-ACCESSOR-body validation approach was considered instead of removing
+    /// <see langword="init"/> entirely, and rejected: <see langword="with"/> assigns properties in the order
+    /// WRITTEN in the <c>with { ... }</c> clause, so a single expression that legitimately changes BOTH
+    /// <see cref="Outcome"/> and <see cref="RejectionReason"/> together — e.g. <c>Rejected+A with { Outcome =
+    /// Applied, RejectionReason = null }</c> — would pass through a TRANSIENTLY inconsistent intermediate
+    /// state between the two assignments and could throw depending on write order alone, for a transition
+    /// that is valid start-to-end. Removing <see langword="init"/> avoids that order-dependence entirely by
+    /// making the properties immutable after construction, which is what this result type's own semantics
+    /// already call for — a result is a terminal, point-in-time fact about one write attempt, never something
+    /// meant to be incrementally edited.)
     /// </summary>
-    public SetpointRejectionReason? RejectionReason { get; init; } =
+    public WriteOutcome Outcome { get; } = Outcome;
+
+    /// <summary>See <see cref="Outcome"/>'s own doc comment for why this has no <see langword="init"/>
+    /// accessor. The validating initializer itself is unchanged from fix round 1: enforces
+    /// "<see cref="RejectionReason"/> is non-null if and only if <see cref="Outcome"/> is
+    /// <see cref="WriteOutcome.Rejected"/>" for every remaining construction path (direct construction and
+    /// <see cref="System.Text.Json.JsonSerializer"/> deserialization — <see langword="with"/> is no longer a
+    /// construction path for this property at all).</summary>
+    public SetpointRejectionReason? RejectionReason { get; } =
         (Outcome == WriteOutcome.Rejected) == (RejectionReason is not null)
             ? RejectionReason
             : throw new ArgumentException(

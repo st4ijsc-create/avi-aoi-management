@@ -50,9 +50,12 @@ public enum CommandRejectionReason
 /// for why setpoint and command are never conflated, including at the result-type level.
 /// </summary>
 /// <param name="Command">Echoes the request's <see cref="CommandRequest.Command"/>.</param>
-/// <param name="Outcome">Which of the four outcomes this attempt landed on — see <see cref="WriteOutcome"/>.</param>
+/// <param name="Outcome">Which of the four outcomes this attempt landed on — see <see cref="WriteOutcome"/>.
+/// Deliberately NOT settable via a <see langword="with"/> expression — see this property's own doc comment
+/// below.</param>
 /// <param name="RejectionReason">Non-null if and only if <paramref name="Outcome"/> is
-/// <see cref="WriteOutcome.Rejected"/>. <see langword="null"/> for every other outcome.</param>
+/// <see cref="WriteOutcome.Rejected"/>. <see langword="null"/> for every other outcome. Deliberately NOT
+/// settable via a <see langword="with"/> expression — see this property's own doc comment below.</param>
 /// <param name="Detail">Optional operator-readable free text — see
 /// <see cref="SetpointWriteResult.Detail"/>'s own remarks; the same role here.</param>
 public sealed record CommandResult(
@@ -62,12 +65,18 @@ public sealed record CommandResult(
     string? Detail = null)
 {
     /// <summary>
-    /// Fix round 1 (task-1-report.md, IMPORTANT) — same enforcement, and the same reason for this exact
-    /// shape (a redeclared property with a validating initializer, not a nonexistent parameterless
-    /// "constructor body"), as <see cref="SetpointWriteResult.RejectionReason"/>'s own doc comment; see
-    /// there for the full rationale. Applies to every construction path, including deserialization.
+    /// Fix round 2 (task-1-report.md, IMPORTANT) — same reasoning, and the same
+    /// <see langword="get"/>-only-with-no-<see langword="init"/> shape, as
+    /// <see cref="SetpointWriteResult.Outcome"/>'s own doc comment; see there for the full rationale
+    /// (a <see langword="with"/> expression bypasses a property's INITIALIZER but still invokes its
+    /// <see langword="init"/> ACCESSOR directly, so fix round 1's validating initializer alone was not
+    /// enough — removing <see langword="init"/> entirely closes it at compile time instead).
     /// </summary>
-    public CommandRejectionReason? RejectionReason { get; init; } =
+    public WriteOutcome Outcome { get; } = Outcome;
+
+    /// <summary>See <see cref="Outcome"/>'s own doc comment for why this has no <see langword="init"/>
+    /// accessor. The validating initializer itself is unchanged from fix round 1.</summary>
+    public CommandRejectionReason? RejectionReason { get; } =
         (Outcome == WriteOutcome.Rejected) == (RejectionReason is not null)
             ? RejectionReason
             : throw new ArgumentException(
