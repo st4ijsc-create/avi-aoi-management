@@ -129,6 +129,14 @@ export async function startBackgroundSchedulers(): Promise<void> {
     console.error("[aiGgufEngine] deep-model warm init failed:", (err as any)?.message || err);
   }
 
+  // Wave 3 §4.2 — đóng cảnh báo đã thôi tái diễn, kèm lý do. Best-effort.
+  try {
+    const { initAlertExpirySweeper } = await import("../services/alertExpirySweeper");
+    initAlertExpirySweeper();
+  } catch (err) {
+    console.error("[alertExpiry] khởi tạo thất bại:", (err as any)?.message || err);
+  }
+
   // S3.4 — AI batch RCA cron (daily 02:00 by default).
   try {
     const { initBatchRcaScheduler } = await import("../services/aiBatchRcaScheduler");
