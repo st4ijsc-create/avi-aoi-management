@@ -40,6 +40,14 @@ const here = dirname(fileURLToPath(import.meta.url))
 const engineApiDir = join(here, "..", "..", "src", "St4i.EngineApi")
 const binDir = join(engineApiDir, "bin")
 
+// SM-6 — the isolated stand-in for %ProgramData%\ST4I\sim\* this webServer's engine now writes to
+// instead of the real one (see playwright.config.ts's own env block for the full store-by-store
+// audit and its one deliberate exception, historian). Wiped in full before every boot so this
+// harness's own data — the "e2e-user-*" accounts task SM-6 found piled up as real, login-capable
+// rows in the PRODUCTION security.db being the whole reason this exists — never survives past a
+// single run to accumulate anywhere, isolated or not.
+const e2eDataDir = join(here, "..", ".e2e-data")
+
 /** @param {string} dir */
 function findTfmOutputDirs(dir) {
   const out = []
@@ -75,3 +83,8 @@ for (const outDir of findTfmOutputDirs(binDir)) {
 console.log(
   `[reset-engine-state] removed ${deleted} persisted state file(s) — ProductConfigStore/SimulatedEcosystem/MachineConfigStore will reseed from their own defaults (ProductConfigStore.SeedProducts()/SeedRecipes(), MachineParameterSchema's baseline defaults) on next boot.`
 )
+
+if (existsSync(e2eDataDir)) {
+  rmSync(e2eDataDir, { recursive: true, force: true })
+  console.log(`[reset-engine-state] wiped isolated E2E ProgramData stand-in: ${e2eDataDir}`)
+}

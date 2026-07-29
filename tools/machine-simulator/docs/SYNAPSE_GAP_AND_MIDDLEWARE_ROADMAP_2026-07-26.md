@@ -7,8 +7,8 @@
 | Đối tượng rà soát | `tools/machine-simulator` (bộ `St4i.*`, .NET 10) — "St4i Machine Simulator" đang tiến hoá thành edge middleware |
 | Tài liệu đối chiếu | Kế hoạch & thiết kế **SYNAPSE** tại `D:\SOURCES\SYNAPSE` (SYN-RAOE-SDD-001 v1.0 + KE-HOACH-PHAT-TRIEN + 5 tầng) |
 | Phương pháp | 3 AI Agent rà soát song song: (1) chuẩn hoá 97 yêu cầu SYNAPSE, (2) kiểm kê hiện trạng theo mã nguồn, (3) phân tích contract + thương mại hoá |
-| Trạng thái | **ĐANG THỰC HIỆN** — GĐ1 xong; GĐ2 xong (trừ B2); GĐ3 phần "Join" (WS-I) nay đã đóng advertise + reconciliation + xoay vòng chứng thư + lệnh khôi phục admin — chỉ còn auto-provision/trust-on-first-discovery; **WS-G-plugin (Connector SDK) nay đã có SEAM** (contract assembly độc lập + registry + `connectors.json` + bộ conformance — CHƯA có plugin loader/sidecar, xem §0-bis.2). Xem **§0-bis Tiến độ** (cập nhật 28/07/2026) |
-| Cập nhật gần nhất | **28/07/2026** — nhánh `feat/machine-simulator`; sau đợt WS-I closeout (`09253325`), đợt **WS-G-plugin Connector SDK seam** đóng phần mã nguồn tại `2df998e3` (GP-1..GP-6b) + phần web/docs tại đợt này (GP-7) — xem `.superpowers/sdd/2026-07-28-wsg-plugin-connector-seam-blueprint/` |
+| Trạng thái | **ĐANG THỰC HIỆN** — GĐ1 xong; GĐ2 xong (trừ B2); GĐ3 phần "Join" (WS-I) nay đã đóng advertise + reconciliation + xoay vòng chứng thư + lệnh khôi phục admin — chỉ còn auto-provision/trust-on-first-discovery; **WS-G-plugin (Connector SDK) nay đã có SEAM** (contract assembly độc lập + registry + `connectors.json` + bộ conformance — CHƯA có plugin loader/sidecar, xem §0-bis.2). **Đợt A (29/07/2026)** — một audit độc lập, SAU khi GĐ1 đã được đánh dấu "xong", phát hiện sản phẩm vẫn KHÔNG bán được cho khách chỉ mua 1 máy thật (đội hình mặc định vẫn fabricated ở cả hai host, dữ liệu demo có thể trộn vào số liệu khách hàng, màn "Connect ecosystem" chặn toàn trang, không có đường thêm máy thật từ UI) — nay đã đóng, xem §0-bis.1 hàng cuối + §0-bis.3. Xem **§0-bis Tiến độ** (cập nhật 29/07/2026) |
+| Cập nhật gần nhất | **29/07/2026** — nhánh `feat/machine-simulator`; sau đợt WS-G-plugin Connector SDK seam (`2df998e3`/GP-7), đợt **Đợt A "máy độc lập bán được thật"** (SM-1 → SM-6, `.superpowers/sdd/2026-07-29-dotA-single-machine-sellable-blueprint/`) đóng tại SM-6 (đợt này) — xem §0-bis.1 |
 
 ---
 
@@ -46,6 +46,20 @@
 > GP-7 thêm thẻ trạng thái connector) không nằm trong 14 baseline visual/a11y hiện có (giống `/site`,
 > `/alarms`, `/line` — chỉ có DOM-level spec riêng); spec DOM `20-assets.spec.ts` (2 bài, gồm kiểm tra
 > a11y + không rò rỉ khoá i18n) đã chạy lại và PASS.
+>
+> **Đợt A (SM-1→SM-6, đóng 29/07/2026)** — 5 project test .NET chạy TỪNG CÁI RIÊNG LẺ (không chạy
+> `dotnet test` cả solution — không ổn định trên máy này), đều PASS, TỔNG KHÔNG ĐỔI so với baseline đầu
+> đợt: **EngineApi 671 · EdgeCore 583 · EdgeService 28 · Connector.Abstractions.Tests 56 ·
+> Connector.Conformance.Tests 11 = 1349** (đợt này không sửa mã C# nào, chỉ web/docs — số liệu không đổi
+> là đúng chủ ý). `npm run build` (`tsc -b && vite build`) nay **thật sự exit 0** (đã xác nhận trực tiếp
+> exit code, không chỉ đọc log) — bốn đợt trước phải né bằng `tsc -b` trần vì lỗi kiểu `SpcChart.tsx:166`
+> (recharts `labelFormatter` — coerce `String(v)` thay vì suppress). **Playwright 176/176** (175 cũ + 1
+> bài mới cho `ProvenanceTag`), chạy TOÀN BỘ sau khi cô lập 10/11 kho `%ProgramData%\ST4I\sim\*` (xem
+> `web/playwright.config.ts`) — xác nhận bằng ảnh chụp trước/sau: production `security.db` giữ đúng 2
+> tài khoản (`demo-admin`, `admin`), không tăng thêm; tài khoản `e2e-user-*` mới do `18-users.spec.ts`
+> tạo ra nằm trong `.e2e-data/security/security.db` cô lập, không phải production. 10 tài khoản
+> `e2e-user-*` thật đã tồn tại từ trước (nhiều hơn con số "sáu" brief ban đầu ghi) đã bị xoá khỏi
+> `security.db` sản xuất — audit chain (8737 dòng, `VerifyChainAsync`) xác minh còn nguyên trước VÀ sau.
 
 ### 0-bis.1 Đã giao
 
@@ -67,6 +81,7 @@
 | **WS-G-core+** Alarm + Line | 3 | **ISA-18.2 AlarmEngine** (3 nguồn: Policy-DENY / DriverHealth / NG-rate, SQLite `alarms.db`, evaluator định kỳ) + **LineController PackML/ISA-88** trên FleetHost + `/v1/alarms` `/v1/line` + UNS `_line/state` + khoá alarm→Held + màn `/alarms` `/line` | `669eba86` | §18 |
 | **WS-I closeout** | 3 | mDNS **advertise** (`_st4i-machine._tcp`, mặc định BẬT khi UNS bật) + **spool bền SQLite cho bridge** (`bridge-spool.db`) với **reconciliation** (resync record retained trước khi phát lại, seq tăng dần) + **xoay vòng chứng thư thiết bị** theo yêu cầu (`POST /v1/site/identity/rotate`, Admin-only) + hiển thị hạn dùng chứng thư + cảnh báo nguồn **`Identity`** (High, không bao giờ Critical) + verb khôi phục **`--reset-admin-password`** (ngoài băng, có audit) + trả hết nợ kỹ thuật WI-6 (WPF `IConvertible→ToDouble`, xslt khớp đuôi, `--install` pre-check) | `09253325` | §14.7, §17.8–§17.11, §18.1–§18.2 |
 | **WS-G-plugin** Connector SDK — **SEAM** (chưa phải hệ plugin) | 3 | `St4i.Connector.Abstractions` (contract assembly `net10.0` thuần, ZERO dependency) + hợp đồng vòng đời `IDeviceDriver` viết thành XML doc + connector id mở (chuỗi tự do, 5 id có sẵn giữ nguyên chính tả) + `ConnectorRegistry` thay hard-code trong `FleetHost` + `connectors.json` (chỉ dispatch được Modbus/OPC-UA có sẵn) + `GET /v1/connectors` + thẻ trạng thái connector trên `/assets` + bộ **conformance suite** đóng gói được (`St4i.Connector.Conformance`, tìm ra và giúp sửa **2 lỗi độ tin cậy thật** ở Modbus/OPC-UA — xem §16.4/§16.6). **CHƯA có plugin loader/sidecar — đây là SEAM, không phải hệ plugin đầy đủ** (xem README §19.7) | `2df998e3` (mã nguồn GP-1..GP-6b) + đợt này (GP-7, web/docs) | §16.4, §16.6, §16.7, §19 |
+| **Đợt A** "Máy độc lập bán được **thật**" — audit-fix sau khi GĐ1 đã tưởng xong | 1 (đính chính) | Một audit độc lập phát hiện: đội hình mặc định vẫn **fabricated** (11 máy `EngineApi`/8 máy `EdgeService`) ở CẢ HAI host thay vì rỗng; dữ liệu demo có thể trộn vô hình vào KPI/historian/OEE/genealogy khách hàng; màn "Connect ecosystem" **chặn toàn trang** Dashboard/Machines khi chưa cấu hình; nút gọi là "E-STOP" trong khi sản phẩm không có đường ghi lệnh (an toàn giả); không có đường thêm máy Modbus/OPC-UA thật từ UI. SM-1/1b: đội hình mặc định **RỖNG** ở cả hai host, đội demo chỉ tải khi `ST4I_DEMO_ENABLED`. SM-2: `is_fabricated` cột lịch sử + `ApplyRealPresenceGateAsync` loại trừ VÔ ĐIỀU KIỆN mọi dòng fabricated khỏi truy vấn khách hàng mặc định, tag `ProvenanceTag` ("Demo"/"Unknown origin") ở bảng kết quả + dialog genealogy. SM-3: gỡ màn chặn — **Standalone nay là trạng thái sản phẩm hợp lệ** (widget trạng thái thu gọn, không nag). SM-4: đổi tên trung thực "E-STOP" → "HALT" (chữ + icon + XML doc, hành vi byte-identical). SM-5: màn `/connectors` mới — thêm máy Modbus/OPC-UA thật từ UI (dán/tải JSON map; CHƯA có visual mapper). SM-6 (đợt này): cô lập Playwright khỏi `%ProgramData%` thật (10/11 kho dữ liệu — historian cố ý chừa lại, xem `web/playwright.config.ts`) + xoá 10 tài khoản `e2e-user-*` thật khỏi `security.db` sản xuất (chain audit còn nguyên) + sửa cổng `npm run build` (lỗi kiểu SpcChart) + test cho `ProvenanceTag` + README §20 + tài liệu này. | SM-1 `76763fde` · SM-1b `df1c547d` · SM-2 `b615ef76` · SM-3 `fa0789c9` · SM-4 `0b05c813` · SM-5 `43f410ac` · SM-6 (đợt này) | README §1, §13.5, §20 (mới) |
 
 ### 0-bis.2 Đính chính cách đánh số giai đoạn
 
@@ -98,6 +113,8 @@ Trình tự **thi công** khác trình tự **§6**. Cụ thể: bốn đợt đ
 | **F** Thương mại hoá | **PARTIAL** — F2 ✅ · F3 ✅; **F1 license chưa** · **F4 auto-update/LTS chưa** · F5 HA thật chưa |
 | **G** Plugin/SDK | **PARTIAL** — **G1 seam ✅** (contract assembly độc lập + `IDeviceDriver` lifecycle contract + connector id mở + `ConnectorRegistry`/`connectors.json` + conformance suite đóng gói được, tìm ra 2 lỗi thật đã sửa ở Modbus/OPC-UA); **G2 sidecar bọc DLL hãng CHƯA** (mô hình cô lập đã chọn, chưa xây); **G3 `plugin.yaml`/apiVersion/`configSchema`→UI/ký số CHƯA** |
 | **H** Trí tuệ (T4) | **CHƯA BẮT ĐẦU** *(đúng chủ ý hoãn)* |
+| **Sellability** — máy độc lập bán được **thật** *(Đợt A, kiểm toán 29/07/2026)* | **DONE** — đội hình mặc định **RỖNG** ở cả `St4i.EngineApi` VÀ `St4i.EdgeService` (đội demo 11/8 máy chỉ tải khi `ST4I_DEMO_ENABLED`); dữ liệu fabricated KHÔNG BAO GIỜ trộn vào KPI/historian/OEE/genealogy khách hàng (`is_fabricated` loại trừ vô điều kiện phía server, tag "Demo"/"Unknown origin" ở UI); màn chặn "Connect ecosystem" đã GỠ — **Standalone là trạng thái sản phẩm hợp lệ**, không phải lỗi cấu hình; nút gọi là "E-STOP" đổi tên trung thực thành **"HALT"** (chữ+icon+docs, hành vi byte-identical); màn `/connectors` mới cho phép thêm máy Modbus/OPC-UA thật từ UI (dán/tải JSON map — CHƯA có visual mapper). Xem README §20. |
+| **Điều khiển máy** (SCADA / machine-control write path) | **CHƯA BẮT ĐẦU, cố ý — KHÔNG bị Đợt A đóng.** Sản phẩm này KHÔNG có đường ghi lệnh tới bất kỳ thiết bị nào: không `WriteAsync` trên hợp đồng `IDeviceDriver`, không lệnh Modbus `Write*`, không OPC-UA `WriteAsync`/`CallAsync`, Sparkplug NCMD không bao giờ được nhận. HALT/Abort chỉ huỷ pipeline ĐỌC của phần mềm này, không dừng được máy thật (README §1). Layer điều khiển máy (SCADA) là **giai đoạn tương lai riêng biệt ("Dot B")**, ngoài phạm vi Đợt A — đừng nhầm việc đổi tên HALT trung thực với việc sản phẩm nay điều khiển được máy. |
 
 ### 0-bis.4 Backlog đang treo *(đã ghi nhận, chưa làm)*
 
@@ -294,6 +311,8 @@ Digital Twin, PdM, RL/Optimization, MLOps, Copilot: **ecosystem-only, hoãn**. *
 > Nguyên tắc: mỗi giai đoạn **chạy được end-to-end** và **giao được giá trị bán hàng**; CI kiểm cả 2 profile (single-node ↔ sẵn-sàng-cluster) để chống "edition drift".
 
 ### GIAI ĐOẠN 1 — "Máy độc lập bán được" *(P0)* — ✅ **XONG** *(28/07/2026)*
+> **Đính chính (Đợt A, 29/07/2026):** "XONG" ở đây có nghĩa là các WORKSTREAM bên dưới (historian/OEE, S&F, bảo mật, đóng gói) đã giao — nhưng một audit độc lập SAU mốc này phát hiện sản phẩm **vẫn không thực sự bán được cho khách chỉ mua 1 máy**, vì đội hình MẶC ĐỊNH vẫn là 11/8 máy fabricated ở cả hai host (không phải rỗng), dữ liệu demo có thể trộn vào số liệu khách hàng, và màn "Connect ecosystem" chặn toàn trang khi chưa cấu hình hệ sinh thái. Khoảng trống "bán được thật" đó — khác với các workstream tính năng bên dưới — chỉ đóng ở **Đợt A** (SM-1→SM-6, xem §0-bis.1 hàng cuối + §0-bis.3). Không overclaim: Đợt A đóng khoảng trống "bán được độc lập", KHÔNG đóng khoảng trống "điều khiển máy" (xem §0-bis.3 hàng "Điều khiển máy").
+
 **Mục tiêu:** một khách mua 1 máy, không hệ sinh thái, vẫn có sản phẩm hoàn chỉnh & giữ được dữ liệu.
 - **WS-A Historian & Báo cáo:** SQLite historian (kết quả/inspection/telemetry), **OEE A×P×Q + six-big-losses**, màn Historian/Report, xuất CSV/PDF, tra cứu serial/genealogy cục bộ. *(GAP-A)*
 - **WS-C Store-and-forward bền:** wire WAL SDK ra đĩa (`queuePath`), replay theo thứ tự + cờ historical. *(GAP-B2)*

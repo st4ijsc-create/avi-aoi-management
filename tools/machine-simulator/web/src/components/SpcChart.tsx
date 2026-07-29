@@ -163,7 +163,14 @@ export function SpcChart({ values, mean, ucl, lcl, className }: SpcChartProps) {
                   color: chartTokens.textBody,
                 }}
                 labelStyle={{ color: chartTokens.textStrong, fontWeight: 600 }}
-                labelFormatter={(v) => t("spcChart.tooltipCycle", { cycle: v })}
+                // recharts 3.10.1 tightened Tooltip's own `labelFormatter` label param from `any` to
+                // `ReactNode` (our locked package.json range is ^3.9.2, whose public type was `any` —
+                // 3.10.1 just made it consistent with what the internal DefaultTooltipContent type
+                // already was). `v` is always this axis's own numeric cycle index at runtime; String(v)
+                // is a real narrowing (not a suppression) to the `string | number` our i18n `t()` vars
+                // require, and is behavior-neutral — `interpolate()` already does `String(vars[key])`
+                // internally regardless of whether a number or string is passed in.
+                labelFormatter={(v) => t("spcChart.tooltipCycle", { cycle: String(v) })}
                 formatter={(v) => [formatMetric(Number(v)), t("spcChart.tooltipValue")]}
               />
               <ReferenceLine

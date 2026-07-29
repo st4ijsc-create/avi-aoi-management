@@ -99,6 +99,36 @@ test.describe("historian — browse, filter, genealogy dialog, CSV export", () =
     }
   })
 
+  // SM-6 — HistorianResultsTable.ProvenanceTag ("Demo"/"Unknown origin", added by SM-2 to satisfy
+  // "the UI must not lie") had no assertion anywhere in this suite. Its "Demo" branch
+  // (isFabricated === true) is NOT reachable through this real UI: SqliteHistorianStore's own
+  // ApplyRealPresenceGateAsync unconditionally excludes every explicitly-fabricated row from the
+  // default (non-`includeFabricated`) query every customer-facing surface — including this page —
+  // uses, and HistorianResultsFilter/Historian.tsx never sends `includeFabricated=true`. This shared
+  // engine's fleet is 100% `driverKind: simulated`, so a real (isFabricated === false) row is
+  // impossible here too — the ONE branch a real render of this screen can ever show is "Unknown
+  // origin" (isFabricated === null), which the shared historian.db carries because it predates the
+  // `is_fabricated` column. That is what this test asserts against — a real render, not a seeded
+  // fixture.
+  test("every visible row and its genealogy entry carry the provenance tag (Unknown origin)", async ({ page }) => {
+    await gotoHistorian(page)
+
+    const provenanceCells = page.locator("tbody tr td:nth-child(4)")
+    const count = await provenanceCells.count()
+    expect(count).toBeGreaterThan(0)
+    for (let i = 0; i < count; i++) {
+      await expect(provenanceCells.nth(i).getByText(viDict.historian.table.unknownProvenance)).toBeVisible()
+    }
+
+    // Same tag, same text, rendered by the same exported ProvenanceTag inside the genealogy dialog.
+    await page.locator("tbody tr").first().getByRole("button", { name: viDict.historian.table.genealogyAction }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByText(viDict.historian.table.unknownProvenance).first()).toBeVisible()
+    await dialog.getByRole("button", { name: "Close" }).click()
+    await expect(dialog).not.toBeVisible()
+  })
+
   test("View genealogy opens a dialog listing this serial's own row, and Close dismisses it", async ({ page }) => {
     await gotoHistorian(page)
 

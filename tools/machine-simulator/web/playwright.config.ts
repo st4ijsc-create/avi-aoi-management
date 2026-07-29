@@ -1,4 +1,12 @@
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+
 import { defineConfig, devices } from "@playwright/test"
+
+const here = dirname(fileURLToPath(import.meta.url))
+// SM-6 — see this file's own webServer env block below for the full store-by-store audit this
+// isolates.
+const e2eDataDir = join(here, ".e2e-data")
 
 /**
  * Task 10 — E2E + visual-regression + axe a11y suite for the 7 screens (Dashboard, Inspector,
@@ -116,7 +124,56 @@ export default defineConfig({
       // would multicast `_st4i-machine._tcp` onto whatever LAN the dev/CI machine is attached to on
       // every `npm run test:e2e`/`npm run dev`. That default-on decision was signed off for installs,
       // not test runs — this suite has no business touching the network at all, so keep it silent.
-      env: { ST4I_DEMO_ENABLED: "true", ST4I_MDNS_ADVERTISE: "0" },
+      //
+      // SM-6 — full audit of every `%ProgramData%\ST4I\sim\*` store `St4i.EngineApi` touches at
+      // runtime (12 total: security, historian, assets, alarms, connector-config, settings, identity,
+      // sitelink, bridge-spool, wal, opcua-pki, creds). Before this fix NONE of them were isolated
+      // here — every `npm run test:e2e`/`npm run dev` wrote real data into the SAME directory a real
+      // install uses, which is how this harness ended up creating real, login-capable "e2e-user-*"
+      // Operator accounts (`18-users.spec.ts` mints one per run — its own comment notes "the roster
+      // only ever grows across repeated runs") directly in the production security.db — 10 of them
+      // by the time this was cleaned up (SM-6 report), not the 6 an earlier audit had counted.
+      // (Several .NET xunit suites already isolate their OWN equivalents of these stores via
+      // ST4I_*_DIR env vars set in test fixtures — a separate, already-working mechanism unrelated to
+      // this Playwright-launched engine process.)
+      //
+      // The 10 stores below are redirected under an isolated `../.e2e-data` root that
+      // `scripts/reset-engine-state.mjs` wipes in full before every boot — isolated AND disposable,
+      // not merely relocated to accumulate somewhere else instead.
+      //
+      // historian is DELIBERATELY the one store left pointed at its real default (no env var set
+      // here). `SqliteHistorianStore.ApplyRealPresenceGateAsync` unconditionally excludes every
+      // explicitly-fabricated row from the default (non-`includeFabricated`) query that every
+      // customer-facing surface uses, and this suite's whole fleet is 100% `driverKind: simulated` —
+      // so a genuinely pristine historian store could never produce a single default-visible row,
+      // which would hang `15-historian.spec.ts`'s and `16-reports.spec.ts`'s shared
+      // `waitForHistorianRows` helper (9 tests total) for its full 30s timeout on every run, forever.
+      // Today's suite only passes because the shared production historian.db still carries ~55k
+      // legacy rows written before the `is_fabricated` column existed (provenance NULL, "Unknown
+      // origin" — the one case the gate lets through when no explicitly-real row is in scope) — a
+      // real, separate, pre-existing product gap (a pure-Demo/exhibition install's Historian/Reports
+      // screens show nothing by default) that a hygiene task isolating a test harness is the wrong
+      // place to silently work around. Flagged in the SM-6 report, not fixed here.
+      //
+      // `creds` (`CredentialStore`, one DPAPI-protected `mk_` key file per machine code) has NO
+      // env-var override in the product at all — it's a static class with a hardcoded path. The
+      // ~2k `ACL-*`/`TEST-*`/`FOREIGN-*`/`CORRUPT-*`.bin files observed under it come from .NET xunit
+      // fixtures (`CredentialStoreTests`), not this Playwright harness, so redirecting it is outside
+      // this audit's scope (this suite never calls anything that writes there).
+      env: {
+        ST4I_DEMO_ENABLED: "true",
+        ST4I_MDNS_ADVERTISE: "0",
+        ST4I_SECURITY_DIR: join(e2eDataDir, "security"),
+        ST4I_ASSETS_DIR: join(e2eDataDir, "assets"),
+        ST4I_ALARMS_DIR: join(e2eDataDir, "alarms"),
+        ST4I_CONNECTOR_CONFIG_DIR: join(e2eDataDir, "connector-config"),
+        ST4I_SETTINGS_DIR: join(e2eDataDir, "settings"),
+        ST4I_IDENTITY_DIR: join(e2eDataDir, "identity"),
+        ST4I_SITELINK_DIR: join(e2eDataDir, "sitelink"),
+        ST4I_BRIDGE_SPOOL_DIR: join(e2eDataDir, "bridge-spool"),
+        ST4I_WAL_DIR: join(e2eDataDir, "wal"),
+        ST4I_OPCUA_PKI_DIR: join(e2eDataDir, "opcua-pki"),
+      },
     },
   ],
 })

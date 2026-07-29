@@ -637,9 +637,9 @@ does.
 
 | | Product build (default) | Exhibition build |
 |---|---|---|
-| Flag | *(absent)* | `ST4I_DEMO_ENABLED=true`, read once at engine startup by `St4i.EngineApi.Config.DemoModeGate` |
+| Flag | *(absent)* | `ST4I_DEMO_ENABLED=true`, read once at engine startup by `St4i.EdgeCore.Config.DemoModeGate` (moved here from `St4i.EngineApi` by SM-1b so `St4i.EdgeService` — §9 — shares the exact same gate) |
 | Engine boots into | **Live** — `TransportMode.Live`, connected to nothing until configured | **Demo** — the fabricated, offline 11-machine fleet, exactly like every build before WS2-T1 |
-| First launch shows | The **"Connect ecosystem"** screen (Dashboard/Machines) — enter the ST4I server URL, a live connection-status readout (idle/testing/connected/failed), a retry, and a link to Onboarding to register/claim this machine. Clears automatically the instant a real server answers. | The full dashboard/machine grid immediately — nothing to configure |
+| First launch shows | The full Dashboard/Machines UI immediately, roster empty until a real machine is added (§20.2) — **not** a blocking form. A small, collapsed-by-default **"Ecosystem"** status widget (`EcosystemStatusWidget`, SM-3 — §20.4) shows **Standalone** (calm/neutral, never a warning) until a server is configured; expand it for the same server-URL field + retry + "Register / claim this machine" link `Settings` already exposes. Auto-expands only when a configured server stops answering (**Failed**, red). | The full dashboard/machine grid immediately — nothing to configure, no widget shown at all (Demo's fabricated fleet has nothing to connect to) |
 | `PUT /v1/mode {Demo}` | Rejected (400, `"Demo mode is not enabled on this deployment."`) — defense in depth, not just a hidden button | Allowed (round-trips back to Live too) |
 | `GET /v1/capabilities` | `{demoEnabled:false, mode:"Live"}` | `{demoEnabled:true, mode:"Demo"}` |
 
@@ -676,20 +676,23 @@ set ST4I_DEMO_ENABLED=true && St4i.EngineApi.exe             :: cmd.exe
 
 **Product build:** ship `publish-desktop/` with **no launcher, no flag** — the operator just
 double-clicks `St4i.DesktopShell.exe` as documented in §13.2. First run connects to nothing (a fresh
-install has no ecosystem configured yet): Dashboard and Machines both show the "Connect ecosystem"
-screen — enter the customer's real ST4I server URL (same field `Settings` → *Server connection*
-already exposes, wired into this screen directly rather than a second config surface), watch the
-status go idle → testing → connected, then follow the "Register / claim this machine" link into
-Onboarding. The screen disappears the moment the configured server answers — Dashboard/Machines
-immediately show the real fleet from then on, no reload needed (`GET /v1/settings/probe` is polled
-in the background the whole time this screen is up).
+install has no ecosystem configured yet) — as of SM-3 (§20.4) that is a **complete, working product
+state**, not a blocking form: Dashboard and Machines render in full immediately, roster empty until a
+real machine is added via `/connectors` (§20.2), with only a small collapsed **"Standalone"** status
+widget in the corner, never a full-page gate. Opening that widget exposes the same server URL field
+`Settings` → *Server connection* already exposes, wired here directly rather than a second config
+surface; saving/retrying walks the badge through testing → connected (or it stays **Failed**, which
+auto-expands the widget on its own), then the "Register / claim this machine" link goes into
+Onboarding. `GET /v1/settings/probe` is polled in the background the whole time — the badge updates
+live, with no reload needed and nothing else on the screen ever blocked waiting for it.
 
 *(VI: WS2 biến app này thành sản phẩm bán cho khách — cùng một bản build `publish-desktop/`, chỉ khác
 CÁCH chạy. Bản triển lãm: copy `packaging/run-exhibition.bat` cạnh `St4i.DesktopShell.exe`, bấm file
 đó thay vì bấm thẳng .exe — set cờ `ST4I_DEMO_ENABLED=true` rồi mới chạy shell, cờ này truyền xuống
 tiến trình engine con. Bản sản phẩm (mặc định): không cờ, không file phụ — bấm thẳng .exe, máy vào
-Live, hiện màn "Kết nối hệ sinh thái" cho tới khi nhập đúng địa chỉ máy chủ thật; màn này tự biến mất
-ngay khi máy chủ trả lời.)*
+Live, Dashboard/Machines hiện đầy đủ ngay lập tức (danh sách máy rỗng cho tới khi thêm máy thật qua
+`/connectors`, §20.2) — chỉ có một widget nhỏ, thu gọn sẵn, tên **"Standalone"**, KHÔNG PHẢI màn chặn
+toàn trang như trước SM-3 (§20.4).)*
 
 ---
 
@@ -3336,3 +3339,215 @@ dựng một `FileSystemWatcher`, vi phạm trực tiếp quy tắc "constructor
 slot mô phỏng — CHƯA tự nó nằm dưới conformance test. **Assembly hợp đồng chưa publish lên NuGet** — bên
 thứ ba hiện tham chiếu từ mã nguồn. **Chưa bắt
 đầu:** `plugin.yaml`/SemVer `apiVersion`/UI sinh từ `configSchema`/ký số plugin.)*
+
+---
+
+## 20. Đợt A (SM-1–SM-6) — single-machine sellability: empty default roster, `/connectors`, data provenance, standalone / Đợt A — máy độc lập bán được thật
+
+**EN** — An audit done for a *different* reason (helping a user recover a login — see §20-item on
+the Playwright leak below) found that, despite Giai đoạn 1–3 above being marked "done" feature by
+feature, this product **could not actually be sold to a customer buying it for one real machine**:
+the shipped default was still the fabricated 11/8-machine demo fleet on both hosts, that fabricated
+data could silently blend into customer-facing numbers, a full-page "Connect ecosystem" form blocked
+Dashboard/Machines until an ecosystem was configured, the HALT control was still named and drawn like
+an emergency stop, and there was no way in the product itself to add a real machine. Six tasks
+(SM-1 → SM-6) closed this. This section documents what actually shipped — **including, plainly, what
+did not.**
+
+### 20.1 From a fresh install to a running real machine / Từ cài mới tới máy thật đang chạy
+
+**EN** — **The product default is now an empty roster, in both hosts.** `St4i.EngineApi`
+(`DemoModeGate`, `St4i.EdgeCore.Config` — shared by both hosts since SM-1b) boots **Live** with
+**zero machines** unless `ST4I_DEMO_ENABLED` is set (§13.5); `St4i.EdgeService`'s `EdgeWorker.LoadFleet`
+returns an **empty roster**, never the built-in 8-machine fallback, in product mode (§9). The
+fabricated fleet (`fleet.json`, 11 machines, `"driverKind": "simulated"` throughout — §10) now loads
+**only** under `ST4I_DEMO_ENABLED=true` — it is demo/exhibition-only in both hosts, never a silent
+product-mode substitute.
+
+A customer's actual path, first launch to first real reading:
+1. Double-click `St4i.DesktopShell.exe` (no flag, no launcher — §13.5). Dashboard/Machines render in
+   full immediately, roster empty, no crash, no blocking screen (§20.4).
+2. Sign in (first-run bootstrap creates the initial Admin account — §14.1) and open **`/connectors`**
+   (Engineer+) — §20.2 below.
+3. Pick Modbus TCP or OPC-UA, enter the connection settings, paste/upload the register/node-map JSON,
+   click **Test connection**, then **Save**. The machine appears in the fleet roster — live, if the
+   fleet was already running (§20.2's own "applies live vs. next Stop/Start" distinction).
+4. Optionally connect a Site/ecosystem server (`Settings` → *Server connection*, or the collapsed
+   **Ecosystem** widget on Dashboard — §20.4) — entirely optional; a customer who never does this has
+   a complete, supported product, not an unfinished one.
+
+The **WPF kiosk packaging** (`St4iMachineSimulator`, the original exhibition-booth app —
+distinct from `St4i.EngineApi`/`St4i.DesktopShell`, the sellable product line above) is **unaffected
+by this batch** and still auto-loads `fleet.json` next to its own exe by long-standing convention
+(§10) — that packaging was never claimed to be "sold to a customer for one real machine" the way
+`St4i.EngineApi`/`DesktopShell` now explicitly is.
+
+*(VI: **Đội hình mặc định nay RỖNG, ở cả hai host.** `St4i.EngineApi` (`DemoModeGate`, dùng chung qua
+`St4i.EdgeCore.Config`) vào **Live** với **0 máy** trừ khi bật `ST4I_DEMO_ENABLED` (§13.5);
+`St4i.EdgeService`'s `LoadFleet` trả về **đội hình rỗng**, KHÔNG bao giờ rơi về 8 máy mặc định trong
+chế độ sản phẩm (§9). Đội hình fabricated (`fleet.json`, 11 máy, toàn bộ `"driverKind": "simulated"`)
+nay chỉ tải khi `ST4I_DEMO_ENABLED=true` — demo/triển lãm mà thôi, ở cả hai host. Đường đi thực tế của
+khách: (1) bấm thẳng `.exe`, không cờ — Dashboard/Machines hiện đầy đủ ngay, đội hình rỗng, không
+crash, không màn chặn; (2) đăng nhập, mở `/connectors`; (3) chọn Modbus/OPC-UA, nhập cấu hình, dán/tải
+JSON map, bấm Test rồi Save — máy xuất hiện trong đội hình; (4) tuỳ chọn kết nối Site/hệ sinh thái, không
+bắt buộc. **Gói kiosk WPF** (`St4iMachineSimulator`) KHÔNG bị đợt này ảnh hưởng, vẫn tự tải `fleet.json`
+cạnh exe như quy ước cũ — gói đó chưa từng được tuyên bố "bán cho khách chỉ 1 máy thật" như
+`St4i.EngineApi`/`DesktopShell` nay đã là.)*
+
+### 20.2 Adding a real machine — the `/connectors` page / Thêm máy thật — trang `/connectors`
+
+**EN** — SM-5 added the write path `/onboarding` never was. `routes/Connectors.tsx` (Engineer+ for
+the add-connector form and Remove button; Operator can view the configured list) talks to four new
+routes on `ConnectorEndpoints.cs`:
+
+| Route | Role | What it does |
+|---|---|---|
+| `GET /v1/connectors/configured` | Operator | Every persisted connector configuration, **without** its register/node-map JSON (which may embed an OPC-UA username/password — never even `SELECT`ed by this projection's SQL). |
+| `POST /v1/connectors` | Engineer, audited `connector.save` | Validates, persists (`ConnectorConfigStore`), registers the factory live, and seeds the roster via `FleetHost.RegisterMachine`. |
+| `DELETE /v1/connectors/{kind}` | Engineer, audited `connector.delete` | Removes **only the persisted row** — see the honest-limitations note below. |
+| `POST /v1/connectors/test` | Engineer, **not audited** (mutates nothing) | Builds a throwaway driver, attempts one bounded read, reports reachable or not — never registered, never touches the running fleet. |
+
+**Only Modbus TCP and OPC-UA are offered** — the two protocols this build has a working driver for
+(§20.5). **The "map JSON"** is the exact same shape the `ST4I_MODBUS_MAP`/`ST4I_OPCUA_MAP` environment
+variables already used: for Modbus, `{ machineCode, unitId, pollIntervalMs, registers: [{ address,
+type, dataType, scale, metric, unit? }] }` (`ModbusRegisterMap.cs`); for OPC-UA, `{ machineCode,
+endpointUrl, securityMode, username?, password?, pollIntervalMs, nodes: [{ nodeId, metric, unit? }] }`
+(`OpcUaNodeMap.cs`). It is entered by pasting or uploading a `.json` file into a plain `<textarea>` —
+**there is no visual/graphical map builder** (§20.5).
+
+**A fresh add applies live; re-saving an existing one does not.** `FleetHost.RegisterMachine` only
+ever **adds** — it has no "unregister"/"update in place." So `POST /v1/connectors` for a **new**
+machine code registers it into the running fleet immediately (restarting the pipeline if it was
+already running). Re-submitting the **same** machine code updates the persisted row and the
+`ConnectorRegistry` factory, but the already-running roster entry is untouched until the next
+Stop/Start or a full restart — the API's own response (`ConnectorCreateResultDto.AppliedLive`) and
+the UI toast say this plainly rather than implying an instant update that didn't happen. Symmetrically,
+**`DELETE`** only removes the persisted configuration row; a machine already in the roster (or a
+connector of that kind currently running) keeps running until the process is fully restarted — there
+is no live "unregister" path either.
+
+*(VI: SM-5 thêm đường ghi mà `/onboarding` chưa từng có. `routes/Connectors.tsx` (form thêm + nút Remove
+yêu cầu Engineer+; xem danh sách là Operator) gọi 4 route mới trên `ConnectorEndpoints.cs`:
+`GET /v1/connectors/configured` (Operator, không kèm JSON map vì có thể chứa mật khẩu OPC-UA),
+`POST /v1/connectors` (Engineer, có audit `connector.save` — validate, lưu, đăng ký factory sống, và
+gieo vào đội hình qua `RegisterMachine`), `DELETE /v1/connectors/{kind}` (Engineer, audit
+`connector.delete` — CHỈ xoá dòng đã lưu), `POST /v1/connectors/test` (Engineer, KHÔNG audit vì không
+đổi gì — dựng driver dùng-một-lần, thử đọc có giới hạn thời gian). **Chỉ Modbus TCP và OPC-UA** được
+chọn — 2 giao thức build này có driver thật. **"JSON map"** đúng y hệt shape 2 biến môi trường
+`ST4I_MODBUS_MAP`/`ST4I_OPCUA_MAP` đã dùng, nhập bằng cách dán/tải file `.json` vào một `<textarea>`
+thường — **CHƯA có bộ dựng map trực quan/đồ hoạ**. **Thêm máy MỚI áp dụng sống ngay; lưu lại một máy ĐÃ
+CÓ thì KHÔNG** — `RegisterMachine` chỉ biết THÊM, không "gỡ đăng ký"/"cập nhật tại chỗ", nên máy mới vào
+đội hình ngay (khởi động lại pipeline nếu đang chạy), còn lưu lại cùng mã máy chỉ cập nhật cấu hình đã
+lưu + factory registry — đội hình ĐANG CHẠY giữ nguyên tới lần Dừng/Chạy kế tiếp hoặc khởi động lại toàn
+bộ tiến trình; phản hồi API + toast nói rõ điều này. Tương tự, `DELETE` chỉ xoá dòng đã lưu — máy đang
+chạy (hoặc connector loại đó đang chạy) vẫn tiếp tục chạy tới khi tiến trình khởi động lại hoàn toàn.)*
+
+### 20.3 Data provenance — fabricated data never blends into customer-facing numbers / Nguồn gốc dữ liệu — dữ liệu giả KHÔNG BAO GIỜ trộn
+
+**EN** — SM-2 added a nullable `is_fabricated` column to the historian schema (migration v2,
+`SqliteHistorianStore.cs`), set once at write time (`DriverKinds.IsFabricated`, keyed off the writing
+machine's `driverKind`) and never re-derived later. Every customer-facing historian/OEE/genealogy query
+(`ApplyRealPresenceGateAsync`) then applies one rule, unconditionally: **an explicitly-fabricated row
+(`is_fabricated = 1`) is EXCLUDED from every default query, full stop** — there is no scope in which a
+demo/simulated cycle is allowed to blend into a customer's pass-rate, OEE, or genealogy numbers by
+default. A **`null`** row — one written before this column existed — is labelled **"Unknown origin"**
+and is let through **only if no explicitly-real row exists in that same query's scope**; the moment a
+real (`is_fabricated = 0`) row is present, Unknown rows are excluded too (a documented, accepted
+residual: a genuinely-real pre-migration row would vanish from a report alongside the fabricated ones
+it can no longer be told apart from — accepted because no shipped customer's data predates this
+migration). Live fleet KPIs follow the same spirit via `FleetKpisDto.HasMixedProvenance`: once a real
+machine is present, the Dashboard's own KPI tiles count **only** that real machine, with a banner
+explaining fabricated machines running alongside are excluded, not blended in.
+
+**The `ProvenanceTag` badge** (`HistorianResultsTable.tsx`, reused by the genealogy dialog) renders
+next to every row's verdict: **"Demo"** for `isFabricated === true`, **"Unknown origin"** for `null`/
+`undefined`, nothing for a real (`false`) row. **Plain fact worth stating, not softening:** because the
+gate above excludes explicitly-fabricated rows from the query itself, and neither `Historian.tsx` nor
+`HistorianResultsTable.tsx` ever requests the `includeFabricated=true` escape hatch, the **"Demo"**
+badge cannot currently render through this shipped web UI — a caller would have to opt in via the raw
+API. What a customer's own screen can show is either nothing (a real row) or **"Unknown origin"** (a
+rare, pre-migration-only case) — which is the intended, honest outcome: a customer's Historian/Reports
+screens show their own real data, or nothing, never demo data dressed up with a badge.
+
+*(VI: SM-2 thêm cột `is_fabricated` (nullable) vào schema historian, gán MỘT LẦN lúc ghi (theo
+`driverKind` của máy), không bao giờ tính lại sau đó. Mọi truy vấn historian/OEE/genealogy khách hàng
+(`ApplyRealPresenceGateAsync`) áp một luật, VÔ ĐIỀU KIỆN: **dòng fabricated tường minh (`is_fabricated =
+1`) bị LOẠI khỏi mọi truy vấn mặc định** — không có phạm vi nào cho phép một chu kỳ demo/mô phỏng trộn
+vào tỷ lệ đạt/OEE/genealogy của khách theo mặc định. Dòng **`null`** (ghi trước khi có cột này) được gắn
+nhãn **"Không rõ nguồn gốc"** và chỉ lọt qua NẾU không có dòng thật tường minh nào trong cùng phạm vi
+truy vấn đó — hễ có dòng thật, dòng Unknown cũng bị loại (giới hạn đã biết, chấp nhận được vì chưa
+khách hàng nào có dữ liệu từ trước migration này). KPI đội hình sống theo cùng tinh thần qua
+`FleetKpisDto.HasMixedProvenance`: khi có máy thật, các thẻ KPI Dashboard chỉ đếm máy thật, kèm banner
+giải thích máy demo chạy song song bị LOẠI, không trộn. **`ProvenanceTag`** hiện cạnh mỗi verdict:
+**"Demo"** khi `isFabricated === true`, **"Không rõ nguồn gốc"** khi `null`/`undefined`, không hiện gì
+khi thật. **Sự thật cần nói thẳng, không mềm hoá:** vì cổng trên loại dòng fabricated NGAY TỪ TRUY VẤN,
+và không route web nào gửi `includeFabricated=true`, nhãn **"Demo"** hiện KHÔNG THỂ render qua UI web đã
+giao — chỉ một lời gọi API trực tiếp mới bật được. Màn hình của khách chỉ có thể hiện KHÔNG GÌ (dòng
+thật) hoặc **"Không rõ nguồn gốc"** (hiếm, chỉ dữ liệu trước migration) — đúng như chủ ý: màn Historian/
+Reports của khách hiện dữ liệu thật của họ, hoặc không hiện gì, không bao giờ hiện dữ liệu demo đội lốt
+nhãn.)*
+
+### 20.4 Standalone is a supported state / Standalone là trạng thái được hỗ trợ
+
+**EN** — Before SM-3, `needsConnect: boolean` drove a full-page "Connect ecosystem" form that
+**replaced** Dashboard/Machines' entire content whenever no ecosystem server was reachable — a
+customer who genuinely never intends to connect one (a legitimate, complete way to own this product)
+saw a permanent, nagging blocking screen. SM-3 replaced the boolean with a named
+`EcosystemConnectionState.status` — `"standalone" | "testing" | "connected" | "failed"` — and moved
+the connect/diagnose form into `EcosystemStatusWidget`: a small, **collapsed-by-default** disclosure
+on Dashboard/Machines (Live mode only — Demo's fabricated fleet has nothing to connect to, so the
+widget doesn't render there at all) carrying a status badge in its own header. **`"standalone"` reads
+as a calm, neutral badge — never a warning** — and stays collapsed; the widget auto-expands only when
+`status === "failed"` (a real, diagnosable problem). §13.5 above is this widget's own product-vs-
+exhibition packaging story.
+
+*(VI: Trước SM-3, `needsConnect: boolean` điều khiển một FORM CHẶN TOÀN TRANG "Kết nối hệ sinh thái",
+thay thế TOÀN BỘ nội dung Dashboard/Machines khi chưa có server hệ sinh thái — một khách hàng THẬT SỰ
+không bao giờ định kết nối (một cách sở hữu sản phẩm hợp lệ, đầy đủ) sẽ thấy màn chặn nag vĩnh viễn.
+SM-3 thay boolean bằng `EcosystemConnectionState.status` có tên rõ ràng — `"standalone" | "testing" |
+"connected" | "failed"` — và chuyển form kết nối/chẩn đoán vào `EcosystemStatusWidget`: một disclosure
+nhỏ, THU GỌN SẴN trên Dashboard/Machines (chỉ ở Live — đội demo không có gì để kết nối nên widget không
+hiện ở Demo), mang badge trạng thái ngay tiêu đề. **`"standalone"` là badge trung tính, bình thản —
+KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi `status === "failed"`.)*
+
+### 20.5 🔴 Honest limitations / Giới hạn trung thực
+
+**EN** — Written down plainly, not softened:
+
+- **There is no write path to any device.** `IDeviceDriver` (`St4i.Connector.Abstractions`) has
+  exactly four members — `Id`, `Kind`, `Health`, `ReadAsync` — no `WriteAsync`/`SendCommand`/`Actuate`.
+  `ModbusTcpDriver`/`OpcUaDriver` expose no write/method-call capability (the only `Write*` hit in
+  either file is an NModbus **socket timeout setting**, not a device write). Sparkplug NCMD (the
+  inbound command topic) is never received anywhere in this codebase. This product **observes**
+  machines; it cannot **command** them. A machine-control (SCADA) layer is a separate future phase,
+  not something this batch started.
+- **Alarms cannot reach anyone who is not looking at the screen.** `St4i.EngineApi/Alarms/` is exactly
+  seven files — a store, an evaluator, endpoints, thresholds, a raise/record model — and nothing else.
+  There is no email, SMS, webhook, Slack, syslog, relay, or audible-signal integration anywhere in this
+  repository. An alarm is visible on `/alarms` and in the `alarms.db` history the moment someone opens
+  that screen, and not one moment before, to anyone who wasn't already looking.
+- **Only Modbus TCP and OPC-UA actually work.** `MqttDriver` exists and is proven by
+  `MqttDriverTests`, but it is registered into **no** host's dependency injection — neither
+  `St4i.EngineApi`'s nor `St4i.EdgeService`'s `Program.cs`/startup wiring references it. Serial/RS-485,
+  S7, EtherNet/IP, and SECS/GEM have no driver at all.
+- **Re-saving an existing connector's settings while the fleet runs does not apply live; a fresh add
+  does.** See §20.2's own explanation — `FleetHost.RegisterMachine` only ever adds, never updates an
+  already-running slot in place.
+- **Editing a connector requires the map JSON to be pasted or uploaded; there is no visual mapper.**
+  `/connectors`' only input for the register/node map is a plain `<textarea>` (or a `.json` file picked
+  into that same textarea) — see §20.2.
+
+*(VI: Ghi rõ ràng, không mềm hoá: **KHÔNG có đường ghi lệnh tới bất kỳ thiết bị nào.** `IDeviceDriver`
+chỉ có đúng 4 thành viên — `Id`, `Kind`, `Health`, `ReadAsync` — không `WriteAsync`/`SendCommand`/
+`Actuate`. `ModbusTcpDriver`/`OpcUaDriver` không có khả năng ghi/gọi method nào (chỉ 1 chỗ khớp
+`Write*` trong cả hai file là **cấu hình timeout socket** của NModbus, không phải ghi thiết bị).
+Sparkplug NCMD (topic lệnh vào) không bao giờ được nhận ở bất kỳ đâu. Sản phẩm này CHỈ QUAN SÁT máy,
+KHÔNG điều khiển được. Layer điều khiển máy (SCADA) là giai đoạn tương lai riêng, đợt này chưa bắt đầu.
+**Cảnh báo KHÔNG thể tới ai không đang nhìn màn hình.** Thư mục `Alarms/` chỉ có đúng 7 file — store,
+evaluator, endpoint, ngưỡng, model raise/record — không gì khác. KHÔNG có email/SMS/webhook/Slack/
+syslog/relay/tín hiệu âm thanh nào trong repo này. **Chỉ Modbus TCP và OPC-UA THẬT SỰ chạy được.**
+`MqttDriver` tồn tại, được `MqttDriverTests` chứng minh, nhưng KHÔNG được đăng ký DI ở host nào cả.
+Serial/RS-485, S7, EtherNet/IP, SECS/GEM chưa có driver. **Lưu lại cấu hình một connector ĐÃ CÓ trong
+khi đội hình đang chạy KHÔNG áp dụng sống; thêm máy MỚI thì có** — xem §20.2. **Sửa một connector đòi
+dán/tải JSON map; CHƯA có bộ dựng trực quan** — ô nhập duy nhất của `/connectors` là một `<textarea>`
+thường.)*

@@ -23,6 +23,11 @@ src-tauri/gen/schemas
 /blob-report/
 /playwright/.cache/
 
+# SM-6 — the isolated %ProgramData%\ST4I\sim\* stand-in playwright.config.ts's webServer env block
+# redirects the engine to (security/assets/alarms/etc.). Wiped before every run by
+# scripts/reset-engine-state.mjs; never intentionally committed content.
+/.e2e-data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
