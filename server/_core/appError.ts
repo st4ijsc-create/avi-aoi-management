@@ -27,10 +27,15 @@ export function appError(
   fallbackMessage?: string,
 ): TRPCError {
   const cause: AppErrorCause = { appCode, ...(params ? { appParams: params } : {}) };
+  // Không bao giờ để message rỗng: log rỗng là log vô dụng. `??` chỉ bắt
+  // null/undefined nên KHÔNG đủ — một fallbackMessage rỗng ("") hoặc toàn
+  // khoảng trắng ("   ") vẫn phải rơi về appCode. Chỉ dùng `trimmed` để QUYẾT
+  // ĐỊNH, không dùng để gán: message thật của caller (kể cả khoảng trắng đầu/
+  // cuối nếu có chủ ý) được giữ nguyên văn khi nó có nội dung.
+  const trimmed = fallbackMessage?.trim();
   return new TRPCError({
     code: trpcCode,
-    // Không bao giờ để message rỗng: log rỗng là log vô dụng.
-    message: fallbackMessage ?? appCode,
+    message: trimmed ? fallbackMessage : appCode,
     cause,
   });
 }

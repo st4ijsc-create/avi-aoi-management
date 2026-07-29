@@ -39,6 +39,26 @@ describe("appError", () => {
     expect(readAppErrorMeta(new Error("x"))).toBeNull();
     expect(readAppErrorMeta(undefined)).toBeNull();
   });
+
+  // Review round 1 — Finding I-1: `??` chỉ bắt null/undefined, không bắt chuỗi
+  // rỗng/toàn-khoảng-trắng. Một fallbackMessage hỏng (biến undefined nội suy ra
+  // "" hoặc chỉ có khoảng trắng) trước đây lọt qua, cho ra message rỗng — cả
+  // log máy chủ lẫn câu hiện cho người dùng (khi client rơi về fallback) đều
+  // rỗng, một lỗi im lặng sẽ nhân lên ở toàn bộ ~1056 chỗ gọi appError() sau này.
+  it("fallbackMessage rỗng (\"\") ⇒ message là mã, KHÔNG phải chuỗi rỗng", () => {
+    const err = appError("BAD_REQUEST", "DB_UNAVAILABLE", undefined, "");
+    expect(err.message).toBe("DB_UNAVAILABLE");
+  });
+
+  it("fallbackMessage toàn khoảng trắng (\"   \") ⇒ message là mã, KHÔNG phải khoảng trắng", () => {
+    const err = appError("BAD_REQUEST", "DB_UNAVAILABLE", undefined, "   ");
+    expect(err.message).toBe("DB_UNAVAILABLE");
+  });
+
+  it("fallbackMessage có nội dung kèm khoảng trắng bao quanh ⇒ giữ NGUYÊN VĂN, không tự ý trim message thật", () => {
+    const err = appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, " Product not found ");
+    expect(err.message).toBe(" Product not found ");
+  });
 });
 
 // Bài học §6(2): trường mới chết im lặng vì chặng nối tay bỏ sót. Phải khẳng
