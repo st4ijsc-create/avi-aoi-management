@@ -415,18 +415,59 @@ var alarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
 // physical relay C-6) sits behind this; NONE of them exists yet, so the notifier is registered with no
 // dispatch delegate — the seam is real and observable, and it delivers to nobody.
 //
-// 🔴 DEFAULT OFF, and off means OFF: with ST4I_ALARM_NOTIFY_ENABLED unset, neither AlarmNotifier nor its
-// seeding hosted service is registered at all, so `sp.GetService<IAlarmNotifier>()` below returns null and
-// AlarmStore falls back to NullAlarmNotifier — no channel, no background thread, no extra allocation, and
-// behaviour bit-for-bit identical to before Đợt C. Opting in ("1"/"true", case-insensitive) is the
-// inverse of ST4I_UNS_ENABLED's opt-OUT parse, deliberately: UNS is a shipped feature that can be turned
-// off, this is an unfinished one that has to be turned on. C-2 (NotificationConfigStore) is expected to
-// supersede this gate with real configuration.
+// 🔴 Task C-2 (task-2-brief.md) — C-1's placeholder ST4I_ALARM_NOTIFY_ENABLED env gate IS GONE, and this
+// is what replaced it. NotificationConfigStore is now the ONLY enable mechanism in the product: the seam
+// runs iff at least one channel has been configured, and each channel's own `enabled` flag decides whether
+// it delivers. Two enable mechanisms cannot disagree if there is only one.
 //
+// The failure mode that removal exists to prevent (found by C-1's own review) ran in the direction C-1 did
+// not expect: an operator could configure a webhook perfectly, never learn an environment variable also
+// had to be set, and get a fully configured alarm system that notified absolutely nobody with no error
+// anywhere. NotificationStartupNotices now guarantees the complement of that — see the notice loop after
+// app.Build() below, and that class's own exhaustively-tested invariant.
+//
+// Constructed as a LOCAL (not just inside AddSingleton) for exactly the reason connectorConfigStore below
+// is: this file must read the channel list synchronously BEFORE app.Build() to decide whether to register
+// the seam at all, and the SAME instance must be the one C-7's handlers later resolve via DI.
+var notificationsDir = Environment.GetEnvironmentVariable(St4i.EngineApi.Alarms.NotificationConfigStore.EnvVarDir);
+IReadOnlyList<St4i.EngineApi.Alarms.NotificationChannelSummary> notificationChannels =
+    Array.Empty<St4i.EngineApi.Alarms.NotificationChannelSummary>();
+try
+{
+    var notificationConfigStore = new St4i.EngineApi.Alarms.NotificationConfigStore(
+        string.IsNullOrWhiteSpace(notificationsDir) ? null : notificationsDir,
+        logError: (ex, msg) => Console.Error.WriteLine($"[notifications] {msg} ({ex.GetType().Name}: {ex.Message})"));
+    builder.Services.AddSingleton(notificationConfigStore);
+    // Blocking read, same "read a startup-only store synchronously before Build()" idiom as
+    // connectorConfigStore.LoadAllAsync()/deviceIdentityStore.LoadOrCreate below. ListAsync is itself
+    // never-throws (it reports an empty list and logs), so this try/catch only covers the constructor —
+    // i.e. a directory that cannot be created or a schema that cannot be migrated.
+    notificationChannels = notificationConfigStore.ListAsync().GetAwaiter().GetResult();
+}
+catch (Exception ex)
+{
+    // Never a startup crash over a config store — same posture as every other startup config load here.
+    // The consequence is loud rather than silent: with no channels, the notice block below warns that
+    // nothing will be sent to anyone.
+    Console.Error.WriteLine(
+        $"[startup] Failed to open the alarm notification configuration store — no notification channel " +
+        $"will run this session: {ex.Message}");
+}
+
+// 🔴 The ONE place "does this build have a delivery implementation?" is expressed. C-3..C-6 assign this
+// variable; BOTH the notifier's dispatch AND the startup notice below read it, so the "configured, enabled
+// and still silent" warning stops firing by itself the moment a real channel is wired in — nobody has to
+// remember to delete it. As of C-2 no channel exists, so it is null and that warning is correct.
+Func<St4i.EngineApi.Alarms.NotificationJob, CancellationToken, Task>? alarmDispatch = null;
+
 // Registered ONLY here. The alarm engine runs only in this process — St4i.EdgeService and both WPF apps
 // never host IAlarmStore — so nothing about this reaches them.
-var alarmNotifyRaw = Environment.GetEnvironmentVariable("ST4I_ALARM_NOTIFY_ENABLED");
-var alarmNotifyEnabled = alarmNotifyRaw == "1" || string.Equals(alarmNotifyRaw, "true", StringComparison.OrdinalIgnoreCase);
+//
+// Keyed on a channel being CONFIGURED rather than ENABLED (see ShouldRunTheSeam's own doc comment): a
+// fresh install that has configured nothing still registers nothing at all, preserving C-1's zero-cost
+// "off means off" for the only case it is worth anything — but once any channel exists the seam runs, so
+// C-7 can toggle a channel on at runtime without needing a restart to make it take effect.
+var alarmNotifyEnabled = St4i.EngineApi.Alarms.NotificationStartupNotices.ShouldRunTheSeam(notificationChannels);
 if (alarmNotifyEnabled)
 {
     // Factory lambda (not the raw-instance overload) so the container OWNS the instance and calls its
@@ -436,7 +477,7 @@ if (alarmNotifyEnabled)
     {
         var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmNotifier");
         return new St4i.EngineApi.Alarms.AlarmNotifier(
-            dispatch: null, // C-3..C-7 fill this in; until then the loop drains and discards.
+            dispatch: alarmDispatch, // C-3..C-6 fill this in; until then the loop drains and discards.
             logWarning: msg => logger.LogWarning("{AlarmNotifyMsg}", msg),
             logError: (ex, msg) => logger.LogError(ex, "{AlarmNotifyMsg}", msg));
     });
@@ -1334,18 +1375,23 @@ app.Logger.LogInformation(
     string.Join(", ", fleetHost.Fleet.Select(d => d.Code)),
     fleetHost.Mode);
 
-// Task C-1 review follow-up — say OUT LOUD, on every boot, that the alarm notification seam is off. The
-// silent-failure mode this prevents is the dangerous direction: once C-2 lands, an operator can configure
-// a webhook/SMTP/relay recipient completely successfully and, without this env var, get a fully
-// configured alarm system that notifies absolutely nobody, with no error anywhere to explain it. One log
-// line at Warning is the cheapest possible guard against that until C-2 replaces the gate with real
-// configuration (at which point "configured but disabled" should become a startup warning of its own).
-if (!alarmNotifyEnabled)
+// 🔴 Task C-2 — the replacement for C-1's single "the env var is not set" warning, and the guarantee that
+// no configuration can be silently inert. NotificationStartupNotices.Describe is a pure function whose
+// invariant — "if nothing will be delivered, at least one Warning is produced" — is asserted exhaustively
+// over its whole input space (see NotificationStartupNoticesTests), rather than by the handful of examples
+// an inline `if` here could cover. Wiring it is these three lines, which cannot be got wrong; the same
+// split BindingRisk.Describe already uses below.
+foreach (var notice in St4i.EngineApi.Alarms.NotificationStartupNotices.Describe(
+             notificationChannels, hasDeliveryImplementation: alarmDispatch is not null))
 {
-    app.Logger.LogWarning(
-        "Alarm notifications are DISABLED (ST4I_ALARM_NOTIFY_ENABLED is not set). Alarms are still recorded and " +
-        "visible at /alarms, but NOTHING is sent to anyone who is not looking at the screen — no webhook, no " +
-        "email, no annunciation, no relay. Set ST4I_ALARM_NOTIFY_ENABLED=1 to turn the notification seam on.");
+    if (notice.Severity == St4i.EngineApi.Alarms.NotificationNoticeSeverity.Warning)
+    {
+        app.Logger.LogWarning("{AlarmNotifyNotice}", notice.Message);
+    }
+    else
+    {
+        app.Logger.LogInformation("{AlarmNotifyNotice}", notice.Message);
+    }
 }
 
 // WS-C-T4 — force-touch WalFlushPump now (same reasoning as FleetHost above): constructing it starts
