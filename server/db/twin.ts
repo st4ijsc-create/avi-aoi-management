@@ -62,15 +62,24 @@ export async function getWipCountSeries(
   if (!db) return [];
   const bucket = Math.max(1, Math.floor(bucketMin));
   const intervalSql = sql.raw(`'${bucket} minutes'`);
+  // date_bin origin MUST be a constant inlined identically in SELECT/GROUP BY/ORDER BY.
+  // A bind param (the old `${since}` origin) is emitted as a DIFFERENT placeholder per clause
+  // ($1 in SELECT vs $4 in GROUP BY), so Postgres sees two distinct expressions and rejects the
+  // query: `column "wip_tracking.enteredAt" must appear in the GROUP BY clause` (SQLSTATE 42803).
+  // A fixed epoch origin keeps the bucket expression byte-identical everywhere; the query window
+  // is still bounded by `enteredAt >= since` below, and bucket phase is irrelevant to a forecast
+  // that only needs an ordered, evenly-spaced series.
+  const originSql = sql.raw(`timestamp '1970-01-01 00:00:00'`);
+  const bucketExpr = sql`date_bin(${intervalSql}, ${wipTracking.enteredAt}, ${originSql})`;
   const rows = await db
     .select({
-      bucketStart: sql<string>`date_bin(${intervalSql}, ${wipTracking.enteredAt}, ${since})`,
+      bucketStart: sql<string>`${bucketExpr}`,
       wipCount: sql<number>`count(*)::int`,
     })
     .from(wipTracking)
     .where(and(eq(wipTracking.lineId, lineId), gte(wipTracking.enteredAt, since)))
-    .groupBy(sql`date_bin(${intervalSql}, ${wipTracking.enteredAt}, ${since})`)
-    .orderBy(asc(sql`date_bin(${intervalSql}, ${wipTracking.enteredAt}, ${since})`));
+    .groupBy(bucketExpr)
+    .orderBy(asc(bucketExpr));
   return rows.map((r) => ({
     bucketStart: r.bucketStart ? new Date(r.bucketStart).toISOString() : "",
     wipCount: Number(r.wipCount ?? 0),

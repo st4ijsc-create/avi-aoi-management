@@ -1147,7 +1147,7 @@ export async function listUnmappedPointDefsWithStats(unmappedModelId: number) {
       resultCount: sql<number>`COUNT(*)::int`.as("resultCount"),
     })
     .from(measurementResults)
-    .where(sql`${measurementResults.pointDefId} = ANY(${ids})`)
+    .where(inArray(measurementResults.pointDefId, ids))
     .groupBy(measurementResults.pointDefId);
   const countMap = new Map<number, number>();
   for (const r of countRows) countMap.set(r.pointDefId, Number(r.resultCount));
@@ -1165,7 +1165,7 @@ export async function listUnmappedPointDefsWithStats(unmappedModelId: number) {
         .from(measurementPointDefs)
         .innerJoin(productModels, eq(productModels.id, measurementPointDefs.productModelId))
         .where(and(
-          sql`${measurementPointDefs.code} = ANY(${codes})`,
+          inArray(measurementPointDefs.code, codes),
           sql`${measurementPointDefs.productModelId} <> ${unmappedModelId}`,
           isNull(measurementPointDefs.deletedAt),
           eq(measurementPointDefs.isActive, true),
@@ -3004,7 +3004,7 @@ export async function getMpDefectStatsForProduct(opts: {
   const pointIds = points.map((p) => p.id);
 
   const resultConds: SQL[] = [
-    sql`${measurementResults.pointDefId} = ANY(${pointIds})`,
+    inArray(measurementResults.pointDefId, pointIds),
   ];
   if (opts.fromTs) {
     resultConds.push(sql`${productInspections.inspectionTime} >= ${opts.fromTs}`);
@@ -3137,7 +3137,7 @@ export async function setCadCandidateSelection(jobId: number, candidateIds: numb
     .set({ selected })
     .where(and(
       eq(cadImportCandidates.jobId, jobId),
-      sql`${cadImportCandidates.id} = ANY(${candidateIds})`,
+      inArray(cadImportCandidates.id, candidateIds),
     ));
 }
 

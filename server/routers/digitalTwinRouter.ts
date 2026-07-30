@@ -11,7 +11,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { machines } from "../../drizzle/schema";
 import { machineHealthHistory } from "../../drizzle/schema";
 import { productInspections } from "../../drizzle/schema";
@@ -57,7 +57,10 @@ export const digitalTwinRouter = router({
           timestamp: machineHealthHistory.timestamp,
         })
         .from(machineHealthHistory)
-        .where(sql`${machineHealthHistory.machineId} = ANY(${machineIds})`)
+        // inArray → "machineId" in ($1,$2,…). NB: a raw `= ANY(${machineIds})` compiles to
+        // `= ANY(($1,$2,…))` — a Postgres row-constructor, not an array — which fails with
+        // SQLSTATE 42809 "op ANY/ALL (array) requires array on right side".
+        .where(inArray(machineHealthHistory.machineId, machineIds))
         .orderBy(desc(machineHealthHistory.timestamp));
 
       const latestHealth = new Map<number, { healthScore: number; predictedFailureRisk: number | null }>();

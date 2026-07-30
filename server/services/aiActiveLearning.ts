@@ -319,7 +319,7 @@ export async function runDiversitySampling(
         JOIN ${aiImageEmbeddings} e2
           ON e2.label IS NOT NULL
          AND e2.id != e1.id
-        WHERE e1.id = ANY(${candidateEmbIds})
+        WHERE e1.id = ANY(${sql`ARRAY[${sql.join(candidateEmbIds.map((id) => sql`${id}`), sql`,`)}]`}::int[])
         GROUP BY e1.id, e1."imageUrl"`,
   ) as any;
 
