@@ -528,6 +528,41 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
         return null;
     }
 
+    /// <summary>Review fix round 2 (Important) — the ONE deliberate exception to this class's "TYPE name
+    /// only, never <c>ex.Message</c>" redaction discipline (see the three <see cref="SlaveException"/>
+    /// catches below, and contrast with every OTHER catch in this class, which still redacts). A
+    /// <see cref="SlaveException"/> carries no credentials and nothing derived from the map's own
+    /// configuration — it is a small, fixed vocabulary of Modbus protocol exception codes
+    /// (<see cref="SlaveExceptionCodes"/>, empirically confirmed by reflection against the installed
+    /// NModbus 3.0.83 to be exactly six <see langword="const byte"/> values, 1-6) reported by the DEVICE
+    /// ITSELF over the wire — not arbitrary text, and structurally incapable of echoing
+    /// <c>_map.Username</c>/<c>Password</c> (Modbus has neither) or anything else this class does not
+    /// already show the operator verbatim (a point/command name, a coil address). It is also the single
+    /// most useful message on the commissioning path: an integrator who sees "Illegal Data Address" learns
+    /// immediately their register address is wrong, without going log-diving for a message the device
+    /// already handed them plainly. Deliberately does NOT surface NModbus's own <c>ex.Message</c>
+    /// (confirmed by reflection to be several sentences of verbatim Modbus-spec prose per code — accurate,
+    /// but unsuited to a one-line operator Detail, and not a shape this class controls if NModbus ever
+    /// reword it) — this hand-written, six-entry mapping is the deliberate, controlled shape instead. If a
+    /// future NModbus version reports a code outside 1-6, the fallback still names the raw numeric code
+    /// rather than silently reverting to <c>ex.Message</c>.</summary>
+    private static string DescribeSlaveException(SlaveException ex) => ex.SlaveExceptionCode switch
+    {
+        SlaveExceptionCodes.IllegalFunction =>
+            $"Illegal Function (Modbus exception code {ex.SlaveExceptionCode})",
+        SlaveExceptionCodes.IllegalDataAddress =>
+            $"Illegal Data Address (Modbus exception code {ex.SlaveExceptionCode})",
+        SlaveExceptionCodes.IllegalDataValue =>
+            $"Illegal Data Value (Modbus exception code {ex.SlaveExceptionCode})",
+        SlaveExceptionCodes.SlaveDeviceFailure =>
+            $"Slave Device Failure (Modbus exception code {ex.SlaveExceptionCode})",
+        SlaveExceptionCodes.Acknowledge =>
+            $"Acknowledge — device accepted the request but needs more time (Modbus exception code {ex.SlaveExceptionCode})",
+        SlaveExceptionCodes.SlaveDeviceBusy =>
+            $"Slave Device Busy (Modbus exception code {ex.SlaveExceptionCode})",
+        _ => $"unrecognized Modbus exception code {ex.SlaveExceptionCode}",
+    };
+
     /// <summary>Narrows <see cref="SetpointWriteRequest.Value"/>'s object? domain (double|bool|string|null,
     /// widened at deserialization — see that property's own doc comment) down to the <see langword="double"/>
     /// <see cref="ModbusRegister.TryComputeRawWordForWrite"/> needs, mirroring the numeric branch of
@@ -624,11 +659,13 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                 // The device was reached and explicitly said no — a KNOWN "no", not an unknown one. The
                 // connection itself stays healthy (a full, valid response arrived and parsed) — no reason to
                 // force a reconnect.
-                // Review fix (Important) — same redaction discipline as this class's other Detail sites:
-                // ex.Message dropped from the operator-visible Detail, full exception (with the device's own
-                // Modbus exception code) still logged.
+                // Review fix round 2 (Important) — the deliberate exception to this class's redaction
+                // discipline: a SlaveException is a structured device-reported protocol code, not arbitrary
+                // text, and the single most useful message on the commissioning path — see
+                // DescribeSlaveException's own doc comment for why this one stays un-redacted while every
+                // other Detail site in this class does not. Full exception still logged too.
                 _logError?.Invoke(ex, $"Modbus device rejected the write to '{point}' on {_map.MachineCode}");
-                return new SetpointWriteResult(point, WriteOutcome.Failed, Detail: $"device rejected the write ({ex.GetType().Name}).");
+                return new SetpointWriteResult(point, WriteOutcome.Failed, Detail: $"device rejected the write: {DescribeSlaveException(ex)}.");
             }
             catch (Exception) when (ct.IsCancellationRequested)
             {
@@ -732,11 +769,11 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                 {
                     // The command never fired at all — a KNOWN "no" from the device itself. The connection
                     // stays healthy (a full response arrived) — no reason to force a reconnect.
-                    // Review fix (Important) — same redaction discipline as this class's other Detail sites:
-                    // ex.Message dropped from the operator-visible Detail, full exception (with the device's
-                    // own Modbus exception code) still logged.
+                    // Review fix round 2 (Important) — deliberately un-redacted, same reasoning as
+                    // ExecuteRegisterWriteAsync's own SlaveException catch (see DescribeSlaveException's own
+                    // doc comment). Full exception still logged too.
                     _logError?.Invoke(ex, $"Modbus device rejected command '{commandName}' on {_map.MachineCode}");
-                    return new CommandResult(commandName, WriteOutcome.Failed, Detail: $"device rejected the command ({ex.GetType().Name}).");
+                    return new CommandResult(commandName, WriteOutcome.Failed, Detail: $"device rejected the command: {DescribeSlaveException(ex)}.");
                 }
                 catch (Exception) when (ct.IsCancellationRequested)
                 {
@@ -786,12 +823,12 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                     // The device is reached and responded (connection healthy, no desync risk) — it just
                     // explicitly refused the RESET half. Still Indeterminate, never Failed/Applied (this
                     // method's own doc comment) — the pulse's primary effect already happened.
-                    // Review fix (Important) — same redaction discipline as this class's other Detail sites:
-                    // ex.Message dropped from the operator-visible Detail, full exception (with the device's
-                    // own Modbus exception code) still logged.
+                    // Review fix round 2 (Important) — deliberately un-redacted, same reasoning as
+                    // ExecuteRegisterWriteAsync's own SlaveException catch (see DescribeSlaveException's own
+                    // doc comment). Full exception still logged too.
                     _logError?.Invoke(ex, $"Modbus coil {coilAddress}'s reset write rejected for command '{commandName}' on {_map.MachineCode}");
                     return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                        Detail: $"coil {coilAddress} was asserted but the device rejected the reset write ({ex.GetType().Name}).");
+                        Detail: $"coil {coilAddress} was asserted but the device rejected the reset write: {DescribeSlaveException(ex)}.");
                 }
                 catch (Exception ex)
                 {
