@@ -327,7 +327,7 @@ export const equipmentStandardsRouter = router({
       requireFlag();
       const d = await db();
       const [before] = await d.select().from(masterAlarms).where(eq(masterAlarms.id, input.id)).limit(1);
-      if (!before) throw new TRPCError({ code: "NOT_FOUND", message: `Master alarm ${input.id} not found` });
+      if (!before) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "masterAlarm" }, `Master alarm ${input.id} not found`);
       const [row] = await d.update(masterAlarms)
         .set({ shelvedUntil: input.shelvedUntil ? new Date(input.shelvedUntil) : null, updatedAt: new Date() })
         .where(eq(masterAlarms.id, input.id)).returning();
@@ -343,7 +343,7 @@ export const equipmentStandardsRouter = router({
       requireFlag();
       const d = await db();
       const [before] = await d.select().from(masterAlarms).where(eq(masterAlarms.id, input.id)).limit(1);
-      if (!before) throw new TRPCError({ code: "NOT_FOUND", message: `Master alarm ${input.id} not found` });
+      if (!before) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "masterAlarm" }, `Master alarm ${input.id} not found`);
       await d.delete(masterAlarms).where(eq(masterAlarms.id, input.id));
       await recordAuditEvent(d, { entityType: "master_alarm", entityId: input.id, action: "delete", actorId: ctx.user.id, before, after: null });
       return { id: input.id, deleted: true };
@@ -484,7 +484,7 @@ export const equipmentStandardsRouter = router({
       requireFlag();
       const d = await db();
       const [cr] = await d.select().from(deviceTypeChangeRequests).where(eq(deviceTypeChangeRequests.id, input.crId)).limit(1);
-      if (!cr) throw new TRPCError({ code: "NOT_FOUND", message: `Change request ${input.crId} not found` });
+      if (!cr) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTypeChangeRequest" }, `Change request ${input.crId} not found`);
       // Doc 54 Wave B — Separation of Duties: the reviewer (reviewedBy=ctx.user) MUST
       // differ from the requester (requestedBy). A requester cannot self-review/approve.
       if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {
@@ -526,7 +526,7 @@ export const equipmentStandardsRouter = router({
       const result = await d.transaction(async (tx) => {
         const [cr] = await tx.select().from(deviceTypeChangeRequests)
           .where(eq(deviceTypeChangeRequests.id, input.crId)).for("update").limit(1);
-        if (!cr) throw new TRPCError({ code: "NOT_FOUND", message: `Change request ${input.crId} not found` });
+        if (!cr) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTypeChangeRequest" }, `Change request ${input.crId} not found`);
         // Doc 54 Wave B — Separation of Duties: the publisher (ctx.user) MUST differ
         // from the requester (requestedBy). A requester cannot self-publish their CR.
         if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {

@@ -72,7 +72,7 @@ export const fieldRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [r] = await d.select().from(robots).where(eq(robots.id, input.robotId)).limit(1);
-      if (!r) throw new TRPCError({ code: "NOT_FOUND", message: `Robot ${input.robotId} not found` });
+      if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, `Robot ${input.robotId} not found`);
       const [tel] = await d
         .select()
         .from(robotTelemetry)

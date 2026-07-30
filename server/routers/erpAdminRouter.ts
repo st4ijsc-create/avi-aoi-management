@@ -142,7 +142,7 @@ export const erpAdminRouter = router({
       ensureOauthEnabled();
       const d = await db();
       const [existing] = await d.select().from(erpOauthClients).where(eq(erpOauthClients.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: `OAuth client ${input.id} not found` });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "oauthClient" }, `OAuth client ${input.id} not found`);
       const clientSecret = `erps_${randomBytes(24).toString("hex")}`;
       const [row] = await d
         .update(erpOauthClients)
@@ -163,7 +163,7 @@ export const erpAdminRouter = router({
         .set({ enabled: input.enabled, updatedAt: new Date() })
         .where(eq(erpOauthClients.id, input.id))
         .returning();
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `OAuth client ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "oauthClient" }, `OAuth client ${input.id} not found`);
       return publicClient(row);
     }),
 
@@ -181,7 +181,7 @@ export const erpAdminRouter = router({
     .mutation(async ({ input }) => {
       const d = await db();
       const [existing] = await d.select().from(erpOauthClients).where(eq(erpOauthClients.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: `OAuth client ${input.id} not found` });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "oauthClient" }, `OAuth client ${input.id} not found`);
       const patch: Partial<typeof erpOauthClients.$inferInsert> = { updatedAt: new Date() };
       if (input.name !== undefined) patch.name = input.name.trim();
       if (input.description !== undefined) patch.description = input.description ?? null;

@@ -103,7 +103,7 @@ export const fleetRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [row] = await d.select().from(tasks).where(eq(tasks.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Task ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.id} not found`);
       return row;
     }),
 
@@ -251,7 +251,7 @@ export const fleetRouter = router({
       requireFlag();
       const d = await db();
       const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
-      if (!t) throw new TRPCError({ code: "NOT_FOUND", message: `Task ${input.taskId} not found` });
+      if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.taskId} not found`);
       if (["completed", "cancelled"].includes(t.status)) {
         throw new TRPCError({ code: "CONFLICT", message: `Task ${input.taskId} is terminal (${t.status})` });
       }
@@ -261,7 +261,7 @@ export const fleetRouter = router({
       // the gap where a manual reassign blindly wrote any deviceId (fake "success").
       const [robot] = await d.select().from(robots).where(eq(robots.id, input.deviceId)).limit(1);
       if (!robot || !robot.isEnabled) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Device ${input.deviceId} not found or not enabled` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, `Device ${input.deviceId} not found or not enabled`);
       }
       if (robot.status === "offline" || robot.status === "estop") {
         throw new TRPCError({ code: "CONFLICT", message: `Device ${input.deviceId} is ${robot.status} — cannot assign work` });
@@ -306,7 +306,7 @@ export const fleetRouter = router({
       requireFlag();
       const d = await db();
       const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
-      if (!t) throw new TRPCError({ code: "NOT_FOUND", message: `Task ${input.taskId} not found` });
+      if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.taskId} not found`);
       if (["completed", "cancelled", "failed"].includes(t.status)) {
         throw new TRPCError({ code: "CONFLICT", message: `Task ${input.taskId} already terminal (${t.status})` });
       }
@@ -351,7 +351,7 @@ export const fleetRouter = router({
       requireFlag();
       const d = await db();
       const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
-      if (!t) throw new TRPCError({ code: "NOT_FOUND", message: `Task ${input.taskId} not found` });
+      if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.taskId} not found`);
       if (["completed", "cancelled", "failed"].includes(t.status)) {
         throw new TRPCError({ code: "CONFLICT", message: `Task ${input.taskId} already terminal (${t.status})` });
       }

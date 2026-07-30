@@ -15,6 +15,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import {
@@ -45,7 +46,7 @@ export const factoryCommandRouter = router({
     .query(async ({ input }) => {
       const detail = await getCommandMachineDetail(input.machineId);
       if (!detail) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Machine ${input.machineId} not found` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine ${input.machineId} not found`);
       }
       return detail;
     }),

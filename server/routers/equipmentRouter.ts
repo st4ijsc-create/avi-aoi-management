@@ -36,7 +36,7 @@ async function getDb() {
 async function loadMachine(machineId: number) {
   const db = await getDb();
   const [m] = await db.select().from(machines).where(eq(machines.id, machineId)).limit(1);
-  if (!m) throw new TRPCError({ code: "NOT_FOUND", message: `Machine ${machineId} not found` });
+  if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine ${machineId} not found`);
   return m;
 }
 

@@ -268,7 +268,7 @@ export const federationRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [site] = await d.select().from(sites).where(eq(sites.code, input.siteCode)).limit(1);
-      if (!site) throw new TRPCError({ code: "NOT_FOUND", message: `Site ${input.siteCode} not found` });
+      if (!site) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "site" }, `Site ${input.siteCode} not found`);
 
       const [snap] = await d
         .select()

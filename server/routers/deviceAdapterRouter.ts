@@ -118,7 +118,7 @@ export const deviceAdapterRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
-      if (!adapter) throw new TRPCError({ code: "NOT_FOUND", message: "Adapter không tồn tại." });
+      if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
       const tags = await db
         .select()
         .from(deviceTags)
@@ -165,7 +165,7 @@ export const deviceAdapterRouter = router({
       const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
       try {
         const [row] = await db.update(deviceAdapters).set(patch).where(eq(deviceAdapters.id, id)).returning();
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Adapter không tồn tại." });
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
         return row;
       } catch (err) {
         if (err instanceof TRPCError) throw err;
@@ -182,7 +182,7 @@ export const deviceAdapterRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       const [existing] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Adapter không tồn tại." });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
       // SAFETY: refuse to delete an adapter that is still enabled (it may be polling).
       if (existing.isEnabled) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Adapter đang bật — hãy tắt (isEnabled=false) trước khi xoá." });
@@ -217,7 +217,7 @@ export const deviceAdapterRouter = router({
       if ("id" in input) {
         const db = await getDb();
         const [adapter] = await db.select().from(deviceAdapters).where(eq(deviceAdapters.id, input.id)).limit(1);
-        if (!adapter) throw new TRPCError({ code: "NOT_FOUND", message: "Adapter không tồn tại." });
+        if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
         protocol = adapter.protocol as OtProtocol;
         endpoint = adapter.endpoint;
         options = (adapter.connectionOptions as Record<string, unknown> | null) ?? undefined;
@@ -310,7 +310,7 @@ export const deviceAdapterRouter = router({
         if (offset !== undefined) patch.offset = offset != null ? String(offset) : null;
         try {
           const [row] = await db.update(deviceTags).set(patch).where(eq(deviceTags.id, id)).returning();
-          if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Tag không tồn tại." });
+          if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
           return row;
         } catch (err) {
           if (err instanceof TRPCError) throw err;
@@ -327,7 +327,7 @@ export const deviceAdapterRouter = router({
       .mutation(async ({ input }) => {
         const db = await getDb();
         const [row] = await db.delete(deviceTags).where(eq(deviceTags.id, input.id)).returning();
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Tag không tồn tại." });
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceTag" }, "Tag không tồn tại.");
         return { success: true };
       }),
   }),

@@ -17,6 +17,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { moduleProcedure, roleProcedure, router } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_ENGINEERING (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
@@ -101,7 +102,7 @@ export const ecnRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const row = await getEcnById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `ECN ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ecn" }, `ECN ${input.id} not found`);
       return row;
     }),
 

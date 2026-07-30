@@ -17,6 +17,7 @@
 import { router, adminProcedure, actuationProcedure } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as aiAdvancedDb from "../db/aiAdvanced";
 import { getMachineById } from "../db/hierarchy";
 import {
@@ -75,7 +76,7 @@ export const edgeDeploymentRouter = router({
       let machineId = input.machineId;
       if (machineId && !deviceId) {
         const machine = await getMachineById(machineId);
-        if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+        if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
         deviceId = machine.code;
         deviceName = deviceName ?? machine.name;
       }
@@ -112,7 +113,7 @@ export const edgeDeploymentRouter = router({
     .input(z.object({ deploymentId: z.number().int().positive() }))
     .query(async ({ input }) => {
       const d = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!d) throw new TRPCError({ code: "NOT_FOUND", message: "Deployment not found" });
+      if (!d) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, "Deployment not found");
       return d;
     }),
 
@@ -146,7 +147,7 @@ export const edgeDeploymentRouter = router({
     .input(z.object({ deploymentId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       const existing = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Deployment not found" });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, "Deployment not found");
       const pkg = await packageModelForDeployment(input.deploymentId);
       if (pkg.status === "READY") await notifyModelAvailable(input.deploymentId);
       return { success: true, deploymentId: input.deploymentId, package: pkg };
