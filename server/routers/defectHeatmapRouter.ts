@@ -10,6 +10,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { moduleProcedure, router } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_QUALITY (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
@@ -58,7 +59,7 @@ export const defectHeatmapRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const startTime = Date.now();
       // Date-only strings are factory-local calendar days (gap A2 at filter level).
@@ -138,7 +139,7 @@ export const defectHeatmapRouter = router({
     .input(heatmapQueryInput)
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const window = resolveFactoryDateWindow(input.startDate, input.endDate);
       const endInclusive = window.endExclusive ? new Date(window.end.getTime() - 1) : window.end;
@@ -160,7 +161,7 @@ export const defectHeatmapRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [heatmap] = await db
         .select()
@@ -242,7 +243,7 @@ export const defectHeatmapRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       await db.delete(defectHeatmapData).where(eq(defectHeatmapData.id, input.id));
       return { success: true };

@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 // doc 54 Wave B — write-floor + module-permission gate for OEE/downtime/health/target
 // mutations that were bare protectedProcedure (P1-3/P1-5: any authenticated user, incl.
 // viewer, could write business data). writeProcedure blocks read-only roles; the
@@ -1089,7 +1090,7 @@ export const oeeRouter = router({
       const { getDb } = await import('../db');
       const { oeeTargets } = await import('../../drizzle/schema');
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Hương-P0: dùng Drizzle thay raw SQL — identifier camelCase không quote bị
       // Postgres fold về lowercase (machineId → machineid) gây "column does not exist".
@@ -1129,7 +1130,7 @@ export const oeeRouter = router({
       const { oeeTargets } = await import('../../drizzle/schema');
       const { eq } = await import('drizzle-orm');
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Hương-P0: dùng Drizzle thay raw SQL không quote (camelCase bị fold lowercase).
       await db.update(oeeTargets)
@@ -1159,7 +1160,7 @@ export const oeeRouter = router({
       const { oeeTargets } = await import('../../drizzle/schema');
       const { eq } = await import('drizzle-orm');
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Hương-P0: soft-delete qua Drizzle thay raw SQL.
       await db.update(oeeTargets)

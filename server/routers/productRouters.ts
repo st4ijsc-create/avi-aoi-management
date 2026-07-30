@@ -5,6 +5,7 @@ import { z } from "zod";
 import * as db from "../db";
 import { withDbErrors } from "../_core/dbErrors";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { nanoid } from "nanoid";
 import { storagePut, resolveImageToDataUrl } from "../storage";
 import { detectSpcViolations, detectEwma, rollingCapability } from "../utils/spcRules";
@@ -2038,7 +2039,7 @@ export const productDocumentRouter = router({
       const { productDocuments } = await import("../../drizzle/schema/product");
       const { eq, desc } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not connected' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
       return database.select().from(productDocuments)
         .where(eq(productDocuments.productModelId, input.productModelId))
         .orderBy(desc(productDocuments.createdAt));
@@ -2059,7 +2060,7 @@ export const productDocumentRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { productDocuments } = await import("../../drizzle/schema/product");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not connected' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
 
       const buffer = Buffer.from(input.fileBase64, 'base64');
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -2086,7 +2087,7 @@ export const productDocumentRouter = router({
       const { productDocuments } = await import("../../drizzle/schema/product");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not connected' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
       await database.delete(productDocuments).where(eq(productDocuments.id, input.id));
       return { success: true };
     }),

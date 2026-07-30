@@ -13,6 +13,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { buildSeedSpecs } from "../services/contracts/apiSpec";
 import {
@@ -75,7 +76,7 @@ export const contractsRouter = router({
     .query(async ({ input }) => {
       const { getDb } = await import("../db/connection");
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Database not available" });
+      if (!db) throw appError("PRECONDITION_FAILED", "DB_UNAVAILABLE", undefined, "Database not available");
       const { contractSchemas } = await import("../../drizzle/schema/contracts");
       const { eq, and, desc } = await import("drizzle-orm");
       const where = input.version
@@ -194,7 +195,7 @@ export const contractsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { getDb } = await import("../db/connection");
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Database not available" });
+      if (!db) throw appError("PRECONDITION_FAILED", "DB_UNAVAILABLE", undefined, "Database not available");
       const { contractQuarantine } = await import("../../drizzle/schema/contracts");
       const { eq } = await import("drizzle-orm");
       const updated = await db
@@ -220,7 +221,7 @@ export const contractsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { getDb } = await import("../db/connection");
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Database not available" });
+      if (!db) throw appError("PRECONDITION_FAILED", "DB_UNAVAILABLE", undefined, "Database not available");
       const { contractQuarantine } = await import("../../drizzle/schema/contracts");
       const { eq } = await import("drizzle-orm");
       const updated = await db

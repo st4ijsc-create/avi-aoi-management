@@ -16,6 +16,7 @@
 import { z } from "zod";
 import { and, desc, eq, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, moduleProcedure, moduleGate, deployProcedure as deployBase, writeProcedure as writeBase } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { isUniqueViolation } from "../_core/dbErrors";
@@ -92,7 +93,7 @@ function toDpcUser(user: { id: number; role: string; name?: string | null }): Dp
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 

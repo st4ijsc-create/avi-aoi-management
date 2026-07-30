@@ -1,6 +1,7 @@
 import { publicProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { isValidMasterKey } from "../_core/masterKey";
 import * as db from "../db";
 import { storageGet, resolveImageToDataUrl } from "../storage";
@@ -472,7 +473,7 @@ export const publicProductApiRouter = router({
       await validateAccess(input);
 
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Find station by code
       const station = await db.getStationByCode(input.stationCode);
@@ -636,7 +637,7 @@ export const publicProductApiRouter = router({
       await validateAccess(input);
 
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Find station
       const station = await db.getStationByCode(input.stationCode);

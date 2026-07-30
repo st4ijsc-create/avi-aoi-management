@@ -22,6 +22,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq, desc } from "drizzle-orm";
 import { router, moduleProcedure } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_OT_CONTROL (moduleGate = pass-through
@@ -66,7 +67,7 @@ import {
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 

@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { getDb } from "../db/connection";
 import { eq, desc } from "drizzle-orm";
 import { trainingJobs } from "../../drizzle/schema/ai";
@@ -76,7 +77,7 @@ export const aiLocalTrainingRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const params = input ?? { limit: 20, offset: 0 };
       let query = database.select().from(trainingJobs).orderBy(desc(trainingJobs.createdAt)).$dynamic();
       if (params.modelId) query = query.where(eq(trainingJobs.modelId, params.modelId));
@@ -90,7 +91,7 @@ export const aiLocalTrainingRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [job] = await database.select().from(trainingJobs).where(eq(trainingJobs.id, input.id)).limit(1);
       if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Training job not found" });
       return job;
@@ -101,7 +102,7 @@ export const aiLocalTrainingRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [deleted] = await database.delete(trainingJobs).where(eq(trainingJobs.id, input.id)).returning({ id: trainingJobs.id });
       if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "Training job not found" });
       return { success: true, id: deleted.id };

@@ -10,6 +10,7 @@ import { router, moduleProcedure } from "../_core/trpc";
 const protectedProcedure = moduleProcedure("MOD_QUALITY");
 import * as db from "../db";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import {
   mean,
   stdDev,
@@ -328,7 +329,7 @@ export const workstationSpcRouter = router({
       // Get spec limits from the first result's metadata or query directly
       const { getDb } = await import('../db/connection');
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const { measurementPointDefs } = await import('../../drizzle/schema');
       const { eq } = await import('drizzle-orm');
