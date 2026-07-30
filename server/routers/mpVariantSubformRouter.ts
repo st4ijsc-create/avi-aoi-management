@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import {
@@ -72,7 +73,7 @@ export const mpVariantSubformRouter = router({
       }
       const conn = await (db as any).getDb?.();
       if (!conn) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
       const { measurementPointDefs } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");

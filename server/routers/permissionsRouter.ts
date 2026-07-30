@@ -3,6 +3,7 @@ import { z } from "zod";
 // instead of the local no-2FA shim that used to live in this file.
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq, and } from "drizzle-orm";
 import { getDb as getDbRaw } from "../db";
 import { permissions, users, userRoles, type Permission, type InsertPermission } from "../../drizzle/schema";
@@ -11,7 +12,7 @@ import { permissions, users, userRoles, type Permission, type InsertPermission }
 // queries can rely on a defined handle (resolves "db is possibly null").
 async function getDb() {
   const db = await getDbRaw();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return db;
 }
 

@@ -30,6 +30,7 @@
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, moduleProcedure, moduleGate, writeProcedure as writeBase } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_ENGINEERING (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
@@ -78,7 +79,7 @@ function toDpcUser(user: { id: number; role: string; name?: string | null }): Dp
 
 async function db() {
   const d = await getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 

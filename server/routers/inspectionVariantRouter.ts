@@ -14,6 +14,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import {
@@ -77,7 +78,7 @@ export const inspectionVariantRouter = router({
       // exists, swap to it.
       const conn = await (db as any).getDb?.();
       if (!conn) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
       // Use sql tag via drizzle through the schema export to stay typed.
       const { productInspections } = await import("../../drizzle/schema");
