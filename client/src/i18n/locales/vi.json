@@ -3669,7 +3669,8 @@
       "zone": "vùng (zone)",
       "sharedResource": "tài nguyên dùng chung",
       "chargerStation": "trạm sạc",
-      "referenceImage": "ảnh tham chiếu"
+      "referenceImage": "ảnh tham chiếu",
+      "record": "bản ghi"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",

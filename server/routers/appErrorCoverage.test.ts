@@ -96,4 +96,21 @@ describe("phủ mã lỗi trong server/routers", () => {
     if (hits > 0) console.error("[phủ mã lỗi] còn throw thô ở:", offenders);
     expect(hits).toBe(0);
   });
+
+  it("server/_core/dbErrors.ts (withDbErrors/rethrowDbError) không còn ném TRPCError trần", () => {
+    // Task 8 (§4.5 đợt 4) — reviewer Task 7 chỉ ra một lỗ hổng trong chính tuyên bố
+    // "cổng phủ toàn bộ": walkTsFiles ở trên CHỈ quét server/routers, nhưng ~24
+    // call-site `withDbErrors()`/`rethrowDbError()` rải khắp router (componentLibrary/
+    // hierarchy/kbStudio/masterData/process/product/system) đều đổ về MỘT điểm ném
+    // duy nhất — server/_core/dbErrors.ts — NẰM NGOÀI đường quét đó. Cổng có thể về 0
+    // (mọi router "sạch") trong khi helper dùng chung vẫn ném `new TRPCError` thô, và
+    // KHÔNG THỬ NGHIỆM nào ở trên bắt được việc đó. Khẳng định riêng này đóng đúng lỗ
+    // hổng: đọc thẳng file, đếm ký tự "new TRPCError(" — phải bằng 0 sau khi Task 8 di
+    // trú rethrowDbError() sang appError("CONFLICT", "ENTITY_DUPLICATE", ...).
+    const dbErrorsPath = join(ROUTERS_DIR, "..", "_core", "dbErrors.ts");
+    const src = readFileSync(dbErrorsPath, "utf8");
+    const n = (src.match(/new TRPCError\(/g) ?? []).length;
+    if (n > 0) console.error(`[phủ mã lỗi] dbErrors.ts còn ${n} chỗ new TRPCError trần`);
+    expect(n).toBe(0);
+  });
 });

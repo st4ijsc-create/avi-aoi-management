@@ -15,6 +15,7 @@
  *   try { ... } catch (err) { rethrowDbError(err, { conflictMessage: "..." }); }
  */
 import { TRPCError } from "@trpc/server";
+import { appError } from "./appError";
 
 const UNIQUE_VIOLATION = "23505";
 const UNDEFINED_TABLE = "42P01";
@@ -127,11 +128,22 @@ export function getViolatedConstraint(err: unknown): string | undefined {
 export function rethrowDbError(err: unknown, opts?: DbErrorOptions): never {
   if (err instanceof TRPCError) throw err;
   if (isUniqueViolation(err)) {
-    throw new TRPCError({
-      code: "CONFLICT",
-      message: opts?.conflictMessage ?? "Mã đã tồn tại",
-      cause: err instanceof Error ? err : undefined,
-    });
+    // Task 8 (Sprint 5 §4.5 đợt 4) — appError() thay throw TRPCError trần. Đây là
+    // 1 trong ~24 call-site withDbErrors()/rethrowDbError() mà reviewer Task 7 chỉ
+    // ra là NẰM NGOÀI đường quét appErrorCoverage.test.ts (chỉ quét server/routers),
+    // nên cổng có thể về 0 mà những chỗ này vẫn phát lỗi không dịch được — lỗ hổng
+    // đã vá bằng khẳng định riêng ở appErrorCoverage.test.ts (mục "dbErrors.ts").
+    //
+    // entity: "record" là khoá CHUNG có chủ đích — helper này được gọi từ ~24 nơi
+    // (componentLibraryRouter/hierarchyRouters/kbStudioRouter/masterDataRouter/
+    // processRouter/productRouters/systemRouters) với đủ loại thực thể khác nhau,
+    // không có tên thực thể cụ thể ở tầng này để tham số hoá riêng cho từng cái
+    // (khác appError() ở router — nơi luôn biết chính xác entity). Nếu để params
+    // rỗng, template ENTITY_DUPLICATE "{{entity}} này đã tồn tại." sẽ hiện
+    // "{{entity}}" trần cho người dùng (chưa nội suy được) — một lỗi hiển thị mới,
+    // đúng thứ sprint này tồn tại để dẹp. Chi tiết CỤ THỂ (ví dụ "Mã kỹ năng đã tồn
+    // tại") vẫn còn ở fallbackMessage (mỗi call-site tự truyền qua conflictMessage).
+    throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "record" }, opts?.conflictMessage ?? "Mã đã tồn tại");
   }
   throw err;
 }

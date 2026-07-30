@@ -3660,7 +3660,8 @@
       "zone": "区域(zone)",
       "sharedResource": "共享资源",
       "chargerStation": "充电站",
-      "referenceImage": "参考图像"
+      "referenceImage": "参考图像",
+      "record": "记录"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",

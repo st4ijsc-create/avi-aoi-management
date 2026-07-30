@@ -3668,7 +3668,8 @@
       "zone": "zone",
       "sharedResource": "shared resource",
       "chargerStation": "charger station",
-      "referenceImage": "reference image"
+      "referenceImage": "reference image",
+      "record": "record"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
