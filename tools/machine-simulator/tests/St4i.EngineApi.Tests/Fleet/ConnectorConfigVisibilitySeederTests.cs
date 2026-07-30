@@ -144,6 +144,75 @@ public sealed class ConnectorConfigVisibilitySeederTests
         Assert.Contains("may NOT reflect", warning, StringComparison.Ordinal);
     }
 
+    /// <summary>Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — closes
+    /// the carried B-4 finding (fix round 1, Important #3): before this task, EVERY existing row (seeded or
+    /// operator) triggered the loud warning above and was left untouched. Now that a row's own
+    /// <see cref="ConnectorConfigSource"/> is known, a row this SAME mechanism seeded on an earlier boot is
+    /// safely refreshed in place — no warning (nothing is wrong), and the row picks up whatever the CURRENT
+    /// map declares (here: a widened writable range), closing B-4's own documented "accepted residual
+    /// staleness gap" as a side effect.</summary>
+    [Fact]
+    public async Task SeedAsync_SecondBootOfTheSameSeededKind_UpsertsFreshMap_NoWarning_ClosesTheStalenessGap()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        var warnings = new List<string>();
+
+        // Boot 1 — the map as it was originally declared (max=500, see WritableModbusMap).
+        await ConnectorConfigVisibilitySeeder.SeedAsync(
+            store, "Modbus", host: "10.0.0.5", port: 502, mapJson: WritableModbusMap, pkiDir: null, logWarning: warnings.Add);
+        var afterBoot1 = Assert.Single(await store.ListAsync());
+        Assert.Equal(ConnectorConfigSource.Seeded, afterBoot1.Source);
+        Assert.Equal(500, afterBoot1.WriteCapability!.WritablePoints.Single().Max);
+        Assert.Empty(warnings); // no existing row yet on the very first boot — nothing to warn about either.
+
+        // Boot 2 — SAME env-var-driven kind, but the underlying map was hand-edited (widened to max=65535).
+        // B-4's "accepted residual gap": before this task, this second call would have been a silent SKIP
+        // (insert-only), leaving GET /v1/connectors/configured showing the STALE max=500 forever until an
+        // operator manually DELETEd and restarted. It is now an UPSERT.
+        const string widenedWritableModbusMap = """
+            {
+              "machineCode": "MODBUS-ENV-01",
+              "unitId": 1,
+              "pollIntervalMs": 500,
+              "registers": [
+                { "address": 5, "type": "Holding", "dataType": "UInt16", "scale": 1.0, "metric": "speed", "unit": "rpm",
+                  "writable": { "min": 0, "max": 65535 } }
+              ]
+            }
+            """;
+        await ConnectorConfigVisibilitySeeder.SeedAsync(
+            store, "Modbus", host: "10.0.0.5", port: 502, mapJson: widenedWritableModbusMap, pkiDir: null, logWarning: warnings.Add);
+
+        var afterBoot2 = Assert.Single(await store.ListAsync()); // still exactly one row — an upsert, not a second row.
+        Assert.Equal(ConnectorConfigSource.Seeded, afterBoot2.Source);
+        Assert.Equal(65535, afterBoot2.WriteCapability!.WritablePoints.Single().Max); // refreshed, not stale.
+        Assert.Empty(warnings); // the load-bearing assertion: refreshing the seeder's own prior row never warns.
+    }
+
+    /// <summary>The other half proven directly: an existing OPERATOR row (not this mechanism's own artifact)
+    /// still gets the pre-existing protect-and-warn treatment, unchanged — this is exactly
+    /// <see cref="SeedAsync_RowAlreadyExistsForKind_NeverOverwritten_ButWarnsLoudly"/> above, restated here
+    /// only to make the CONTRAST with the Seeded-row test explicit in one place.</summary>
+    [Fact]
+    public async Task SeedAsync_RowAlreadyExistsAndIsAnOperatorRow_NeverRefreshed_StillWarnsLoudly()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+        var warnings = new List<string>();
+
+        var operatorSaved = await store.SaveAsync(
+            "Modbus", "OPERATOR-OWN-MACHINE", "192.168.1.50", 502, """{"machineCode":"OPERATOR-OWN-MACHINE"}""");
+        Assert.Equal(ConnectorConfigSource.Operator, operatorSaved.Source);
+
+        await ConnectorConfigVisibilitySeeder.SeedAsync(
+            store, "Modbus", host: "10.0.0.5", port: 502, mapJson: WritableModbusMap, pkiDir: null,
+            logWarning: warnings.Add);
+
+        var row = Assert.Single(await store.ListAsync());
+        Assert.Equal("OPERATOR-OWN-MACHINE", row.MachineCode); // untouched.
+        Assert.Equal(ConnectorConfigSource.Operator, row.Source); // never flipped to Seeded.
+        Assert.Single(warnings); // still warns, exactly as before this task.
+    }
+
     [Fact]
     public async Task SeedAsync_MalformedMap_LogsWarning_NeverThrows_NoRowInserted()
     {

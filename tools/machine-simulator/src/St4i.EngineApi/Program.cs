@@ -163,10 +163,17 @@ builder.Services.AddSingleton<AuditRecorder>();
 // so a SAFETY_BLOCKED denial always wins/reports over a later RoleObligationRule denial (PolicyEngine
 // itself is "any deny wins", so this ordering only matters for WHICH reason code is reported when both
 // would deny — see PolicyEngine's own doc comment).
+//
+// Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — CriticalAlarmGuardRule
+// added SECOND, still ahead of RoleObligationRule: the same safety-first precedence reasoning applies one
+// level down — if a Critical alarm is active AND the caller also lacks the required role, SAFETY_BLOCKED
+// (if HALT is also engaged) or NOT_READY (the Critical-alarm gate) should be the reported reason, not a bare
+// role-denial that would leave an operator believing "get the right role" is the only obstacle.
 builder.Services.AddSingleton<St4i.EngineApi.Policy.PolicyEngine>(_ =>
     new St4i.EngineApi.Policy.PolicyEngine(new St4i.EngineApi.Policy.IPolicyRule[]
     {
-        new St4i.EngineApi.Policy.Rules.EstopGuardRule(),   // safety-first (deny precedence)
+        new St4i.EngineApi.Policy.Rules.EstopGuardRule(),          // safety-first (deny precedence)
+        new St4i.EngineApi.Policy.Rules.CriticalAlarmGuardRule(),  // second — see comment above
         new St4i.EngineApi.Policy.Rules.RoleObligationRule(),
     }));
 
@@ -1146,6 +1153,7 @@ app.MapUserEndpoints();
 app.MapAssetEndpoints();
 // GP-5 (task-5-brief.md item 3) — GET /v1/connectors: visibility for a configured-but-not-started connector.
 app.MapConnectorEndpoints();
+app.MapMachineWriteEndpoints();
 // GĐ3 sub-4 LC-1 — the alarm HTTP surface (GET /v1/alarms(+/history), POST /v1/alarms/{id}/ack).
 app.MapAlarmEndpoints();
 // GĐ3 sub-4 LC-3 — the LineController HTTP surface (GET /v1/line, POST /v1/line/{command}).

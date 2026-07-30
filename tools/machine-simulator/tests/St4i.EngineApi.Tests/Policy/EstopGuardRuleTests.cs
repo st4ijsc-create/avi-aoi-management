@@ -49,6 +49,45 @@ public sealed class EstopGuardRuleTests
         Assert.Null(decision);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Task B-6 — THE non-negotiable invariant: EstopGuardRule must cover both new machine-write actions.
+    // Mirrors the fleet.start/scenario.burst pairs above exactly, proving neither new action was left out.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void MachineSetpointWrite_WhileEstopped_DeniesSafetyBlocked()
+    {
+        var decision = _rule.Evaluate(Request("machine.setpoint.write", estopEngaged: true));
+
+        Assert.NotNull(decision);
+        Assert.False(decision!.IsPermitted);
+        Assert.Equal(PolicyReasonCode.SafetyBlocked, decision.Reason);
+    }
+
+    [Fact]
+    public void MachineSetpointWrite_NotEstopped_ReturnsNull_LetsRoleObligationDecide()
+    {
+        var decision = _rule.Evaluate(Request("machine.setpoint.write", estopEngaged: false));
+        Assert.Null(decision);
+    }
+
+    [Fact]
+    public void MachineCommandInvoke_WhileEstopped_DeniesSafetyBlocked()
+    {
+        var decision = _rule.Evaluate(Request("machine.command.invoke", estopEngaged: true));
+
+        Assert.NotNull(decision);
+        Assert.False(decision!.IsPermitted);
+        Assert.Equal(PolicyReasonCode.SafetyBlocked, decision.Reason);
+    }
+
+    [Fact]
+    public void MachineCommandInvoke_NotEstopped_ReturnsNull()
+    {
+        var decision = _rule.Evaluate(Request("machine.command.invoke", estopEngaged: false));
+        Assert.Null(decision);
+    }
+
     [Theory]
     [InlineData("fleet.stop")]
     [InlineData("fleet.estop")]

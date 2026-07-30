@@ -9,12 +9,28 @@ public static class PolicyResults
     /// <summary>Audits the denial (policy denials ARE recorded — a deliberate departure from the WS-D-D4
     /// "no audit row on a pre-mutation rejection" rule, same safety/security rationale as <c>auth.login_failed</c>
     /// and <c>fleet.estop</c> already are) and returns the reason→status-mapped error response.</summary>
+    /// <param name="targetType">Task B-6 — optional, additive. Every pre-existing call site (FleetEndpoints,
+    /// LineEndpoints, ScenarioEndpoints, ...) omits this, so its audit row's <c>targetType</c> stays the
+    /// literal <c>"policy"</c>, byte-for-byte unchanged. <c>MachineWriteEndpoints</c> passes <c>"machine"</c>
+    /// so an investigator six months later can find every denied write/command attempt against a specific
+    /// machine the same way they already find <c>machine.*</c> success rows.</param>
+    /// <param name="targetId">Optional, additive — defaults to the wire reason <paramref name="decision"/>
+    /// carries (the pre-existing behavior) when omitted. <c>MachineWriteEndpoints</c> passes the machine code.</param>
+    /// <param name="requestDetail">Optional, additive — folded into the audit row's <c>newValue</c> alongside
+    /// <c>reason</c>/<c>message</c> (never replacing them) only when non-null, so every pre-existing call
+    /// site's audit JSON is unchanged. <c>MachineWriteEndpoints</c> passes the requested point/value or
+    /// command/arguments here — the brief's "which point or command, the requested value" investigator
+    /// requirement, applied to the denied path too, not just the applied/rejected/failed/indeterminate one.</param>
     public static async Task<IResult> DenyAsync(
-        HttpContext ctx, AuditRecorder recorder, string action, PolicyDecision decision, CancellationToken ct)
+        HttpContext ctx, AuditRecorder recorder, string action, PolicyDecision decision, CancellationToken ct,
+        string? targetType = null, string? targetId = null, object? requestDetail = null)
     {
         var code = decision.Reason.ToWireCode();
-        await recorder.RecordAsync(ctx, $"{action}.denied", "policy", code,
-            null, new { reason = code, message = decision.Message }, ct).ConfigureAwait(false);
+        object newValue = requestDetail is null
+            ? new { reason = code, message = decision.Message }
+            : new { reason = code, message = decision.Message, request = requestDetail };
+        await recorder.RecordAsync(ctx, $"{action}.denied", targetType ?? "policy", targetId ?? code,
+            null, newValue, ct).ConfigureAwait(false);
 
         // GĐ3 sub-4 LC-1 — the FIRST alarm SOURCE: every policy DENY raises a latched Policy alarm.
         // SAFETY_BLOCKED (the halt guard, EstopGuardRule) is Critical + a halt-specific runbook; every

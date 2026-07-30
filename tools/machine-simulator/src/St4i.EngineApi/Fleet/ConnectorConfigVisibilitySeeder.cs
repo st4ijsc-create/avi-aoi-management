@@ -31,23 +31,33 @@ namespace St4i.EngineApi.Fleet;
 /// startup) risks silently destroying an operator's own persisted row the moment BOTH sources happen to name
 /// the same kind (see above), which is the worse failure mode of the two.</para>
 ///
-/// <para><b>Fix round 1 (review, Important #2) — a skipped seed due to an existing row now ALWAYS warns
-/// loudly, naming exactly which endpoint is showing stale data.</b> Every call to <see cref="SeedAsync"/> is
-/// for a <paramref name="kind"/> THIS RUN's env-var/connectors.json source is ACTIVELY driving (see
+/// <para><b>Fix round 1 (review, Important #2) — a skipped seed due to an EXISTING OPERATOR row now ALWAYS
+/// warns loudly, naming exactly which endpoint is showing stale data.</b> Every call to <see cref="SeedAsync"/>
+/// is for a <paramref name="kind"/> THIS RUN's env-var/connectors.json source is ACTIVELY driving (see
 /// Program.cs's own call sites — <c>SeedAsync</c> is never called for a kind with no live non-store source
 /// this run) — which, per the pre-existing precedence rule, ALWAYS wins over a persisted row for the SAME
-/// kind at the live-registry level. So an existing row at this point is, BY CONSTRUCTION, ALREADY shadowed:
-/// the live driver may be able to write/command the machine while the persisted row (what
+/// kind at the live-registry level. So an existing OPERATOR row at this point is, BY CONSTRUCTION, ALREADY
+/// shadowed: the live driver may be able to write/command the machine while the persisted row (what
 /// <c>GET /v1/connectors/configured</c> actually shows) reports something else entirely — most dangerously,
 /// under-reporting a writable connector as read-only (an operator's earlier read-only <c>POST</c>, now
 /// shadowed by a WRITABLE env-var map). Silently skipping, as the original version of this fix did, preserves
 /// EXACTLY the false report the carried B-3 finding exists to close, in the safety-relevant direction. Every
-/// skip here is now reported via <paramref name="logWarning"/>, unconditionally — not just when a capability
-/// mismatch is detected, since ANY difference (a different machine code, host, or capability) means the same
-/// thing: the persisted row is not what is actually running. A proper fix would add a <c>source</c> column
-/// (<c>"env"</c>/<c>"connectors.json"</c>/<c>"operator"</c>) so a seeded row could be told apart from an
-/// operator's own and safely refreshed — scoped OUT of this task (B-4 has no endpoint-layer changes in scope);
-/// this warning is the accepted minimum instead.</para>
+/// skip due to an OPERATOR row is now reported via <paramref name="logWarning"/>, unconditionally — not just
+/// when a capability mismatch is detected, since ANY difference (a different machine code, host, or
+/// capability) means the same thing: the persisted row is not what is actually running.</para>
+///
+/// <para><b>Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) —
+/// closes the carried B-4 finding: a <see cref="ConnectorConfigSource.Seeded"/> row is now told apart from a
+/// <see cref="ConnectorConfigSource.Operator"/> one, so this method can tell "an operator's own configuration,
+/// now shadowed" (still insert-only, still warns loudly — behavior UNCHANGED for that case) apart from
+/// "my own artifact from an earlier boot of the SAME env-var/connectors.json source" (safe to refresh in
+/// place — nobody but this method could have created it, so there is no operator data to protect here). The
+/// latter case is now an UPSERT, not a skip: no warning (there is nothing wrong to warn about — a fresh row
+/// for a kind this run is actively driving replacing a stale one from an earlier boot of the SAME kind is
+/// exactly correct), and it ALSO closes B-4's own documented "accepted residual gap" (a seeded row going
+/// stale after a hand-edited map, fixable before this task only by an explicit
+/// <c>DELETE /v1/connectors/{kind}</c> + restart) — every boot now re-seeds a <see cref="ConnectorConfigSource.Seeded"/>
+/// row fresh, automatically.</para>
 /// </summary>
 public static class ConnectorConfigVisibilitySeeder
 {
@@ -77,7 +87,12 @@ public static class ConnectorConfigVisibilitySeeder
         try
         {
             var existing = await store.GetAsync(kind, ct).ConfigureAwait(false);
-            if (existing is not null)
+
+            // Task B-6 — only an existing OPERATOR row is protected/warned-about. A row this SAME mechanism
+            // seeded on an earlier boot carries no operator data to protect — nobody but SeedAsync could have
+            // created a Seeded row — so it is safe, and correct, to refresh it in place below instead of
+            // treating it as a shadowed conflict.
+            if (existing is not null && existing.Source == ConnectorConfigSource.Operator)
             {
                 // Fix round 1 (review, Important #2) — insert-only still (never overwrite an operator's own
                 // persisted row — see this class's own doc comment), but no longer a SILENT skip: this call
@@ -103,9 +118,12 @@ public static class ConnectorConfigVisibilitySeeder
                 return;
             }
 
+            // No warning here even when existing is non-null (a Seeded row from an earlier boot of this SAME
+            // source) — SaveAsync's upsert (ON CONFLICT ... DO UPDATE) simply refreshes it, closing B-4's own
+            // documented staleness gap for this case automatically.
             await store.SaveAsync(
                     validated.Kind, validated.MachineCode, validated.Host, validated.Port, mapJson,
-                    validated.WriteCapability, ct)
+                    validated.WriteCapability, ct, source: ConnectorConfigSource.Seeded)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)

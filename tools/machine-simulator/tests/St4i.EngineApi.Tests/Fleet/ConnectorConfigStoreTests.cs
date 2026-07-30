@@ -308,6 +308,77 @@ public sealed class ConnectorConfigStoreTests
         Assert.Null(record!.WriteCapability);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — the `source`
+    // column: its own migration (v3), what a pre-existing row means, and round-tripping.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SaveAsync_NoSourceArgument_DefaultsToOperator_ByteIdenticalToBeforeThisTask()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+
+        var summary = await store.SaveAsync("Modbus", "MODBUS-01", "10.0.0.5", 502, "{}");
+        Assert.Equal(ConnectorConfigSource.Operator, summary.Source);
+
+        var record = await store.GetAsync("Modbus");
+        Assert.Equal(ConnectorConfigSource.Operator, record!.Source);
+    }
+
+    [Fact]
+    public async Task SaveAsync_ExplicitSeededSource_RoundTrips()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+
+        var summary = await store.SaveAsync(
+            "Modbus", "MODBUS-01", "10.0.0.5", 502, "{}", source: ConnectorConfigSource.Seeded);
+        Assert.Equal(ConnectorConfigSource.Seeded, summary.Source);
+
+        var record = await store.GetAsync("Modbus");
+        Assert.Equal(ConnectorConfigSource.Seeded, record!.Source);
+
+        var listed = await store.ListAsync();
+        Assert.Equal(ConnectorConfigSource.Seeded, Assert.Single(listed).Source);
+    }
+
+    [Fact]
+    public async Task SaveAsync_ReSavingSameKind_UpdatesSource_LastWriteWins()
+    {
+        var store = new ConnectorConfigStore(TempDir());
+
+        await store.SaveAsync("Modbus", "MODBUS-01", "10.0.0.5", 502, "{}", source: ConnectorConfigSource.Seeded);
+        var updated = await store.SaveAsync("Modbus", "MODBUS-02", "10.0.0.6", 503, "{}"); // operator save, default source
+
+        Assert.Equal(ConnectorConfigSource.Operator, updated.Source);
+        var record = await store.GetAsync("Modbus");
+        Assert.Equal(ConnectorConfigSource.Operator, record!.Source);
+    }
+
+    /// <summary>The load-bearing migration-boundary assertion, mirroring
+    /// <see cref="AFreshStore_PointedAtTheSameDirectory_MigratesExistingRowsToVersion2_ExistingRowsReadAsNull"/>
+    /// exactly: a row written by "version 2" schema logic (no `source` column at all yet) — proven by
+    /// constructing the FIRST store instance and saving without ever mentioning source, then re-opening a
+    /// fresh store instance pointed at the SAME directory and confirming the read-back is
+    /// <see cref="ConnectorConfigSource.Operator"/>, the exact fact this migration's own doc comment
+    /// promises for a pre-existing row (SQLite's ADD COLUMN with a literal DEFAULT applies it to every
+    /// existing row at migration time).</summary>
+    [Fact]
+    public async Task AFreshStore_PointedAtTheSameDirectory_MigratesExistingRowsToVersion3_ExistingRowsReadAsOperator()
+    {
+        var dir = TempDir();
+        var store1 = new ConnectorConfigStore(dir);
+        await store1.SaveAsync("Modbus", "MODBUS-PRE-B6", "10.0.0.5", 502, "{}");
+
+        var store2 = new ConnectorConfigStore(dir);
+        var record = await store2.GetAsync("Modbus");
+
+        Assert.NotNull(record);
+        Assert.Equal(ConnectorConfigSource.Operator, record!.Source);
+
+        var summary = Assert.Single(await store2.ListAsync());
+        Assert.Equal(ConnectorConfigSource.Operator, summary.Source);
+    }
+
     [Fact]
     public void ResolveRoot_PrefersExplicitDirectory_OverEnvVar_OverDefault()
     {

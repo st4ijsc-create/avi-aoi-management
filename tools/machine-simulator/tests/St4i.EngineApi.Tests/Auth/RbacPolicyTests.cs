@@ -212,6 +212,12 @@ public sealed class RbacPolicyTests
         new("/v1/connectors/configured", new[] { "GET" }, Policies.Operator),
 
         // Engineer
+        // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — a setpoint
+        // write physically changes a live machine, a different kind of authority from a config-row change,
+        // but sits beside the OTHER Engineer-gated connector/config mutations (including the one that
+        // declares a point writable at all — POST /v1/connectors' own save gate) rather than the lower
+        // Operator tier (whose existing actions never touch a device at all).
+        new("/v1/machines/{code}/setpoint", new[] { "POST" }, Policies.Engineer),
         new("/v1/machines/{code}/sync-config", new[] { "POST" }, Policies.Engineer),
         new("/v1/mode", new[] { "PUT" }, Policies.Engineer),
         new("/v1/settings", new[] { "GET" }, Policies.Engineer),
@@ -255,6 +261,13 @@ public sealed class RbacPolicyTests
 
         // Admin — GĐ3 closeout WI-4 (device-identity rotation — see SiteEndpoints.RotateIdentityAsync)
         new("/v1/site/identity/rotate", new[] { "POST" }, Policies.Admin),
+
+        // Admin — Task B-6: a command can fire real, ungoverned motion (a coil pulse, an OPC-UA CallAsync) —
+        // this batch's own highest-risk actuation surface (B-5's report: "the highest-risk surface this
+        // batch"). Gated strictly ABOVE the setpoint-write tier — see RoleObligationRule's own doc comment
+        // for the full argument, and MachineWriteEndpointsTests for the proof that an Engineer (setpoint-
+        // authorised) caller cannot invoke a command.
+        new("/v1/machines/{code}/command", new[] { "POST" }, Policies.Admin),
 
         // Admin — WS-D-D7 user management (UserEndpoints.cs)
         new("/v1/users", new[] { "GET" }, Policies.Admin),

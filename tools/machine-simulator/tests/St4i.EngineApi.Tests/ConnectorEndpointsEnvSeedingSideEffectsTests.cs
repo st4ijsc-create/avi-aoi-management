@@ -16,31 +16,36 @@ namespace St4i.EngineApi.Tests;
 /// 1, Important #3: <see cref="ConnectorConfigVisibilitySeeder"/> seeds a row into the SAME
 /// <see cref="ConnectorConfigStore"/> table <c>POST</c>/<c>DELETE /v1/connectors</c> and the persisted-row
 /// startup loop already read from — closing the write-capability visibility gap this way (rather than a
-/// second, provenance-tracking table) has real, DELIBERATELY-NOT-FIXED side effects on those existing
-/// endpoints, since B-4's own brief scopes endpoint changes OUT ("Deliberately NOT in scope: ...
-/// Endpoints/policy/RBAC/audit (B-6)"). Per the review's own instruction ("fix the behaviour or ... cover it
-/// with tests and say so explicitly"), this file covers the two side effects that are reachable and testable
-/// without a second boot-cycle simulation beyond what this project's OWN restart-survival tests
-/// (<c>ConnectorEndpointsTests</c>) already do:
+/// second, provenance-tracking table) had real side effects on those existing endpoints, deliberately NOT
+/// fixed by B-4 (out of that task's scope — "Endpoints/policy/RBAC/audit (B-6)").
+///
+/// <para><b>Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — closes
+/// the carried finding.</b> <see cref="ConnectorConfigStore"/> now has its own
+/// <see cref="ConnectorConfigSource"/> column (<see cref="ConnectorConfigSource.Operator"/> vs.
+/// <see cref="ConnectorConfigSource.Seeded"/>), so:</para>
 ///
 /// <list type="bullet">
-/// <item><description><c>POST /v1/connectors</c> for a DIFFERENT machine of an env-var-seeded kind now 409s,
-/// naming a machine code the operator never actually persisted themselves.</description></item>
-/// <item><description><c>DELETE /v1/connectors/{kind}</c> succeeds against a seeded row, but the deletion does
-/// NOT stick across a restart while the SAME env var stays active — the next boot's seeding pass simply
-/// recreates an equivalent row, since it only ever checks "does a row already exist", not "did an operator
-/// delete one before".</description></item>
+/// <item><description><c>POST /v1/connectors</c> for a DIFFERENT machine of an env-var-seeded kind no longer
+/// 409s — the seeded row is not something an operator ever persisted, so there is nothing of theirs to
+/// protect; the save proceeds, upserting the operator's own configuration over the seeded visibility row
+/// (see <see cref="PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s"/>).
+/// The pre-existing protection for a GENUINE operator row is unchanged and still proven
+/// (<see cref="PostConnector_ForADifferentMachine_OfAnOperatorOwnedKind_Still409s_ProtectionIntact"/>).</description></item>
+/// <item><description><c>DELETE /v1/connectors/{kind}</c> still succeeds against a seeded row (unchanged,
+/// intentional — see <see cref="ConnectorConfigVisibilitySeeder"/>'s own doc comment: the documented recovery
+/// workflow IS "delete + restart to reseed"), and its response now says PLAINLY that the row was not
+/// operator-created and will simply reappear if the same source config is still active next boot — see
+/// <see cref="DeleteConnector_SucceedsAgainstASeededRow_ButDoesNotStick_NextBootWithSameEnvVarReseedsIt"/>.</description></item>
+/// <item><description>The startup loop's own "ignored — an environment variable already configures this
+/// connector kind" self-referential warning about the seeder's own row is unaffected by THIS file (still not
+/// captured here — see the original note below), but the seeder itself no longer warns about its OWN prior
+/// row at all (see <c>ConnectorConfigVisibilitySeederTests</c>'s new test) — the third named symptom, closed
+/// one layer down from where this file's tests look.</description></item>
 /// </list>
 ///
-/// <para><b>NOT covered here, documented instead</b> (the review's own alternative): the persisted-row
-/// startup loop's own "ignored — an environment variable already configures this connector kind" warning
-/// fires, every subsequent boot, about the SEEDER's OWN row — self-referential log noise. Verifying this
-/// would require capturing Program.cs's <c>Console.Error</c> output across a real host boot, disproportionate
-/// to what this fix is worth; the class doc comment on <see cref="ConnectorConfigVisibilitySeeder"/> and the
-/// task report both name it explicitly instead.</para>
-///
-/// <para>A proper fix for all three is a <c>source</c> column distinguishing a seeded row from an operator's
-/// own — explicitly scoped OUT of this task (no endpoint-layer changes) and left as a named follow-up.</para>
+/// <para><b>NOT covered here, documented instead</b> (kept from the original file — capturing Program.cs's
+/// <c>Console.Error</c> output across a real host boot is disproportionate to what remains to verify once the
+/// seeder's own behavior is unit-tested directly).</para>
 /// </summary>
 [Collection(SecurityEnvVarTests.CollectionName)]
 public sealed class ConnectorEndpointsEnvSeedingSideEffectsTests
@@ -165,8 +170,14 @@ public sealed class ConnectorEndpointsEnvSeedingSideEffectsTests
         return (admin, engineer);
     }
 
+    /// <summary>Task B-6 — the provenance fix, proven directly: renamed from the pre-fix
+    /// <c>...409sNamingTheSeededMachine_OperatorNeverPersistedIt</c> (this exact scenario is what the
+    /// carried finding named). Before B-6, this exact request 409'd, naming a machine code the operator never
+    /// persisted themselves — the load-bearing assertion below is now the OPPOSITE: the save SUCCEEDS,
+    /// because a <see cref="ConnectorConfigSource.Seeded"/> row is no longer treated as "an operator already
+    /// configured this kind".</summary>
     [Fact]
-    public async Task PostConnector_ForADifferentMachine_409sNamingTheSeededMachine_OperatorNeverPersistedIt()
+    public async Task PostConnector_ForADifferentMachine_SucceedsOverwritingTheSeededRow_NoLongerFalsely409s()
     {
         var envCode = "ENVSEED-SHADOW-" + Guid.NewGuid().ToString("N")[..8];
         var envMapPath = Path.Combine(Path.GetTempPath(), $"st4i-envseed-map-{Guid.NewGuid():N}.json");
@@ -178,29 +189,75 @@ public sealed class ConnectorEndpointsEnvSeedingSideEffectsTests
             using (admin) using (engineer)
             {
                 // Sanity: the seeding pass DID create a row for the env-var machine — never explicitly saved
-                // by anyone through this endpoint.
+                // by anyone through this endpoint — and it is correctly tagged Seeded, not Operator.
                 using var configuredBefore = await engineer.GetAsync("/v1/connectors/configured");
                 var before = await configuredBefore.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
-                Assert.Contains(before!, s => s.Kind == "Modbus" && s.MachineCode == envCode);
+                var seededRow = Assert.Single(before!, s => s.Kind == "Modbus" && s.MachineCode == envCode);
+                Assert.Equal(ConnectorConfigSource.Seeded, seededRow.Source);
 
-                // The load-bearing assertion (Fix round 1, Important #3): an Engineer trying to configure a
-                // genuinely DIFFERENT Modbus machine through the normal UI path is blocked — 409, naming the
-                // ENV-SEEDED machine code as "already configured", even though no operator ever persisted it
-                // through this endpoint themselves.
+                // The load-bearing assertion (Task B-6, closing Fix round 1 Important #3): an Engineer
+                // configuring a genuinely DIFFERENT Modbus machine through the normal UI path now SUCCEEDS —
+                // the seeded row is not an operator's own configuration, so it is not protected from being
+                // overwritten by one.
                 var otherCode = "ENVSEED-OTHER-" + Guid.NewGuid().ToString("N")[..8];
                 using var create = await engineer.PostAsJsonAsync(
                     "/v1/connectors",
                     new ConnectorCreateRequest("Modbus", "10.0.0.99", 502, ValidModbusMap(otherCode)),
                     JsonOptions);
 
-                Assert.Equal(HttpStatusCode.Conflict, create.StatusCode);
-                var body = await create.Content.ReadAsStringAsync();
-                Assert.Contains(envCode, body, StringComparison.Ordinal);
+                Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+
+                // The store now reports the OPERATOR's own row (the seeded one was upserted over) — Source
+                // flips to Operator, since this row now genuinely IS an operator's own persisted config.
+                using var configuredAfter = await engineer.GetAsync("/v1/connectors/configured");
+                var after = await configuredAfter.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+                var operatorRow = Assert.Single(after!, s => s.Kind == "Modbus");
+                Assert.Equal(otherCode, operatorRow.MachineCode);
+                Assert.Equal(ConnectorConfigSource.Operator, operatorRow.Source);
             }
         }
         finally
         {
             File.Delete(envMapPath);
+        }
+    }
+
+    /// <summary>Task B-6 — the OTHER half of the provenance fix: relaxing the guard for a Seeded row must NOT
+    /// remove the pre-existing protection for a GENUINE operator row. No env-var seeding involved at all here
+    /// — two plain <c>POST /v1/connectors</c> calls, same kind, different machine codes; the second must still
+    /// 409 exactly as it always has.</summary>
+    [Fact]
+    public async Task PostConnector_ForADifferentMachine_OfAnOperatorOwnedKind_Still409s_ProtectionIntact()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer) = await SetUpAdminAndEngineerAsync(factory);
+        using (admin) using (engineer)
+        {
+            var firstCode = "OPERATOR-OWN-" + Guid.NewGuid().ToString("N")[..8];
+            using (var createFirst = await engineer.PostAsJsonAsync(
+                       "/v1/connectors",
+                       new ConnectorCreateRequest("Modbus", "10.0.0.50", 502, ValidModbusMap(firstCode)),
+                       JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.OK, createFirst.StatusCode);
+            }
+
+            var secondCode = "OPERATOR-OTHER-" + Guid.NewGuid().ToString("N")[..8];
+            using var createSecond = await engineer.PostAsJsonAsync(
+                "/v1/connectors",
+                new ConnectorCreateRequest("Modbus", "10.0.0.51", 502, ValidModbusMap(secondCode)),
+                JsonOptions);
+
+            Assert.Equal(HttpStatusCode.Conflict, createSecond.StatusCode);
+            var body = await createSecond.Content.ReadAsStringAsync();
+            Assert.Contains(firstCode, body, StringComparison.Ordinal);
+
+            // Still exactly the operator's original row — never overwritten.
+            using var configured = await engineer.GetAsync("/v1/connectors/configured");
+            var summaries = await configured.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
+            var row = Assert.Single(summaries!, s => s.Kind == "Modbus");
+            Assert.Equal(firstCode, row.MachineCode);
+            Assert.Equal(ConnectorConfigSource.Operator, row.Source);
         }
     }
 
@@ -221,11 +278,18 @@ public sealed class ConnectorEndpointsEnvSeedingSideEffectsTests
                 {
                     using var configuredBefore = await engineer1.GetAsync("/v1/connectors/configured");
                     var before = await configuredBefore.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);
-                    Assert.Contains(before!, s => s.Kind == "Modbus" && s.MachineCode == envCode);
+                    var seededRow = Assert.Single(before!, s => s.Kind == "Modbus" && s.MachineCode == envCode);
+                    Assert.Equal(ConnectorConfigSource.Seeded, seededRow.Source);
 
-                    // DELETE succeeds (200) against a row the operator never created themselves.
+                    // DELETE succeeds (200) against a row the operator never created themselves — Task B-6:
+                    // the response now says so plainly, instead of the generic "keeps running" message a
+                    // genuine operator row gets.
                     using var delete = await engineer1.DeleteAsync("/v1/connectors/Modbus");
                     Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+                    var deleteResult = await delete.Content.ReadFromJsonAsync<ConnectorDeleteResultDto>(JsonOptions);
+                    Assert.NotNull(deleteResult);
+                    Assert.Contains("not created by an operator", deleteResult!.Message, StringComparison.Ordinal);
+                    Assert.Contains("reappear", deleteResult.Message, StringComparison.Ordinal);
 
                     using var configuredAfterDelete = await engineer1.GetAsync("/v1/connectors/configured");
                     var afterDelete = await configuredAfterDelete.Content.ReadFromJsonAsync<List<ConnectorConfigSummary>>(JsonOptions);

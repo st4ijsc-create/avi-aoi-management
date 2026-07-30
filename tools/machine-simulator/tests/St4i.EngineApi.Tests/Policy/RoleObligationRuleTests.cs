@@ -49,6 +49,44 @@ public sealed class RoleObligationRuleTests
         Assert.True(decision!.IsPermitted);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Task B-6 — commands gated strictly more strictly than setpoints: Engineer (or higher) may write a
+    // setpoint; only Admin may invoke a command. A setpoint-authorised caller (Engineer) must NOT be able
+    // to invoke a command.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(Roles.Operator, false)]
+    [InlineData(Roles.Engineer, true)]
+    [InlineData(Roles.Admin, true)]
+    public void MachineSetpointWrite_RequiresEngineerOrHigher(string role, bool expectedPermit)
+    {
+        var decision = _rule.Evaluate(Request("machine.setpoint.write", role));
+
+        Assert.NotNull(decision);
+        Assert.Equal(expectedPermit, decision!.IsPermitted);
+        if (!expectedPermit)
+        {
+            Assert.Equal(PolicyReasonCode.PolicyDenied, decision.Reason);
+        }
+    }
+
+    [Theory]
+    [InlineData(Roles.Operator, false)]
+    [InlineData(Roles.Engineer, false)]
+    [InlineData(Roles.Admin, true)]
+    public void MachineCommandInvoke_RequiresAdmin_EngineerAlone_IsNotEnough(string role, bool expectedPermit)
+    {
+        var decision = _rule.Evaluate(Request("machine.command.invoke", role));
+
+        Assert.NotNull(decision);
+        Assert.Equal(expectedPermit, decision!.IsPermitted);
+        if (!expectedPermit)
+        {
+            Assert.Equal(PolicyReasonCode.PolicyDenied, decision.Reason);
+        }
+    }
+
     [Fact]
     public void UnknownAction_DeniesUnsupported()
     {

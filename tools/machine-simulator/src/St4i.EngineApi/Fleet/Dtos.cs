@@ -1,3 +1,4 @@
+using System.Text.Json;
 using St4i.EdgeCore.Engine;
 using St4i.EdgeCore.Models;
 using St4i.Connector.Abstractions.Models;
@@ -269,3 +270,55 @@ public sealed record ConnectorTestRequest(string Kind, string? Host, int? Port, 
 /// both "the connector factory rejected this configuration" and "no response within the bounded window",
 /// since an operator does not need to know or care which.</summary>
 public sealed record ConnectorTestResultDto(bool Ok, string? Error);
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /v1/machines/{code}/setpoint, POST /v1/machines/{code}/command — Task B-6
+// (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md): the last thing standing
+// between an authenticated session and a moving machine. See MachineWriteEndpoints' own class doc comment
+// for the full policy/RBAC/audit/rate-limit write-up.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// <summary><c>Value</c> is bound as a raw <see cref="JsonElement"/>, deliberately — NOT <c>object?</c>. This
+/// host's global HTTP JSON options (<c>Program.cs</c>'s <c>ConfigureHttpJsonOptions</c>) have no converter for
+/// bare <see cref="object"/>, so an <c>object?</c>-typed property would bind to a boxed <see cref="JsonElement"/>
+/// anyway (System.Text.Json's own default for an untyped member) — <see cref="MachineWriteEndpoints"/> makes
+/// that explicit and then re-parses it through <see cref="St4i.Connector.Abstractions.Json.ConnectorJson"/>'s
+/// own <c>object?</c> converter (the SAME already-hardened domain <see cref="IWritableDeviceDriver.WriteSetpointAsync"/>
+/// expects: <c>double | bool | string | null</c>, decision (b) rejecting arrays/objects/decimal loudly rather
+/// than silently coercing) — reusing that logic rather than re-deriving a second, possibly-inconsistent
+/// narrowing rule at the HTTP boundary. An omitted <c>"value"</c> key binds to
+/// <see cref="JsonValueKind.Undefined"/> (distinguishable from an explicit JSON <c>null</c>,
+/// <see cref="JsonValueKind.Null"/>) — <see cref="MachineWriteEndpoints"/> rejects the former with 400
+/// ("value is required") and lets the latter through as a genuine (if unusual) write attempt, exactly the
+/// same "a value was never supplied" vs. "a value was supplied and IS null" distinction this codebase already
+/// insists on elsewhere (e.g. <c>ConnectorWritablePointGrant</c>'s own nullable-not-sentinel bounds).</summary>
+public sealed record MachineSetpointWriteRequestDto(string Point, JsonElement Value);
+
+/// <summary><c>Arguments</c>' values are bound as raw <see cref="JsonElement"/>s for the identical reason
+/// <see cref="MachineSetpointWriteRequestDto.Value"/> is — see that DTO's own doc comment. <see langword="null"/>/
+/// omitted for a command that takes none (the only shape a Modbus coil-pulse command can ever declare today —
+/// see <see cref="St4i.EdgeCore.Drivers.Modbus.ModbusRegisterMap"/>'s own remarks on Modbus commands carrying
+/// no wire-mapping for arguments yet).</summary>
+public sealed record MachineCommandRequestDto(string Command, Dictionary<string, JsonElement>? Arguments = null);
+
+/// <summary>The <c>404</c>/<c>409</c> body for the three-and-a-half operator-meaningful "cannot even attempt
+/// this write" cases (<see cref="Fleet.MachineDriverAvailability"/>, minus <see cref="Fleet.MachineDriverAvailability.MachineNotFound"/>,
+/// which reuses the plain <see cref="ApiErrorDto"/> shape <c>GET /v1/machines/{code}</c> already returns for
+/// an unknown code — one consistent "unknown machine" shape across the whole API). <see cref="Reason"/> is a
+/// stable, SCREAMING_SNAKE machine code (mirrors <see cref="Policy.PolicyDenyDto"/>'s own <c>Reason</c>) an
+/// operator-facing client can branch on; <see cref="Error"/> is the human-readable explanation — same field
+/// order/naming as <see cref="Policy.PolicyDenyDto"/> so a caller that already knows one error shape in this
+/// API recognizes the other immediately.</summary>
+public sealed record MachineWriteUnavailableDto(string Error, string Reason);
+
+/// <summary>The <c>200 OK</c> body for an ATTEMPTED setpoint write — every <see cref="WriteOutcome"/>
+/// (<c>Applied</c>/<c>Rejected</c>/<c>Failed</c>/<c>Indeterminate</c>) returns this SAME shape at this SAME
+/// status code; see <see cref="MachineWriteEndpoints"/>'s own class doc comment for why status code 200
+/// (never 4xx/5xx) is deliberate for every outcome once a live driver was actually resolved and a write
+/// genuinely attempted — the exact same "verdict IN the body, never an exception-shaped response" posture
+/// <see cref="ConnectorTestResultDto"/> already established for <c>POST /v1/connectors/test</c>.</summary>
+public sealed record MachineSetpointWriteResponseDto(string MachineCode, SetpointWriteResult Result);
+
+/// <summary>The command-invocation mirror of <see cref="MachineSetpointWriteResponseDto"/> — same reasoning,
+/// same status-code posture, for <see cref="CommandResult"/> instead.</summary>
+public sealed record MachineCommandInvokeResponseDto(string MachineCode, CommandResult Result);

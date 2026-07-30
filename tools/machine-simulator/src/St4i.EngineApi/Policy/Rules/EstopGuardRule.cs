@@ -25,6 +25,15 @@ public sealed class EstopGuardRule : IPolicyRule
     private static readonly HashSet<string> ActuatingActions = new(StringComparer.Ordinal)
     {
         "fleet.start", "scenario.burst", "line.start", "line.unhold",
+
+        // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — THE
+        // non-negotiable invariant this task exists to deliver. A setpoint write or a command invocation
+        // physically changes/actuates a live device — strictly MORE consequential than any action already
+        // in this set (which, until B-4/B-5, never reached a device at all). If either action were missing
+        // here, the HALT latch would be engaged while an operator could still command the machine — exactly
+        // what the latch exists to prevent. See MachineWriteEndpointsTests' HALT-latched tests for the
+        // direct, unmistakable proof (latch HALT, attempt both, assert SAFETY_BLOCKED).
+        "machine.setpoint.write", "machine.command.invoke",
     };
 
     public PolicyDecision? Evaluate(PolicyRequest request)

@@ -227,6 +227,44 @@ public sealed record ConnectorWriteCapability(
 /// <see cref="LoadAllAsync"/> — the STARTUP wiring path, never exposed over HTTP — reads the full row
 /// including <see cref="ConnectorConfigRecord.MapJson"/>.</para>
 /// </summary>
+/// <summary>
+/// Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — closes the
+/// carried B-4 finding (fix round 1, Important #3): before this, an env-var/<c>connectors.json</c>-seeded
+/// row (<see cref="ConnectorConfigVisibilitySeeder"/>) and an operator's own row (<c>POST /v1/connectors</c>)
+/// were STORED IDENTICALLY — nothing distinguished them — which produced three real, reachable defects:
+/// <c>POST</c> 409ing against a machine code the operator never actually persisted (the mismatch-conflict
+/// guard couldn't tell "an operator's own prior row" from "the seeder's own artifact for the SAME kind, under
+/// a DIFFERENT machine"), <c>DELETE</c> succeeding on a row nobody created (harmless, but with no way to say
+/// so), and the seeder's OWN "an existing row may not reflect what's actually running" warning firing on
+/// EVERY subsequent boot about its own prior artifact (a seeded row for a kind the same env var/
+/// <c>connectors.json</c> entry still actively drives will always be found "already existing" by the next
+/// boot's seeding pass).
+///
+/// <para><b><see cref="Operator"/> is the default</b> (<see cref="ConnectorConfigStore.SaveAsync"/>'s own
+/// parameter default, and migration v3's column default for every row written before this column existed) —
+/// the conservative choice: every row a real operator explicitly persisted via <c>POST /v1/connectors</c>
+/// keeps its full "protect this from being silently overwritten" treatment, and a pre-migration row that
+/// actually WAS seeded by an earlier build's <see cref="ConnectorConfigVisibilitySeeder"/> (B-4 shipped before
+/// this column existed) is, for one run after upgrading, treated as if an operator owned it — the seeder will
+/// warn once and decline to refresh it, rather than guessing it is safe to silently overwrite something it
+/// cannot prove it created. An operator who wants that specific row's provenance corrected can
+/// <c>DELETE /v1/connectors/{kind}</c> once and restart — the next seeding pass inserts it fresh, correctly
+/// tagged <see cref="Seeded"/>. This is the same "assert the failure, don't assume it can't happen" bias this
+/// whole codebase already applies elsewhere (e.g. <c>ModbusRegister.TryComputeRawWordForWrite</c> re-checking
+/// bounds on every call even though B-3 already proved parse-time enforcement sufficient).</para>
+/// </summary>
+public enum ConnectorConfigSource
+{
+    /// <summary>Persisted by an explicit operator action — <c>POST /v1/connectors</c>. The ONLY source this
+    /// column could ever record before this task (every migrated pre-existing row defaults to this).</summary>
+    Operator,
+
+    /// <summary>Persisted by <see cref="ConnectorConfigVisibilitySeeder.SeedAsync"/> — a VISIBILITY-only row
+    /// for a connector this run's <c>ST4I_MODBUS_MAP</c>/<c>ST4I_OPCUA_MAP</c>/<c>connectors.json</c> is
+    /// actively driving, never something an operator explicitly asked this product to persist.</summary>
+    Seeded,
+}
+
 public sealed record ConnectorConfigRecord(
     string Kind,
     string MachineCode,
@@ -235,7 +273,8 @@ public sealed record ConnectorConfigRecord(
     string MapJson,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc,
-    ConnectorWriteCapability? WriteCapability = null);
+    ConnectorWriteCapability? WriteCapability = null,
+    ConnectorConfigSource Source = ConnectorConfigSource.Operator);
 
 /// <summary>The credential-free projection every caller OUTSIDE startup wiring gets — see
 /// <see cref="ConnectorConfigStore"/>'s own doc comment for why <c>MapJson</c> (which may embed OPC-UA
@@ -249,13 +288,18 @@ public sealed record ConnectorConfigRecord(
 /// <see cref="ConnectorWriteCapability"/> persistence record, so a caller reads one consistent capability
 /// shape regardless of which endpoint it came from. <see langword="null"/> for a read-only connector — every
 /// connector this build accepted before this task, and any map that simply declares neither.</param>
+/// <param name="Source">Task B-6 — see <see cref="ConnectorConfigSource"/>'s own doc comment. Surfaced here
+/// (not a credential — an origin tag) so an operator/auditor reading <c>GET /v1/connectors/configured</c> can
+/// tell an env-var/<c>connectors.json</c>-driven visibility row apart from one they explicitly persisted
+/// themselves, rather than the two being visually identical.</param>
 public sealed record ConnectorConfigSummary(
     string Kind,
     string MachineCode,
     string? Host,
     int? Port,
     DateTimeOffset UpdatedAtUtc,
-    ConnectorWriteCapabilityDto? WriteCapability = null);
+    ConnectorWriteCapabilityDto? WriteCapability = null,
+    ConnectorConfigSource Source = ConnectorConfigSource.Operator);
 
 public sealed class ConnectorConfigStore
 {
@@ -295,6 +339,13 @@ public sealed class ConnectorConfigStore
         (2, new[]
         {
             "ALTER TABLE connector_configs ADD COLUMN write_capability_json TEXT NULL;",
+        }),
+        // Task B-6 — see ConnectorConfigSource's own doc comment for why "Operator" is the correct default
+        // for every row that predates this column (SQLite's ADD COLUMN with a literal DEFAULT applies it to
+        // every existing row at migration time, same mechanism v2 already relies on for write_capability_json).
+        (3, new[]
+        {
+            "ALTER TABLE connector_configs ADD COLUMN source TEXT NOT NULL DEFAULT 'Operator';",
         }),
     };
 
@@ -428,9 +479,15 @@ public sealed class ConnectorConfigStore
     /// documented tension rather than a code change; a future task adding a second call site should treat this
     /// paragraph as the reminder to get it right, since the type system will not catch an omission here.</para>
     /// </param>
+    /// <param name="source">Task B-6 — see <see cref="ConnectorConfigSource"/>'s own doc comment. Defaults to
+    /// <see cref="ConnectorConfigSource.Operator"/> — every pre-existing call site/test (predating this task)
+    /// that never mentions it keeps persisting an operator row, byte for byte. The one production call site
+    /// that must pass <see cref="ConnectorConfigSource.Seeded"/> explicitly is
+    /// <see cref="ConnectorConfigVisibilitySeeder.SeedAsync"/>.</param>
     public async Task<ConnectorConfigSummary> SaveAsync(
         string kind, string machineCode, string? host, int? port, string mapJson,
-        ConnectorWriteCapability? writeCapability = null, CancellationToken ct = default)
+        ConnectorWriteCapability? writeCapability = null, CancellationToken ct = default,
+        ConnectorConfigSource source = ConnectorConfigSource.Operator)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
         ArgumentException.ThrowIfNullOrWhiteSpace(machineCode);
@@ -439,18 +496,20 @@ public sealed class ConnectorConfigStore
         var nowIso = ToIso(DateTimeOffset.UtcNow);
         var normalizedCapability = (writeCapability is not null && writeCapability.GrantsCapability) ? writeCapability : null;
         var writeCapabilityJson = normalizedCapability?.ToJson();
+        var sourceText = source.ToString();
 
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO connector_configs (kind, machine_code, host, port, map_json, write_capability_json, created_at, updated_at)
-            VALUES (@kind, @machine_code, @host, @port, @map_json, @write_capability_json, @now, @now)
+            INSERT INTO connector_configs (kind, machine_code, host, port, map_json, write_capability_json, source, created_at, updated_at)
+            VALUES (@kind, @machine_code, @host, @port, @map_json, @write_capability_json, @source, @now, @now)
             ON CONFLICT(kind) DO UPDATE SET
                 machine_code = excluded.machine_code,
                 host = excluded.host,
                 port = excluded.port,
                 map_json = excluded.map_json,
                 write_capability_json = excluded.write_capability_json,
+                source = excluded.source,
                 updated_at = excluded.updated_at;
             """;
         cmd.Parameters.AddWithValue("@kind", kind);
@@ -459,21 +518,23 @@ public sealed class ConnectorConfigStore
         cmd.Parameters.AddWithValue("@port", (object?)port ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@map_json", mapJson);
         cmd.Parameters.AddWithValue("@write_capability_json", (object?)writeCapabilityJson ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@source", sourceText);
         cmd.Parameters.AddWithValue("@now", nowIso);
 
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
         return new ConnectorConfigSummary(
             kind, machineCode, host, port, ParseIso(nowIso),
-            normalizedCapability is null ? null : ConnectorWriteCapabilityDto.From(normalizedCapability));
+            normalizedCapability is null ? null : ConnectorWriteCapabilityDto.From(normalizedCapability),
+            source);
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // Read
     // ─────────────────────────────────────────────────────────────────────
 
-    private const string FullColumns = "kind, machine_code, host, port, map_json, created_at, updated_at, write_capability_json";
-    private const string SummaryColumns = "kind, machine_code, host, port, updated_at, write_capability_json";
+    private const string FullColumns = "kind, machine_code, host, port, map_json, created_at, updated_at, write_capability_json, source";
+    private const string SummaryColumns = "kind, machine_code, host, port, updated_at, write_capability_json, source";
 
     /// <summary>The FULL row (including <see cref="ConnectorConfigRecord.MapJson"/>, which may embed OPC-UA
     /// credentials) for one kind — engine-internal use only (validating an update targets the same machine,
@@ -555,7 +616,8 @@ public sealed class ConnectorConfigStore
         MapJson: reader.GetString(reader.GetOrdinal("map_json")),
         CreatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("created_at"))),
         UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))),
-        WriteCapability: GetWriteCapability(reader));
+        WriteCapability: GetWriteCapability(reader),
+        Source: GetSource(reader));
 
     private static ConnectorConfigSummary ReadSummary(SqliteDataReader reader)
     {
@@ -566,8 +628,17 @@ public sealed class ConnectorConfigStore
             Host: GetNullableString(reader, "host"),
             Port: GetNullableInt(reader, "port"),
             UpdatedAtUtc: ParseIso(reader.GetString(reader.GetOrdinal("updated_at"))),
-            WriteCapability: rawCapability is null ? null : ConnectorWriteCapabilityDto.From(rawCapability));
+            WriteCapability: rawCapability is null ? null : ConnectorWriteCapabilityDto.From(rawCapability),
+            Source: GetSource(reader));
     }
+
+    /// <summary>Task B-6 — <see cref="Enum.Parse{TEnum}(string)"/>, not a raw string comparison: this column
+    /// only ever holds one of the two <see cref="ConnectorConfigSource"/> member names (this class is the
+    /// ONLY writer of this column — see <see cref="SaveAsync"/> and the migration's own literal default),
+    /// so a value this doesn't recognize is a genuine corruption/schema-drift signal worth throwing loudly
+    /// for, not silently defaulting past.</summary>
+    private static ConnectorConfigSource GetSource(SqliteDataReader reader) =>
+        Enum.Parse<ConnectorConfigSource>(reader.GetString(reader.GetOrdinal("source")));
 
     /// <summary>Task B-3 — <see langword="null"/> (a pre-existing row, or a map that declares no write/command
     /// capability — see <see cref="ConnectorWriteCapability"/>'s own doc comment for why the two are stored

@@ -169,8 +169,19 @@ public static class ConnectorEndpoints
         // forever (RegisterMachine has no unregister) or silently swap which physical machine a familiar
         // roster tile represents — both dishonest. An operator who genuinely wants to switch machines must
         // explicitly DELETE the old configuration first.
+        //
+        // Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — closes the
+        // carried B-4 finding: this guard now only fires against an existing OPERATOR row.
+        // ConnectorConfigVisibilitySeederTests/ConnectorEndpointsEnvSeedingSideEffectsTests' own reviewer-
+        // proved scenario — an env-var/connectors.json-SEEDED row for a DIFFERENT machine code shadowing this
+        // kind — is no longer treated as "an operator already configured this kind" at all: the operator
+        // never persisted that row themselves, so there is nothing of theirs to protect from being
+        // overwritten. The save below proceeds normally, upserting the seeded row into an operator-owned one
+        // (SaveAsync's default `source` is Operator) for the machine code THIS request actually names.
         var existing = await store.GetAsync(validated.Kind, ct).ConfigureAwait(false);
-        if (existing is not null && !string.Equals(existing.MachineCode, validated.MachineCode, StringComparison.OrdinalIgnoreCase))
+        if (existing is not null
+            && existing.Source == ConnectorConfigSource.Operator
+            && !string.Equals(existing.MachineCode, validated.MachineCode, StringComparison.OrdinalIgnoreCase))
         {
             return Results.Conflict(new ApiErrorDto(
                 $"A {validated.Kind} connector is already configured for machine '{existing.MachineCode}'. " +
@@ -270,15 +281,26 @@ public static class ConnectorEndpoints
 
         await recorder.RecordAsync(
             ctx, "connector.delete", "connector", normalized,
-            new { existing.MachineCode, existing.Host, existing.Port },
+            new { existing.MachineCode, existing.Host, existing.Port, existing.Source },
             null,
             ct).ConfigureAwait(false);
 
         // English, deliberately — see CreateConnectorAsync's own remark on this.
-        const string message =
-            "Removed from the persisted configuration. This machine remains in the fleet roster and, if a " +
-            "connector of this kind is currently running, keeps running until the application is fully " +
-            "restarted — there is no live \"unregister\" path.";
+        //
+        // Task B-6 — provenance-aware: deleting a SEEDED row (never something an operator explicitly asked
+        // this product to persist — see ConnectorConfigVisibilitySeeder's own doc comment) removes the
+        // visibility row but says so plainly, including the one thing the generic message would otherwise
+        // leave an operator to discover by surprise — that it comes right back the next time this process
+        // starts, as long as the SAME environment-variable/connectors.json configuration is still active.
+        var message = existing.Source == ConnectorConfigSource.Seeded
+            ? "Removed from the persisted configuration. This row was not created by an operator — it was " +
+              "auto-populated for visibility from this run's environment-variable/connectors.json " +
+              "configuration. That underlying configuration is unaffected: if it is still active, this row " +
+              "(and the live connector it describes) will simply reappear the next time this process starts. " +
+              "Remove/change the environment variable or connectors.json entry itself to stop that."
+            : "Removed from the persisted configuration. This machine remains in the fleet roster and, if a " +
+              "connector of this kind is currently running, keeps running until the application is fully " +
+              "restarted — there is no live \"unregister\" path.";
 
         return Results.Ok(new ConnectorDeleteResultDto(normalized, message));
     }
