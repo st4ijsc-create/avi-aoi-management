@@ -453,7 +453,10 @@ export const aoiOnboardingRouter = router({
           );
         }
         if (reason.length < 5) {
-          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "overrideReason" }, "Override cần lý do (≥ 5 ký tự) — sẽ được ghi vào audit log.");
+          // Review cuối, ca I-A #14: `reason` ĐÃ được nhập (admin có thể gõ "ok") — chỉ
+          // chưa đủ độ dài. FIELD_REQUIRED nói "thiếu", nhưng trường này không thiếu, nó
+          // KHÔNG HỢP LỆ (quá ngắn). Đổi sang INVALID_VALUE để câu hiện đúng sự thật.
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "overrideReason" }, "Override cần lý do (≥ 5 ký tự) — sẽ được ghi vào audit log.");
         }
         overridden = true;
       }
@@ -522,7 +525,13 @@ export const aoiOnboardingRouter = router({
         reason: input.reason.trim(),
       });
       if (!row) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "commissioningRecord" }, "Máy này không có bản ghi commissioning đang hiệu lực.");
+        // Review cuối, ca I-A #8: decommissionMachine() trả null khi
+        // `!latest || latest.status !== "commissioned"` — máy có thể CÓ bản ghi (draft,
+        // hoặc đã decommissioned từ trước), chỉ không ở trạng thái "commissioned" để
+        // decommission tiếp. ENTITY_NOT_FOUND khẳng định "không có bản ghi" — sai khi máy
+        // có bản ghi nhưng sai trạng thái. Đổi sang OPERATION_FAILED, tái dùng khoá
+        // "transitionMachineLifecycle" đã có sẵn cho lớp thao tác chuyển trạng thái máy.
+        throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "transitionMachineLifecycle" }, "Máy này không có bản ghi commissioning đang hiệu lực.");
       }
       try {
         const d = await db();

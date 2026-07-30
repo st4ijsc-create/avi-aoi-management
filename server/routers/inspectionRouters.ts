@@ -462,7 +462,13 @@ export const measurementResultRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const result = await db.getMeasurementResultById(input.id);
-      if (!result || !result.imageUrl) {
+      // Review cuối — ghi sổ trước: `!result || !result.imageUrl` gộp hai tình huống
+      // khác nhau (kết quả đo không tồn tại vs. kết quả CÓ nhưng không có ảnh) vào MỘT
+      // câu chỉ nói về ảnh. Tách để entity đúng với điều kiện thật đã xảy ra.
+      if (!result) {
+        throw appError('BAD_REQUEST', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
+      }
+      if (!result.imageUrl) {
         throw appError('BAD_REQUEST', 'ENTITY_NOT_FOUND', { entity: 'image' }, 'No image available for analysis');
       }
 

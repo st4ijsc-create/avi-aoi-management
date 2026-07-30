@@ -185,7 +185,13 @@ export const aiSegmentationRouter = router({
         return { ...result, masks, degraded: false as const };
       } catch (err) {
         if (err instanceof SegmentationUnavailableError) {
-          throw appError("PRECONDITION_FAILED", "FEATURE_DISABLED", { feature: "aiSegmentation" }, `MODEL_NOT_AVAILABLE: ${err.message}`);
+          // Review cuối, ca I-A #12: SegmentationUnavailableError ném khi model không
+          // tồn tại HOẶC `model.status !== "ACTIVE"` — trạng thái của MỘT bản ghi model,
+          // không phải một cờ tính năng hệ thống. FEATURE_DISABLED nói "tính năng chưa
+          // bật" — sai, không có công tắc nào cho người dùng bật. Đổi sang
+          // OPERATION_FAILED, tái dùng cùng khoá "segmentImage" với nhánh catch chung ở
+          // dưới — cả hai đều là "không thực hiện được: phân đoạn ảnh".
+          throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "segmentImage" }, `MODEL_NOT_AVAILABLE: ${err.message}`);
         }
         throw appError(
           "INTERNAL_SERVER_ERROR",

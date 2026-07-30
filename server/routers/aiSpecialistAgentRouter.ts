@@ -539,7 +539,17 @@ export const aiSpecialistAgentRouter = router({
       // (cùng chốt sở hữu), nhưng trả kèm `steps` — nơi chứa `repoContextSummary`.
       const session = await getAiSpecialistSessionDetail(input.sessionId, ctx.user.id);
       if (!session) {
-        throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "agentSession", parent: "user" }, "Session does not belong to current user");
+        // Review cuối, ca I-A #11: getAiSpecialistSessionDetail() lọc bằng
+        // `and(eq(id, sessionId), eq(userId, userId))` — trả null CẢ khi phiên không tồn
+        // tại LẪN khi nó thuộc người dùng khác; không có cách nào phân biệt hai trường
+        // hợp từ kết quả null. SCOPE_MISMATCH khẳng định phiên CÓ TỒN TẠI (chỉ sai chủ) —
+        // nói quá. getSessionDetail (:373) gọi CÙNG helper này và đã dùng đúng
+        // ENTITY_NOT_FOUND — đổi appCode cho khớp, xoá mâu thuẫn giữa hai call-site trên
+        // cùng một helper. GIỮ NGUYÊN mã tRPC "FORBIDDEN" + fallbackMessage gốc (test cũ
+        // aiSpecialistAgentRouter.test.ts khẳng định `.code === "FORBIDDEN"` — đây là mã
+        // TRUYỀN TẢI (transport), tách biệt với appCode quyết định CÂU chữ hiện cho
+        // người dùng; đổi appCode không cần đổi transport code).
+        throw appError("FORBIDDEN", "ENTITY_NOT_FOUND", { entity: "agentSession" }, "Session does not belong to current user");
       }
       return upsertSpecialistFeedback({
         ...input,

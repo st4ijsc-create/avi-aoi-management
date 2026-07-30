@@ -37,6 +37,14 @@ function rethrow(err: unknown): never {
   if (message.includes("Segregation of duties")) {
     throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveProgramRelease" }, message);
   }
+  // Review cuối, ca I-A #10: inspectionProgramService ném CẢ `Product model #N not
+  // found` (createRelease — thiếu SẢN PHẨM) LẪN `Program release #N not found`
+  // (approve/reject/release/compare — thiếu BẢN PHÁT HÀNH). Regex "not found" trước
+  // đây gộp cả hai vào entity:"programRelease" — SAI HẲN thực thể khi thứ thiếu là mã
+  // sản phẩm. Phân biệt theo nội dung message trước khi gán entity.
+  if (message.includes("Product model") && message.includes("not found")) {
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, message);
+  }
   if (message.includes("not found")) {
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, message);
   }

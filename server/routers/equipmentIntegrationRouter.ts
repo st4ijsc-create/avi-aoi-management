@@ -51,7 +51,11 @@ function toTrpc(err: unknown): TRPCError {
   const msg = err instanceof Error ? err.message : String(err);
   if (/not found/i.test(msg)) return appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, msg);
   if (/disabled/i.test(msg)) return appError("CONFLICT", "FEATURE_DISABLED", { feature: "equipmentIntegration" }, msg);
-  return appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "euromapIntegration" }, msg);
+  // Review cuối, ca I-A #13: `toTrpc` chỉ được gọi bởi 5 thủ tục recipe-versioning
+  // (createRecipeVersion/releaseRecipeVersion/archiveRecipeVersion/rollbackRecipeVersion/
+  // recordRecipeLoad) — KHÔNG thủ tục Euromap/FOCAS nào dùng mapper này (các adapter đó
+  // chỉ đọc, không throw qua đây). operation:"euromapIntegration" nói sai hẳn thao tác.
+  return appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "manageRecipeVersion" }, msg);
 }
 
 export const equipmentIntegrationRouter = router({

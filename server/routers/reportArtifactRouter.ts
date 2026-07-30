@@ -36,6 +36,13 @@ function mapArtifactError(err: unknown): never {
     if (err.reason === "forbidden") {
       throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "accessReportArtifact" }, err.message);
     }
+    // Review cuối, ca I-A #9: 'expired' bị gộp chung vào ENTITY_NOT_FOUND trước đây —
+    // tệp CÒN ĐÓ, chỉ quá hạn lưu trữ (retention window), không phải "không tìm thấy".
+    // Tách nhánh để nói đúng; tRPC code GIỮ NGUYÊN NOT_FOUND (đã có comment ở đầu file
+    // giải thích lý do: tRPC không có mã HTTP 410, REST route riêng mới trả 410 thật).
+    if (err.reason === "expired") {
+      throw appError("NOT_FOUND", "ENTITY_EXPIRED", { entity: "reportArtifact" }, err.message);
+    }
     throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportArtifact" }, err.message);
   }
   throw err;

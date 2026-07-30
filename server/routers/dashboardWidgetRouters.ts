@@ -147,7 +147,9 @@ export const dashboardWidgetRouter = router({
       const currentLayout = await db.getDashboardWidgetLayout(ctx.user.id);
       
       if (!currentLayout) {
-        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'No layout found to save');
+        // Review cuối — ghi sổ trước: thứ thiếu là LAYOUT của user, không phải "dashboard"
+        // (một khái niệm rộng hơn — bảng điều khiển vẫn tồn tại, chỉ chưa có bố cục lưu).
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboardLayout' }, 'No layout found to save');
       }
       
       // Extract widgets and layout from current layout
