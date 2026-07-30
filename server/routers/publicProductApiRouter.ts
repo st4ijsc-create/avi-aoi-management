@@ -362,7 +362,7 @@ export const publicProductApiRouter = router({
       }
 
       if (!product.referenceImageUrl && !product.referenceImageKey) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Product has no reference image" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "referenceImage" }, "Product has no reference image");
       }
 
       // Nếu có storageKey thì lấy URL tải từ storage, ngược lại trả về URL trực tiếp
@@ -431,7 +431,7 @@ export const publicProductApiRouter = router({
       }
 
       if (!point.referenceImageUrl && !point.referenceImageKey) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point has no reference image" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "referenceImage" }, "Measurement point has no reference image");
       }
 
       let downloadUrl = point.referenceImageUrl;

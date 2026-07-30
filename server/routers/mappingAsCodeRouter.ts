@@ -38,12 +38,12 @@ const yamlInput = z.string().min(1).max(1_048_576);
 /** Map lỗi service → TRPCError với code phù hợp (không leak stack/SQL). */
 function toTrpcError(err: unknown): TRPCError {
   if (err instanceof MappingValidationError) {
-    return new TRPCError({ code: "BAD_REQUEST", message: err.message });
+    return appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "validateMappingAsCode" }, err.message);
   }
   if (err instanceof MappingImportError) {
     const code =
       err.code === "ADAPTER_NOT_FOUND" ? "NOT_FOUND" : err.code === "VERSION_REGRESSION" ? "PRECONDITION_FAILED" : "INTERNAL_SERVER_ERROR";
-    return new TRPCError({ code, message: err.message });
+    return appError(code, "OPERATION_FAILED", { operation: "importMappingAsCode" }, err.message);
   }
   if (err instanceof TRPCError) return err;
   return appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "mappingAsCodeSync" }, "Mapping-as-code thất bại. Kiểm tra log server.");

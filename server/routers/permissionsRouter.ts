@@ -891,7 +891,7 @@ export const permissionsRouter = router({
       }
       
       if (existing.isSystem) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot modify system roles' });
+        throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'updateRole' }, 'Cannot modify system roles');
       }
       
       await db
@@ -918,7 +918,7 @@ export const permissionsRouter = router({
       }
       
       if (existing.isSystem) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete system roles' });
+        throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'deleteRole' }, 'Cannot delete system roles');
       }
       
       await db

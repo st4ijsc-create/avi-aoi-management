@@ -10,6 +10,7 @@ import { z } from "zod";
 import { router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import {
   exportProductPackage,
@@ -24,7 +25,7 @@ export const productPackageRouter = router({
       try {
         return await exportProductPackage(input.productModelId);
       } catch (err: any) {
-        throw new TRPCError({ code: "NOT_FOUND", message: err?.message ?? "Export failed" });
+        throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "exportProductPackage" }, err?.message ?? "Export failed");
       }
     }),
 
@@ -44,7 +45,7 @@ export const productPackageRouter = router({
           createdBy: ctx.user.id,
         });
       } catch (err: any) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: err?.message ?? "Import failed" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "importProductPackage" }, err?.message ?? "Import failed");
       }
       try {
         await db.createAuditLog({

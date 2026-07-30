@@ -104,7 +104,7 @@ export const backupRouter = router({
           errorMessage: error.message,
           duration,
         });
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Backup failed: ${error.message}` });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "createBackup" }, `Backup failed: ${error.message}`);
       }
     }),
 
@@ -173,7 +173,7 @@ export const backupRouter = router({
           errorMessage: error.message,
           duration: Date.now() - startTime,
         });
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Restore failed: ${error.message}` });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "restoreBackup" }, `Restore failed: ${error.message}`);
       }
     }),
 

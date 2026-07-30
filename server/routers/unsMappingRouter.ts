@@ -81,10 +81,7 @@ export const unsMappingRouter = router({
         return await createMapping({ ...input, createdBy: ctx.user.id });
       } catch (err) {
         if (isUniqueViolation(err)) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Tag "${input.tag}" đã có mapping trong adapter này.`,
-          });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "unsMapping" }, `Tag "${input.tag}" đã có mapping trong adapter này.`);
         }
         throw err;
       }
@@ -102,7 +99,7 @@ export const unsMappingRouter = router({
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isUniqueViolation(err)) {
-          throw new TRPCError({ code: "CONFLICT", message: "Tag đã có mapping trong adapter này." });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "unsMapping" }, "Tag đã có mapping trong adapter này.");
         }
         throw err;
       }

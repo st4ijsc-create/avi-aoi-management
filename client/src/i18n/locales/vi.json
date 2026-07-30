@@ -3676,7 +3676,10 @@
       "measurementPointVersion": "phiên bản điểm đo",
       "visionAdapter": "adapter thị giác",
       "auditLog": "nhật ký audit",
-      "reportArtifact": "tệp báo cáo đã lưu"
+      "reportArtifact": "tệp báo cáo đã lưu",
+      "contractSchema": "schema hợp đồng dữ liệu",
+      "measurementSample": "mẫu đo",
+      "metricDefinition": "định nghĩa chỉ số"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3776,7 +3779,26 @@
       "generateExternalReport": "sinh báo cáo bên ngoài",
       "emailReport": "gửi báo cáo qua email",
       "regenerateTwoFactorSecret": "tạo lại mã bí mật 2FA",
-      "enableTwoFactor": "bật xác thực 2 lớp"
+      "enableTwoFactor": "bật xác thực 2 lớp",
+      "createBackup": "tạo sao lưu",
+      "writeCausalGraph": "ghi đồ thị nhân quả",
+      "registerContractSchemaVersion": "đăng ký phiên bản schema hợp đồng",
+      "manageDefectDisposition": "quản lý xử lý lỗi (disposition)",
+      "manageEcn": "quản lý ECN (thay đổi kỹ thuật)",
+      "validateMappingAsCode": "kiểm tra mapping-as-code",
+      "importMappingAsCode": "nhập mapping-as-code",
+      "manageNcr": "quản lý NCR (không phù hợp)",
+      "manageOrderLifecycle": "quản lý vòng đời lệnh sản xuất",
+      "updateRole": "cập nhật vai trò",
+      "deleteRole": "xoá vai trò",
+      "exportProductPackage": "xuất gói sản phẩm",
+      "importProductPackage": "nhập gói sản phẩm",
+      "createPanelDefinition": "tạo định nghĩa panel",
+      "savePanelBoards": "lưu board của panel",
+      "manageRouting": "quản lý routing",
+      "computeMetric": "tính chỉ số",
+      "retryReportDelivery": "gửi lại báo cáo",
+      "testSmtpConnection": "kiểm tra kết nối SMTP"
     },
     "field": {
       "code": "mã",
@@ -3847,7 +3869,10 @@
       "criticalThreshold": "ngưỡng nghiêm trọng",
       "workflowOrWorkflowRef": "workflow hoặc mã tham chiếu workflow",
       "ursimEndpoint": "địa chỉ URSim",
-      "rosbridgeUrl": "địa chỉ ROSBRIDGE"
+      "rosbridgeUrl": "địa chỉ ROSBRIDGE",
+      "causalGraph": "đồ thị nhân quả",
+      "idempotencyKey": "khoá idempotency",
+      "lotCodeOrProductModelId": "mã lô hoặc mã model sản phẩm"
     },
     "feature": {
       "web_ingest": "nạp nội dung từ web",

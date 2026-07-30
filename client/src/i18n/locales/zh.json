@@ -3667,7 +3667,10 @@
       "measurementPointVersion": "测量点版本",
       "visionAdapter": "视觉适配器",
       "auditLog": "审计日志",
-      "reportArtifact": "已保存的报告"
+      "reportArtifact": "已保存的报告",
+      "contractSchema": "契约schema",
+      "measurementSample": "测量样本",
+      "metricDefinition": "指标定义"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3767,7 +3770,26 @@
       "generateExternalReport": "生成外部报告",
       "emailReport": "邮件发送报告",
       "regenerateTwoFactorSecret": "重新生成2FA密钥",
-      "enableTwoFactor": "启用双因素认证"
+      "enableTwoFactor": "启用双因素认证",
+      "createBackup": "创建备份",
+      "writeCausalGraph": "写入因果图",
+      "registerContractSchemaVersion": "注册契约schema版本",
+      "manageDefectDisposition": "管理缺陷处置",
+      "manageEcn": "管理工程变更(ECN)",
+      "validateMappingAsCode": "验证mapping-as-code",
+      "importMappingAsCode": "导入mapping-as-code",
+      "manageNcr": "管理不合格品(NCR)",
+      "manageOrderLifecycle": "管理订单生命周期",
+      "updateRole": "更新角色",
+      "deleteRole": "删除角色",
+      "exportProductPackage": "导出产品包",
+      "importProductPackage": "导入产品包",
+      "createPanelDefinition": "创建面板定义",
+      "savePanelBoards": "保存面板板卡",
+      "manageRouting": "管理工艺路线",
+      "computeMetric": "计算指标",
+      "retryReportDelivery": "重试报告投递",
+      "testSmtpConnection": "测试SMTP连接"
     },
     "field": {
       "code": "编码",
@@ -3838,7 +3860,10 @@
       "criticalThreshold": "严重阈值",
       "workflowOrWorkflowRef": "工作流或工作流引用",
       "ursimEndpoint": "URSim地址",
-      "rosbridgeUrl": "ROSBRIDGE地址"
+      "rosbridgeUrl": "ROSBRIDGE地址",
+      "causalGraph": "因果图",
+      "idempotencyKey": "幂等键",
+      "lotCodeOrProductModelId": "批次代码或产品型号ID"
     },
     "feature": {
       "web_ingest": "网页内容导入",

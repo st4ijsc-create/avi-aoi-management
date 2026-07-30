@@ -53,10 +53,10 @@ function toTrpc(err: unknown): never {
       err.httpStatus === 403 ? "FORBIDDEN" :
       err.httpStatus === 503 ? "PRECONDITION_FAILED" :
       err.httpStatus >= 500 ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST";
-    throw new TRPCError({ code, message: err.message });
+    throw appError(code, "OPERATION_FAILED", { operation: "manageOrderLifecycle" }, err.message);
   }
   if (err instanceof TRPCError) throw err;
-  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: (err as Error)?.message ?? "Order lifecycle error" });
+  throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "manageOrderLifecycle" }, (err as Error)?.message ?? "Order lifecycle error");
 }
 
 const lifecycleEnum = z.enum(["created", "allocated", "running", "held", "compensating", "done", "failed", "rejected"]);

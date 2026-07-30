@@ -140,13 +140,14 @@ async function assertIdempotencyKeyConsistent(
     .limit(1);
   if (!prior) return; // key mới → không xung đột
   if (idempotencyKeyConflicts(prior, want)) {
-    throw new TRPCError({
-      code: "CONFLICT",
-      message:
-        `Khóa idempotency "${idempotencyKey}" đã được dùng cho một lần deploy KHÁC ` +
+    throw appError(
+      "CONFLICT",
+      "INVALID_VALUE",
+      { field: "idempotencyKey" },
+      `Khóa idempotency "${idempotencyKey}" đã được dùng cho một lần deploy KHÁC ` +
         `(build #${prior.buildId}, ${prior.stage}${prior.deviceId != null ? `, thiết bị #${prior.deviceId}` : ""}). ` +
         `Yêu cầu hiện tại khác → hãy dùng khóa mới; hệ thống không ghi đè hay nuốt xung đột.`,
-    });
+    );
   }
 }
 
@@ -218,7 +219,7 @@ export const programmingRouter = router({
       const d = await db();
       const code = input.code.trim();
       const [clash] = await d.select().from(programProjects).where(eq(programProjects.code, code)).limit(1);
-      if (clash) throw new TRPCError({ code: "CONFLICT", message: `A project with code "${code}" already exists.` });
+      if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "programmingProject" }, `A project with code "${code}" already exists.`);
       const [row] = await d
         .insert(programProjects)
         .values({

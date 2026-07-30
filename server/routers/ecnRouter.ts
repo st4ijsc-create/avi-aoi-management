@@ -42,9 +42,9 @@ function toTrpc(err: unknown): never {
       err.code === "NOT_FOUND" ? "NOT_FOUND" :
       err.code === "SOD" ? "FORBIDDEN" :
       err.code === "DB" ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST";
-    throw new TRPCError({ code, message: err.message });
+    throw appError(code, "OPERATION_FAILED", { operation: "manageEcn" }, err.message);
   }
-  throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: (err as any)?.message ?? "ECN error" });
+  throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "manageEcn" }, (err as any)?.message ?? "ECN error");
 }
 
 const impactSummarySchema = z.object({

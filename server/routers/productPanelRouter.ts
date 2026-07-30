@@ -107,10 +107,12 @@ export const productPanelRouter = router({
         const id = await createPanelDef(def, boards);
         return { id };
       } catch (err) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: err instanceof Error ? err.message : "Failed to create panel definition",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "createPanelDefinition" },
+          err instanceof Error ? err.message : "Failed to create panel definition",
+        );
       }
     }),
 
@@ -155,10 +157,12 @@ export const productPanelRouter = router({
       try {
         return await replaceBoards(input.panelDefId, input.boards);
       } catch (err) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: err instanceof Error ? err.message : "Failed to save boards",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "savePanelBoards" },
+          err instanceof Error ? err.message : "Failed to save boards",
+        );
       }
     }),
 });

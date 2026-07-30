@@ -3675,7 +3675,10 @@
       "measurementPointVersion": "measurement point version",
       "visionAdapter": "vision adapter",
       "auditLog": "audit log entry",
-      "reportArtifact": "saved report artifact"
+      "reportArtifact": "saved report artifact",
+      "contractSchema": "contract schema",
+      "measurementSample": "measurement sample",
+      "metricDefinition": "metric definition"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3775,7 +3778,26 @@
       "generateExternalReport": "generate external report",
       "emailReport": "email report",
       "regenerateTwoFactorSecret": "regenerate 2FA secret",
-      "enableTwoFactor": "enable two-factor authentication"
+      "enableTwoFactor": "enable two-factor authentication",
+      "createBackup": "create backup",
+      "writeCausalGraph": "write causal graph",
+      "registerContractSchemaVersion": "register contract schema version",
+      "manageDefectDisposition": "manage defect disposition",
+      "manageEcn": "manage ECN (engineering change)",
+      "validateMappingAsCode": "validate mapping-as-code",
+      "importMappingAsCode": "import mapping-as-code",
+      "manageNcr": "manage NCR (nonconformance)",
+      "manageOrderLifecycle": "manage order lifecycle",
+      "updateRole": "update role",
+      "deleteRole": "delete role",
+      "exportProductPackage": "export product package",
+      "importProductPackage": "import product package",
+      "createPanelDefinition": "create panel definition",
+      "savePanelBoards": "save panel boards",
+      "manageRouting": "manage routing",
+      "computeMetric": "compute metric",
+      "retryReportDelivery": "retry report delivery",
+      "testSmtpConnection": "test SMTP connection"
     },
     "field": {
       "code": "code",
@@ -3846,7 +3868,10 @@
       "criticalThreshold": "critical threshold",
       "workflowOrWorkflowRef": "workflow or workflow reference",
       "ursimEndpoint": "URSim endpoint",
-      "rosbridgeUrl": "ROSBRIDGE URL"
+      "rosbridgeUrl": "ROSBRIDGE URL",
+      "causalGraph": "causal graph",
+      "idempotencyKey": "idempotency key",
+      "lotCodeOrProductModelId": "lot code or product model ID"
     },
     "feature": {
       "web_ingest": "web content ingestion",

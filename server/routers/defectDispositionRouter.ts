@@ -18,6 +18,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, moduleProcedure, qualityProcedure, roleProcedure } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_QUALITY (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`
@@ -67,7 +68,7 @@ function rethrow(err: unknown): never {
       : err.code === "CONFLICT" ? "CONFLICT"
       : err.code === "BAD_REQUEST" ? "BAD_REQUEST"
       : "INTERNAL_SERVER_ERROR";
-    throw new TRPCError({ code, message: err.message });
+    throw appError(code, "OPERATION_FAILED", { operation: "manageDefectDisposition" }, err.message);
   }
   throw err;
 }
@@ -163,10 +164,12 @@ export const defectDispositionRouter = router({
     .mutation(async ({ input, ctx }) => {
       // Mirror _core require2FA for privileged roles (roleProcedure alone does not).
       if (TWO_FA_ROLES.has(ctx.user.role) && !ctx.user.twoFactorEnabled) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
-        });
+        throw appError(
+          "FORBIDDEN",
+          "TWO_FACTOR_NOT_SET_UP",
+          undefined,
+          "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
+        );
       }
       try {
         return await updateDispositionStatus(

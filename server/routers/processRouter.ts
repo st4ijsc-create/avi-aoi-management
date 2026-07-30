@@ -52,7 +52,7 @@ export const processRouter = router({
       // Check if code already exists
       const existing = await db.getProcessByCode(input.code);
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: `Mã quy trình '${input.code}' đã tồn tại` });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'process' }, `Mã quy trình '${input.code}' đã tồn tại`);
       }
 
       const result = await withDbErrors(() => db.createProcess({
@@ -89,7 +89,7 @@ export const processRouter = router({
       if (rest.code && rest.code !== existing.code) {
         const codeExists = await db.getProcessByCode(rest.code);
         if (codeExists) {
-          throw new TRPCError({ code: 'CONFLICT', message: `Mã quy trình '${rest.code}' đã tồn tại` });
+          throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'process' }, `Mã quy trình '${rest.code}' đã tồn tại`);
         }
       }
 

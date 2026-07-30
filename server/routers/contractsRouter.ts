@@ -88,7 +88,7 @@ export const contractsRouter = router({
         .where(where)
         .orderBy(desc(contractSchemas.version))
         .limit(1);
-      if (rows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: `No schema for subject "${input.subject}"` });
+      if (rows.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "contractSchema" }, `No schema for subject "${input.subject}"`);
       return rows[0];
     }),
 
@@ -119,7 +119,7 @@ export const contractsRouter = router({
         return { subject: entry.name, version: entry.version, persisted };
       } catch (err) {
         if (err instanceof SchemaCompatError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "registerContractSchemaVersion" }, err.message);
         }
         throw err;
       }

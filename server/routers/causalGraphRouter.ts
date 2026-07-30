@@ -21,6 +21,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import {
@@ -76,12 +77,14 @@ function guard<T>(fn: () => T): T {
     return fn();
   } catch (err) {
     if (err instanceof CausalGraphValidationError) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+      throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "causalGraph" }, err.message);
     }
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: err instanceof Error ? err.message : "Causal graph write failed",
-    });
+    throw appError(
+      "INTERNAL_SERVER_ERROR",
+      "OPERATION_FAILED",
+      { operation: "writeCausalGraph" },
+      err instanceof Error ? err.message : "Causal graph write failed",
+    );
   }
 }
 

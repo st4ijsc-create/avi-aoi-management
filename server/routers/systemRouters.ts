@@ -485,7 +485,7 @@ export const scheduledReportRouter = router({
       const { retryReportDelivery, drainReportDeliveriesOnce } = await import('../services/reportDeliveryService');
       const result = await retryReportDelivery(input.deliveryId);
       if (!result.ok) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason ?? 'Retry failed' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'retryReportDelivery' }, result.reason ?? 'Retry failed');
       }
       void drainReportDeliveriesOnce().catch(() => undefined);
       return { success: true };
@@ -835,10 +835,7 @@ export const smtpRouter = router({
         await testSmtpConnection(config);
         return { success: true, message: 'SMTP connection successful' };
       } catch (error: any) {
-        throw new TRPCError({ 
-          code: 'INTERNAL_SERVER_ERROR', 
-          message: `SMTP connection failed: ${error.message}` 
-        });
+        throw appError('INTERNAL_SERVER_ERROR', 'OPERATION_FAILED', { operation: 'testSmtpConnection' }, `SMTP connection failed: ${error.message}`);
       }
     }),
 

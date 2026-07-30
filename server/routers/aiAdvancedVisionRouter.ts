@@ -38,13 +38,10 @@ function decodeBase64Image(b64: string): Buffer {
     throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Invalid base64 image");
   }
   if (buf.length === 0) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Empty image payload" });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Empty image payload");
   }
   if (buf.length > MAX_IMAGE_BYTES) {
-    throw new TRPCError({
-      code: "PAYLOAD_TOO_LARGE",
-      message: `Image exceeds ${MAX_IMAGE_BYTES} bytes`,
-    });
+    throw appError("PAYLOAD_TOO_LARGE", "INVALID_VALUE", { field: "image" }, `Image exceeds ${MAX_IMAGE_BYTES} bytes`);
   }
   return buf;
 }
