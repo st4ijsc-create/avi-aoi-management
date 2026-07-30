@@ -118,3 +118,49 @@ describe("cổng chặn — mọi tham số tự-do của appError() phải có 
     expect(missing).toEqual([]);
   });
 });
+
+/** Toàn bộ text bên trong cặp ngoặc tròn của MỘT lời gọi `appError(...)` (đếm ngoặc
+ *  để bắt trọn lời gọi nhiều dòng — cùng kỹ thuật với extractAppErrorParams ở trên). */
+function extractAppErrorCallBodies(src: string): string[] {
+  const bodies: string[] = [];
+  const callRe = /appError\s*\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = callRe.exec(src))) {
+    let depth = 1;
+    let i = m.index + m[0].length;
+    const start = i;
+    while (i < src.length && depth > 0) {
+      if (src[i] === "(") depth++;
+      else if (src[i] === ")") depth--;
+      i++;
+    }
+    bodies.push(src.slice(start, i - 1));
+  }
+  return bodies;
+}
+
+// Đợt sửa cuối (Phần 5 mục 3, review toàn cục) — cổng tĩnh ở trên chứng minh khoá
+// TỒN TẠI trong từ điển, nhưng không chứng minh tham số ĐƯỢC TRUYỀN ở call-site. Mẫu
+// `errors.PERMISSION_DENIED` có `{{action}}`: thiếu `action` ở lời gọi appError() thì
+// người dùng thấy placeholder thô "Bạn không có quyền: ." (interpolation rỗng) —
+// không phải lỗi ngã (mọi thứ vẫn chạy), chỉ chữ sai, y hệt lớp lỗi mà file này vừa
+// chặn cho entity/operation/field/feature/action ở trên.
+describe("cổng chặn — mọi appError(..., 'PERMISSION_DENIED', ...) phải truyền action", () => {
+  it("không lời gọi PERMISSION_DENIED nào thiếu tham số action", () => {
+    const missing: string[] = [];
+    for (const file of walkTsFiles(ROUTERS_DIR)) {
+      const src = readFileSync(file, "utf8");
+      if (!src.includes("appError(") || !src.includes("PERMISSION_DENIED")) continue;
+      for (const body of extractAppErrorCallBodies(src)) {
+        if (!/["'`]PERMISSION_DENIED["'`]/.test(body)) continue;
+        if (!/\baction\s*:/.test(body)) {
+          missing.push(`${file.replace(ROUTERS_DIR, "")} :: appError(..., 'PERMISSION_DENIED', ...) thiếu tham số action`);
+        }
+      }
+    }
+    if (missing.length > 0) {
+      console.error(`[cổng PERMISSION_DENIED→action] ${missing.length} chỗ thiếu:\n` + missing.join("\n"));
+    }
+    expect(missing).toEqual([]);
+  });
+});
