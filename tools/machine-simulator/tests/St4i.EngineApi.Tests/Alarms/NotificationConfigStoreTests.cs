@@ -148,24 +148,53 @@ public sealed class NotificationConfigStoreTests
             }
         }
 
-        // (4) Every *SummaryColumns constant is actually registered, so none escapes the scan in (3).
+        // (4) Every *SummaryColumns projection is actually registered, so none escapes the scan in (3).
+        //
+        // Review round 2 (M3): `static readonly string` counts as well as `const`, so declaring a
+        // projection the other way does not silently skip it. (M2): matching by VALUE alone let a new
+        // constant that happened to duplicate an existing string slip through, and let one be registered
+        // against the WRONG table — so the count is pinned as well, and every projected column is required
+        // to actually exist on the table it is registered against, which is what a wrong-table
+        // registration violates.
+        var summaryProjections = typeof(NotificationConfigSchema)
+            .GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+            .Where(field => (field.IsLiteral || field.IsInitOnly) && field.FieldType == typeof(string) &&
+                            field.Name.EndsWith("SummaryColumns", StringComparison.Ordinal))
+            .Select(field => (
+                field.Name,
+                Value: (string)(field.IsLiteral ? field.GetRawConstantValue()! : field.GetValue(null)!)))
+            .ToList();
+
+        Assert.NotEmpty(summaryProjections);
+
+        Assert.True(NotificationConfigSchema.PublicProjections.Length == summaryProjections.Count,
+            $"NotificationConfigSchema declares {summaryProjections.Count} *SummaryColumns projection(s) " +
+            $"({string.Join(", ", summaryProjections.Select(p => p.Name))}) but PublicProjections registers " +
+            $"{NotificationConfigSchema.PublicProjections.Length}. Every summary projection must be " +
+            "registered exactly once, or nothing checks it for secret-bearing columns.");
+
         var registered = NotificationConfigSchema.PublicProjections
             .Select(projection => projection.Columns)
             .ToHashSet(StringComparer.Ordinal);
 
-        var summaryConstants = typeof(NotificationConfigSchema)
-            .GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-            .Where(field => field.IsLiteral && field.FieldType == typeof(string) &&
-                            field.Name.EndsWith("SummaryColumns", StringComparison.Ordinal))
-            .ToList();
-
-        Assert.NotEmpty(summaryConstants);
-        foreach (var constant in summaryConstants)
+        foreach (var (name, value) in summaryProjections)
         {
-            var value = (string)constant.GetRawConstantValue()!;
             Assert.True(registered.Contains(value),
-                $"NotificationConfigSchema.{constant.Name} is a public summary projection but is not " +
-                "registered in PublicProjections, so nothing checks it for secret-bearing columns.");
+                $"NotificationConfigSchema.{name} is a public summary projection but is not registered in " +
+                "PublicProjections, so nothing checks it for secret-bearing columns.");
+        }
+
+        // Registered against the RIGHT table: every projected column must exist on it. This is what a
+        // copy-paste registration — (SmtpTable, WebhookSummaryColumns) — actually gets wrong, and it would
+        // otherwise sail past (3), since the columns are simply absent from that table's classification.
+        foreach (var (table, columns) in NotificationConfigSchema.PublicProjections)
+        {
+            foreach (var column in NotificationConfigSchema.Split(columns))
+            {
+                Assert.True(physical.Contains((table, column)),
+                    $"The public projection registered for '{table}' names column '{column}', which does " +
+                    $"not exist on '{table}'. It is registered against the wrong table.");
+            }
         }
 
         // Non-vacuity — (3) must not be passing because nothing is classified secret any more. Since
@@ -730,6 +759,39 @@ public sealed class NotificationConfigStoreTests
 
         Assert.Contains(grantedTo, sid => sid.Equals(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null)));
         Assert.Contains(grantedTo, sid => sid.Equals(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null)));
+    }
+
+    /// <summary>
+    /// 🔴 Review round 2 (F1) — the regression this pins. <see cref="NotificationConfigStore.SaveWebhookAsync"/>
+    /// writes credential material (the URL) through its own transaction, and round 1 introduced it calling
+    /// straight into the secret upsert — bypassing the ACL, which was then applied only by
+    /// <see cref="NotificationConfigStore.SetSecretAsync"/>. So the newest credential path was the one path
+    /// that skipped the lock-down.
+    ///
+    /// <para>The constructor also applies the ACL, which would mask the gap entirely — so this test first
+    /// UNDOES the lock-down (restoring inheritance, the permissive <c>%ProgramData%</c> default this exists
+    /// to remove), proves it is undone, and only then saves. Passing therefore requires the SAVE to have
+    /// re-applied it.</para>
+    /// </summary>
+    [Fact]
+    public async Task SaveWebhookAsync_AlsoLocksDownTheDirectory_NotJustSetSecretAsync()
+    {
+        var dir = TempDir();
+        var store = new NotificationConfigStore(dir);
+
+        // Undo the constructor's lock-down so the assertion below can only be satisfied by the save.
+        var info = new DirectoryInfo(dir);
+        var relaxed = info.GetAccessControl(AccessControlSections.Access);
+        relaxed.SetAccessRuleProtection(isProtected: false, preserveInheritance: true);
+        info.SetAccessControl(relaxed);
+        Assert.False(info.GetAccessControl(AccessControlSections.Access).AreAccessRulesProtected);
+
+        Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, WebhookUrlWithSecretPath));
+
+        Assert.True(new DirectoryInfo(dir).GetAccessControl(AccessControlSections.Access).AreAccessRulesProtected,
+            "SaveWebhookAsync stored a credential (the webhook URL) without re-applying the directory ACL. " +
+            "Under LocalMachine-scoped DPAPI that ACL is the confidentiality boundary against another local " +
+            "account, and it must be applied on every credential write — see UpsertSecretAsync.");
     }
 
     // ─────────────────────────────────────────────────────────────────────

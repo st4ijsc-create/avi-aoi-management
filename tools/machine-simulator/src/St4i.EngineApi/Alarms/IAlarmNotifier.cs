@@ -31,8 +31,17 @@ namespace St4i.EngineApi.Alarms;
 /// idiom.</description></item>
 /// </list>
 ///
-/// The default is <see cref="NullAlarmNotifier"/> — with nothing configured, behaviour is bit-for-bit
-/// what it was before Đợt C. This whole batch is additive and default-off.
+/// The default is <see cref="NullAlarmNotifier"/>, which does nothing and allocates nothing — see there.
+///
+/// <para>🔴 Task C-2 (review round 2, M1) — this used to say "with nothing configured, behaviour is
+/// bit-for-bit what it was before Đợt C; this whole batch is additive and default-off". <b>That is no
+/// longer true of the production host and must not be repeated.</b> C-2 deleted the
+/// <c>ST4I_ALARM_NOTIFY_ENABLED</c> gate and now registers a real <see cref="AlarmNotifier"/>
+/// unconditionally, so a fresh install starts one bounded channel, one drain loop and one hosted service
+/// it did not start before. The trade was made deliberately: a seam that is only sometimes registered is a
+/// seam an operator can configure and never have run. <see cref="NullAlarmNotifier"/> remains the default
+/// for every OTHER construction site — every test, and any non-host caller that builds an
+/// <see cref="AlarmStore"/> directly.</para>
 /// </summary>
 public interface IAlarmNotifier
 {

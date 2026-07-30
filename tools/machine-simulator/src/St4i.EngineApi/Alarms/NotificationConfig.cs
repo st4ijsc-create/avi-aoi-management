@@ -204,9 +204,20 @@ public static class NotificationDelivery
 /// <para>A truncated SHA-256 of the full URL answers "did this change?" and "are these two the same?"
 /// without ever returning the capability — the same "opaque token obtainable only by having seen the real
 /// thing" role <c>ConnectorWriteCapability.ComputeFingerprint</c>, <c>DeviceIdentity.Fingerprint</c> and
-/// <c>SiteEndpoints.PemFingerprint</c> already play in this codebase. Truncation is safe here because the
-/// fingerprint is only ever compared, never inverted: recovering the URL would mean guessing the whole
-/// high-entropy path and checking it, which the full digest would allow equally.</para></param>
+/// <c>SiteEndpoints.PemFingerprint</c> already play in this codebase.</para>
+///
+/// <para>🔴 <b>Review round 2 — that precedent is doing slightly more work than it has earned, so state
+/// the difference.</b> All three of those digest PUBLIC or non-secret material: a map's declared grants, a
+/// certificate's public bytes, a trust-pin PEM. <b>This is the first fingerprint in this repository taken
+/// over material that is itself a credential.</b> The consequence is a confirm-a-guess oracle that does not
+/// arise for any of them: somebody holding this value can test a candidate URL and learn whether it is the
+/// configured one. That is bounded only by the URL's own entropy — ample for a Slack or Teams webhook
+/// (a long random path), and thin for a guessable internal one like <c>https://mes.plant/alarm</c>, where
+/// the fingerprint confirms what an attacker had probably already guessed and could confirm by simply
+/// POSTing to it. Judged acceptable because the alternative — no fingerprint — pushes C-7/C-8 into
+/// exposing the URL outright, which is strictly worse. Truncation does not make this worse and arguably
+/// makes it better: at 64 bits a brute-force search yields many false positives that a full digest would
+/// eliminate, so the shorter value is the weaker oracle.</para></param>
 /// <param name="Label">Review round 1 (I3) — an optional operator-supplied name ("Ops Slack #line-alerts").
 /// Free text, never derived, never a credential, and shown by every public read: the fingerprint proves
 /// two configurations are the SAME, and this is what tells a human WHICH one it is. Deliberately not

@@ -46,7 +46,10 @@ internal static class NotificationConfigSchema
     // enforced by reflection in the schema test, so adding a sixth table's summary and forgetting to
     // register it fails the suite instead of silently escaping the scan.
 
-    internal const string ChannelFullColumns = "channel, instance, enabled, min_priority, created_at, updated_at";
+    // Review round 2 (M4) — there is deliberately NO ChannelFullColumns. One existed and was referenced
+    // nowhere: no read returns a whole channel row (the per-channel getters project `enabled` and
+    // `min_priority` explicitly and join their side table; ListAsync uses the summary). Left in place it
+    // advertised `created_at` as readable when nothing reads it, which is a promise the type does not keep.
     internal const string ChannelSummaryColumns = "channel, instance, enabled, min_priority, updated_at";
 
     internal const string WebhookFullColumns = "endpoint, url_fingerprint, label";
@@ -243,6 +246,17 @@ public sealed class NotificationConfigStore
     // recreated three tables would have left a destructive migration in the ladder forever, as precedent,
     // to handle a state that cannot exist. Once this branch merges that argument expires, and every
     // further change is an append.
+    //
+    // Review round 2 (M5) — the one machine on which that reasoning does NOT hold, and the recovery.
+    // EnsureSchema only applies versions ABOVE the stored user_version, and the reshaped v1 is still
+    // version 1. So a notifications.db created by the PREVIOUS commit (686140f1) is left silently
+    // un-migrated: it lacks the `instance` column, every query against it fails, and because this store is
+    // never-throws that surfaces as "nothing configured" rather than as an error. Unreachable for any
+    // shipped build — no released version ever created this file — but reachable on a dev or reviewer
+    // machine that booted the host at that exact commit.
+    //   Recovery: delete %ProgramData%\ST4I\sim\notifications\notifications.db (or whatever
+    //   ST4I_NOTIFICATIONS_DIR points at) and restart. There is nothing to preserve — no build that could
+    //   have written that file ever shipped, so any content is a developer's own test data.
     private static readonly (int Version, string[] Statements)[] Migrations =
     {
         (1, new[]
@@ -323,11 +337,13 @@ public sealed class NotificationConfigStore
         RootDirectory = ResolveRoot(directory);
         Directory.CreateDirectory(RootDirectory);
 
-        // Applied here AND on every secret write (self-healing, best-effort, never throws — see
-        // SecurityDirAcl.Apply). Same unconditional-on-every-save posture as CredentialStore, and for the
-        // same reason: under DataProtectionScope.LocalMachine this ACL is the confidentiality boundary
-        // against another LOCAL account, so an install upgraded from a build that predates this store must
-        // get locked down on its next write rather than only on a fresh install.
+        // Applied here AND, unconditionally, inside UpsertSecretAsync — the ONE method every credential
+        // write funnels through (review round 2, F1: it used to be applied by SetSecretAsync, which
+        // SaveWebhookAsync bypassed). Self-healing, best-effort, never throws — see SecurityDirAcl.Apply.
+        // Same unconditional-on-every-save posture as CredentialStore, and for the same reason: under
+        // DataProtectionScope.LocalMachine this ACL is the confidentiality boundary against another LOCAL
+        // account, so an install upgraded from a build that predates this store must get locked down on its
+        // next write rather than only on a fresh install.
         SecurityDirAcl.Apply(RootDirectory, message => Console.Error.WriteLine($"[notificationconfig] {message}"));
 
         DbPath = Path.Combine(RootDirectory, "notifications.db");
@@ -667,8 +683,8 @@ public sealed class NotificationConfigStore
             ArgumentException.ThrowIfNullOrWhiteSpace(name);
             ArgumentException.ThrowIfNullOrEmpty(plaintext);
 
-            SecurityDirAcl.Apply(RootDirectory, message => Console.Error.WriteLine($"[notificationconfig] {message}"));
-
+            // The ACL is applied inside UpsertSecretAsync — the choke point EVERY credential write passes
+            // through, including SaveWebhookAsync's. See that method's own doc comment (review round 2, F1).
             using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
             using var transaction = connection.BeginTransaction();
             await UpsertSecretAsync(
@@ -684,13 +700,28 @@ public sealed class NotificationConfigStore
         }
     }
 
-    /// <summary>The single place a plaintext secret becomes ciphertext and reaches the database — shared
-    /// by <see cref="SetSecretAsync"/> and by <see cref="SaveWebhookAsync"/>, which needs it to run inside
-    /// its own transaction so the URL and its derived display columns commit together.</summary>
-    private static async Task UpsertSecretAsync(
+    /// <summary>
+    /// The single place a plaintext secret becomes ciphertext and reaches the database — shared by
+    /// <see cref="SetSecretAsync"/> and by <see cref="SaveWebhookAsync"/>, which needs it to run inside its
+    /// own transaction so the URL and its derived display columns commit together.
+    ///
+    /// <para>🔴 <b>Review round 2 (F1) — the ACL is applied HERE, not at the call sites, and this method is
+    /// an instance method for that reason alone.</b> It was <see langword="static"/>, with
+    /// <see cref="SetSecretAsync"/> applying the ACL itself; round 1 then added
+    /// <see cref="SaveWebhookAsync"/> as a second writer of credential material that called straight in
+    /// here — so the ONE new credential path was the one path that skipped the lock-down, while the
+    /// constructor's comment claimed the ACL ran on every secret write. Applying it at the choke point
+    /// every credential must pass through makes that claim true by construction instead of by two call
+    /// sites both remembering, and a third writer added later cannot reintroduce the gap.</para>
+    /// </summary>
+    private async Task UpsertSecretAsync(
         SqliteConnection connection, SqliteTransaction transaction, NotificationChannel channel,
         string instance, string name, string plaintext, string nowIso, CancellationToken ct)
     {
+        // Best-effort, never throws (see SecurityDirAcl.Apply). Runs before the write rather than after, so
+        // a directory created since the last boot is locked down BEFORE ciphertext lands in it.
+        SecurityDirAcl.Apply(RootDirectory, message => Console.Error.WriteLine($"[notificationconfig] {message}"));
+
         var protectedBytes = NotificationSecretProtector.Protect(plaintext);
 
         using var cmd = connection.CreateCommand();
