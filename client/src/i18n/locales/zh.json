@@ -3648,7 +3648,8 @@
       "deviceType": "设备类型",
       "operationCode": "操作代码",
       "ngRateThreshold": "NG率阈值",
-      "productionSession": "生产会话"
+      "productionSession": "生产会话",
+      "moduleAuditPreset": "模块审计预设"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

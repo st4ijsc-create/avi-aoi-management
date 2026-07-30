@@ -396,10 +396,7 @@ export const aiSpecialistAgentRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = getModuleAuditPreset(input.presetId);
       if (!preset) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `Module audit preset '${input.presetId}' not found`,
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "moduleAuditPreset" }, `Module audit preset '${input.presetId}' not found`);
       }
 
       const objective = input.overrideObjective ?? preset.objective;

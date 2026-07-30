@@ -3657,7 +3657,8 @@
       "deviceType": "loại thiết bị",
       "operationCode": "mã thao tác",
       "ngRateThreshold": "ngưỡng tỉ lệ NG",
-      "productionSession": "phiên sản xuất"
+      "productionSession": "phiên sản xuất",
+      "moduleAuditPreset": "mẫu kiểm toán module"
     }
   },
   "export": {

@@ -3656,7 +3656,8 @@
       "deviceType": "device type",
       "operationCode": "operation code",
       "ngRateThreshold": "NG-rate threshold",
-      "productionSession": "production session"
+      "productionSession": "production session",
+      "moduleAuditPreset": "module audit preset"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

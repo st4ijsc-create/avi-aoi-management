@@ -212,8 +212,12 @@ async function getOrExtractImage(
   }
 
   // Extract from ZIP
+  // I-2 (review round 1): pkg CHẮC CHẮN tồn tại ở đây (caller đã resolve nó) — chỉ
+  // thiếu storageKey. ENTITY_NOT_FOUND ("Không tìm thấy gói AOI") sẽ nói SAI: gói
+  // không hề mất, người vận hành sẽ đi tìm nhầm thứ. Dùng OPERATION_FAILED để mô
+  // tả đúng hành động không thực hiện được, không đụng tới field nội bộ.
   if (!pkg.storageKey) {
-    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package storage key not found");
+    throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "extract image from AOI package" }, "Package storage key not found");
   }
 
   let zipBuffer: Buffer;
