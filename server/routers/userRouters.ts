@@ -9,7 +9,7 @@ import * as db from "../db";
 export const userRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     if (ctx.user.role !== 'admin') {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+      throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'listUsers' }, 'Admin only');
     }
     return db.getAllUsers();
   }),
@@ -121,7 +121,7 @@ export const userRouter = router({
       
       // Only local users can have password changed
       if (user.loginMethod !== 'local') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chỉ có thể đổi mật khẩu cho tài khoản nội bộ' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'resetUserPassword' }, 'Chỉ có thể đổi mật khẩu cho tài khoản nội bộ');
       }
       
       const bcrypt = await import('bcryptjs');
@@ -138,10 +138,10 @@ export const userRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'changeUserRole' }, 'Admin only');
       }
       if (input.userId === ctx.user.id) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot change your own role' });
+        throw appError('BAD_REQUEST', 'PERMISSION_DENIED', { action: 'changeOwnRole' }, 'Cannot change your own role');
       }
       await db.updateUserRole(input.userId, input.role);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name, action: 'user_update_role', entityType: 'user', entityId: input.userId, details: { newRole: input.role } }).catch(() => {});
@@ -154,10 +154,10 @@ export const userRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteUser' }, 'Admin only');
       }
       if (input.userId === ctx.user.id) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot delete yourself' });
+        throw appError('BAD_REQUEST', 'PERMISSION_DENIED', { action: 'deleteOwnAccount' }, 'Cannot delete yourself');
       }
       await db.deleteUser(input.userId);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name, action: 'user_delete', entityType: 'user', entityId: input.userId }).catch(() => {});
@@ -192,14 +192,14 @@ export const userRouter = router({
       
       // Only local users can change password
       if (user.loginMethod !== 'local' || !user.passwordHash) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chỉ tài khoản nội bộ mới có thể đổi mật khẩu' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'changeOwnPassword' }, 'Chỉ tài khoản nội bộ mới có thể đổi mật khẩu');
       }
-      
+
       // Verify current password
       const bcrypt = await import('bcryptjs');
       const isValid = await bcrypt.compare(input.currentPassword, user.passwordHash);
       if (!isValid) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mật khẩu hiện tại không đúng' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'currentPassword' }, 'Mật khẩu hiện tại không đúng');
       }
       
       // Hash and save new password
@@ -296,7 +296,7 @@ export const userRouter = router({
       if (user.loginMethod === 'local' && user.passwordHash) {
         const isValidPassword = await bcrypt.compare(input.password, user.passwordHash);
         if (!isValidPassword) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mật khẩu không đúng' });
+          throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'password' }, 'Mật khẩu không đúng');
         }
       }
 

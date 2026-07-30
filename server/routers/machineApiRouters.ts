@@ -2470,10 +2470,7 @@ function enforceMachineHeartbeatRateLimit(machineId: number, machineCode: string
   }
   win.count += 1;
   if (win.count > limit) {
-    throw new TRPCError({
-      code: "TOO_MANY_REQUESTS",
-      message: `Heartbeat rate limit exceeded for machine ${machineCode} (${limit}/min)`,
-    });
+    throw appError("TOO_MANY_REQUESTS", "RATE_LIMITED", undefined, `Heartbeat rate limit exceeded for machine ${machineCode} (${limit}/min)`);
   }
 }
 
@@ -2732,10 +2729,7 @@ async function validateProcessStepType(stepType: string, machineCode: string): P
   }
   if (known) return;
   if (mode === "enforce") {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Unknown stepType "${stepType}" (not in process_step_types; PROCESS_ATTR_VALIDATE_MODE=enforce)`,
-    });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "stepType" }, `Unknown stepType "${stepType}" (not in process_step_types; PROCESS_ATTR_VALIDATE_MODE=enforce)`);
   }
   console.warn(
     `[submitProcessResult] UNKNOWN stepType "${stepType}" from machine=${machineCode} — ACCEPTED ` +
@@ -2778,10 +2772,7 @@ export async function processProcessResultSubmission(
   if (input.waveforms && input.waveforms.length > 0) {
     const bytes = Buffer.byteLength(JSON.stringify(input.waveforms), "utf8");
     if (bytes > processWaveformMaxBytes()) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `waveforms exceed PROCESS_WAVEFORM_MAX_BYTES (${processWaveformMaxBytes()} bytes; got ${bytes})`,
-      });
+      throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "waveforms" }, `waveforms exceed PROCESS_WAVEFORM_MAX_BYTES (${processWaveformMaxBytes()} bytes; got ${bytes})`);
     }
   }
 
@@ -3464,7 +3455,7 @@ export const machineApiRouter = router({
       const { eq, and } = await import("drizzle-orm");
       const dbInstance = await db.getDb();
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        throw appError('INTERNAL_SERVER_ERROR', 'DB_UNAVAILABLE', undefined, 'Database not available');
       }
 
       const results = await dbInstance.select().from(measurementResults)
@@ -4498,7 +4489,7 @@ export const machineApiRouter = router({
       }
 
       if (!productModel.referenceImageUrl && !productModel.referenceImageKey) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Product has no reference image' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'referenceImage' }, 'Product has no reference image');
       }
 
       let downloadUrl = productModel.referenceImageUrl;
@@ -4602,7 +4593,7 @@ export const machineApiRouter = router({
       );
 
       if (!referenceImage) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No valid image data provided' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'image' }, 'No valid image data provided');
       }
 
       const updatePayload: Record<string, unknown> = {
@@ -4721,7 +4712,7 @@ export const machineApiRouter = router({
       );
 
       if (!referenceImage) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No valid image data provided' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'image' }, 'No valid image data provided');
       }
 
       // Doc 31 B.6 — NO threshold gate here: this endpoint updates ONLY the point's
@@ -4790,7 +4781,7 @@ export const machineApiRouter = router({
       }
 
       if (!point.referenceImageUrl) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Measurement point '${input.pointCode}' has no reference image` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'referenceImage' }, `Measurement point '${input.pointCode}' has no reference image`);
       }
 
       // Convert relative /uploads/ URLs to base64 data URLs for external clients
@@ -5076,7 +5067,7 @@ export const machineApiRouter = router({
         throw appError('FORBIDDEN', 'SCOPE_MISMATCH', { entity: 'edgeDeployment', parent: 'machine' }, 'Deployment does not belong to this machine');
       }
       if (!deployment.packageKey || !deployment.packageHash) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Package not ready' });
+        throw appError('CONFLICT', 'OPERATION_FAILED', { operation: 'downloadEdgePackage' }, 'Package not ready');
       }
 
       if (deployment.status === "READY") {

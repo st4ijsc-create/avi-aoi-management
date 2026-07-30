@@ -592,7 +592,7 @@ export const spcRuleViolationRouter = router({
   acknowledge: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.user?.id) throw new TRPCError({ code: 'UNAUTHORIZED' });
+      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED');
       await db.acknowledgeSpcViolation(input.id, ctx.user.id);
       return { success: true };
     }),
@@ -601,7 +601,7 @@ export const spcRuleViolationRouter = router({
   resolve: protectedProcedure
     .input(z.object({ id: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.user?.id) throw new TRPCError({ code: 'UNAUTHORIZED' });
+      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED');
       await db.resolveSpcViolation(input.id, ctx.user.id, input.notes);
       return { success: true };
     }),
@@ -643,14 +643,14 @@ export const cpkTrendRouter = router({
       // Get spec limits
       const { getDb } = await import('../db/connection');
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      if (!database) throw appError('INTERNAL_SERVER_ERROR', 'DB_UNAVAILABLE', undefined, 'Database not available');
       
       const { measurementPointDefs } = await import('../../drizzle/schema');
       const { eq } = await import('drizzle-orm');
       const [pointDef] = await database.select().from(measurementPointDefs).where(eq(measurementPointDefs.id, input.measurementPointDefId));
       
       if (!pointDef?.upperLimit || !pointDef?.lowerLimit) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Measurement point has no spec limits defined' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'calculateCpkCapability' }, 'Measurement point has no spec limits defined');
       }
 
       const values = rawData.map(d => Number(d.value));
@@ -784,7 +784,7 @@ export const qualityGateRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const gate = await db.getQualityGate(input.id);
-      if (!gate) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' });
       return gate;
     }),
 
@@ -854,12 +854,12 @@ export const qualityGateRouter = router({
     }))
     .query(async ({ input }) => {
       const gate = await db.getQualityGate(input.qualityGateId);
-      if (!gate) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' });
 
       // Get recent inspection data for this gate's scope
       const { getDb } = await import('../db/connection');
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      if (!database) throw appError('INTERNAL_SERVER_ERROR', 'DB_UNAVAILABLE', undefined, 'Database not available');
       
       const { productInspections } = await import('../../drizzle/schema');
       const { desc, and, eq, sql } = await import('drizzle-orm');
@@ -976,7 +976,7 @@ export const qualityGateRouter = router({
     }))
     .mutation(async ({ input }) => {
       const gate = await db.getQualityGate(input.qualityGateId);
-      if (!gate) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' });
 
       return db.createQualityGateEvent({
         qualityGateId: input.qualityGateId,
@@ -993,7 +993,7 @@ export const qualityGateRouter = router({
   acknowledgeEvent: protectedProcedure
     .input(z.object({ id: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.user?.id) throw new TRPCError({ code: 'UNAUTHORIZED' });
+      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED');
       await db.acknowledgeQualityGateEvent(input.id, ctx.user.id, input.notes);
       return { success: true };
     }),
@@ -1002,7 +1002,7 @@ export const qualityGateRouter = router({
   resolveEvent: protectedProcedure
     .input(z.object({ id: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.user?.id) throw new TRPCError({ code: 'UNAUTHORIZED' });
+      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED');
       await db.resolveQualityGateEvent(input.id, ctx.user.id, input.notes);
       return { success: true };
     }),

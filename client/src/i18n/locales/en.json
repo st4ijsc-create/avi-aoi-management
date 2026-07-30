@@ -3664,7 +3664,11 @@
       "productCategory": "product category",
       "trainingBatchTag": "training batch tag",
       "msaObservation": "MSA observation",
-      "kbCorpus": "knowledge corpus"
+      "kbCorpus": "knowledge corpus",
+      "zone": "zone",
+      "sharedResource": "shared resource",
+      "chargerStation": "charger station",
+      "referenceImage": "reference image"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3712,7 +3716,16 @@
       "downloadLicenseFile": "download license file",
       "generateOfflineActivationRequest": "generate offline activation request",
       "applyOfflineLicense": "apply offline license",
-      "getHardwareFingerprint": "get hardware fingerprint"
+      "getHardwareFingerprint": "get hardware fingerprint",
+      "assignFleetTask": "assign fleet task",
+      "completeFleetTask": "complete fleet task",
+      "cancelFleetTask": "cancel fleet task",
+      "downloadEdgePackage": "download edge deployment package",
+      "resetUserPassword": "reset user password",
+      "changeOwnPassword": "change own password",
+      "signProductionSession": "sign production session",
+      "closeProductionSession": "close production session",
+      "signOffProductionSession": "supervisor sign-off production session"
     },
     "field": {
       "code": "code",
@@ -3760,7 +3773,13 @@
       "fileContent": "file content",
       "videoContent": "video content",
       "confirm": "confirmation",
-      "dashboardTarget": "dashboard target"
+      "dashboardTarget": "dashboard target",
+      "stepType": "process step type",
+      "waveforms": "waveform data",
+      "currentPassword": "current password",
+      "password": "password",
+      "patchJson": "patch data",
+      "supervisorPasswordConfirmed": "supervisor password confirmation"
     },
     "feature": {
       "web_ingest": "web content ingestion",
@@ -3791,7 +3810,8 @@
       "modelPipeline": "model pipeline",
       "licenseServerSdk": "License Server SDK",
       "speechToText": "speech-to-text",
-      "loraFinetune": "LoRA finetune"
+      "loraFinetune": "LoRA finetune",
+      "productVariants": "product variants"
     },
     "action": {
       "viewOthersPermissions": "view another user's permissions",
@@ -3813,7 +3833,13 @@
       "viewDashboard": "view dashboard",
       "exportDashboard": "export dashboard",
       "convertDashboardToTemplate": "convert dashboard to template",
-      "selfApproveGoldenSample": "self-approve own golden sample"
+      "selfApproveGoldenSample": "self-approve own golden sample",
+      "listUsers": "view user list",
+      "changeUserRole": "change user role",
+      "deleteUser": "delete user",
+      "deleteOwnAccount": "delete own account",
+      "manageOwnProductionSession": "manage own production session",
+      "signOffProductionSession": "supervisor sign-off production session"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

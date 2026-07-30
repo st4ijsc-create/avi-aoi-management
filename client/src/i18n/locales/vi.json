@@ -3665,7 +3665,11 @@
       "productCategory": "danh mục sản phẩm",
       "trainingBatchTag": "thẻ lô huấn luyện",
       "msaObservation": "quan sát MSA",
-      "kbCorpus": "kho tri thức (corpus)"
+      "kbCorpus": "kho tri thức (corpus)",
+      "zone": "vùng (zone)",
+      "sharedResource": "tài nguyên dùng chung",
+      "chargerStation": "trạm sạc",
+      "referenceImage": "ảnh tham chiếu"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3713,7 +3717,16 @@
       "downloadLicenseFile": "tải tệp license",
       "generateOfflineActivationRequest": "tạo yêu cầu kích hoạt offline",
       "applyOfflineLicense": "áp dụng license offline",
-      "getHardwareFingerprint": "lấy mã định danh phần cứng"
+      "getHardwareFingerprint": "lấy mã định danh phần cứng",
+      "assignFleetTask": "gán tác vụ đội robot",
+      "completeFleetTask": "hoàn tất tác vụ đội robot",
+      "cancelFleetTask": "huỷ tác vụ đội robot",
+      "downloadEdgePackage": "tải gói triển khai edge",
+      "resetUserPassword": "đặt lại mật khẩu người dùng",
+      "changeOwnPassword": "đổi mật khẩu của chính mình",
+      "signProductionSession": "ký duyệt phiên sản xuất",
+      "closeProductionSession": "đóng phiên sản xuất",
+      "signOffProductionSession": "ký duyệt (supervisor) phiên sản xuất"
     },
     "field": {
       "code": "mã",
@@ -3761,7 +3774,13 @@
       "fileContent": "nội dung tệp",
       "videoContent": "nội dung video",
       "confirm": "xác nhận",
-      "dashboardTarget": "đích bảng điều khiển"
+      "dashboardTarget": "đích bảng điều khiển",
+      "stepType": "loại bước quy trình",
+      "waveforms": "dữ liệu dạng sóng",
+      "currentPassword": "mật khẩu hiện tại",
+      "password": "mật khẩu",
+      "patchJson": "dữ liệu thay đổi (patch)",
+      "supervisorPasswordConfirmed": "xác nhận mật khẩu supervisor"
     },
     "feature": {
       "web_ingest": "nạp nội dung từ web",
@@ -3792,7 +3811,8 @@
       "modelPipeline": "pipeline mô hình",
       "licenseServerSdk": "License Server SDK",
       "speechToText": "chuyển giọng nói thành văn bản",
-      "loraFinetune": "tinh chỉnh LoRA"
+      "loraFinetune": "tinh chỉnh LoRA",
+      "productVariants": "biến thể sản phẩm"
     },
     "action": {
       "viewOthersPermissions": "xem quyền của người khác",
@@ -3814,7 +3834,13 @@
       "viewDashboard": "xem bảng điều khiển",
       "exportDashboard": "xuất bảng điều khiển",
       "convertDashboardToTemplate": "chuyển bảng điều khiển thành mẫu",
-      "selfApproveGoldenSample": "tự duyệt golden sample của chính mình"
+      "selfApproveGoldenSample": "tự duyệt golden sample của chính mình",
+      "listUsers": "xem danh sách người dùng",
+      "changeUserRole": "đổi vai trò người dùng",
+      "deleteUser": "xoá người dùng",
+      "deleteOwnAccount": "xoá tài khoản của chính mình",
+      "manageOwnProductionSession": "thao tác phiên sản xuất của chính mình",
+      "signOffProductionSession": "ký duyệt (supervisor) phiên sản xuất"
     }
   },
   "export": {

@@ -47,12 +47,13 @@ const BASE_VARIANT_CODE = "BASE";
 async function assertVariantTableAvailable(): Promise<void> {
   const ok = await db.productVariantsTableAvailable();
   if (!ok) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message:
-        "Tính năng biến thể sản phẩm chưa sẵn sàng: cần áp dụng migration 0286 (product_variants). " +
+    throw appError(
+      "PRECONDITION_FAILED",
+      "FEATURE_DISABLED",
+      { feature: "productVariants" },
+      "Tính năng biến thể sản phẩm chưa sẵn sàng: cần áp dụng migration 0286 (product_variants). " +
         "Product variants require migration 0286 to be applied.",
-    });
+    );
   }
 }
 
@@ -156,15 +157,12 @@ export const productVariantRouter = router({
       // 'BASE' is reserved for the model's inheritance root (created by 0286 /
       // ensureBaseVariant); an author never mints one manually.
       if (input.code.toUpperCase() === BASE_VARIANT_CODE) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Mã '${BASE_VARIANT_CODE}' được dành riêng cho biến thể gốc`,
-        });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "code" }, `Mã '${BASE_VARIANT_CODE}' được dành riêng cho biến thể gốc`);
       }
       // Live-uniqueness pre-check (the partial unique index is the tx-level backstop).
       const existing = await db.getVariantByCode(input.productModelId, input.code);
       if (existing) {
-        throw new TRPCError({ code: "CONFLICT", message: `Biến thể '${input.code}' đã tồn tại` });
+        throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productVariant" }, `Biến thể '${input.code}' đã tồn tại`);
       }
 
       let id: number;
@@ -181,7 +179,7 @@ export const productVariantRouter = router({
         });
       } catch (err: any) {
         if (err?.code === "23505" || /uq_product_variants_model_code/.test(String(err?.message))) {
-          throw new TRPCError({ code: "CONFLICT", message: `Biến thể '${input.code}' đã tồn tại` });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productVariant" }, `Biến thể '${input.code}' đã tồn tại`);
         }
         throw err;
       }
@@ -226,14 +224,11 @@ export const productVariantRouter = router({
           throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "renameRootVariantCode" }, "Không thể đổi mã biến thể gốc");
         }
         if (patch.code.toUpperCase() === BASE_VARIANT_CODE) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Mã '${BASE_VARIANT_CODE}' được dành riêng cho biến thể gốc`,
-          });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "code" }, `Mã '${BASE_VARIANT_CODE}' được dành riêng cho biến thể gốc`);
         }
         const clash = await db.getVariantByCode(existing.productModelId, patch.code);
         if (clash && clash.id !== variantId) {
-          throw new TRPCError({ code: "CONFLICT", message: `Biến thể '${patch.code}' đã tồn tại` });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productVariant" }, `Biến thể '${patch.code}' đã tồn tại`);
         }
       }
 
@@ -363,10 +358,7 @@ export const productVariantRouter = router({
       }
       // action='override' must carry a patch; 'exclude' must not.
       if (input.action === "override" && (!input.patchJson || Object.keys(input.patchJson).length === 0)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Ghi đè cần patchJson (các trường thay đổi)",
-        });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "patchJson" }, "Ghi đè cần patchJson (các trường thay đổi)");
       }
 
       // The target must be a BASE/common point (variantId NULL) of THIS variant's model.
@@ -378,10 +370,12 @@ export const productVariantRouter = router({
         throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "measurementPoint", parent: "productModel" }, "Điểm đo không thuộc sản phẩm của biến thể");
       }
       if (basePoint.variantId != null) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Chỉ được ghi đè điểm đo chung (base) — không phải điểm riêng của biến thể",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "overrideBaseVariantPoint" },
+          "Chỉ được ghi đè điểm đo chung (base) — không phải điểm riêng của biến thể",
+        );
       }
 
       const id = await db.setVariantPointOverride({

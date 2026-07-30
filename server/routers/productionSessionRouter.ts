@@ -14,10 +14,10 @@ const SIGNOFF_ALGORITHM = "HMAC-SHA256";
 // điều phối (admin/supervisor/quality_inspector) thao tác mọi phiên của line.
 const SESSION_SUPERVISOR_ROLES = new Set(["admin", "supervisor", "quality_inspector"]);
 function assertSessionActor(session: { operatorId: number | null }, user: { id: number; role?: string } | undefined | null) {
-  if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Chưa đăng nhập" });
+  if (!user) throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Chưa đăng nhập");
   if (SESSION_SUPERVISOR_ROLES.has(String(user.role))) return;
   if (session.operatorId != null && session.operatorId === user.id) return;
-  throw new TRPCError({ code: "FORBIDDEN", message: "Bạn chỉ được thao tác phiên sản xuất của chính mình" });
+  throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "manageOwnProductionSession" }, "Bạn chỉ được thao tác phiên sản xuất của chính mình");
 }
 
 function buildSignoffPayload(input: {
@@ -32,10 +32,14 @@ function buildSignoffPayload(input: {
 function signPayload(payload: string) {
   const secret = process.env.SIGNOFF_SECRET;
   if (!secret || secret.length < 16) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "SIGNOFF_SECRET chưa được cấu hình (tối thiểu 16 ký tự) để ký bản ghi 21 CFR Part 11",
-    });
+    // Lỗi cấu hình khởi động (biến môi trường thiếu) — người dùng không tự gây ra được,
+    // nhưng vẫn phải là appError() (không TRPCError trần) theo nguyên tắc #3 của Task 8.
+    throw appError(
+      "INTERNAL_SERVER_ERROR",
+      "OPERATION_FAILED",
+      { operation: "signProductionSession" },
+      "SIGNOFF_SECRET chưa được cấu hình (tối thiểu 16 ký tự) để ký bản ghi 21 CFR Part 11",
+    );
   }
   const hash = createHash("sha256").update(payload).digest("hex");
   const signature = createHmac("sha256", secret).update(payload).digest("hex");
@@ -207,7 +211,7 @@ export const productionSessionRouter = router({
       if (!session) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       assertSessionActor(session, ctx.user);
       if (session.status === "closed" || (session.status as any) === "signed_off") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Phiên đã đóng hoặc đã ký" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "closeProductionSession" }, "Phiên đã đóng hoặc đã ký");
       }
       const closedAt = new Date();
       const kpi = await computeKpiSnapshot(db, {
@@ -262,19 +266,19 @@ export const productionSessionRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin" && ctx.user?.role !== "supervisor") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ supervisor hoặc admin được ký duyệt phiên" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "signOffProductionSession" }, "Chỉ supervisor hoặc admin được ký duyệt phiên");
       }
       if (!input.supervisorPasswordConfirmed) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cần xác nhận lại mật khẩu trước khi ký (21 CFR Part 11 §11.200)" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "supervisorPasswordConfirmed" }, "Cần xác nhận lại mật khẩu trước khi ký (21 CFR Part 11 §11.200)");
       }
 
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
       if (!session) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       if (session.status !== "closed") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Phiên phải ở trạng thái 'closed' trước khi ký duyệt" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "signOffProductionSession" }, "Phiên phải ở trạng thái 'closed' trước khi ký duyệt");
       }
       if (session.supervisorSignoff) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Phiên đã được ký duyệt trước đó" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "signOffProductionSession" }, "Phiên đã được ký duyệt trước đó");
       }
 
       const signedAt = new Date();

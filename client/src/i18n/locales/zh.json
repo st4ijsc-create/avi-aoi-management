@@ -3656,7 +3656,11 @@
       "productCategory": "产品类别",
       "trainingBatchTag": "训练批次标签",
       "msaObservation": "MSA观测值",
-      "kbCorpus": "知识库(corpus)"
+      "kbCorpus": "知识库(corpus)",
+      "zone": "区域(zone)",
+      "sharedResource": "共享资源",
+      "chargerStation": "充电站",
+      "referenceImage": "参考图像"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3704,7 +3708,16 @@
       "downloadLicenseFile": "下载许可证文件",
       "generateOfflineActivationRequest": "生成离线激活请求",
       "applyOfflineLicense": "应用离线许可证",
-      "getHardwareFingerprint": "获取硬件指纹"
+      "getHardwareFingerprint": "获取硬件指纹",
+      "assignFleetTask": "分配机队任务",
+      "completeFleetTask": "完成机队任务",
+      "cancelFleetTask": "取消机队任务",
+      "downloadEdgePackage": "下载边缘部署包",
+      "resetUserPassword": "重置用户密码",
+      "changeOwnPassword": "更改本人密码",
+      "signProductionSession": "签署生产阶段记录",
+      "closeProductionSession": "关闭生产阶段",
+      "signOffProductionSession": "主管签核生产阶段"
     },
     "field": {
       "code": "编码",
@@ -3752,7 +3765,13 @@
       "fileContent": "文件内容",
       "videoContent": "视频内容",
       "confirm": "确认",
-      "dashboardTarget": "仪表板目标"
+      "dashboardTarget": "仪表板目标",
+      "stepType": "工序步骤类型",
+      "waveforms": "波形数据",
+      "currentPassword": "当前密码",
+      "password": "密码",
+      "patchJson": "变更数据(patch)",
+      "supervisorPasswordConfirmed": "主管密码确认"
     },
     "feature": {
       "web_ingest": "网页内容导入",
@@ -3783,7 +3802,8 @@
       "modelPipeline": "模型流水线",
       "licenseServerSdk": "License Server SDK",
       "speechToText": "语音转文字",
-      "loraFinetune": "LoRA微调"
+      "loraFinetune": "LoRA微调",
+      "productVariants": "产品变体"
     },
     "action": {
       "viewOthersPermissions": "查看他人的权限",
@@ -3805,7 +3825,13 @@
       "viewDashboard": "查看仪表板",
       "exportDashboard": "导出仪表板",
       "convertDashboardToTemplate": "将仪表板转换为模板",
-      "selfApproveGoldenSample": "自行批准本人的Golden样本"
+      "selfApproveGoldenSample": "自行批准本人的Golden样本",
+      "listUsers": "查看用户列表",
+      "changeUserRole": "更改用户角色",
+      "deleteUser": "删除用户",
+      "deleteOwnAccount": "删除本人账户",
+      "manageOwnProductionSession": "操作本人的生产阶段",
+      "signOffProductionSession": "主管签核生产阶段"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

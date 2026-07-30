@@ -21,8 +21,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_LEGACY_THROWS = 229; // ← task 8 lô 1/N (aoiPackageRouter/hierarchyRouters/productRouters/
-// licenseRouter/kbIngestRouter/kbStudioRouter/goldenSampleRouter/dashboardWidgetRouters — 114 chỗ): 343 - 114 = 229
+const ALLOWED_LEGACY_THROWS = 176; // ← task 8 lô 2/N (spcAdvancedRouter/userRouters/fleetRouter/
+// machineApiRouters/productionSessionRouter/productVariantRouter — 53 chỗ): 229 - 53 = 176
 
 const ROUTERS_DIR = dirname(fileURLToPath(import.meta.url));
 

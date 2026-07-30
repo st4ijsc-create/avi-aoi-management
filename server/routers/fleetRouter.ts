@@ -253,7 +253,7 @@ export const fleetRouter = router({
       const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
       if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.taskId} not found`);
       if (["completed", "cancelled"].includes(t.status)) {
-        throw new TRPCError({ code: "CONFLICT", message: `Task ${input.taskId} is terminal (${t.status})` });
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Task ${input.taskId} is terminal (${t.status})`);
       }
       // W4-18 (2) — VALIDATE the destination device before writing the assignment.
       // (a) must exist AND be enabled, (b) must be online (not offline/estop),
@@ -264,10 +264,10 @@ export const fleetRouter = router({
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, `Device ${input.deviceId} not found or not enabled`);
       }
       if (robot.status === "offline" || robot.status === "estop") {
-        throw new TRPCError({ code: "CONFLICT", message: `Device ${input.deviceId} is ${robot.status} — cannot assign work` });
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Device ${input.deviceId} is ${robot.status} — cannot assign work`);
       }
       if (!deviceSupportsCapability(robot.kind, t.requiredCapability)) {
-        throw new TRPCError({ code: "CONFLICT", message: `Device ${input.deviceId} (${robot.kind}) does not support capability "${t.requiredCapability}"` });
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Device ${input.deviceId} (${robot.kind}) does not support capability "${t.requiredCapability}"`);
       }
       await d
         .update(tasks)
@@ -308,7 +308,7 @@ export const fleetRouter = router({
       const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
       if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.taskId} not found`);
       if (["completed", "cancelled", "failed"].includes(t.status)) {
-        throw new TRPCError({ code: "CONFLICT", message: `Task ${input.taskId} already terminal (${t.status})` });
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "completeFleetTask" }, `Task ${input.taskId} already terminal (${t.status})`);
       }
       await d
         .update(tasks)
@@ -353,7 +353,7 @@ export const fleetRouter = router({
       const [t] = await d.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
       if (!t) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fleetTask" }, `Task ${input.taskId} not found`);
       if (["completed", "cancelled", "failed"].includes(t.status)) {
-        throw new TRPCError({ code: "CONFLICT", message: `Task ${input.taskId} already terminal (${t.status})` });
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "cancelFleetTask" }, `Task ${input.taskId} already terminal (${t.status})`);
       }
       await d
         .update(tasks)
@@ -379,7 +379,7 @@ export const fleetRouter = router({
       requireFlag();
       const d = await db();
       const [clash] = await d.select().from(zones).where(eq(zones.code, input.code)).limit(1);
-      if (clash) throw new TRPCError({ code: "CONFLICT", message: `Zone code "${input.code}" already exists` });
+      if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "zone" }, `Zone code "${input.code}" already exists`);
       const [row] = await d
         .insert(zones)
         .values({
@@ -479,7 +479,7 @@ export const fleetRouter = router({
       requireResourceFlag();
       const d = await db();
       const [clash] = await d.select().from(operationCodes).where(eq(operationCodes.code, input.code)).limit(1);
-      if (clash) throw new TRPCError({ code: "CONFLICT", message: `Operation code "${input.code}" already exists` });
+      if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "operationCode" }, `Operation code "${input.code}" already exists`);
       const [row] = await d
         .insert(operationCodes)
         .values({
@@ -644,7 +644,7 @@ export const fleetRouter = router({
       requireResourceFlag();
       const d = await db();
       const [clash] = await d.select().from(sharedResources).where(eq(sharedResources.code, input.code)).limit(1);
-      if (clash) throw new TRPCError({ code: "CONFLICT", message: `Resource code "${input.code}" already exists` });
+      if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "sharedResource" }, `Resource code "${input.code}" already exists`);
       const [row] = await d
         .insert(sharedResources)
         .values({
@@ -732,7 +732,7 @@ export const fleetRouter = router({
       requireResourceFlag();
       const d = await db();
       const [clash] = await d.select().from(chargerStations).where(eq(chargerStations.code, input.code)).limit(1);
-      if (clash) throw new TRPCError({ code: "CONFLICT", message: `Charger code "${input.code}" already exists` });
+      if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "chargerStation" }, `Charger code "${input.code}" already exists`);
       const [row] = await d
         .insert(chargerStations)
         .values({
