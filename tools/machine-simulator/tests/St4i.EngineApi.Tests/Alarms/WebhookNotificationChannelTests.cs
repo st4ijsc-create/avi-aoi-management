@@ -1305,6 +1305,50 @@ public sealed class WebhookNotificationChannelTests : IDisposable
         Assert.Null(await store.GetWebhookAsync(ct: cts.Token));
     }
 
+    /// <summary>
+    /// 🔴 Review round 2 (m-1) — <c>targetId</c> is typed nullable, but a FLEET-WIDE alarm does not arrive
+    /// as <see langword="null"/>: <see cref="AlarmEvaluator"/>'s NgRate raise sends the literal
+    /// <c>"fleet"</c>. The contract document told receivers the opposite, which would have given them a
+    /// branch that never fires and a fleet-wide alarm rendered as a machine id.
+    ///
+    /// <para>Pinned here against the real value the real source uses, so the doc cannot drift back. And the
+    /// display placeholder is asserted to be <c>unspecified</c> rather than <c>fleet</c> — this product's
+    /// own <c>text</c> builder must not make the equation the document tells receivers not to make.</para>
+    /// </summary>
+    [Fact]
+    public async Task AFleetWideAlarm_CarriesTheLiteralTargetId_NotNull_AndNullIsNeverRenderedAsFleet()
+    {
+        await using var server = WebhookLoopbackServer.Start(new ScriptedResponse(200));
+        var store = NewStore();
+        Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, server.Url()));
+
+        using var channel = NewChannel(store);
+
+        // Exactly what AlarmEvaluator raises for a fleet NG-rate breach.
+        var ngRate = MakeAlarm() with
+        {
+            Key = "NgRate:HIGH:fleet", Source = AlarmSource.NgRate, Code = "HIGH", TargetId = "fleet",
+        };
+        await channel.DispatchAsync(MakeJob(alarm: ngRate));
+
+        using var body = JsonDocument.Parse(Assert.Single(server.Requests).Body);
+        var alarm = body.RootElement.GetProperty("alarm");
+        Assert.Equal(JsonValueKind.String, alarm.GetProperty("targetId").ValueKind); // NOT Null
+        Assert.Equal("fleet", alarm.GetProperty("targetId").GetString());
+        Assert.Equal("NgRate", alarm.GetProperty("source").GetString());
+
+        // A genuinely unset target renders as "unspecified" — never as "fleet", which would be this
+        // product asserting the very synonym the contract forbids.
+        var unspecified = MakeAlarm() with { TargetId = null };
+        await channel.DispatchAsync(MakeJob(alarm: unspecified));
+
+        using var second = JsonDocument.Parse(server.Requests[1].Body);
+        Assert.Equal(JsonValueKind.Null, second.RootElement.GetProperty("alarm").GetProperty("targetId").ValueKind);
+        var text = second.RootElement.GetProperty("text").GetString()!;
+        Assert.Contains("unspecified", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("fleet", text, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>The shipped budgets are what the report and the docs claim. Every other test in this file
     /// shrinks them, so without this nothing would notice a default drifting.</summary>
     [Fact]

@@ -79,7 +79,7 @@ Rules a receiver can rely on:
   | `edge.actor` | **yes** | system-originated edges (`Raised`, `Escalated`, `Restored`, an evaluator `Cleared`) |
   | `alarm.key`, `.source`, `.code`, `.priority`, `.state`, `.message`, `.clearOnAck`, `.count`, `.firstRaisedUtc`, `.lastRaisedUtc` | never | — |
   | `alarm.runbook` | **yes** | the source supplied no runbook pointer |
-  | `alarm.targetId` | **yes** | the alarm is fleet-wide rather than about one machine |
+  | `alarm.targetId` | **yes** (but see below) | no source in this build ever leaves it unset — treat `null` as *unspecified*, not as a synonym for fleet-wide |
   | `alarm.ackedUtc`, `alarm.ackedBy` | **yes** | the alarm has not been acknowledged |
 
 - **Ignore fields you do not recognise.** Additive fields do not bump `specVersion`.
@@ -117,9 +117,24 @@ The sender fires on **edges**, never on state. A condition that stays true for a
 - `edge.sequence` is a per-process, strictly increasing ordinal — use it to order two messages about one
   alarm without trusting clocks. **It resets to 0 when the engine restarts**; for cross-restart identity use
   `source.host` + `edge.atUtc`.
-- `source.host` is which machine *sent* this. `alarm.targetId` is which machine the alarm is *about*
-  — **or `null` when the alarm is fleet-wide.** One engine runs a whole fleet. (`text` substitutes the word
-  `fleet` for display; `alarm.targetId` itself is `null`, never the literal string.)
+- `source.host` is which machine *sent* this. `alarm.targetId` is what the alarm is *about* — one engine
+  runs a whole fleet, so these are different questions.
+
+  🔴 **`targetId` is typed nullable but no source in this build ever leaves it unset, and a fleet-wide
+  alarm does NOT arrive as `null`.** Do not write `if (targetId == null) → fleet-wide`: it is a branch that
+  never fires, and it will render the fleet-wide case as a machine id. What the four sources actually put
+  there:
+
+  | `alarm.source` | `alarm.targetId` |
+  |---|---|
+  | `DriverHealth` | the slot label of the machine, e.g. `MODBUS-01` |
+  | `NgRate` | the literal string **`fleet`** — this is the fleet-wide case |
+  | `Identity` | the literal string `device` (this engine's own X.509 identity) |
+  | `Policy` | the action that was denied, e.g. `setpoint.write` |
+
+  So `targetId` is a **machine code only when `source` is `DriverHealth`**. Branch on `alarm.source`, not on
+  the shape of `targetId`. A future source may legitimately send `null`; treat that as *unspecified*, not as
+  a synonym for fleet-wide.
 - There is deliberately **no numeric alarm id**. The internal one is a SQLite rowid, which SQLite reuses
   after a delete; a receiver keying on it would silently merge two unrelated alarms.
 

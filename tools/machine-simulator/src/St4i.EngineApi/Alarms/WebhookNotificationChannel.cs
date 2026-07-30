@@ -24,11 +24,18 @@ namespace St4i.EngineApi.Alarms;
 /// disabled, or the alarm is less severe than that instance's minimum priority. NOT a loss: this is the
 /// operator's configuration working.</param>
 /// <param name="Delivered">(notification, instance) pairs the receiver answered with a 2xx.</param>
-/// <param name="Lost">🔴 (notification, instance) pairs that were MEANT to be delivered and were not — a
-/// permanent rejection, a retry budget exhausted, an undecryptable destination, an unusable auth token, or
-/// an internal fault. <b>This batch offers no delivery guarantee and there is no queue behind this
-/// channel</b> (see <see cref="AlarmNotifier"/>): the edge that produced this notification will not be
-/// re-emitted. A non-zero value here means somebody was not told something that happened.</param>
+/// <param name="Lost">
+/// 🔴 (notification, instance) pairs that were MEANT to be delivered and were not. The full list, because
+/// this is the operator-facing definition of the counter and a stale one is how the <c>Unsigned</c> defect
+/// below arose: a permanent rejection; a retry budget exhausted; an undecryptable destination URL; an
+/// <b>undecryptable signing secret</b> (review round 1, I-1 — sending unsigned instead would silently stop
+/// this machine proving its identity); a <b>configuration that could not be read back</b> after being
+/// listed (review round 1, M-1 — indistinguishable from a delete in the same instant, so counted as the
+/// loss it more likely is); an unusable auth token; or an internal fault.
+///
+/// <para><b>This batch offers no delivery guarantee and there is no queue behind this channel</b> (see
+/// <see cref="AlarmNotifier"/>): the edge that produced this notification will not be re-emitted. A
+/// non-zero value here means somebody was not told something that happened.</para></param>
 /// <param name="Cancelled">Deliveries abandoned because the process is shutting down. Also a loss, counted
 /// separately because it is expected during shutdown and alarming at any other time. When shutdown arrives
 /// before the destination list has been resolved the unit is the whole notification rather than one

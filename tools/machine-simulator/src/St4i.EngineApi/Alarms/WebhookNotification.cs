@@ -146,7 +146,14 @@ public sealed record WebhookPayloadEdge(
 /// <param name="State">The <see cref="AlarmState"/> member name as it stood at the edge.</param>
 /// <param name="Message">Operator-facing free text.</param>
 /// <param name="Runbook">An optional pointer at what to do about it.</param>
-/// <param name="TargetId">Which machine (or <c>fleet</c>) the alarm is ABOUT.</param>
+/// <param name="TargetId">What the alarm is ABOUT. 🔴 Typed nullable, but no source in this build leaves
+/// it unset, and a FLEET-WIDE alarm does not arrive as <see langword="null"/> — it arrives as the literal
+/// <c>"fleet"</c> (see <see cref="AlarmEvaluator"/>'s NgRate raise). The four sources put four different
+/// kinds of thing here: a slot label for <see cref="AlarmSource.DriverHealth"/>, <c>"fleet"</c> for
+/// <see cref="AlarmSource.NgRate"/>, <c>"device"</c> for <see cref="AlarmSource.Identity"/>, and the denied
+/// action for <see cref="AlarmSource.Policy"/>. A receiver must therefore branch on
+/// <see cref="Source"/> rather than on the shape of this field, and must not read
+/// <see langword="null"/> as "fleet-wide". See <c>docs/ALARM_WEBHOOK_CONTRACT.md</c> §2.</param>
 /// <param name="ClearOnAck">Whether this is an EVENT alarm (acking clears it) or a CONDITION alarm (acking
 /// only silences it). A receiver rendering "is this still on?" needs it.</param>
 /// <param name="Count">How many times the condition has been restated since it was first raised — the
@@ -250,7 +257,12 @@ public sealed record WebhookPayload(
     private static string BuildText(NotificationJob job, string sourceHost)
     {
         var alarm = job.Alarm;
-        var target = string.IsNullOrWhiteSpace(alarm.TargetId) ? "fleet" : alarm.TargetId;
+        // 🔴 Review round 2 (m-1) — the placeholder is "unspecified", NOT "fleet". No source in this build
+        // leaves TargetId unset, and the one FLEET-WIDE source (NgRate) sends the literal "fleet" itself, so
+        // substituting "fleet" here would be this product's own display code making exactly the
+        // null-means-fleet-wide equation the contract document now tells receivers not to make. Unreachable
+        // today; wrong the moment it is not.
+        var target = string.IsNullOrWhiteSpace(alarm.TargetId) ? "unspecified" : alarm.TargetId;
         var actor = string.IsNullOrWhiteSpace(job.Actor) ? "" : $" by {job.Actor}";
         var escalation = job.PreviousPriority is { } previous ? $" (was {previous})" : "";
         return $"[{alarm.Priority.ToString().ToUpperInvariant()}] {job.Edge.ToString().ToUpperInvariant()}" +
