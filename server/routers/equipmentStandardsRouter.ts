@@ -164,7 +164,7 @@ export const equipmentStandardsRouter = router({
     .query(async ({ input }) => {
       const nodes = await loadNodeSet();
       const resolved = resolveType(input.typeKey, nodes);
-      if (!resolved) throw new TRPCError({ code: "NOT_FOUND", message: `Device type '${input.typeKey}' not found` });
+      if (!resolved) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceType" }, `Device type '${input.typeKey}' not found`);
       return resolved;
     }),
 

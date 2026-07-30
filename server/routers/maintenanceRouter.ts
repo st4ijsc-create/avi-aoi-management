@@ -49,7 +49,7 @@ async function getRow(id: number) {
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
   const [row] = await db.select().from(maintenanceWorkOrders).where(eq(maintenanceWorkOrders.id, id)).limit(1);
-  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `work_order ${id} not found` });
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workOrder" }, `work_order ${id} not found`);
   return row;
 }
 
@@ -272,7 +272,7 @@ export const maintenanceRouter = router({
           .for("update")
           .limit(1);
         if (!part) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Spare part not found" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "sparePart" }, "Spare part not found");
         }
         if (part.quantityOnHand < input.quantityUsed) {
           throw new TRPCError({

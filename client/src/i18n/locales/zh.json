@@ -3644,7 +3644,10 @@
       "componentPackage": "元件封装",
       "material": "物料",
       "heatmap": "缺陷热力图",
-      "license": "许可证"
+      "license": "许可证",
+      "deviceType": "设备类型",
+      "operationCode": "操作代码",
+      "ngRateThreshold": "NG率阈值"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

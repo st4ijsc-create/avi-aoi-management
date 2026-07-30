@@ -86,7 +86,7 @@ export const mqttSoftwareVersionRouter = router({
         .from(mqttSoftwareVersions)
         .where(eq(mqttSoftwareVersions.id, input.versionId))
         .limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Version not found" });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "softwareVersion" }, "Version not found");
 
       const buffer = Buffer.from(input.fileBase64, "base64");
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -122,7 +122,7 @@ export const mqttSoftwareVersionRouter = router({
         .from(mqttSoftwareVersions)
         .where(eq(mqttSoftwareVersions.id, input.id))
         .limit(1);
-      if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Version not found" });
+      if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "softwareVersion" }, "Version not found");
       if (!target.apkFileUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Version must have an APK uploaded before setting as latest" });
 
       // Clear current latest

@@ -11,6 +11,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { moduleProcedure, qualityProcedure, router } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_QUALITY (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
@@ -72,7 +73,7 @@ export const ncrRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const row = await getNcrById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `NCR ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ncr" }, `NCR ${input.id} not found`);
       return row;
     }),
 

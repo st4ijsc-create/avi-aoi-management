@@ -39,7 +39,7 @@ export const mpVariantSubformRouter = router({
     .query(async ({ input }) => {
       const mp = await (db as any).getMeasurementPointDefById?.(input.pointDefId);
       if (!mp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Measurement point not found");
       }
       return {
         pointDefId: mp.id,
@@ -57,7 +57,7 @@ export const mpVariantSubformRouter = router({
     .mutation(async ({ input }) => {
       const mp = await (db as any).getMeasurementPointDefById?.(input.pointDefId);
       if (!mp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Measurement point not found");
       }
       // Resolve the active typeCode: explicit input wins, else preserve existing.
       const code = input.measurementTypeCode === undefined

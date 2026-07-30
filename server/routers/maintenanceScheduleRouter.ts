@@ -62,7 +62,7 @@ async function getRow(id: number): Promise<ScheduleRow> {
   const db = await getDb();
   if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
   const [row] = await db.select().from(maintenanceSchedules).where(eq(maintenanceSchedules.id, id)).limit(1);
-  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `maintenance_schedule ${id} not found` });
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "maintenanceSchedule" }, `maintenance_schedule ${id} not found`);
   return row;
 }
 
@@ -113,7 +113,7 @@ export const maintenanceScheduleRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const [machine] = await db.select({ code: machines.code, id: machines.id })
         .from(machines).where(eq(machines.id, input.machineId)).limit(1);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: `Machine ${input.machineId} not found` });
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine ${input.machineId} not found`);
 
       const [row] = await db.insert(maintenanceSchedules).values({
         machineId: input.machineId,

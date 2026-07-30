@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 // doc 54 Wave B — bulletin config + publish mutations were bare protectedProcedure (any
 // authenticated user, incl. viewer, could publish/config). writeProcedure blocks read-only
 // roles; requirePermission("mqtt_bulletin", ...) adds the module check (admin-effective by
@@ -299,7 +300,7 @@ export const mqttBulletinRouter = router({
       .limit(1);
 
       if (result.length === 0) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Bulletin not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'bulletin' }, 'Bulletin not found');
       }
 
       return {
@@ -486,7 +487,7 @@ export const mqttBulletinRouter = router({
       .limit(1);
 
       if (stationInfo.length === 0) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Station ${input.stationId} không tồn tại` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'station' }, `Station ${input.stationId} không tồn tại`);
       }
 
       const { station, line, workshop, factory } = stationInfo[0];

@@ -1,6 +1,7 @@
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { nanoid } from "nanoid";
 import { and as drizzleAnd, eq as drizzleEq, ne as drizzleNe, gte as drizzleGte, asc as drizzleAsc, sql } from "drizzle-orm";
 import * as db from "../db";
@@ -514,7 +515,7 @@ async function resolvePointsConfigForSync(
   if (trimmedCode) {
     const productModel = await db.getProductModelByCode(trimmedCode);
     if (!productModel) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${trimmedCode}' not found` });
+      throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${trimmedCode}' not found`);
     }
     const version = variantOn
       ? (await resolveSyncVariant(productModel.id, variantCode, Number(productModel.pointsConfigVersion ?? 1))).version
@@ -3432,7 +3433,7 @@ export const machineApiRouter = router({
 
       const inspection = await db.getProductInspectionById(input.inspectionId);
       if (!inspection) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Inspection not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
       }
 
       const inspectionModel = inspection.productModelId
@@ -3451,7 +3452,7 @@ export const machineApiRouter = router({
         machinePointCache,
       );
       if (!pointDef) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement point not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementPoint' }, 'Measurement point not found');
       }
 
       // Find the measurement result
@@ -3470,7 +3471,7 @@ export const machineApiRouter = router({
         .limit(1);
 
       if (results.length === 0) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
 
       // Upload image to S3
@@ -3538,7 +3539,7 @@ export const machineApiRouter = router({
       const normalizedModelCode = input.productModelCode.trim();
       const productModel = await db.getProductModelByCode(normalizedModelCode);
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Product model not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, 'Product model not found');
       }
 
       const workstationCache: WorkstationCache = new Map();
@@ -4143,7 +4144,7 @@ export const machineApiRouter = router({
       if (input.productModelCode) {
         const productModel = await db.getProductModelByCode(input.productModelCode.trim());
         if (!productModel) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
         }
         // PV1: report the resolved variant's version (base == model version) under
         // the flag; otherwise the model version exactly as before.
@@ -4428,7 +4429,7 @@ export const machineApiRouter = router({
         const normalizedModelCode = input.productModelCode.trim();
         const productModel = await db.getProductModelByCode(normalizedModelCode);
         if (!productModel) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${normalizedModelCode}' not found` });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${normalizedModelCode}' not found`);
         }
 
         const { points, versionOverride } = await pointsForModel(productModel);
@@ -4483,7 +4484,7 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       if (!productModel.referenceImageUrl && !productModel.referenceImageKey) {
@@ -4544,7 +4545,7 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       // Compute image hash for deduplication
@@ -4671,12 +4672,12 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       const existing = await db.getMeasurementPointDefByCode(productModel.id, input.pointCode.trim());
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Measurement point '${input.pointCode}' not found in product model '${input.productModelCode}'` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementPoint' }, `Measurement point '${input.pointCode}' not found in product model '${input.productModelCode}'`);
       }
 
       // Compute image hash for deduplication (same pattern as syncProductImage)
@@ -4770,12 +4771,12 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       const point = await db.getMeasurementPointDefByCode(productModel.id, input.pointCode.trim());
       if (!point) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Measurement point '${input.pointCode}' not found in product model '${input.productModelCode}'` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementPoint' }, `Measurement point '${input.pointCode}' not found in product model '${input.productModelCode}'`);
       }
 
       if (!point.referenceImageUrl) {
@@ -4838,7 +4839,7 @@ export const machineApiRouter = router({
 
       const productModel = await db.getProductModelByCode(input.productModelCode.trim());
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Product model '${input.productModelCode}' not found` });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, `Product model '${input.productModelCode}' not found`);
       }
 
       // Doc 55 Item 3 PV1 — variant-aware version gate + point source (flag-gated).
@@ -5057,7 +5058,7 @@ export const machineApiRouter = router({
       const machine = edgeAuth.machine;
 
       const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
 
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
@@ -5107,7 +5108,7 @@ export const machineApiRouter = router({
       const machine = edgeAuth.machine;
 
       const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
       if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
@@ -5136,7 +5137,7 @@ export const machineApiRouter = router({
       const machine = edgeAuth.machine;
 
       const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
       if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
@@ -5175,7 +5176,7 @@ export const machineApiRouter = router({
       const machine = edgeAuth.machine;
 
       const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
-      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
       if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });

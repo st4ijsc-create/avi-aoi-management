@@ -455,7 +455,7 @@ export const fleetRouter = router({
     .input(z.object({ code: z.string().min(1).max(64), deviceKind: z.string().max(32).optional() }))
     .query(async ({ input }) => {
       const r = await resolveOperation(input.code, input.deviceKind ?? null);
-      if (!r) throw new TRPCError({ code: "NOT_FOUND", message: `Operation "${input.code}" not found` });
+      if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "operationCode" }, `Operation "${input.code}" not found`);
       return r;
     }),
 

@@ -10,6 +10,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -169,7 +170,7 @@ export const operatorBadgeRouter = router({
         ...(patch.validTo !== undefined ? { validTo: patch.validTo } : {}),
         ...(patch.notes !== undefined ? { notes: patch.notes ?? null } : {}),
       });
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Badge not found" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "badge" }, "Badge not found");
       return row;
     }),
 
@@ -179,7 +180,7 @@ export const operatorBadgeRouter = router({
     .input(z.object({ id: z.number().int().positive(), validTo: dateInput }))
     .mutation(async ({ input }) => {
       const row = await revokeBadge(input.id, input.validTo ?? undefined);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Badge not found" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "badge" }, "Badge not found");
       return row;
     }),
 

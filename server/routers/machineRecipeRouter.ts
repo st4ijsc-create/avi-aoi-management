@@ -266,7 +266,7 @@ export const machineRecipeRouter = router({
       .input(z.object({ id: z.number().int().positive() }))
       .query(async ({ input }) => {
         const row = await getRecipeById(input.id);
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Recipe không tồn tại." });
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         return row;
       }),
 
@@ -323,7 +323,7 @@ export const machineRecipeRouter = router({
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => {
         const existing = await getRecipeById(input.id);
-        if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Recipe không tồn tại." });
+        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         await archiveRecipe(input.id);
         // W5-22 — archive từng làm MẤT actor; nay ghi vết genealogy với người thực hiện.
         await recordGenealogySafe("archive", { ...existing, status: "archived" }, {
@@ -343,7 +343,7 @@ export const machineRecipeRouter = router({
       .input(z.object({ id: z.number().int().positive(), isGolden: z.boolean() }))
       .mutation(async ({ input }) => {
         const existing = await getRecipeById(input.id);
-        if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Recipe không tồn tại." });
+        if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         return setGoldenRecipe(input.id, input.isGolden);
       }),
 
@@ -513,9 +513,9 @@ export const machineRecipeRouter = router({
         const db = await getDb();
         const [machine] = await db.select({ id: machines.id }).from(machines)
           .where(eq(machines.id, input.machineId)).limit(1);
-        if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Máy không tồn tại." });
+        if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Máy không tồn tại.");
         const recipe = await getRecipeById(input.recipeId);
-        if (!recipe) throw new TRPCError({ code: "NOT_FOUND", message: "Recipe không tồn tại." });
+        if (!recipe) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         if (recipe.status === "archived") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Recipe đã lưu trữ — không thể yêu cầu đổi model." });
         }
@@ -648,7 +648,7 @@ export const machineRecipeRouter = router({
         const db = await getDb();
         const [row] = await db.select().from(changeoverRequests)
           .where(eq(changeoverRequests.id, input.id)).limit(1);
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Yêu cầu không tồn tại." });
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "changeoverRequest" }, "Yêu cầu không tồn tại.");
         if (row.status !== "pending") {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Không thể duyệt từ trạng thái ${row.status}.` });
         }
@@ -687,7 +687,7 @@ export const machineRecipeRouter = router({
         const db = await getDb();
         const [row] = await db.select().from(changeoverRequests)
           .where(eq(changeoverRequests.id, input.id)).limit(1);
-        if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Yêu cầu không tồn tại." });
+        if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "changeoverRequest" }, "Yêu cầu không tồn tại.");
         if (row.status !== "pending") {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Không thể từ chối từ trạng thái ${row.status}.` });
         }

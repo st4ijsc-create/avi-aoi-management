@@ -113,7 +113,7 @@ export const ngRateThresholdRouter = router({
         .limit(1);
 
       if (result.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Threshold not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ngRateThreshold" }, "Threshold not found");
       }
 
       return {
@@ -419,7 +419,7 @@ export const ngRateThresholdRouter = router({
       .limit(1);
 
       if (stationInfo.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Station ${input.stationId} không tồn tại` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, `Station ${input.stationId} không tồn tại`);
       }
 
       const { station, line, workshop, factory } = stationInfo[0];

@@ -3653,7 +3653,10 @@
       "componentPackage": "gói linh kiện",
       "material": "vật tư",
       "heatmap": "bản đồ nhiệt lỗi",
-      "license": "giấy phép"
+      "license": "giấy phép",
+      "deviceType": "loại thiết bị",
+      "operationCode": "mã thao tác",
+      "ngRateThreshold": "ngưỡng tỉ lệ NG"
     }
   },
   "export": {

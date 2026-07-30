@@ -3652,7 +3652,10 @@
       "componentPackage": "component package",
       "material": "material",
       "heatmap": "defect heatmap",
-      "license": "license"
+      "license": "license",
+      "deviceType": "device type",
+      "operationCode": "operation code",
+      "ngRateThreshold": "NG-rate threshold"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
