@@ -86,4 +86,42 @@ describe("routeAlert — cửa sổ gộp không còn nuốt lần tái diễn",
     expect(String(warn.mock.calls[0][0])).toContain("VAN AN TOÀN");
     warn.mockRestore();
   });
+
+  // Sprint 5 debt E5 — throttle: trước sửa, MỖI lượt chạm trần lại warn ⇒ một
+  // vòng lặp hỏng 1000 lượt/phút sinh 1000 dòng warn/phút — chính log dùng để
+  // BẮT vòng lặp hỏng lại trở thành một vòng lặp gây ồn khác. Chỉ dòng warn
+  // ĐẦU TIÊN của mỗi cửa sổ 5 phút được in ra.
+  it("chạm van an toàn NHIỀU lần trong cùng cửa sổ ⇒ chỉ warn LẦN ĐẦU, không lặp lại mỗi lượt", async () => {
+    process.env.ROUTE_ALERT_MAX_PER_WINDOW = "2";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    seedOpenAlertRows = [{ id: 79, severity: "HIGH", occurrenceCount: 1, notificationSentAt: new Date() }];
+    // Trần=2 ⇒ lượt 3,4,5,6 đều CHẠM van (4 lần chạm trong cùng cửa sổ), nhưng
+    // chỉ lượt 3 (lần chạm ĐẦU TIÊN) được warn — lượt 4,5,6 im lặng ở log (vẫn
+    // bị BỎ đúng như van cũ, chỉ không warn lặp lại).
+    for (let i = 0; i < 6; i++) {
+      await routeAlert({ type: "MACHINE_FAILURE", machineId: 8203, severity: "HIGH", message: "x", data: {} } as any);
+    }
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  // Sprint 5 debt E7(c) — trước đây chỉ assert log chứa chuỗi "VAN AN TOÀN"
+  // chung chung, không kiểm được vận hành có tra đúng máy/loại cảnh báo đang
+  // có vòng lặp hỏng hay không. Log THẬT đã nêu cả khoá lẫn số đếm — bài test
+  // này lấp khoảng trống assertion, không đổi hành vi.
+  it("nội dung cảnh báo van phải nêu RÕ khoá + số đếm, không chỉ 'VAN AN TOÀN' chung chung", async () => {
+    process.env.ROUTE_ALERT_MAX_PER_WINDOW = "2";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    seedOpenAlertRows = [{ id: 80, severity: "HIGH", occurrenceCount: 1, notificationSentAt: new Date() }];
+    for (let i = 0; i < 3; i++) {
+      await routeAlert({ type: "MACHINE_FAILURE", machineId: 8204, severity: "HIGH", message: "x", data: {} } as any);
+    }
+    expect(warn).toHaveBeenCalledTimes(1);
+    const msg = String(warn.mock.calls[0][0]);
+    expect(msg).toContain("MACHINE_FAILURE:8204:all"); // khoá (consolidationKey) THẬT
+    expect(msg).toContain("3"); // số đếm (nextCount) tại đúng lượt chạm van
+    warn.mockRestore();
+  });
 });

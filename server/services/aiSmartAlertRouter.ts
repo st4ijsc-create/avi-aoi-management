@@ -145,6 +145,13 @@ const consolidationRedisKey = (consolidationKey: string) =>
 interface ConsolidationEntry {
   timestamp: number;
   count: number;
+  // Sprint 5 debt E5 — đã in cảnh báo VAN AN TOÀN cho CỬA SỔ này chưa. Một
+  // vòng lặp hỏng ở phía phát sinh 1000 lượt/phút từng kéo theo 1000 dòng
+  // warn/phút (mỗi lượt chạm trần lại warn một lần) — chính log dùng để PHÁT
+  // HIỆN vòng lặp hỏng lại trở thành một vòng lặp gây ồn khác. Cờ này (nằm
+  // NGAY TRONG entry Redis đã có sẵn, không cần kho nhớ riêng) đảm bảo chỉ
+  // dòng warn ĐẦU TIÊN của mỗi cửa sổ 5 phút được in ra.
+  warned?: boolean;
 }
 
 async function getConsolidationEntry(consolidationKey: string): Promise<ConsolidationEntry | null> {
@@ -228,7 +235,6 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
 
   if (existing && now - existing.timestamp < CONSOLIDATION_WINDOW_MS) {
     const nextCount = existing.count + 1;
-    await setConsolidationEntry(consolidationKey, { timestamp: existing.timestamp, count: nextCount });
     consolidated = true;
     // Sprint 5 §2.5 — trần cũ là `nextCount > 3` và return sớm TRƯỚC cả đường
     // ghi DB lẫn nhật ký ⇒ lần tái diễn thứ 4+ biến mất không dấu vết: KPI đếm
@@ -236,12 +242,22 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     // cho MỘT máy (3/5 phút = 6/10 phút, dưới ngưỡng).
     // Việc gộp THÔNG BÁO nay do decideNotify lo — đây chỉ còn là van an toàn.
     const cap = maxPerWindow();
-    if (nextCount > cap) {
+    // Sprint 5 debt E5 — trước đây warn MỖI LƯỢT chạm trần: một vòng lặp hỏng
+    // 1000 lượt/phút sinh 1000 dòng warn/phút, chính log dùng để bắt vòng lặp
+    // hỏng lại trở thành một vòng lặp gây ồn khác. Chỉ warn LẦN ĐẦU chạm trần
+    // trong mỗi cửa sổ 5 phút — nhớ bằng field `warned` ngay trong entry Redis
+    // đã có sẵn (không cần kho nhớ riêng).
+    let warned = existing.warned ?? false;
+    if (nextCount > cap && !warned) {
       console.warn(
         `[SmartAlert] VAN AN TOÀN: khoá ${consolidationKey} đã ${nextCount} lượt trong ` +
           `${CONSOLIDATION_WINDOW_MS / 1000}s (trần ROUTE_ALERT_MAX_PER_WINDOW=${cap}) — bỏ lượt này. ` +
           `Nghi vấn vòng lặp hỏng ở phía phát cảnh báo.`,
       );
+      warned = true;
+    }
+    await setConsolidationEntry(consolidationKey, { timestamp: existing.timestamp, count: nextCount, warned });
+    if (nextCount > cap) {
       return {
         alertType: event.type,
         targets: [],
@@ -252,7 +268,7 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
       };
     }
   } else {
-    await setConsolidationEntry(consolidationKey, { timestamp: now, count: 1 });
+    await setConsolidationEntry(consolidationKey, { timestamp: now, count: 1, warned: false });
   }
 
   // W0-F G5.5 (doc 44, mig 0249): persist runbook/recommendation pointers when the
