@@ -32,6 +32,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
@@ -55,7 +56,7 @@ type ThresholdApprovalRow = typeof thresholdApprovals.$inferSelect;
 
 async function getById(id: number) {
   const db = await getDb();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
   const [row] = await db
     .select()
     .from(thresholdApprovals)
@@ -147,7 +148,7 @@ export const thresholdApprovalRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "proposedLsl must be < proposedUsl" });
       }
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
       const [mp] = await db
         .select({
@@ -189,7 +190,7 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const row = await getById(input.id);
       if (row.status !== STATUS_PENDING) {
         throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot approve from status ${row.status}` });
@@ -212,7 +213,7 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
       const results: Array<{ id: number; status: "approved" | "skipped" | "failed"; reason?: string }> = [];
       // De-dupe while preserving order.
@@ -251,7 +252,7 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const row = await getById(input.id);
       if (row.status !== STATUS_PENDING) {
         throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot reject from status ${row.status}` });
@@ -278,7 +279,7 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const row = await getById(input.id);
       if (row.status !== STATUS_PENDING) {
         throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot withdraw from status ${row.status}` });
@@ -318,7 +319,7 @@ export const thresholdApprovalRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const conds = [] as any[];
       if (input?.pointDefId) conds.push(eq(thresholdApprovals.pointDefId, input.pointDefId));
       if (input?.status) conds.push(eq(thresholdApprovals.status, input.status));
@@ -391,7 +392,7 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
       let pointDefId = input.pointDefId ?? null;
       const approvalId = input.approvalId ?? null;

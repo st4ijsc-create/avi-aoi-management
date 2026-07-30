@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { webhookConfigs, webhookDeliveryLogs } from "../../drizzle/schema";
@@ -171,7 +172,7 @@ export const webhookRouter = router({
   // List all webhook configs
   list: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+    if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
     const configs = await db.select().from(webhookConfigs).orderBy(desc(webhookConfigs.createdAt));
     return configs;
@@ -182,7 +183,7 @@ export const webhookRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [config] = await db.select().from(webhookConfigs).where(eq(webhookConfigs.id, input.id));
       if (!config) throw new TRPCError({ code: "NOT_FOUND", message: "Webhook không tồn tại" });
@@ -210,7 +211,7 @@ export const webhookRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền tạo webhook" });
@@ -249,7 +250,7 @@ export const webhookRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền cập nhật webhook" });
@@ -272,7 +273,7 @@ export const webhookRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền xóa webhook" });
@@ -290,7 +291,7 @@ export const webhookRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [webhook] = await db.select().from(webhookConfigs).where(eq(webhookConfigs.id, input.id));
       if (!webhook) throw new TRPCError({ code: "NOT_FOUND", message: "Webhook không tồn tại" });
@@ -312,7 +313,7 @@ export const webhookRouter = router({
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       await db.update(webhookConfigs)
         .set({ isEnabled: input.isEnabled, updatedAt: new Date() })
@@ -329,7 +330,7 @@ export const webhookRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (input.webhookId) {
         return await db.select().from(webhookDeliveryLogs)
@@ -346,7 +347,7 @@ export const webhookRouter = router({
   // Get webhook stats
   getStats: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+    if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
     const totalWebhooks = await db.select({ count: sql<number>`count(*)` }).from(webhookConfigs);
     const activeWebhooks = await db.select({ count: sql<number>`count(*)` }).from(webhookConfigs).where(eq(webhookConfigs.isEnabled, true));
@@ -372,7 +373,7 @@ export const webhookRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền xóa logs" });

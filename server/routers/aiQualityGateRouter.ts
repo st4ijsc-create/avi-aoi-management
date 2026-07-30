@@ -8,6 +8,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { getDb } from "../db";
 import { eq, and, desc, sql } from "drizzle-orm";
 import {
@@ -68,7 +69,7 @@ export const aiQualityGateRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [config] = await db.select().from(aiQualityGateConfigs).where(eq(aiQualityGateConfigs.id, input.id)).limit(1);
       if (!config) throw new TRPCError({ code: "NOT_FOUND", message: "Quality gate config not found" });
       return config;
@@ -95,7 +96,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [result] = await db
         .insert(aiQualityGateConfigs)
         .values({
@@ -130,7 +131,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { id, autoOkThreshold, autoNgThreshold, reviewThreshold, ...rest } = input;
       const updateData: Record<string, unknown> = { ...rest, updatedAt: new Date() };
       if (autoOkThreshold !== undefined) updateData.autoOkThreshold = autoOkThreshold.toFixed(4);
@@ -150,7 +151,7 @@ export const aiQualityGateRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       await db.delete(aiQualityGateConfigs).where(eq(aiQualityGateConfigs.id, input.id));
       invalidateConfigCache();
       return { success: true };
@@ -167,7 +168,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Get inspection to find machine & product
       const inspResult = await db.execute(
@@ -245,7 +246,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [result] = await db
         .update(aiQualityGateResults)
         .set({
@@ -340,7 +341,7 @@ export const aiQualityGateRouter = router({
     .input(z.object({ experimentId: z.number(), configId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       await pauseExperiment(input.experimentId);
       await db
         .update(aiQualityGateConfigs)
@@ -419,7 +420,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [result] = await db
         .insert(aiEnsembleConfigs)
         .values({
@@ -446,7 +447,7 @@ export const aiQualityGateRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { id, cascadeThreshold, ...rest } = input;
       const updateData: Record<string, unknown> = { ...rest, updatedAt: new Date() };
       if (cascadeThreshold !== undefined) updateData.cascadeThreshold = cascadeThreshold.toFixed(4);
@@ -463,7 +464,7 @@ export const aiQualityGateRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       await db.delete(aiEnsembleConfigs).where(eq(aiEnsembleConfigs.id, input.id));
       return { success: true };
     }),

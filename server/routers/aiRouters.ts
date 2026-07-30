@@ -2,6 +2,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { getDb } from "../db";
 import { sql, eq } from "drizzle-orm";
 import { predictiveAlerts, rootCauseAnalysis } from "../../drizzle/schema";
@@ -22,7 +23,7 @@ export const rootCauseRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const startTime = Date.now();
       
@@ -242,7 +243,7 @@ export const rootCauseRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       let query = sql`SELECT * FROM root_cause_analysis WHERE 1=1`;
       if (input?.analysisType) {
@@ -282,7 +283,7 @@ export const rootCauseRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(
         sql`SELECT * FROM root_cause_analysis WHERE id = ${input.id}`
@@ -347,7 +348,7 @@ export const rootCauseRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const existingResult = await db.execute(
         sql`SELECT id, "aiInsights" FROM root_cause_analysis WHERE id = ${input.id}`
@@ -398,7 +399,7 @@ export const rootCauseRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const existingResult = await db.execute(
         sql`SELECT id FROM root_cause_analysis WHERE id = ${input.id}`
@@ -426,7 +427,7 @@ export const predictiveAlertRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const { predictiveAlerts } = await import('../../drizzle/schema');
       const { desc, eq, and } = await import('drizzle-orm');
@@ -492,7 +493,7 @@ export const predictiveAlertRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(
         sql`SELECT * FROM predictive_alerts WHERE id = ${input.id}`
@@ -538,7 +539,7 @@ export const predictiveAlertRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // W0-1 fix (doc 69): was a raw UPDATE with unquoted `acknowledgedBy`/
       // `acknowledgedAt` (Postgres folds to lowercase → column does not exist),
@@ -559,7 +560,7 @@ export const predictiveAlertRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // W0-1 fix (doc 69): was a raw UPDATE with unquoted `resolvedBy`/
       // `resolvedAt`/`resolutionNotes` — same silent no-persist bug as above.
@@ -580,7 +581,7 @@ export const predictiveAlertRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       await db.execute(
         sql`UPDATE predictive_alerts SET status = 'DISMISSED' WHERE id = ${input.id}`
@@ -598,7 +599,7 @@ export const predictiveAlertRouter = router({
     }).optional())
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const now = new Date();
       const daysAgo = new Date();
@@ -738,7 +739,7 @@ export const predictiveAlertRouter = router({
   stats: protectedProcedure
     .query(async () => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(sql`
         SELECT 

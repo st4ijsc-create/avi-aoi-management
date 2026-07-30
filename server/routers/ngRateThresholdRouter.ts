@@ -19,6 +19,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, adminProcedure, qualityProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
@@ -49,7 +50,7 @@ export const ngRateThresholdRouter = router({
     )
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const conditions = [];
       if (input?.stationId) conditions.push(eq(mqttNgRateThresholds.stationId, input.stationId));
@@ -92,7 +93,7 @@ export const ngRateThresholdRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const result = await db
         .select({
@@ -149,7 +150,7 @@ export const ngRateThresholdRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       // Validate: criticalThreshold phải >= warningThreshold
       if (input.criticalThreshold < input.warningThreshold) {
@@ -207,7 +208,7 @@ export const ngRateThresholdRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const { id, ...updateData } = input;
       const setData: any = { updatedAt: new Date() };
@@ -260,7 +261,7 @@ export const ngRateThresholdRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       await db.delete(mqttNgRateThresholds).where(eq(mqttNgRateThresholds.id, input.id));
       return { success: true };
@@ -273,7 +274,7 @@ export const ngRateThresholdRouter = router({
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       await db
         .update(mqttNgRateThresholds)
@@ -299,7 +300,7 @@ export const ngRateThresholdRouter = router({
     )
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       const conditions = [];
       if (input?.stationId) conditions.push(eq(mqttNgRateAlertHistory.stationId, input.stationId));
@@ -341,7 +342,7 @@ export const ngRateThresholdRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       await db
         .update(mqttNgRateAlertHistory)
@@ -401,7 +402,7 @@ export const ngRateThresholdRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB not available");
 
       // Get station info with hierarchy
       const stationInfo = await db.select({

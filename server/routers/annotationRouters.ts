@@ -1,6 +1,7 @@
 import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
@@ -268,7 +269,7 @@ export const annotationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Check if annotation exists for this image
       const existing = await db.execute(
         sql`SELECT id FROM image_annotations WHERE "imageUrl" = ${input.imageUrl} AND "createdBy" = ${ctx.user.id} LIMIT 1`
@@ -294,7 +295,7 @@ export const annotationRouter = router({
     .input(z.object({ imageUrl: z.string() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const result = await db.execute(
         sql`SELECT * FROM image_annotations WHERE "imageUrl" = ${input.imageUrl} ORDER BY "updatedAt" DESC LIMIT 1`
       ) as any;
@@ -317,7 +318,7 @@ export const annotationRouter = router({
     .input(z.object({ inspectionId: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const result = await db.execute(
         sql`SELECT * FROM image_annotations WHERE "inspectionId" = ${input.inspectionId} ORDER BY "createdAt" DESC`
       ) as any;
@@ -344,7 +345,7 @@ export const annotationRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get all annotations and filter in memory for complex JSON queries
       const result = await db.execute(
@@ -424,7 +425,7 @@ export const annotationRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get all annotations with inspection data
       let query = sql`
@@ -529,7 +530,7 @@ export const annotationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get template
       const templateResult = await db.execute(
@@ -581,7 +582,7 @@ export const annotationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       let deletedCount = 0;
       for (const imageUrl of input.imageUrls) {
@@ -603,7 +604,7 @@ export const annotationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get source annotations
       const sourceResult = await db.execute(
@@ -804,7 +805,7 @@ Respond in JSON format with an array of findings.`
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Check ownership
       const existing = await db.execute(
         sql`SELECT "createdBy" FROM image_annotations WHERE id = ${input.id}`
@@ -832,7 +833,7 @@ Respond in JSON format with an array of findings.`
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`mr."imageUrl" IS NOT NULL`];
@@ -923,7 +924,7 @@ Respond in JSON format with an array of findings.`
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`ia.annotations IS NOT NULL`];
@@ -1074,7 +1075,7 @@ Respond in JSON format with an array of findings.`
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [
@@ -1200,7 +1201,7 @@ Respond in JSON format with an array of findings.`
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic conditions using parameterized queries
       const conditions = [sql`ia.annotations IS NOT NULL`];
@@ -1311,7 +1312,7 @@ Respond in JSON format with an array of findings.`
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       try {
         const importData = JSON.parse(input.data);
@@ -1392,7 +1393,7 @@ export const annotationTemplateRouter = router({
     }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Build dynamic query
       let result: any;
@@ -1436,7 +1437,7 @@ export const annotationTemplateRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       await db.execute(
         sql`INSERT INTO annotation_templates (name, category, description, annotations, "createdBy") VALUES (${input.name}, ${input.category}, ${input.description || null}, ${JSON.stringify(input.annotations)}, ${ctx.user.id})`
@@ -1449,7 +1450,7 @@ export const annotationTemplateRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Check if system template
       const existing = await db.execute(
@@ -1481,7 +1482,7 @@ export const annotationHistoryRouter = router({
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       let query;
       if (input.annotationId) {
@@ -1512,7 +1513,7 @@ export const annotationHistoryRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(
         sql`SELECT * FROM annotation_history WHERE id = ${input.id}`
@@ -1542,7 +1543,7 @@ export const annotationHistoryRouter = router({
     .input(z.object({ historyId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       // Get the history record
       const historyResult = await db.execute(
@@ -1586,7 +1587,7 @@ export const annotationHistoryRouter = router({
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       
       const result = await db.execute(
         sql`SELECT * FROM annotation_history WHERE id IN (${input.versionId1}, ${input.versionId2})`

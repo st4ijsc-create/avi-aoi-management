@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { createHmac, createHash } from "crypto";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
@@ -94,7 +95,7 @@ export const productionSessionRouter = router({
     )
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const filters = [] as any[];
       if (input?.factoryId) filters.push(eq(productionSessions.factoryId, input.factoryId));
       if (input?.workshopId) filters.push(eq(productionSessions.workshopId, input.workshopId));
@@ -116,7 +117,7 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [row] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
       return row;
@@ -139,7 +140,7 @@ export const productionSessionRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const sessionCode = `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
       const [created] = await db.insert(productionSessions).values({
@@ -167,7 +168,7 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
       if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
       assertSessionActor(existing, ctx.user);
@@ -184,7 +185,7 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
       if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
       assertSessionActor(existing, ctx.user);
@@ -201,7 +202,7 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number(), operatorNotes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
       if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
       assertSessionActor(session, ctx.user);
@@ -240,7 +241,7 @@ export const productionSessionRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [updated] = await db
         .update(productionSessions)
         .set({
@@ -258,7 +259,7 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number(), supervisorPasswordConfirmed: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin" && ctx.user?.role !== "supervisor") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ supervisor hoặc admin được ký duyệt phiên" });
@@ -312,7 +313,7 @@ export const productionSessionRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
       if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
       if (!session.supervisorSignoff || !session.signoffPayload || !session.signoffSignature) {

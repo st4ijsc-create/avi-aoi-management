@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { backupLogs, scheduledBackups } from "../../drizzle/schema";
@@ -17,7 +18,7 @@ export const backupRouter = router({
   // List backup history
   listBackups: adminProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+    if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
     const logs = await db.select().from(backupLogs).orderBy(desc(backupLogs.createdAt)).limit(100);
     return logs;
@@ -41,7 +42,7 @@ export const backupRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const databaseUrl = process.env.DATABASE_URL;
       if (!databaseUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DATABASE_URL not configured" });
@@ -115,7 +116,7 @@ export const backupRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [backup] = await db.select().from(backupLogs).where(eq(backupLogs.id, input.backupId));
       if (!backup) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy bản backup" });
@@ -186,7 +187,7 @@ export const backupRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [log] = await db.select().from(backupLogs).where(eq(backupLogs.id, input.id));
       if (log?.fileUrl) {
@@ -201,7 +202,7 @@ export const backupRouter = router({
   // List scheduled backups
   listScheduled: adminProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+    if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
     const schedules = await db.select().from(scheduledBackups).orderBy(desc(scheduledBackups.createdAt));
     return schedules;
@@ -222,7 +223,7 @@ export const backupRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Calculate next run time
       const now = new Date();
@@ -268,7 +269,7 @@ export const backupRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const { id, ...updateData } = input;
       await db.update(scheduledBackups)
@@ -283,7 +284,7 @@ export const backupRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       await db.delete(scheduledBackups).where(eq(scheduledBackups.id, input.id));
       return { success: true, message: "Đã xóa lịch backup" };
@@ -294,7 +295,7 @@ export const backupRouter = router({
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       await db.update(scheduledBackups)
         .set({ isEnabled: input.isEnabled, updatedAt: new Date() })
@@ -306,7 +307,7 @@ export const backupRouter = router({
   // Get backup stats
   getStats: adminProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+    if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
     const totalBackups = await db.select({ count: sql<number>`count(*)` }).from(backupLogs);
     const successBackups = await db.select({ count: sql<number>`count(*)` }).from(backupLogs).where(eq(backupLogs.status, "success"));

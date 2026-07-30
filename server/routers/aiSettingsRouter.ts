@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import path from "path";
 import fs from "fs";
 import sharp from "sharp";
@@ -144,10 +145,7 @@ export const aiSettingsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // doc 69 W0-4: real encryption at rest (AES-256-GCM via secretBox) — replaces the
       // prior Buffer.from(...).toString("base64"), which was reversible ENCODING, not
       // encryption (doc-51 P0 finding).
@@ -183,10 +181,7 @@ export const aiSettingsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [existing] = await db
         .select({ id: aiApiKeys.id })
         .from(aiApiKeys)
@@ -206,10 +201,7 @@ export const aiSettingsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [key] = await db
         .select()
         .from(aiApiKeys)
@@ -244,10 +236,7 @@ export const aiSettingsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [key] = await db
         .select({ id: aiApiKeys.id, status: aiApiKeys.status })
         .from(aiApiKeys)
@@ -315,10 +304,7 @@ export const aiSettingsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const entries = Object.entries(input).filter(
         ([, v]) => v !== undefined
       );
@@ -377,10 +363,7 @@ export const aiSettingsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Database not available",
-        });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const entries = Object.entries(input).filter(
         ([, v]) => v !== undefined
       );
@@ -461,7 +444,7 @@ export const aiSettingsRouter = router({
     .input(z.object({}).optional())
     .mutation(async () => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const startedAt = new Date().toISOString();
       await upsertConfigValue(db, "pipeline_status", "running");
@@ -663,7 +646,7 @@ export const aiSettingsRouter = router({
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const updates: [string, string][] = (
         [
           input.targetWidth !== undefined ? ["pp_targetWidth", input.targetWidth] : null,
