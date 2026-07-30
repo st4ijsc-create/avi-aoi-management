@@ -36,6 +36,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
 import type { TrpcContext } from "../_core/context";
 import { getExecutiveSummaries, runExecutiveReportNow } from "../services/aiExecutiveReport";
 import { getExecutiveReportSchedulerStatus } from "../services/reportScheduler";
@@ -80,7 +81,7 @@ async function applyExecutiveReportReadScope(
   input?: { factoryCode?: string },
 ): Promise<{ factoryCode?: string }> {
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+    throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
   }
   enforceAiAnalyticsRateLimit(ctx.user.id);
 
@@ -163,7 +164,7 @@ export const executiveReportRouter = router({
   /** Scheduler + flag status for dashboards. No factory-scoped business data returned. */
   schedulerStatus: protectedProcedure.query(async ({ ctx }) => {
     if (!ctx.user) {
-      throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+      throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
     }
     enforceAiAnalyticsRateLimit(ctx.user.id);
     return getExecutiveReportSchedulerStatus();

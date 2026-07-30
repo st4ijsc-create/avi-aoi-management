@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
 import type { TrpcContext } from "../_core/context";
 import {
   getDefectTrend,
@@ -105,7 +106,7 @@ const periodInput = z.object({
 const analyticsRolloutProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   const user = ctx.user;
   if (!user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+    throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
   }
 
   const rolloutPercent = getRolloutPercent();
@@ -134,7 +135,7 @@ async function applyAnalyticsScope<T extends { factoryCode?: string; machineId?:
   input: T,
 ): Promise<T> {
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+    throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
   }
   enforceAiAnalyticsRateLimit(ctx.user.id);
   const { factoryCode } = await enforceAnalyticsFactoryScope({

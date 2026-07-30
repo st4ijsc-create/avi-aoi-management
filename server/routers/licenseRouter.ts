@@ -620,7 +620,7 @@ const adminLicenseRouter = router({
     }))
     .query(async ({ input }) => {
       if (!input?.licenseKey) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'License key is required' });
+        throw appError('BAD_REQUEST', 'FIELD_REQUIRED', { field: 'licenseKey' }, 'License key is required');
       }
       return db.getSyncLogs(input.licenseKey, input?.limit || 100);
     }),

@@ -24,6 +24,7 @@
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
 import { checkPermission } from "../_core/accessControl";
 import { getMtconnectStats } from "../services/mtconnect/mtconnectPoller";
 import { checkControlGatewayConsistency } from "../services/controlGatewayConsistency";
@@ -436,7 +437,7 @@ export function collectFlagMatrix(env: NodeJS.ProcessEnv = process.env): Readine
 const readinessProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   const user = ctx.user;
   if (!user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+    throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
   }
   if (user.role === "admin") return next();
   const [sys, ctl] = await Promise.all([

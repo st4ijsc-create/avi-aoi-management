@@ -1658,10 +1658,12 @@ export const machineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       if ((input.status === "decommissioned" || input.status === "retired") && !input.reason?.trim()) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "A reason is required when decommissioning or retiring a machine",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "FIELD_REQUIRED",
+          { field: "decommissionReason" },
+          "A reason is required when decommissioning or retiring a machine",
+        );
       }
 
       let result: Awaited<ReturnType<typeof db.transitionMachineLifecycle>>;

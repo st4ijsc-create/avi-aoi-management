@@ -173,7 +173,7 @@ export const aiEvalRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       if (!input.datasetId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "datasetId is required (create + build a dataset first)" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "datasetId" }, "datasetId is required (create + build a dataset first)");
       }
       return createTrainingJob({
         name: `pipeline-${input.modelId}-${input.targetVersion}`,

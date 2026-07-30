@@ -482,10 +482,12 @@ export const aiModelRouter = router({
           });
         }
         if (!isCardComplete(existing)) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "Cannot approve an incomplete model card — fill in all required governance fields first.",
-          });
+          throw appError(
+            "PRECONDITION_FAILED",
+            "FIELD_REQUIRED",
+            { field: "modelCardGovernanceFields" },
+            "Cannot approve an incomplete model card — fill in all required governance fields first.",
+          );
         }
         const approved = await db.approveModelCardByModelId(input.modelId, ctx.user.id);
         try {

@@ -1305,7 +1305,7 @@ export const aoiPackageRouter = router({
         }
         pkgId = pkgs[0].id;
       } else {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "id or packageId required" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "idOrPackageId" }, "id or packageId required");
       }
 
       return database
@@ -1352,7 +1352,7 @@ export const aoiPackageRouter = router({
         pkgDbId = pkgs[0].id;
         pkgPackageId = pkgs[0].packageId;
       } else {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "id or packageId required" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "idOrPackageId" }, "id or packageId required");
       }
 
       const logs = await database

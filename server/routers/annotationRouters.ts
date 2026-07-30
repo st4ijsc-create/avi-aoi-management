@@ -1490,7 +1490,7 @@ export const annotationHistoryRouter = router({
       } else if (input.imageUrl) {
         query = sql`SELECT * FROM annotation_history WHERE "imageUrl" = ${input.imageUrl} ORDER BY "versionNumber" DESC LIMIT ${input.limit}`;
       } else {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Either annotationId or imageUrl is required' });
+        throw appError('BAD_REQUEST', 'FIELD_REQUIRED', { field: 'annotationIdOrImageUrl' }, 'Either annotationId or imageUrl is required');
       }
       
       const result = await db.execute(query) as any;

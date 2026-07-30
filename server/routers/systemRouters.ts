@@ -787,7 +787,7 @@ export const smtpRouter = router({
         if (existing) {
           dataToUpdate.password = existing.password;
         } else {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Password is required for new SMTP config' });
+          throw appError('BAD_REQUEST', 'FIELD_REQUIRED', { field: 'smtpPassword' }, 'Password is required for new SMTP config');
         }
       }
       
@@ -817,7 +817,7 @@ export const smtpRouter = router({
           if (existingConfig) {
             config.password = existingConfig.password;
           } else {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Password is required' });
+            throw appError('BAD_REQUEST', 'FIELD_REQUIRED', { field: 'smtpPassword' }, 'Password is required');
           }
         }
       } else {
