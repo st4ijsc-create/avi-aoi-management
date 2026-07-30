@@ -222,7 +222,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireSafetyFlag();
       const row = await auditEvent(input.eventId, ctx.user.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Safety event ${input.eventId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "safetyEvent" }, `Safety event ${input.eventId} not found`);
       return row;
     }),
 
@@ -614,7 +614,7 @@ export const safetyRouter = router({
     .mutation(async ({ input }) => {
       requireWorkforceFlag();
       const row = await signalHandshake(input.sessionId, input.state);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Collaboration ${input.sessionId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "collaboration" }, `Collaboration ${input.sessionId} not found`);
       return row;
     }),
 
@@ -632,7 +632,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
       const row = await abortCollaboration(input.sessionId, input.reason, ctx.user.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Collaboration ${input.sessionId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "collaboration" }, `Collaboration ${input.sessionId} not found`);
       return row;
     }),
 
@@ -734,7 +734,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
       const row = await confirmAssignment(input.assignmentId, ctx.user.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Assignment ${input.assignmentId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workforceAssignment" }, `Assignment ${input.assignmentId} not found`);
       return row;
     }),
 
@@ -744,7 +744,7 @@ export const safetyRouter = router({
     .mutation(async ({ input, ctx }) => {
       requireWorkforceFlag();
       const row = await closeAssignment(input.assignmentId, ctx.user.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Assignment ${input.assignmentId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workforceAssignment" }, `Assignment ${input.assignmentId} not found`);
       return row;
     }),
 });

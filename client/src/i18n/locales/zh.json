@@ -3647,7 +3647,8 @@
       "license": "许可证",
       "deviceType": "设备类型",
       "operationCode": "操作代码",
-      "ngRateThreshold": "NG率阈值"
+      "ngRateThreshold": "NG率阈值",
+      "productionSession": "生产会话"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

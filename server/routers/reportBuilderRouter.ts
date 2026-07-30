@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { getDb } from "../db/connection";
@@ -75,7 +76,7 @@ async function assertReportOwnership(id: number, ctx: { user: { id: number; role
     SELECT "createdBy" FROM report_templates WHERE id = ${id}
   `);
   const rows = result.rows || result;
-  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy báo cáo" });
+  if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "report" }, "Không tìm thấy báo cáo");
   if (rows[0].createdBy == null || rows[0].createdBy !== ctx.user.id) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền sửa hoặc xóa báo cáo này" });
   }
@@ -141,7 +142,7 @@ export const reportBuilderRouter = router({
           SELECT * FROM report_templates WHERE id = ${id}
         `);
         const rows = result.rows || result;
-        if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy báo cáo" });
+        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "report" }, "Không tìm thấy báo cáo");
 
         // IDOR guard: only the owner, an admin, or anyone for a default/public
         // report may read it.

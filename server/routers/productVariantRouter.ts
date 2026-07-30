@@ -31,6 +31,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import type { ProductVariant, VariantPointOverride } from "../../drizzle/schema";
 
@@ -120,7 +121,7 @@ export const productVariantRouter = router({
       await assertVariantTableAvailable();
       const variant = await db.getVariantById(input.variantId);
       if (!variant) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
       const [overrides, effective] = await Promise.all([
         db.getVariantOverrides(variant.id),
@@ -150,7 +151,7 @@ export const productVariantRouter = router({
 
       const model = await db.getProductModelById(input.productModelId);
       if (!model) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy sản phẩm" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, "Không tìm thấy sản phẩm");
       }
       // 'BASE' is reserved for the model's inheritance root (created by 0286 /
       // ensureBaseVariant); an author never mints one manually.
@@ -216,7 +217,7 @@ export const productVariantRouter = router({
       const { variantId, ...patch } = input;
       const existing = await db.getVariantById(variantId);
       if (!existing) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
 
       if (patch.code !== undefined && patch.code !== existing.code) {
@@ -271,7 +272,7 @@ export const productVariantRouter = router({
 
       const existing = await db.getVariantById(input.variantId);
       if (!existing) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
       if (existing.isBase) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Không thể xoá biến thể gốc" });
@@ -310,7 +311,7 @@ export const productVariantRouter = router({
       if (variantId != null) {
         const variant = await db.getVariantById(variantId);
         if (!variant) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
         }
         if (variant.productModelId !== input.productModelId) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Biến thể không thuộc sản phẩm này" });
@@ -348,7 +349,7 @@ export const productVariantRouter = router({
 
       const variant = await db.getVariantById(input.variantId);
       if (!variant) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
       // Overrides express how a NON-BASE variant diverges FROM the base; the base
       // variant owns the common points directly and cannot override itself.
@@ -369,7 +370,7 @@ export const productVariantRouter = router({
       // The target must be a BASE/common point (variantId NULL) of THIS variant's model.
       const basePoint = await db.getMeasurementPointDefById(input.basePointDefId);
       if (!basePoint) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy điểm đo gốc" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Không tìm thấy điểm đo gốc");
       }
       if (basePoint.productModelId !== variant.productModelId) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Điểm đo không thuộc sản phẩm của biến thể" });
@@ -423,7 +424,7 @@ export const productVariantRouter = router({
 
       const variant = await db.getVariantById(input.variantId);
       if (!variant) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy biến thể" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
 
       await db.removeVariantOverride(input.variantId, input.basePointDefId);

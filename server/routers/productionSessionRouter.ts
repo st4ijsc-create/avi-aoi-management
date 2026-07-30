@@ -119,7 +119,7 @@ export const productionSessionRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [row] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       return row;
     }),
 
@@ -170,7 +170,7 @@ export const productionSessionRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       assertSessionActor(existing, ctx.user);
       const [updated] = await db
         .update(productionSessions)
@@ -187,7 +187,7 @@ export const productionSessionRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [existing] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       assertSessionActor(existing, ctx.user);
       const [updated] = await db
         .update(productionSessions)
@@ -204,7 +204,7 @@ export const productionSessionRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!session) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       assertSessionActor(session, ctx.user);
       if (session.status === "closed" || (session.status as any) === "signed_off") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Phiên đã đóng hoặc đã ký" });
@@ -251,7 +251,7 @@ export const productionSessionRouter = router({
         })
         .where(eq(productionSessions.id, input.fromSessionId))
         .returning();
-      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên nguồn" });
+      if (!updated) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên nguồn");
       return { success: true, session: updated };
     }),
 
@@ -269,7 +269,7 @@ export const productionSessionRouter = router({
       }
 
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!session) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       if (session.status !== "closed") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Phiên phải ở trạng thái 'closed' trước khi ký duyệt" });
       }
@@ -315,7 +315,7 @@ export const productionSessionRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [session] = await db.select().from(productionSessions).where(eq(productionSessions.id, input.id));
-      if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy phiên sản xuất" });
+      if (!session) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionSession" }, "Không tìm thấy phiên sản xuất");
       if (!session.supervisorSignoff || !session.signoffPayload || !session.signoffSignature) {
         return { signed: false as const, valid: false as const, reason: "Phiên chưa được ký duyệt" };
       }

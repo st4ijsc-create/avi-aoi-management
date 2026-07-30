@@ -6,6 +6,7 @@ const protectedProcedure = moduleProcedure("MOD_PRODUCTION");
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 
 export const productionOrderRouter = router({
@@ -167,7 +168,7 @@ export const productionOrderRouter = router({
     .mutation(async ({ input, ctx }) => {
       const order = await db.getProductionOrderById(input.id);
       if (!order) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Production order not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productionOrder' }, 'Production order not found');
       }
 
       const targetLineId = input.lineId || order.lineId;
@@ -176,7 +177,7 @@ export const productionOrderRouter = router({
       const lines = await db.getProductionLines();
       const targetLine = lines.find(l => l.id === targetLineId);
       if (!targetLine) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Production line not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'line' }, 'Production line not found');
       }
 
       // Check for overlap unless force override is set
@@ -245,7 +246,7 @@ export const productionOrderRouter = router({
       if (input.lineId && input.lineId !== order.lineId) {
         const newLine = lines.find(l => l.id === input.lineId);
         if (!newLine) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Production line not found' });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'line' }, 'Production line not found');
         }
         updateData.lineId = input.lineId;
         updateData.workshopId = newLine.workshopId;

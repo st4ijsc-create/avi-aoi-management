@@ -14,6 +14,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { runDes, type LineModel, type SimConfig } from "../services/simulation/desEngine";
@@ -166,7 +167,7 @@ export const simulationRouter = router({
             ? scene.lines.find((l) => l.id === input.lineRef || l.code === input.lineRef)
             : scene.lines[0];
       if (!line) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Requested line not found in the factory scene graph." });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, "Requested line not found in the factory scene graph.");
       }
 
       const model = buildLineModelFromScene(line, {

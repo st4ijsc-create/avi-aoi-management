@@ -3655,7 +3655,8 @@
       "license": "license",
       "deviceType": "device type",
       "operationCode": "operation code",
-      "ngRateThreshold": "NG-rate threshold"
+      "ngRateThreshold": "NG-rate threshold",
+      "productionSession": "production session"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

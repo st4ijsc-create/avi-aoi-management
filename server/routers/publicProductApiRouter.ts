@@ -147,7 +147,7 @@ export const publicProductApiRouter = router({
 
       const product = await db.getProductModelByCode(input.code);
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.code}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.code}`);
       }
 
       const measurementPoints = await db.getMeasurementPointDefsByProductModel(product.id);
@@ -229,7 +229,7 @@ export const publicProductApiRouter = router({
 
       const product = await db.getProductModelById(input.id);
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.id}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.id}`);
       }
 
       const measurementPoints = await db.getMeasurementPointDefsByProductModel(product.id);
@@ -308,7 +308,7 @@ export const publicProductApiRouter = router({
 
       const product = await db.getProductModelByCode(input.productCode);
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
       }
 
       const points = await db.getMeasurementPointDefsByProductModel(product.id);
@@ -358,7 +358,7 @@ export const publicProductApiRouter = router({
 
       const product = await db.getProductModelByCode(input.productCode);
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
       }
 
       if (!product.referenceImageUrl && !product.referenceImageKey) {
@@ -421,13 +421,13 @@ export const publicProductApiRouter = router({
       } else if (input.pointCode && input.productCode) {
         const product = await db.getProductModelByCode(input.productCode);
         if (!product) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
         }
         point = await db.getMeasurementPointDefByCode(product.id, input.pointCode);
       }
 
       if (!point) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Measurement point not found");
       }
 
       if (!point.referenceImageUrl && !point.referenceImageKey) {
@@ -478,7 +478,7 @@ export const publicProductApiRouter = router({
       // Find station by code
       const station = await db.getStationByCode(input.stationCode);
       if (!station) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Station not found: ${input.stationCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, `Station not found: ${input.stationCode}`);
       }
 
       // Get machines in this station
@@ -498,7 +498,7 @@ export const publicProductApiRouter = router({
 
       if (input.productCode) {
         const product = await db.getProductModelByCode(input.productCode);
-        if (!product) throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+        if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
         productModelId = product.id;
         productInfo = { id: product.id, code: product.code, name: product.name };
       } else {
@@ -642,7 +642,7 @@ export const publicProductApiRouter = router({
       // Find station
       const station = await db.getStationByCode(input.stationCode);
       if (!station) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Station not found: ${input.stationCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, `Station not found: ${input.stationCode}`);
       }
 
       // Get machines in station
@@ -656,7 +656,7 @@ export const publicProductApiRouter = router({
       let productModelId: number | null = null;
       if (input.productCode) {
         const product = await db.getProductModelByCode(input.productCode);
-        if (!product) throw new TRPCError({ code: "NOT_FOUND", message: `Product not found: ${input.productCode}` });
+        if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
         productModelId = product.id;
       }
 
@@ -690,7 +690,7 @@ export const publicProductApiRouter = router({
       }
 
       if (!pointDef) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Measurement point not found: ${input.pointCode}` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `Measurement point not found: ${input.pointCode}`);
       }
 
       // Build date/filter conditions

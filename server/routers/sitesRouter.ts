@@ -136,7 +136,7 @@ export const sitesRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [row] = await d.select().from(sites).where(eq(sites.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Site ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "site" }, `Site ${input.id} not found`);
       return publicRow(row);
     }),
 
@@ -197,7 +197,7 @@ export const sitesRouter = router({
     .mutation(async ({ input }) => {
       const d = await db();
       const [existing] = await d.select().from(sites).where(eq(sites.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: `Site ${input.id} not found` });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "site" }, `Site ${input.id} not found`);
 
       const patch: Partial<typeof sites.$inferInsert> = { updatedAt: new Date() };
       if (input.name !== undefined) patch.name = input.name.trim();
@@ -219,7 +219,7 @@ export const sitesRouter = router({
     .mutation(async ({ input }) => {
       const d = await db();
       const removed = await d.delete(sites).where(eq(sites.id, input.id)).returning();
-      if (removed.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: `Site ${input.id} not found` });
+      if (removed.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "site" }, `Site ${input.id} not found`);
       return { id: input.id, deleted: true };
     }),
 
@@ -232,7 +232,7 @@ export const sitesRouter = router({
     .mutation(async ({ input }) => {
       const d = await db();
       const [row] = await d.select().from(sites).where(eq(sites.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Site ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "site" }, `Site ${input.id} not found`);
 
       const result = await probeSite(row);
       const now = new Date();

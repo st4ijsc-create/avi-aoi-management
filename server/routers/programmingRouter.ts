@@ -198,7 +198,7 @@ export const programmingRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [row] = await d.select().from(programProjects).where(eq(programProjects.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.id} not found`);
       return row;
     }),
 
@@ -253,7 +253,7 @@ export const programmingRouter = router({
       if (input.description !== undefined) patch.description = input.description;
       if (input.defaultBranch !== undefined) patch.defaultBranch = input.defaultBranch;
       const [row] = await d.update(programProjects).set(patch).where(eq(programProjects.id, input.id)).returning();
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.id} not found`);
       return row;
     }),
 
@@ -298,7 +298,7 @@ export const programmingRouter = router({
     .query(async ({ input }) => {
       const d = await db();
       const [row] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Artifact ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingArtifact" }, `Artifact ${input.id} not found`);
       return row;
     }),
 
@@ -316,7 +316,7 @@ export const programmingRouter = router({
     .mutation(async ({ input, ctx }) => {
       const d = await db();
       const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
-      if (!proj) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.projectId} not found` });
+      if (!proj) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.projectId} not found`);
 
       // Next version on this branch = max(existing)+1. doc 54 Wave C — this read-max
       // then-insert is NOT atomic: two concurrent saves on the same (projectId, branch)
@@ -799,7 +799,7 @@ export const programmingRouter = router({
       }
       const d = await db();
       const [proj] = await d.select().from(programProjects).where(eq(programProjects.id, input.projectId)).limit(1);
-      if (!proj) throw new TRPCError({ code: "NOT_FOUND", message: `Project ${input.projectId} not found` });
+      if (!proj) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programmingProject" }, `Project ${input.projectId} not found`);
       const machineId = proj.deviceId;
       // Không gắn thiết bị → không có nguồn để đọc (báo trung thực về UI).
       if (machineId == null) {
