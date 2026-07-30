@@ -36,6 +36,12 @@ let sendAlertNotificationThrows = false;
 // sendAlertNotificationThrows — throw là lỗi kỹ thuật, còn đây là "gửi có chủ
 // đích không tới ai").
 let sendAlertNotificationReturnsNull = false;
+// Review round 2, Important — sendAlertEmail() (emailService.ts) trả về
+// Promise<boolean>, KHÔNG BAO GIỜ ném (SMTP chưa cấu hình / ALERT_EMAIL_TO
+// chưa cấu hình / sendMail lỗi — cả ba nhánh đều `return false` nội bộ). Cờ
+// này mô phỏng ĐÚNG hình dạng đó — mặc định `false` (đúng hành vi thật khi
+// SMTP chưa cấu hình, trường hợp phổ biến nhất ở dev/test).
+let sendAlertEmailReturns = false;
 
 function chain(getRows: () => any[]) {
   const node: any = {
@@ -118,7 +124,7 @@ vi.mock("./notificationService", () => ({
     return { id: notified.length };
   }),
 }));
-vi.mock("./emailService", () => ({ sendAlertEmail: vi.fn(async () => undefined) }));
+vi.mock("./emailService", () => ({ sendAlertEmail: vi.fn(async () => sendAlertEmailReturns) }));
 
 beforeEach(() => {
   calls.length = 0;
@@ -130,6 +136,7 @@ beforeEach(() => {
   alertInsertThrows = false;
   sendAlertNotificationThrows = false;
   sendAlertNotificationReturnsNull = false;
+  sendAlertEmailReturns = false;
   generateText.mockClear();
   process.env.ALERT_RENOTIFY_COOLDOWN_MINUTES = "240";
   process.env.ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES = "0";
@@ -140,6 +147,11 @@ afterEach(() => {
 });
 
 const MAINTENANCE = [{ userId: 7, username: "kt1", role: "maintenance", email: null }];
+// Review round 2, Important — MAINTENANCE (email: null) không bao giờ chạm
+// nhánh email của sendSmartNotification (`target.email && ...`), nên bộ test
+// cũ "né" được đúng chỗ bug email sống lại. Target riêng CÓ email để bắt buộc
+// đi qua cả hai kênh.
+const MAINTENANCE_WITH_EMAIL = [{ userId: 7, username: "kt1", role: "maintenance", email: "kt1@example.com" }];
 
 describe("routeAlert — tách gửi thông báo khỏi ghi nhật ký", () => {
   // Sprint 5 debt E3 (cập nhật assertion — KHÔNG phải nới lỏng) — bài test này
@@ -253,6 +265,54 @@ describe("routeAlert — tách gửi thông báo khỏi ghi nhật ký", () => {
     // KHÔNG có UPDATE stamp nào chạy tiếp theo — "gửi" không ném lỗi nhưng
     // cũng không tới tay ai, không được phép đóng dấu "đã báo".
     expect(calls.some((c) => c.kind === "update")).toBe(false);
+  });
+
+  // Review round 2, Important — kênh EMAIL làm sống lại nguyên vẹn bug E3:
+  // `delivered = true` vô điều kiện sau `await sendAlertEmail(...)` (dòng cũ)
+  // vừa bỏ qua giá trị trả về boolean của sendAlertEmail(), vừa GHI ĐÈ kết quả
+  // ĐÚNG của kênh in-app phía trên. Bộ test cũ né được vì MAINTENANCE có
+  // email:null nên không bao giờ chạm nhánh email. Ba ca dưới đây dùng
+  // MAINTENANCE_WITH_EMAIL để bắt buộc đi qua cả hai kênh.
+  describe("kênh email — không được ghi đè kết quả in-app một cách vô điều kiện", () => {
+    it("in-app bị chặn (null, giờ yên lặng) + email THẤT BẠI (SMTP chưa cấu hình) ⇒ KHÔNG stamp", async () => {
+      seedUserRows = MAINTENANCE_WITH_EMAIL;
+      sendAlertNotificationReturnsNull = true;
+      sendAlertEmailReturns = false;
+      const { routeAlert } = await import("./aiSmartAlertRouter");
+      await routeAlert({ type: "MACHINE_FAILURE", machineId: 8111, severity: "HIGH", message: "x", data: {} } as any);
+
+      expect(notified).toHaveLength(0); // không ai thật sự nhận được gì, qua kênh nào
+      const ins = calls.find((c) => c.kind === "insert")!;
+      expect(ins.payload.notificationSent).toBe(false);
+      expect(ins.payload.notificationSentAt).toBeNull();
+      expect(calls.some((c) => c.kind === "update")).toBe(false);
+    });
+
+    it("in-app bị chặn (null) NHƯNG email GỬI ĐƯỢC ⇒ CÓ stamp (email tới được là đủ)", async () => {
+      seedUserRows = MAINTENANCE_WITH_EMAIL;
+      sendAlertNotificationReturnsNull = true;
+      sendAlertEmailReturns = true;
+      const { routeAlert } = await import("./aiSmartAlertRouter");
+      await routeAlert({ type: "MACHINE_FAILURE", machineId: 8112, severity: "HIGH", message: "x", data: {} } as any);
+
+      const stampUpd = calls.find((c) => c.kind === "update")!;
+      expect(stampUpd).toBeTruthy();
+      expect(stampUpd.payload.notificationSent).toBe(true);
+      expect(stampUpd.payload.notificationSentAt).toBeInstanceOf(Date);
+    });
+
+    it("in-app GỬI ĐƯỢC NHƯNG email THẤT BẠI ⇒ VẪN CÓ stamp (in-app một mình đủ — không bị AND với email)", async () => {
+      seedUserRows = MAINTENANCE_WITH_EMAIL;
+      sendAlertEmailReturns = false; // in-app mặc định gửi được (không set cờ ném/null)
+      const { routeAlert } = await import("./aiSmartAlertRouter");
+      await routeAlert({ type: "MACHINE_FAILURE", machineId: 8113, severity: "HIGH", message: "x", data: {} } as any);
+
+      expect(notified).toHaveLength(1); // in-app đã tới
+      const stampUpd = calls.find((c) => c.kind === "update")!;
+      expect(stampUpd).toBeTruthy();
+      expect(stampUpd.payload.notificationSent).toBe(true);
+      expect(stampUpd.payload.notificationSentAt).toBeInstanceOf(Date);
+    });
   });
 
   // Review round 1, Finding 1 — §2.6(2): sau khi đảo trật tự, thông báo gửi

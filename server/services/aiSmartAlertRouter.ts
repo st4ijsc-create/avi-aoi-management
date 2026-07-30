@@ -1301,14 +1301,25 @@ async function sendSmartNotification(
 
   if (target.email && (event.severity === "HIGH" || event.severity === "CRITICAL")) {
     try {
-      await sendAlertEmail({
+      // Review round 2, Important — sendAlertEmail() (emailService.ts) trả về
+      // `Promise<boolean>` và trả `false` ở BA nhánh không thành công, KHÔNG hề
+      // ném: (1) transporter chưa khởi tạo (SMTP chưa cấu hình), (2)
+      // ALERT_EMAIL_TO chưa cấu hình, (3) transporter.sendMail() ném (bắt nội
+      // bộ, trả false). `delivered = true` vô điều kiện sau `await` — như dòng
+      // cũ ở đây — vừa bỏ qua CẢ BA nhánh false đó, vừa GHI ĐÈ kết quả ĐÚNG của
+      // kênh in-app phía trên (vd in-app bị chặn giờ yên lặng ⇒ result=null ⇒
+      // delivered=false, nhưng dòng vô điều kiện này biến nó thành true trở
+      // lại) — đúng bug E3 tái sinh ở kênh email. Chỉ NÂNG delivered lên true
+      // khi email THẬT SỰ gửi được; nếu email hỏng nhưng in-app đã thành công,
+      // delivered vẫn phải giữ nguyên true (không được lỡ tay AND lại).
+      const emailOk = await sendAlertEmail({
         ruleName: event.type,
         ruleType: event.type,
         message: `${prefix}${event.message}\nRouted because: ${target.reason}`,
         currentValue: 0,
         thresholdValue: 0,
       });
-      delivered = true;
+      if (emailOk) delivered = true;
     } catch (error) {
       console.error(`[Smart Alert] Failed to email ${target.email}:`, error);
     }
