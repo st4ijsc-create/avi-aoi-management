@@ -1,5 +1,6 @@
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
 import { initTRPC, TRPCError } from "@trpc/server";
+import type { TRPCDefaultErrorShape, TRPCErrorFormatter } from "@trpc/server";
 import superjson from "superjson";
 import speakeasy from "speakeasy";
 import type { TrpcContext } from "./context";
@@ -7,28 +8,61 @@ import type { TrpcContext } from "./context";
 import { moduleGate } from "./moduleGate";
 import { readAppErrorMeta } from "./appError";
 
+/**
+ * Đợt sửa cuối (Phần 4, khuyến nghị mạnh của review cuối) — CÔNG TẮC QUAY LUI.
+ *
+ * Trước đây `appCode`/`appParams` được gắn VÔ ĐIỀU KIỆN vào mọi phản hồi lỗi. Nếu
+ * sau khi lên production phát hiện một câu dịch sai lan rộng (vd một khoá từ điển
+ * gây hiểu nhầm nghiêm trọng hơn câu tiếng Anh gốc), cách duy nhất để lùi lại là
+ * revert 43 commit + build lại toàn bộ FE — quá chậm cho một sự cố đang diễn ra.
+ *
+ * Mặc định BẬT (`!== "false"`, không phải `=== "true"`) — thiếu biến môi trường vẫn
+ * giữ hành vi hiện tại (không đổi gì cho ai chưa biết tới cờ này). Đặt
+ * `APP_ERROR_CODES_ENABLED=false` để client tự động rơi về ĐÚNG hành vi trước
+ * sprint mã-lỗi (message thô làm câu hiện, không có appCode/appParams trong
+ * shape.data) — KHÔNG cần đụng bundle FE, vì `trpcErrors.ts`/`errorCodes.ts` phía
+ * client đã tự rơi về `fallback` khi `getAppError()` trả null (xem
+ * client/src/lib/trpcErrors.ts `getAppError`).
+ */
+function appErrorCodesEnabled(): boolean {
+  return process.env.APP_ERROR_CODES_ENABLED !== "false";
+}
+
+/** Xuất riêng để test (appError.test.ts) dựng lại ĐÚNG router thật thay vì chép tay
+ *  errorFormatter — bài học §6(2): chặng nối tay bỏ sót làm chết im lặng trường mới. */
+export const errorFormatter: TRPCErrorFormatter<
+  TrpcContext,
+  TRPCDefaultErrorShape & {
+    data: TRPCDefaultErrorShape["data"] & {
+      conflict?: unknown;
+      appCode?: string;
+      appParams?: Record<string, string | number>;
+    };
+  }
+> = ({ shape, error }) => {
+  // Doc 31 UX3 — additive forward of an optimistic-lock CONFLICT payload. Only
+  // present when a mutation threw TRPCError({ cause: { mpConflict } }); every
+  // other error is unaffected. Lets the client show current values + a
+  // reload/overwrite choice without a second round-trip.
+  const mpConflict = (error.cause as { mpConflict?: unknown } | undefined)?.mpConflict;
+  // Sprint 5 §4.2 — mã lỗi máy-đọc-được. Chỉ có mặt khi lỗi được dựng bằng
+  // appError(); mọi lỗi khác giữ nguyên hình dạng phản hồi như trước.
+  const appMeta = appErrorCodesEnabled() ? readAppErrorMeta(error) : null;
+  return {
+    ...shape,
+    data: {
+      ...shape.data,
+      // Strip stack traces in production to avoid leaking internals
+      stack: process.env.NODE_ENV === 'production' ? undefined : shape.data.stack,
+      ...(mpConflict ? { conflict: mpConflict } : {}),
+      ...(appMeta ? { appCode: appMeta.appCode, ...(appMeta.appParams ? { appParams: appMeta.appParams } : {}) } : {}),
+    },
+  };
+};
+
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
-  errorFormatter({ shape, error }) {
-    // Doc 31 UX3 — additive forward of an optimistic-lock CONFLICT payload. Only
-    // present when a mutation threw TRPCError({ cause: { mpConflict } }); every
-    // other error is unaffected. Lets the client show current values + a
-    // reload/overwrite choice without a second round-trip.
-    const mpConflict = (error.cause as { mpConflict?: unknown } | undefined)?.mpConflict;
-    // Sprint 5 §4.2 — mã lỗi máy-đọc-được. Chỉ có mặt khi lỗi được dựng bằng
-    // appError(); mọi lỗi khác giữ nguyên hình dạng phản hồi như trước.
-    const appMeta = readAppErrorMeta(error);
-    return {
-      ...shape,
-      data: {
-        ...shape.data,
-        // Strip stack traces in production to avoid leaking internals
-        stack: process.env.NODE_ENV === 'production' ? undefined : shape.data.stack,
-        ...(mpConflict ? { conflict: mpConflict } : {}),
-        ...(appMeta ? { appCode: appMeta.appCode, ...(appMeta.appParams ? { appParams: appMeta.appParams } : {}) } : {}),
-      },
-    };
-  },
+  errorFormatter,
 });
 
 export const router = t.router;
