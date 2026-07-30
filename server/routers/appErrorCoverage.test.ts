@@ -14,6 +14,19 @@
  * + kbStudioRouter.ts, 13 chỗ): 1043 chỗ `new TRPCError` trong 117 file
  * (loại `.test.ts`). Tự đo lại bằng:
  *   grep -rno "new TRPCError" server/routers --include=*.ts | grep -v "\.test\.ts" | wc -l
+ *
+ * ⚠⚠ PHẠM VI CHÍNH XÁC (đính chính ở đợt sửa cuối — C-1, review toàn cục):
+ * MỌI khẳng định trong file này chỉ đo `new TRPCError` — TỨC LÀ chỉ bắt lỗi ném
+ * bằng constructor tRPC trực tiếp. **Nó KHÔNG ĐO và KHÔNG BAO PHỦ
+ * `throw new Error(...)`** — tRPC v11 đặt `message = opts.message ?? cause?.message
+ * ?? code`, nên MỘT `throw new Error("Database not available")` (hay bất kỳ chuỗi
+ * tiếng Anh viết tay nào khác qua `new Error`) vẫn đi NGUYÊN VẸN tới client, y hệt
+ * trước khi có sprint này — cổng ở trên không nhìn thấy nó, và trước đợt sửa cuối
+ * này KHÔNG có gì đo nó cả. "Không còn câu tiếng Anh không dịch được" và "không còn
+ * `new TRPCError` trong `server/routers/`" là HAI TUYÊN BỐ KHÁC NHAU — nhầm giữa
+ * hai điều đó là gốc rễ của C-1. Cổng `ALLOWED_RAW_ERROR_THROWS` ở dưới đóng đúng lỗ
+ * hổng THỨ HAI đó (đo `throw new Error(`), một ngân sách RIÊNG, KHÔNG cộng dồn với
+ * `ALLOWED_LEGACY_THROWS` — hai họ lỗi độc lập, hai cách sửa khác nhau.
  */
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -32,10 +45,20 @@ const ALLOWED_LEGACY_THROWS = 0; // ← task 8 lô 7/N (CUỐI) — 16 file còn
 // cổng này (test walkTsFiles ở trên) chứng minh **`server/routers/**` + 2 khẳng định
 // riêng bên dưới** (`server/_core/dbErrors.ts` + `server/routers.ts`) đã sạch —
 // KHÔNG PHẢI toàn bộ ứng dụng. Review round 1 quét thật `server/**` (trừ `.test.ts`,
-// trừ chính `appError.ts` — nơi dựng lỗi) và tìm thấy **67 chỗ còn lại trong 14 file**
-// `_core`/`services`/`utils` CHƯA di trú, cố ý để ngoài phạm vi Task 8 (hạ tầng lõi +
-// security-critical, không nên sửa vội cuối một task lớn) — danh sách đầy đủ 14 file ×
-// số chỗ nằm trong task-8-report.md mục "Fix round 1".
+// trừ chính `appError.ts` — nơi dựng lỗi) và tìm thấy **64 chỗ còn lại trong 13 file**
+// `_core`/`services`/`utils` CHƯA di trú (đính chính đợt sửa cuối — số đúng đo được là
+// 64/13, không phải 67/14 như bản nháp ban đầu của round 1), cố ý để ngoài phạm vi
+// Task 8 (hạ tầng lõi + security-critical, không nên sửa vội cuối một task lớn) —
+// danh sách đầy đủ 13 file × số chỗ nằm trong task-8-report.md mục "Fix round 1". Tự
+// đo lại bằng:
+//   grep -rno "new TRPCError(" server --include=*.ts | grep -v "\.test\.ts" | grep -v "^server/routers/" | grep -v "appError\.ts:" | wc -l
+//
+// ⚠⚠ Và, tách bạch rất quan trọng (gốc của C-1, xem docstring đầu file): con số này
+// — cũng như ALLOWED_LEGACY_THROWS ở trên — đo **`new TRPCError`**, KHÔNG đo
+// **"còn câu tiếng Anh không dịch được cho người dùng"**. `throw new Error(...)`
+// (75 chỗ trong `server/routers/**`, xem ALLOWED_RAW_ERROR_THROWS bên dưới) không hề
+// đi qua `new TRPCError` nhưng message của nó vẫn tới thẳng client — hai cổng đo hai
+// thứ khác nhau, cả hai đều cần để nói đúng "sạch cái gì".
 
 const ROUTERS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -79,11 +102,20 @@ describe("phủ mã lỗi trong server/routers", () => {
     expect(ALLOWED_LEGACY_THROWS).toBe(total);
   });
 
-  it("không còn chuỗi 'Database not available' thô nào bị NÉM (throw) trong router", () => {
+  it("không còn `new TRPCError({...message: 'Database not available'/...})` nào trong router", () => {
     // Task 5 đợt 1 (§4.5 đợt 1) đã di trú toàn bộ 209 chỗ `throw new
     // TRPCError({ code, message: "Database not available"/"DB not
     // available"/"Database not connected"/"...unavailable" })` sang
     // appError(code, "DB_UNAVAILABLE", undefined, message).
+    //
+    // ⚠⚠ ĐÍNH CHÍNH TÊN (đợt sửa cuối, C-1 — review toàn cục): tên cũ của khẳng định
+    // này là "không còn chuỗi 'Database not available' thô nào bị NÉM (throw) trong
+    // router" — SAI, vì nó ngụ ý bao phủ MỌI cách ném ra chuỗi đó, kể cả qua
+    // `throw new Error(...)`. Thực tế regex dưới đây CHỈ soi trong ngữ cảnh
+    // `new TRPCError({…message:…})` — nó mù hoàn toàn với `throw new Error("Database
+    // not available")` (31 chỗ đo được trong `server/routers/**` ở đợt sửa cuối, xem
+    // ALLOWED_RAW_ERROR_THROWS bên dưới — tiền tồn tại, không phải hồi quy của sprint
+    // này). Tên mới nói đúng phạm vi: chỉ `new TRPCError`, không phải "mọi cách ném".
     //
     // ⚠ Regex SIẾT theo ngữ cảnh `new TRPCError({...` (không chỉ khớp
     // `message:` trần) — khác bản brief gốc. Lý do: server/routers/alertRouters.ts:53
@@ -140,5 +172,63 @@ describe("phủ mã lỗi trong server/routers", () => {
     const n = (src.match(/new TRPCError\(/g) ?? []).length;
     if (n > 0) console.error(`[phủ mã lỗi] routers.ts còn ${n} chỗ new TRPCError trần`);
     expect(n).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Đợt sửa cuối (C-1, review toàn cục) — NGÂN SÁCH THỨ HAI, độc lập với
+// ALLOWED_LEGACY_THROWS ở trên.
+//
+// C-1 phát hiện: describe() ở trên chỉ đo `new TRPCError` — nó KHÔNG NHÌN THẤY
+// `throw new Error(...)`. tRPC v11 đặt `message = opts.message ?? cause?.message ??
+// code`, nên một `throw new Error("Database not available")` trong `server/routers/**`
+// vẫn đưa nguyên chuỗi tiếng Anh đó tới client, y hệt trước khi có sprint mã-lỗi này —
+// người dùng Việt Nam vẫn đọc đúng câu mà loạt này tuyên bố đã xoá sổ.
+//
+// Đo được ở `server/routers/**` (trừ `.test.ts`) tại thời điểm đợt sửa cuối:
+//   grep -rno "throw new Error(" server/routers --include=*.ts | grep -v "\.test\.ts" | wc -l
+//   → 75 chỗ trong 20 file (31 trong số đó là biến thể "Database/DB not available/not
+//   connected/unavailable" — cùng họ câu mà cổng ALLOWED_LEGACY_THROWS/DB_UNAVAILABLE
+//   đã xoá sổ ở phía `new TRPCError`, nhưng còn nguyên ở phía `new Error`).
+//
+// ⚠ TOÀN BỘ 75 chỗ này là NỢ TIỀN TỒN TẠI — không phải hồi quy của đợt sửa cuối, và
+// KHÔNG phải việc của đợt sửa cuối để di trú (đó là một đợt quét riêng, cùng cơ học
+// "một mã, một chuỗi" như Task 4-8 nhưng nhắm `new Error` thay vì `new TRPCError`).
+// Việc CỦA đợt sửa cuối là làm cho cổng ĐO ĐƯỢC món nợ này, để nó không tiếp tục lớn
+// lên trong im lặng — cổng dưới đây hoạt động y hệt ALLOWED_LEGACY_THROWS: ngân sách
+// bám sát số thật, CHỈ ĐƯỢC GIẢM, không bao giờ được nâng lên để test xanh.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Hạ số này mỗi khi một đợt quét riêng di trú xong `throw new Error(...)` sang
+ *  appError(). KHÔNG BAO GIỜ nâng lên — số dư thừa che mất nợ mới, y hệt
+ *  ALLOWED_LEGACY_THROWS ở trên. Ngân sách này ĐỘC LẬP với ALLOWED_LEGACY_THROWS
+ *  (hai họ throw khác nhau: `new TRPCError` vs `new Error`), không cộng dồn. */
+const ALLOWED_RAW_ERROR_THROWS = 75; // ← đo được ở đợt sửa cuối (C-1), 20 file, tiền tồn tại.
+
+function countRawErrorThrows(): { total: number; byFile: Array<[string, number]> } {
+  const byFile: Array<[string, number]> = [];
+  let total = 0;
+  for (const file of walkTsFiles(ROUTERS_DIR)) {
+    const n = (readFileSync(file, "utf8").match(/throw new Error\(/g) ?? []).length;
+    if (n > 0) { byFile.push([file.replace(ROUTERS_DIR, ""), n]); total += n; }
+  }
+  byFile.sort((a, b) => b[1] - a[1]);
+  return { total, byFile };
+}
+
+describe("phủ mã lỗi trong server/routers — ngân sách `throw new Error(...)` (C-1)", () => {
+  it(`còn tối đa ${ALLOWED_RAW_ERROR_THROWS} chỗ throw new Error(...) chưa qua appError`, () => {
+    const { total, byFile } = countRawErrorThrows();
+    if (total > ALLOWED_RAW_ERROR_THROWS) {
+      console.error("[phủ mã lỗi] còn nợ throw new Error(...) ở:", byFile.slice(0, 15));
+    }
+    expect(total).toBeLessThanOrEqual(ALLOWED_RAW_ERROR_THROWS);
+  });
+
+  it("ngân sách throw new Error(...) KHÔNG được nới rộng hơn thực tế", () => {
+    // Cùng lý do với ALLOWED_LEGACY_THROWS: ngân sách phải bám SÁT số thật, nếu
+    // không một `throw new Error(...)` mới sẽ lọt qua mà không ai biết.
+    const { total } = countRawErrorThrows();
+    expect(ALLOWED_RAW_ERROR_THROWS).toBe(total);
   });
 });
