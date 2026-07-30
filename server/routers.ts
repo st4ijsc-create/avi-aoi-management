@@ -4,6 +4,7 @@ import { establishSession, LoginError, verifyCredentials } from "./_core/authSer
 import { systemRouter } from "./_core/systemRouter";
 import { listEnabledSsoMethods } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
+import { appError } from "./_core/appError";
 import { invalidateAuthSession } from "./services/authSessionCache";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -255,7 +256,21 @@ export const appRouter = router({
               PASSWORD_UNSUPPORTED: "BAD_REQUEST",
               ACCOUNT_LOCKED: "TOO_MANY_REQUESTS",
             };
-            throw new TRPCError({ code: codeMap[err.code], message: err.message });
+            const trpcCode = codeMap[err.code];
+            // Bốn nhánh LoginError là BỐN tình huống thật khác nhau — không gộp
+            // chung một mã (đúng bài học fix round 1 I-1: đọc đúng lý do, không đoán
+            // theo mặt chữ). ACCOUNT_LOCKED là brute-force lockout — khớp RATE_LIMITED
+            // y hệt các nơi throttle khác trong sprint này.
+            if (err.code === "ACCOUNT_LOCKED") {
+              throw appError(trpcCode, "RATE_LIMITED", undefined, err.message);
+            }
+            if (err.code === "ACCOUNT_DISABLED") {
+              throw appError(trpcCode, "PERMISSION_DENIED", { action: "login" }, err.message);
+            }
+            if (err.code === "PASSWORD_UNSUPPORTED") {
+              throw appError(trpcCode, "OPERATION_FAILED", { operation: "loginWithPassword" }, err.message);
+            }
+            throw appError(trpcCode, "INVALID_VALUE", { field: "credentials" }, err.message);
           }
           throw err;
         }
@@ -293,12 +308,12 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const existingAdmins = await db.getUsersByRole('admin');
         if (existingAdmins.length > 0) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin already exists' });
+          throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'setupAdmin' }, 'Admin already exists');
         }
 
         const existingUser = await db.getUserByUsername(input.username);
         if (existingUser) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Tên đăng nhập đã tồn tại' });
+          throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'user' }, 'Tên đăng nhập đã tồn tại');
         }
 
         const userId = await db.createUser({

@@ -3804,7 +3804,10 @@
       "manageHotFolder": "manage hot folder",
       "issueOperatorBadge": "issue operator badge",
       "rollbackAiModel": "rollback AI model",
-      "setLatestSoftwareVersion": "set latest software version"
+      "setLatestSoftwareVersion": "set latest software version",
+      "connectRos2Bridge": "connect ROS2 bridge",
+      "loginWithPassword": "log in with password",
+      "setupAdmin": "set up the first admin account"
     },
     "field": {
       "code": "code",
@@ -3879,7 +3882,8 @@
       "causalGraph": "causal graph",
       "idempotencyKey": "idempotency key",
       "lotCodeOrProductModelId": "lot code or product model ID",
-      "deviceId": "device ID"
+      "deviceId": "device ID",
+      "credentials": "login credentials"
     },
     "feature": {
       "web_ingest": "web content ingestion",
@@ -3960,7 +3964,8 @@
       "selfApproveProgramRelease": "self-approve own program release",
       "accessReportArtifact": "access report artifact",
       "useAiAnalyticsCanary": "use AI Analytics (gradual rollout)",
-      "viewTrustEnforcementCenter": "view Trust & Enforcement Center"
+      "viewTrustEnforcementCenter": "view Trust & Enforcement Center",
+      "login": "log in"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

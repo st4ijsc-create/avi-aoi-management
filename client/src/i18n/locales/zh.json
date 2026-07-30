@@ -3796,7 +3796,10 @@
       "manageHotFolder": "管理热文件夹",
       "issueOperatorBadge": "签发操作员工牌",
       "rollbackAiModel": "回滚AI模型",
-      "setLatestSoftwareVersion": "设置最新软件版本"
+      "setLatestSoftwareVersion": "设置最新软件版本",
+      "connectRos2Bridge": "连接ROS2桥接",
+      "loginWithPassword": "使用密码登录",
+      "setupAdmin": "设置首个管理员账户"
     },
     "field": {
       "code": "编码",
@@ -3871,7 +3874,8 @@
       "causalGraph": "因果图",
       "idempotencyKey": "幂等键",
       "lotCodeOrProductModelId": "批次代码或产品型号ID",
-      "deviceId": "设备ID"
+      "deviceId": "设备ID",
+      "credentials": "登录凭证"
     },
     "feature": {
       "web_ingest": "网页内容导入",
@@ -3952,7 +3956,8 @@
       "selfApproveProgramRelease": "自行批准本人的程序发布版本",
       "accessReportArtifact": "访问报告文件",
       "useAiAnalyticsCanary": "使用AI Analytics(灰度发布中)",
-      "viewTrustEnforcementCenter": "查看信任与执行中心"
+      "viewTrustEnforcementCenter": "查看信任与执行中心",
+      "login": "登录"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

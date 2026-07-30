@@ -121,8 +121,11 @@ export const simTargetsRouter = router({
       }
       const bridge = await startRos2Bridge();
       if (!bridge) {
-        // startRos2Bridge already logged the honest reason; surface it.
-        throw appError("SERVICE_UNAVAILABLE", "FEATURE_DISABLED", { feature: "ros2Bridge" }, "ROS2 bridge did not connect (rosbridge unreachable?)");
+        // startRos2Bridge already logged the honest reason; surface it. NOT
+        // FEATURE_DISABLED — the flag IS on (checked above) and the URL IS set; this
+        // is a live connect failure, a different situation needing a different action
+        // than "go enable the feature" (fix round 1, I-1).
+        throw appError("SERVICE_UNAVAILABLE", "OPERATION_FAILED", { operation: "connectRos2Bridge" }, "ROS2 bridge did not connect (rosbridge unreachable?)");
       }
       return bridge.status();
     }),

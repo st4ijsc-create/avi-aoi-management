@@ -3805,7 +3805,10 @@
       "manageHotFolder": "quản lý hot-folder",
       "issueOperatorBadge": "cấp thẻ vận hành viên",
       "rollbackAiModel": "rollback model AI",
-      "setLatestSoftwareVersion": "đặt phiên bản phần mềm mới nhất"
+      "setLatestSoftwareVersion": "đặt phiên bản phần mềm mới nhất",
+      "connectRos2Bridge": "kết nối cầu nối ROS2",
+      "loginWithPassword": "đăng nhập bằng mật khẩu",
+      "setupAdmin": "khởi tạo tài khoản admin đầu tiên"
     },
     "field": {
       "code": "mã",
@@ -3880,7 +3883,8 @@
       "causalGraph": "đồ thị nhân quả",
       "idempotencyKey": "khoá idempotency",
       "lotCodeOrProductModelId": "mã lô hoặc mã model sản phẩm",
-      "deviceId": "mã thiết bị"
+      "deviceId": "mã thiết bị",
+      "credentials": "thông tin đăng nhập"
     },
     "feature": {
       "web_ingest": "nạp nội dung từ web",
@@ -3961,7 +3965,8 @@
       "selfApproveProgramRelease": "tự duyệt phiên bản chương trình của chính mình",
       "accessReportArtifact": "truy cập tệp báo cáo",
       "useAiAnalyticsCanary": "dùng AI Analytics (đang triển khai dần)",
-      "viewTrustEnforcementCenter": "xem Trust & Enforcement Center"
+      "viewTrustEnforcementCenter": "xem Trust & Enforcement Center",
+      "login": "đăng nhập"
     }
   },
   "export": {

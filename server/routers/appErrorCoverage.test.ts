@@ -26,7 +26,16 @@ const ALLOWED_LEGACY_THROWS = 0; // ← task 8 lô 7/N (CUỐI) — 16 file còn
 // bootstrapRouter/commissioningRouter/edgeDeploymentRouter/hotFolderRouter/masterDataRouter/
 // mqttOeeRouters/mqttSoftwareVersionRouter/operatorBadgeRouter/readinessRouter/rumRouter/
 // sitesRouter/statusTemplateRouters — 16 chỗ): 16 - 16 = 0.
-// TOÀN BỘ server/routers/** đã di trú xong — mọi TRPCError hướng-người-dùng đều qua appError().
+//
+// ⚠ PHẠM VI CHÍNH XÁC của con số 0 này (đính chính sau review round 1, I-2 —
+// câu tuyên bố gốc "mọi TRPCError hướng-người-dùng đều qua appError()" NÓI QUÁ):
+// cổng này (test walkTsFiles ở trên) chứng minh **`server/routers/**` + 2 khẳng định
+// riêng bên dưới** (`server/_core/dbErrors.ts` + `server/routers.ts`) đã sạch —
+// KHÔNG PHẢI toàn bộ ứng dụng. Review round 1 quét thật `server/**` (trừ `.test.ts`,
+// trừ chính `appError.ts` — nơi dựng lỗi) và tìm thấy **67 chỗ còn lại trong 14 file**
+// `_core`/`services`/`utils` CHƯA di trú, cố ý để ngoài phạm vi Task 8 (hạ tầng lõi +
+// security-critical, không nên sửa vội cuối một task lớn) — danh sách đầy đủ 14 file ×
+// số chỗ nằm trong task-8-report.md mục "Fix round 1".
 
 const ROUTERS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -115,6 +124,21 @@ describe("phủ mã lỗi trong server/routers", () => {
     const src = readFileSync(dbErrorsPath, "utf8");
     const n = (src.match(/new TRPCError\(/g) ?? []).length;
     if (n > 0) console.error(`[phủ mã lỗi] dbErrors.ts còn ${n} chỗ new TRPCError trần`);
+    expect(n).toBe(0);
+  });
+
+  it("server/routers.ts (đường đăng nhập + bootstrap admin) không còn ném TRPCError trần", () => {
+    // Fix round 1 (I-2b, review điều phối viên) — cùng dạng lỗ hổng như dbErrors.ts:
+    // `server/routers.ts` NẰM NGOÀI server/routers/ (tên trùng thư mục nhưng là file
+    // anh em cùng cấp `server/`), nên walkTsFiles ở trên KHÔNG BAO GIỜ quét tới nó dù
+    // nó chứa route `auth.login` (mapping LoginError → tRPC code) và `auth.setupAdmin`
+    // — hai đường người dùng thật gặp NHIỀU NHẤT trong toàn ứng dụng. Task 8 đã di trú
+    // 3 chỗ ở đây; khẳng định riêng này đảm bảo không ai âm thầm thêm throw thô mới mà
+    // cổng không biết.
+    const routersTsPath = join(ROUTERS_DIR, "..", "routers.ts");
+    const src = readFileSync(routersTsPath, "utf8");
+    const n = (src.match(/new TRPCError\(/g) ?? []).length;
+    if (n > 0) console.error(`[phủ mã lỗi] routers.ts còn ${n} chỗ new TRPCError trần`);
     expect(n).toBe(0);
   });
 });
