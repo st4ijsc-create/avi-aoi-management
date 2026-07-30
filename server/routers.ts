@@ -1,6 +1,6 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { establishSession, LoginError, verifyCredentials } from "./_core/authService";
+import { establishSession, LOCKOUT_MINUTES, LoginError, verifyCredentials } from "./_core/authService";
 import { systemRouter } from "./_core/systemRouter";
 import { listEnabledSsoMethods } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
@@ -259,13 +259,25 @@ export const appRouter = router({
             const trpcCode = codeMap[err.code];
             // Bốn nhánh LoginError là BỐN tình huống thật khác nhau — không gộp
             // chung một mã (đúng bài học fix round 1 I-1: đọc đúng lý do, không đoán
-            // theo mặt chữ). ACCOUNT_LOCKED là brute-force lockout — khớp RATE_LIMITED
-            // y hệt các nơi throttle khác trong sprint này.
+            // theo mặt chữ).
+            //
+            // Review cuối, ca I-A #2: ACCOUNT_LOCKED KHÔNG PHẢI RATE_LIMITED — đây là
+            // KHOÁ TÀI KHOẢN có thời hạn (brute-force lockout), không phải "thao tác quá
+            // nhanh" (throttle). Dùng đúng mã ACCOUNT_LOCKED + số phút còn lại thật
+            // (LoginError.meta.remainingMinutes khi có — nhánh lockout-đang-hiệu-lực ở
+            // authService.ts:107-115 — else dùng LOCKOUT_MINUTES, đúng số phút vừa khoá ở
+            // nhánh vừa-chạm-ngưỡng authService.ts:137-141), thay vì truyền `undefined`
+            // và để "ít phút" nói giảm so với 15 phút thật.
             if (err.code === "ACCOUNT_LOCKED") {
-              throw appError(trpcCode, "RATE_LIMITED", undefined, err.message);
+              const remainingMinutes =
+                typeof err.meta?.remainingMinutes === "number" ? err.meta.remainingMinutes : LOCKOUT_MINUTES;
+              throw appError(trpcCode, "ACCOUNT_LOCKED", { remainingMinutes }, err.message);
             }
+            // Review cuối, ca I-A #3: tài khoản bị VÔ HIỆU HOÁ ≠ THIẾU QUYỀN.
+            // PERMISSION_DENIED khiến người dùng đi xin quyền — sai hướng hoàn toàn, tài
+            // khoản này cần được admin kích hoạt lại, không phải cấp thêm quyền.
             if (err.code === "ACCOUNT_DISABLED") {
-              throw appError(trpcCode, "PERMISSION_DENIED", { action: "login" }, err.message);
+              throw appError(trpcCode, "ACCOUNT_DISABLED", undefined, err.message);
             }
             if (err.code === "PASSWORD_UNSUPPORTED") {
               throw appError(trpcCode, "OPERATION_FAILED", { operation: "loginWithPassword" }, err.message);

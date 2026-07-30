@@ -348,7 +348,10 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.validateOnline(input.licenseKey);
     }),
@@ -360,7 +363,10 @@ const publicLicenseRouter = router({
     .input(z.object({ offlineLicenseBase64: z.string().min(1) }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.validateOffline(input.offlineLicenseBase64);
     }),
@@ -401,7 +407,10 @@ const publicLicenseRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       const result = await licenseService.applyOfflineLicense(
         input.offlinePackageBase64,
@@ -433,7 +442,10 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .query(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.getAllowedModulesFromServer(input.licenseKey);
     }),
@@ -448,7 +460,10 @@ const publicLicenseRouter = router({
     }))
     .query(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.isModuleAllowedOnServer(input.licenseKey, input.moduleCode);
     }),
@@ -467,7 +482,10 @@ const publicLicenseRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.syncModulesWithServer(input.licenseKey, input.clientModules);
     }),
@@ -477,7 +495,8 @@ const publicLicenseRouter = router({
    */
   productModules: protectedProcedure.query(async () => {
     if (!licenseService.hasSDKClient()) {
-      throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+      // Review cuối, ca I-A #5 — xem chú thích ở các call-site khác trong file này.
+      throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
     }
     return licenseService.getProductModulesFromServer();
   }),
@@ -489,7 +508,10 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.checkoutFloatingLicense(input.licenseKey);
     }),
@@ -504,7 +526,10 @@ const publicLicenseRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.checkinFloatingLicense(input.licenseKey, input.sessionId);
     }),
@@ -519,7 +544,10 @@ const publicLicenseRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.sendFloatingHeartbeat(input.licenseKey, input.sessionId);
     }),
@@ -531,7 +559,10 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .query(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.getFloatingStatus(input.licenseKey);
     }),
@@ -543,7 +574,10 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .query(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
+        // Review cuối, ca I-A #5: KHÔNG có công tắc nào để admin "bật" License Server SDK —
+        // nó chỉ thiếu cấu hình (LICENSE_SERVER_URL). FEATURE_DISABLED ngụ ý có một
+        // toggle đang tắt; FEATURE_NOT_CONFIGURED nói đúng: cần cấu hình, không phải bật.
+        throw appError('PRECONDITION_FAILED', 'FEATURE_NOT_CONFIGURED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.checkGracePeriod(input.licenseKey);
     }),

@@ -232,7 +232,12 @@ async function getOrExtractImage(
       : path.join(process.cwd(), "uploads");
     const filePath = path.join(uploadsRoot, pkg.storageKey);
     if (!fs.existsSync(filePath)) {
-      throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "ZIP file not found on disk");
+      // Review cuối, ca I-A #1: gói NÀY tồn tại trong DB (pkg + storageKey đều có) —
+      // chỉ file ZIP cục bộ bị mất/di chuyển. ENTITY_NOT_FOUND{entity:"aoiPackage"} nói
+      // SAI: người vận hành sẽ đi tìm nhầm "gói" thay vì hiểu đây là sự cố lưu trữ. Khớp
+      // anh em ruột ở :223 (storageKey thiếu) và nhánh forge ở :243 (download lỗi) —
+      // cả ba đều dùng OPERATION_FAILED cho cùng họ lỗi "trích xuất ảnh gói AOI thất bại".
+      throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "extractAoiPackageImage" }, "ZIP file not found on disk");
     }
     zipBuffer = fs.readFileSync(filePath);
   } else {

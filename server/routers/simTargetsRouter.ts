@@ -117,7 +117,12 @@ export const simTargetsRouter = router({
         throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "ros2Bridge" }, "ROS2 bridge disabled (set ROS2_BRIDGE_ENABLED=true)");
       }
       if (!rosbridgeUrlFromEnv()) {
-        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "rosbridgeUrl" }, "ROSBRIDGE_URL is empty");
+        // Review cuối, ca I-A #4: `ros2Connect` KHÔNG có `.input()` — không có trường
+        // "rosbridgeUrl" nào trên màn hình để người dùng điền. FIELD_REQUIRED sẽ chỉ
+        // người vận hành đi tìm một ô nhập không tồn tại. ROSBRIDGE_URL là biến môi
+        // trường phía máy chủ — đây là lỗi CẤU HÌNH MÁY CHỦ, cùng họ với guard ngay
+        // dưới (:128, OPERATION_FAILED — đã sửa đúng ở fix round 1, I-1).
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "connectRos2Bridge" }, "ROSBRIDGE_URL is empty");
       }
       const bridge = await startRos2Bridge();
       if (!bridge) {

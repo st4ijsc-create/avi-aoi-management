@@ -108,7 +108,11 @@ export const commissioningRouter = router({
     .mutation(async ({ input, ctx }) => {
       const row = await revokeRecord(input.recordId, ctx.user.id, input.reason ?? null);
       if (!row) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "commissioningRecord" }, "Bản ghi commissioning không tồn tại hoặc không còn ở trạng thái 'active'.");
+        // Review cuối, ca I-A #7: revokeRecord() UPDATE ... WHERE id=? AND status='active'
+        // — trả null khi bản ghi CÓ TỒN TẠI nhưng không còn 'active' (đã revoke từ trước),
+        // không chỉ khi id không tồn tại. ENTITY_NOT_FOUND khẳng định "không có" — sai khi
+        // rơi vào nhánh "đã hết hiệu lực". fallbackMessage giữ nguyên (chỉ vào log).
+        throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "revokeCommissioningRecord" }, "Bản ghi commissioning không tồn tại hoặc không còn ở trạng thái 'active'.");
       }
       return row;
     }),

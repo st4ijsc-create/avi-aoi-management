@@ -261,7 +261,11 @@ export const fleetRouter = router({
       // the gap where a manual reassign blindly wrote any deviceId (fake "success").
       const [robot] = await d.select().from(robots).where(eq(robots.id, input.deviceId)).limit(1);
       if (!robot || !robot.isEnabled) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, `Device ${input.deviceId} not found or not enabled`);
+        // Review cuối, ca I-A #6: trong đa số trường hợp thực tế robot TỒN TẠI, chỉ bị
+        // vô hiệu (isEnabled=false) — ENTITY_NOT_FOUND nói sai. Khớp hai guard kề bên
+        // (:266 offline/estop, :269 thiếu capability) — cả ba đều là "không thể gán việc
+        // cho thiết bị này", cùng họ OPERATION_FAILED.
+        throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Device ${input.deviceId} not found or not enabled`);
       }
       if (robot.status === "offline" || robot.status === "estop") {
         throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignFleetTask" }, `Device ${input.deviceId} is ${robot.status} — cannot assign work`);
