@@ -3538,11 +3538,14 @@
     "SCOPE_MISMATCH": "The {{entity}} does not belong to the selected {{parent}}.",
     "FIELD_REQUIRED": "Missing required information: {{field}}.",
     "INVALID_VALUE": "Invalid value for {{field}}.",
+    "INVALID_VALUE_WITH_REASON": "Invalid value for {{field}}. {{reason}}",
     "FEATURE_DISABLED": "The {{feature}} feature is not enabled on this system.",
     "OPERATION_FAILED": "Could not complete: {{operation}}.",
+    "OPERATION_FAILED_WITH_REASON": "Could not complete: {{operation}}. {{reason}}",
     "PERMISSION_DENIED": "You don't have permission to: {{action}}.",
+    "PERMISSION_DENIED_WITH_REASON": "You don't have permission to: {{action}}. {{reason}}",
     "AUTH_REQUIRED": "You need to log in to use this feature.",
-    "TWO_FACTOR_NOT_SET_UP": "Two-factor authentication is not enabled for this account.",
+    "TWO_FACTOR_NOT_SET_UP": "Two-factor authentication is not enabled for this account. Go to Settings > Security to set it up.",
     "RATE_LIMITED": "You're doing this too fast. Please try again in a few minutes.",
     "ACCOUNT_LOCKED": "Account temporarily locked after too many failed logins. Try again in {{remainingMinutes}} minutes.",
     "ACCOUNT_DISABLED": "This account has been disabled. Contact an administrator to reactivate it.",
@@ -3976,7 +3979,20 @@
     "cannotDisplayTable": "Cannot display table",
     "cannotDisplayContent": "Cannot display content",
     "cannotDisplayChart": "Cannot display chart",
-    "analyticsRenderError": "Analytics render error"
+    "analyticsRenderError": "Analytics render error",
+    "reason": {
+      "scheduleConflict": "Schedule conflicts with {{conflictCount}} other production order(s). Use forceOverride=true to bypass.",
+      "lineCapacityExceeded": "Line {{lineName}} supports at most {{maxConcurrent}} concurrent order(s); there are already {{currentCount}}. Use forceOverride=true to bypass.",
+      "productionCapacityExceeded": "Quantity {{quantity}} exceeds line capacity ({{maxCapacity}} units over {{hours}} hours). Use forceOverride=true to bypass.",
+      "productReadinessBlocked": "Product {{productCode}} is not configured enough to be assigned to a machine (readiness {{score}}%). Complete the measurement points, or use force=true if intentional.",
+      "dryRunNotPassed": "Run step 3 (Dry-run) first, or ask an admin to sign off with an override reason.",
+      "adapterStillEnabled": "Disable it (isEnabled=false) before deleting.",
+      "needsAdminSystemOrMachineControl": "Requires the admin_system or machine_control permission.",
+      "unknownBuiltInRole": "Unknown role. Available roles: {{validRoles}}.",
+      "insufficientCpkSamples": "Insufficient data: {{sampleCount}} samples (minimum {{minSamples}}).",
+      "invalidBase64Image": "The base64 data could not be decoded.",
+      "emptyImagePayload": "The image is empty after decoding."
+    }
   },
   "export": {
     "reportMenu": {

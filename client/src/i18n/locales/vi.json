@@ -3539,11 +3539,14 @@
     "SCOPE_MISMATCH": "Không thuộc {{parent}} đang chọn: {{entity}}.",
     "FIELD_REQUIRED": "Thiếu thông tin bắt buộc: {{field}}.",
     "INVALID_VALUE": "Giá trị không hợp lệ ở {{field}}.",
+    "INVALID_VALUE_WITH_REASON": "Giá trị không hợp lệ ở {{field}}. {{reason}}",
     "FEATURE_DISABLED": "Tính năng {{feature}} chưa được bật trên hệ thống này.",
     "OPERATION_FAILED": "Không thực hiện được: {{operation}}.",
+    "OPERATION_FAILED_WITH_REASON": "Không thực hiện được: {{operation}}. {{reason}}",
     "PERMISSION_DENIED": "Bạn không có quyền: {{action}}.",
+    "PERMISSION_DENIED_WITH_REASON": "Bạn không có quyền: {{action}}. {{reason}}",
     "AUTH_REQUIRED": "Bạn cần đăng nhập để dùng chức năng này.",
-    "TWO_FACTOR_NOT_SET_UP": "Tài khoản này chưa bật xác thực 2 lớp.",
+    "TWO_FACTOR_NOT_SET_UP": "Tài khoản này chưa bật xác thực 2 lớp. Vào Cài đặt > Bảo mật để thiết lập.",
     "RATE_LIMITED": "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
     "ACCOUNT_LOCKED": "Tài khoản tạm khoá do đăng nhập sai nhiều lần. Thử lại sau {{remainingMinutes}} phút.",
     "ACCOUNT_DISABLED": "Tài khoản này đã bị vô hiệu hoá. Liên hệ quản trị viên để được kích hoạt lại.",
@@ -3969,6 +3972,19 @@
       "useAiAnalyticsCanary": "dùng AI Analytics (đang triển khai dần)",
       "viewTrustEnforcementCenter": "xem Trust & Enforcement Center",
       "login": "đăng nhập"
+    },
+    "reason": {
+      "scheduleConflict": "Lịch trùng với {{conflictCount}} lệnh sản xuất khác. Dùng forceOverride=true để bỏ qua.",
+      "lineCapacityExceeded": "Dây chuyền {{lineName}} chỉ hỗ trợ tối đa {{maxConcurrent}} lệnh cùng lúc, hiện đã có {{currentCount}}. Dùng forceOverride=true để bỏ qua.",
+      "productionCapacityExceeded": "Số lượng {{quantity}} vượt quá năng lực dây chuyền ({{maxCapacity}} sản phẩm trong {{hours}} giờ). Dùng forceOverride=true để bỏ qua.",
+      "productReadinessBlocked": "Sản phẩm {{productCode}} chưa đủ cấu hình để gán máy (readiness {{score}}%). Hoàn thiện điểm đo hoặc dùng force=true nếu cố ý.",
+      "dryRunNotPassed": "Chạy bước 3 (Dry-run) trước, hoặc nhờ admin ký với lý do override.",
+      "adapterStillEnabled": "Hãy tắt (isEnabled=false) trước khi xoá.",
+      "needsAdminSystemOrMachineControl": "Cần quyền admin_system hoặc machine_control.",
+      "unknownBuiltInRole": "Vai trò không tồn tại. Vai trò hợp lệ: {{validRoles}}.",
+      "insufficientCpkSamples": "Không đủ dữ liệu: {{sampleCount}} mẫu (tối thiểu {{minSamples}}).",
+      "invalidBase64Image": "Dữ liệu base64 không đọc được.",
+      "emptyImagePayload": "Ảnh rỗng sau khi giải mã."
     }
   },
   "export": {

@@ -3530,11 +3530,14 @@
     "SCOPE_MISMATCH": "{{entity}}不属于当前选择的{{parent}}。",
     "FIELD_REQUIRED": "缺少必填信息：{{field}}。",
     "INVALID_VALUE": "{{field}}的值无效。",
+    "INVALID_VALUE_WITH_REASON": "{{field}}的值无效。{{reason}}",
     "FEATURE_DISABLED": "此系统尚未启用{{feature}}功能。",
     "OPERATION_FAILED": "操作失败：{{operation}}。",
+    "OPERATION_FAILED_WITH_REASON": "操作失败：{{operation}}。{{reason}}",
     "PERMISSION_DENIED": "您无权：{{action}}。",
+    "PERMISSION_DENIED_WITH_REASON": "您无权：{{action}}。{{reason}}",
     "AUTH_REQUIRED": "您需要登录才能使用此功能。",
-    "TWO_FACTOR_NOT_SET_UP": "此账户尚未启用双因素认证。",
+    "TWO_FACTOR_NOT_SET_UP": "此账户尚未启用双因素认证。请前往「设置 > 安全」进行设置。",
     "RATE_LIMITED": "操作过于频繁，请稍后再试。",
     "ACCOUNT_LOCKED": "由于多次登录失败，账户已被临时锁定。请在 {{remainingMinutes}} 分钟后重试。",
     "ACCOUNT_DISABLED": "此账户已被停用。请联系管理员重新启用。",
@@ -3968,7 +3971,20 @@
     "cannotDisplayTable": "无法显示表格",
     "cannotDisplayContent": "无法显示内容",
     "cannotDisplayChart": "无法显示图表",
-    "analyticsRenderError": "分析render错误"
+    "analyticsRenderError": "分析render错误",
+    "reason": {
+      "scheduleConflict": "排程与另外 {{conflictCount}} 个生产订单冲突。使用 forceOverride=true 可忽略。",
+      "lineCapacityExceeded": "产线 {{lineName}} 最多支持 {{maxConcurrent}} 个并发订单，目前已有 {{currentCount}} 个。使用 forceOverride=true 可忽略。",
+      "productionCapacityExceeded": "数量 {{quantity}} 超出产线能力（{{hours}} 小时内 {{maxCapacity}} 件）。使用 forceOverride=true 可忽略。",
+      "productReadinessBlocked": "产品 {{productCode}} 配置尚不足以分配给机台（readiness {{score}}%）。请完善测量点，或在有意为之时使用 force=true。",
+      "dryRunNotPassed": "请先完成步骤 3（Dry-run），或请管理员以覆盖原因签署。",
+      "adapterStillEnabled": "请先停用（isEnabled=false）再删除。",
+      "needsAdminSystemOrMachineControl": "需要 admin_system 或 machine_control 权限。",
+      "unknownBuiltInRole": "角色不存在。可用角色：{{validRoles}}。",
+      "insufficientCpkSamples": "数据不足：{{sampleCount}} 个样本（最少需要 {{minSamples}} 个）。",
+      "invalidBase64Image": "无法解码 base64 数据。",
+      "emptyImagePayload": "解码后图像为空。"
+    }
   },
   "export": {
     "reportMenu": {

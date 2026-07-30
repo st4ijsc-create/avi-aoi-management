@@ -39,6 +39,12 @@ const PARAM_SPACE: Record<string, string> = {
   field: "field",
   feature: "feature",
   action: "action",
+  // Sprint 5 doc 71 Task 5 (F4) — không gian MỚI `errors.reason.*` (chỉ dẫn hành
+  // động khôi phục cho OPERATION_FAILED/INVALID_VALUE/PERMISSION_DENIED khi có
+  // `_WITH_REASON`, xem client/src/lib/errorCodes.ts). Cổng này phải TỰ bao được
+  // không gian mới ngay khi thêm — nếu không, một lời gọi `reason: "..."` thiếu bản
+  // dịch sẽ lọt qua trong im lặng, đúng lớp lỗi mà cả file này tồn tại để chặn.
+  reason: "reason",
 };
 const PARAM_KEYS = Object.keys(PARAM_SPACE);
 

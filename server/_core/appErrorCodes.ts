@@ -17,19 +17,28 @@ export const APP_ERROR_CODES = [
                           // gọi đã trót truyền field vô ích, dọn ở Task 4 (F5, doc 71).
   "SCOPE_MISMATCH",       // params: { entity, parent }
   "FIELD_REQUIRED",       // params: { field }
-  "INVALID_VALUE",        // params: { field } — KHÔNG có `reason` (cùng lý do ENTITY_DUPLICATE
-                          // ở trên: comment cũ quảng cáo `reason?` nhưng chưa từng có template
-                          // render {{reason}}). Task 5 (doc 71) sẽ thêm khoá `errors.reason.*` +
-                          // template có {{reason}} — KHÔNG đụng ở đây, để tránh xung đột.
+  "INVALID_VALUE",        // params: { field, reason? } — Task 5 (doc 71, F4) đã thêm `reason?`
+                          // THẬT: khoá client `errors.INVALID_VALUE_WITH_REASON` (có {{reason}})
+                          // chỉ được dùng khi `params.reason` là chuỗi khác rỗng — câu GỐC
+                          // `errors.INVALID_VALUE` (không đổi) vẫn phục vụ mọi call site cũ chưa
+                          // truyền `reason`. `reason` PHẢI là khoá camelCase vào `errors.reason.*`
+                          // (client/src/lib/errorCodes.ts), KHÔNG phải câu tiếng Việt/Anh viết tay.
   "FEATURE_DISABLED",     // params: { feature }
-  "OPERATION_FAILED",     // params: { operation }
-  "PERMISSION_DENIED",    // params: { action? }
+  "OPERATION_FAILED",     // params: { operation, reason? } — cùng cơ chế `reason?` với
+                          // INVALID_VALUE ở trên (khoá `_WITH_REASON` riêng, xem doc 71 Task 5).
+  "PERMISSION_DENIED",    // params: { action, reason? } — `action` vẫn BẮT BUỘC (cổng
+                          // appErrorParamsCoverage.test.ts); `reason?` thêm ở Task 5 (doc 71) khi
+                          // cần nói THÊM (vd tên quyền cụ thể cần có) ngoài tên action.
   "AUTH_REQUIRED",        // params: {} — chưa đăng nhập (ctx.user null), KHÁC FIELD_REQUIRED
                           // (không phải thiếu một trường nhập) và KHÁC FEATURE_DISABLED.
                           // Task 7 fix round 1 (I-1).
   "TWO_FACTOR_NOT_SET_UP", // params: {} — 2FA CHƯA BẬT cho TÀI KHOẢN này, KHÁC FEATURE_DISABLED
                           // (2FA đang bật toàn hệ thống, chỉ tài khoản này chưa dùng).
-                          // Task 7 fix round 1 (I-2).
+                          // Task 7 fix round 1 (I-2). Task 5 (doc 71, F4): chỉ dẫn "Vào Cài đặt >
+                          // Bảo mật để thiết lập" đã mất ở defectDispositionRouter.ts — KHÔNG dùng
+                          // cơ chế `reason?` (chỉ dẫn này ĐÚNG cho MỌI call site, không riêng
+                          // router nào), nên khôi phục thẳng vào câu TĨNH `errors.TWO_FACTOR_NOT_SET_UP`
+                          // (client i18n) — mọi caller hưởng lợi, không cần sửa từng router.
   "RATE_LIMITED",         // params: {} — vượt hạn mức thao tác (per-IP/per-machine throttle).
                           // Task 8 — gộp 3+ nơi ném TOO_MANY_REQUESTS rải rác (hierarchyRouters
                           // register/claimKey throttle, machineApiRouters heartbeat). Chi tiết
