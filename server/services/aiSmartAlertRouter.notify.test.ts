@@ -236,3 +236,70 @@ describe("routeAlert — tách gửi thông báo khỏi ghi nhật ký", () => {
     expect(calls.some((c) => c.kind === "insert-occurrence")).toBe(true); // nhật ký lần-tái-diễn vẫn được ghi
   });
 });
+
+// Sprint 5 debt E2 — cảnh báo KHÔNG gắn máy (vd YIELD_DROP cấp nhà máy) là nhóm
+// DUY NHẤT còn đứng ngoài cooldown: routeAlert chỉ tra cảnh báo đang mở khi có
+// machineId (:212), nên decideAlertWrite() luôn trả action="insert" cho nhóm này
+// — MỌI lượt gọi, không riêng lượt đầu — và luật #1 của decideNotify
+// (action==="insert" ⇒ báo NGAY) khiến nhóm này báo ở MỌI lượt, không chỉ lượt đầu.
+// alertEvaluatorScheduler chạy mỗi 2 phút ⇒ một nhà máy tụt yield cả ngày bắn
+// ~30 thông báo/giờ cho mọi quality_inspector.
+//
+// Test này viết TRƯỚC khi sửa (đỏ trước): nếu KHÔNG có cooldown, lần gọi thứ hai
+// (ngay sau lần đầu, cùng cooldown 4h mặc định) vẫn phải báo — assertion
+// `expect(notified).toHaveLength(0)` ở dưới SẼ THẤT BẠI trên mã hiện tại.
+describe("routeAlert — cooldown cho cảnh báo KHÔNG gắn máy (E2, cấp nhà máy)", () => {
+  it("YIELD_DROP chỉ có factoryId: gọi 2 lần liên tiếp trong cooldown ⇒ lần 2 IM LẶNG, nhưng vẫn ghi nhật ký occurrence", async () => {
+    seedUserRows = MAINTENANCE; // chỉ cần có người nhận, mock không lọc theo role thật
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    const event = { type: "YIELD_DROP", factoryId: 9301, severity: "HIGH", message: "yield drop", data: {} } as any;
+
+    await routeAlert(event);
+    expect(notified).toHaveLength(1); // lần đầu: chưa từng báo ⇒ luôn báo (fail-open)
+
+    notified.length = 0; // đo riêng lần 2, không cộng dồn với lần 1
+    await routeAlert(event);
+
+    // ⚠ Đây chính là luật #1 của decideNotify (action==="insert" ⇒ báo) không được
+    // phép ghi đè cooldown cho nhóm không-máy: nếu code chỉ truyền thêm
+    // lastNotifiedAt mà không đổi `action`, luật #1 vẫn thắng và assertion dưới đây
+    // sẽ đỏ (notified vẫn có 1 phần tử).
+    expect(notified).toHaveLength(0); // lần 2 trong cooldown ⇒ KHÔNG làm phiền quality_inspector
+    expect(calls.filter((c) => c.kind === "insert-occurrence")).toHaveLength(2); // NHƯNG cả 2 lần đều được ghi sổ
+  });
+
+  it("YIELD_DROP CRITICAL không gắn máy: gọi 2 lần liên tiếp ⇒ báo CẢ HAI lần (CRITICAL xuyên cooldown)", async () => {
+    seedUserRows = MAINTENANCE;
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    const event = { type: "YIELD_DROP", factoryId: 9302, severity: "CRITICAL", message: "yield drop nặng", data: {} } as any;
+
+    await routeAlert(event);
+    expect(notified).toHaveLength(1);
+
+    notified.length = 0;
+    await routeAlert(event);
+
+    // Hệ quả tự nhiên của nhóm không-máy: không có "mức trước" để so (existingOpen
+    // luôn null), nên luật "mức tăng" (severity-raised) không bao giờ áp dụng được
+    // ở đây — CHỈ CRITICAL mới xuyên qua được cooldown cấp nhà máy.
+    expect(notified).toHaveLength(1); // CRITICAL (cooldown-critical mặc định=0) ⇒ báo lại ngay
+  });
+
+  it("đã hết cooldown 4h (mốc gửi cũ nằm sẵn trong Redis) ⇒ báo lại", async () => {
+    // Bạch hộp có chủ ý: brief chốt đúng khoá `smartalert:lastnotify:${consolidationKey}`
+    // (redisService THẬT, không mock — fallback bộ nhớ vì test không có REDIS_URL).
+    // Seed thẳng một mốc gửi 5h trước (> cooldown 4h mặc định) để không phải chờ
+    // thời gian thật trôi qua.
+    const { redisService } = await import("./redisService");
+    await redisService.set(
+      "smartalert:lastnotify:YIELD_DROP:all:9303",
+      { timestamp: Date.now() - 5 * 3600_000 },
+      8 * 3600,
+    );
+    seedUserRows = MAINTENANCE;
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    await routeAlert({ type: "YIELD_DROP", factoryId: 9303, severity: "HIGH", message: "x", data: {} } as any);
+
+    expect(notified).toHaveLength(1); // đã hết cooldown ⇒ báo lại, không bị kẹt im lặng vĩnh viễn
+  });
+});

@@ -129,6 +129,40 @@ async function setConsolidationEntry(consolidationKey: string, entry: Consolidat
   }
 }
 
+// Sprint 5 debt E2 — cảnh báo KHÔNG gắn máy (vd YIELD_DROP cấp nhà máy) là nhóm
+// DUY NHẤT còn đứng ngoài cooldown thông báo: existingOpen chỉ được tra khi có
+// machineId (routeAlert, nhánh :212 bên dưới), nên decideAlertWrite() luôn trả
+// action="insert" cho nhóm này — ở MỌI lượt gọi, không riêng lượt đầu. Không có
+// dòng predictive_alerts nào để đọc notificationSentAt cho nhóm không-máy, nên
+// mượn đúng khuôn Redis get/set ở trên để tự nhớ mốc gửi gần nhất theo
+// consolidationKey. TTL = cooldown thường × 2 — đủ dài để cooldown không hết hạn
+// thầm lặng giữa hai lần tái diễn đo được, tối thiểu 1s để tránh SETEX ttl<=0 khi
+// khách chỉnh cooldown về 0.
+const lastNotifyRedisKey = (consolidationKey: string) =>
+  `smartalert:lastnotify:${consolidationKey}`;
+
+interface LastNotifyEntry {
+  timestamp: number;
+}
+
+async function getLastNotifyEntry(consolidationKey: string): Promise<LastNotifyEntry | null> {
+  try {
+    return await redisService.get<LastNotifyEntry>(lastNotifyRedisKey(consolidationKey));
+  } catch (err) {
+    console.error("[SmartAlert] đọc mốc-gửi-gần-nhất (nhóm không-máy) THẤT BẠI:", (err as Error).message);
+    return null;
+  }
+}
+
+async function setLastNotifyEntry(consolidationKey: string, entry: LastNotifyEntry, cooldownMs: number): Promise<void> {
+  const ttlSeconds = Math.max(1, Math.ceil((cooldownMs * 2) / 1000));
+  try {
+    await redisService.set(lastNotifyRedisKey(consolidationKey), entry, ttlSeconds);
+  } catch (err) {
+    console.error("[SmartAlert] ghi mốc-gửi-gần-nhất (nhóm không-máy) THẤT BẠI:", (err as Error).message);
+  }
+}
+
 // Map the integer escalationLevel stored on predictive_alerts (0=none/L1,
 // 1=L2/supervisor, 2=L3/admin) to/from the logical L1/L2/L3 labels used here.
 function escalationLevelToLabel(level: number): EscalationLevel {
@@ -259,13 +293,37 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     lookupFailed,
   );
 
+  // Sprint 5 debt E2 — nhóm KHÔNG gắn máy: existingOpen luôn null (lookup ở trên
+  // chỉ chạy khi có machineId) nên decision.action luôn là "insert" cho nhóm này.
+  // Đọc mốc gửi gần nhất từ Redis để BIẾT có phải lần đầu hay không.
+  const isNoMachineGroup = event.machineId == null;
+  const lastNotifyEntry = isNoMachineGroup ? await getLastNotifyEntry(consolidationKey) : null;
+
+  // ⚠ CHỖ DỄ SAI NHẤT — luật #1 của decideNotify là `action === "insert" ⇒ báo
+  // NGAY`, không xét gì thêm (kể cả lastNotifiedAt). decideAlertWrite() luôn trả
+  // "insert" cho nhóm không-máy nên nếu truyền thẳng decision.action vào đây, luật
+  // #1 sẽ ghi đè cooldown VÔ ĐIỀU KIỆN — đúng bug đang sửa (mọi lượt đều báo).
+  // Chỉ khi Redis ĐÃ có mốc gửi (đã từng báo thật cho khoá này) mới coi lượt này
+  // là "update" RIÊNG cho mục đích quyết-định-gửi. KHÔNG đụng `decision.action`
+  // dùng cho nhánh ghi INSERT/UPDATE predictive_alerts phía dưới — nhóm không-máy
+  // luôn thật sự INSERT (không có dòng đang mở nào để cập nhật); việc gộp ở đây
+  // CHỈ ảnh hưởng quyết định có gửi thông báo hay không.
+  const notifyAction: "insert" | "update" =
+    isNoMachineGroup && lastNotifyEntry != null ? "update" : decision.action;
+
   // Sprint 5 §2.2 — GỬI hay không là quyết định RIÊNG với GHI hay không.
   const notifyDecision = decideNotify({
-    action: decision.action,
+    action: notifyAction,
     incomingSeverity: event.severity as AlertSeverity,
     // ⚠ Mức của dòng ĐANG MỞ TRƯỚC update — KHÔNG dùng decision.severity (đã gộp).
+    // Nhóm không-máy không có dòng đang mở nào để so ⇒ previousSeverity luôn null.
+    // HỆ QUẢ TỰ NHIÊN (không phải thiếu sót): thiếu "mức trước" nghĩa là luật
+    // "mức tăng" (severity-raised) KHÔNG BAO GIỜ áp dụng được cho nhóm này — chỉ
+    // CRITICAL mới xuyên qua được cooldown của cảnh báo cấp nhà máy/không gắn máy.
     previousSeverity: existingOpen?.severity ?? null,
-    lastNotifiedAt: existingOpen?.notificationSentAt?.getTime() ?? null,
+    lastNotifiedAt: isNoMachineGroup
+      ? (lastNotifyEntry?.timestamp ?? null)
+      : (existingOpen?.notificationSentAt?.getTime() ?? null),
     now: Date.now(),
     cooldownMs: renotifyCooldownMs(),
     criticalCooldownMs: criticalCooldownMs(),
@@ -302,6 +360,15 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
   // nhận (không có user `maintenance`) mà vẫn stamp ⇒ cảnh báo im 4 giờ vì một
   // lượt gửi không tồn tại.
   const willStamp = notifyDecision.notify && targets.length > 0;
+
+  // Sprint 5 debt E2 — nhóm không-máy không có cột notificationSentAt nào để tự
+  // stamp (không có dòng predictive_alerts đại diện "trạng thái đang mở" của
+  // khoá này), nên lưu mốc gửi vào Redis ở đây. CHỈ stamp khi THẬT SỰ có người
+  // nhận — cùng lý do với willStamp: nhà máy chưa cấu hình role quality_inspector
+  // mà vẫn stamp ⇒ cảnh báo im 4h vì một lượt gửi không tồn tại.
+  if (isNoMachineGroup && willStamp) {
+    await setLastNotifyEntry(consolidationKey, { timestamp: Date.now() }, renotifyCooldownMs());
+  }
 
   // WS-4: allow callers (e.g. predictiveMaintenanceService) to pass through
   // predictedTimeframe, confidenceScore, and factors. Backward-compatible —
