@@ -491,10 +491,18 @@ public sealed class ConnectorConfigStore
     /// that never mentions it keeps persisting an operator row, byte for byte. The one production call site
     /// that must pass <see cref="ConnectorConfigSource.Seeded"/> explicitly is
     /// <see cref="ConnectorConfigVisibilitySeeder.SeedAsync"/>.</param>
+    /// <param name="ct">Task B-8 — moved to be the LAST parameter (was previously between
+    /// <paramref name="writeCapability"/> and <paramref name="source"/>, a carried finding from B-6's
+    /// review: every other method in this codebase that takes a <see cref="CancellationToken"/> takes it
+    /// last). Safe to reorder: every test call site names <paramref name="source"/> explicitly when it
+    /// passes it (never positionally past <paramref name="writeCapability"/>), and the two production call
+    /// sites (<see cref="Endpoints.ConnectorEndpoints.CreateConnectorAsync"/>,
+    /// <see cref="ConnectorConfigVisibilitySeeder.SeedAsync"/>) are updated alongside this signature to
+    /// pass it by name.</param>
     public async Task<ConnectorConfigSummary> SaveAsync(
         string kind, string machineCode, string? host, int? port, string mapJson,
-        ConnectorWriteCapability? writeCapability = null, CancellationToken ct = default,
-        ConnectorConfigSource source = ConnectorConfigSource.Operator)
+        ConnectorWriteCapability? writeCapability = null,
+        ConnectorConfigSource source = ConnectorConfigSource.Operator, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
         ArgumentException.ThrowIfNullOrWhiteSpace(machineCode);

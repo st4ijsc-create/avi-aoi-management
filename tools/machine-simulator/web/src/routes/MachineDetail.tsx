@@ -11,6 +11,7 @@ import {
   ScanEye,
   ServerCrash,
   SlidersHorizontal,
+  Zap,
 } from "lucide-react"
 import type { VariantProps } from "class-variance-authority"
 import { Link, useParams } from "wouter"
@@ -28,6 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BoardView } from "@/components/BoardView"
 import { ConfigSyncPanel } from "@/components/ConfigSyncPanel"
 import { CycleLogTable, formatCycleTime, verdictMeta } from "@/components/CycleLogTable"
+import { MachineControlPanel } from "@/components/MachineControlPanel"
 import { MachineSettingsPanel } from "@/components/MachineSettingsPanel"
 import { SpcChart } from "@/components/SpcChart"
 import { TelemetryChart } from "@/components/TelemetryChart"
@@ -229,6 +231,10 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
               <SlidersHorizontal className="size-3.5" aria-hidden="true" data-icon="inline-start" />
               {t("machineDetail.tabs.settings")}
             </TabsTrigger>
+            <TabsTrigger value="control">
+              <Zap className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              {t("machineDetail.tabs.control")}
+            </TabsTrigger>
             <TabsTrigger value="log">
               <History className="size-3.5" aria-hidden="true" data-icon="inline-start" />
               {t("machineDetail.tabs.log")}
@@ -347,6 +353,12 @@ function MachineDetailBody({ machine }: { machine: MachineDetailDto }) {
                 <Sheet className="max-w-4xl" bodyClassName="flex flex-col p-0">
                   <MachineSettingsPanel machineCode={machine.code} deviceClass={machine.class} attributedAs="detail" />
                 </Sheet>
+              </motion.div>
+            </TabsContent>
+
+            <TabsContent value="control" className="pt-4">
+              <motion.div initial="hidden" animate="visible" variants={fadeSlideUp}>
+                <MachineControlPanel machineCode={machine.code} />
               </motion.div>
             </TabsContent>
 

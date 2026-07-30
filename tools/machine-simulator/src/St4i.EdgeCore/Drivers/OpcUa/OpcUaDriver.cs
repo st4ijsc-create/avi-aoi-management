@@ -1030,7 +1030,13 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
     /// This task's own dispose-racing-a-stuck-write test (<c>DisposeAsync_WhileCommandIsStuckMidFlight_...</c>)
     /// only exercises a LIVE server (the stuck command's own connection, not the close call against a
     /// server that has itself gone unresponsive) — the close-against-a-hung-server case is UNTESTED here.
-    /// B-6/B-8 need to know this before building HALT-path guarantees on top of this driver.</para></summary>
+    /// B-6/B-8 need to know this before building HALT-path guarantees on top of this driver.
+    ///
+    /// <b>B-8 (closeout): assessed, not fixed — see <c>MachineWriteEndpoints</c>'s own class doc comment,
+    /// "Carried finding, assessed and routed," for the closing rationale (<c>WaitAndDisposeOldPipeline</c>'s
+    /// bounded <c>.Wait(3s)</c> means <c>FleetHost.Estop()</c> itself still returns within budget; only the
+    /// unbounded background disposal can run longer — resource hygiene, not a HALT-budget violation). Both
+    /// tradeoffs on this method stay accepted and documented, not open items.</b></para></summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;

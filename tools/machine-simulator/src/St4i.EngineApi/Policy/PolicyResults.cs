@@ -48,12 +48,17 @@ public static class PolicyResults
             var priority = decision.Reason == PolicyReasonCode.SafetyBlocked ? AlarmPriority.Critical : AlarmPriority.High;
             var runbook = decision.Reason switch
             {
-                // SM-4 — this only stopped THIS SOFTWARE's own data collection, never any machine (the
-                // product has no write path to any device). Say so, rather than telling the operator to
-                // "verify the machine is safe" as if this control had any bearing on that.
+                // SM-4/B-8 — this only stopped THIS SOFTWARE's own data collection, never any machine. Say
+                // so, rather than telling the operator to "verify the machine is safe" as if this control
+                // had any bearing on that. This runbook also fires for a HALT-latched machine.setpoint.write/
+                // machine.command.invoke denial (EstopGuardRule.ActuatingActions) — a real write path to a
+                // device exists now (Modbus/OPC-UA, MachineWriteEndpoints), and this is precisely the rule
+                // that keeps it refused while latched; the runbook stays about THIS control's own scope
+                // (this software's read pipeline), never a claim that no write path exists anywhere.
                 PolicyReasonCode.SafetyBlocked =>
                     "The halt latch is engaged — this stopped this software's own data collection only, not any " +
-                    "machine. Reset the latch (POST /v1/fleet/estop/reset) before starting.",
+                    "machine, and it also blocks any setpoint/command write while engaged. Reset the latch " +
+                    "(POST /v1/fleet/estop/reset) before starting or writing.",
                 _ => "The action was denied by policy. Check the operator's role and the current fleet state.",
             };
             await alarms.RaiseAsync(

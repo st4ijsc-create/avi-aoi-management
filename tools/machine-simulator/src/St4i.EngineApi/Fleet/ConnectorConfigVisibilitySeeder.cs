@@ -135,7 +135,7 @@ public static class ConnectorConfigVisibilitySeeder
             // documented staleness gap for this case automatically.
             await store.SaveAsync(
                     validated.Kind, validated.MachineCode, validated.Host, validated.Port, mapJson,
-                    validated.WriteCapability, ct, source: ConnectorConfigSource.Seeded)
+                    validated.WriteCapability, source: ConnectorConfigSource.Seeded, ct: ct)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)

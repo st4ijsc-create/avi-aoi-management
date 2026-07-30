@@ -224,7 +224,7 @@ public static class ConnectorEndpoints
 
         var saved = await store.SaveAsync(
                 validated.Kind, validated.MachineCode, validated.Host, validated.Port, body.MapJson,
-                validated.WriteCapability, ct)
+                validated.WriteCapability, ct: ct)
             .ConfigureAwait(false);
 
         // Live-register BEFORE RegisterMachine — a restart-if-running triggered below must always see the

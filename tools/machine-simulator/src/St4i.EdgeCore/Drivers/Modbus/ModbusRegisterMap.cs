@@ -10,8 +10,8 @@ namespace St4i.EdgeCore.Drivers.Modbus;
 /// (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) lets a map DECLARE that a
 /// <see cref="Holding"/> register may also be written (see <see cref="ModbusRegister.Writable"/>) — but this
 /// class stays a plain, throwing parse function: it declares what MAY be written and within what bounds,
-/// never performs any I/O itself. Actually executing a write against the device is B-4's job, not built
-/// here. <see cref="Input"/> can never be declared writable — <see cref="ModbusRegisterMap.FromJson"/> rejects
+/// never performs any I/O itself. Actually executing a write against the device is <see cref="ModbusTcpDriver"/>'s
+/// job (built since B-4), not this class's. <see cref="Input"/> can never be declared writable — <see cref="ModbusRegisterMap.FromJson"/> rejects
 /// that at parse time, because FC04 has no write function code at all on the wire; declaring it writable
 /// would be a map that can never actually be honoured.</summary>
 public enum ModbusRegisterType { Holding, Input }
@@ -53,9 +53,9 @@ public sealed record ModbusWritableRange(double? Min, double? Max);
 /// name" concept — writable within <see cref="ModbusWritableRange.Min"/>/<see cref="ModbusWritableRange.Max"/>
 /// (engineering units). See <see cref="ModbusRegisterMap.FromJson"/> for everything this declaration is
 /// validated against at parse time (mandatory bounds, Holding-only, non-zero <see cref="Scale"/>, and the
-/// inverse-scaling overflow check), and <see cref="TryComputeRawWordForWrite"/> for the write-side math a
-/// future driver (B-4) calls to actually turn an engineering-unit setpoint into the 16-bit word it writes on
-/// the wire.</para>
+/// inverse-scaling overflow check), and <see cref="TryComputeRawWordForWrite"/> for the write-side math
+/// <see cref="ModbusTcpDriver"/> calls (since B-4) to actually turn an engineering-unit setpoint into the
+/// 16-bit word it writes on the wire.</para>
 /// </summary>
 public sealed record ModbusRegister(
     ushort Address, ModbusRegisterType Type, ModbusDataType DataType, double Scale, string Metric, string? Unit = null,

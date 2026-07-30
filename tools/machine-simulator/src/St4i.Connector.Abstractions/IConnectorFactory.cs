@@ -72,10 +72,14 @@ public interface IConnectorFactory
     ///
     /// <para><b>MUST NOT throw for a bad/malformed <paramref name="config"/>.</b> A third-party driver
     /// must never be able to take down a host whose own <c>Estop()</c> halt call depends on this same
-    /// lock (see the promptness rule above) merely because its factory method threw. (SM-4: this
-    /// interface has no write path to any device at all — <see cref="IDeviceDriver"/> only reads — so
-    /// "take down a host" here means crash the process, never disable a safety function; there is no
-    /// safety function here to disable.) Return <see langword="false"/> instead, with <paramref name="error"/> set to
+    /// lock (see the promptness rule above) merely because its factory method threw. (SM-4/B-8: THIS
+    /// METHOD itself still performs no I/O and reaches no device — that part is unchanged — but the
+    /// <see cref="IDeviceDriver"/> it builds may also implement the OPTIONAL <see cref="IWritableDeviceDriver"/>
+    /// capability (Task B-1) and go on to write to a real device later, through <c>WriteSetpointAsync</c>/
+    /// <c>InvokeCommandAsync</c>, never through <see cref="TryCreate"/> itself. So "take down a host" here
+    /// still means crash the process, never disable a safety function — there is no safety function
+    /// anywhere in this product for a bad config to disable — but it is no longer true to say this
+    /// interface, or the drivers it builds, have no write path at all.) Return <see langword="false"/> instead, with <paramref name="error"/> set to
     /// an operator-readable message describing what was wrong; the caller's contract is to log it and
     /// treat this connector as disabled for the run, never to crash. This interface cannot structurally
     /// force a third-party implementation to honor this — a badly-behaved factory can still throw — which

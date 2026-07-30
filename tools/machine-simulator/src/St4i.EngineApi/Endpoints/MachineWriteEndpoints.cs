@@ -142,8 +142,29 @@ namespace St4i.EngineApi.Endpoints;
 /// concern (a stale in-flight close racing a later reconnect), not a violation of "HALT must always be
 /// reachable within budget". Fixing it properly means changing <c>OpcUaDriver.cs</c>'s own carefully
 /// empirically-reasoned concurrency model (B-5, already reviewed and signed off) — out of this task's scope
-/// (policy/RBAC/audit/endpoints, not driver internals). Routed to B-8 with this exact assessment, per the
-/// brief's own explicit "fix or route with a clear statement" alternative.</para>
+/// (policy/RBAC/audit/endpoints, not driver internals). <b>B-8 closes this: assessment confirmed, matches
+/// the identical conclusion already recorded on <c>OpcUaDriver.DisposeAsync</c>'s own doc comment (the
+/// <c>_sessionLock</c> tradeoff below it) — no code change, this stays a documented, accepted tradeoff, not
+/// an open item.</b></para>
+///
+/// <para><b>Carried finding, routed here with a clear statement — request-shape 400s run AHEAD of the
+/// policy gate.</b> Both handlers below validate the request BODY (non-blank point/command, a parseable
+/// value/argument) before calling <see cref="PolicyEngine.Evaluate"/> — so a malformed request from an
+/// authenticated-but-role-refused caller, or one sent while HALT-latched, gets a plain <c>400</c> with no
+/// audit row and no policy evaluation at all, unlike every properly-shaped attempt (permitted or denied),
+/// which is always audited. Deliberately NOT reordered: (1) no device I/O and no mutation happens on
+/// either path — a 400 here proves nothing about the fleet's state and grants nothing, so there is no
+/// unaudited MACHINE ACTION to miss, only an unaudited malformed HTTP request, the same posture every
+/// other endpoint in this codebase already takes for shape validation; (2) evaluating policy against a
+/// request this class cannot even parse into a <see cref="SetpointWriteRequest"/>/<see cref="CommandRequest"/>
+/// would mean auditing a decision about an action that was never actually well-formed enough to attempt,
+/// which is a stranger audit row than none at all. This is "unaudited probing, no device I/O" — a genuine,
+/// accepted gap (an attacker profiling exact request-shape validation leaves no trace), not a safety gap;
+/// closing it would mean either running full RBAC+policy evaluation before parsing (moving the cheapest
+/// check behind the most expensive one, for every caller, to protect against a probe that can't touch a
+/// device) or adding a SEPARATE unconditional audit row ahead of shape validation (a new kind of audit
+/// entry this codebase has nowhere else). Left as a documented tradeoff per the brief's own "fix or route
+/// with a clear statement" instruction, not fixed.</para>
 /// </summary>
 public static class MachineWriteEndpoints
 {

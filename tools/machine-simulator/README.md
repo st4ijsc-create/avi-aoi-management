@@ -32,26 +32,38 @@ WPF nên cùng pipeline đó cũng chạy headless qua `St4i.EdgeService`.
 > **EN** — The control this product calls **HALT** on the HMI panel (fleet-level `FleetHost.Estop()`
 > / `POST /v1/fleet/estop`) and **Abort** on the Line Control page is a **supervisory software latch**,
 > not a safety device. Pressing it cancels this software's own read pipeline and disconnects from the
-> configured device(s) — nothing more. It cannot stop a machine, because **this product has no write
-> path to any device anywhere in this codebase**: `IDeviceDriver` has exactly one data-producing
-> member (`ReadAsync`); there is no `WriteAsync`/`SendCommand`/`Actuate` on any driver contract, no
-> Modbus `Write*` call, no OPC-UA `WriteAsync`/`CallAsync`, and Sparkplug NCMD is never received
-> anywhere. A real emergency stop is a hardwired, safety-rated circuit per **ISO 13849** (Cat 3/4) —
-> software is never permitted to be the safety path, and this product does not attempt to be one. Do
-> not rely on any control in this product as a safety function, and do not connect a real machine's
-> actual emergency-stop circuit to anything this software does.
+> configured device(s) — nothing more. **This product CAN write to a device** — as of Đợt B (§21), a
+> Modbus TCP or OPC-UA connector whose map declares a writable setpoint/command executes a real write
+> (`POST /v1/machines/{code}/setpoint`/`.../command`), gated by role (Engineer for a setpoint, Admin for
+> a command) and refused outright while HALT is engaged. **HALT itself still never touches that path —
+> and never will.** If you're asking "you can write now, why doesn't HALT stop my machine?": a real
+> emergency stop is a hardwired, safety-rated circuit per **ISO 13849** (Cat 3/4) — software is never
+> permitted to be the safety path, full stop. Making HALT also fire a Modbus/OPC-UA write to try to stop
+> the device would not close that gap; it would make a supervisory latch LOOK more like a safety device
+> while still failing to be one — a worse product, not a safer one. So HALT stays exactly what it always
+> was: it cancels this software's own read pipeline and disconnects from the configured device(s),
+> nothing more, and the machine-control write path (§21) is a separate, explicitly role-and-latch-gated
+> capability that HALT deliberately does not use. Do not rely on any control in this product as a safety
+> function, and do not connect a real machine's actual emergency-stop circuit to anything this software
+> does.
 >
 > **VI** — Điều khiển mà sản phẩm này gọi là **NGỪNG** trên bảng HMI (mức fleet, `FleetHost.Estop()` /
 > `POST /v1/fleet/estop`) và **Hủy** trên trang Line Control là một **chốt phần mềm giám sát**, không
 > phải thiết bị an toàn. Nhấn nút này chỉ hủy pipeline đọc dữ liệu của phần mềm này và ngắt kết nối tới
-> thiết bị đã cấu hình — không hơn không kém. Nó không thể dừng máy thật, vì **sản phẩm này không có
-> đường ghi lệnh tới bất kỳ thiết bị nào trong toàn bộ mã nguồn**: `IDeviceDriver` chỉ có đúng một
-> thành viên tạo dữ liệu (`ReadAsync`); không hợp đồng driver nào có `WriteAsync`/`SendCommand`/
-> `Actuate`, không có lệnh Modbus `Write*`, không có OPC-UA `WriteAsync`/`CallAsync`, và Sparkplug
-> NCMD không bao giờ được nhận ở bất kỳ đâu. Một hệ thống dừng khẩn cấp thật là mạch cứng đạt chuẩn an
-> toàn theo **ISO 13849** (Cat 3/4) — phần mềm không bao giờ được phép là đường an toàn, và sản phẩm
-> này không cố trở thành như vậy. Đừng dựa vào bất kỳ điều khiển nào trong sản phẩm này như một chức
-> năng an toàn, và đừng đấu mạch dừng khẩn cấp thật của máy vào bất cứ thứ gì phần mềm này làm.
+> thiết bị đã cấu hình — không hơn không kém. **Sản phẩm này GIỜ ghi được vào thiết bị** — từ Đợt B
+> (§21), một connector Modbus TCP hay OPC-UA có map khai báo setpoint/lệnh ghi được sẽ thực thi một
+> lệnh ghi thật (`POST /v1/machines/{code}/setpoint`/`.../command`), gác theo vai trò (Engineer cho
+> setpoint, Admin cho lệnh) và bị từ chối thẳng khi NGỪNG đang cài. **Bản thân NGỪNG vẫn không bao giờ
+> chạm vào đường ghi đó — và sẽ không bao giờ.** Nếu bạn đang hỏi "giờ ghi được rồi, sao NGỪNG không
+> dừng máy tôi?": một hệ thống dừng khẩn cấp thật là mạch cứng đạt chuẩn an toàn theo **ISO 13849**
+> (Cat 3/4) — phần mềm không bao giờ được phép là đường an toàn, chấm hết. Cho NGỪNG tự bắn một lệnh ghi
+> Modbus/OPC-UA để cố dừng thiết bị không lấp được khoảng trống đó; nó chỉ khiến một chốt giám sát TRÔNG
+> giống thiết bị an toàn hơn trong khi vẫn không phải — một sản phẩm tệ hơn, không an toàn hơn. Nên
+> NGỪNG vẫn giữ nguyên đúng như trước giờ: chỉ hủy pipeline đọc dữ liệu của phần mềm này và ngắt kết nối
+> tới thiết bị đã cấu hình, không hơn không kém — còn năng lực ghi điều khiển máy (§21) là một khả năng
+> tách biệt, gác theo vai trò và theo chốt NGỪNG, mà NGỪNG cố tình không dùng tới. Đừng dựa vào bất kỳ
+> điều khiển nào trong sản phẩm này như một chức năng an toàn, và đừng đấu mạch dừng khẩn cấp thật của
+> máy vào bất cứ thứ gì phần mềm này làm.
 
 ---
 
@@ -321,8 +333,8 @@ P2/P3 items below have since landed — see the **Status** column and **§16** f
 |---|---|---|---|
 | **P1 (this build)** | Simulator + EdgeCore + Normalizer + Live/Demo/Auto + Hot-folder AOI + MQTT + headless service seam + packaging | Hot-folder (doc 28), MQTT | Delivered |
 | P2 | Mapping UI + Sparkplug B + headless Device Manager | MQTT/Sparkplug B | **Sparkplug B: delivered** — a local UNS spine (always-on loopback MQTT broker + dual Sparkplug B/semantic-mirror publisher), see §16.1. Mapping UI + headless Device Manager: still future. |
-| P3 | Modbus TCP/RTU + Serial drivers (screw/glue guns, small PLCs, RS-232/485) | Modbus, Serial | **Modbus TCP: partially delivered** — TCP polling only, read-only, `UInt16`/`Int16` registers, one register per read, see §16.4. **Not yet:** 32-bit/float registers, register-block batching, Modbus **RTU** (serial), a per-machine `MappingProfile` override for Modbus. Serial drivers: still future. |
-| P4 | OPC-UA + Siemens S7 / EtherNet-IP drivers | OPC-UA, S7, EtherNet/IP | **OPC-UA client: partially delivered** — the licensing spike that used to gate this is resolved (the OPC Foundation .NET stack relicensed MIT on 2025-12-04); a read-only poller against ONE OPC-UA server, `SecurityMode=None` (anonymous or username/password), poll-only (no subscriptions), see §16.6. **Not yet:** Siemens S7 / EtherNet-IP drivers, Sign/SignAndEncrypt security modes, complex/structured-type node decoding. |
+| P3 | Modbus TCP/RTU + Serial drivers (screw/glue guns, small PLCs, RS-232/485) | Modbus, Serial | **Modbus TCP: partially delivered** — TCP polling, `UInt16`/`Int16` registers, one register per read, see §16.4; **read-AND-write since Đợt B** (§21) for a Holding register/command a map declares writable — a zero-argument coil pulse only, see §21.6. **Not yet:** 32-bit/float registers, register-block batching, Modbus **RTU** (serial), a per-machine `MappingProfile` override for Modbus. Serial drivers: still future. |
+| P4 | OPC-UA + Siemens S7 / EtherNet-IP drivers | OPC-UA, S7, EtherNet/IP | **OPC-UA client: partially delivered** — the licensing spike that used to gate this is resolved (the OPC Foundation .NET stack relicensed MIT on 2025-12-04); a poller against ONE OPC-UA server, `SecurityMode=None` (anonymous or username/password), poll-only (no subscriptions), see §16.6; **read-AND-write since Đợt B** (§21) for a node/method a map declares writable, including typed `CallAsync` arguments. **Not yet:** Siemens S7 / EtherNet-IP drivers, Sign/SignAndEncrypt security modes, complex/structured-type node decoding. |
 | P5 | SECS/GEM + Zmotion (koffi FFI) + HA/buffering + security hardening + OTA config | SECS/GEM, Zmotion | Future. |
 
 **Also delivered this build, not originally scoped as its own P1-P5 phase above** — a default-deny
@@ -349,12 +361,22 @@ topic) have both since landed — see **§18** for the full detail (env vars, en
 sources/priorities, PackML states+commands+FleetHost mapping, and the alarm→hold gate's honest
 boundary).
 
+**Update (Đợt B — machine control):** the biggest single line item on this whole roadmap — **this
+product can now write to a device** — has landed. A Modbus/OPC-UA connector whose map declares a
+writable setpoint or command executes a real write (`POST /v1/machines/{code}/setpoint`/`.../command`),
+gated by RBAC (Engineer/Admin), the HALT latch, and a fleet-wide Critical-alarm interlock, with a web UI
+to issue one. This does NOT make HALT a safety function or an emergency stop — see §1 and §21.5 for why
+that conclusion did not change even though the reason Đợt A originally gave for it (no write path
+existed) did. See **§21** for the full detail (endpoints, roles, the `Applied`/`Rejected`/`Failed`/
+`Indeterminate` outcome vocabulary, the web UI, and honest limitations).
+
 **Genuinely still future, not touched by this build:** **EST/SCEP enrollment + a Site CA** — today the
 device identity is a bare self-signed certificate, and trust (in both mDNS directions now — browsing,
 §17.4, and the machine's own advertising, §17.8) is still a single operator-pasted, manually pinned PEM,
 not a CA-issued/auto-renewed chain, with no automatic trust-on-first-discovery (§17.11); **an inbound
 command path (NCMD or otherwise)** — the bridge is outbound-telemetry-only, so a Site can observe this
-device but never actuate it; and **WS-B B2 (bridge inversion)** — flipping the UNS spine from an
+device but never actuate it through the ecosystem link (unrelated to §21's LOCAL write path — a
+SYNAPSE Site still cannot reach it); and **WS-B B2 (bridge inversion)** — flipping the UNS spine from an
 additive mirror into the sole source of truth with ST4I/historian driven asynchronously off it instead
 of synchronously inside `EdgePipeline` — assessed and **deliberately deferred to a dedicated GĐ3 pass**
 (high blast-radius: ~34 files touch the synchronous ack today; see
@@ -371,13 +393,15 @@ Site.
 
 *(VI: Vài mục P2/P3 phía trên ĐÃ giao trong Giai đoạn 2 (pass 1+2) — xem cột **Status** và **§16** để
 biết chi tiết đầy đủ (biến môi trường, endpoint, hành vi). Sparkplug B: ĐÃ GIAO qua UNS spine cục bộ
-(§16.1). Modbus TCP: GIAO MỘT PHẦN — chỉ đọc qua TCP, thanh ghi UInt16/Int16, mỗi lần đọc 1 thanh ghi
-(§16.4); CHƯA có 32-bit/float, đọc theo khối, Modbus RTU (nối tiếp), hay MappingProfile riêng cho từng
-máy Modbus. OPC-UA: GIAO MỘT PHẦN — "licensing spike" trước đây từng chặn mục này đã được giải quyết (bộ
-thư viện .NET của OPC Foundation đổi giấy phép sang MIT ngày 2025-12-04); một poller chỉ-đọc nối với MỘT
-server OPC-UA, `SecurityMode=None` (ẩn danh hoặc username/password), chỉ poll (chưa có subscription), xem
-§16.6. CHƯA có: driver Siemens S7/EtherNet-IP, chế độ bảo mật Sign/SignAndEncrypt, giải mã kiểu
-phức hợp/cấu trúc. Cũng đã giao trong bản này dù không nằm
+(§16.1). Modbus TCP: GIAO MỘT PHẦN — đọc qua TCP, thanh ghi UInt16/Int16, mỗi lần đọc 1 thanh ghi
+(§16.4); **ĐỌC VÀ GHI từ Đợt B** (§21) cho thanh ghi Holding/lệnh map khai báo ghi được — chỉ xung coil
+không tham số, xem §21.6. CHƯA có 32-bit/float, đọc theo khối, Modbus RTU (nối tiếp), hay MappingProfile
+riêng cho từng máy Modbus. OPC-UA: GIAO MỘT PHẦN — "licensing spike" trước đây từng chặn mục này đã được
+giải quyết (bộ thư viện .NET của OPC Foundation đổi giấy phép sang MIT ngày 2025-12-04); một poller nối
+với MỘT server OPC-UA, `SecurityMode=None` (ẩn danh hoặc username/password), chỉ poll (chưa có
+subscription), xem §16.6; **ĐỌC VÀ GHI từ Đợt B** (§21) cho node/method map khai báo ghi được, kể cả tham
+số `CallAsync` có kiểu. CHƯA có: driver Siemens S7/EtherNet-IP, chế độ bảo mật Sign/SignAndEncrypt, giải
+mã kiểu phức hợp/cấu trúc. Cũng đã giao trong bản này dù không nằm
 trong bảng P1-P5 gốc: lớp Policy mặc định-từ-chối + endpoint an toàn XC-R40 `/v1/safety` (§16.2), cách
 ly lỗi theo từng pipeline (§16.3), và Asset Registry ISA-95 bền vững (§16.5 — chính là phần "mô hình
 canonical" của lộ trình này).
@@ -394,11 +418,21 @@ ISA-18.2 (nguồn Policy DENY / DriverHealth / NG-rate, kho SQLite tập-đang-h
 đều đã giao — xem **§18** để biết chi tiết đầy đủ (biến môi trường, endpoint, nguồn/mức ưu tiên cảnh
 báo, trạng thái+lệnh PackML+ánh xạ FleetHost, và ranh giới thật của khoá cảnh báo→hold).
 
+**Cập nhật (Đợt B — điều khiển máy):** mục lớn nhất trên toàn bộ lộ trình này — **sản phẩm này giờ ghi
+được vào thiết bị** — đã giao. Một connector Modbus/OPC-UA có map khai báo setpoint/lệnh ghi được sẽ
+thực thi một lệnh ghi thật (`POST /v1/machines/{code}/setpoint`/`.../command`), gác theo RBAC
+(Engineer/Admin), chốt NGỪNG, và khoá liên động cảnh báo Critical toàn fleet, cùng một web UI để bắn lệnh.
+Điều này KHÔNG biến NGỪNG thành chức năng an toàn hay dừng khẩn cấp — xem §1 và §21.5 vì sao kết luận đó
+không đổi dù lý do Đợt A từng đưa ra (chưa có đường ghi) nay không còn đúng nữa. Xem **§21** để biết chi
+tiết đầy đủ (endpoint, vai trò, từ vựng kết quả `Applied`/`Rejected`/`Failed`/`Indeterminate`, web UI, và
+giới hạn trung thực).
+
 Vẫn CHƯA làm: **EST/SCEP + Site CA** để tự động cấp/xoay chứng chỉ (hiện danh tính thiết bị chỉ là chứng
 chỉ tự ký, và tin cậy — ở CẢ HAI chiều mDNS, vừa duyệt tìm §17.4 vừa tự quảng bá §17.8 — vẫn chỉ là một
 PEM operator dán tay, ghim thủ công, không phải chuỗi CA cấp/tự gia hạn, và vẫn chưa có
 trust-on-first-discovery tự động, §17.11); **đường lệnh vào (NCMD hay khác)** — bridge CHỈ GỬI telemetry
-RA, Site quan sát được máy này nhưng không điều khiển được; và **WS-B B2 (đảo chiều bridge)** — đã đánh
+RA, Site quan sát được máy này nhưng không điều khiển được qua liên kết hệ sinh thái (khác với đường ghi
+CỤC BỘ ở §21 — một SYNAPSE Site vẫn không chạm tới được); và **WS-B B2 (đảo chiều bridge)** — đã đánh
 giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (phạm vi ảnh hưởng lớn — khoảng 34 file đang dùng ack đồng
 bộ).
 
@@ -1465,13 +1499,16 @@ New read-only endpoint:
 |---|---|---|---|
 | `/v1/safety` | GET | Operator | Returns `{ estopEngaged, isRunning, safetyClass: "SupervisorySoftwareLatch", advisory }` |
 
-**The XC-R40 boundary** — read this before treating the halt latch as more than it is (SM-4: see §1's
-safety notice for the full statement): it is a **SUPERVISORY software latch**, not a substitute for a
-machine's independent, safety-rated emergency-stop circuit (a hardwired circuit per ISO 13849), and
-must never be relied on as a protective safety function — **this product has no write path to any
-device at all**; `/v1/safety` itself carries this advisory string verbatim in its response
-(`SafetyEndpoints.XcR40Advisory`). `GET /v1/safety` is **read-only by design** — there is deliberately
-no write route here. The only two ways to change the underlying latch remain the pre-existing operator
+**The XC-R40 boundary** — read this before treating the halt latch as more than it is (SM-4/B-8: see
+§1's safety notice for the full statement): it is a **SUPERVISORY software latch**, not a substitute for
+a machine's independent, safety-rated emergency-stop circuit (a hardwired circuit per ISO 13849), and
+must never be relied on as a protective safety function. **This product now has a real write path**
+(§21 — Modbus/OPC-UA setpoints and commands), but this latch itself never touches it — see §1 for why
+that stays deliberate rather than a gap now that writing is possible; `/v1/safety` itself carries this
+exact reasoning in its response string (`SafetyEndpoints.XcR40Advisory`). `GET /v1/safety` is
+**read-only by design** — there is deliberately no write route on THIS endpoint (the machine-control
+write routes live at `POST /v1/machines/{code}/setpoint`/`.../command`, §21, an entirely separate
+surface). The only two ways to change the underlying latch remain the pre-existing operator
 actions: `POST /v1/fleet/estop` (engage) and `POST /v1/fleet/estop/reset` (clear) — both still
 Operator-role, both still audited, both still always reachable even while the latch is engaged (the
 policy rule never blocks stop/estop/estop-reset/reads). The operator-facing label for these actions is
@@ -1485,8 +1522,9 @@ hành thấy được: `POST /v1/fleet/start` khi chốt ngừng đang cài gi�
 (kèm dòng audit `fleet.start.denied`) thay vì im lặng no-op trả 200 như trước. Endpoint mới
 `GET /v1/safety` (vai trò Operator, CHỈ ĐỌC) trả trạng thái chốt ngừng giám sát + cảnh báo XC-R40.
 **Ranh giới XC-R40**: chốt này là điều khiển phần mềm GIÁM SÁT, KHÔNG thay thế mạch dừng khẩn cấp an
-toàn độc lập của máy (mạch cứng theo ISO 13849) — không bao giờ được coi là chức năng an toàn bảo vệ,
-và **sản phẩm này không có đường ghi lệnh tới bất kỳ thiết bị nào**. Tên gọi mà người vận hành nhìn
+toàn độc lập của máy (mạch cứng theo ISO 13849) — không bao giờ được coi là chức năng an toàn bảo vệ.
+**Sản phẩm này GIỜ có đường ghi thật** (§21 — setpoint/lệnh Modbus/OPC-UA), nhưng bản thân chốt này
+không bao giờ chạm vào đường ghi đó — xem §1. Tên gọi mà người vận hành nhìn
 thấy là **NGỪNG** (bảng HMI) và **Hủy** (Line Control) — không phải "E-STOP"; các định danh trong mã
 nguồn (`FleetHost.Estop()`, route `/v1/fleet/estop`, `EstopGuardRule`) vẫn giữ nguyên để ổn định API,
 nhưng không có bề mặt nào hướng tới người vận hành còn gọi đây là dừng khẩn cấp. Chỉ có 2 cách ghi vào chốt: `POST /v1/fleet/estop`
@@ -1570,7 +1608,8 @@ Register-map JSON shape (`ModbusRegisterMap.FromJson` — property names matched
   above.
 
 **Task B-3 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md) — declarative
-write/command capability, no driver executes any of it yet (that's B-4).** Two OPTIONAL additions, both
+write/command capability, executed by `ModbusTcpDriver` since B-4 (§21 has the full write-path
+writeup).** Two OPTIONAL additions, both
 absent from every register-map ever accepted before this task and both a no-op for a map that never sets
 them (a map with neither is a read-only connector exactly as before):
 
@@ -1587,8 +1626,11 @@ them (a map with neither is a read-only connector exactly as before):
   (an OPC-UA-style boxed integer is re-narrowed to the exact declared width) before it could ever reach a
   device.
 
-Neither declaration performs any I/O by itself — `ModbusRegisterMap`/`ModbusTcpDriver` still only ever
-**read** — this is the map format B-4's future write driver will consume.
+Neither declaration performs any I/O by itself — `ModbusRegisterMap` stays a plain, throwing parse
+function, exactly as before. `ModbusTcpDriver` is the one that acts on what a map declares: it still
+polls every register (writable or not) exactly like before, and additionally executes a real write
+(`WriteSingleCoilAsync`/`WriteSingleRegisterAsync`) for a point/command this same map marks writable,
+since B-4 (§21).
 
 When Modbus is enabled and its map loads successfully, the Modbus machine is wired in as a
 **first-class roster member** — it gets a fleet snapshot tile, a historian row per poll, and (via
@@ -1771,10 +1813,9 @@ Node-map JSON shape (`OpcUaNodeMap.FromJson` — property names matched case-ins
 - A blank `machineCode`/`endpointUrl` or an empty `nodes` list is rejected at load (throws), which
   Program.cs catches — it logs a warning and disables OPC-UA for the run rather than crashing startup.
 
-**Task B-3 — declarative write/command capability, executed by `OpcUaDriver` since B-5** (see task-5-report.md
-— the "no driver executes any of this yet" framing this paragraph originally shared with the Modbus section
-above is stale for OPC-UA specifically now that B-5 has shipped `WriteSetpointAsync`/`InvokeCommandAsync`;
-left as-is for Modbus per B-8's own coordinated cleanup): a node may add `"writable": { "valueType": "Bool" |
+**Task B-3 — declarative write/command capability, executed by `OpcUaDriver` since B-5** (see task-5-report.md;
+§21 has the full write-path writeup for both protocols, B-8's coordinated cleanup of every "no driver
+executes this yet" framing this section and §16.4 above used to share): a node may add `"writable": { "valueType": "Bool" |
 "Int16" | "UInt16" | "Int32" | "UInt32" | "Double", "min": <number>, "max": <number> }` — `valueType` must be
 `Bool` or numeric; a **string** writable node remains unsupported (its domain isn't similarly bounded). For a
 numeric `valueType`, `min`/`max` are **mandatory** and must fit within that type's own representable range;
@@ -3595,13 +3636,16 @@ KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi 
 
 **EN** — Written down plainly, not softened:
 
-- **There is no write path to any device.** `IDeviceDriver` (`St4i.Connector.Abstractions`) has
-  exactly four members — `Id`, `Kind`, `Health`, `ReadAsync` — no `WriteAsync`/`SendCommand`/`Actuate`.
-  `ModbusTcpDriver`/`OpcUaDriver` expose no write/method-call capability (the only `Write*` hit in
-  either file is an NModbus **socket timeout setting**, not a device write). Sparkplug NCMD (the
-  inbound command topic) is never received anywhere in this codebase. This product **observes**
-  machines; it cannot **command** them. A machine-control (SCADA) layer is a separate future phase,
-  not something this batch started.
+- **Machine control (writing to a device) exists now — see §21, not this bullet.** This line used to say
+  "there is no write path to any device" — true when this section was written (Đợt A), **false since
+  Đợt B** (B-1 through B-8): `IDeviceDriver` gained an OPTIONAL `IWritableDeviceDriver` capability, and
+  both `ModbusTcpDriver` and `OpcUaDriver` execute a real write for a machine whose map declares one
+  (`POST /v1/machines/{code}/setpoint`/`.../command`). §21 states the honest limitations of THAT
+  capability plainly (only two protocols write, a Modbus command is a zero-argument coil pulse, there is
+  no rate limiting, the Critical-alarm gate is fleet-wide, `Indeterminate` is a real operational state,
+  and Sparkplug NCMD — inbound commands from the ecosystem — is still never received, so this write path
+  is local-caller-only). Left here, corrected rather than deleted, so anyone who bookmarked this
+  paragraph across a batch boundary sees the correction in place, not a silently vanished claim.
 - **Alarms cannot reach anyone who is not looking at the screen.** `St4i.EngineApi/Alarms/` is exactly
   seven files — a store, an evaluator, endpoints, thresholds, a raise/record model — and nothing else.
   There is no email, SMS, webhook, Slack, syslog, relay, or audible-signal integration anywhere in this
@@ -3626,12 +3670,16 @@ KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi 
   machine" product path (an empty or all-real roster) has no fabricated cycles to leak, so this never
   fires by accident. Recorded here as a known limitation, not fixed this batch.
 
-*(VI: Ghi rõ ràng, không mềm hoá: **KHÔNG có đường ghi lệnh tới bất kỳ thiết bị nào.** `IDeviceDriver`
-chỉ có đúng 4 thành viên — `Id`, `Kind`, `Health`, `ReadAsync` — không `WriteAsync`/`SendCommand`/
-`Actuate`. `ModbusTcpDriver`/`OpcUaDriver` không có khả năng ghi/gọi method nào (chỉ 1 chỗ khớp
-`Write*` trong cả hai file là **cấu hình timeout socket** của NModbus, không phải ghi thiết bị).
-Sparkplug NCMD (topic lệnh vào) không bao giờ được nhận ở bất kỳ đâu. Sản phẩm này CHỈ QUAN SÁT máy,
-KHÔNG điều khiển được. Layer điều khiển máy (SCADA) là giai đoạn tương lai riêng, đợt này chưa bắt đầu.
+*(VI: Ghi rõ ràng, không mềm hoá: **Điều khiển máy (ghi vào thiết bị) đã có — xem §21, không phải dòng
+này.** Dòng này từng viết "KHÔNG có đường ghi lệnh tới bất kỳ thiết bị nào" — đúng lúc viết mục này (Đợt
+A), **SAI từ Đợt B** (B-1 đến B-8): `IDeviceDriver` có thêm khả năng TÙY CHỌN `IWritableDeviceDriver`, và
+cả `ModbusTcpDriver` lẫn `OpcUaDriver` đều thực thi lệnh ghi thật cho máy có map khai báo ghi được
+(`POST /v1/machines/{code}/setpoint`/`.../command`). §21 ghi rõ giới hạn thật của năng lực đó (chỉ 2 giao
+thức ghi được, lệnh Modbus là xung coil không tham số, KHÔNG có giới hạn tốc độ, cổng cảnh báo Critical
+là toàn fleet chứ không theo từng máy, `Indeterminate` là trạng thái vận hành thật, và Sparkplug NCMD —
+lệnh vào từ hệ sinh thái — vẫn không bao giờ được nhận, nên đường ghi này chỉ local). Giữ lại ở đây,
+sửa lại thay vì xóa, để ai từng đọc đoạn này ở đợt trước vẫn thấy chỗ sửa, không phải một khẳng định biến
+mất âm thầm.
 **Cảnh báo KHÔNG thể tới ai không đang nhìn màn hình.** Thư mục `Alarms/` chỉ có đúng 7 file — store,
 evaluator, endpoint, ngưỡng, model raise/record — không gì khác. KHÔNG có email/SMS/webhook/Slack/
 syslog/relay/tín hiệu âm thanh nào trong repo này. **Chỉ Modbus TCP và OPC-UA THẬT SỰ chạy được.**
@@ -3647,3 +3695,193 @@ Site phía trên — một chu kỳ fabricated được phát giống hệt mộ
 thật+demo (bật Demo song song một máy thật đã thêm) — đường đi chuẩn "một máy thật" (đội hình rỗng hoặc
 toàn máy thật) không có chu kỳ fabricated nào để rò rỉ, nên việc này không tự nhiên xảy ra. Ghi nhận ở
 đây như một giới hạn đã biết, chưa sửa trong đợt này.)*
+
+---
+
+## 21. Đợt B (B-1–B-8) — machine control: writing to a device / Điều khiển máy: ghi vào thiết bị
+
+**EN** — Every other section above that predates this one was written while it was true that **nothing in
+this codebase could write to a device**. Đợt B (tasks B-1 through B-8, this section) built exactly that
+capability, deliberately, as the highest-risk work in this project to date: until now the product only
+ever *observed* a machine; a bug in this batch can change the physical state of running equipment. Every
+place elsewhere in this document that used to assert "no write path exists" has been corrected in this
+same coordinated pass (§1, §16.2, §16.4, §16.6, §20.5) rather than left to rot into a claim that is now
+simply false.
+
+### 21.1 What a write actually is / Một lệnh ghi thực sự là gì
+
+Two operations, never conflated with each other or with a read:
+
+- **A setpoint write** — `POST /v1/machines/{code}/setpoint` `{ "point": "<name>", "value": <number|bool|string> }`
+  — sets one pre-declared point (a Modbus Holding register, an OPC-UA node) to a value, gated at
+  **Engineer** role.
+- **A command invocation** — `POST /v1/machines/{code}/command` `{ "command": "<name>", "arguments"?: {...} }`
+  — invokes a pre-declared command/method that **can trigger real, physical motion** (a Modbus coil
+  pulse, an OPC-UA `CallAsync`), gated at **Admin** — one level stricter than a setpoint, deliberately,
+  because a command can start a machine moving and a setpoint cannot. This is the SAME asymmetry the web
+  UI (§21.4) surfaces, not something the UI is free to flatten.
+
+Both a point and a command are **named**, never a raw register address or NodeId — resolving a name to a
+real device address is entirely the driver's own job (`St4i.Connector.Abstractions.IWritableDeviceDriver`,
+task B-1). Both are declared in the connector's own register/node map (§16.4/§16.6) with **mandatory**
+physical bounds (a numeric point) validated at parse time, never left "unbounded" by a forgotten field —
+see §16.4/§16.6 for the exact validation rules (NaN/±Infinity rejected, overflow-checked against the
+physical register width, a missing coil address rejected rather than silently defaulting to coil 0).
+
+### 21.2 The gates a write passes through / Các cổng một lệnh ghi phải qua
+
+In order, every attempt (permitted or denied) is audited:
+
+1. **Request-shape validation** — a non-blank point/command name, a value/argument this host's JSON
+   converter can parse. A malformed request 400s here, before policy is even evaluated (§21.7 addresses
+   this as a carried, accepted gap, not a fixed one).
+2. **A Critical alarm blocks it** (`CriticalAlarmGuardRule`) — mirroring `LineController`'s own precedent.
+   **This gate is fleet-wide, not per-machine** — see §21.6.
+3. **Policy + RBAC** (`PolicyEngine`, `EstopGuardRule`, `RoleObligationRule`) — denied outright while HALT
+   is engaged (`SAFETY_BLOCKED`, `409`), or if the caller's role doesn't meet the action's own minimum
+   (`403`). Every denial is audited and, for `SAFETY_BLOCKED`, raises a Critical Policy alarm.
+4. **Machine → live-driver resolution** (`FleetHost.TryWriteSetpointAsync`/`TryInvokeCommandAsync`) — a
+   machine code with no live driver, a read-only driver, or a driver shared ambiguously with another
+   roster member (`AmbiguousDriver` — refuses rather than risk delivering the write to the wrong physical
+   device) each get their own `409` with an actionable reason, never one generic "not available" error.
+5. **The driver's own pre-flight validation** — an unknown point/command, a point the map declares
+   read-only, or a value outside its declared range is `Rejected` **without the device ever being
+   touched** — the cheapest possible refusal, always before any I/O.
+6. **The actual write** — Modbus (`ModbusTcpDriver`) or OPC-UA (`OpcUaDriver`) only; see §21.6.
+
+Every attempted write (steps 5–6) returns `200 OK` with the outcome **in the body**, never a 4xx/5xx —
+deliberately, because this batch's own carried findings include a transport that silently re-sent an
+unacknowledged write; mapping an uncertain outcome to a 4xx/5xx status would invite exactly the kind of
+automatic HTTP-layer retry this contract forbids (§21.3). Only a genuinely UNATTEMPTED write (steps 1–4)
+gets a non-`200` status, because retrying something that never touched the device is always safe.
+
+### 21.3 `WriteOutcome` — four outcomes, one of them is the whole point / Bốn kết quả, một trong số đó là mấu chốt
+
+`Applied` / `Rejected` / `Failed` / `Indeterminate` — the same four-way vocabulary for both a setpoint and
+a command:
+
+- **`Applied`** — the device confirmed the write took effect.
+- **`Rejected`** — refused before the device was ever touched (an unknown point/command, a read-only
+  point, an out-of-range value/argument) — the device's state is provably unchanged.
+- **`Failed`** — the device or transport was reached and explicitly said no — a KNOWN failure.
+- **`Indeterminate`** — **the single most consequential thing an operator can be told.** The attempt was
+  interrupted (most commonly a timeout) before a definitive applied/failed answer arrived — the driver
+  genuinely does not know whether the device took the write. This is NOT an error code to swallow or
+  collapse into "failed": a failed write is safe to consider retryable in spirit (a known no), while an
+  indeterminate one is not — retrying a setpoint that may have already applied can leave the wrong value
+  in place unnoticed, and retrying a command that may have already fired can trigger a second, real coil
+  pulse or `CallAsync` — a genuine double-actuation. **No driver in this codebase ever retries a write on
+  its own initiative, for any reason, including a timeout — that decision belongs to a human standing
+  where they can see the machine, never to software.** If you see `Indeterminate`: stop, do not resubmit
+  the same write reflexively, and go verify the machine's actual physical state before deciding what to do
+  next — that is the entire reason this outcome exists rather than being hidden inside "failed," which
+  most comparable products do.
+
+The web UI (§21.4) renders `Indeterminate` as itself — a distinct, clearly-worded state — never folded
+into a generic failure banner and never mistaken for success. Two earlier tasks in this same batch (B-4,
+B-5) shipped bugs where exactly this collapse happened one layer down (a driver-level bug swallowing
+`Indeterminate` into a generic exception string); this UI does not repeat that one layer up.
+
+### 21.4 Web UI — MachineDetail's "Control" tab / Web UI — tab "Control" ở trang chi tiết máy
+
+`web/src/routes/MachineDetail.tsx` gained a new tab (bilingual "Control"/"Điều khiển") showing, for the
+machine being viewed: every writable point declared for its connector (name, wire target, min/max bounds)
+with an inline form to submit a setpoint, and every declared command (name, wire target) behind a
+**confirmation dialog** — the same deliberate, two-step "this is destructive, say so before the click"
+pattern `Site.tsx`'s identity-rotation flow already established, not a bare button a stray click can fire.
+A setpoint does not get that same friction — it changes a value, it does not itself trigger motion — but
+it is still gated: the form only renders its submit control for a session that meets the setpoint action's
+own **Engineer** minimum, and the command's confirm-and-fire control only renders for **Admin** — the same
+asymmetry §21.1 states for the API, made visible in the UI rather than flattened into one generic "write"
+affordance. A session below the relevant role sees the declared points/commands (read-only) plus a plain
+statement of which role is required, never a silently missing control. Every outcome — `Applied`/
+`Rejected`/`Failed`/`Indeterminate`, plus the not-available cases (no live driver, read-only, ambiguous
+driver) — renders with its own distinct wording; see §21.3 for why `Indeterminate` in particular is never
+allowed to blur into anything else.
+
+### 21.5 Why HALT still doesn't stop a machine / Vì sao NGỪNG vẫn không dừng được máy
+
+Answered in full in §1's safety notice — restated here because this is where a reader following the write
+path is most likely to ask it: **a real emergency stop is a hardwired Cat 3/4 circuit per ISO 13849;
+software is never the safety path, full stop.** That was true when Đợt A renamed E-STOP to HALT and gave
+"no write path exists" as the reason HALT couldn't stop a machine either way; that specific reason is gone
+now, but the conclusion is not, and this batch deliberately did **not** make HALT command a stop. A
+software "emergency stop" that also pulsed a coil or wrote a shutdown setpoint to a PLC would look even
+more like a safety device while still failing to be one under ISO 13849 — a worse, more misleading
+product, not a safer one. HALT (`FleetHost.Estop()`) and the new write path
+(`FleetHost.TryWriteSetpointAsync`/`TryInvokeCommandAsync`) are two genuinely separate capabilities: the
+first never calls the second, by design, and that is not going to change.
+
+### 21.6 🔴 Honest limitations / Giới hạn trung thực
+
+Stated plainly, verified against the source below, not softened:
+
+- **Only Modbus TCP and OPC-UA can write.** Serial/RS-485, S7, EtherNet/IP, and SECS/GEM have no driver at
+  all (§20.5). `MqttDriver` (`St4i.EdgeCore.Drivers.Mqtt`) exists and is proven by its own test suite but
+  is wired into **no** host's dependency injection — it cannot write, or even read, in a running instance
+  of this product today.
+- **A Modbus command is a zero-argument coil pulse.** `ModbusRegisterMap`'s command declaration
+  (`coilAddress` + optional `arguments`) rejects any command that declares an argument **at parse time** —
+  a real wire convention for delivering an argument to a Modbus coil pulse was never defined, so a map that
+  tries is refused up front, naming the offending command, rather than accepted and silently
+  un-executable. OPC-UA commands (`CallAsync`) do support typed arguments, narrowed against the map's own
+  declared type before ever reaching the device.
+- **There is no rate limiting anywhere in this product.** No `AddRateLimiter`, no debounce, no throttle —
+  a deliberate B-6 decision, not an oversight: the invariant that actually matters for a write (no
+  implicit retry, no double actuation) is already enforced at the driver layer, independent of request
+  rate, and a rate limiter would not distinguish "N legitimate setpoint writes across N machines" from
+  "one stuck script re-firing the same command" — the one real hazard rate limiting usually guards
+  against here is a UI/workflow concern (the confirm-before-fire dialog, §21.4), not a server-side one.
+- **The Critical-alarm write gate is fleet-wide, not per-machine.** `CriticalAlarmGuardRule` blocks a
+  write/command if **any** Critical alarm is active anywhere in the fleet, because `Alarm.TargetId`
+  cannot identify a single machine code reliably enough to scope the gate narrower — a Critical alarm on
+  machine A currently blocks a write to machine B too. Conservative in the safe direction (refuses more
+  than a per-machine gate would, never less), not a bug.
+- **`Indeterminate` is a real operational state, not an error code** — see §21.3 for what it means and
+  what an operator should do when they see it (stop; verify the physical machine; do not reflexively
+  resubmit).
+- **There is no inbound command path from the ecosystem.** Sparkplug NCMD (the inbound command topic) is
+  still never received anywhere in this codebase (unchanged from §20.5) — this write path is reachable
+  only from an authenticated local HTTP caller (the web UI, or a direct API call), never from a SYNAPSE
+  Site or any other upstream system.
+
+*(VI: Ghi rõ, đã đối chiếu mã nguồn, không mềm hoá: **Chỉ Modbus TCP và OPC-UA ghi được** — Serial/RS-485,
+S7, EtherNet/IP, SECS/GEM chưa có driver (§20.5); `MqttDriver` tồn tại, có test riêng, nhưng KHÔNG được
+đăng ký DI ở host nào — không đọc, không ghi được trong một instance đang chạy của sản phẩm này.
+**Một lệnh Modbus là một xung coil không tham số** — khai báo lệnh của `ModbusRegisterMap` (`coilAddress`
++ `arguments` tuỳ chọn) từ chối NGAY LÚC NẠP bất kỳ lệnh nào khai báo tham số — chưa có quy ước dây thật
+nào để truyền tham số vào một xung coil Modbus, nên map nào cố khai báo sẽ bị từ chối ngay, nêu rõ tên
+lệnh, thay vì được chấp nhận rồi không bao giờ thực thi được. Lệnh OPC-UA (`CallAsync`) hỗ trợ tham số có
+kiểu, được thu hẹp theo đúng kiểu map khai báo trước khi chạm thiết bị. **KHÔNG có giới hạn tốc độ nào
+trong sản phẩm này** — không `AddRateLimiter`, không debounce, không throttle — quyết định CÓ CHỦ Ý của
+B-6, không phải thiếu sót: bất biến thật sự quan trọng cho một lệnh ghi (không tự động thử lại, không ghi
+đúp) đã được ép ở tầng driver, độc lập với tốc độ request; bộ giới hạn tốc độ không phân biệt được "N lệnh
+ghi hợp lệ trên N máy khác nhau" với "một script kẹt bắn lại đúng một lệnh" — rủi ro thật mà giới hạn tốc
+độ hay dùng để chặn ở đây là vấn đề UI/quy trình thao tác (hộp thoại xác nhận trước khi bắn, §21.4), không
+phải phía server. **Cổng chặn cảnh báo Critical là TOÀN FLEET, không theo từng máy** —
+`CriticalAlarmGuardRule` chặn một lệnh ghi nếu BẤT KỲ cảnh báo Critical nào đang hoạt động ở bất cứ đâu
+trong fleet, vì `Alarm.TargetId` không đủ tin cậy để xác định một mã máy cụ thể mà thu hẹp cổng chặn hơn —
+một cảnh báo Critical ở máy A hiện đang chặn cả lệnh ghi tới máy B. Đây là hướng an toàn hơn (chặn nhiều
+hơn một cổng theo-từng-máy, không bao giờ ít hơn), không phải lỗi. **`Indeterminate` là một trạng thái vận
+hành thật, không phải mã lỗi** — xem §21.3 để biết ý nghĩa và operator nên làm gì khi thấy nó (dừng lại;
+kiểm tra máy thật; đừng bắn lại phản xạ). **Không có đường lệnh vào từ hệ sinh thái** — Sparkplug NCMD
+(topic lệnh vào) vẫn không bao giờ được nhận ở bất kỳ đâu trong mã nguồn (không đổi so với §20.5) — đường
+ghi này chỉ tới được từ một caller HTTP cục bộ đã xác thực (web UI, hoặc gọi API trực tiếp), không bao giờ
+từ một SYNAPSE Site hay hệ thống hướng lên nào khác.)*
+
+### 21.7 Carried items — closed or routed / Các mục mang sang — đã đóng hoặc định tuyến
+
+- **`ConnectorConfigStore.SaveAsync`'s parameter ordering** — closed this task: `CancellationToken ct` is
+  now the LAST parameter (was previously sandwiched before `source`), matching every other method in this
+  codebase; both production call sites updated to pass it by name.
+- **Request-shape `400`s run ahead of the policy gate** (an unauthenticated-shape probe leaves no audit
+  row) — routed, not fixed: documented as a deliberate tradeoff on `MachineWriteEndpoints`'s own class doc
+  comment (no device I/O and no mutation happens on this path, so there is no machine action to miss
+  auditing, only an unaudited malformed HTTP request).
+- **`OpcUaDriver.DisposeSessionAsync`'s background `CloseAsync` running past HALT's 3-second budget** —
+  already assessed at B-5/B-6 as resource hygiene, not a HALT-budget violation (`WaitAndDisposeOldPipeline`
+  bounds the CALLER's wait; only the best-effort background close can run longer). B-8 confirms that
+  assessment; no code change.
+- **`OpcUaDriver.DisposeAsync` not taking `_sessionLock`** — a documented, accepted tradeoff (B-5): taking
+  the lock would make HALT/disposal wait on whatever currently holds it, recreating the exact
+  latency-coupling this project already fixed once. Confirmed, not changed.

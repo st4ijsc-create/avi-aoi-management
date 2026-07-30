@@ -11,8 +11,13 @@ namespace St4i.EngineApi.Policy.Rules;
 /// SM-4 — the class/route names here (<c>EstopGuardRule</c>, <c>fleet.estop</c>) are kept unchanged
 /// deliberately (API/identifier stability); the TRUTH this rule enforces is narrower than the name
 /// suggests: it gates whether THIS SOFTWARE resumes reading from its configured device(s), never
-/// anything about a physical machine's own state. This codebase has no write path to any device — see
-/// <see cref="St4i.EngineApi.Fleet.FleetHost.Estop"/>'s own doc comment.
+/// anything about a physical machine's own state — see <see cref="St4i.EngineApi.Fleet.FleetHost.Estop"/>'s
+/// own doc comment. Task B-8: a real write path exists NOW (<see cref="St4i.EngineApi.Endpoints.MachineWriteEndpoints"/>,
+/// Modbus/OPC-UA) and <c>machine.setpoint.write</c>/<c>machine.command.invoke</c> are themselves in
+/// <see cref="ActuatingActions"/> below — while the latch is engaged, THIS rule is what stands between an
+/// operator and a device write, refusing it before any I/O. See README §1 for why HALT staying a
+/// software-only latch that never itself commands a stop is still the right call even though the write
+/// path now exists.
 ///
 /// GĐ3 sub-4 LC-3 — <c>line.start</c>/<c>line.unhold</c> are the <see cref="St4i.EngineApi.Line.LineController"/>
 /// commands that ultimately call <see cref="St4i.EngineApi.Fleet.FleetHost.Start"/> (same as <c>fleet.start</c>
@@ -42,10 +47,12 @@ public sealed class EstopGuardRule : IPolicyRule
         if (request.Safety.EstopEngaged)
         {
             return PolicyDecision.Deny(PolicyReasonCode.SafetyBlocked,
-                "The halt latch is engaged — this only stopped this software's own data collection, not any " +
-                "machine. Reset the latch (POST /v1/fleet/estop/reset) before starting production. " +
-                "(This is a supervisory SOFTWARE latch, NOT a substitute for the machine's own safety-rated " +
-                "emergency-stop circuit, and this product has no write path to any device at all — SYNAPSE XC-R40.)");
+                "The halt latch is engaged — this refuses the setpoint/command write itself (no device was " +
+                "touched) as well as blocking fleet.start, because the latch only ever stopped this software's " +
+                "own data collection, never any machine. Reset the latch (POST /v1/fleet/estop/reset) before " +
+                "writing to or starting production. (This is a supervisory SOFTWARE latch, NOT a substitute " +
+                "for the machine's own safety-rated emergency-stop circuit — SYNAPSE XC-R40 — which is exactly " +
+                "why it does not attempt to stop a machine even though this product can now write to one.)");
         }
         return null; // latch clear → let RoleObligation decide
     }

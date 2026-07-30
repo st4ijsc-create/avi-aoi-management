@@ -48,9 +48,11 @@ public sealed record LineTransitionResult(bool Accepted, PackMlState State, stri
 /// redirect. Otherwise → Execute + <see cref="FleetHost.Start"/>.</description></item>
 /// <item><description><b>Stop</b>: legal from {Execute, Held} → Stopped + <see cref="FleetHost.Stop"/>.</description></item>
 /// <item><description><b>Abort</b>: legal from any state except Aborted (a halt must always be
-/// reachable) → Aborted + <see cref="FleetHost.Estop"/>. SM-4: despite the ISA-88/PackML name, this is
+/// reachable) → Aborted + <see cref="FleetHost.Estop"/>. SM-4/B-8: despite the ISA-88/PackML name, this is
 /// a software abort of THIS SOFTWARE's own read pipeline — it stops data collection and disconnects
-/// from the configured device(s), and has no write path to, and no effect on, any physical machine. A
+/// from the configured device(s). <see cref="FleetHost.Estop"/> never calls the real write path a device
+/// now has (Modbus/OPC-UA setpoints/commands, since B-4/B-5) — see that method's own doc comment for why
+/// that stays a deliberate choice, not a gap — so Abort still has no effect on any physical machine. A
 /// real emergency stop is a hardwired, safety-rated circuit (ISO 13849); this is not one and must never
 /// be presented as one.</description></item>
 /// <item><description><b>Reset</b>: legal from {Stopped, Aborted} → Idle + <see cref="FleetHost.ResetEstop"/>

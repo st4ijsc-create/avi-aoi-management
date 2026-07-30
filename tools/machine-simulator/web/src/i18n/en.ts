@@ -355,6 +355,7 @@ export const en: Dictionary = {
       board: "Board",
       config: "Config",
       settings: "Settings",
+      control: "Control",
       log: "Log",
     },
     overview: {
@@ -369,6 +370,67 @@ export const en: Dictionary = {
       title: "Machine not found",
       description: (vars: Vars) =>
         `No machine with code ${vars.code} is registered in this fleet. It may not have started yet, or the code was mistyped.`,
+    },
+    // Task B-8 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-8-brief.md) —
+    // `MachineControlPanel.tsx`, the first web surface over the write path B-1 through B-7 built
+    // (`POST /v1/machines/{code}/setpoint`/`.../command`). Setpoint requires Engineer, a command
+    // requires Admin (one level stricter — a command can trigger real physical motion, a setpoint
+    // cannot), mirroring `EstopGuardRule`/`RoleObligationRule`'s own server-side split exactly — this
+    // UI reflects that asymmetry rather than flattening it (README §21.4).
+    control: {
+      description:
+        "Writable setpoints and commands this machine's connector declares, with their physical bounds. Issuing one reaches the real device.",
+      loadFailed: "Couldn't load this machine's write capability.",
+      errorGeneric: "The request failed. Try again, or check the fleet/connector status.",
+      roleRequiredEngineer: "Requires Engineer role or higher to write.",
+      roleRequiredAdmin: "Requires Admin role to invoke a command.",
+      noCapability: {
+        title: "No writable points or commands",
+        description:
+          "This machine's connector isn't configured for writing, or its map declares no writable setpoint or command.",
+      },
+      points: {
+        title: "Writable setpoints",
+        empty: "No writable points declared.",
+        valueLabel: "Value",
+        boundsHint: (vars: Vars) => `Range ${vars.min}–${vars.max}`,
+        boolHint: "On/off — a boolean point, no numeric range.",
+        invalidValue: "Enter a number.",
+        submit: "Write",
+        writing: "Writing…",
+      },
+      commands: {
+        title: "Commands",
+        empty: "No commands declared.",
+        invoke: "Invoke…",
+        invoking: "Invoking…",
+        confirmTitle: (vars: Vars) => `Invoke "${vars.command}"?`,
+        confirmDescription: (vars: Vars) =>
+          `This sends a real command to machine ${vars.machineCode} and can trigger physical motion (a coil pulse or a device method call) — it is not a simulation. This cannot be recalled once sent.`,
+        argumentsLabel: "Arguments (JSON, optional)",
+        argumentsHint: "Leave blank unless this command's own map declares arguments — most commands take none.",
+        argumentsInvalid: "Must be a JSON object of name → value pairs, or left blank.",
+        cancel: "Cancel",
+        confirmSubmit: "Invoke command",
+      },
+      // Same four-way vocabulary as `St4i.Connector.Abstractions.Models.WriteOutcome` — see
+      // `lib/api.ts`'s own `WriteOutcome` doc comment for why `Indeterminate` must never collapse
+      // into a generic failure, and never read as success.
+      outcome: {
+        applied: "Applied — the device confirmed it.",
+        rejected: "Rejected — refused before the device was touched.",
+        failed: "Failed — the device or transport reported an explicit failure.",
+        indeterminate: "Indeterminate — the device's state is now UNKNOWN.",
+        indeterminateGuidance:
+          "Do not resubmit this reflexively — a retry can double-actuate. Go check the machine's actual physical state first, then decide.",
+      },
+      rejectionReason: {
+        UnknownPoint: "This point name isn't recognized by the live driver.",
+        NotWritable: "The map declares this point read-only.",
+        OutOfRange: "The value is outside this point's declared range.",
+        UnknownCommand: "This command name isn't recognized by the live driver.",
+        InvalidArgument: "An argument was missing or didn't match the command's declared type.",
+      },
     },
   },
 
@@ -1362,10 +1424,12 @@ export const en: Dictionary = {
     },
 
     status: {
-      // SM-4 — renamed from "E-STOP ENGAGED": this is a supervisory software latch (`FleetHost.Estop`),
+      // SM-4/B-8 — renamed from "E-STOP ENGAGED": this is a supervisory software latch (`FleetHost.Estop`),
       // not a safety device. It stops this software's own read pipeline / disconnects from the
-      // configured device(s) — it does not, and cannot, stop any machine (see README §1's safety note).
-      // Deliberately distinct text from `controls.estopBanner` below ("HALT ENGAGED") — both render on
+      // configured device(s) — it does not call the real write path a device now has (Modbus/OPC-UA
+      // setpoints/commands, since B-4/B-5), so it still does not, and cannot, stop any machine (see
+      // README §1's safety note for why that stays deliberate). Deliberately distinct text from
+      // `controls.estopBanner` below ("HALT ENGAGED") — both render on
       // screen at once (nameplate lamp + control-rail banner) and a Playwright `exact: true` text match
       // (`11-hmi.spec.ts`) depends on them not colliding.
       estop: "HALTED",
@@ -1387,11 +1451,13 @@ export const en: Dictionary = {
       start: "START",
       pause: "PAUSE",
       reset: "RESET",
-      // SM-4 — this control is NOT an emergency stop and must never be labeled as one: it is a
+      // SM-4/B-8 — this control is NOT an emergency stop and must never be labeled as one: it is a
       // supervisory software latch that stops this software's own read pipeline and disconnects from
-      // the configured device(s). It has no write path to any device and cannot stop a machine — see
-      // README §1. "HALT" describes what it actually does without borrowing the authority of a safety
-      // term; a real E-STOP is a hardwired, safety-rated circuit per ISO 13849, never a software control.
+      // the configured device(s). This product CAN write to a device now (Modbus/OPC-UA setpoints and
+      // commands — see MachineDetail's "Control" tab), but this button never calls that path — see
+      // README §1 for why HALT staying write-free is still the right call. "HALT" describes what it
+      // actually does without borrowing the authority of a safety term; a real E-STOP is a hardwired,
+      // safety-rated circuit per ISO 13849, never a software control.
       estop: "HALT",
       estopBanner: "HALT ENGAGED",
       estopHint: "Press RESET to unlock the controls",
@@ -2114,9 +2180,10 @@ export const en: Dictionary = {
       holdAria: "Hold the line",
       unholdAria: "Unhold the line",
       stopAria: "Stop the line",
-      // SM-4 — was "Abort (emergency stop) the line": describes what actually happens instead of
-      // borrowing the authority of a safety term. See README §1 — this product has no write path to
-      // any device and cannot stop a machine.
+      // SM-4/B-8 — was "Abort (emergency stop) the line": describes what actually happens instead of
+      // borrowing the authority of a safety term. This product CAN write to a device now (Modbus/OPC-UA
+      // setpoints and commands elsewhere in this app), but Abort/HALT is unrelated to that path and never
+      // calls it — see README §1 for why it stays that way — so Abort still cannot stop a machine.
       abortAria: "Abort (stops data collection immediately) the line",
       resetAria: "Reset the line",
     },

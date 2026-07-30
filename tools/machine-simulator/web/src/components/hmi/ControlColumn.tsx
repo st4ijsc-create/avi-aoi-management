@@ -7,13 +7,16 @@ import { cn } from "@/lib/utils"
  * gloss"), not the active-language-swap `t()`/`gloss()` pairing `Readout`'s `label`/`labelEn` use —
  * omitted only once the label itself is already English (`useLanguage().language === "en"`), per that
  * prop's own doc comment. */
-// SM-4 — the "estop" variant's own gloss is deliberately "HALT", not "E-STOP": this control is a
+// SM-4/B-8 — the "estop" variant's own gloss is deliberately "HALT", not "E-STOP": this control is a
 // supervisory software latch (`FleetHost.Estop`) that stops this software's own read pipeline and
-// disconnects from the configured device(s). It is not, and cannot be, a safety device — there is no
-// write path to any device anywhere in this codebase (README §1). The internal identifier ("estop",
-// `FleetHost.Estop()`, the `/v1/fleet/estop` route) is kept unchanged; only the operator-facing text
-// changed. A real E-STOP is a hardwired, safety-rated circuit per ISO 13849 — software must never
-// borrow that name.
+// disconnects from the configured device(s). It is not, and cannot be, a safety device — not because no
+// write path exists anymore (this product CAN write to a device now — Modbus/OPC-UA setpoints and
+// commands, `POST /v1/machines/{code}/setpoint|command`, gated by role and by this same latch), but
+// because HALT deliberately never calls that write path (README §1 explains why: a software "stop" that
+// also touched the device would look more like a safety device while still not being one). The internal
+// identifier ("estop", `FleetHost.Estop()`, the `/v1/fleet/estop` route) is kept unchanged; only the
+// operator-facing text changed. A real E-STOP is a hardwired, safety-rated circuit per ISO 13849 —
+// software must never borrow that name.
 const EN_LABEL: Record<"start" | "pause" | "reset" | "estop", string> = {
   start: "START",
   pause: "PAUSE",

@@ -61,6 +61,18 @@ export async function gotoMachineDetailSettings(page: Page, code: string): Promi
   })
 }
 
+/** Machine detail, "Control" tab — Task B-8's `MachineControlPanel` (writable setpoints/commands over
+ * `POST /v1/machines/{code}/setpoint`/`.../command`). Waits past the tab switch and
+ * `useConfiguredConnectors()`'s own loading skeleton — the panel's own empty/no-capability state or its
+ * "Writable setpoints" heading only renders once that query has resolved at least once. */
+export async function gotoMachineDetailControl(page: Page, code: string): Promise<void> {
+  await gotoMachineDetail(page, code)
+  await page.getByRole("tab", { name: viDict.machineDetail.tabs.control }).click()
+  await expect(page.getByText(viDict.machineDetail.control.description).or(page.getByText(viDict.machineDetail.control.noCapability.title))).toBeVisible({
+    timeout: 15_000,
+  })
+}
+
 export async function gotoInspector(page: Page): Promise<void> {
   await page.goto("/inspector")
   await expect(page.getByRole("heading", { name: viDict.inspector.title, level: 1 })).toBeVisible()

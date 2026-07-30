@@ -766,10 +766,12 @@ export function useStopFleet() {
 }
 
 /**
- * C-2/C-3 — the HALT command. SM-4: despite the identifier name (kept for stability), this is a
+ * C-2/C-3 — the HALT command. SM-4/B-8: despite the identifier name (kept for stability), this is a
  * supervisory software latch, not a safety device — it stops THIS SOFTWARE's own read pipeline and
- * disconnects from the configured device(s); it has no write path to, and no effect on, any physical
- * machine (see README §1). Unlike the old component-local `estopEngaged` React state, the latch this
+ * disconnects from the configured device(s). This call never reaches `POST /v1/machines/{code}/setpoint|
+ * command` (the real write path a device now has — Modbus/OPC-UA, gated by role and by this same latch),
+ * so it still has no effect on any physical machine — see README §1 for why that stays deliberate rather
+ * than a gap now that writing is possible. Unlike the old component-local `estopEngaged` React state, the latch this
  * seeds (`useFleetEstopEngaged`) is server-owned and mirrored on every `/v1/fleet` poll, so it's shared
  * across every panel/tab and survives a reload. `mutationFn` calls `FleetHost.Estop()`, which tears the
  * pipeline down BEFORE returning — so `onSuccess` firing is itself the confirmation this software's own
@@ -1660,8 +1662,12 @@ export interface ConnectorConfigSummary {
   /** Task B-3 (`.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-3-brief.md`) —
    * `ConnectorWriteCapability` (`Fleet/ConnectorConfigStore.cs`). `null` for every connector this build has
    * ever accepted before this task, and for any map that simply declares no writable point/command — safe
-   * to show here (unlike `mapJson`) because a point/command NAME is never a credential. No driver executes
-   * a write yet (B-4/B-5) — this is visibility into what a map DECLARES, not a live capability. */
+   * to show here (unlike `mapJson`) because a point/command NAME is never a credential. Task B-8: both
+   * `ModbusTcpDriver` (B-4) and `OpcUaDriver` (B-5) now execute a write for a LIVE connector of this kind —
+   * this field is still what the persisted MAP declares (not proof a live driver is currently reachable
+   * for this exact machine code; see `MachineWriteEndpoints`/`FleetHost.TryWriteSetpointAsync` for the
+   * live-availability check an actual `POST /v1/machines/{code}/setpoint|command` performs), but it is no
+   * longer true to say nothing executes it. */
   writeCapability?: ConnectorWriteCapability | null
 }
 
@@ -1839,6 +1845,174 @@ export function useDeleteConnector() {
 export function useTestConnector() {
   return useMutation({
     mutationFn: connectorConfigEndpoints.test,
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Machine write endpoints (setpoint/command) — Task B-8 (`.superpowers/sdd/2026-07-29-dotB-machine-
+// control-blueprint/task-8-brief.md`), `MachineDetail.tsx`'s "Control" tab, over `POST /v1/machines/
+// {code}/setpoint`/`.../command` (`MachineWriteEndpoints.cs`). B-1 through B-7 built the write path
+// itself (Modbus/OPC-UA drivers, the RBAC/policy/HALT/Critical-alarm gate, the declarative map schema
+// with mandatory limits); this is the first web surface to actually issue one. Wire shapes mirror
+// `St4i.Connector.Abstractions.Models.WriteOutcome`/`SetpointWriteResult`/`CommandResult` and
+// `St4i.EngineApi.Fleet.Dtos`'s `MachineSetpointWriteResponseDto`/`MachineCommandInvokeResponseDto`/
+// `MachineWriteUnavailableDto` exactly.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** `St4i.Connector.Abstractions.Models.WriteOutcome` — kept as the SAME four-way string union for both a
+ * setpoint and a command (see that enum's own doc comment for why `Indeterminate` is the enum's ordinal
+ * 0/default rather than `Applied`: a missing/default value must never be misread as success). **Render
+ * every one of these four distinctly** — `Indeterminate` in particular must never collapse into a
+ * generic failure banner (or, worse, be treated as success): it means the driver genuinely does not know
+ * whether the device applied the write, and is the single most consequential fact this whole write
+ * contract exists to preserve (README §21.3). */
+export type WriteOutcome = "Indeterminate" | "Rejected" | "Failed" | "Applied"
+
+/** `St4i.Connector.Abstractions.Models.SetpointRejectionReason` — populated only when `outcome` is
+ * `"Rejected"`; `null` for every other outcome (server-enforced invariant, `SetpointWriteResult`'s own
+ * doc comment). */
+export type SetpointRejectionReason = "UnknownPoint" | "NotWritable" | "OutOfRange"
+
+/** `St4i.Connector.Abstractions.Models.CommandRejectionReason` — same `Rejected`-only rule as
+ * `SetpointRejectionReason` above, kept as its own separate type (never shared) mirroring the server's
+ * own "never conflate setpoint and command" discipline. */
+export type CommandRejectionReason = "UnknownCommand" | "InvalidArgument"
+
+/** `SetpointWriteResult` (`Connector.Abstractions/Models/SetpointWrite.cs`) — one setpoint-write
+ * attempt's outcome. `point` echoes the request so a caller can match a result back to it without
+ * holding the original request object. */
+export interface SetpointWriteResult {
+  point: string
+  outcome: WriteOutcome
+  rejectionReason: SetpointRejectionReason | null
+  detail: string | null
+}
+
+/** `CommandResult` (`Connector.Abstractions/Models/CommandInvocation.cs`) — the command-invocation
+ * mirror of `SetpointWriteResult` above, deliberately its own type (never shared — a command CAN trigger
+ * real physical motion, unlike a setpoint). */
+export interface CommandResult {
+  command: string
+  outcome: WriteOutcome
+  rejectionReason: CommandRejectionReason | null
+  detail: string | null
+}
+
+/** `MachineSetpointWriteResponseDto`/`MachineCommandInvokeResponseDto` (`Fleet/Dtos.cs`) — the `200 OK`
+ * body for an ATTEMPTED write (see `MachineWriteEndpoints.cs`'s own doc comment for why every attempted
+ * outcome, including `Failed`/`Indeterminate`, is still a `200` — mapping an uncertain outcome to a
+ * 4xx/5xx would invite an HTTP-layer automatic retry, which this write contract forbids outright). */
+export interface MachineSetpointWriteResponse {
+  machineCode: string
+  result: SetpointWriteResult
+}
+
+export interface MachineCommandInvokeResponse {
+  machineCode: string
+  result: CommandResult
+}
+
+/** Body sent to `POST /v1/machines/{code}/setpoint` — `value` is the same `double|bool|string|null`
+ * domain every other connector-value field in this file already uses (`ConnectorObjectConverter`'s own
+ * doc comment). */
+export interface MachineSetpointWriteInput {
+  point: string
+  value: number | boolean | string | null
+}
+
+/** Body sent to `POST /v1/machines/{code}/command`. `arguments` is optional — omit it entirely for the
+ * overwhelming majority of commands, which take none (README §21.6: a Modbus command is a zero-argument
+ * coil pulse by construction; only OPC-UA commands can declare typed arguments at all). */
+export interface MachineCommandInvokeInput {
+  command: string
+  arguments?: Record<string, number | boolean | string>
+}
+
+/** Mirrors `ConnectorConfigApiError` above — surfaces the server's own `ApiErrorDto.error`/
+ * `MachineWriteUnavailableDto.error` text verbatim (already actionable copy: see `MachineWriteEndpoints.
+ * NotAvailableResult`'s own doc comment) rather than a generic "request failed" toast, for every
+ * NOT-attempted case: `400` (malformed request shape), `404` (unknown machine code), `409`
+ * (`NO_LIVE_DRIVER`/`READ_ONLY`/`AMBIGUOUS_DRIVER` — `reason` carries which). An ATTEMPTED write/command
+ * never throws this — it is always a `200` with the outcome in the body (`MachineSetpointWriteResponse`/
+ * `MachineCommandInvokeResponse` above), by design. */
+export class MachineWriteApiError extends Error {
+  status: number
+  /** The server's own `error` text — undefined only for a genuinely unparseable body. */
+  serverMessage?: string
+  /** `MachineWriteUnavailableDto.reason` — only present on a `409` (`NO_LIVE_DRIVER`/`READ_ONLY`/
+   * `AMBIGUOUS_DRIVER`); undefined for a `400`/`404`, which carry no reason code. */
+  reason?: string
+
+  constructor(status: number, serverMessage?: string, reason?: string) {
+    super(serverMessage ?? `request failed: ${status}`)
+    this.name = "MachineWriteApiError"
+    this.status = status
+    this.serverMessage = serverMessage
+    this.reason = reason
+  }
+}
+
+async function machineWriteRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  })
+  if (res.status === 401) unauthorizedHandler?.()
+  if (!res.ok) {
+    let serverMessage: string | undefined
+    let reason: string | undefined
+    try {
+      const body = (await res.json()) as { error?: string; reason?: string }
+      serverMessage = body?.error
+      reason = body?.reason
+    } catch {
+      // Non-JSON body (rare — a proxy/500 page) — fall back to the generic message.
+    }
+    throw new MachineWriteApiError(res.status, serverMessage, reason)
+  }
+  return (await res.json()) as T
+}
+
+const machineWriteEndpoints = {
+  writeSetpoint: (code: string, input: MachineSetpointWriteInput) =>
+    machineWriteRequest<MachineSetpointWriteResponse>(`/v1/machines/${encodeURIComponent(code)}/setpoint`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  invokeCommand: (code: string, input: MachineCommandInvokeInput) =>
+    machineWriteRequest<MachineCommandInvokeResponse>(`/v1/machines/${encodeURIComponent(code)}/command`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+}
+
+/** `POST /v1/machines/{code}/setpoint` (Engineer — `MachineDetail.tsx`'s own client-side role check is
+ * only a UX gate; `Policies.Engineer` on the route is the real enforcement). Invalidates this machine's
+ * own query on success so any operating-configuration surface reading the same machine picks up a
+ * setpoint change on its next render rather than waiting out a poll. Rejected calls (400/404/409) throw
+ * `MachineWriteApiError`; an ATTEMPTED write never throws — see that type's own doc comment. */
+export function useWriteMachineSetpoint(code: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: MachineSetpointWriteInput) => machineWriteEndpoints.writeSetpoint(code, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.machine(code) })
+    },
+  })
+}
+
+/** `POST /v1/machines/{code}/command` (Admin — one role stricter than a setpoint, deliberately: a
+ * command can trigger real physical motion, a setpoint cannot. `MachineDetail.tsx`'s own client-side role
+ * check is only a UX gate; `Policies.Admin` on the route is the real enforcement). Same invalidation and
+ * error-throwing shape as `useWriteMachineSetpoint` above. */
+export function useInvokeMachineCommand(code: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: MachineCommandInvokeInput) => machineWriteEndpoints.invokeCommand(code, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.machine(code) })
+    },
   })
 }
 

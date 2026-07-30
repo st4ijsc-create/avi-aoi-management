@@ -346,6 +346,7 @@ export const vi = {
       board: "Bo mạch",
       config: "Cấu hình",
       settings: "Cài đặt",
+      control: "Điều khiển",
       log: "Nhật ký",
     },
     overview: {
@@ -360,6 +361,65 @@ export const vi = {
       title: "Không tìm thấy máy",
       description: (vars: Vars) =>
         `Không có máy với mã ${vars.code} trong đội máy này. Có thể máy chưa khởi động, hoặc mã đã gõ sai.`,
+    },
+    // Task B-8 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-8-brief.md) —
+    // `MachineControlPanel.tsx`, bề mặt web đầu tiên trên đường ghi mà B-1 đến B-7 đã xây
+    // (`POST /v1/machines/{code}/setpoint`/`.../command`). Setpoint cần vai trò Engineer, lệnh cần
+    // Admin (nghiêm ngặt hơn một bậc — lệnh có thể gây chuyển động vật lý thật, setpoint thì không) —
+    // đúng theo cách chia vai trò phía server (README §21.4), UI này phản ánh sự khác biệt đó chứ
+    // không san phẳng.
+    control: {
+      description: "Setpoint và lệnh ghi được mà connector của máy này khai báo, kèm giới hạn vật lý. Bắn một lệnh sẽ chạm tới thiết bị thật.",
+      loadFailed: "Không tải được năng lực ghi của máy này.",
+      errorGeneric: "Yêu cầu thất bại. Thử lại, hoặc kiểm tra trạng thái fleet/connector.",
+      roleRequiredEngineer: "Cần vai trò Engineer trở lên để ghi.",
+      roleRequiredAdmin: "Cần vai trò Admin để bắn lệnh.",
+      noCapability: {
+        title: "Không có điểm hay lệnh ghi được",
+        description: "Connector của máy này chưa được cấu hình để ghi, hoặc map của nó không khai báo setpoint/lệnh ghi được nào.",
+      },
+      points: {
+        title: "Setpoint ghi được",
+        empty: "Chưa khai báo điểm ghi được nào.",
+        valueLabel: "Giá trị",
+        boundsHint: (vars: Vars) => `Khoảng ${vars.min}–${vars.max}`,
+        boolHint: "Bật/tắt — điểm boolean, không có khoảng số.",
+        invalidValue: "Nhập một số.",
+        submit: "Ghi",
+        writing: "Đang ghi…",
+      },
+      commands: {
+        title: "Lệnh",
+        empty: "Chưa khai báo lệnh nào.",
+        invoke: "Bắn lệnh…",
+        invoking: "Đang bắn lệnh…",
+        confirmTitle: (vars: Vars) => `Bắn lệnh "${vars.command}"?`,
+        confirmDescription: (vars: Vars) =>
+          `Thao tác này gửi một lệnh thật tới máy ${vars.machineCode} và có thể gây chuyển động vật lý (một xung coil hoặc một lệnh gọi method trên thiết bị) — đây không phải mô phỏng. Không thể thu hồi sau khi đã gửi.`,
+        argumentsLabel: "Tham số (JSON, tuỳ chọn)",
+        argumentsHint: "Để trống trừ khi map của lệnh này khai báo tham số — hầu hết lệnh không cần tham số.",
+        argumentsInvalid: "Phải là một object JSON dạng tên → giá trị, hoặc để trống.",
+        cancel: "Hủy",
+        confirmSubmit: "Bắn lệnh",
+      },
+      // Cùng bộ 4 kết quả như `St4i.Connector.Abstractions.Models.WriteOutcome` — xem comment của
+      // `WriteOutcome` trong `lib/api.ts` để biết vì sao `Indeterminate` không bao giờ được gộp
+      // thành lỗi chung chung, và không bao giờ đọc thành thành công.
+      outcome: {
+        applied: "Đã áp dụng — thiết bị đã xác nhận.",
+        rejected: "Bị từ chối — chưa chạm tới thiết bị.",
+        failed: "Thất bại — thiết bị hoặc đường truyền báo lỗi rõ ràng.",
+        indeterminate: "Không xác định — trạng thái thiết bị hiện KHÔNG RÕ.",
+        indeterminateGuidance:
+          "Đừng bắn lại theo phản xạ — thử lại có thể gây tác động kép. Hãy kiểm tra trạng thái vật lý thật của máy trước, rồi mới quyết định.",
+      },
+      rejectionReason: {
+        UnknownPoint: "Tên điểm này driver đang chạy không nhận ra.",
+        NotWritable: "Map khai báo điểm này chỉ đọc.",
+        OutOfRange: "Giá trị nằm ngoài khoảng đã khai báo cho điểm này.",
+        UnknownCommand: "Tên lệnh này driver đang chạy không nhận ra.",
+        InvalidArgument: "Thiếu tham số, hoặc tham số không đúng kiểu lệnh đã khai báo.",
+      },
     },
   },
 
@@ -1397,10 +1457,12 @@ export const vi = {
       start: "BẮT ĐẦU",
       pause: "TẠM DỪNG",
       reset: "ĐẶT LẠI",
-      // SM-4 — nút này KHÔNG phải là dừng khẩn cấp và không được gọi như vậy: đây là chốt phần mềm
-      // giám sát, chỉ dừng việc phần mềm này đọc dữ liệu và ngắt kết nối tới thiết bị đã cấu hình —
-      // không có đường ghi lệnh tới bất kỳ thiết bị nào, không thể dừng máy thật (xem README §1). Một
-      // E-STOP thật là mạch cứng đạt chuẩn an toàn theo ISO 13849, không bao giờ là phần mềm.
+      // SM-4/B-8 — nút này KHÔNG phải là dừng khẩn cấp và không được gọi như vậy: đây là chốt phần mềm
+      // giám sát, chỉ dừng việc phần mềm này đọc dữ liệu và ngắt kết nối tới thiết bị đã cấu hình. Sản
+      // phẩm này GIỜ ghi được vào thiết bị thật (setpoint/lệnh Modbus/OPC-UA), nhưng nút này không bao
+      // giờ gọi đường ghi đó — xem README §1 vì sao NGỪNG vẫn cố tình không ghi — nên vẫn không thể
+      // dừng máy thật. Một E-STOP thật là mạch cứng đạt chuẩn an toàn theo ISO 13849, không bao giờ là
+      // phần mềm.
       estop: "NGỪNG",
       estopBanner: "NGỪNG ĐÃ KÍCH HOẠT",
       estopHint: "Nhấn ĐẶT LẠI để gỡ khóa điều khiển",

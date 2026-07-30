@@ -506,9 +506,12 @@ public sealed class FleetHost
     /// SM-4 — TRUTH, for anyone reading this property: it is a SUPERVISORY SOFTWARE latch. It reflects
     /// only whether <see cref="Estop"/> has torn down this software's own read pipeline. It is NOT a
     /// safety-rated device, has no bearing on the physical state of any real machine, and cannot have
-    /// one — this codebase has no write path to any device anywhere (<see cref="IDeviceDriver"/> only
-    /// reads). A real emergency stop is a hardwired, safety-rated circuit per ISO 13849; software must
-    /// never be the safety path. See <see cref="Estop"/>'s own doc comment and README §1.</summary>
+    /// one — not because no write path exists anymore (Task B-1/B-4/B-5 built one — Modbus/OPC-UA
+    /// setpoints and commands via <see cref="IWritableDeviceDriver"/>), but because THIS property, and
+    /// <see cref="Estop"/>/<see cref="ResetEstop"/> which set it, deliberately never call that write path
+    /// at all — see <see cref="Estop"/>'s own doc comment for why turning HALT into a software "stop the
+    /// machine" command would be worse, not safer. A real emergency stop is a hardwired, safety-rated
+    /// circuit per ISO 13849; software must never be the safety path. See README §1.</summary>
     public bool EstopEngaged { get { lock (_gate) return _estopEngaged; } }
 
     private bool _estopEngaged;
@@ -920,12 +923,21 @@ public sealed class FleetHost
     /// for why the identifier stays), this method does <b>not</b> stop a machine, and cannot. It tears
     /// down THIS SOFTWARE's own read pipeline — cancels every <see cref="PipelineSlot"/>'s token,
     /// disposes each slot's <see cref="IDeviceDriver"/> (closing whatever local connection it holds) —
-    /// then latches <see cref="EstopEngaged"/>. That is the entire effect. There is no
-    /// <c>WriteAsync</c>/<c>SendCommand</c>/<c>Actuate</c> anywhere in <see cref="IDeviceDriver"/>, no
-    /// Modbus/OPC-UA write call, and Sparkplug NCMD is never received — this codebase has no write path
-    /// to any device, so there is nothing here that could reach out and stop a real machine even if it
-    /// tried to. A real emergency stop is a hardwired, safety-rated circuit per ISO 13849 (Cat 3/4);
-    /// software is never permitted to be the safety path, and this method is not an attempt to be one.
+    /// then latches <see cref="EstopEngaged"/>. That is the entire effect: no <c>WriteAsync</c>/
+    /// <c>SendCommand</c>/<c>Actuate</c> call, no Modbus/OPC-UA write, no Sparkplug NCMD (still never
+    /// received either way). Nothing here reaches out and stops a real machine.
+    ///
+    /// <para><b>Task B-8 — this is now a DELIBERATE choice, not an absence of capability.</b> Đợt A wrote
+    /// the paragraph above when it was still also true that NOTHING in this codebase could write to a
+    /// device at all; Đợt B (B-1 through B-7) built exactly that — <see cref="TryWriteSetpointAsync"/>/
+    /// <see cref="TryInvokeCommandAsync"/> reach a real Modbus/OPC-UA device today. This method could
+    /// call them and did not, on purpose: a real emergency stop is a hardwired, safety-rated circuit per
+    /// ISO 13849 (Cat 3/4) — software is never permitted to be the safety path — and a software "stop"
+    /// that also pulses a coil or writes a shutdown setpoint to a PLC would look and feel MORE like a
+    /// safety device than this latch already risks looking like, while still not meeting that bar. That
+    /// is a worse product than an honestly-named supervisory latch that only ever touches its own
+    /// pipeline. If an operator asks why HALT doesn't stop their machine now that writing is possible:
+    /// this is why, and it is not going to change.</para>
     ///
     /// Branch-review C-2/C-3 — a real, confirmed stop OF THIS SOFTWARE'S PIPELINE: tears the pipeline
     /// down (same path <see cref="Stop"/> uses) and only THEN latches <see cref="EstopEngaged"/>, so a
@@ -955,9 +967,11 @@ public sealed class FleetHost
 
     /// <summary>Clears the HALT latch <see cref="Estop"/> sets — an explicit, separate transition from
     /// <see cref="Start"/> (spec/C-2: "RESET clears the latch but does NOT auto-restart the fleet").
-    /// The fleet stays stopped until an operator presses START again. SM-4: like <see cref="Estop"/>,
-    /// this only ever touches this software's own supervisory latch/pipeline — it has no write path to,
-    /// and no effect on, any physical machine.</summary>
+    /// The fleet stays stopped until an operator presses START again. SM-4/B-8: like <see cref="Estop"/>,
+    /// this only ever touches this software's own supervisory latch/pipeline — it never calls
+    /// <see cref="TryWriteSetpointAsync"/>/<see cref="TryInvokeCommandAsync"/> (the real write path a
+    /// device now has, since B-4/B-5), so clearing the latch has no effect on any physical machine
+    /// either.</summary>
     public void ResetEstop()
     {
         lock (_gate)
