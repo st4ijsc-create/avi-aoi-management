@@ -17,9 +17,17 @@ namespace St4i.EngineApi.Alarms;
 /// (its TEXT PRIMARY KEY); rows are UPSERTed by <see cref="RaiseAsync"/> and DELETEd by
 /// <see cref="ClearAsync"/>/a ClearOnAck <see cref="AckAsync"/> — a Cleared alarm does not linger here with
 /// a "Cleared" state, it's simply gone. This table has no declared <c>INTEGER PRIMARY KEY</c>, so every row
-/// still gets SQLite's implicit <c>rowid</c> — that rowid IS <see cref="Alarm.Id"/> (stable across an
-/// UPSERT's <c>DO UPDATE</c> path, since that's a real SQL UPDATE, not a delete+insert; only re-appears with
-/// a NEW rowid if the key was cleared and later re-raised).</description></item>
+/// still gets SQLite's implicit <c>rowid</c> — that rowid IS <see cref="Alarm.Id"/>, and it is stable across
+/// an UPSERT's <c>DO UPDATE</c> path (that's a real SQL UPDATE, not a delete+insert).
+///
+/// <para>🔴 A rowid is NOT stable across a clear-and-re-raise, and — this part matters, because a Task C-1
+/// design decision turns on it — it is NOT necessarily new either. Without <c>AUTOINCREMENT</c>, SQLite
+/// assigns "one more than the largest rowid currently in the table", so a cleared key that was the table's
+/// HIGH-WATER row hands its rowid straight back to the next insert: on a single-alarm table the sequence
+/// raise/clear/raise yields rowid 1, then rowid 1 again, with <see cref="Alarm.Count"/> going 1 → 1 (a
+/// re-INSERT reseeds it). Only a cleared NON-high-water row leaves a gap that later inserts skip past.
+/// Anything reasoning about <c>(rowid, count)</c> as though it advanced monotonically is therefore wrong —
+/// both components can DECREASE. See <c>_writeGate</c>'s doc comment for the consequence.</para></description></item>
 /// <item><description><c>alarm_history</c> — the APPEND-ONLY event log (raised/cleared/acked), never
 /// mutated or deleted — the durable record of "what happened and when" that outlives whatever
 /// <c>active_alarms</c> currently contains.</description></item>
@@ -77,21 +85,37 @@ public sealed class AlarmStore : IAlarmStore
     /// once C-6 lands, i.e. precisely the spurious pulse this task exists to prevent.</para>
     ///
     /// <para><b>Why not reconstruct the ordering in the detector from <see cref="Alarm.Id"/> +
-    /// <see cref="Alarm.Count"/>?</b> Because those two cannot distinguish a stale raise from a legitimate
-    /// one. SQLite REUSES an implicit rowid once the table's high-water row is deleted, and a re-INSERT
-    /// resets <c>count</c> to 1 — so the legitimate raise→clear→raise sequence on a single-alarm table
-    /// produces the byte-identical <c>(rowid, count)</c> pair (1, 1) that a stale post-delete raise would.
-    /// A "reject anything not strictly newer" guard therefore cannot tell them apart: it either lets the
-    /// stale one through or swallows the legitimate re-raise. No extra column is available to disambiguate
-    /// (this task adds no migration). Ordering the writes at the source is exact; reconstructing it
-    /// afterwards is not possible with the information the row carries.</para>
+    /// <see cref="Alarm.Count"/>, rejecting any raise that is "not strictly newer" than the last transition
+    /// applied for that key?</b> Because <b>no monotone order over <c>(rowid, count)</c> exists to be
+    /// strictly-newer WITH RESPECT TO</b> — both components can decrease. A cleared high-water row hands its
+    /// rowid back to the next insert (see the <c>active_alarms</c> bullet above), and that re-insert reseeds
+    /// <c>count</c> to 1. So across a single key's life the pairs genuinely run 1/1 → 1/2 → (clear) → 1/1:
+    /// the sequence goes BACKWARDS at a point where nothing is stale. Any comparison-based guard must
+    /// therefore either admit a stale raise or reject a legitimate one — there is no threshold that
+    /// separates them, because the two orders are not comparable in the first place. This is not a
+    /// near-miss that a cleverer predicate would fix.
+    ///
+    /// <para><c>(FirstRaisedUtc, Count)</c> — which DOES distinguish the two, since a re-INSERT stamps a
+    /// fresh <c>first_raised_at</c> — was considered and rejected: it makes a coil-safety invariant rest on
+    /// wall-clock monotonicity, so an NTP step backwards, or simply two operations landing inside one clock
+    /// tick, would silently break it. No extra column is available either (this task adds no migration).</para>
+    ///
+    /// Ordering the writes at the source is exact and depends on nothing; reconstructing the order
+    /// afterwards is not possible from what the row carries.</para>
     ///
     /// <para>Cost: alarm WRITES become logically single-threaded in this process. SQLite's WAL already
     /// permits only one writer at a time, so this mostly replaces <c>SQLITE_BUSY</c> back-off with a fair
     /// queue rather than adding contention. Reads (<see cref="ListActiveAsync"/>/
-    /// <see cref="QueryHistoryAsync"/>) do not take it. Lock ordering is always store-gate →
-    /// notifier-gate and never the reverse, so the two cannot deadlock;
-    /// <see cref="IAlarmNotifier.Notify"/> is non-blocking and never calls back into this store.</para>
+    /// <see cref="QueryHistoryAsync"/>) do not take it, and neither does per-call connection setup —
+    /// <see cref="OpenConnectionAsync"/> and its four PRAGMAs run BEFORE the wait in all three members,
+    /// since they touch nothing shared and cannot affect ordering. The critical section is exactly
+    /// statement-execute → history-append → notify. Lock ordering is always store-gate → notifier-gate and
+    /// never the reverse, so the two cannot deadlock.</para>
+    ///
+    /// <para>🔴 The corollary a channel author must know: because <see cref="IAlarmNotifier.Notify"/> runs
+    /// INSIDE this gate, a notifier that blocks does not merely slow its own caller — it stalls every alarm
+    /// write in the process, including every policy denial on the request path. That is why the interface
+    /// documents non-blocking as a hard requirement rather than a preference.</para>
     /// </summary>
     private readonly SemaphoreSlim _writeGate = new(1, 1);
 
@@ -274,85 +298,92 @@ public sealed class AlarmStore : IAlarmStore
 
         try
         {
+            var key = raise.Key;
+
+            // Deliberately OUTSIDE the gate: opening a per-call connection and applying its four PRAGMAs is
+            // five round trips of setup that touch nothing shared and cannot affect ordering. Holding the
+            // gate across them would serialise every alarm write behind another caller's connection setup,
+            // on the request path of every policy denial, for nothing.
+            using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+
             // Task C-1 (I-2) — the write AND its notification happen under one gate, so the notifier can
             // never see a transition out of commit order. See _writeGate's own doc comment.
             await _writeGate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-            var key = raise.Key;
-            var nowIso = ToIso(DateTimeOffset.UtcNow);
+                // Inside the gate, so the stamped timestamp reflects the order rows actually change rather
+                // than the order callers arrived.
+                var nowIso = ToIso(DateTimeOffset.UtcNow);
 
-            using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
-
-            Alarm upserted;
-            using (var cmd = connection.CreateCommand())
-            {
-                // ON CONFLICT(key) DO UPDATE deliberately OMITS first_raised_at/state/acked_at/acked_by —
-                // SQLite leaves an omitted column exactly as it was on conflict, so a re-raise of an
-                // already-Acked (ClearOnAck=false) alarm stays Acked rather than silently reverting to
-                // Active — see Alarm's own doc comment.
-                //
-                // Task C-1 — RETURNING (SQLite >= 3.35; this build bundles SQLitePCLRaw 2.1.12) makes the
-                // upsert report the row it just wrote in the SAME statement. That matters for more than
-                // convenience: telling a first raise from a re-raise by SELECTing first and then upserting
-                // would be two statements with a window between them, and two concurrent raises of one key
-                // (the evaluator's timer thread and a request-path policy denial CAN overlap) would both
-                // read "absent" and both claim to be the first. One statement has no such window. It also
-                // hands the notification seam the COMPLETE resulting alarm, so no channel ever has to go
-                // back and re-query a row that may have changed by the time it is read.
-                cmd.CommandText = $"""
-                    INSERT INTO active_alarms
-                        (key, source, code, priority, state, message, runbook, target_id, clear_on_ack,
-                         count, first_raised_at, last_raised_at, acked_at, acked_by)
-                    VALUES
-                        (@key, @source, @code, @priority, @state, @message, @runbook, @target_id, @clear_on_ack,
-                         1, @now, @now, NULL, NULL)
-                    ON CONFLICT(key) DO UPDATE SET
-                        last_raised_at = excluded.last_raised_at,
-                        count = count + 1,
-                        message = excluded.message,
-                        priority = excluded.priority
-                    RETURNING rowid AS id, {Columns};
-                    """;
-                cmd.Parameters.AddWithValue("@key", key);
-                cmd.Parameters.AddWithValue("@source", raise.Source.ToString());
-                cmd.Parameters.AddWithValue("@code", raise.Code);
-                cmd.Parameters.AddWithValue("@priority", raise.Priority.ToString());
-                cmd.Parameters.AddWithValue("@state", nameof(AlarmState.Active));
-                cmd.Parameters.AddWithValue("@message", raise.Message);
-                cmd.Parameters.AddWithValue("@runbook", (object?)raise.Runbook ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@target_id", (object?)raise.TargetId ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@clear_on_ack", raise.ClearOnAck ? 1 : 0);
-                cmd.Parameters.AddWithValue("@now", nowIso);
-
-                using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                Alarm upserted;
+                using (var cmd = connection.CreateCommand())
                 {
-                    throw new InvalidOperationException(
-                        $"active_alarms upsert for key '{key}' returned no row — the alarm was not recorded.");
+                    // ON CONFLICT(key) DO UPDATE deliberately OMITS first_raised_at/state/acked_at/acked_by
+                    // — SQLite leaves an omitted column exactly as it was on conflict, so a re-raise of an
+                    // already-Acked (ClearOnAck=false) alarm stays Acked rather than silently reverting to
+                    // Active — see Alarm's own doc comment.
+                    //
+                    // Task C-1 — RETURNING (SQLite >= 3.35; this build bundles SQLitePCLRaw 2.1.12) makes
+                    // the upsert report the row it just wrote in the SAME statement. That matters for more
+                    // than convenience: telling a first raise from a re-raise by SELECTing first and then
+                    // upserting would be two statements with a window between them, and two concurrent
+                    // raises of one key (the evaluator's timer thread and a request-path policy denial CAN
+                    // overlap) would both read "absent" and both claim to be the first. One statement has no
+                    // such window. It also hands the notification seam the COMPLETE resulting alarm, so no
+                    // channel ever has to go back and re-query a row that may have changed by then.
+                    cmd.CommandText = $"""
+                        INSERT INTO active_alarms
+                            (key, source, code, priority, state, message, runbook, target_id, clear_on_ack,
+                             count, first_raised_at, last_raised_at, acked_at, acked_by)
+                        VALUES
+                            (@key, @source, @code, @priority, @state, @message, @runbook, @target_id, @clear_on_ack,
+                             1, @now, @now, NULL, NULL)
+                        ON CONFLICT(key) DO UPDATE SET
+                            last_raised_at = excluded.last_raised_at,
+                            count = count + 1,
+                            message = excluded.message,
+                            priority = excluded.priority
+                        RETURNING rowid AS id, {Columns};
+                        """;
+                    cmd.Parameters.AddWithValue("@key", key);
+                    cmd.Parameters.AddWithValue("@source", raise.Source.ToString());
+                    cmd.Parameters.AddWithValue("@code", raise.Code);
+                    cmd.Parameters.AddWithValue("@priority", raise.Priority.ToString());
+                    cmd.Parameters.AddWithValue("@state", nameof(AlarmState.Active));
+                    cmd.Parameters.AddWithValue("@message", raise.Message);
+                    cmd.Parameters.AddWithValue("@runbook", (object?)raise.Runbook ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@target_id", (object?)raise.TargetId ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@clear_on_ack", raise.ClearOnAck ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@now", nowIso);
+
+                    using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException(
+                            $"active_alarms upsert for key '{key}' returned no row — the alarm was not recorded.");
+                    }
+                    upserted = ReadAlarm(reader);
+
+                    // Step the statement to completion before disposing it. A single-row upsert cannot
+                    // produce a second row, so this is a formality — but an abandoned RETURNING statement is
+                    // exactly the kind of thing that is only "obviously fine" until it is not.
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false)) { }
                 }
-                upserted = ReadAlarm(reader);
 
-                // Step the statement to completion before disposing it. A single-row upsert cannot produce
-                // a second row, so this is a formality — but an abandoned RETURNING statement is exactly
-                // the kind of thing that is only "obviously fine" until it is not.
-                while (await reader.ReadAsync(ct).ConfigureAwait(false)) { }
-            }
+                await AppendHistoryAsync(connection, key, "raised", raise.Source, raise.Code, raise.Priority, raise.Message, actor: null, ct)
+                    .ConfigureAwait(false);
 
-            await AppendHistoryAsync(connection, key, "raised", raise.Source, raise.Code, raise.Priority, raise.Message, actor: null, ct)
-                .ConfigureAwait(false);
+                // count == 1 is exactly "the INSERT path ran": VALUES seeds it to 1 and DO UPDATE only ever
+                // increments, so a count of 1 can only mean this call created the row (or re-created it
+                // after an earlier clear, which is the same edge as far as anyone downstream is concerned).
+                var transition = new AlarmTransition(
+                    upserted.Count == 1 ? AlarmTransitionKind.Raised : AlarmTransitionKind.ReRaised, upserted);
 
-            // count == 1 is exactly "the INSERT path ran": VALUES seeds it to 1 and DO UPDATE only ever
-            // increments, so a count of 1 can only mean this call created the row (or re-created it after
-            // an earlier clear, which is the same edge as far as anyone downstream is concerned).
-            var transition = new AlarmTransition(
-                upserted.Count == 1 ? AlarmTransitionKind.Raised : AlarmTransitionKind.ReRaised, upserted);
-
-            // Notify only after BOTH writes committed. A notification for an alarm that was never recorded
-            // is a lie, and every failure path throws to the catch below before reaching here.
-            // NotifySafely is itself unconditionally never-throws, so it cannot be mistaken for a DB fault.
-            NotifySafely(transition, actor: null);
-            return transition;
+                // Notify only after BOTH writes committed. A notification for an alarm that was never
+                // recorded is a lie, and every failure path throws to the catch below before reaching here.
+                // NotifySafely is unconditionally never-throws, so it cannot be mistaken for a DB fault.
+                NotifySafely(transition, actor: null);
+                return transition;
             }
             finally
             {
@@ -377,40 +408,43 @@ public sealed class AlarmStore : IAlarmStore
     {
         try
         {
+            // Outside the gate — see RaiseAsync's own comment: per-call connection setup is not shared
+            // state and cannot affect ordering.
+            using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+
             // Task C-1 (I-2) — write and notification under one gate; see _writeGate's doc comment.
             await _writeGate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-            using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+                Alarm? removed;
+                using (var delCmd = connection.CreateCommand())
+                {
+                    // Task C-1 — DELETE ... RETURNING replaces the previous SELECT-then-DELETE pair for the
+                    // same reason RaiseAsync uses RETURNING: one statement has no window in which a
+                    // concurrent clear of the same key could make BOTH callers believe they were the one
+                    // that removed it (and therefore both announce a "cleared" edge). It also still yields
+                    // the row's Source/Code/Priority/Message for the history append, which is what the
+                    // SELECT was there for.
+                    delCmd.CommandText = $"DELETE FROM active_alarms WHERE key = @key RETURNING rowid AS id, {Columns};";
+                    delCmd.Parameters.AddWithValue("@key", key);
 
-            Alarm? removed;
-            using (var delCmd = connection.CreateCommand())
-            {
-                // Task C-1 — DELETE ... RETURNING replaces the previous SELECT-then-DELETE pair for the
-                // same reason RaiseAsync uses RETURNING: one statement has no window in which a concurrent
-                // clear of the same key could make BOTH callers believe they were the one that removed it
-                // (and therefore both announce a "cleared" edge). It also still yields the row's Source/
-                // Code/Priority/Message for the history append, which is what the SELECT was there for.
-                delCmd.CommandText = $"DELETE FROM active_alarms WHERE key = @key RETURNING rowid AS id, {Columns};";
-                delCmd.Parameters.AddWithValue("@key", key);
+                    using var reader = await delCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                    removed = await reader.ReadAsync(ct).ConfigureAwait(false) ? ReadAlarm(reader) : null;
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false)) { }
+                }
 
-                using var reader = await delCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                removed = await reader.ReadAsync(ct).ConfigureAwait(false) ? ReadAlarm(reader) : null;
-                while (await reader.ReadAsync(ct).ConfigureAwait(false)) { }
-            }
+                // No-op (not an error) — nothing active carried this key. The evaluator does this on every
+                // tick for every healthy slot, so this is by far the most common outcome.
+                if (removed is null) return AlarmTransition.None;
 
-            // No-op (not an error) — nothing active carried this key. The evaluator does this on every
-            // tick for every healthy slot, so this is by far the most common outcome.
-            if (removed is null) return AlarmTransition.None;
+                await AppendHistoryAsync(connection, key, "cleared", removed.Source, removed.Code, removed.Priority, removed.Message, actor: null, ct)
+                    .ConfigureAwait(false);
 
-            await AppendHistoryAsync(connection, key, "cleared", removed.Source, removed.Code, removed.Priority, removed.Message, actor: null, ct)
-                .ConfigureAwait(false);
+                var transition = new AlarmTransition(
+                    AlarmTransitionKind.Cleared, removed with { State = AlarmState.Cleared });
 
-            var transition = new AlarmTransition(
-                AlarmTransitionKind.Cleared, removed with { State = AlarmState.Cleared });
-
-            NotifySafely(transition, actor: null);
-            return transition;
+                NotifySafely(transition, actor: null);
+                return transition;
             }
             finally
             {
@@ -431,64 +465,66 @@ public sealed class AlarmStore : IAlarmStore
 
     public async Task<Alarm?> AckAsync(long id, string by, CancellationToken ct = default)
     {
+        // Outside the gate — see RaiseAsync's own comment: per-call connection setup is not shared state
+        // and cannot affect ordering.
+        using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+
         // Task C-1 (I-2) — an ack DELETEs or UPDATEs a row a concurrent raise may be mid-write on, so it
         // takes the same gate. No try/catch around it: AckAsync is deliberately NOT a never-throws member
         // (see IAlarmStore), and a cancelled wait here surfaces the same way any other failure does.
         await _writeGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-        using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
+            var current = await ReadByRowIdAsync(connection, id, ct).ConfigureAwait(false);
+            if (current is null) return null;
 
-        var current = await ReadByRowIdAsync(connection, id, ct).ConfigureAwait(false);
-        if (current is null) return null;
+            var nowIso = ToIso(DateTimeOffset.UtcNow);
+            var ackedAtUtc = ParseIso(nowIso);
 
-        var nowIso = ToIso(DateTimeOffset.UtcNow);
-        var ackedAtUtc = ParseIso(nowIso);
-
-        if (current.ClearOnAck)
-        {
-            using (var delCmd = connection.CreateCommand())
+            if (current.ClearOnAck)
             {
-                delCmd.CommandText = "DELETE FROM active_alarms WHERE rowid = @id;";
-                delCmd.Parameters.AddWithValue("@id", id);
-                await delCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                using (var delCmd = connection.CreateCommand())
+                {
+                    delCmd.CommandText = "DELETE FROM active_alarms WHERE rowid = @id;";
+                    delCmd.Parameters.AddWithValue("@id", id);
+                    await delCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                await AppendHistoryAsync(connection, current.Key, "cleared", current.Source, current.Code, current.Priority, current.Message, actor: by, ct)
+                    .ConfigureAwait(false);
+
+                var cleared = current with { State = AlarmState.Cleared, AckedUtc = ackedAtUtc, AckedBy = by };
+
+                // Task C-1 — an EVENT alarm (every Policy denial) can leave active_alarms ONLY through this
+                // branch, so this is a genuine "the alarm is over" edge, not a bookkeeping detail. Treating
+                // it as a non-edge would leave a downstream annunciator/relay latched on forever after an
+                // operator acknowledged the very alarm that lit it.
+                NotifySafely(new AlarmTransition(AlarmTransitionKind.Cleared, cleared), actor: by);
+                return cleared;
             }
-
-            await AppendHistoryAsync(connection, current.Key, "cleared", current.Source, current.Code, current.Priority, current.Message, actor: by, ct)
-                .ConfigureAwait(false);
-
-            var cleared = current with { State = AlarmState.Cleared, AckedUtc = ackedAtUtc, AckedBy = by };
-
-            // Task C-1 — an EVENT alarm (every Policy denial) can leave active_alarms ONLY through this
-            // branch, so this is a genuine "the alarm is over" edge, not a bookkeeping detail. Treating it
-            // as a non-edge would leave a downstream annunciator/relay latched on forever after an
-            // operator acknowledged the very alarm that lit it.
-            NotifySafely(new AlarmTransition(AlarmTransitionKind.Cleared, cleared), actor: by);
-            return cleared;
-        }
-        else
-        {
-            using (var updCmd = connection.CreateCommand())
+            else
             {
-                updCmd.CommandText = "UPDATE active_alarms SET state = @state, acked_at = @now, acked_by = @by WHERE rowid = @id;";
-                updCmd.Parameters.AddWithValue("@state", nameof(AlarmState.Acked));
-                updCmd.Parameters.AddWithValue("@now", nowIso);
-                updCmd.Parameters.AddWithValue("@by", by);
-                updCmd.Parameters.AddWithValue("@id", id);
-                await updCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                using (var updCmd = connection.CreateCommand())
+                {
+                    updCmd.CommandText = "UPDATE active_alarms SET state = @state, acked_at = @now, acked_by = @by WHERE rowid = @id;";
+                    updCmd.Parameters.AddWithValue("@state", nameof(AlarmState.Acked));
+                    updCmd.Parameters.AddWithValue("@now", nowIso);
+                    updCmd.Parameters.AddWithValue("@by", by);
+                    updCmd.Parameters.AddWithValue("@id", id);
+                    await updCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                await AppendHistoryAsync(connection, current.Key, "acked", current.Source, current.Code, current.Priority, current.Message, actor: by, ct)
+                    .ConfigureAwait(false);
+
+                var acked = current with { State = AlarmState.Acked, AckedUtc = ackedAtUtc, AckedBy = by };
+
+                // Task C-1 — reported on EVERY ack, including a repeat ack of an already-Acked alarm
+                // (nothing here refuses one). Collapsing repeats to a single edge is the notifier's job, not
+                // the store's: the store reports what it did, the detector decides what is news.
+                NotifySafely(new AlarmTransition(AlarmTransitionKind.Acked, acked), actor: by);
+                return acked;
             }
-
-            await AppendHistoryAsync(connection, current.Key, "acked", current.Source, current.Code, current.Priority, current.Message, actor: by, ct)
-                .ConfigureAwait(false);
-
-            var acked = current with { State = AlarmState.Acked, AckedUtc = ackedAtUtc, AckedBy = by };
-
-            // Task C-1 — reported on EVERY ack, including a repeat ack of an already-Acked alarm (nothing
-            // here refuses one). Collapsing repeats to a single edge is the notifier's job, not the
-            // store's: the store reports what it did, the detector decides what is news.
-            NotifySafely(new AlarmTransition(AlarmTransitionKind.Acked, acked), actor: by);
-            return acked;
-        }
         }
         finally
         {

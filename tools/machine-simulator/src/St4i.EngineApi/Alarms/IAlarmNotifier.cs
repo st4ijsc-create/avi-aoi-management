@@ -15,11 +15,18 @@ namespace St4i.EngineApi.Alarms;
 /// break that contract from the inside. (<see cref="AlarmStore"/> ALSO wraps every call in its own
 /// try/catch — belt and braces, and tested — but that guard exists to survive a hostile implementation,
 /// not to excuse one.)</description></item>
-/// <item><description><b>It must not block.</b> <see cref="IAlarmStore.RaiseAsync"/> runs on the request
-/// path of every policy denial (<c>PolicyResults.DenyAsync</c>). <see cref="Notify"/> is deliberately
-/// <see langword="void"/> and synchronous: the only correct implementation shape is "decide, then
-/// <c>TryWrite</c> into a bounded channel" — never an await, never an HTTP call, never a
-/// file/serial/relay write. See <see cref="AlarmNotifier"/>, which follows
+/// <item><description>🔴 <b>It must not block — and the blast radius is the whole process, not just the
+/// caller.</b> <see cref="Notify"/> is invoked from inside <c>AlarmStore._writeGate</c>, the
+/// capacity-1 semaphore that serialises write-then-notify so that transitions reach the edge detector in
+/// commit order (see that field's doc comment for the race it closes). A <see cref="Notify"/> that blocks
+/// therefore does not merely slow ITS OWN caller: it stalls <b>every alarm write in the process</b> behind
+/// it — every <see cref="AlarmSource.DriverHealth"/>/<see cref="AlarmSource.NgRate"/> evaluator tick and
+/// every policy denial on the HTTP request path (<c>PolicyResults.DenyAsync</c>), whether or not they have
+/// anything to do with the alarm being notified. That is why this is a hard requirement and not a
+/// preference. <see cref="Notify"/> is deliberately <see langword="void"/> and synchronous: the only
+/// correct implementation shape is "decide, then <c>TryWrite</c> into a bounded channel" — never an await,
+/// never a sleep, never an HTTP call, never a file/serial/relay write. Real work belongs on the far side
+/// of the channel, on the drain loop. See <see cref="AlarmNotifier"/>, which follows
 /// <see cref="St4i.EdgeCore.Historian.HistorianWriter"/>'s established enqueue/drain
 /// idiom.</description></item>
 /// </list>
@@ -38,6 +45,9 @@ public interface IAlarmNotifier
     /// <see cref="AlarmTransitionKind.None"/> transition is a legal no-op.</param>
     /// <param name="actor">The username behind an ack/ack-clear, or <see langword="null"/> for a
     /// system-originated write (a raise, an evaluator clear).</param>
+    /// <remarks>Called while <c>AlarmStore._writeGate</c> is held — see the interface's own doc comment.
+    /// Blocking here blocks every alarm write in the process, and calling back into
+    /// <see cref="IAlarmStore"/> from here would re-enter that gate and deadlock.</remarks>
     void Notify(AlarmTransition transition, string? actor = null);
 
     /// <summary>Called ONCE at host start with everything currently in <c>active_alarms</c> — alarms this

@@ -185,6 +185,16 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
     // throughout rather than gate-guarded like its neighbours above.
     private long _dropped;
 
+    /// <summary>Channel-full EVICTIONS only — the subset of <c>_dropped</c> that means "a channel is not
+    /// keeping up" rather than "the process is shutting down". Guarded by <c>_gate</c>, not
+    /// <see cref="Interlocked"/>, and that is the point: it is incremented ONLY from the
+    /// <c>itemDropped</c> callback, which fires synchronously from inside <c>TryWrite</c>, which only ever
+    /// runs under the gate. <see cref="EmitLocked"/> brackets its <c>TryWrite</c> with two reads of THIS
+    /// field to decide whether it evicted anything — bracketing <c>_dropped</c> instead would false-positive
+    /// the moment the drain loop's own shutdown-abandon increments landed between the two reads, and would
+    /// then log "queue saturated / a channel is not keeping up" when nothing was evicted at all.</summary>
+    private long _evicted;
+
     private long _dispatched;
     private long _dispatchFailures;
 
@@ -203,7 +213,14 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
     /// plain delegate rather than an interface deliberately: inventing the channel abstraction is C-3's
     /// decision to make, not this task's, and <see cref="St4i.EdgeCore.Historian.HistorianWriter"/>
     /// already establishes plain delegates as this codebase's shape for an optional hook. It may throw —
-    /// the loop catches, counts and carries on.</param>
+    /// the loop catches, counts and carries on.
+    ///
+    /// <para>Note for C-3..C-6: this runs on the DRAIN thread, which holds no lock — so unlike
+    /// <see cref="IAlarmNotifier.Notify"/> it MAY block, and it may call back into
+    /// <see cref="IAlarmStore"/> (an auto-acking channel is plausible) without deadlocking, since nothing
+    /// holding <c>AlarmStore._writeGate</c> ever waits on this loop. It does, however, couple drain
+    /// throughput to alarm-write throughput: a delegate that takes the store's gate will queue behind every
+    /// evaluator tick and policy denial.</para></param>
     /// <param name="logWarning">Where a dropped job is reported. Invoked OUTSIDE the gate.</param>
     /// <param name="logError">Where a dispatch failure (or a defensive internal fault) is reported.</param>
     /// <param name="capacity">Bounded-channel capacity; see <see cref="DefaultCapacity"/>.</param>
@@ -223,11 +240,16 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
                 FullMode = BoundedChannelFullMode.DropOldest,
                 SingleReader = true,
             },
-            // Drop path (1) of 3 — see the class doc comment's drop-accounting paragraph. This fires
-            // SYNCHRONOUSLY from inside TryWrite (i.e. already under _gate), so a plain increment is
-            // correct here and no logging is done from it: Notify/SeedFromActive notice the counter moved
-            // and log after releasing the gate.
-            itemDropped: _ => Interlocked.Increment(ref _dropped));
+            // Drop path (1) of 5 — see the class doc comment's drop-accounting paragraph. This fires
+            // SYNCHRONOUSLY from inside TryWrite (i.e. already under _gate), so the plain `_evicted++` is
+            // correct, and no logging is done from here: EmitLocked notices _evicted moved and its caller
+            // logs after releasing the gate. _evicted is what distinguishes THIS path (a channel is not
+            // keeping up) from the shutdown paths, all of which share the same _dropped total.
+            itemDropped: _ =>
+            {
+                _evicted++;
+                Interlocked.Increment(ref _dropped);
+            });
 
         _drainLoop = Task.Run(() => RunDrainLoopAsync(_cts.Token));
     }
@@ -377,17 +399,22 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
     {
         if (IsDisposed)
         {
-            // Drop path (3) of 3 — an edge arriving after shutdown began. Counted, not silent.
+            // Drop path (3) of 5 — an edge arriving after shutdown began. Counted, not silent.
             Interlocked.Increment(ref _dropped);
             return EmitOutcome.DroppedShuttingDown;
         }
 
         var job = new NotificationJob(++_sequence, edge, alarm, DateTimeOffset.UtcNow, previousPriority, actor);
 
-        var droppedBefore = Interlocked.Read(ref _dropped);
+        // Bracket _evicted, NOT _dropped. _dropped is also incremented by the drain loop (shutdown-abandon
+        // and its final sweep), so one of those landing between two reads of it would report an eviction
+        // that never happened and log "a channel is not keeping up" during an orderly shutdown — the exact
+        // wrong-operational-message failure this class already fixes elsewhere. _evicted is only ever
+        // touched by the itemDropped callback below, under this same gate, so the bracket is exact.
+        var evictedBefore = _evicted;
         if (!_channel.Writer.TryWrite(job))
         {
-            // Drop path (2) of 3 — the writer is completed, which only DisposeAsync ever does. Same
+            // Drop path (2) of 5 — the writer is completed, which only DisposeAsync ever does. Same
             // operational meaning as the check above, so it reports the same way.
             Interlocked.Increment(ref _dropped);
             return EmitOutcome.DroppedShuttingDown;
@@ -399,7 +426,7 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
         // which fires synchronously from inside the TryWrite above) while still returning true — the two
         // are independent, so Enqueued and Dropped can both move on one call. That is the honest
         // accounting: one job went in, a different one fell out.
-        return Interlocked.Read(ref _dropped) != droppedBefore
+        return _evicted != evictedBefore
             ? EmitOutcome.EnqueuedAfterEviction
             : EmitOutcome.Enqueued;
     }
