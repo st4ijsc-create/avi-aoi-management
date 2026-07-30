@@ -179,10 +179,10 @@ export const maintenanceRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const existing = await getRow(input.id);
       if (existing.status === "COMPLETED") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Work order already completed" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "closeWorkOrder" }, "Work order already completed");
       }
       if (existing.status === "CANCELLED") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot close a cancelled work order" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "closeWorkOrder" }, "Cannot close a cancelled work order");
       }
 
       const closedAt = new Date();
@@ -275,10 +275,12 @@ export const maintenanceRouter = router({
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "sparePart" }, "Spare part not found");
         }
         if (part.quantityOnHand < input.quantityUsed) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Insufficient stock for ${part.partCode}: on hand ${part.quantityOnHand}, requested ${input.quantityUsed}`,
-          });
+          throw appError(
+            "BAD_REQUEST",
+            "INVALID_VALUE",
+            { field: "quantityUsed" },
+            `Insufficient stock for ${part.partCode}: on hand ${part.quantityOnHand}, requested ${input.quantityUsed}`,
+          );
         }
 
         // Ledger row — unitCost is snapshotted from the inventory master.

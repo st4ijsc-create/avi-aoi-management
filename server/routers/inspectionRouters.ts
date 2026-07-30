@@ -101,7 +101,7 @@ export const inspectionRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
       }
       if (inspection.originalResult !== 'NG') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only NG results can be marked as NTF' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'markInspectionNtf' }, 'Only NG results can be marked as NTF');
       }
 
       await db.updateProductInspectionNTF(input.id, ctx.user.id, input.reason);
@@ -463,7 +463,7 @@ export const measurementResultRouter = router({
     .mutation(async ({ input }) => {
       const result = await db.getMeasurementResultById(input.id);
       if (!result || !result.imageUrl) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No image available for analysis' });
+        throw appError('BAD_REQUEST', 'ENTITY_NOT_FOUND', { entity: 'image' }, 'No image available for analysis');
       }
 
       // Get point definition for context
@@ -816,7 +816,7 @@ Respond in JSON format:
 
       // Only NG (or NTF) results should carry a defect classification.
       if (input.defectCatalogId !== null && result.result === "OK") {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only NG results can be classified with a defect code' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'classifyDefect' }, 'Only NG results can be classified with a defect code');
       }
 
       // Resolve & validate the catalog entry; pull severity to denormalise.

@@ -12,6 +12,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { requirePermission } from "../_core/accessControl";
@@ -154,7 +155,7 @@ export const enhancedAuditRouter = router({
     .input(z.number())
     .query(async ({ input: id }) => {
       const conn = await getDb();
-      if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!conn) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const result: any = await conn.execute(sql`
         SELECT al.*, u."name" as "displayUserName"
@@ -163,7 +164,7 @@ export const enhancedAuditRouter = router({
         WHERE al.id = ${id}
       `);
       const rows = result.rows || result;
-      if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "auditLog" });
 
       const entry = rows[0];
       const details = entry.details || {};
@@ -393,7 +394,7 @@ export const enhancedAuditRouter = router({
     }))
     .mutation(async ({ input }) => {
       const conn = await getDb();
-      if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!conn) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const result: any = await conn.execute(sql`
         SELECT 

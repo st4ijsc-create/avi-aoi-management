@@ -35,12 +35,12 @@ import {
 function rethrow(err: unknown): never {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes("Segregation of duties")) {
-    throw new TRPCError({ code: "FORBIDDEN", message });
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveProgramRelease" }, message);
   }
   if (message.includes("not found")) {
-    throw new TRPCError({ code: "NOT_FOUND", message });
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, message);
   }
-  throw new TRPCError({ code: "BAD_REQUEST", message });
+  throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "manageProgramRelease" }, message);
 }
 
 export const inspectionProgramRouter = router({

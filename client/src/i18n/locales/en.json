@@ -3673,7 +3673,9 @@
       "onboardingDraft": "onboarding draft",
       "aiModelCard": "AI model card",
       "measurementPointVersion": "measurement point version",
-      "visionAdapter": "vision adapter"
+      "visionAdapter": "vision adapter",
+      "auditLog": "audit log entry",
+      "reportArtifact": "saved report artifact"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3763,7 +3765,17 @@
       "reviewEquipmentChangeRequest": "review equipment change request",
       "startProductionRun": "start production run",
       "rescheduleProductionOrder": "reschedule production order",
-      "startAcquisitionWorker": "start acquisition worker"
+      "startAcquisitionWorker": "start acquisition worker",
+      "deleteAdapter": "delete adapter",
+      "manageProgramRelease": "manage inspection program release",
+      "markInspectionNtf": "mark inspection as NTF",
+      "classifyDefect": "classify defect",
+      "closeWorkOrder": "close work order",
+      "deleteWorkflow": "delete workflow",
+      "generateExternalReport": "generate external report",
+      "emailReport": "email report",
+      "regenerateTwoFactorSecret": "regenerate 2FA secret",
+      "enableTwoFactor": "enable two-factor authentication"
     },
     "field": {
       "code": "code",
@@ -3829,7 +3841,12 @@
       "urdfSource": "URDF source",
       "to": "end time",
       "machineCodeOrApiKey": "machine code or API key",
-      "payload": "payload"
+      "payload": "payload",
+      "quantityUsed": "quantity used",
+      "criticalThreshold": "critical threshold",
+      "workflowOrWorkflowRef": "workflow or workflow reference",
+      "ursimEndpoint": "URSim endpoint",
+      "rosbridgeUrl": "ROSBRIDGE URL"
     },
     "feature": {
       "web_ingest": "web content ingestion",
@@ -3906,7 +3923,9 @@
       "createWebhook": "create webhook",
       "updateWebhook": "update webhook",
       "deleteWebhook": "delete webhook",
-      "deleteWebhookLogs": "delete webhook logs"
+      "deleteWebhookLogs": "delete webhook logs",
+      "selfApproveProgramRelease": "self-approve own program release",
+      "accessReportArtifact": "access report artifact"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

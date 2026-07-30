@@ -85,10 +85,7 @@ export const twoFactorRouter = router({
     }
 
     if (user[0].twoFactorEnabled) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "2FA is already enabled. Disable it first to regenerate.",
-      });
+      throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "regenerateTwoFactorSecret" }, "2FA is already enabled. Disable it first to regenerate.");
     }
 
     // Generate new TOTP secret
@@ -138,17 +135,11 @@ export const twoFactorRouter = router({
       }
 
       if (user[0].twoFactorEnabled) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "2FA is already enabled",
-        });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "enableTwoFactor" }, "2FA is already enabled");
       }
 
       if (!user[0].twoFactorSecret) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Please generate a secret first",
-        });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "enableTwoFactor" }, "Please generate a secret first");
       }
 
       // Verify the TOTP code

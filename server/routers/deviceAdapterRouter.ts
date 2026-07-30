@@ -150,7 +150,7 @@ export const deviceAdapterRouter = router({
         return row;
       } catch (err) {
         if (isUniqueViolation(err)) {
-          throw new TRPCError({ code: "CONFLICT", message: `Mã adapter "${input.code}" đã tồn tại.` });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "adapter" }, `Mã adapter "${input.code}" đã tồn tại.`);
         }
         throw err;
       }
@@ -185,7 +185,7 @@ export const deviceAdapterRouter = router({
       if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
       // SAFETY: refuse to delete an adapter that is still enabled (it may be polling).
       if (existing.isEnabled) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Adapter đang bật — hãy tắt (isEnabled=false) trước khi xoá." });
+        throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "deleteAdapter" }, "Adapter đang bật — hãy tắt (isEnabled=false) trước khi xoá.");
       }
       // Cascade delete tags + adapter atomically.
       await db.transaction(async (tx) => {
@@ -293,7 +293,7 @@ export const deviceAdapterRouter = router({
           return row;
         } catch (err) {
           if (isUniqueViolation(err)) {
-            throw new TRPCError({ code: "CONFLICT", message: `Tag "${input.tagKey}" đã tồn tại trong adapter này.` });
+            throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "deviceTag" }, `Tag "${input.tagKey}" đã tồn tại trong adapter này.`);
           }
           throw err;
         }

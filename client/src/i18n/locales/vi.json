@@ -3674,7 +3674,9 @@
       "onboardingDraft": "bản nháp onboarding",
       "aiModelCard": "model card AI",
       "measurementPointVersion": "phiên bản điểm đo",
-      "visionAdapter": "adapter thị giác"
+      "visionAdapter": "adapter thị giác",
+      "auditLog": "nhật ký audit",
+      "reportArtifact": "tệp báo cáo đã lưu"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3764,7 +3766,17 @@
       "reviewEquipmentChangeRequest": "review change-request thiết bị",
       "startProductionRun": "bắt đầu lượt sản xuất",
       "rescheduleProductionOrder": "đổi lịch lệnh sản xuất",
-      "startAcquisitionWorker": "khởi động worker thu nhận dữ liệu"
+      "startAcquisitionWorker": "khởi động worker thu nhận dữ liệu",
+      "deleteAdapter": "xoá adapter",
+      "manageProgramRelease": "quản lý phiên bản chương trình kiểm tra",
+      "markInspectionNtf": "đánh dấu NTF cho kiểm tra",
+      "classifyDefect": "phân loại lỗi",
+      "closeWorkOrder": "đóng lệnh công việc",
+      "deleteWorkflow": "xoá workflow",
+      "generateExternalReport": "sinh báo cáo bên ngoài",
+      "emailReport": "gửi báo cáo qua email",
+      "regenerateTwoFactorSecret": "tạo lại mã bí mật 2FA",
+      "enableTwoFactor": "bật xác thực 2 lớp"
     },
     "field": {
       "code": "mã",
@@ -3830,7 +3842,12 @@
       "urdfSource": "nguồn URDF",
       "to": "thời điểm kết thúc",
       "machineCodeOrApiKey": "mã máy hoặc khoá API",
-      "payload": "dữ liệu payload"
+      "payload": "dữ liệu payload",
+      "quantityUsed": "số lượng sử dụng",
+      "criticalThreshold": "ngưỡng nghiêm trọng",
+      "workflowOrWorkflowRef": "workflow hoặc mã tham chiếu workflow",
+      "ursimEndpoint": "địa chỉ URSim",
+      "rosbridgeUrl": "địa chỉ ROSBRIDGE"
     },
     "feature": {
       "web_ingest": "nạp nội dung từ web",
@@ -3907,7 +3924,9 @@
       "createWebhook": "tạo webhook",
       "updateWebhook": "cập nhật webhook",
       "deleteWebhook": "xoá webhook",
-      "deleteWebhookLogs": "xoá nhật ký webhook"
+      "deleteWebhookLogs": "xoá nhật ký webhook",
+      "selfApproveProgramRelease": "tự duyệt phiên bản chương trình của chính mình",
+      "accessReportArtifact": "truy cập tệp báo cáo"
     }
   },
   "export": {

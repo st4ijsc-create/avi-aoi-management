@@ -102,7 +102,7 @@ export const simTargetsRouter = router({
       }
       const ep = resolveEndpoint(input.endpoint);
       if (!ep) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "No URSim endpoint (set URSIM_HOST or pass endpoint)" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "ursimEndpoint" }, "No URSim endpoint (set URSIM_HOST or pass endpoint)");
       }
       const result = await validateUrscriptOnUrsim(input.urscript, ep, { powerOn: input.powerOn });
       lastUrsimValidation = { at: new Date().toISOString(), result };
@@ -117,12 +117,12 @@ export const simTargetsRouter = router({
         throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "ros2Bridge" }, "ROS2 bridge disabled (set ROS2_BRIDGE_ENABLED=true)");
       }
       if (!rosbridgeUrlFromEnv()) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "ROSBRIDGE_URL is empty" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "rosbridgeUrl" }, "ROSBRIDGE_URL is empty");
       }
       const bridge = await startRos2Bridge();
       if (!bridge) {
         // startRos2Bridge already logged the honest reason; surface it.
-        throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "ROS2 bridge did not connect (rosbridge unreachable?)" });
+        throw appError("SERVICE_UNAVAILABLE", "FEATURE_DISABLED", { feature: "ros2Bridge" }, "ROS2 bridge did not connect (rosbridge unreachable?)");
       }
       return bridge.status();
     }),

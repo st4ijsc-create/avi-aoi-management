@@ -270,7 +270,7 @@ export const orchestrationRouter = router({
         if (!wf) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, `Workflow "${input.workflowRef}" not found`);
         def = wf.definitionJson as WorkflowDefinition;
       } else {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Provide either `workflow` or `workflowRef`." });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "workflowOrWorkflowRef" }, "Provide either `workflow` or `workflowRef`.");
       }
 
       // Load referenced machine rows (machineType + capabilities) for capability resolution.
@@ -353,10 +353,12 @@ export const orchestrationRouter = router({
       const runs = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.workflowId, wf.id));
       const active = runs.filter((r) => !["completed", "failed", "aborted"].includes(r.status));
       if (active.length > 0) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Workflow "${wf.ref}" has ${active.length} active run(s). Abort or finish them before deleting.`,
-        });
+        throw appError(
+          "CONFLICT",
+          "OPERATION_FAILED",
+          { operation: "deleteWorkflow" },
+          `Workflow "${wf.ref}" has ${active.length} active run(s). Abort or finish them before deleting.`,
+        );
       }
 
       // Cascade-clean terminal run history (steps → runs) then delete the workflow.
@@ -401,7 +403,7 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflows)
         .where(eq(orchestrationWorkflows.ref, newRef))
         .limit(1);
-      if (clash) throw new TRPCError({ code: "CONFLICT", message: `A workflow with ref "${newRef}" already exists.` });
+      if (clash) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workflow" }, `A workflow with ref "${newRef}" already exists.`);
 
       // Re-stamp the definition's own ref so the stored JSON stays consistent.
       const def = {

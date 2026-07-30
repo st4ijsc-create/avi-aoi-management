@@ -13,6 +13,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import {
   ArtifactError,
@@ -32,8 +33,10 @@ function viewerOf(ctx: { user: { id: number; role: string } }): ArtifactViewer {
 
 function mapArtifactError(err: unknown): never {
   if (err instanceof ArtifactError) {
-    const code = err.reason === "forbidden" ? "FORBIDDEN" : "NOT_FOUND";
-    throw new TRPCError({ code, message: err.message });
+    if (err.reason === "forbidden") {
+      throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "accessReportArtifact" }, err.message);
+    }
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportArtifact" }, err.message);
   }
   throw err;
 }
@@ -146,10 +149,7 @@ export const reportArtifactRouter = router({
         });
       } catch (err) {
         if (err instanceof ExternalReportError) {
-          throw new TRPCError({
-            code: err.status === 400 ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
-            message: err.message,
-          });
+          throw appError(err.status === 400 ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "generateExternalReport" }, err.message);
         }
         throw err;
       }
@@ -179,10 +179,12 @@ export const reportArtifactRouter = router({
           emailedTo = input.emailTo.length;
         } catch (err) {
           // The report itself is generated + persisted; surface a soft email error.
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Report generated (id ${result.reportId}) but email delivery failed: ${(err as any)?.message || err}`,
-          });
+          throw appError(
+            "INTERNAL_SERVER_ERROR",
+            "OPERATION_FAILED",
+            { operation: "emailReport" },
+            `Report generated (id ${result.reportId}) but email delivery failed: ${(err as any)?.message || err}`,
+          );
         }
       }
 

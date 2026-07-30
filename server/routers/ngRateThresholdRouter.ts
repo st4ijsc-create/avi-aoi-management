@@ -154,10 +154,7 @@ export const ngRateThresholdRouter = router({
 
       // Validate: criticalThreshold phải >= warningThreshold
       if (input.criticalThreshold < input.warningThreshold) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Ngưỡng nghiêm trọng phải lớn hơn hoặc bằng ngưỡng cảnh báo",
-        });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "criticalThreshold" }, "Ngưỡng nghiêm trọng phải lớn hơn hoặc bằng ngưỡng cảnh báo");
       }
 
       const [result] = await db
@@ -234,15 +231,12 @@ export const ngRateThresholdRouter = router({
           .from(mqttNgRateThresholds)
           .where(eq(mqttNgRateThresholds.id, id))
           .limit(1);
-        if (existing.length === 0) throw new TRPCError({ code: "NOT_FOUND" });
-        
+        if (existing.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ngRateThreshold" });
+
         const warning = updateData.warningThreshold ?? Number(existing[0].warningThreshold);
         const critical = updateData.criticalThreshold ?? Number(existing[0].criticalThreshold);
         if (critical < warning) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Ngưỡng nghiêm trọng phải lớn hơn hoặc bằng ngưỡng cảnh báo",
-          });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "criticalThreshold" }, "Ngưỡng nghiêm trọng phải lớn hơn hoặc bằng ngưỡng cảnh báo");
         }
       }
 

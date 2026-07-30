@@ -3665,7 +3665,9 @@
       "onboardingDraft": "上线草稿",
       "aiModelCard": "AI模型卡",
       "measurementPointVersion": "测量点版本",
-      "visionAdapter": "视觉适配器"
+      "visionAdapter": "视觉适配器",
+      "auditLog": "审计日志",
+      "reportArtifact": "已保存的报告"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3755,7 +3757,17 @@
       "reviewEquipmentChangeRequest": "审核设备变更请求",
       "startProductionRun": "开始生产运行",
       "rescheduleProductionOrder": "调整生产订单排程",
-      "startAcquisitionWorker": "启动数据采集工作进程"
+      "startAcquisitionWorker": "启动数据采集工作进程",
+      "deleteAdapter": "删除适配器",
+      "manageProgramRelease": "管理检验程序发布版本",
+      "markInspectionNtf": "将检验标记为NTF",
+      "classifyDefect": "分类缺陷",
+      "closeWorkOrder": "关闭工单",
+      "deleteWorkflow": "删除工作流",
+      "generateExternalReport": "生成外部报告",
+      "emailReport": "邮件发送报告",
+      "regenerateTwoFactorSecret": "重新生成2FA密钥",
+      "enableTwoFactor": "启用双因素认证"
     },
     "field": {
       "code": "编码",
@@ -3821,7 +3833,12 @@
       "urdfSource": "URDF来源",
       "to": "结束时间",
       "machineCodeOrApiKey": "设备编码或API密钥",
-      "payload": "负载数据"
+      "payload": "负载数据",
+      "quantityUsed": "使用数量",
+      "criticalThreshold": "严重阈值",
+      "workflowOrWorkflowRef": "工作流或工作流引用",
+      "ursimEndpoint": "URSim地址",
+      "rosbridgeUrl": "ROSBRIDGE地址"
     },
     "feature": {
       "web_ingest": "网页内容导入",
@@ -3898,7 +3915,9 @@
       "createWebhook": "创建webhook",
       "updateWebhook": "更新webhook",
       "deleteWebhook": "删除webhook",
-      "deleteWebhookLogs": "删除webhook日志"
+      "deleteWebhookLogs": "删除webhook日志",
+      "selfApproveProgramRelease": "自行批准本人的程序发布版本",
+      "accessReportArtifact": "访问报告文件"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
