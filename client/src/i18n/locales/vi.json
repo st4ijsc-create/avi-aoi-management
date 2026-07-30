@@ -3659,7 +3659,15 @@
       "ngRateThreshold": "ngưỡng tỉ lệ NG",
       "productionSession": "phiên sản xuất",
       "moduleAuditPreset": "mẫu kiểm toán module"
-    }
+    },
+    "operation": {
+      "extractAoiPackageImage": "trích xuất ảnh từ gói AOI"
+    },
+    "field": {},
+    "feature": {
+      "web_ingest": "nạp nội dung từ web"
+    },
+    "action": {}
   },
   "export": {
     "reportMenu": {

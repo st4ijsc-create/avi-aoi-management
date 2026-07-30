@@ -3659,6 +3659,14 @@
       "productionSession": "production session",
       "moduleAuditPreset": "module audit preset"
     },
+    "operation": {
+      "extractAoiPackageImage": "extract image from AOI package"
+    },
+    "field": {},
+    "feature": {
+      "web_ingest": "web content ingestion"
+    },
+    "action": {},
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
     "cannotLoadData": "Cannot load data",

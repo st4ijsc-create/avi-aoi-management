@@ -3651,6 +3651,14 @@
       "productionSession": "生产会话",
       "moduleAuditPreset": "模块审计预设"
     },
+    "operation": {
+      "extractAoiPackageImage": "从AOI数据包提取图像"
+    },
+    "field": {},
+    "feature": {
+      "web_ingest": "网页内容导入"
+    },
+    "action": {},
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
     "cannotLoadData": "无法加载数据",
