@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -220,6 +221,14 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             return Task.CompletedTask;
         };
     });
+
+// Task B-6 fix round 1 (review, Important I2) — a role-refused attempt at either machine-write route
+// (RequireAuthorization denying BEFORE MachineWriteEndpoints' own handler ever runs) otherwise left no audit
+// trace at all. Registering this replaces the DI-resolved IAuthorizationMiddlewareResultHandler the
+// authorization middleware (app.UseAuthorization(), below) uses; MachineWriteRoleDenialAuditHandler's own doc
+// comment explains why this is the correct seam and why it is scoped to exactly the two machine-write routes,
+// delegating byte-identically to the framework's own default handler for every other route/outcome.
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, St4i.EngineApi.Auth.MachineWriteRoleDenialAuditHandler>();
 
 builder.Services.AddAuthorization(options =>
 {
@@ -1001,11 +1010,20 @@ builder.Services.AddSingleton(sp =>
     {
         if (alreadyConfiguredKinds.Contains(row.Kind))
         {
-            connectorsLogger.LogWarning(
-                "Persisted connector configuration for kind '{ConnectorKind}' (machine '{MachineCode}') ignored " +
-                "— an environment variable or a connectors.json entry already configures this connector kind " +
-                "for this run; that source takes precedence.",
-                row.Kind, row.MachineCode);
+            // Task B-6 fix round 1 (review, Important I3) — a row THIS RUN's own ConnectorConfigVisibilitySeeder
+            // inserted (Source == Seeded) is, by construction, ALWAYS going to land in this branch: it exists
+            // ONLY BECAUSE the very env-var/connectors.json source that "wins" here is active. Warning about it
+            // is pure self-referential noise repeating on every single boot — the exact carried B-4 symptom
+            // ("startup log a warning about the seeder's own row every boot") this task was assigned to close.
+            // An OPERATOR row genuinely being shadowed here is still worth the warning below, unchanged.
+            if (row.Source == St4i.EngineApi.Fleet.ConnectorConfigSource.Operator)
+            {
+                connectorsLogger.LogWarning(
+                    "Persisted connector configuration for kind '{ConnectorKind}' (machine '{MachineCode}') ignored " +
+                    "— an environment variable or a connectors.json entry already configures this connector kind " +
+                    "for this run; that source takes precedence.",
+                    row.Kind, row.MachineCode);
+            }
             continue;
         }
 

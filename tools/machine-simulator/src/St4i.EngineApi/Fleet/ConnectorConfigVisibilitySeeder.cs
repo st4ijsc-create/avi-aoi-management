@@ -58,6 +58,18 @@ namespace St4i.EngineApi.Fleet;
 /// stale after a hand-edited map, fixable before this task only by an explicit
 /// <c>DELETE /v1/connectors/{kind}</c> + restart) — every boot now re-seeds a <see cref="ConnectorConfigSource.Seeded"/>
 /// row fresh, automatically.</para>
+///
+/// <para><b>Fix round 1 (review, Important I3) — correction: THIS fix alone did not close the carried B-4
+/// "warns about its own row every boot" symptom.</b> The original B-6 submission's report claimed it did, which
+/// was WRONG — there is a SEPARATE warning site, <c>Program.cs</c>'s persisted-row startup loop (the code that
+/// decides which persisted rows get their machine registered into the roster, entirely independent of THIS
+/// class), which reads the exact same <c>connector_configs</c> rows and had its OWN, unguarded "ignored — an
+/// environment variable ... already configures this connector kind" warning with no <c>Source</c> check at
+/// all. From boot 2 onward that OTHER loop's warning fired about this seeder's own row every single boot —
+/// verbatim the symptom this class's own doc comment above claims is closed. Both sites needed the identical
+/// one-line guard; only this one had it until fix round 1 added the same check to <c>Program.cs</c>'s loop.
+/// See <c>ConnectorEndpointsEnvSeedingSideEffectsTests.PersistedRowStartupLoop_*</c> for the real-logging-
+/// pipeline proof of the OTHER site now closed too.</para>
 /// </summary>
 public static class ConnectorConfigVisibilitySeeder
 {

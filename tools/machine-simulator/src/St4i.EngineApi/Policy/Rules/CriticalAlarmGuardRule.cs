@@ -20,13 +20,29 @@ namespace St4i.EngineApi.Policy.Rules;
 /// <see cref="St4i.EngineApi.Alarms.AlarmEvaluator"/>'s own Identity-expiry alarm is deliberately capped at
 /// <see cref="St4i.EngineApi.Alarms.AlarmPriority.High"/> specifically so it can NEVER reach a
 /// production-gating check — "an expiring certificate must never stop production". This rule only ever reads
-/// <see cref="PolicyRequest.CriticalAlarmActive"/>, which a caller resolves by asking whether ANY alarm is
-/// currently <see cref="St4i.EngineApi.Alarms.AlarmPriority.Critical"/> — an alarm source's own choice of
-/// priority (already made once, by <see cref="St4i.EngineApi.Alarms.AlarmEvaluator"/>, before this rule ever
-/// runs) is what decides whether it can reach this gate, exactly as it already decides whether it reaches
-/// <see cref="St4i.EngineApi.Line.LineController"/>'s gate. Nothing here changes any alarm source's priority,
-/// widens what counts as Critical, or gives Identity/DriverHealth/NgRate/Policy any NEW power — this rule
-/// reuses a decision those sources already made.</description></item>
+/// <see cref="PolicyRequest.CriticalAlarmActive"/>, which a caller resolves by asking whether ANY
+/// <see cref="St4i.EngineApi.Alarms.AlarmSource.DriverHealth"/>/<see cref="St4i.EngineApi.Alarms.AlarmSource.NgRate"/>/
+/// <see cref="St4i.EngineApi.Alarms.AlarmSource.Identity"/> alarm is currently
+/// <see cref="St4i.EngineApi.Alarms.AlarmPriority.Critical"/> — that source's own choice of priority (already
+/// made once, before this rule ever runs) is what decides whether it can reach this gate, exactly as it
+/// already decides whether it reaches <see cref="St4i.EngineApi.Line.LineController"/>'s gate. Nothing here
+/// changes any alarm source's priority or widens what counts as Critical.
+///
+/// <para><b>Fix round 1 (review, Important I1) — <see cref="St4i.EngineApi.Alarms.AlarmSource.Policy"/> is
+/// DELIBERATELY EXCLUDED from the signal</b> (enforced by the caller —
+/// <c>MachineWriteEndpoints.AnyCriticalAlarmActiveAsync</c> — not by this rule itself, which only ever sees the
+/// already-resolved boolean). The reviewer's own probe found a genuine self-latch: <c>PolicyResults.DenyAsync</c>
+/// raises a <see cref="St4i.EngineApi.Alarms.AlarmPriority.Critical"/> <see cref="St4i.EngineApi.Alarms.AlarmSource.Policy"/>
+/// alarm for every <c>SAFETY_BLOCKED</c> denial — left counted in, ANY HALT-blocked attempt (a write, a
+/// <c>fleet.start</c>, a <c>line.start</c>) would raise an alarm that then blocked EVERY subsequent write/
+/// command via THIS rule until an operator found and acknowledged it, self-disabling machine-write capability
+/// on the most ordinary sequence in the product ("halt, reset, retry"). A Policy-source alarm is a RECORD OF A
+/// REFUSAL this same request path just wrote — not an independent observation about the plant, unlike
+/// DriverHealth/NgRate/Identity — so counting it here was never actually consistent with this bullet's own
+/// "reuses a decision those sources already made" argument: Policy's "decision" is circular (this gate's own
+/// denial feeding back into this gate). Excluded by SOURCE, not by lowering <c>SAFETY_BLOCKED</c>'s priority —
+/// that stays Critical (a pre-existing, unrelated <c>LineEndpointsTests</c> assertion depends on
+/// it).</para></description></item>
 /// <item><description>Scoped fleet-wide, not per-machine, deliberately: today's <c>Alarm.TargetId</c> values
 /// (a slot LABEL for DriverHealth, the literal <c>"fleet"</c> for NgRate, <c>"device"</c> for Identity) do not
 /// reliably identify a single MACHINE CODE — a slot can serve more than one roster member (the same fact

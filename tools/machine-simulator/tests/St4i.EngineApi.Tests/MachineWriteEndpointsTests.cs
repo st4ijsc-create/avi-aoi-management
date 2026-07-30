@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +14,7 @@ using St4i.EdgeCore.Mapping;
 using St4i.EdgeCore.Models;
 using St4i.EngineApi.Alarms;
 using St4i.EngineApi.Auth;
+using St4i.EngineApi.Endpoints;
 using St4i.EngineApi.Fleet;
 using St4i.EngineApi.Policy;
 using St4i.EngineApi.Tests.Auth;
@@ -344,6 +347,88 @@ public sealed class MachineWriteEndpointsTests
             using var write = await operatorClient.PostAsJsonAsync(
                 "/v1/machines/ANY/setpoint", new { point = "speed", value = 1.0 }, JsonOptions);
             Assert.Equal(HttpStatusCode.Forbidden, write.StatusCode);
+        }
+    }
+
+    /// <summary>Fix round 1 (review, Important I2) — a role-refused attempt is audited, not silently dropped.
+    /// Before the fix, ASP.NET Core's authorization middleware denied this request (403) BEFORE
+    /// <c>MachineWriteEndpoints.InvokeCommandAsync</c> ever ran — nothing in this task's own code path was ever
+    /// reached, so no audit row existed at all for "an Engineer tried to command a physical machine and was
+    /// refused." <see cref="MachineWriteRoleDenialAuditHandler"/> closes this at the one seam that CAN observe
+    /// the denial (the authorization middleware result handler), independent of and before any endpoint
+    /// handler code.</summary>
+    [Fact]
+    public async Task Command_EngineerForbidden_RoleDenialIsAudited()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, _) = await SetUpAllRolesAsync(factory, "role-denial-audit");
+        using (admin) using (engineer)
+        {
+            const string code = "MW-ROLEDENIAL-01";
+
+            using (var invoke = await engineer.PostAsJsonAsync(
+                       $"/v1/machines/{code}/command", new { command = "start-cycle" }, JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, invoke.StatusCode);
+            }
+
+            using var auditResp = await admin.GetAsync("/v1/audit?action=machine.command.invoke.denied&limit=1000");
+            var page = await auditResp.Content.ReadFromJsonAsync<AuditPageDto>(JsonOptions);
+            var entry = Assert.Single(page!.Items, e => e.TargetId == code);
+            Assert.Equal("machine", entry.TargetType);
+            Assert.Contains("ROLE_DENIED", entry.NewValueJson, StringComparison.Ordinal);
+            Assert.Contains("Engineer", entry.NewValueJson, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>The setpoint-route mirror — an Operator lacks Engineer, refused by the SAME middleware seam.</summary>
+    [Fact]
+    public async Task Setpoint_OperatorForbidden_RoleDenialIsAudited()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, _, operatorClient) = await SetUpAllRolesAsync(factory, "role-denial-audit-sp");
+        using (admin) using (operatorClient)
+        {
+            const string code = "MW-ROLEDENIAL-SP-01";
+
+            using (var write = await operatorClient.PostAsJsonAsync(
+                       $"/v1/machines/{code}/setpoint", new { point = "speed", value = 1.0 }, JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, write.StatusCode);
+            }
+
+            using var auditResp = await admin.GetAsync("/v1/audit?action=machine.setpoint.write.denied&limit=1000");
+            var page = await auditResp.Content.ReadFromJsonAsync<AuditPageDto>(JsonOptions);
+            var entry = Assert.Single(page!.Items, e => e.TargetId == code);
+            Assert.Equal("machine", entry.TargetType);
+            Assert.Contains("ROLE_DENIED", entry.NewValueJson, StringComparison.Ordinal);
+            Assert.Contains("Operator", entry.NewValueJson, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>An anonymous (unauthenticated) caller is NOT audited by this handler — that is a 401
+    /// Challenge, not a Forbid; <see cref="Microsoft.AspNetCore.Authorization.PolicyAuthorizationResult.Forbidden"/>
+    /// is specifically false for that case (see <see cref="MachineWriteRoleDenialAuditHandler"/>'s own doc
+    /// comment for why only an IDENTIFIED, insufficiently-privileged caller is the case worth recording here).</summary>
+    [Fact]
+    public async Task Command_Unauthenticated_401_NeverAudited()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, _, _) = await SetUpAllRolesAsync(factory, "anon-not-audited");
+        using (admin)
+        {
+            const string code = "MW-ANON-01";
+            using var anonymous = factory.CreateClient();
+
+            using (var invoke = await anonymous.PostAsJsonAsync(
+                       $"/v1/machines/{code}/command", new { command = "start-cycle" }, JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.Unauthorized, invoke.StatusCode);
+            }
+
+            using var auditResp = await admin.GetAsync("/v1/audit?action=machine.command.invoke.denied&limit=1000");
+            var page = await auditResp.Content.ReadFromJsonAsync<AuditPageDto>(JsonOptions);
+            Assert.Empty(page!.Items.Where(e => e.TargetId == code));
         }
     }
 
@@ -717,6 +802,91 @@ public sealed class MachineWriteEndpointsTests
         }
     }
 
+    /// <summary>Fix round 1 (review) — a genuine contradiction the reviewer caught: the applied/rejected/
+    /// failed/indeterminate path deliberately uses <see cref="CancellationToken.None"/> so an aborted client
+    /// cannot make its audit row vanish, but the DENIED path was still passing the request's own (possibly
+    /// already-cancelled) token into <see cref="PolicyResults.DenyAsync"/> — the identical hazard, unfixed, one
+    /// branch over.
+    ///
+    /// <para>Proven directly, not via HTTP (a genuinely-aborted HTTP request cannot be observed from the test
+    /// side): calls <see cref="MachineWriteEndpoints.WriteSetpointAsync"/> — the real, shipped, <c>internal</c>
+    /// handler (<c>InternalsVisibleTo</c>) — with a <see cref="CancelingAlarmStore"/> test double standing in
+    /// for the pre-flight Critical-alarm read. That read is DELIBERATELY still cancellable (see this class's
+    /// own doc comment, "Cancellation" — it's a read, safe to abort) and completes successfully, but as a SIDE
+    /// EFFECT of completing, it cancels the SAME token the request is using — modeling "the client disconnected
+    /// at the exact moment its pre-flight read finished, right before the deny/audit step." HALT is engaged so
+    /// the outcome is a deterministic <c>SAFETY_BLOCKED</c> deny. Asserts (1) the call completes without
+    /// throwing despite the now-cancelled token and (2) the resulting audit row genuinely exists in the real,
+    /// SQLite-backed store afterward — before this fix, <c>recorder.RecordAsync(ctx, ..., ct)</c> would have
+    /// received the cancelled token, <c>SqliteAuditStore.AppendAsync</c> would have thrown
+    /// <see cref="OperationCanceledException"/>, and <see cref="AuditRecorder"/>'s own never-throws catch would
+    /// have silently swallowed it — no row, no exception, nothing visible at all.</para></summary>
+    [Fact]
+    public async Task Setpoint_DeniedPath_AuditRowSurvives_EvenWhenTheClientDisconnectsRightBeforeTheDenyIsRecorded()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, _, _) = await SetUpAllRolesAsync(factory, "cancel-survives-deny");
+        using (admin)
+        {
+            const string code = "MW-CANCEL-DENY-01";
+
+            var host = factory.Services.GetRequiredService<FleetHost>();
+            host.Estop(); // guarantees a deterministic SAFETY_BLOCKED deny below.
+
+            var recorder = factory.Services.GetRequiredService<AuditRecorder>();
+            var policy = factory.Services.GetRequiredService<PolicyEngine>();
+
+            var ctx = new DefaultHttpContext { RequestServices = factory.Services };
+            ctx.User = new ClaimsPrincipal(new ClaimsIdentity(
+                new[]
+                {
+                    new Claim(ClaimTypes.Name, "cancel-survives-engineer"),
+                    new Claim(ClaimTypes.Role, Roles.Engineer),
+                },
+                authenticationType: "TestAuth"));
+
+            using var cts = new CancellationTokenSource();
+            var fakeAlarms = new CancelingAlarmStore(cts);
+
+            var body = new MachineSetpointWriteRequestDto("speed", JsonSerializer.SerializeToElement(1.0));
+
+            // The load-bearing assertion, part 1: does not throw despite the token being cancelled mid-call.
+            var result = await MachineWriteEndpoints.WriteSetpointAsync(
+                code, body, host, fakeAlarms, ctx, recorder, policy, cts.Token);
+            Assert.NotNull(result);
+            Assert.True(cts.IsCancellationRequested); // sanity — the cancellation genuinely happened.
+
+            // The load-bearing assertion, part 2: the denial was still audited — a real, persisted row.
+            using var auditResp = await admin.GetAsync("/v1/audit?action=machine.setpoint.write.denied&limit=1000");
+            var page = await auditResp.Content.ReadFromJsonAsync<AuditPageDto>(JsonOptions);
+            Assert.Contains(page!.Items, e => e.TargetId == code);
+        }
+    }
+
+    /// <summary>A real <see cref="IAlarmStore"/> stand-in whose <see cref="ListActiveAsync"/> reports no active
+    /// alarms (so <c>EstopGuardRule</c>'s <c>SAFETY_BLOCKED</c> is the only thing denying) but, as a side
+    /// effect of completing, cancels the SAME token the caller is using — see
+    /// <see cref="Setpoint_DeniedPath_AuditRowSurvives_EvenWhenTheClientDisconnectsRightBeforeTheDenyIsRecorded"/>'s
+    /// own doc comment for exactly what race this models.</summary>
+    private sealed class CancelingAlarmStore : IAlarmStore
+    {
+        private readonly CancellationTokenSource _cts;
+        public CancelingAlarmStore(CancellationTokenSource cts) => _cts = cts;
+
+        public Task RaiseAsync(AlarmRaise raise, CancellationToken ct = default) => Task.CompletedTask;
+        public Task ClearAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<Alarm?> AckAsync(long id, string by, CancellationToken ct = default) => Task.FromResult<Alarm?>(null);
+
+        public Task<IReadOnlyList<Alarm>> ListActiveAsync(CancellationToken ct = default)
+        {
+            _cts.Cancel();
+            return Task.FromResult<IReadOnlyList<Alarm>>(Array.Empty<Alarm>());
+        }
+
+        public Task<AlarmHistoryPage> QueryHistoryAsync(AlarmHistoryFilter filter, CancellationToken ct = default) =>
+            Task.FromResult(new AlarmHistoryPage(Array.Empty<AlarmHistoryEntry>(), 0, filter.Limit, filter.Offset));
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // The Critical-alarm decision: blocks a write/command; a High-priority alarm (e.g. Identity's own,
     // deliberately capped there) does NOT.
@@ -780,6 +950,87 @@ public sealed class MachineWriteEndpointsTests
                 var deny = await invoke.Content.ReadFromJsonAsync<PolicyDenyDto>(JsonOptions);
                 Assert.Equal("NOT_READY", deny!.Reason);
                 Assert.Equal(0, fakeDriver.CommandCallCount);
+            }
+            finally
+            {
+                host.AdditionalPipelinesForTests = null;
+                host.Stop();
+            }
+        }
+    }
+
+    /// <summary>Fix round 1 (review, Important I1) — reproduces the reviewer's exact 3-step probe proving the
+    /// self-latch is closed: a HALT-blocked write raises a Critical <c>Policy</c> alarm (pre-existing,
+    /// unrelated behavior — <c>LineEndpointsTests</c> already pins it); before the fix, that very alarm then
+    /// blocked EVERY subsequent write with <c>NOT_READY</c> until an operator found and acknowledged it — the
+    /// most ordinary operator sequence in the product ("halt, reset, retry") self-disabled machine-write
+    /// capability. This test proves step 3 (retry after reset) succeeds DESPITE the step-1 alarm remaining
+    /// active/unacknowledged the whole time — the fix must hold without anyone touching that alarm at
+    /// all.</summary>
+    [Fact]
+    public async Task Setpoint_AfterAHaltBlockedAttemptThenReset_SecondWriteSucceeds_DespiteTheUnackedPolicyAlarmFromTheFirst()
+    {
+        await using var factory = await CreateFactoryAsync();
+        var (admin, engineer, _) = await SetUpAllRolesAsync(factory, "no-self-latch");
+        using (admin) using (engineer)
+        {
+            const string code = "MW-NOSELFLATCH-01";
+            var fakeDriver = new FakeWritableDriver();
+            var host = await SetUpWritableMachineAsync(factory, code, fakeDriver);
+            try
+            {
+                // Step 0 (latch clear) — sanity: the write path genuinely works before any of this.
+                using (var baseline = await engineer.PostAsJsonAsync(
+                           $"/v1/machines/{code}/setpoint", new { point = "speed", value = 1.0 }, JsonOptions))
+                {
+                    Assert.Equal(HttpStatusCode.OK, baseline.StatusCode);
+                }
+
+                // Step 1 (HALT latched) — the write is refused SAFETY_BLOCKED, which raises a Critical Policy alarm.
+                using (var estop = await admin.PostAsync("/v1/fleet/estop", null))
+                {
+                    Assert.Equal(HttpStatusCode.OK, estop.StatusCode);
+                }
+
+                using (var blocked = await engineer.PostAsJsonAsync(
+                           $"/v1/machines/{code}/setpoint", new { point = "speed", value = 2.0 }, JsonOptions))
+                {
+                    Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+                    var deny = await blocked.Content.ReadFromJsonAsync<PolicyDenyDto>(JsonOptions);
+                    Assert.Equal("SAFETY_BLOCKED", deny!.Reason);
+                }
+
+                // Step 2 (HALT reset) — the latch clears, but the Policy/Critical alarm from step 1 is still
+                // active and UNACKNOWLEDGED (nobody has hit /v1/alarms/{id}/ack). ResetEstop only clears the
+                // latch (PackML Reset -> Idle, not Execute) — the pipeline itself was torn down by Estop(), so
+                // Start() must be called again before the machine has a live driver to write to at all (a
+                // separate, unrelated fact from the alarm/policy question this test is actually about).
+                using (var reset = await admin.PostAsync("/v1/fleet/estop/reset", null))
+                {
+                    Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+                }
+
+                using (var activeAlarms = await admin.GetAsync("/v1/alarms"))
+                {
+                    var alarms = await activeAlarms.Content.ReadFromJsonAsync<List<Alarm>>(JsonOptionsWithEnums);
+                    Assert.Contains(alarms!, a => a.Source == AlarmSource.Policy && a.Priority == AlarmPriority.Critical && a.State != AlarmState.Cleared);
+                }
+
+                host.Start();
+                await WaitUntilAsync(
+                    () => host.GetMachineDriverAvailability(code) == MachineDriverAvailability.Writable,
+                    "the writable driver's slot to come back up after the HALT/reset cycle");
+
+                // Step 3 — THE LOAD-BEARING ASSERTION: a second write now succeeds, even though the step-1
+                // Policy/Critical alarm is still sitting there, unacknowledged. Before this fix, this returned
+                // 409 NOT_READY (the self-latch).
+                using (var retried = await engineer.PostAsJsonAsync(
+                           $"/v1/machines/{code}/setpoint", new { point = "speed", value = 3.0 }, JsonOptions))
+                {
+                    Assert.Equal(HttpStatusCode.OK, retried.StatusCode);
+                }
+
+                Assert.Equal(2, fakeDriver.WriteCallCount); // step 0 + step 3 reached the driver; step 1's did not (denied pre-flight).
             }
             finally
             {

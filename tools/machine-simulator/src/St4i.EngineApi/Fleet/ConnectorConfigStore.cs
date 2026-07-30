@@ -245,13 +245,20 @@ public sealed record ConnectorWriteCapability(
 /// the conservative choice: every row a real operator explicitly persisted via <c>POST /v1/connectors</c>
 /// keeps its full "protect this from being silently overwritten" treatment, and a pre-migration row that
 /// actually WAS seeded by an earlier build's <see cref="ConnectorConfigVisibilitySeeder"/> (B-4 shipped before
-/// this column existed) is, for one run after upgrading, treated as if an operator owned it — the seeder will
-/// warn once and decline to refresh it, rather than guessing it is safe to silently overwrite something it
-/// cannot prove it created. An operator who wants that specific row's provenance corrected can
-/// <c>DELETE /v1/connectors/{kind}</c> once and restart — the next seeding pass inserts it fresh, correctly
-/// tagged <see cref="Seeded"/>. This is the same "assert the failure, don't assume it can't happen" bias this
-/// whole codebase already applies elsewhere (e.g. <c>ModbusRegister.TryComputeRawWordForWrite</c> re-checking
-/// bounds on every call even though B-3 already proved parse-time enforcement sufficient).</para>
+/// this column existed) is treated as if an operator owned it.</para>
+///
+/// <para><b>Fix round 1 (review) — the cost of that conservatism, stated correctly.</b> The original wording
+/// here claimed the seeder "will warn once" for such a row — WRONG: nothing ever re-tags an existing row's
+/// <see cref="Source"/>, so a row misclassified <see cref="Operator"/> at the migration boundary stays that
+/// way, and <see cref="ConnectorConfigVisibilitySeeder.SeedAsync"/> sees <c>Source == Operator</c> and warns
+/// EVERY subsequent boot, indefinitely — not once. Only a manual <c>DELETE /v1/connectors/{kind}</c> + restart
+/// corrects it (the next seeding pass inserts it fresh, correctly tagged <see cref="Seeded"/>, and the warnings
+/// stop from then on). This remains the right default — a false-positive warning that never stops until an
+/// operator acts is a far safer failure mode than silently overwriting data this store cannot prove it didn't
+/// create — but the cost must be described accurately, not minimized. Same "assert the failure, don't assume
+/// it can't happen" bias this whole codebase already applies elsewhere (e.g.
+/// <c>ModbusRegister.TryComputeRawWordForWrite</c> re-checking bounds on every call even though B-3 already
+/// proved parse-time enforcement sufficient).</para>
 /// </summary>
 public enum ConnectorConfigSource
 {

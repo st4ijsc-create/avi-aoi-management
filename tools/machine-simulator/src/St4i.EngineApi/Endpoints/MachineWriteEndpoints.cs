@@ -64,25 +64,52 @@ namespace St4i.EngineApi.Endpoints;
 /// <see cref="Line.LineController"/>'s existing precedent; no, this hands no alarm source new authority — the
 /// Identity-expiry alarm stays capped at High specifically so it can never reach this gate either).</para>
 ///
+/// <para><b>Fix round 1 (review) — <see cref="AlarmSource.Policy"/> is EXCLUDED from
+/// <see cref="AnyCriticalAlarmActiveAsync"/>'s signal — a genuine self-latch, found by the reviewer's own
+/// probe.</b> <see cref="Policy.PolicyResults.DenyAsync"/> raises a <see cref="AlarmPriority.Critical"/>,
+/// <c>ClearOnAck: true</c> <see cref="AlarmSource.Policy"/> alarm for every <c>SAFETY_BLOCKED</c> denial (a
+/// PRE-EXISTING behavior this task did not introduce — <c>LineEndpointsTests</c> already asserts it). Before
+/// this fix, that alarm counted toward "is a Critical alarm active" here too — so ANY HALT-blocked write/
+/// command/`fleet.start`/`line.start` attempt raised an alarm that then blocked EVERY subsequent write/command
+/// (via <see cref="Policy.Rules.CriticalAlarmGuardRule"/>) until an operator found and acknowledged it — the
+/// single most ordinary operator sequence in the product ("try something while halted, reset, try again")
+/// self-disabled machine-write capability. The fix is precise, not a broad exclusion: a Policy-source alarm is
+/// a RECORD OF A REFUSAL this same request path just wrote, never an independent observation about the PLANT
+/// (unlike <see cref="AlarmSource.DriverHealth"/>/<see cref="AlarmSource.NgRate"/>, which describe the device/
+/// process itself) — so it is the wrong kind of fact for a gate whose entire point is "is the PLANT currently
+/// in a bad-enough state to refuse touching it." Excluding it by source, not by priority: lowering
+/// `SAFETY_BLOCKED`'s own alarm priority to High was considered and rejected — <c>LineEndpointsTests</c>'
+/// <c>PostStart_WhileEstopped_Gets409SafetyBlocked_AndRaisesACriticalAlarm</c> already asserts it stays
+/// Critical, a pre-existing, unrelated behavior this task must not change. Proven both ways in
+/// <c>MachineWriteEndpointsTests</c>: the reviewer's own 3-step probe (latch → deny → reset → a SECOND write
+/// must succeed despite the still-unacked Policy/Critical alarm from step 1) and mutation-verified (temporarily
+/// removing the exclusion reproduces the exact self-latch: the second write 409s <c>NOT_READY</c>).</para>
+///
 /// <para><b>Rate limiting — decided: not here, and why.</b> This codebase has zero rate-limiting
 /// infrastructure anywhere (no <c>AddRateLimiter</c>, no debounce, no throttle) — the brief itself confirms
-/// this is a first, not a gap in an existing pattern. This task does not add one, for three reasons: (1) the
-/// invariant that actually matters for a write endpoint — no implicit retry, no double actuation — is already
-/// enforced at the driver layer (B-1's contract, proven at B-4/B-5) and is orthogonal to REQUEST RATE; a rate
-/// limiter would not have prevented the "stale response desyncs the connection" or "transport silently
-/// resent" Criticals this batch already found and fixed, because those were about ONE call's own internal
-/// behavior, not about how many calls arrive per second. (2) Both write endpoints already funnel through
-/// <see cref="FleetHost"/>'s single per-slot <c>_ioLock</c>-equivalent concurrency control at the DRIVER level
-/// (<c>ModbusTcpDriver</c>'s <c>_ioLock</c> serializes every write against every poll; <c>OpcUaDriver</c>
-/// relies on the server's own request/response correlation) — a caller hammering this endpoint as fast as
-/// HTTP allows produces a QUEUE of serialized writes against the real device, not concurrent/overlapping ones;
-/// slow, not unsafe. (3) The one hazard rate-limiting-shaped controls usually exist to prevent — a stuck
-/// script or a held-down UI button firing the SAME write/command over and over — is a UI/workflow concern
-/// (B-8's job: a confirm-before-fire UI affordance, not a server-side request-rate cap) rather than a policy
-/// layer one; a rate limiter here would not distinguish a legitimate burst of DIFFERENT setpoint writes across
-/// many machines from the one hazard case, and could throttle a legitimate multi-machine operator dashboard
-/// for no safety benefit. Documented here as a "not now, and here is why" per the brief's own instruction —
-/// not silence.</para>
+/// this is a first, not a gap in an existing pattern. This task does not add one:
+/// <list type="bullet">
+/// <item><description>The invariant that actually matters for a write endpoint — no implicit retry, no double
+/// actuation — is already enforced at the driver layer (B-1's contract, proven at B-4/B-5) and is orthogonal to
+/// REQUEST RATE; neither of this batch's two write-path Criticals were rate-shaped bugs.</description></item>
+/// <item><description><b>Fix round 1 (review) — corrected: this is NOT symmetric across protocols.</b>
+/// <c>ModbusTcpDriver</c>'s <c>_ioLock</c> genuinely serializes every write against every poll (one shared
+/// connection, one call at a time). <c>OpcUaDriver</c> does NOT have an equivalent write-serializing lock —
+/// its <c>_sessionLock</c> guards only "ensure a live session," never the actual <c>WriteAsync</c>/
+/// <c>CallAsync</c> dispatch (B-5's own report: proven concurrent Read/Write/Call is safe there specifically
+/// BECAUSE nothing serializes it) — so concurrent OPC-UA writes/commands from a hammering caller ARE genuinely
+/// concurrent against the real device, not queued. And even where Modbus DOES queue: "slow, not unsafe" holds
+/// for a setpoint (last write wins, no harm in redundant identical writes) but NOT for a command — N queued
+/// `start-cycle` pulses are N real actuations, not N redundant attempts at the same one. A rate limiter would
+/// not distinguish "N legitimate distinct setpoint writes across N machines" from "one stuck script re-firing
+/// the SAME command," so it would not resolve this class of hazard even if added — which is why the decision
+/// is "not now" rather than "not needed," a distinction this doc comment now states correctly instead of
+/// overclaiming driver-level safety it does not have.</description></item>
+/// <item><description>The one real hazard rate-limiting-shaped controls usually exist to prevent — a stuck
+/// script or a held-down UI button firing the SAME write/command repeatedly — is a UI/workflow concern (B-8's
+/// job: a confirm-before-fire affordance) rather than a server-side request-rate one.</description></item>
+/// </list>
+/// Documented here as a "not now, and here is why" per the brief's own instruction — not silence.</para>
 ///
 /// <para><b>Cancellation — deliberately NOT the request's own token past the point of no return.</b> B-4's
 /// carried finding: a cancelled write tears down the SAME connection the poll loop shares, which can flap
@@ -90,17 +117,19 @@ namespace St4i.EngineApi.Endpoints;
 /// (a closed tab, a client-side timeout, a flaky mobile network) is not a rare event for a write endpoint —
 /// wiring ASP.NET Core's own request-aborted token straight through to <see cref="FleetHost.TryWriteSetpointAsync"/>
 /// would make that teardown ROUTINE, exactly what the brief warns against. Both handlers below therefore use
-/// the bound <c>ct</c> (== <c>HttpContext.RequestAborted</c>) ONLY for the pre-flight steps that touch no
-/// device (the Critical-alarm read, a denied-policy audit row) and switch to <see cref="CancellationToken.None"/>
-/// for the write/command call itself AND the resulting audit row — once a real device write is about to be
-/// attempted, an aborted HTTP client must not desynchronise the shared connection, and once a write's true
-/// outcome is known, the audit row recording it must be written regardless of whether the original caller is
-/// still listening (using the request's own possibly-already-cancelled token there risks the store's
+/// the bound <c>ct</c> (== <c>HttpContext.RequestAborted</c>) ONLY for the one pre-flight step that touches no
+/// device and mutates nothing (the Critical-alarm read) and switch to <see cref="CancellationToken.None"/> for
+/// EVERYTHING from that point on — the write/command call itself, its resulting audit row, AND (fix round 1,
+/// review — a genuine contradiction of this exact reasoning, caught by the reviewer) the DENIED-path audit row
+/// too. A refused attempt still WRITES an audit row and (for <c>SAFETY_BLOCKED</c>) raises an alarm — both are
+/// mutations, not reads, and deserve the identical protection the applied/rejected/failed/indeterminate path
+/// already got: using the request's own possibly-already-cancelled token there risks the store's
 /// <c>AppendAsync</c> throwing <see cref="OperationCanceledException"/>, silently swallowed by
-/// <see cref="AuditRecorder"/>'s own never-throws contract — the audit row for a write that GENUINELY happened
-/// would simply vanish, exactly the gap this task's audit requirement exists to close). The underlying
-/// driver's OWN bound (Modbus <c>Transport.WriteTimeout</c>, OPC-UA <c>Session.OperationTimeout</c> — both
-/// already proven at B-4/B-5) still limits how long any single call can take; nothing here can hang forever.</para>
+/// <see cref="AuditRecorder"/>'s own never-throws contract — the audit row for a refusal that GENUINELY
+/// happened (who was denied, what they tried, why) would simply vanish, exactly the gap this task's audit
+/// requirement exists to close, now for the denied path as much as the attempted one. The underlying driver's
+/// OWN bound (Modbus <c>Transport.WriteTimeout</c>, OPC-UA <c>Session.OperationTimeout</c> — both already
+/// proven at B-4/B-5) still limits how long any single call can take; nothing here can hang forever.</para>
 ///
 /// <para><b>Carried finding, assessed and routed (not fixed here)</b> — B-5's own report flags
 /// <c>OpcUaDriver.DisposeSessionAsync</c> calling <c>session.CloseAsync(CancellationToken.None)</c>, a network
@@ -153,8 +182,12 @@ public static class MachineWriteEndpoints
         var decision = policy.Evaluate(PolicyRequest.For(context, SetpointAction, host.GetSafetyStatus(), criticalAlarmActive));
         if (!decision.IsPermitted)
         {
+            // Fix round 1 (review) — CancellationToken.None, not ct: see this class's own doc comment,
+            // "Cancellation". A denied attempt still writes an audit row (and, for SAFETY_BLOCKED, raises an
+            // alarm) — both mutations deserve the same protection from an aborted client the attempted-write
+            // path already has.
             return await PolicyResults.DenyAsync(
-                context, recorder, SetpointAction, decision, ct,
+                context, recorder, SetpointAction, decision, CancellationToken.None,
                 targetType: "machine", targetId: code,
                 requestDetail: new { point = body.Point, value }).ConfigureAwait(false);
         }
@@ -221,8 +254,10 @@ public static class MachineWriteEndpoints
         var decision = policy.Evaluate(PolicyRequest.For(context, CommandAction, host.GetSafetyStatus(), criticalAlarmActive));
         if (!decision.IsPermitted)
         {
+            // Fix round 1 (review) — CancellationToken.None, not ct: same reasoning as WriteSetpointAsync's
+            // own deny path above.
             return await PolicyResults.DenyAsync(
-                context, recorder, CommandAction, decision, ct,
+                context, recorder, CommandAction, decision, CancellationToken.None,
                 targetType: "machine", targetId: code,
                 requestDetail: new { command = body.Command, arguments }).ConfigureAwait(false);
         }
@@ -298,14 +333,25 @@ public static class MachineWriteEndpoints
         _ => throw new ArgumentOutOfRangeException(nameof(availability), availability, "Unreachable: Writable always returns a non-null result."),
     };
 
-    /// <summary>Duplicated from (not shared with) <c>LineEndpoints.AnyCriticalAlarmActiveAsync</c> — same tiny
-    /// helper, same reasoning as <c>RbacPolicyTests</c>' own duplicated factory recipe: a two-line private
-    /// helper is cheaper to keep self-contained per file than to promote to a shared public utility for a
-    /// second call site.</summary>
+    /// <summary>Deliberately NOT identical to <c>LineEndpoints.AnyCriticalAlarmActiveAsync</c> — same tiny-
+    /// helper-per-file idiom as <c>RbacPolicyTests</c>' own duplicated factory recipe, but this one additionally
+    /// EXCLUDES <see cref="AlarmSource.Policy"/> (fix round 1, review finding I1 — a genuine self-latch,
+    /// reproduced by the reviewer's own probe: a <c>SAFETY_BLOCKED</c> denial raises a Critical Policy alarm —
+    /// see <see cref="Policy.PolicyResults.DenyAsync"/> — which, left uncounted-out, then blocked EVERY
+    /// subsequent write/command via <see cref="Policy.Rules.CriticalAlarmGuardRule"/> until an operator found
+    /// and acknowledged that specific alarm — the most ordinary operator sequence in the product,
+    /// "halt, reset, retry," self-disabled machine-write capability). A Policy-source alarm records a REFUSAL
+    /// this same request path just wrote — not an independent observation about the plant — so it is
+    /// structurally the wrong kind of fact for a gate whose entire point is "is the PLANT in a bad enough state
+    /// to refuse touching it," unlike <see cref="AlarmSource.DriverHealth"/>/<see cref="AlarmSource.NgRate"/>/
+    /// <see cref="AlarmSource.Identity"/> (each is an observation about the device/process itself). See
+    /// <c>MachineWriteEndpoints</c>' own class doc comment, "The Critical-alarm decision," for why lowering
+    /// <c>SAFETY_BLOCKED</c>'s alarm priority instead was rejected (an existing, unrelated
+    /// <c>LineEndpointsTests</c> assertion already pins it Critical).</summary>
     private static async Task<bool> AnyCriticalAlarmActiveAsync(IAlarmStore alarms, CancellationToken ct)
     {
         var active = await alarms.ListActiveAsync(ct).ConfigureAwait(false);
-        return active.Any(a => a.Priority == AlarmPriority.Critical);
+        return active.Any(a => a.Priority == AlarmPriority.Critical && a.Source != AlarmSource.Policy);
     }
 
     /// <summary>Re-parses a bound <see cref="JsonElement"/> through <see cref="ConnectorJson.Options"/>'s own
