@@ -35,13 +35,23 @@ function decodeBase64Image(b64: string): Buffer {
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Invalid base64 image");
+    // Task 5 (doc 71) — 3 nhánh ở đây trước kia đều render CÙNG một câu
+    // ("Giá trị không hợp lệ ở hình ảnh.") dù nguyên nhân khác hẳn nhau (base64 hỏng /
+    // ảnh rỗng / vượt dung lượng) — đúng bệnh "76 nhóm ≥2 nguyên nhân → 1 câu". `reason`
+    // tách 2 nhánh đầu; nhánh vượt dung lượng tái dùng KB_FILE_TOO_LARGE{limitMb} đã có
+    // (Task 3) thay vì nhồi vào INVALID_VALUE — cùng bệnh KB đã chữa, tái phát ở luồng ảnh.
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "invalidBase64Image" }, "Invalid base64 image");
   }
   if (buf.length === 0) {
-    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Empty image payload");
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Empty image payload");
   }
   if (buf.length > MAX_IMAGE_BYTES) {
-    throw appError("PAYLOAD_TOO_LARGE", "INVALID_VALUE", { field: "image" }, `Image exceeds ${MAX_IMAGE_BYTES} bytes`);
+    throw appError(
+      "PAYLOAD_TOO_LARGE",
+      "KB_FILE_TOO_LARGE",
+      { limitMb: Math.round((MAX_IMAGE_BYTES / (1024 * 1024)) * 10) / 10 },
+      `Image exceeds ${MAX_IMAGE_BYTES} bytes`,
+    );
   }
   return buf;
 }

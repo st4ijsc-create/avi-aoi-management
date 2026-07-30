@@ -62,11 +62,19 @@ function decodeBase64Image(b64: string): Buffer {
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Invalid base64 image");
+    // Task 5 (doc 71) — xem ghi chú cùng pattern ở aiAdvancedVisionRouter.ts:
+    // reason tách 3 nguyên nhân trước đây render 1 câu; nhánh vượt dung lượng tái
+    // dùng KB_FILE_TOO_LARGE{limitMb}, KHÔNG nhồi vào INVALID_VALUE.
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "invalidBase64Image" }, "Invalid base64 image");
   }
-  if (buf.length === 0) throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Empty image payload");
+  if (buf.length === 0) throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Empty image payload");
   if (buf.length > MAX_IMAGE_BYTES) {
-    throw appError("PAYLOAD_TOO_LARGE", "INVALID_VALUE", { field: "image" }, `Image exceeds ${MAX_IMAGE_BYTES} bytes`);
+    throw appError(
+      "PAYLOAD_TOO_LARGE",
+      "KB_FILE_TOO_LARGE",
+      { limitMb: Math.round((MAX_IMAGE_BYTES / (1024 * 1024)) * 10) / 10 },
+      `Image exceeds ${MAX_IMAGE_BYTES} bytes`,
+    );
   }
   return buf;
 }
