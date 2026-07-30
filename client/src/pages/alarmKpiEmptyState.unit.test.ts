@@ -43,4 +43,17 @@ describe("pickOccurrenceLogNotice", () => {
       predictiveCount: 0, occurrenceLog: undefined, generatedAt, windowHours: 8,
     })).toBeNull();
   });
+
+  // Sprint 5 debt E7(b) — nhánh `!input.generatedAt` chưa từng có test. Thiếu
+  // generatedAt (client cũ, hoặc lỗi truyền tham số) nghĩa là không có mốc để
+  // so "since = generatedAt - windowHours" ⇒ phải im lặng, KHÔNG được tính
+  // toán mù (Number(undefined) → NaN) rồi lỡ suy ra kết luận sai.
+  it("thiếu generatedAt ⇒ không giải thích, KHÔNG tính mù trên since bị NaN", () => {
+    expect(pickOccurrenceLogNotice({
+      predictiveCount: 0,
+      occurrenceLog: { available: true, firstOccurredAt: "2026-07-29T09:00:00.000Z" }, // sổ CÓ mốc
+      generatedAt: undefined,
+      windowHours: 8,
+    })).toBeNull();
+  });
 });
