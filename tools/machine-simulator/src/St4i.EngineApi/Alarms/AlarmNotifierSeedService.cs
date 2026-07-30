@@ -45,14 +45,15 @@ public sealed class AlarmNotifierSeedService : IHostedService
             var active = await _alarms.ListActiveAsync(cancellationToken).ConfigureAwait(false);
             _notifier.SeedFromActive(active);
 
-            if (active.Count > 0)
-            {
-                _logger?.LogInformation(
-                    "Alarm notifier adopted {Count} alarm(s) still active from a previous process — each raised ONE " +
-                    "'Restored' notification (not a fresh 'Raised'), and none of them will re-notify while the " +
-                    "condition simply persists.",
-                    active.Count);
-            }
+            // UNCONDITIONAL, including the zero case. "Adopted 0 alarms" and "seeding never ran" are very
+            // different facts and must not look identical in a log — until C-7 exposes
+            // AlarmNotifierStats.Seeded on an endpoint, this line is the ONLY way an operator can tell
+            // them apart, and the brief's requirement is that they can find out what the system did.
+            _logger?.LogInformation(
+                "Alarm notifier adopted {Count} alarm(s) still active from a previous process — each raised ONE " +
+                "'Restored' notification (not a fresh 'Raised'), and none of them will re-notify while the " +
+                "condition simply persists.",
+                active.Count);
         }
         catch (Exception ex)
         {

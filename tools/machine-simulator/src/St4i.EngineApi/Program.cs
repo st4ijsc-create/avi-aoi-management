@@ -1334,6 +1334,20 @@ app.Logger.LogInformation(
     string.Join(", ", fleetHost.Fleet.Select(d => d.Code)),
     fleetHost.Mode);
 
+// Task C-1 review follow-up — say OUT LOUD, on every boot, that the alarm notification seam is off. The
+// silent-failure mode this prevents is the dangerous direction: once C-2 lands, an operator can configure
+// a webhook/SMTP/relay recipient completely successfully and, without this env var, get a fully
+// configured alarm system that notifies absolutely nobody, with no error anywhere to explain it. One log
+// line at Warning is the cheapest possible guard against that until C-2 replaces the gate with real
+// configuration (at which point "configured but disabled" should become a startup warning of its own).
+if (!alarmNotifyEnabled)
+{
+    app.Logger.LogWarning(
+        "Alarm notifications are DISABLED (ST4I_ALARM_NOTIFY_ENABLED is not set). Alarms are still recorded and " +
+        "visible at /alarms, but NOTHING is sent to anyone who is not looking at the screen — no webhook, no " +
+        "email, no annunciation, no relay. Set ST4I_ALARM_NOTIFY_ENABLED=1 to turn the notification seam on.");
+}
+
 // WS-C-T4 — force-touch WalFlushPump now (same reasoning as FleetHost above): constructing it starts
 // its background Task.Run loop immediately, rather than leaving it dormant until something happens to
 // resolve the singleton on its own (nothing else in the DI graph depends on it).

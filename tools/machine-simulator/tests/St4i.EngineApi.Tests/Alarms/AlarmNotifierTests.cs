@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using St4i.Connector.Abstractions.Models;
 using St4i.EngineApi.Alarms;
+using St4i.EngineApi.Fleet;
 using Xunit;
 
 namespace St4i.EngineApi.Tests.Alarms;
@@ -103,6 +105,86 @@ public sealed class AlarmNotifierTests : IDisposable
         var job = Assert.Single(jobs);
         Assert.Equal(AlarmEdgeKind.Raised, job.Edge);
         Assert.Equal("DriverHealth:DOWN:slot-1", job.Alarm.Key);
+    }
+
+    /// <summary>
+    /// 🔴 The same storm proof, but driven through the REAL <see cref="AlarmEvaluator"/> with ALL FOUR
+    /// sources live at once, rather than through hand-built <see cref="AlarmRaise"/> values.
+    ///
+    /// <para>Storm immunity for the four real sources is correct BY CONSTRUCTION — each source's dedup key
+    /// (<see cref="AlarmRaise.Key"/> = Source + Code + TargetId) is invariant while its condition holds,
+    /// and its varying data (NgRate's computed rate, Identity's days-to-expiry) lives only in
+    /// <see cref="Alarm.Message"/>, which is not part of the key. But nothing PINNED that construction: the
+    /// day either of those values migrates into <c>TargetId</c>, every tick becomes a new key, the storm
+    /// returns in full, and no hand-built test notices. This test is that pin.</para>
+    ///
+    /// <para>It also pins the other half of the escalation argument: no source varies
+    /// <see cref="Alarm.Priority"/> on a stable key today, so no <see cref="AlarmEdgeKind.Escalated"/> edge
+    /// is reachable in production.</para>
+    /// </summary>
+    [Fact]
+    public async Task Storm_AllFourRealSourcesThroughTheRealEvaluator_NotifyOncePerCondition()
+    {
+        const int Ticks = 30;
+
+        var (dispatch, jobs) = Collector();
+        var notifier = new AlarmNotifier(dispatch);
+        var store = new AlarmStore(NewTempDir(), notifier: notifier);
+        var evaluator = new AlarmEvaluator(store, new AlarmThresholds());
+
+        // Three slots, held in a FIXED state for the whole run: one Down, one Degraded, one healthy (whose
+        // every-tick clears are the no-op path).
+        var health = new List<DriverHealthSnapshot>
+        {
+            new("slot-down", DriverKinds.Modbus, DriverHealthState.Down),
+            new("slot-degraded", DriverKinds.Modbus, DriverHealthState.Degraded),
+            new("slot-ok", DriverKinds.Modbus, DriverHealthState.Connected),
+        };
+
+        // A certificate 10 days from expiry — inside the 30-day warn window for the whole run.
+        var identityNotAfter = DateTimeOffset.UtcNow.AddDays(10);
+
+        long totalPass = 0, totalJudged = 0;
+        for (var tick = 0; tick < Ticks; tick++)
+        {
+            // Deliberately VARY the NG rate tick to tick (50% / 60% — both far above the 20% threshold and
+            // the 5-unit sample floor). The rate is the value most likely to be moved into the alarm key by
+            // a future change, so varying it means such a change flips the key every tick and this test's
+            // "exactly one notification" assertion fails loudly instead of passing on a constant.
+            totalJudged += 100;
+            totalPass += tick % 2 == 0 ? 50 : 40;
+            await evaluator.EvaluateAsync(
+                health, (totalPass, totalJudged), CancellationToken.None, identityNotAfterUtc: identityNotAfter);
+        }
+
+        var stats = notifier.Stats;
+        await notifier.DisposeAsync();
+
+        // FOUR notifications for four conditions held over thirty ticks — not 4 x 30.
+        Assert.Equal(4, jobs.Count);
+        Assert.All(jobs, j => Assert.Equal(AlarmEdgeKind.Raised, j.Edge));
+
+        // The keys really are the real ones, and each source's priority is STABLE (nothing escalates).
+        Assert.Equal(
+            new[]
+            {
+                ("DriverHealth:DEGRADED:slot-degraded", AlarmPriority.High),
+                ("DriverHealth:DOWN:slot-down", AlarmPriority.Critical),
+                ("Identity:EXPIRING:device", AlarmPriority.High),
+                ("NgRate:HIGH:fleet", AlarmPriority.High),
+            },
+            jobs.Select(j => (j.Alarm.Key, j.Alarm.Priority)).OrderBy(t => t.Key, StringComparer.Ordinal).ToArray());
+        Assert.DoesNotContain(jobs, j => j.Edge == AlarmEdgeKind.Escalated);
+
+        // Non-vacuity, exactly: DriverHealth's two keys re-raise on ticks 1..29 (29 each); NgRate seeds its
+        // baseline on tick 0, raises on tick 1 and re-raises on ticks 2..29 (28); Identity dedups inside the
+        // evaluator and is never called again after tick 0. 29 + 29 + 28 = 86. Zero in any vacuous variant.
+        Assert.Equal(86, stats.Suppressed);
+        Assert.Equal(4, stats.Enqueued);
+        Assert.Equal(0, stats.Dropped);
+
+        // And all four are genuinely in the database, storming its history exactly as they did before.
+        Assert.Equal(4, (await store.ListActiveAsync()).Count);
     }
 
     /// <summary>240 history rows are still written (this task does NOT change the pre-existing re-raise
@@ -619,6 +701,7 @@ public sealed class AlarmNotifierTests : IDisposable
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var delivered = new ConcurrentQueue<NotificationJob>();
+        var warnings = new List<string>();
 
         var notifier = new AlarmNotifier(
             dispatch: async (job, _) =>
@@ -627,6 +710,7 @@ public sealed class AlarmNotifierTests : IDisposable
                 entered.TrySetResult();
                 await release.Task;
             },
+            logWarning: msg => { lock (warnings) warnings.Add(msg); },
             capacity: Capacity);
 
         // Park the reader inside dispatch (job seq 1), so the channel below is genuinely untouched.
@@ -642,6 +726,14 @@ public sealed class AlarmNotifierTests : IDisposable
         Assert.Equal(Extra, stats.Dropped);                    // every eviction counted...
         Assert.Equal(1 + Capacity + Extra, stats.Enqueued);    // ...even though every write was ACCEPTED
 
+        // And reported as SATURATION — the opposite operational meaning from a shutdown drop.
+        Assert.Equal(Extra, warnings.Count);
+        Assert.All(warnings, msg =>
+        {
+            Assert.Contains("saturated", msg, StringComparison.Ordinal);
+            Assert.DoesNotContain("shutting down", msg, StringComparison.Ordinal);
+        });
+
         release.TrySetResult();
         await notifier.DisposeAsync();
 
@@ -651,12 +743,15 @@ public sealed class AlarmNotifierTests : IDisposable
             delivered.Select(j => j.Alarm.Key).ToArray());
     }
 
-    /// <summary>Drop path 3 of 3: an edge arriving after shutdown. Counted, not silent.</summary>
+    /// <summary>Drop path 3: an edge arriving after shutdown. Counted — and reported as SHUTDOWN, not as
+    /// saturation. Telling an operator "a notification channel is not keeping up" while the process is
+    /// simply exiting sends them after a problem that does not exist.</summary>
     [Fact]
-    public async Task Enqueue_AfterDispose_IsCountedAsADrop()
+    public async Task Enqueue_AfterDispose_IsCountedAsADrop_AndReportedAsShutdownNotSaturation()
     {
+        var warnings = new List<string>();
         var (dispatch, jobs) = Collector();
-        var notifier = new AlarmNotifier(dispatch);
+        var notifier = new AlarmNotifier(dispatch, logWarning: msg => { lock (warnings) warnings.Add(msg); });
 
         notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("before")));
         await notifier.DisposeAsync();
@@ -668,6 +763,97 @@ public sealed class AlarmNotifierTests : IDisposable
         Assert.Equal(2, stats.Dropped);
         Assert.Equal(1, stats.Enqueued);
         Assert.Single(jobs);
+
+        Assert.Equal(2, warnings.Count);
+        Assert.All(warnings, msg =>
+        {
+            Assert.Contains("shutting down", msg, StringComparison.Ordinal);
+            Assert.DoesNotContain("saturated", msg, StringComparison.Ordinal);
+            Assert.DoesNotContain("not keeping up", msg, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>Drop path 5: an internal fault in the detector itself. It is logged — and it must also be
+    /// COUNTED, or <see cref="AlarmNotifierStats.Dropped"/> reads 0 while a notification was genuinely
+    /// lost, saying the opposite of the log line next to it. A null <see cref="Alarm.Key"/> is the
+    /// cheapest way to make the dictionary lookup throw.</summary>
+    [Fact]
+    public async Task AnInternalFaultInTheDetector_IsCountedAsADrop_NotJustLogged()
+    {
+        var errors = new List<string>();
+        var (dispatch, jobs) = Collector();
+        var notifier = new AlarmNotifier(dispatch, logError: (_, msg) => { lock (errors) errors.Add(msg); });
+
+        var malformed = MakeAlarm("ignored") with { Key = null! };
+        notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, malformed));
+        notifier.SeedFromActive(new[] { malformed });
+
+        var stats = notifier.Stats;
+        await notifier.DisposeAsync();
+
+        Assert.Empty(jobs);
+        Assert.Equal(2, errors.Count);
+        Assert.Equal(2, stats.Dropped); // the log and the counter agree
+    }
+
+    /// <summary>🔴 <see cref="TaskCanceledException"/> DERIVES from
+    /// <see cref="OperationCanceledException"/>, and it is what <see cref="HttpClient"/> throws on its OWN
+    /// request timeout even when the drain token was never signalled — so C-3's webhook and C-4's SMTP will
+    /// both produce one routinely. Without a <c>when (ct.IsCancellationRequested)</c> filter such a job
+    /// skips BOTH the dispatched and the failure counter and vanishes from the accounting entirely.</summary>
+    [Fact]
+    public async Task ADispatchTimeoutThatLooksLikeCancellation_IsCountedAsAFailure_NotSilentlySwallowed()
+    {
+        var delivered = new ConcurrentQueue<string>();
+        var notifier = new AlarmNotifier(dispatch: (job, _) =>
+            job.Alarm.Key == "times-out"
+                // Exactly what HttpClient raises when ITS OWN timeout elapses and the caller's token is fine.
+                ? throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.")
+                : Task.Run(() => delivered.Enqueue(job.Alarm.Key)));
+
+        notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("ok-1")));
+        notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("times-out")));
+        notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("ok-2")));
+
+        await notifier.DisposeAsync();
+        var stats = notifier.Stats;
+
+        Assert.Equal(1, stats.DispatchFailures); // counted, not vanished
+        Assert.Equal(2, stats.Dispatched);
+        Assert.Equal(0, stats.Dropped);          // it threw; it was not abandoned by a shutdown
+        Assert.Equal(3, stats.Enqueued);
+        Assert.Equal(2, delivered.Count);        // and the loop carried on past it
+    }
+
+    /// <summary>Drop path 4: a hard-stop shutdown cancels a dispatch mid-flight and abandons whatever is
+    /// still queued. A truncated drain must not be invisible — every abandoned job is counted.</summary>
+    [Fact]
+    public async Task AHardStopShutdown_CountsTheJobItAbandonedAndEverythingStillQueued()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Honours the token (so DisposeAsync's bounded hard-stop can actually unwind it) but never
+        // otherwise completes.
+        var notifier = new AlarmNotifier(dispatch: async (_, ct) =>
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+        });
+
+        notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("in-flight")));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        for (var i = 0; i < 4; i++)
+        {
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm($"queued-{i}")));
+        }
+
+        await notifier.DisposeAsync(); // drains for 5s, then cancels
+        var stats = notifier.Stats;
+
+        Assert.Equal(5, stats.Enqueued);
+        Assert.Equal(0, stats.Dispatched);
+        Assert.Equal(5, stats.Dropped); // 1 abandoned mid-dispatch + 4 never read
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -704,6 +890,137 @@ public sealed class AlarmNotifierTests : IDisposable
         Assert.Equal(AlarmEdgeKind.Raised, job.Edge);
         Assert.Equal(Racers - 1, stats.Suppressed);
         Assert.Equal(Racers, (await store.ListActiveAsync()).Single().Count);
+    }
+
+    /// <summary>
+    /// 🔴 The interleaving the review derived (I-2). Thread A's raise upserts key <c>K</c> and commits,
+    /// then awaits its history append; in that window thread B deletes the row and notifies
+    /// <c>Cleared</c>, so the detector drops <c>K</c>; A then resumes and notifies its now-stale raise,
+    /// which — if transitions were allowed to arrive out of commit order — would be emitted as a fresh
+    /// <c>Raised</c> for a row that no longer exists, leaving the detector permanently believing <c>K</c>
+    /// is active. For a <see cref="AlarmSource.Policy"/> key that never heals (nothing re-raises those
+    /// periodically), so once C-6 lands it is a latched coil.
+    ///
+    /// <para>The invariant that catches it: once everything is quiescent, the detector's view
+    /// (<see cref="AlarmNotifierStats.TrackedKeys"/>) must equal the database's
+    /// (<see cref="IAlarmStore.ListActiveAsync"/>). <see cref="AlarmStore"/>'s write gate is what makes
+    /// that hold; without it, a stale raise resurrects a key in the detector that the DB does not
+    /// have.</para>
+    /// </summary>
+    [Fact]
+    public async Task RaisesRacingClears_AreSerialisedWithTheirWrites_AndLeaveTheDetectorAgreeingWithTheDatabase()
+    {
+        const int Rounds = 60;
+        const int Racers = 8;
+
+        var (dispatch, jobs) = Collector();
+        var notifier = new AlarmNotifier(dispatch);
+        var probe = new SerialisationProbeNotifier(notifier);
+        var store = new AlarmStore(NewTempDir(), notifier: probe);
+
+        var raise = new AlarmRaise(
+            AlarmSource.Policy, "SAFETY_BLOCKED", AlarmPriority.Critical, "E-STOP is engaged.",
+            TargetId: "fleet.start", ClearOnAck: true);
+
+        for (var round = 0; round < Rounds; round++)
+        {
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var racers = Enumerable.Range(0, Racers).Select(i => Task.Run(async () =>
+            {
+                await gate.Task;
+                if (i % 2 == 0) await store.RaiseAsync(raise);
+                else await store.ClearAsync(raise.Key);
+            })).ToArray();
+            gate.SetResult();
+            await Task.WhenAll(racers);
+        }
+
+        var trackedKeys = notifier.Stats.TrackedKeys;
+        var active = await store.ListActiveAsync();
+        await notifier.DisposeAsync();
+
+        // 🔴 The direct pin on the fix: the store's write-then-notify section is mutually exclusive, so the
+        // probe can NEVER observe two threads inside it at once. With the gate this is impossible by
+        // construction (not merely unlikely); without it, eight racers and a 1 ms observation window make
+        // an overlap essentially certain.
+        Assert.Equal(1, probe.MaxConcurrent);
+
+        // ...from which in-order delivery follows: the detector's view matches the database's.
+        Assert.Equal(active.Count, trackedKeys);
+
+        // Stronger: replay the emitted edges and confirm they form a legal state machine for this key —
+        // never two Raised in a row without a Cleared between them.
+        var live = false;
+        foreach (var job in jobs)
+        {
+            switch (job.Edge)
+            {
+                case AlarmEdgeKind.Raised:
+                    Assert.False(live, $"seq {job.Sequence}: a second Raised for '{job.Alarm.Key}' with no Cleared in between.");
+                    live = true;
+                    break;
+                case AlarmEdgeKind.Cleared:
+                    Assert.True(live, $"seq {job.Sequence}: a Cleared for '{job.Alarm.Key}' that was never Raised.");
+                    live = false;
+                    break;
+            }
+        }
+        Assert.Equal(active.Count == 1, live);
+    }
+
+    /// <summary>The same invariant with the ACK path — the reviewer's exact scenario, since a Policy EVENT
+    /// alarm can only ever leave <c>active_alarms</c> through <see cref="IAlarmStore.AckAsync"/>.</summary>
+    [Fact]
+    public async Task RaisesRacingAcks_AreSerialisedWithTheirWrites_AndLeaveTheDetectorAgreeingWithTheDatabase()
+    {
+        const int Rounds = 40;
+
+        var (dispatch, jobs) = Collector();
+        var notifier = new AlarmNotifier(dispatch);
+        var probe = new SerialisationProbeNotifier(notifier);
+        var store = new AlarmStore(NewTempDir(), notifier: probe);
+
+        var raise = new AlarmRaise(
+            AlarmSource.Policy, "SAFETY_BLOCKED", AlarmPriority.Critical, "E-STOP is engaged.",
+            TargetId: "fleet.start", ClearOnAck: true);
+
+        for (var round = 0; round < Rounds; round++)
+        {
+            await store.RaiseAsync(raise);
+            var id = (await store.ListActiveAsync()).Single().Id;
+
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var raiser = Task.Run(async () => { await gate.Task; await store.RaiseAsync(raise); });
+            var acker = Task.Run(async () => { await gate.Task; await store.AckAsync(id, "operator-1"); });
+            gate.SetResult();
+            await Task.WhenAll(raiser, acker);
+
+            await store.ClearAsync(raise.Key); // quiesce before the next round
+        }
+
+        var trackedKeys = notifier.Stats.TrackedKeys;
+        var active = await store.ListActiveAsync();
+        await notifier.DisposeAsync();
+
+        Assert.Equal(1, probe.MaxConcurrent);
+        Assert.Empty(active);
+        Assert.Equal(0, trackedKeys);
+
+        var live = false;
+        foreach (var job in jobs)
+        {
+            if (job.Edge == AlarmEdgeKind.Raised)
+            {
+                Assert.False(live, $"seq {job.Sequence}: a second Raised for '{job.Alarm.Key}' with no Cleared in between.");
+                live = true;
+            }
+            else if (job.Edge == AlarmEdgeKind.Cleared)
+            {
+                Assert.True(live, $"seq {job.Sequence}: a Cleared for '{job.Alarm.Key}' that was never Raised.");
+                live = false;
+            }
+        }
+        Assert.False(live);
     }
 
     /// <summary>Jobs reach the channel in the order their edges were DECIDED — a Cleared can never overtake
@@ -795,6 +1112,54 @@ public sealed class AlarmNotifierTests : IDisposable
 
         public void SeedFromActive(IReadOnlyList<Alarm> active) =>
             throw new InvalidOperationException("ThrowingNotifier: simulated seed failure (test double).");
+    }
+
+    /// <summary>
+    /// Task C-1 review fix (I-2) — a pass-through <see cref="IAlarmNotifier"/> that reports the HIGHEST
+    /// number of threads ever simultaneously inside <see cref="Notify"/>, i.e. inside
+    /// <see cref="AlarmStore"/>'s write-then-notify section.
+    ///
+    /// <para>The 1 ms sleep is the whole point: <see cref="AlarmStore"/> already has a real window between
+    /// its committed row write and its notification (it awaits a history INSERT in between), but that
+    /// window is sub-millisecond and hard to land on reliably from a test. Sleeping WIDENS the existing
+    /// window so an overlap becomes observable — it does not invent one. Note that in the passing
+    /// direction this is not probabilistic at all: while the store holds its write gate, two threads
+    /// CANNOT both be here, no matter how long the sleep is.</para>
+    ///
+    /// <para>A real notifier must of course never block (see <see cref="IAlarmNotifier"/>); this is a test
+    /// instrument, not a channel.</para>
+    /// </summary>
+    private sealed class SerialisationProbeNotifier : IAlarmNotifier
+    {
+        private readonly IAlarmNotifier _inner;
+        private int _inside;
+        private int _maxConcurrent;
+
+        public SerialisationProbeNotifier(IAlarmNotifier inner) => _inner = inner;
+
+        public int MaxConcurrent => Volatile.Read(ref _maxConcurrent);
+
+        public void Notify(AlarmTransition transition, string? actor = null)
+        {
+            var now = Interlocked.Increment(ref _inside);
+            int seen;
+            while (now > (seen = Volatile.Read(ref _maxConcurrent)))
+            {
+                Interlocked.CompareExchange(ref _maxConcurrent, now, seen);
+            }
+
+            try
+            {
+                Thread.Sleep(1);
+                _inner.Notify(transition, actor);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _inside);
+            }
+        }
+
+        public void SeedFromActive(IReadOnlyList<Alarm> active) => _inner.SeedFromActive(active);
     }
 
     /// <summary>A store whose <see cref="ListActiveAsync"/> fails — the failure

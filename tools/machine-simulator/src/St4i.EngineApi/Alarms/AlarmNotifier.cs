@@ -12,13 +12,17 @@ namespace St4i.EngineApi.Alarms;
 /// <param name="Suppressed">Store transitions that were deliberately NOT an edge — overwhelmingly the
 /// 5s-tick re-raises this whole class exists to absorb. A large and steadily growing number here is
 /// healthy, not a fault.</param>
-/// <param name="Dropped">Jobs LOST — see <see cref="AlarmNotifier"/>'s drop-accounting comment. Counts
-/// all three loss paths (channel-full eviction, refused write, enqueue after dispose). Any non-zero value
-/// means a channel did not hear about something that happened.</param>
+/// <param name="Dropped">Jobs LOST — see <see cref="AlarmNotifier"/>'s drop-accounting comment for all
+/// five loss paths. Any non-zero value means a channel did not hear about something that happened. A
+/// non-zero value observed only after shutdown began is expected; one that grows while the process is
+/// running means a channel is not keeping up.</param>
 /// <param name="Dispatched">Jobs the drain loop successfully handed to the dispatch delegate (or, with no
 /// delegate configured, drained and discarded).</param>
-/// <param name="DispatchFailures">Jobs whose dispatch delegate threw. The job is not retried — C-3's
-/// webhook owns its own retry/backoff policy; the seam does not second-guess it.</param>
+/// <param name="DispatchFailures">Jobs whose dispatch delegate threw — INCLUDING a
+/// <see cref="TaskCanceledException"/> from a delegate's own timeout (an <see cref="HttpClient"/> request
+/// timeout raises one even when the drain token was never signalled). Only a genuine shutdown
+/// cancellation is excluded, and that is counted under <paramref name="Dropped"/> instead. The job is not
+/// retried — C-3's webhook owns its own retry/backoff policy; the seam does not second-guess it.</param>
 /// <param name="Seeded">How many still-active alarms were adopted from a previous process at start (each
 /// of which produced one <see cref="AlarmEdgeKind.Restored"/> job).</param>
 /// <param name="TrackedKeys">How many alarm keys the edge detector currently believes are active. Should
@@ -107,14 +111,26 @@ public sealed record AlarmNotifierStats(
 /// released). The drain loop never takes the gate at all, so a hung channel cannot block
 /// <see cref="Notify"/>.</para>
 ///
-/// <para><b>Drop accounting.</b> A bounded <see cref="BoundedChannelFullMode.DropOldest"/> channel has
-/// THREE ways to lose a job, and the obvious <c>if (!TryWrite(...))</c> check catches only one of them —
-/// a prior finding in this repository was exactly a drop counter that did not count every drop path.
-/// Under <c>DropOldest</c>, <c>TryWrite</c> returns <see langword="true"/> and silently evicts the OLDEST
-/// queued item, so the saturation case never trips that check at all. All three are counted here:
-/// (1) eviction, via <see cref="Channel"/>'s own <c>itemDropped</c> callback; (2) a refused write (the
-/// writer is completed); (3) an enqueue arriving after <see cref="DisposeAsync"/>. Every one increments
-/// <see cref="AlarmNotifierStats.Dropped"/>.</para>
+/// <para><b>Drop accounting.</b> A job can be lost in FIVE ways, and the obvious
+/// <c>if (!TryWrite(...))</c> check catches only one of them — a prior finding in this repository was
+/// exactly a drop counter that did not count every drop path. Under
+/// <see cref="BoundedChannelFullMode.DropOldest"/>, <c>TryWrite</c> returns <see langword="true"/> and
+/// silently evicts the OLDEST queued item, so the saturation case never trips that check at all. All five
+/// increment <see cref="AlarmNotifierStats.Dropped"/>:
+/// <list type="number">
+/// <item><description>Eviction on a full channel — via <see cref="Channel"/>'s own <c>itemDropped</c>
+/// callback.</description></item>
+/// <item><description>A refused write (the writer is completed, which only <see cref="DisposeAsync"/>
+/// does).</description></item>
+/// <item><description>An enqueue arriving after <see cref="DisposeAsync"/>.</description></item>
+/// <item><description>A job abandoned mid-dispatch by a shutdown cancellation, and everything still
+/// queued when the drain loop ends — a truncated drain must not be invisible.</description></item>
+/// <item><description>An edge lost to an internal fault in <see cref="Notify"/>/
+/// <see cref="SeedFromActive"/>'s own catch-all.</description></item>
+/// </list>
+/// Only case 1 means "a channel is not keeping up"; cases 2-4 mean "the process is shutting down". They
+/// are logged as different things, because sending an operator after a nonexistent problem during
+/// shutdown is its own kind of failure.</para>
 ///
 /// <para><b>Shape.</b> Copied from <see cref="St4i.EdgeCore.Historian.HistorianWriter"/> — bounded
 /// capacity 10,000, <see cref="BoundedChannelFullMode.DropOldest"/>, <c>SingleReader</c>, background drain
@@ -144,6 +160,18 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _drainLoop;
 
+    /// <summary>What one <see cref="EmitLocked"/> call actually did — so the caller can log the RIGHT
+    /// thing after releasing the gate. A drop during shutdown and a drop from saturation are different
+    /// operational events: telling an operator "a channel is not keeping up" while the process is simply
+    /// exiting sends them after a problem that does not exist (the same distinction
+    /// <see cref="St4i.EdgeCore.Historian.HistorianWriter.Enqueue"/> already draws).</summary>
+    private enum EmitOutcome
+    {
+        Enqueued,
+        EnqueuedAfterEviction,
+        DroppedShuttingDown,
+    }
+
     private readonly object _gate = new();
     private readonly Dictionary<string, KeyState> _tracked = new(StringComparer.Ordinal);
     private bool _seeded;
@@ -151,12 +179,23 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
     private long _sequence;
     private long _enqueued;
     private long _suppressed;
+
+    // Written from BOTH the enqueue path (under _gate) and the drain loop (a cancelled drain abandons
+    // jobs, and those must be counted too — see RunDrainLoopAsync), so this one is Interlocked-managed
+    // throughout rather than gate-guarded like its neighbours above.
     private long _dropped;
 
     private long _dispatched;
     private long _dispatchFailures;
 
-    private volatile bool _disposed;
+    /// <summary>0 = live, 1 = disposed. An <see cref="int"/> rather than a <see langword="bool"/> so
+    /// <see cref="DisposeAsync"/>'s "have I already run?" check-and-set is a single
+    /// <see cref="Interlocked.Exchange(ref int, int)"/> — the doc there sells idempotency as a safety
+    /// property (the container tracks this instance twice), and a non-atomic check-then-set would only be
+    /// idempotent by luck.</summary>
+    private int _disposed;
+
+    private bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
     /// <param name="dispatch">Where a drained job goes. <see langword="null"/> (the default) means the
     /// loop drains and discards — which is precisely the C-1 state of the world: the seam is real and
@@ -188,7 +227,7 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
             // SYNCHRONOUSLY from inside TryWrite (i.e. already under _gate), so a plain increment is
             // correct here and no logging is done from it: Notify/SeedFromActive notice the counter moved
             // and log after releasing the gate.
-            itemDropped: _ => _dropped++);
+            itemDropped: _ => Interlocked.Increment(ref _dropped));
 
         _drainLoop = Task.Run(() => RunDrainLoopAsync(_cts.Token));
     }
@@ -202,7 +241,7 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
             lock (_gate)
             {
                 return new AlarmNotifierStats(
-                    _enqueued, _suppressed, _dropped,
+                    _enqueued, _suppressed, Interlocked.Read(ref _dropped),
                     Interlocked.Read(ref _dispatched), Interlocked.Read(ref _dispatchFailures),
                     _seededCount, _tracked.Count);
             }
@@ -220,11 +259,9 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
         {
             if (transition.Kind == AlarmTransitionKind.None || transition.Alarm is not { } alarm) return;
 
-            var overflowed = false;
+            var outcome = EmitOutcome.Enqueued;
             lock (_gate)
             {
-                var droppedBefore = _dropped;
-
                 switch (transition.Kind)
                 {
                     case AlarmTransitionKind.Raised:
@@ -235,11 +272,11 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
                         // restart (see SeedFromActive) or when two concurrent raises of one key both
                         // observed the row as absent. Trusting the store's label alone would emit two
                         // "Raised" edges for that race; trusting the dictionary emits exactly one.
-                        OnRaiseLocked(alarm);
+                        outcome = OnRaiseLocked(alarm);
                         break;
 
                     case AlarmTransitionKind.Cleared:
-                        if (_tracked.Remove(alarm.Key)) EmitLocked(AlarmEdgeKind.Cleared, alarm, null, actor);
+                        if (_tracked.Remove(alarm.Key)) outcome = EmitLocked(AlarmEdgeKind.Cleared, alarm, null, actor);
                         else _suppressed++;
                         break;
 
@@ -247,7 +284,7 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
                         if (_tracked.TryGetValue(alarm.Key, out var acking) && acking.State == AlarmState.Active)
                         {
                             _tracked[alarm.Key] = acking with { State = AlarmState.Acked };
-                            EmitLocked(AlarmEdgeKind.Acked, alarm, null, actor);
+                            outcome = EmitLocked(AlarmEdgeKind.Acked, alarm, null, actor);
                         }
                         else
                         {
@@ -256,47 +293,76 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
                         }
                         break;
                 }
-
-                overflowed = _dropped != droppedBefore;
             }
 
-            if (overflowed)
-            {
-                _logWarning?.Invoke(
-                    "Alarm notification queue saturated — dropped the oldest queued notification(s). " +
-                    "A notification channel is not keeping up; see the notifier's Dropped counter.");
-            }
+            LogOutcome(outcome, alarm.Key);
         }
         catch (Exception ex)
         {
             // IAlarmNotifier.Notify is contractually never-throws (AlarmStore.RaiseAsync/ClearAsync are
             // never-throws and call straight into it). Nothing above should be able to throw, but this
             // guard is what makes that a guarantee rather than a code review.
+            //
+            // Counted, not just logged: reaching here means an edge really was lost, and
+            // AlarmNotifierStats.Dropped is documented as "jobs LOST … any non-zero value means a channel
+            // did not hear about something that happened". Leaving it at 0 while logging a lost edge would
+            // make the counter say the opposite of the log. (A fault AFTER EmitLocked already counted a
+            // drop would double-count — over-reporting a loss is strictly safer than under-reporting one.)
+            Interlocked.Increment(ref _dropped);
             ReportError(ex, "Alarm notifier: the edge detector faulted — this edge was lost, the alarm itself is unaffected.");
         }
     }
 
-    /// <summary>Caller holds <c>_gate</c>. See the class doc comment for the escalation argument.</summary>
-    private void OnRaiseLocked(Alarm alarm)
+    /// <summary>Called AFTER the gate is released — a caller-supplied logging delegate must never run
+    /// under it.</summary>
+    private void LogOutcome(EmitOutcome outcome, string key)
+    {
+        switch (outcome)
+        {
+            case EmitOutcome.EnqueuedAfterEviction:
+                _logWarning?.Invoke(
+                    "Alarm notification queue saturated — dropped the oldest queued notification(s) to make room " +
+                    $"for '{key}'. A notification channel is not keeping up; see the notifier's Dropped counter.");
+                break;
+
+            case EmitOutcome.DroppedShuttingDown:
+                _logWarning?.Invoke(
+                    $"Alarm notifier is shutting down — dropped the notification for '{key}'. This is expected " +
+                    "during shutdown and does NOT mean a channel is falling behind.");
+                break;
+        }
+    }
+
+    /// <summary>Caller holds <c>_gate</c>. See the class doc comment for the escalation argument.
+    ///
+    /// <para>This method assumes transitions are delivered in the order their database writes committed —
+    /// which <see cref="AlarmStore"/> guarantees by holding its own write gate across write-then-notify
+    /// (see <c>AlarmStore._writeGate</c>). Without that guarantee a raise whose row a concurrent ack had
+    /// already deleted would arrive here as an untracked key and be emitted as a fresh
+    /// <see cref="AlarmEdgeKind.Raised"/> for a row that no longer exists — which for a
+    /// <see cref="AlarmSource.Policy"/> key never heals, because nothing periodically re-raises those.
+    /// The ordering is enforced at the source rather than reconstructed here on purpose; see
+    /// <c>AlarmStore</c>'s own comment for why <see cref="Alarm.Id"/>+<see cref="Alarm.Count"/> cannot
+    /// reconstruct it.</para></summary>
+    private EmitOutcome OnRaiseLocked(Alarm alarm)
     {
         if (!_tracked.TryGetValue(alarm.Key, out var state))
         {
             _tracked[alarm.Key] = new KeyState(alarm.Priority, alarm.State);
-            EmitLocked(AlarmEdgeKind.Raised, alarm, previousPriority: null, actor: null);
-            return;
+            return EmitLocked(AlarmEdgeKind.Raised, alarm, previousPriority: null, actor: null);
         }
 
         if (IsMoreSevere(alarm.Priority, state.Priority))
         {
             // High-water mark: only ever ratchets UP, and is discarded wholesale when the key clears.
             _tracked[alarm.Key] = state with { Priority = alarm.Priority };
-            EmitLocked(AlarmEdgeKind.Escalated, alarm, previousPriority: state.Priority, actor: null);
-            return;
+            return EmitLocked(AlarmEdgeKind.Escalated, alarm, previousPriority: state.Priority, actor: null);
         }
 
         // 🔴 THE line this whole task exists for: a restatement of an alarm that is already known is not
         // news, no matter how many times the 5s evaluator restates it.
         _suppressed++;
+        return EmitOutcome.Enqueued;
     }
 
     /// <summary><see cref="AlarmPriority"/> is declared MOST-SEVERE-FIRST (Critical = 0 … Low = 3), the
@@ -305,23 +371,37 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
     private static bool IsMoreSevere(AlarmPriority candidate, AlarmPriority current) => candidate < current;
 
     /// <summary>Caller holds <c>_gate</c>. Assigns the sequence number and enqueues; every failure path
-    /// increments <c>_dropped</c>.</summary>
-    private void EmitLocked(AlarmEdgeKind edge, Alarm alarm, AlarmPriority? previousPriority, string? actor)
+    /// increments <c>_dropped</c>. Returns what happened so the caller can log it once the gate is
+    /// released.</summary>
+    private EmitOutcome EmitLocked(AlarmEdgeKind edge, Alarm alarm, AlarmPriority? previousPriority, string? actor)
     {
-        if (_disposed)
+        if (IsDisposed)
         {
             // Drop path (3) of 3 — an edge arriving after shutdown began. Counted, not silent.
-            _dropped++;
-            return;
+            Interlocked.Increment(ref _dropped);
+            return EmitOutcome.DroppedShuttingDown;
         }
 
         var job = new NotificationJob(++_sequence, edge, alarm, DateTimeOffset.UtcNow, previousPriority, actor);
 
-        // TryWrite may ALSO have evicted an older job (drop path 1, counted by the itemDropped callback)
-        // while still returning true — the two are independent, so Enqueued and Dropped can both move on
-        // one call. That is the honest accounting: one job went in, a different one fell out.
-        if (_channel.Writer.TryWrite(job)) _enqueued++;
-        else _dropped++; // Drop path (2) of 3 — the writer is completed.
+        var droppedBefore = Interlocked.Read(ref _dropped);
+        if (!_channel.Writer.TryWrite(job))
+        {
+            // Drop path (2) of 3 — the writer is completed, which only DisposeAsync ever does. Same
+            // operational meaning as the check above, so it reports the same way.
+            Interlocked.Increment(ref _dropped);
+            return EmitOutcome.DroppedShuttingDown;
+        }
+
+        _enqueued++;
+
+        // TryWrite may ALSO have evicted an older job (drop path 1, counted by the itemDropped callback,
+        // which fires synchronously from inside the TryWrite above) while still returning true — the two
+        // are independent, so Enqueued and Dropped can both move on one call. That is the honest
+        // accounting: one job went in, a different one fell out.
+        return Interlocked.Read(ref _dropped) != droppedBefore
+            ? EmitOutcome.EnqueuedAfterEviction
+            : EmitOutcome.Enqueued;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -365,33 +445,28 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
         {
             if (active is null) return;
 
-            var overflowed = false;
+            var worstOutcome = EmitOutcome.Enqueued;
             lock (_gate)
             {
                 if (_seeded) return;
                 _seeded = true;
 
-                var droppedBefore = _dropped;
                 foreach (var alarm in active)
                 {
                     if (alarm is null || _tracked.ContainsKey(alarm.Key)) continue;
                     _tracked[alarm.Key] = new KeyState(alarm.Priority, alarm.State);
                     _seededCount++;
-                    EmitLocked(AlarmEdgeKind.Restored, alarm, previousPriority: null, actor: null);
+                    var outcome = EmitLocked(AlarmEdgeKind.Restored, alarm, previousPriority: null, actor: null);
+                    if (outcome > worstOutcome) worstOutcome = outcome;
                 }
-
-                overflowed = _dropped != droppedBefore;
             }
 
-            if (overflowed)
-            {
-                _logWarning?.Invoke(
-                    "Alarm notification queue saturated while restoring alarms from a previous process — " +
-                    "some Restored notifications were dropped; see the notifier's Dropped counter.");
-            }
+            LogOutcome(worstOutcome, "<restored alarms>");
         }
         catch (Exception ex)
         {
+            // Counted for the same reason Notify's catch-all is — see there.
+            Interlocked.Increment(ref _dropped);
             ReportError(ex, "Alarm notifier: restoring alarms from a previous process faulted — the seam is running WITHOUT that history.");
         }
     }
@@ -415,9 +490,21 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
                         if (_dispatch is not null) await _dispatch(job, ct).ConfigureAwait(false);
                         Interlocked.Increment(ref _dispatched);
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
-                        // Shutdown in progress — DisposeAsync cancelled mid-dispatch. Nothing to report.
+                        // 🔴 The `when` filter is load-bearing, not decoration — same idiom as
+                        // AlarmEvaluatorService's own loop. TaskCanceledException DERIVES from
+                        // OperationCanceledException, and that is precisely what HttpClient throws on its
+                        // OWN request timeout even when `ct` was never signalled — so C-3's webhook and
+                        // C-4's SMTP will both produce one routinely. Caught unguarded, such a job would
+                        // skip the _dispatched increment above AND the _dispatchFailures increment below
+                        // and vanish from every counter, while AlarmNotifierStats.DispatchFailures claims
+                        // to count "jobs whose dispatch delegate threw". With the filter, only a genuine
+                        // shutdown lands here; anything else falls through to the counted handler.
+                        //
+                        // Even a genuine shutdown loses this job, so count it: a truncated drain must not
+                        // be invisible.
+                        Interlocked.Increment(ref _dropped);
                     }
                     catch (Exception ex)
                     {
@@ -427,7 +514,7 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Expected on shutdown: DisposeAsync cancels the token while WaitToReadAsync may be pending.
         }
@@ -436,8 +523,17 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
             // Defensive, and one step beyond HistorianWriter's own loop: if the loop dies, every later
             // notification is silently lost with nothing to show for it, so say so loudly. (The inner
             // try/catch above already absorbs everything a dispatch delegate can do; reaching here means
-            // the channel plumbing itself faulted.)
+            // the channel plumbing itself faulted.) An OperationCanceledException that is NOT a shutdown
+            // lands here too, rather than being swallowed by the filter above.
             ReportError(ex, "Alarm notification drain loop stopped unexpectedly — notifications will no longer be delivered in this process.");
+        }
+        finally
+        {
+            // Whatever is still queued when this loop ends is never going to be delivered — on a cancelled
+            // (hard-stop) shutdown, or after a fault. Count it: a truncated drain that leaves Dropped at 0
+            // would tell an operator nothing was lost when something was. On a CLEAN shutdown the loop only
+            // exits once the channel is empty, so this sweep finds nothing and changes no counter.
+            while (reader.TryRead(out _)) Interlocked.Increment(ref _dropped);
         }
     }
 
@@ -469,8 +565,11 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
     /// <see cref="St4i.EdgeCore.Uns.UnsPublisher"/> already uses), so it can be disposed twice.</summary>
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
-        _disposed = true;
+        // Atomic check-and-set, not check-then-set: two containers/threads disposing concurrently must not
+        // both proceed, or the second could TryComplete/Dispose the CTS while the first is still awaiting
+        // the loop. Idempotency here is a safety property, so it must not be idempotent only by luck.
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
         _channel.Writer.TryComplete();
 
         try

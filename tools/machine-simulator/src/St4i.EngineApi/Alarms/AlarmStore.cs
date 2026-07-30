@@ -38,7 +38,9 @@ namespace St4i.EngineApi.Alarms;
 /// a first raise OR a restatement of an identical active alarm), <see cref="ClearAsync"/>'s delete (which
 /// may be a no-op), and <see cref="AckAsync"/>'s two branches. Every one of them reports through
 /// <c>NotifySafely</c>, and only ever AFTER its write has committed: a notification for an alarm that was
-/// never recorded is a lie.</para>
+/// never recorded is a lie. All three mutating members hold <c>_writeGate</c> across write-AND-notify, so
+/// the notifier observes transitions in commit order — see that field's own doc comment for the race that
+/// closes and why it cannot be reconstructed downstream.</para>
 /// </summary>
 public sealed class AlarmStore : IAlarmStore
 {
@@ -54,6 +56,44 @@ public sealed class AlarmStore : IAlarmStore
     /// caused them has committed. Defaults to <see cref="NullAlarmNotifier"/>, which is why every
     /// pre-existing construction site behaves bit-for-bit as it did before Đợt C.</summary>
     private readonly IAlarmNotifier _notifier;
+
+    /// <summary>
+    /// Task C-1 review fix (I-2) — serialises <b>write-then-notify</b> across
+    /// <see cref="RaiseAsync"/>/<see cref="ClearAsync"/>/<see cref="AckAsync"/>, so the order in which the
+    /// notifier observes transitions is exactly the order in which the rows actually changed. Same
+    /// <see cref="SemaphoreSlim"/>-capacity-1 idiom, and for the same class of reason, as
+    /// <see cref="St4i.EngineApi.Auth.SqliteAuditStore"/>'s own <c>_appendLock</c>: SQLite's statement
+    /// atomicity does not serialise a MULTI-step operation, and this one is multi-step the moment the
+    /// notification is part of it.
+    ///
+    /// <para>🔴 The concrete race it closes: thread A's raise upserts key <c>K</c> and commits
+    /// (<see cref="AlarmTransitionKind.ReRaised"/>), then awaits its history append. In that window thread
+    /// B acks the same alarm, DELETEs the row and notifies <c>Cleared</c> — the detector drops <c>K</c>. A
+    /// then resumes and notifies its stale <c>ReRaised</c>, which now finds <c>K</c> untracked and is
+    /// emitted as a fresh <b>Raised</b> for a row that no longer exists. For a
+    /// <see cref="AlarmSource.Policy"/> key that never heals: <see cref="AlarmEvaluator"/> only ever clears
+    /// DriverHealth/NgRate/Identity keys, and nothing re-raises Policy periodically, so the detector would
+    /// believe that alarm is active until the same action is denied AND acked again — a latched relay coil
+    /// once C-6 lands, i.e. precisely the spurious pulse this task exists to prevent.</para>
+    ///
+    /// <para><b>Why not reconstruct the ordering in the detector from <see cref="Alarm.Id"/> +
+    /// <see cref="Alarm.Count"/>?</b> Because those two cannot distinguish a stale raise from a legitimate
+    /// one. SQLite REUSES an implicit rowid once the table's high-water row is deleted, and a re-INSERT
+    /// resets <c>count</c> to 1 — so the legitimate raise→clear→raise sequence on a single-alarm table
+    /// produces the byte-identical <c>(rowid, count)</c> pair (1, 1) that a stale post-delete raise would.
+    /// A "reject anything not strictly newer" guard therefore cannot tell them apart: it either lets the
+    /// stale one through or swallows the legitimate re-raise. No extra column is available to disambiguate
+    /// (this task adds no migration). Ordering the writes at the source is exact; reconstructing it
+    /// afterwards is not possible with the information the row carries.</para>
+    ///
+    /// <para>Cost: alarm WRITES become logically single-threaded in this process. SQLite's WAL already
+    /// permits only one writer at a time, so this mostly replaces <c>SQLITE_BUSY</c> back-off with a fair
+    /// queue rather than adding contention. Reads (<see cref="ListActiveAsync"/>/
+    /// <see cref="QueryHistoryAsync"/>) do not take it. Lock ordering is always store-gate →
+    /// notifier-gate and never the reverse, so the two cannot deadlock;
+    /// <see cref="IAlarmNotifier.Notify"/> is non-blocking and never calls back into this store.</para>
+    /// </summary>
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
 
     private static readonly string[] OpenPragmas =
     {
@@ -232,9 +272,13 @@ public sealed class AlarmStore : IAlarmStore
     {
         if (raise is null) return AlarmTransition.None;
 
-        AlarmTransition transition;
         try
         {
+            // Task C-1 (I-2) — the write AND its notification happen under one gate, so the notifier can
+            // never see a transition out of commit order. See _writeGate's own doc comment.
+            await _writeGate.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
             var key = raise.Key;
             var nowIso = ToIso(DateTimeOffset.UtcNow);
 
@@ -301,21 +345,28 @@ public sealed class AlarmStore : IAlarmStore
             // count == 1 is exactly "the INSERT path ran": VALUES seeds it to 1 and DO UPDATE only ever
             // increments, so a count of 1 can only mean this call created the row (or re-created it after
             // an earlier clear, which is the same edge as far as anyone downstream is concerned).
-            transition = new AlarmTransition(
+            var transition = new AlarmTransition(
                 upserted.Count == 1 ? AlarmTransitionKind.Raised : AlarmTransitionKind.ReRaised, upserted);
+
+            // Notify only after BOTH writes committed. A notification for an alarm that was never recorded
+            // is a lie, and every failure path throws to the catch below before reaching here.
+            // NotifySafely is itself unconditionally never-throws, so it cannot be mistaken for a DB fault.
+            NotifySafely(transition, actor: null);
+            return transition;
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
         }
         catch (Exception ex)
         {
             // Deliberately swallowed — see IAlarmStore's doc comment: a Policy DENY handler (or LC-2's
-            // periodic evaluator) must never fail just because alarms.db hiccuped.
+            // periodic evaluator) must never fail just because alarms.db hiccuped. Also covers a cancelled
+            // _writeGate.WaitAsync above (which never entered the inner try, so nothing to release).
             _logError?.Invoke(ex, $"Alarm raise failed for key '{raise?.Key}' — this alarm was not recorded.");
             return AlarmTransition.None;
         }
-
-        // Notify only after BOTH writes committed. A notification for an alarm that was never recorded is
-        // a lie, and the failure path above returns before ever reaching here.
-        NotifySafely(transition, actor: null);
-        return transition;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -324,9 +375,12 @@ public sealed class AlarmStore : IAlarmStore
 
     public async Task<AlarmTransition> ClearAsync(string key, CancellationToken ct = default)
     {
-        AlarmTransition transition;
         try
         {
+            // Task C-1 (I-2) — write and notification under one gate; see _writeGate's doc comment.
+            await _writeGate.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
             using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
 
             Alarm? removed;
@@ -352,16 +406,22 @@ public sealed class AlarmStore : IAlarmStore
             await AppendHistoryAsync(connection, key, "cleared", removed.Source, removed.Code, removed.Priority, removed.Message, actor: null, ct)
                 .ConfigureAwait(false);
 
-            transition = new AlarmTransition(AlarmTransitionKind.Cleared, removed with { State = AlarmState.Cleared });
+            var transition = new AlarmTransition(
+                AlarmTransitionKind.Cleared, removed with { State = AlarmState.Cleared });
+
+            NotifySafely(transition, actor: null);
+            return transition;
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
         }
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Alarm clear failed for key '{key}'.");
             return AlarmTransition.None;
         }
-
-        NotifySafely(transition, actor: null);
-        return transition;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -371,6 +431,12 @@ public sealed class AlarmStore : IAlarmStore
 
     public async Task<Alarm?> AckAsync(long id, string by, CancellationToken ct = default)
     {
+        // Task C-1 (I-2) — an ack DELETEs or UPDATEs a row a concurrent raise may be mid-write on, so it
+        // takes the same gate. No try/catch around it: AckAsync is deliberately NOT a never-throws member
+        // (see IAlarmStore), and a cancelled wait here surfaces the same way any other failure does.
+        await _writeGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
         using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
 
         var current = await ReadByRowIdAsync(connection, id, ct).ConfigureAwait(false);
@@ -422,6 +488,11 @@ public sealed class AlarmStore : IAlarmStore
             // store's: the store reports what it did, the detector decides what is news.
             NotifySafely(new AlarmTransition(AlarmTransitionKind.Acked, acked), actor: by);
             return acked;
+        }
+        }
+        finally
+        {
+            _writeGate.Release();
         }
     }
 
@@ -553,10 +624,20 @@ public sealed class AlarmStore : IAlarmStore
         }
         catch (Exception ex)
         {
-            _logError?.Invoke(
-                ex,
-                $"Alarm notification hook threw for key '{transition.Alarm?.Key}' — the alarm itself WAS recorded; " +
-                "only its notification was lost.");
+            try
+            {
+                _logError?.Invoke(
+                    ex,
+                    $"Alarm notification hook threw for key '{transition.Alarm?.Key}' — the alarm itself WAS recorded; " +
+                    "only its notification was lost.");
+            }
+            catch
+            {
+                // Even the REPORT failed. Swallow it: this method is called from inside RaiseAsync's and
+                // ClearAsync's own try blocks now (it has to be, to stay under _writeGate), so anything
+                // escaping here would be caught by their catch and mis-reported as "this alarm was not
+                // recorded" — the one thing that message must never say when the alarm is safely written.
+            }
         }
     }
 
