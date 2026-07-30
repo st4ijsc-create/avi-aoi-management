@@ -185,7 +185,15 @@ export const deviceAdapterRouter = router({
       if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, "Adapter không tồn tại.");
       // SAFETY: refuse to delete an adapter that is still enabled (it may be polling).
       if (existing.isEnabled) {
-        throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "deleteAdapter" }, "Adapter đang bật — hãy tắt (isEnabled=false) trước khi xoá.");
+        // Task 5 (doc 71) — reason khôi phục chỉ dẫn "tắt trước khi xoá" đã mất khi câu
+        // chuẩn OPERATION_FAILED chỉ nội suy {{operation}} ("deleteAdapter", không nói
+        // vì sao bị chặn).
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "deleteAdapter", reason: "adapterStillEnabled" },
+          "Adapter đang bật — hãy tắt (isEnabled=false) trước khi xoá.",
+        );
       }
       // Cascade delete tags + adapter atomically.
       await db.transaction(async (tx) => {

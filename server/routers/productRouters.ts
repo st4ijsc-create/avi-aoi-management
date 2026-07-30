@@ -1855,7 +1855,10 @@ export const productMachineMappingRouter = router({
             throw appError(
               "BAD_REQUEST",
               "OPERATION_FAILED",
-              { operation: "assignProductToMachine" },
+              // Task 5 (doc 71) — `reason` khôi phục readiness score + chỉ dẫn
+              // force=true đã mất khi câu chuẩn OPERATION_FAILED chỉ nội suy
+              // {{operation}} (mã "assignProductToMachine", không nói vì sao thất bại).
+              { operation: "assignProductToMachine", reason: "productReadinessBlocked", productCode: product.code, score: readiness.score },
               `Sản phẩm "${product.code}" chưa đủ cấu hình để gán máy (readiness ${readiness.score}% — band "blocked"). ` +
                 `Hoàn thiện điểm-đo (ngưỡng/tọa độ/golden) trước, hoặc gán với force=true nếu cố ý.`,
             );

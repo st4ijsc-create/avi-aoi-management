@@ -1099,10 +1099,13 @@ export const permissionsRouter = router({
       const permTemplates = DEFAULT_ROLE_PERMISSIONS[input.builtInRole];
 
       if (!permTemplates) {
+        // Task 5 (doc 71) — reason khôi phục danh sách role hợp lệ (validRoles) đã mất
+        // khi câu chuẩn INVALID_VALUE chỉ nội suy {{field}} ("vai trò dựng sẵn", không
+        // liệt kê role nào mới hợp lệ).
         throw appError(
           'BAD_REQUEST',
           'INVALID_VALUE',
-          { field: 'builtInRole' },
+          { field: 'builtInRole', reason: 'unknownBuiltInRole', validRoles: Object.keys(DEFAULT_ROLE_PERMISSIONS).join(', ') },
           `Unknown built-in role: ${input.builtInRole}. Available: ${Object.keys(DEFAULT_ROLE_PERMISSIONS).join(', ')}`,
         );
       }

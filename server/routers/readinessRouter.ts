@@ -448,7 +448,10 @@ const readinessProcedure = protectedProcedure.use(async ({ ctx, next }) => {
     throw appError(
       "FORBIDDEN",
       "PERMISSION_DENIED",
-      { action: "viewTrustEnforcementCenter" },
+      // Task 5 (doc 71) — reason khôi phục TÊN QUYỀN cần có: câu chuẩn PERMISSION_DENIED
+      // chỉ nội suy {{action}} ("xem Trust & Enforcement Center"), không nói CẦN quyền
+      // gì để được cấp — người dùng đọc xong vẫn không biết đi xin quyền nào.
+      { action: "viewTrustEnforcementCenter", reason: "needsAdminSystemOrMachineControl" },
       "Cần quyền xem admin_system hoặc machine_control để truy cập Trust & Enforcement Center.",
     );
   }

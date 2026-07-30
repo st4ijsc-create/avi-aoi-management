@@ -637,7 +637,14 @@ export const cpkTrendRouter = router({
       });
 
       if (rawData.length < 30) {
-        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'calculateCpkCapability' }, `Insufficient data: ${rawData.length} samples (minimum 30 required)`);
+        // Task 5 (doc 71) — reason khôi phục số mẫu thực tế + ngưỡng tối thiểu đã mất
+        // khi câu chuẩn OPERATION_FAILED chỉ nội suy {{operation}}.
+        throw appError(
+          'BAD_REQUEST',
+          'OPERATION_FAILED',
+          { operation: 'calculateCpkCapability', reason: 'insufficientCpkSamples', sampleCount: rawData.length, minSamples: 30 },
+          `Insufficient data: ${rawData.length} samples (minimum 30 required)`,
+        );
       }
 
       // Get spec limits

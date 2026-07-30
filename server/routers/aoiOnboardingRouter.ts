@@ -448,7 +448,9 @@ export const aoiOnboardingRouter = router({
           throw appError(
             "PRECONDITION_FAILED",
             "OPERATION_FAILED",
-            { operation: "signOnboarding" },
+            // Task 5 (doc 71) — reason tĩnh (không tham số động): mọi lần rơi vào nhánh
+            // này đều cần ĐÚNG MỘT chỉ dẫn "chạy Dry-run hoặc nhờ admin ký".
+            { operation: "signOnboarding", reason: "dryRunNotPassed" },
             "Máy chưa có dry-run đạt — chạy bước 3 (Dry-run) trước, hoặc nhờ admin ký với lý do override.",
           );
         }
