@@ -27,6 +27,31 @@ internal static class ModbusLoopbackHarness
         },
     };
 
+    /// <summary>Task B-7 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-7-brief.md) — a
+    /// purely-additive writable-shape map (one writable Holding register "speed" [0,500], one coil-pulse
+    /// command "start-cycle"), mirroring <c>ModbusTcpDriverWriteTests</c>' own private <c>BuildWritableMap</c>
+    /// exactly (same point/command names/addresses/bounds), so <c>ModbusTcpDriverConformanceTests</c>'s new
+    /// write-contract checks share the identical, already-proven-correct shape rather than inventing a
+    /// second one. <paramref name="readTimeoutMs"/> lets a caller configure a SHORT internal write timeout —
+    /// see <see cref="DeviceDriverConformanceSuite.CreateUnresponsiveWritableDeviceAsync"/>'s own doc comment
+    /// for why the write-contract checks need one.</summary>
+    public static ModbusRegisterMap BuildWritableMap(string machineCode, int? readTimeoutMs = null, int pollIntervalMs = 5_000) => new()
+    {
+        MachineCode = machineCode,
+        UnitId = 1,
+        PollIntervalMs = pollIntervalMs,
+        ReadTimeoutMs = readTimeoutMs,
+        Registers = new List<ModbusRegister>
+        {
+            new(Address: 5, Type: ModbusRegisterType.Holding, DataType: ModbusDataType.UInt16, Scale: 1.0, Metric: "speed", Unit: "rpm",
+                Writable: new ModbusWritableRange(0, 500)),
+        },
+        Commands = new List<ModbusCommand>
+        {
+            new("start-cycle", CoilAddress: 3),
+        },
+    };
+
     /// <summary>A running slave plus everything needed to tear it down. Exposes its pieces individually
     /// (rather than only a single <see cref="DisposeAsync"/>) so a caller that needs to kill the slave OUT
     /// FROM UNDER a driver mid-test (as <see cref="ModbusTcpDriverLoopbackTests"/>'s fault-injection test

@@ -81,6 +81,14 @@ public abstract class DeviceDriverConformanceSuite
     /// collects.</summary>
     protected virtual int ReadingsRequiredForRoundTripCheck => 3;
 
+    /// <summary>Task B-7 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-7-brief.md) — bound
+    /// for a single <c>WriteSetpointAsync</c>/<c>InvokeCommandAsync</c> call issued against
+    /// <see cref="CreateUnresponsiveWritableDeviceAsync"/>'s own target. Generous relative to what a driver
+    /// author is expected to configure that target's OWN internal timeout to (a few hundred ms to a couple of
+    /// seconds — see that hook's own doc comment), so CI jitter never produces a false failure, while still
+    /// catching a driver that hangs indefinitely instead of resolving to <see cref="Models.WriteOutcome.Indeterminate"/>.</summary>
+    protected virtual TimeSpan WriteBudget => TimeSpan.FromSeconds(8);
+
     // ---- hooks a driver author implements ----------------------------------------------------------
 
     /// <summary>
@@ -225,9 +233,103 @@ public abstract class DeviceDriverConformanceSuite
         return results;
     }
 
+    // ---- write-contract hooks (Task B-7, task-7-brief.md) -------------------------------------------
+    //
+    // Applicability, not a gap (the brief's own framing): a driver that does not implement
+    // IWritableDeviceDriver at all never reaches any Check_Write_* method (see the wiring-enforcement
+    // section below — EveryCheckIsWiredOrAcknowledged tests CreateDriver()'s own runtime type for the
+    // capability, exactly the way a real host is documented to: `if (driver is IWritableDeviceDriver)`),
+    // so a read-only driver author never has to touch these hooks, never has to add anything to
+    // AcknowledgedGaps, and never sees a Check_Write_* method at all in the "must wire or acknowledge" set.
+    // A driver that DOES implement it must wire (or acknowledge) every one of them, same as every other check.
+
+    /// <summary>One WRITABLE driver instance plus everything <see cref="Check_Write_TimedOutWriteOrCommand_ReturnsIndeterminate_NeverThrows"/>
+    /// and its siblings need, pointed at a target that is transport/session-reachable but never completes a
+    /// setpoint write or command invocation — the write-contract mirror of <see cref="UnresponsiveDeviceSession"/>,
+    /// extended with what a WRITE check needs beyond a READ one: a real point/command name this driver
+    /// actually declares (so a call can be attempted at all, never invented by the suite itself), and a way
+    /// to observe how many discrete attempts a TRANSPORT LAYER underneath the driver actually made — the
+    /// externally-observable fact <see cref="Check_Write_NoImplicitRetry_ExactlyOneCommandAttemptReachesTheDeviceOnTimeout"/>
+    /// needs, since task-4-report.md found a silent transport-level resend the DRIVER'S OWN code never saw
+    /// (NModbus's <c>Transport.Retries</c> resending an unacknowledged write) — a driver's own claimed
+    /// outcome alone cannot prove this; only a count taken from OUTSIDE the driver can.</summary>
+    /// <param name="Driver">A fresh, independent, writable driver instance.</param>
+    /// <param name="WritablePoint">A name from <paramref name="Driver"/>'s own <c>WritablePoints</c> — a
+    /// setpoint write against it must be attemptable (never rejected pre-flight) so the checks below can
+    /// actually reach the "no definitive answer arrives" scenario they exist to test.</param>
+    /// <param name="ValidPointValue">A value within <paramref name="WritablePoint"/>'s own declared range —
+    /// never rejected as <see cref="Models.SetpointRejectionReason.OutOfRange"/>.</param>
+    /// <param name="Command">A name from <paramref name="Driver"/>'s own <c>Commands</c> that takes NO
+    /// required arguments the checks below would otherwise have to know how to supply, UNLESS <paramref
+    /// name="CommandArguments"/> is supplied to cover them.</param>
+    /// <param name="CommandArguments">Arguments to pass alongside <paramref name="Command"/> — <see
+    /// langword="null"/> for a zero-argument command (the common case for both built-in protocols' own test
+    /// commands).</param>
+    /// <param name="CommandAttemptsReachingDevice">Cumulative count of discrete attempts that have reached
+    /// the "device" (or its stand-in) so far, observed independently of anything <paramref name="Driver"/>
+    /// itself reports — e.g. counting raw requests received on the wire, or a test server's own instrumented
+    /// invocation counter. Read before AND after one <c>InvokeCommandAsync</c> call to compute a delta.</param>
+    /// <param name="AttemptCountSettleDelay">How long to wait, after a call against <paramref name="Driver"/>
+    /// has already returned, before trusting <paramref name="CommandAttemptsReachingDevice"/> as settled —
+    /// zero for a target that counts synchronously as bytes arrive (Modbus's raw stream); non-zero for a
+    /// target whose own handler runs on a delay independent of when the CLIENT gave up waiting (OPC-UA's
+    /// instrumented method, held open past the client's own operation timeout).</param>
+    /// <param name="ForceUnstickAsync">Best-effort teardown, mirroring <see cref="UnresponsiveDeviceSession.ForceUnstickAsync"/>'s
+    /// own role — called before disposing <paramref name="Driver"/> so a still-listening target doesn't
+    /// outlive the check.</param>
+    protected sealed record UnresponsiveWritableDeviceSession(
+        IWritableDeviceDriver Driver,
+        string WritablePoint,
+        object ValidPointValue,
+        string Command,
+        Dictionary<string, object>? CommandArguments,
+        Func<int> CommandAttemptsReachingDevice,
+        TimeSpan AttemptCountSettleDelay,
+        Func<Task> ForceUnstickAsync);
+
+    /// <summary>
+    /// Builds a writable driver instance (see <see cref="UnresponsiveWritableDeviceSession"/>'s own doc
+    /// comment for the full shape) whose underlying target accepts a connection/session but never sends a
+    /// definitive response to a write/command — mirroring <see cref="CreateUnresponsiveDeviceAsync"/>'s own
+    /// "real, portable, loopback-only silent peer" rationale exactly, for the write side. Only ever called
+    /// from a Check_Write_* method, so an override that only implements <see cref="IWritableDeviceDriver"/>
+    /// members meaningfully (never <see cref="IDeviceDriver.ReadAsync"/>-dependent behaviour) is completely
+    /// fine — none of the write checks read from <paramref name="Driver"/>.
+    ///
+    /// <para><b>The driver's OWN internal write/command timeout should be configured SHORT</b> (a few hundred
+    /// milliseconds to a couple of seconds — well under <see cref="WriteBudget"/>) so
+    /// <see cref="Check_Write_TimedOutWriteOrCommand_ReturnsIndeterminate_NeverThrows"/> and its siblings,
+    /// which deliberately issue a call with NO cancellation at all and wait for the driver's own bound to
+    /// elapse, complete quickly rather than waiting out a multi-second-or-unbounded production default.</para>
+    ///
+    /// <para><b>Virtual, not abstract — deliberately.</b> A read-only <see cref="IDeviceDriver"/> (the
+    /// overwhelming majority of drivers, per <see cref="IWritableDeviceDriver"/>'s own doc comment) has no
+    /// writable target to build one of these against at all, and this class's own "applicability, not a gap"
+    /// design means such a driver's Check_Write_* obligations disappear entirely (see
+    /// <see cref="EveryCheckIsWiredOrAcknowledged"/>) — so this hook is never actually CALLED for one. Making
+    /// it <see langword="abstract"/> would force every existing read-only conformance test class, and every
+    /// existing read-side negative-control harness, to implement a hook they can never meaningfully satisfy
+    /// and will never be asked to use, purely to keep compiling — exactly the boilerplate-for-no-reason the
+    /// applicability mechanism exists to avoid. The default throws loudly (never silently returns a
+    /// nonsensical session) so a writable driver's author who forgets to override this gets an immediate,
+    /// clear failure the first time a Check_Write_* check actually calls it, rather than some confusing
+    /// downstream symptom.</para>
+    /// </summary>
+    protected virtual Task<UnresponsiveWritableDeviceSession> CreateUnresponsiveWritableDeviceAsync() =>
+        throw new NotSupportedException(
+            $"{GetType().Name} must override {nameof(CreateUnresponsiveWritableDeviceAsync)} — its own " +
+            $"{nameof(CreateDriver)} returns an {nameof(IWritableDeviceDriver)}, so at least one Check_Write_* " +
+            "check needs a writable target that never completes a write/command.");
+
     // ---- wiring enforcement (task-6-report.md "Fix round 1", IMPORTANT 3) --------------------------
 
     private const string CheckMethodPrefix = "Check_";
+
+    /// <summary>Task B-7 — every <c>Check_*</c> name that belongs to the WRITE contract, minus the shared
+    /// <see cref="CheckMethodPrefix"/>, starts with this. Used by <see cref="FindUnwiredAndUnacknowledgedChecks"/>
+    /// to exempt them entirely for a driver that does not implement <see cref="IWritableDeviceDriver"/> —
+    /// see this class's own "Applicability, not a gap" remarks above.</summary>
+    private const string WriteCheckInfix = "Write_";
 
     /// <summary>
     /// <see langword="false"/> only for a harness that exists purely to let a negative-control test manually
@@ -263,13 +365,29 @@ public abstract class DeviceDriverConformanceSuite
     /// negative-control test can prove this detection logic has teeth without needing to instantiate a
     /// "live", xunit-auto-discoverable, deliberately-incomplete conformance test class (which would itself
     /// become a permanently-failing test the moment xunit discovered it).
+    ///
+    /// <para><b>Task B-7 — <paramref name="includeWriteChecks"/>, the applicability mechanism.</b> When
+    /// <see langword="false"/> (a driver that does not implement <see cref="IWritableDeviceDriver"/> — see
+    /// <see cref="EveryCheckIsWiredOrAcknowledged"/>'s own instance-level test of <c>CreateDriver()</c>'s
+    /// runtime type), every <c>Check_Write_*</c> name is dropped from consideration ENTIRELY — not counted as
+    /// missing, not requiring an <see cref="AcknowledgedGaps"/> entry either. This is deliberately NOT the
+    /// same mechanism as <see cref="AcknowledgedGaps"/>: an acknowledged gap documents a check that DOES apply
+    /// but is currently, genuinely broken (a <c>KnownGap_*</c> test pins the real failing behaviour); a
+    /// write-capable-only check on a read-only driver does not apply AT ALL — there is no failing behaviour to
+    /// pin, because there is no write capability for it to describe. Conflating the two would force every
+    /// read-only driver author (the overwhelming majority, per the brief) to recite a boilerplate
+    /// "AcknowledgedGaps" entry for a capability their driver was never meant to have — exactly the kind of
+    /// false "known-broken" signal <see cref="AcknowledgedGaps"/>'s own doc comment reserves for a genuine
+    /// finding, not a correct absence.</para>
     /// </summary>
-    public static IReadOnlyList<string> FindUnwiredAndUnacknowledgedChecks(Type concreteType, IEnumerable<string> acknowledgedGaps)
+    public static IReadOnlyList<string> FindUnwiredAndUnacknowledgedChecks(
+        Type concreteType, IEnumerable<string> acknowledgedGaps, bool includeWriteChecks = true)
     {
         var checkNames = typeof(DeviceDriverConformanceSuite)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => m.Name.StartsWith(CheckMethodPrefix, StringComparison.Ordinal) && m.GetParameters().Length == 0)
-            .Select(m => m.Name[CheckMethodPrefix.Length..]);
+            .Select(m => m.Name[CheckMethodPrefix.Length..])
+            .Where(n => includeWriteChecks || !n.StartsWith(WriteCheckInfix, StringComparison.Ordinal));
 
         var wiredFactNames = concreteType
             .GetMethods(BindingFlags.Public | BindingFlags.Instance)
@@ -285,20 +403,49 @@ public abstract class DeviceDriverConformanceSuite
     /// <summary>Enforces that THIS concrete subclass gives every check declared on the base class an
     /// explicit fate (wired or acknowledged) — see this class's own doc comment's "third trap" remarks. A
     /// negative-control harness (<see cref="IsConformanceTarget"/> = <see langword="false"/>) is exempt: it
-    /// exists to invoke individual checks manually, not to demonstrate full coverage.</summary>
+    /// exists to invoke individual checks manually, not to demonstrate full coverage.
+    ///
+    /// <para><b>Task B-7 — applicability, determined the SAME way a real host is documented to.</b>
+    /// <see cref="IWritableDeviceDriver"/>'s own doc comment says a host asks "can this driver write?" by
+    /// testing an already-live <see cref="IDeviceDriver"/> reference — <c>if (driver is
+    /// IWritableDeviceDriver)</c> — never by assuming or requiring it of any particular driver. This test does
+    /// EXACTLY that against <see cref="CreateDriver"/>'s own return value, so a read-only driver's
+    /// <c>Check_Write_*</c> obligations disappear entirely (see <see cref="FindUnwiredAndUnacknowledgedChecks"/>'s
+    /// own doc comment) while a writable one's do not — without this class needing a second, parallel
+    /// "declare whether you write" flag that could drift out of sync with what <see cref="CreateDriver"/>
+    /// actually returns.</para>
+    /// </summary>
     [Fact]
-    public void EveryCheckIsWiredOrAcknowledged()
+    public async Task EveryCheckIsWiredOrAcknowledged()
     {
         if (!IsConformanceTarget) return;
 
-        var missing = FindUnwiredAndUnacknowledgedChecks(GetType(), AcknowledgedGaps);
+        var isWritable = await IsWriteCapableAsync();
+        var missing = FindUnwiredAndUnacknowledgedChecks(GetType(), AcknowledgedGaps, isWritable);
 
         Assert.True(
             missing.Count == 0,
             $"{GetType().Name} silently omits conformance coverage for: {string.Join(", ", missing)}. Every " +
             $"Check_* method on {nameof(DeviceDriverConformanceSuite)} must be wired as a [Fact] method named " +
             "identically (minus the \"Check_\" prefix) or listed in AcknowledgedGaps with a reason (e.g. a " +
-            "KnownGap_* test pinning real, currently-broken behaviour).");
+            "KnownGap_* test pinning real, currently-broken behaviour). Check_Write_* methods only apply at " +
+            "all when CreateDriver() returns an IWritableDeviceDriver — see this method's own doc comment.");
+    }
+
+    /// <summary>Task B-7 — builds ONE driver via <see cref="CreateDriver"/> purely to test it for
+    /// <see cref="IWritableDeviceDriver"/>, then disposes it immediately. <see cref="CreateDriver"/>'s own
+    /// contract (non-blocking, no I/O) makes this cheap enough to pay on every run of this wiring check.</summary>
+    private async Task<bool> IsWriteCapableAsync()
+    {
+        var driver = CreateDriver();
+        try
+        {
+            return driver is IWritableDeviceDriver;
+        }
+        finally
+        {
+            await driver.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     // ---- checks -------------------------------------------------------------------------------------
@@ -658,6 +805,467 @@ public abstract class DeviceDriverConformanceSuite
             var diff = DeviceReadingEquality.Compare(reading, roundTripped!, allowNumericWidening: true);
             Assert.True(diff is null, $"reading #{i} did not round-trip losslessly through ConnectorJson: {diff}\nJSON: {json}");
         }
+    }
+
+    // ---- write-contract checks (Task B-7, task-7-brief.md) -------------------------------------------
+    //
+    // Every check below is derived from IWritableDeviceDriver's own doc comments (see that interface's doc
+    // comment for the full narrative these checks enforce piecemeal) — the read-side checks' own contract:
+    // each one is proven, in tests/St4i.Connector.Conformance.Tests, to genuinely reject a deliberately
+    // non-conforming fake driver, not merely to pass against conforming ones.
+
+    /// <summary>Enforces: "MUST return Rejected WITHOUT touching the device at all for an unknown point" /
+    /// "MUST return Rejected WITHOUT touching the device at all for an unknown command" (WriteSetpointAsync's
+    /// and InvokeCommandAsync's own doc comments) — points and commands are NAMED, never raw addresses/codes,
+    /// and an unrecognised name is the caller's mistake, never attempted against the device.</summary>
+    public virtual async Task Check_Write_UnknownPointOrCommand_RejectedWithoutTouchingDevice()
+    {
+        await using var driver = CreateDriver();
+        var writable = (IWritableDeviceDriver)driver;
+
+        var unknownPoint = $"__conformance-unknown-point-{Guid.NewGuid():N}";
+        var (pointResult, pointThrown) = await TryWriteSetpointAsync(
+            writable, new SetpointWriteRequest(unknownPoint, 0.0), CancellationToken.None).ConfigureAwait(false);
+        Assert.True(pointThrown is null, $"WriteSetpointAsync threw for an unknown point instead of rejecting it: {pointThrown}");
+        Assert.NotNull(pointResult);
+        Assert.Equal(WriteOutcome.Rejected, pointResult!.Outcome);
+        Assert.Equal(SetpointRejectionReason.UnknownPoint, pointResult.RejectionReason);
+
+        var unknownCommand = $"__conformance-unknown-command-{Guid.NewGuid():N}";
+        var (commandResult, commandThrown) = await TryInvokeCommandAsync(
+            writable, new CommandRequest(unknownCommand), CancellationToken.None).ConfigureAwait(false);
+        Assert.True(commandThrown is null, $"InvokeCommandAsync threw for an unknown command instead of rejecting it: {commandThrown}");
+        Assert.NotNull(commandResult);
+        Assert.Equal(WriteOutcome.Rejected, commandResult!.Outcome);
+        Assert.Equal(CommandRejectionReason.UnknownCommand, commandResult.RejectionReason);
+    }
+
+    /// <summary>Enforces: "Setpoint write and command invocation are two distinct operations... Do not add a
+    /// third member that tries to do both" (IWritableDeviceDriver's own class doc comment) — carried down to
+    /// the NAME level this check actually exercises: a command's own declared name must not be acceptable as
+    /// a <c>WriteSetpointAsync</c> point, and a point's own declared name must not be acceptable as an
+    /// <c>InvokeCommandAsync</c> command. The two vocabularies are separate namespaces, not one shared
+    /// pool.</summary>
+    public virtual async Task Check_Write_SetpointAndCommandNamespaces_AreDistinct()
+    {
+        await using var driver = CreateDriver();
+        var writable = (IWritableDeviceDriver)driver;
+
+        Assert.True(writable.WritablePoints.Count > 0,
+            "this check needs at least one declared writable point to cross-check against Commands — override CreateDriver() to declare one.");
+        Assert.True(writable.Commands.Count > 0,
+            "this check needs at least one declared command to cross-check against WritablePoints — override CreateDriver() to declare one.");
+
+        var commandName = writable.Commands[0];
+        var pointName = writable.WritablePoints[0];
+        Assert.NotEqual(commandName, pointName);
+
+        var (crossPointResult, crossPointThrown) = await TryWriteSetpointAsync(
+            writable, new SetpointWriteRequest(commandName, 0.0), CancellationToken.None).ConfigureAwait(false);
+        Assert.True(crossPointThrown is null, $"WriteSetpointAsync threw when given a COMMAND's own name as a point: {crossPointThrown}");
+        Assert.NotNull(crossPointResult);
+        Assert.Equal(WriteOutcome.Rejected, crossPointResult!.Outcome);
+        Assert.Equal(SetpointRejectionReason.UnknownPoint, crossPointResult.RejectionReason);
+
+        var (crossCommandResult, crossCommandThrown) = await TryInvokeCommandAsync(
+            writable, new CommandRequest(pointName), CancellationToken.None).ConfigureAwait(false);
+        Assert.True(crossCommandThrown is null, $"InvokeCommandAsync threw when given a POINT's own name as a command: {crossCommandThrown}");
+        Assert.NotNull(crossCommandResult);
+        Assert.Equal(WriteOutcome.Rejected, crossCommandResult!.Outcome);
+        Assert.Equal(CommandRejectionReason.UnknownCommand, crossCommandResult.RejectionReason);
+    }
+
+    /// <summary>Enforces <see cref="Models.IWritableDeviceDriver.WritablePoints"/>/<see cref="Models.IWritableDeviceDriver.Commands"/>'s
+    /// own doc comment: "fixed for the lifetime of this instance"/"effectively immutable... never a live view
+    /// a caller could observe changing". Task B-4 shipped these as the underlying <c>List&lt;string&gt;</c>
+    /// cast to <c>IReadOnlyList&lt;string&gt;</c> — downcastable and mutable — and a reviewer caught it; this
+    /// check reproduces exactly that downcast-and-mutate attempt against BOTH the <c>Add</c> and the indexer-
+    /// set paths, so it catches a raw mutable list AND any other still-mutable collection shape, not only the
+    /// one specific type that shipped.</summary>
+    public virtual async Task Check_Write_CapabilityLists_AreEffectivelyImmutable()
+    {
+        await using var driver = CreateDriver();
+        var writable = (IWritableDeviceDriver)driver;
+
+        AssertCapabilityListIsImmutable(writable.WritablePoints, nameof(IWritableDeviceDriver.WritablePoints));
+        AssertCapabilityListIsImmutable(writable.Commands, nameof(IWritableDeviceDriver.Commands));
+    }
+
+    /// <summary>Enforces: "A timed-out write returns Indeterminate; it does not throw" — the single most
+    /// consequential invariant in the write contract (task-7-brief.md): after a timeout the driver genuinely
+    /// does not know whether the device applied the write, and that uncertainty can ONLY reach the caller
+    /// through the returned result, never through a thrown exception. Exercised against BOTH operations —
+    /// <c>InvokeCommandAsync</c> is the higher-risk one (IWritableDeviceDriver's own doc comment: "a command
+    /// CAN trigger real, physical motion"), but the "never throws" rule binds both equally.</summary>
+    public virtual async Task Check_Write_TimedOutWriteOrCommand_ReturnsIndeterminate_NeverThrows()
+    {
+        var session = await CreateUnresponsiveWritableDeviceAsync().ConfigureAwait(false);
+        try
+        {
+            var writeCall = session.Driver.WriteSetpointAsync(
+                new SetpointWriteRequest(session.WritablePoint, session.ValidPointValue), CancellationToken.None);
+            var (writeResult, writeThrown, writeInTime) = await AwaitWithBudgetAsync(writeCall, WriteBudget).ConfigureAwait(false);
+            Assert.True(writeInTime,
+                $"WriteSetpointAsync against a target that never responds did not return within {WriteBudget} — " +
+                "configure CreateUnresponsiveWritableDeviceAsync()'s own driver with a SHORT internal write " +
+                "timeout so a genuine (uncancelled) timeout resolves well within this budget.");
+            Assert.True(writeThrown is null,
+                $"WriteSetpointAsync threw {writeThrown} for a timed-out write instead of returning Indeterminate " +
+                "— IWritableDeviceDriver's contract forbids letting any exception propagate from a write.");
+            Assert.Equal(WriteOutcome.Indeterminate, writeResult!.Outcome);
+
+            var commandCall = session.Driver.InvokeCommandAsync(
+                new CommandRequest(session.Command, session.CommandArguments), CancellationToken.None);
+            var (commandResult, commandThrown, commandInTime) = await AwaitWithBudgetAsync(commandCall, WriteBudget).ConfigureAwait(false);
+            Assert.True(commandInTime, $"InvokeCommandAsync against a target that never responds did not return within {WriteBudget}.");
+            Assert.True(commandThrown is null,
+                $"InvokeCommandAsync threw {commandThrown} for a timed-out command instead of returning " +
+                "Indeterminate — the higher-risk of the two operations, per the interface's own doc comment.");
+            Assert.Equal(WriteOutcome.Indeterminate, commandResult!.Outcome);
+        }
+        finally
+        {
+            await session.ForceUnstickAsync().ConfigureAwait(false);
+            await session.Driver.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Enforces: "Indeterminate's Detail tells an operator what to check" (task-7-brief.md) — a
+    /// requirement the brief itself says a bare non-empty check misses: B-4 shipped a path where a generic
+    /// exception string replaced the one message saying a COIL had been left latched ON (a cancellation
+    /// racing <c>InvokeCommandAsync</c>'s own reset half), and B-5 shipped one where a malformed NodeId
+    /// produced "unexpected failure: Cannot parse node id text..." for a call that provably never left the
+    /// process (affecting BOTH <c>WriteSetpointAsync</c> and <c>InvokeCommandAsync</c>) — both are the SAME
+    /// failure shape, a genuinely-authored, situational message getting silently replaced by generic/canned
+    /// text. Exercised against BOTH operations, not just the setpoint one, specifically because the FIRST of
+    /// those two regressions lived in the COMMAND path. Without over-fitting to any one driver's wording (the
+    /// brief's own instruction), the closest falsifiable proxy that does not hard-code any vocabulary is:
+    /// Detail must be non-empty for EVERY Indeterminate cause, AND two genuinely different causes (an
+    /// uncancelled internal timeout vs. a caller-initiated cancellation) must not produce the IDENTICAL Detail
+    /// text FOR THE SAME OPERATION — a driver that funnels every Indeterminate through one fixed, generic
+    /// message (this check's own negative control: <c>AlwaysSameDetailWritableFakeDriver</c>) fails this,
+    /// while either real driver's own genuinely situational wording passes it.</summary>
+    public virtual async Task Check_Write_Indeterminate_DetailIsNonEmpty_AndDistinguishesDistinctCauses()
+    {
+        var session = await CreateUnresponsiveWritableDeviceAsync().ConfigureAwait(false);
+        try
+        {
+            // Setpoint write — Cause 1 (a genuine, UNCANCELLED timeout) vs. Cause 2 (genuine CALLER-initiated
+            // cancellation, well before the driver's own internal timeout).
+            var setpointTimeout = await RunIndeterminateSetpointWriteAsync(session, CancellationToken.None).ConfigureAwait(false);
+            AssertDetailIsNonEmpty(setpointTimeout.Detail, "a genuine (uncancelled) setpoint write timeout");
+
+            using var setpointCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+            var setpointCancel = await RunIndeterminateSetpointWriteAsync(session, setpointCts.Token).ConfigureAwait(false);
+            AssertDetailIsNonEmpty(setpointCancel.Detail, "a genuine setpoint write cancellation");
+
+            Assert.NotEqual(setpointTimeout.Detail, setpointCancel.Detail);
+
+            // InvokeCommandAsync — the SAME two-cause comparison, on the operation where the actual B-4
+            // regression this check targets lived (a coil pulse's reset half, cancelled mid-flight).
+            var commandTimeout = await RunIndeterminateCommandAsync(session, CancellationToken.None).ConfigureAwait(false);
+            AssertDetailIsNonEmpty(commandTimeout.Detail, "a genuine (uncancelled) command timeout");
+
+            using var commandCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+            var commandCancel = await RunIndeterminateCommandAsync(session, commandCts.Token).ConfigureAwait(false);
+            AssertDetailIsNonEmpty(commandCancel.Detail, "a genuine command cancellation");
+
+            Assert.NotEqual(commandTimeout.Detail, commandCancel.Detail);
+        }
+        finally
+        {
+            await session.ForceUnstickAsync().ConfigureAwait(false);
+            await session.Driver.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task<SetpointWriteResult> RunIndeterminateSetpointWriteAsync(UnresponsiveWritableDeviceSession session, CancellationToken ct)
+    {
+        var call = session.Driver.WriteSetpointAsync(new SetpointWriteRequest(session.WritablePoint, session.ValidPointValue), ct);
+        var (result, thrown, inTime) = await AwaitWithBudgetAsync(call, WriteBudget).ConfigureAwait(false);
+        Assert.True(inTime, $"WriteSetpointAsync against an unresponsive target did not return within {WriteBudget}.");
+        Assert.True(thrown is null, $"WriteSetpointAsync threw {thrown} instead of returning Indeterminate.");
+        Assert.Equal(WriteOutcome.Indeterminate, result!.Outcome);
+        return result;
+    }
+
+    private async Task<CommandResult> RunIndeterminateCommandAsync(UnresponsiveWritableDeviceSession session, CancellationToken ct)
+    {
+        var call = session.Driver.InvokeCommandAsync(new CommandRequest(session.Command, session.CommandArguments), ct);
+        var (result, thrown, inTime) = await AwaitWithBudgetAsync(call, WriteBudget).ConfigureAwait(false);
+        Assert.True(inTime, $"InvokeCommandAsync against an unresponsive target did not return within {WriteBudget}.");
+        Assert.True(thrown is null, $"InvokeCommandAsync threw {thrown} instead of returning Indeterminate.");
+        Assert.Equal(WriteOutcome.Indeterminate, result!.Outcome);
+        return result;
+    }
+
+    private static void AssertDetailIsNonEmpty(string? detail, string scenario) =>
+        Assert.False(
+            string.IsNullOrWhiteSpace(detail),
+            $"an Indeterminate result's Detail was null/blank for {scenario} — an operator standing next to " +
+            "the machine is told nothing at all to check.");
+
+    /// <summary>Enforces: "No implicit retries, ever, for any reason, including a timeout" (IWritableDeviceDriver's
+    /// own doc comment), checked against the highest-risk operation the SAME doc comment names explicitly:
+    /// "the no-retry rule matters MOST here [InvokeCommandAsync]: a retried command can physically re-fire
+    /// whatever it just triggered." Task B-4 found this could be violated entirely BENEATH the driver's own
+    /// code (NModbus's transport-level <c>Retries</c> silently resending an unacknowledged write) — the
+    /// driver's own return value cannot prove this either way, so this check counts attempts observed from
+    /// OUTSIDE the driver (<see cref="UnresponsiveWritableDeviceSession.CommandAttemptsReachingDevice"/>),
+    /// exactly the class of bug the brief calls out.</summary>
+    public virtual async Task Check_Write_NoImplicitRetry_ExactlyOneCommandAttemptReachesTheDeviceOnTimeout()
+    {
+        var session = await CreateUnresponsiveWritableDeviceAsync().ConfigureAwait(false);
+        try
+        {
+            var before = session.CommandAttemptsReachingDevice();
+
+            var call = session.Driver.InvokeCommandAsync(
+                new CommandRequest(session.Command, session.CommandArguments), CancellationToken.None);
+            var (result, thrown, inTime) = await AwaitWithBudgetAsync(call, WriteBudget).ConfigureAwait(false);
+            Assert.True(inTime, $"InvokeCommandAsync against a target that never responds did not return within {WriteBudget}.");
+            Assert.True(thrown is null, $"InvokeCommandAsync threw {thrown} for a timed-out command instead of returning Indeterminate.");
+            Assert.Equal(WriteOutcome.Indeterminate, result!.Outcome);
+
+            // Generous extra wait so a delayed server-side handler settles AND a would-be retried second
+            // attempt has every opportunity to show up before the count is trusted — mirrors
+            // ModbusTcpDriverWriteTests' own "generous extra wait" no-retry proof technique.
+            if (session.AttemptCountSettleDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(session.AttemptCountSettleDelay).ConfigureAwait(false);
+            }
+
+            var after = session.CommandAttemptsReachingDevice();
+            Assert.Equal(1, after - before);
+        }
+        finally
+        {
+            await session.ForceUnstickAsync().ConfigureAwait(false);
+            await session.Driver.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Enforces: "Cancellation must be honoured promptly, same as IDeviceDriver.ReadAsync" (IWritableDeviceDriver's
+    /// own doc comment) — the write-contract mirror of <see cref="Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable"/>,
+    /// against the SAME kind of realistic target (transport-reachable, never responds) rather than a
+    /// fast-failing one.</summary>
+    public virtual async Task Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice()
+    {
+        var session = await CreateUnresponsiveWritableDeviceAsync().ConfigureAwait(false);
+        try
+        {
+            using var cts = new CancellationTokenSource();
+            var call = session.Driver.WriteSetpointAsync(
+                new SetpointWriteRequest(session.WritablePoint, session.ValidPointValue), cts.Token);
+
+            // Let the attempt actually get in flight before cancelling — same reasoning as the read-side check.
+            await Task.Delay(TimeSpan.FromMilliseconds(200)).ConfigureAwait(false);
+            cts.Cancel();
+
+            var (result, thrown, inTime) = await AwaitWithBudgetAsync(call, CancellationBudget).ConfigureAwait(false);
+            Assert.True(
+                inTime,
+                $"WriteSetpointAsync did not end within {CancellationBudget} of the token being cancelled while " +
+                "writing to an unresponsive device.");
+            Assert.True(thrown is null, $"WriteSetpointAsync threw {thrown} on cancellation instead of returning Indeterminate.");
+            Assert.Equal(WriteOutcome.Indeterminate, result!.Outcome);
+        }
+        finally
+        {
+            await session.ForceUnstickAsync().ConfigureAwait(false);
+            await session.Driver.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Enforces: "Every result round-trips losslessly through ConnectorJson — including Indeterminate
+    /// and every rejection reason" (task-7-brief.md), the write-contract mirror of
+    /// <see cref="Check_Telemetry_RoundTripsLosslesslyThroughConnectorJson"/> — B-1's zero-value defect
+    /// (absence of information deserialising to "the machine took it") is exactly what this catches. Drives
+    /// the REAL driver (never a hand-built record — that schema-level exhaustive proof already lives in
+    /// <c>WriteRoundTripTests</c>) through a Rejected result (needs no reachable device — proves this for both
+    /// operations cheaply) and an Indeterminate one (needs <see cref="CreateUnresponsiveWritableDeviceAsync"/>),
+    /// and round-trips each by VALUE, not merely "did not throw".</summary>
+    public virtual async Task Check_Write_RoundTripsLosslesslyThroughConnectorJson()
+    {
+        await using var driver = CreateDriver();
+        var writable = (IWritableDeviceDriver)driver;
+
+        var (rejectedPoint, pointThrown) = await TryWriteSetpointAsync(
+            writable, new SetpointWriteRequest($"__conformance-rt-{Guid.NewGuid():N}", 0.0), CancellationToken.None).ConfigureAwait(false);
+        Assert.True(pointThrown is null, $"WriteSetpointAsync threw instead of rejecting: {pointThrown}");
+        AssertRoundTrips(rejectedPoint!);
+
+        var (rejectedCommand, commandThrown) = await TryInvokeCommandAsync(
+            writable, new CommandRequest($"__conformance-rt-{Guid.NewGuid():N}"), CancellationToken.None).ConfigureAwait(false);
+        Assert.True(commandThrown is null, $"InvokeCommandAsync threw instead of rejecting: {commandThrown}");
+        AssertRoundTrips(rejectedCommand!);
+
+        var session = await CreateUnresponsiveWritableDeviceAsync().ConfigureAwait(false);
+        try
+        {
+            var call = session.Driver.WriteSetpointAsync(
+                new SetpointWriteRequest(session.WritablePoint, session.ValidPointValue), CancellationToken.None);
+            var (indeterminate, thrown, inTime) = await AwaitWithBudgetAsync(call, WriteBudget).ConfigureAwait(false);
+            Assert.True(inTime, $"WriteSetpointAsync against an unresponsive target did not return within {WriteBudget}.");
+            Assert.True(thrown is null, $"WriteSetpointAsync threw {thrown} instead of returning Indeterminate.");
+            Assert.Equal(WriteOutcome.Indeterminate, indeterminate!.Outcome);
+            AssertRoundTrips(indeterminate);
+        }
+        finally
+        {
+            await session.ForceUnstickAsync().ConfigureAwait(false);
+            await session.Driver.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    // ---- write-contract helpers ------------------------------------------------------------------------
+
+    /// <summary>Calls <see cref="Models.IWritableDeviceDriver.WriteSetpointAsync"/>, catching ANY exception
+    /// rather than letting it propagate — every write-contract "must not throw" check needs to turn a
+    /// driver's own thrown exception into an ordinary, reportable assertion failure rather than an
+    /// unhandled fault the test runner treats completely differently (see the individual checks' own
+    /// assertions on <c>Thrown</c>).</summary>
+    private static async Task<(SetpointWriteResult? Result, Exception? Thrown)> TryWriteSetpointAsync(
+        IWritableDeviceDriver driver, SetpointWriteRequest request, CancellationToken ct)
+    {
+        try
+        {
+            return (await driver.WriteSetpointAsync(request, ct).ConfigureAwait(false), null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex);
+        }
+    }
+
+    /// <summary>The <see cref="Models.IWritableDeviceDriver.InvokeCommandAsync"/> mirror of
+    /// <see cref="TryWriteSetpointAsync"/> — see that method's own remarks.</summary>
+    private static async Task<(CommandResult? Result, Exception? Thrown)> TryInvokeCommandAsync(
+        IWritableDeviceDriver driver, CommandRequest request, CancellationToken ct)
+    {
+        try
+        {
+            return (await driver.InvokeCommandAsync(request, ct).ConfigureAwait(false), null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex);
+        }
+    }
+
+    /// <summary>Awaits <paramref name="task"/> up to <paramref name="budget"/>, catching any exception it
+    /// throws rather than letting it propagate, and reporting definitively whether it completed in time —
+    /// shared by every write-contract check that must PROVE a driver call returns promptly without throwing,
+    /// rather than merely hoping xunit's own test-runner timeout eventually notices a hang.</summary>
+    private static async Task<(TResult? Result, Exception? Thrown, bool CompletedInTime)> AwaitWithBudgetAsync<TResult>(
+        Task<TResult> task, TimeSpan budget)
+    {
+        var winner = await Task.WhenAny(task, Task.Delay(budget)).ConfigureAwait(false);
+        if (!ReferenceEquals(winner, task))
+        {
+            return (default, null, false);
+        }
+
+        try
+        {
+            return (await task.ConfigureAwait(false), null, true);
+        }
+        catch (Exception ex)
+        {
+            return (default, ex, true);
+        }
+    }
+
+    /// <summary>Mechanism behind <see cref="Check_Write_CapabilityLists_AreEffectivelyImmutable"/> — see that
+    /// check's own doc comment. Two independent probes, neither hard-coded to the specific
+    /// <c>List&lt;string&gt;</c> shape B-4 actually shipped: (1) a direct downcast attempt (the EXACT B-4
+    /// shape); (2) for ANY collection type that also implements <see cref="IList{T}"/>, an attempted
+    /// <c>Add</c> AND an attempted indexer overwrite, each expected to either throw or leave the list
+    /// unchanged.</summary>
+    private static void AssertCapabilityListIsImmutable(IReadOnlyList<string> list, string propertyName)
+    {
+        Assert.False(
+            list is List<string>,
+            $"{propertyName} is backed by a raw List<string> exposed through an IReadOnlyList<string>-typed " +
+            "reference — a caller can downcast straight back to List<string> and mutate it directly (Task " +
+            "B-4's exact shipped shape). Wrap it in something a caller genuinely cannot mutate (e.g. " +
+            ".AsReadOnly()), not merely a differently-typed reference over the same mutable instance.");
+
+        if (list is not IList<string> asIList)
+        {
+            return;
+        }
+
+        var originalCount = list.Count;
+        var addEx = Record.Exception(() => asIList.Add("__conformance_mutation_probe__"));
+        Assert.True(
+            addEx is not null || list.Count == originalCount,
+            $"{propertyName} accepted Add() without throwing and its own Count changed afterward — it is a " +
+            "mutable collection a caller can corrupt, not an effectively-immutable snapshot.");
+
+        if (originalCount == 0)
+        {
+            return;
+        }
+
+        var originalFirst = list[0];
+        var setEx = Record.Exception(() => asIList[0] = "__conformance_mutation_probe__");
+        Assert.True(
+            setEx is not null || Equals(list[0], originalFirst),
+            $"{propertyName}[0] was overwritten via IList<string>'s own indexer without throwing — a caller " +
+            "can silently corrupt an entry in what is supposed to be an effectively-immutable list.");
+    }
+
+    private static void AssertRoundTrips(SetpointWriteResult result)
+    {
+        string? json = null;
+        try
+        {
+            json = JsonSerializer.Serialize(result, ConnectorJson.Options);
+        }
+        catch (JsonException ex)
+        {
+            Assert.Fail($"a real driver's own SetpointWriteResult (Point={result.Point}, Outcome={result.Outcome}) could not be serialized: {ex.Message}");
+        }
+
+        SetpointWriteResult? roundTripped = null;
+        try
+        {
+            roundTripped = JsonSerializer.Deserialize<SetpointWriteResult>(json!, ConnectorJson.Options);
+        }
+        catch (Exception ex)
+        {
+            Assert.Fail($"a real driver's own SetpointWriteResult failed to deserialize back through ConnectorJson: {ex.Message}\nJSON: {json}");
+        }
+
+        Assert.NotNull(roundTripped);
+        Assert.Equal(result, roundTripped);
+    }
+
+    private static void AssertRoundTrips(CommandResult result)
+    {
+        string? json = null;
+        try
+        {
+            json = JsonSerializer.Serialize(result, ConnectorJson.Options);
+        }
+        catch (JsonException ex)
+        {
+            Assert.Fail($"a real driver's own CommandResult (Command={result.Command}, Outcome={result.Outcome}) could not be serialized: {ex.Message}");
+        }
+
+        CommandResult? roundTripped = null;
+        try
+        {
+            roundTripped = JsonSerializer.Deserialize<CommandResult>(json!, ConnectorJson.Options);
+        }
+        catch (Exception ex)
+        {
+            Assert.Fail($"a real driver's own CommandResult failed to deserialize back through ConnectorJson: {ex.Message}\nJSON: {json}");
+        }
+
+        Assert.NotNull(roundTripped);
+        Assert.Equal(result, roundTripped);
     }
 
     // ---- shared helpers -------------------------------------------------------------------------------

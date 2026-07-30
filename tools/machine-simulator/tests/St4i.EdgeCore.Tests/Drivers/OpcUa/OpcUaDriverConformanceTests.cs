@@ -43,9 +43,16 @@ public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
     private static string NewPkiRoot(string tag) =>
         Path.Combine(Path.GetTempPath(), $"st4i-opcua-conf-{tag}-" + Guid.NewGuid().ToString("N")[..8]);
 
+    /// <summary>Task B-7 — switched from <see cref="OpcUaLoopbackHarness.BuildMap"/> to
+    /// <see cref="OpcUaLoopbackHarness.BuildWritableMap"/>: the write-contract checks (e.g.
+    /// <see cref="Check_Write_SetpointAndCommandNamespaces_AreDistinct"/>) need at least one real declared
+    /// point AND command name to cross-check, which the original read-only map never declared. Purely
+    /// additive to what every existing READ check already exercises — none of them read
+    /// <see cref="Models.IWritableDeviceDriver.WritablePoints"/>/<see cref="Models.IWritableDeviceDriver.Commands"/>
+    /// at all, so this changes nothing about their own outcomes.</summary>
     protected override IDeviceDriver CreateDriver() =>
         new OpcUaDriver(
-            OpcUaLoopbackHarness.BuildMap("PLC-CONFORMANCE-NODEVICE", $"opc.tcp://127.0.0.1:{ClosedPort}/nobody-home"),
+            OpcUaLoopbackHarness.BuildWritableMap("PLC-CONFORMANCE-NODEVICE", $"opc.tcp://127.0.0.1:{ClosedPort}/nobody-home"),
             pkiDir: NewPkiRoot("nodevice"));
 
     /// <summary>A real, portable, loopback-only "silent" peer — accepts the TCP connection but never
@@ -132,4 +139,75 @@ public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
     /// <c>SelectEndpointAsync</c> overload closes the gap GP-6 originally pinned as broken.</summary>
     [Fact]
     public Task ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable() => Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable();
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Task B-7 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-7-brief.md) — the write
+    // contract, wired against the SAME real OpcUaDriver this class already conformance-tests for reads.
+    // CreateDriver() already returns an IWritableDeviceDriver (OpcUaDriver implements it since B-5), so
+    // EveryCheckIsWiredOrAcknowledged now requires every Check_Write_* below to be wired or acknowledged.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>A real, working OPC-UA session (session establishment itself succeeds normally) whose
+    /// "Speed" variable write / "StartCycle" method invocation is held open past the driver's own SHORT
+    /// <c>operationTimeoutMs</c> — <see cref="OpcUaLoopbackHarness.WritableServerControls.MethodDelayMs"/>,
+    /// unlike <see cref="CreateUnresponsiveDeviceAsync"/>'s plain "never speaks the protocol at all" silent
+    /// listener, reproduces the SPECIFIC scenario the write-contract checks need: an ALREADY-LIVE session, a
+    /// genuinely in-flight (never-acknowledged) write/call, and the client giving up on its own bound while
+    /// the server-side handler is still running — exactly the shape a transport-level retry underneath the
+    /// driver would have to resend. "start-cycle" (not "ping") is used because only its own handler
+    /// (<see cref="OpcUaLoopbackHarness.WritableServerControls.InvokeStartCycle"/>) — and the "Speed" write
+    /// handler — actually respect <see cref="OpcUaLoopbackHarness.WritableServerControls.MethodDelayMs"/>;
+    /// "ping" returns immediately regardless.</summary>
+    protected override async Task<UnresponsiveWritableDeviceSession> CreateUnresponsiveWritableDeviceAsync()
+    {
+        const int operationTimeoutMs = 500;
+        const int methodDelayMs = 2000; // safely > operationTimeoutMs, so the CLIENT always gives up first.
+
+        var pkiRoot = NewPkiRoot("write-unresponsive");
+        var testServer = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot).ConfigureAwait(false);
+        testServer.Controls.MethodDelayMs = methodDelayMs;
+
+        var driver = new OpcUaDriver(
+            OpcUaLoopbackHarness.BuildWritableMap("PLC-CONFORMANCE-WRITE-UNRESPONSIVE", testServer.EndpointUrl),
+            pkiDir: pkiRoot, operationTimeoutMs: operationTimeoutMs);
+
+        async Task ForceUnstickAsync()
+        {
+            await testServer.DisposeAsync().ConfigureAwait(false);
+        }
+
+        return new UnresponsiveWritableDeviceSession(
+            driver, "speed", 100.0, "start-cycle",
+            CommandArguments: new Dictionary<string, object> { ["speed"] = 42L },
+            CommandAttemptsReachingDevice: () => testServer.Controls.StartCycleInvokedCount,
+            // Unlike Modbus's synchronous byte-counting responder, "StartCycle"'s own invocation counter only
+            // increments AFTER MethodDelayMs elapses server-side — settle long enough for that to have
+            // happened even though the CLIENT already gave up much earlier (operationTimeoutMs).
+            AttemptCountSettleDelay: TimeSpan.FromMilliseconds(methodDelayMs + 1000),
+            ForceUnstickAsync: ForceUnstickAsync);
+    }
+
+    [Fact]
+    public Task Write_UnknownPointOrCommand_RejectedWithoutTouchingDevice() => Check_Write_UnknownPointOrCommand_RejectedWithoutTouchingDevice();
+
+    [Fact]
+    public Task Write_SetpointAndCommandNamespaces_AreDistinct() => Check_Write_SetpointAndCommandNamespaces_AreDistinct();
+
+    [Fact]
+    public Task Write_CapabilityLists_AreEffectivelyImmutable() => Check_Write_CapabilityLists_AreEffectivelyImmutable();
+
+    [Fact]
+    public Task Write_TimedOutWriteOrCommand_ReturnsIndeterminate_NeverThrows() => Check_Write_TimedOutWriteOrCommand_ReturnsIndeterminate_NeverThrows();
+
+    [Fact]
+    public Task Write_Indeterminate_DetailIsNonEmpty_AndDistinguishesDistinctCauses() => Check_Write_Indeterminate_DetailIsNonEmpty_AndDistinguishesDistinctCauses();
+
+    [Fact]
+    public Task Write_NoImplicitRetry_ExactlyOneCommandAttemptReachesTheDeviceOnTimeout() => Check_Write_NoImplicitRetry_ExactlyOneCommandAttemptReachesTheDeviceOnTimeout();
+
+    [Fact]
+    public Task Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice() => Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice();
+
+    [Fact]
+    public Task Write_RoundTripsLosslesslyThroughConnectorJson() => Check_Write_RoundTripsLosslesslyThroughConnectorJson();
 }

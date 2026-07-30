@@ -38,8 +38,15 @@ public sealed class ModbusTcpDriverConformanceTests : DeviceDriverConformanceSui
         return port;
     }
 
+    /// <summary>Task B-7 — switched from <see cref="ModbusLoopbackHarness.BuildMap"/> to
+    /// <see cref="ModbusLoopbackHarness.BuildWritableMap"/>: the write-contract checks (e.g.
+    /// <see cref="Check_Write_SetpointAndCommandNamespaces_AreDistinct"/>) need at least one real declared
+    /// point AND command name to cross-check, which the original read-only map never declared. Purely
+    /// additive to what every existing READ check already exercises — none of them read
+    /// <see cref="Models.IWritableDeviceDriver.WritablePoints"/>/<see cref="Models.IWritableDeviceDriver.Commands"/>
+    /// at all, so this changes nothing about their own outcomes.</summary>
     protected override IDeviceDriver CreateDriver() =>
-        new ModbusTcpDriver("127.0.0.1", ClosedPort, ModbusLoopbackHarness.BuildMap("PLC-CONFORMANCE-NODEVICE"));
+        new ModbusTcpDriver("127.0.0.1", ClosedPort, ModbusLoopbackHarness.BuildWritableMap("PLC-CONFORMANCE-NODEVICE"));
 
     /// <summary>A real, portable, loopback-only "silent" peer — accepts the TCP connection but never
     /// writes a byte back — rather than <see cref="CreateDriver"/>'s fast-failing closed port. See
@@ -117,6 +124,104 @@ public sealed class ModbusTcpDriverConformanceTests : DeviceDriverConformanceSui
     /// own) together close the gap GP-6 originally pinned as broken.</summary>
     [Fact]
     public Task ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable() => Check_ReadAsync_HonoursCancellation_WhenNoDeviceIsReachable();
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Task B-7 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-7-brief.md) — the write
+    // contract, wired against the SAME real ModbusTcpDriver this class already conformance-tests for reads.
+    // CreateDriver() already returns an IWritableDeviceDriver (ModbusTcpDriver implements it since B-4), so
+    // EveryCheckIsWiredOrAcknowledged now requires every Check_Write_* below to be wired or acknowledged —
+    // see DeviceDriverConformanceSuite's own "applicability, not a gap" remarks for why a READ-only driver
+    // never reaches this obligation at all.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>A real, portable, loopback-only responder that accepts TCP connections and counts raw
+    /// Modbus-TCP requests received (any 12-byte request — a single-register write and a single-coil write
+    /// are the same wire size) but NEVER answers any of them — the write-contract mirror of this class's own
+    /// <see cref="CreateUnresponsiveDeviceAsync"/> target, extended with the externally-observable attempt
+    /// count <see cref="DeviceDriverConformanceSuite.UnresponsiveWritableDeviceSession.CommandAttemptsReachingDevice"/>
+    /// needs. Keeps accepting fresh connections for its whole lifetime (never just one) so a hypothetically
+    /// broken driver that reconnects to retry would still be counted correctly.</summary>
+    protected override Task<UnresponsiveWritableDeviceSession> CreateUnresponsiveWritableDeviceAsync()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var attemptCount = 0;
+        var serverCts = new CancellationTokenSource();
+        var serverTask = Task.Run(async () =>
+        {
+            try
+            {
+                while (!serverCts.IsCancellationRequested)
+                {
+                    using var accepted = await listener.AcceptTcpClientAsync(serverCts.Token).ConfigureAwait(false);
+                    var stream = accepted.GetStream();
+                    while (!serverCts.IsCancellationRequested)
+                    {
+                        var request = new byte[12];
+                        if (!await ReadExactAsync(stream, request, request.Length, serverCts.Token).ConfigureAwait(false))
+                        {
+                            break; // this connection closed (e.g. the driver force-closed it on its own timeout) — go accept the next one.
+                        }
+
+                        Interlocked.Increment(ref attemptCount);
+                        // never respond — every attempt (the first, or a would-be retried one) times out identically.
+                    }
+                }
+            }
+            catch
+            {
+                // teardown (listener stopped, or the deadline/ForceUnstickAsync below cancelling) — expected.
+            }
+        });
+
+        // A SHORT internal write timeout — see CreateUnresponsiveWritableDeviceAsync's own doc comment for
+        // why: the write-contract checks deliberately issue an UNCANCELLED call and wait for this bound to
+        // elapse on its own.
+        var driver = new ModbusTcpDriver(
+            "127.0.0.1", port, ModbusLoopbackHarness.BuildWritableMap("PLC-CONFORMANCE-WRITE-UNRESPONSIVE", readTimeoutMs: 300));
+
+        async Task ForceUnstickAsync()
+        {
+            try { await serverCts.CancelAsync(); } catch { }
+            try { await serverTask; } catch { }
+            try { listener.Stop(); } catch { }
+            serverCts.Dispose();
+        }
+
+        return Task.FromResult(new UnresponsiveWritableDeviceSession(
+            driver, "speed", 100.0, "start-cycle", CommandArguments: null,
+            CommandAttemptsReachingDevice: () => Volatile.Read(ref attemptCount),
+            // Modbus's own counting responder counts synchronously as bytes arrive — no server-side handler
+            // delay to settle, unlike OPC-UA's instrumented-method-based equivalent.
+            AttemptCountSettleDelay: TimeSpan.FromMilliseconds(300),
+            ForceUnstickAsync: ForceUnstickAsync));
+    }
+
+    [Fact]
+    public Task Write_UnknownPointOrCommand_RejectedWithoutTouchingDevice() => Check_Write_UnknownPointOrCommand_RejectedWithoutTouchingDevice();
+
+    [Fact]
+    public Task Write_SetpointAndCommandNamespaces_AreDistinct() => Check_Write_SetpointAndCommandNamespaces_AreDistinct();
+
+    [Fact]
+    public Task Write_CapabilityLists_AreEffectivelyImmutable() => Check_Write_CapabilityLists_AreEffectivelyImmutable();
+
+    [Fact]
+    public Task Write_TimedOutWriteOrCommand_ReturnsIndeterminate_NeverThrows() => Check_Write_TimedOutWriteOrCommand_ReturnsIndeterminate_NeverThrows();
+
+    [Fact]
+    public Task Write_Indeterminate_DetailIsNonEmpty_AndDistinguishesDistinctCauses() => Check_Write_Indeterminate_DetailIsNonEmpty_AndDistinguishesDistinctCauses();
+
+    [Fact]
+    public Task Write_NoImplicitRetry_ExactlyOneCommandAttemptReachesTheDeviceOnTimeout() => Check_Write_NoImplicitRetry_ExactlyOneCommandAttemptReachesTheDeviceOnTimeout();
+
+    [Fact]
+    public Task Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice() => Check_Write_Cancellation_HonouredPromptly_EvenAgainstAnUnresponsiveDevice();
+
+    [Fact]
+    public Task Write_RoundTripsLosslesslyThroughConnectorJson() => Check_Write_RoundTripsLosslesslyThroughConnectorJson();
 
     /// <summary>
     /// GP-6b (task-6b-report.md) — the PRIMARY acceptance criterion for this defect, more important than
