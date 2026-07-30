@@ -873,8 +873,11 @@ public sealed class MachineWriteEndpointsTests
         private readonly CancellationTokenSource _cts;
         public CancelingAlarmStore(CancellationTokenSource cts) => _cts = cts;
 
-        public Task RaiseAsync(AlarmRaise raise, CancellationToken ct = default) => Task.CompletedTask;
-        public Task ClearAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<AlarmTransition> RaiseAsync(AlarmRaise raise, CancellationToken ct = default) =>
+            Task.FromResult(AlarmTransition.None);
+
+        public Task<AlarmTransition> ClearAsync(string key, CancellationToken ct = default) =>
+            Task.FromResult(AlarmTransition.None);
         public Task<Alarm?> AckAsync(long id, string by, CancellationToken ct = default) => Task.FromResult<Alarm?>(null);
 
         public Task<IReadOnlyList<Alarm>> ListActiveAsync(CancellationToken ct = default)

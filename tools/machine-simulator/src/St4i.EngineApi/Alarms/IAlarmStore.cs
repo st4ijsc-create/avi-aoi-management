@@ -52,16 +52,31 @@ public interface IAlarmStore
     /// <summary>Upserts an active alarm keyed by <see cref="AlarmRaise.Key"/> (dedup) and appends a
     /// "raised" row to <c>alarm_history</c>. A same-key re-raise increments <see cref="Alarm.Count"/> and
     /// bumps <see cref="Alarm.LastRaisedUtc"/> while PRESERVING <see cref="Alarm.FirstRaisedUtc"/> and any
-    /// existing ack state — see <see cref="Alarm"/>'s doc comment. NEVER throws.</summary>
-    Task RaiseAsync(AlarmRaise raise, CancellationToken ct = default);
+    /// existing ack state — see <see cref="Alarm"/>'s doc comment. NEVER throws.
+    ///
+    /// <para>Task C-1 — returns WHAT IT DID: <see cref="AlarmTransitionKind.Raised"/> if this call created
+    /// the row, <see cref="AlarmTransitionKind.ReRaised"/> if it merely restated an already-active alarm,
+    /// or <see cref="AlarmTransitionKind.None"/> if the write failed and was swallowed. The
+    /// <see cref="AlarmSource.DriverHealth"/>/<see cref="AlarmSource.NgRate"/> sources call this
+    /// unconditionally on every 5s evaluator tick for as long as their condition holds, so "was called" and
+    /// "changed something" are wildly different questions and only the store can answer the second one
+    /// without a second query that would race. Existing callers may ignore the value — <c>await</c>-ing it
+    /// as a statement is legal and every pre-existing call site does exactly that.</para></summary>
+    Task<AlarmTransition> RaiseAsync(AlarmRaise raise, CancellationToken ct = default);
 
     /// <summary>Removes the alarm identified by <paramref name="key"/> from the live (<c>active_alarms</c>)
     /// set — regardless of whether it was <see cref="AlarmState.Active"/> or <see cref="AlarmState.Acked"/>
     /// — and appends a "cleared" row to <c>alarm_history</c>. A no-op (not an error) if no active alarm
     /// currently carries that key. This is LC-2's evaluator's call: a CONDITION alarm (<see cref="Alarm.ClearOnAck"/>
     /// == <see langword="false"/>) is only ever removed once the underlying condition itself ends, never by
-    /// an operator's Ack alone. NEVER throws.</summary>
-    Task ClearAsync(string key, CancellationToken ct = default);
+    /// an operator's Ack alone. NEVER throws.
+    ///
+    /// <para>Task C-1 — returns <see cref="AlarmTransitionKind.Cleared"/> (carrying the alarm as it stood
+    /// at removal, with <see cref="Alarm.State"/> == <see cref="AlarmState.Cleared"/>) when a row was
+    /// actually removed, and <see cref="AlarmTransitionKind.None"/> when the call was a no-op or the write
+    /// failed. The evaluator calls this on EVERY tick for every healthy slot, so the vast majority of calls
+    /// are no-ops and must be distinguishable from a genuine clear.</para></summary>
+    Task<AlarmTransition> ClearAsync(string key, CancellationToken ct = default);
 
     /// <summary>Acknowledges the active alarm identified by its <see cref="Alarm.Id"/>. If
     /// <see cref="Alarm.ClearOnAck"/> is <see langword="true"/> (an EVENT alarm), this BOTH acks and clears
@@ -70,7 +85,15 @@ public interface IAlarmStore
     /// <c>active_alarms</c> with <see cref="Alarm.State"/> set to <see cref="AlarmState.Acked"/> and an
     /// "acked" history row is appended. Returns the alarm as it now stands (its <see cref="Alarm.State"/>
     /// reflecting whichever of the two outcomes above applied), or <see langword="null"/> if no active alarm
-    /// has that id (unknown, or already cleared).</summary>
+    /// has that id (unknown, or already cleared).
+    ///
+    /// <para>Task C-1 — unlike <see cref="RaiseAsync"/>/<see cref="ClearAsync"/> this signature is
+    /// UNCHANGED: it already returns the resulting alarm, and it is not a never-throws member (it is an
+    /// ordinary request-path call reachable only from <c>AlarmEndpoints</c>, allowed to surface a failure
+    /// as a 500). Both of its branches still reach the notification seam internally — the ClearOnAck=true
+    /// branch as a <see cref="AlarmTransitionKind.Cleared"/>, the ClearOnAck=false branch as a
+    /// <see cref="AlarmTransitionKind.Acked"/> — but that hook is not permitted to add a new way for this
+    /// method to throw.</para></summary>
     Task<Alarm?> AckAsync(long id, string by, CancellationToken ct = default);
 
     /// <summary>Every alarm currently in <c>active_alarms</c> (i.e. every alarm whose <see cref="Alarm.State"/>

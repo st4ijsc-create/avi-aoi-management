@@ -455,10 +455,10 @@ public sealed class AlarmEvaluatorTests : IDisposable
     /// <see cref="AlarmEvaluator.EvaluateAsync"/> from throwing.</summary>
     private sealed class ThrowingAlarmStore : IAlarmStore
     {
-        public Task RaiseAsync(AlarmRaise raise, CancellationToken ct = default) =>
+        public Task<AlarmTransition> RaiseAsync(AlarmRaise raise, CancellationToken ct = default) =>
             throw new InvalidOperationException("ThrowingAlarmStore: simulated RaiseAsync failure (test double).");
 
-        public Task ClearAsync(string key, CancellationToken ct = default) =>
+        public Task<AlarmTransition> ClearAsync(string key, CancellationToken ct = default) =>
             throw new InvalidOperationException("ThrowingAlarmStore: simulated ClearAsync failure (test double).");
 
         public Task<Alarm?> AckAsync(long id, string by, CancellationToken ct = default) =>

@@ -408,10 +408,51 @@ builder.Services.AddSingleton<St4i.EngineApi.AssetRegistry.IAssetRegistry>(sp =>
 // SQLite connections are short-lived-per-call, not because of any in-process lock (unlike SqliteAuditStore).
 // Relocatable via ST4I_ALARMS_DIR, same ops/testability rationale as ST4I_ASSETS_DIR above.
 var alarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
+
+// Task C-1 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-1-brief.md) — the alarm
+// NOTIFICATION seam: an edge detector in front of a bounded, drop-oldest channel drained in the
+// background (see AlarmNotifier). Every Đợt C channel (webhook C-3, SMTP C-4, local annunciation C-5,
+// physical relay C-6) sits behind this; NONE of them exists yet, so the notifier is registered with no
+// dispatch delegate — the seam is real and observable, and it delivers to nobody.
+//
+// 🔴 DEFAULT OFF, and off means OFF: with ST4I_ALARM_NOTIFY_ENABLED unset, neither AlarmNotifier nor its
+// seeding hosted service is registered at all, so `sp.GetService<IAlarmNotifier>()` below returns null and
+// AlarmStore falls back to NullAlarmNotifier — no channel, no background thread, no extra allocation, and
+// behaviour bit-for-bit identical to before Đợt C. Opting in ("1"/"true", case-insensitive) is the
+// inverse of ST4I_UNS_ENABLED's opt-OUT parse, deliberately: UNS is a shipped feature that can be turned
+// off, this is an unfinished one that has to be turned on. C-2 (NotificationConfigStore) is expected to
+// supersede this gate with real configuration.
+//
+// Registered ONLY here. The alarm engine runs only in this process — St4i.EdgeService and both WPF apps
+// never host IAlarmStore — so nothing about this reaches them.
+var alarmNotifyRaw = Environment.GetEnvironmentVariable("ST4I_ALARM_NOTIFY_ENABLED");
+var alarmNotifyEnabled = alarmNotifyRaw == "1" || string.Equals(alarmNotifyRaw, "true", StringComparison.OrdinalIgnoreCase);
+if (alarmNotifyEnabled)
+{
+    // Factory lambda (not the raw-instance overload) so the container OWNS the instance and calls its
+    // IAsyncDisposable.DisposeAsync on shutdown — the same reason siteBridgeManager below is registered
+    // that way, and the same drain-then-bounded-cancel shutdown HistorianWriter already relies on.
+    builder.Services.AddSingleton(sp =>
+    {
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmNotifier");
+        return new St4i.EngineApi.Alarms.AlarmNotifier(
+            dispatch: null, // C-3..C-7 fill this in; until then the loop drains and discards.
+            logWarning: msg => logger.LogWarning("{AlarmNotifyMsg}", msg),
+            logError: (ex, msg) => logger.LogError(ex, "{AlarmNotifyMsg}", msg));
+    });
+    // Forwards the interface to the SAME concrete singleton (same shape as IUnsPublisher -> UnsPublisher
+    // below); AlarmNotifier.DisposeAsync is idempotent, which is what makes being tracked twice safe.
+    builder.Services.AddSingleton<St4i.EngineApi.Alarms.IAlarmNotifier>(
+        sp => sp.GetRequiredService<St4i.EngineApi.Alarms.AlarmNotifier>());
+    builder.Services.AddHostedService<St4i.EngineApi.Alarms.AlarmNotifierSeedService>();
+}
+
 builder.Services.AddSingleton<St4i.EngineApi.Alarms.IAlarmStore>(sp =>
     new St4i.EngineApi.Alarms.AlarmStore(
         string.IsNullOrWhiteSpace(alarmsDir) ? null : alarmsDir,
-        logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("Alarms").LogError(ex, "{AlarmsMsg}", msg)));
+        logError: (ex, msg) => sp.GetRequiredService<ILoggerFactory>().CreateLogger("Alarms").LogError(ex, "{AlarmsMsg}", msg),
+        // GetService (not GetRequiredService): unregistered — the default — means NullAlarmNotifier.
+        notifier: sp.GetService<St4i.EngineApi.Alarms.IAlarmNotifier>()));
 
 // GĐ3 sub-4 LC-2 (.superpowers/sdd/2026-07-27-giaidoan3-alarms-linecontroller-blueprint/task-2-brief.md) —
 // the automatic (condition-based) alarm SOURCES riding on top of LC-1's store above: a periodic evaluator

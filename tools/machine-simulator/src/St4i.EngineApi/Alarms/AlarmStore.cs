@@ -29,6 +29,16 @@ namespace St4i.EngineApi.Alarms;
 /// doc comment) — every other member is a direct, caller-invoked read/write reachable only from
 /// <c>AlarmEndpoints</c>, so a genuine failure there is allowed to surface as an ordinary exception, same as
 /// every comparable store in this codebase.
+///
+/// <para>Task C-1 — this class is also where the notification seam (<see cref="IAlarmNotifier"/>) is
+/// invoked from, deliberately NOT <see cref="AlarmEvaluator"/>: the evaluator is only ONE of the callers
+/// that mutate alarm state (<c>PolicyResults.DenyAsync</c> and <c>AlarmEndpoints</c>' ack are the others),
+/// so hooking it would silently miss every Policy alarm and every operator ack. There are exactly four
+/// state-transition sites and all four are in this file — <see cref="RaiseAsync"/>'s upsert (which may be
+/// a first raise OR a restatement of an identical active alarm), <see cref="ClearAsync"/>'s delete (which
+/// may be a no-op), and <see cref="AckAsync"/>'s two branches. Every one of them reports through
+/// <c>NotifySafely</c>, and only ever AFTER its write has committed: a notification for an alarm that was
+/// never recorded is a lie.</para>
 /// </summary>
 public sealed class AlarmStore : IAlarmStore
 {
@@ -39,6 +49,11 @@ public sealed class AlarmStore : IAlarmStore
     public string DbPath { get; }
 
     private readonly Action<Exception, string>? _logError;
+
+    /// <summary>Task C-1 — where alarm-state EDGES are reported, after (never before) the write that
+    /// caused them has committed. Defaults to <see cref="NullAlarmNotifier"/>, which is why every
+    /// pre-existing construction site behaves bit-for-bit as it did before Đợt C.</summary>
+    private readonly IAlarmNotifier _notifier;
 
     private static readonly string[] OpenPragmas =
     {
@@ -95,9 +110,14 @@ public sealed class AlarmStore : IAlarmStore
     /// <param name="logError">Where <see cref="RaiseAsync"/>/<see cref="ClearAsync"/> report a swallowed
     /// failure. Optional — a <see langword="null"/> logger just means the failure is silently swallowed
     /// (still never thrown).</param>
-    public AlarmStore(string? directory = null, Action<Exception, string>? logError = null)
+    /// <param name="notifier">Task C-1 — the notification seam (see <see cref="IAlarmNotifier"/>).
+    /// Optional and TRAILING so every pre-existing construction site keeps compiling untouched;
+    /// <see langword="null"/> means <see cref="NullAlarmNotifier"/>, i.e. exactly the pre-Đợt-C
+    /// behaviour with no extra thread and no extra allocation.</param>
+    public AlarmStore(string? directory = null, Action<Exception, string>? logError = null, IAlarmNotifier? notifier = null)
     {
         _logError = logError;
+        _notifier = notifier ?? NullAlarmNotifier.Instance;
 
         var root = ResolveRoot(directory);
         Directory.CreateDirectory(root);
@@ -208,10 +228,11 @@ public sealed class AlarmStore : IAlarmStore
     // RaiseAsync — upsert active_alarms + append "raised" history. NEVER throws.
     // ─────────────────────────────────────────────────────────────────────
 
-    public async Task RaiseAsync(AlarmRaise raise, CancellationToken ct = default)
+    public async Task<AlarmTransition> RaiseAsync(AlarmRaise raise, CancellationToken ct = default)
     {
-        if (raise is null) return;
+        if (raise is null) return AlarmTransition.None;
 
+        AlarmTransition transition;
         try
         {
             var key = raise.Key;
@@ -219,13 +240,23 @@ public sealed class AlarmStore : IAlarmStore
 
             using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
 
+            Alarm upserted;
             using (var cmd = connection.CreateCommand())
             {
                 // ON CONFLICT(key) DO UPDATE deliberately OMITS first_raised_at/state/acked_at/acked_by —
                 // SQLite leaves an omitted column exactly as it was on conflict, so a re-raise of an
                 // already-Acked (ClearOnAck=false) alarm stays Acked rather than silently reverting to
                 // Active — see Alarm's own doc comment.
-                cmd.CommandText = """
+                //
+                // Task C-1 — RETURNING (SQLite >= 3.35; this build bundles SQLitePCLRaw 2.1.12) makes the
+                // upsert report the row it just wrote in the SAME statement. That matters for more than
+                // convenience: telling a first raise from a re-raise by SELECTing first and then upserting
+                // would be two statements with a window between them, and two concurrent raises of one key
+                // (the evaluator's timer thread and a request-path policy denial CAN overlap) would both
+                // read "absent" and both claim to be the first. One statement has no such window. It also
+                // hands the notification seam the COMPLETE resulting alarm, so no channel ever has to go
+                // back and re-query a row that may have changed by the time it is read.
+                cmd.CommandText = $"""
                     INSERT INTO active_alarms
                         (key, source, code, priority, state, message, runbook, target_id, clear_on_ack,
                          count, first_raised_at, last_raised_at, acked_at, acked_by)
@@ -236,7 +267,8 @@ public sealed class AlarmStore : IAlarmStore
                         last_raised_at = excluded.last_raised_at,
                         count = count + 1,
                         message = excluded.message,
-                        priority = excluded.priority;
+                        priority = excluded.priority
+                    RETURNING rowid AS id, {Columns};
                     """;
                 cmd.Parameters.AddWithValue("@key", key);
                 cmd.Parameters.AddWithValue("@source", raise.Source.ToString());
@@ -248,47 +280,88 @@ public sealed class AlarmStore : IAlarmStore
                 cmd.Parameters.AddWithValue("@target_id", (object?)raise.TargetId ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@clear_on_ack", raise.ClearOnAck ? 1 : 0);
                 cmd.Parameters.AddWithValue("@now", nowIso);
-                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+                using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        $"active_alarms upsert for key '{key}' returned no row — the alarm was not recorded.");
+                }
+                upserted = ReadAlarm(reader);
+
+                // Step the statement to completion before disposing it. A single-row upsert cannot produce
+                // a second row, so this is a formality — but an abandoned RETURNING statement is exactly
+                // the kind of thing that is only "obviously fine" until it is not.
+                while (await reader.ReadAsync(ct).ConfigureAwait(false)) { }
             }
 
             await AppendHistoryAsync(connection, key, "raised", raise.Source, raise.Code, raise.Priority, raise.Message, actor: null, ct)
                 .ConfigureAwait(false);
+
+            // count == 1 is exactly "the INSERT path ran": VALUES seeds it to 1 and DO UPDATE only ever
+            // increments, so a count of 1 can only mean this call created the row (or re-created it after
+            // an earlier clear, which is the same edge as far as anyone downstream is concerned).
+            transition = new AlarmTransition(
+                upserted.Count == 1 ? AlarmTransitionKind.Raised : AlarmTransitionKind.ReRaised, upserted);
         }
         catch (Exception ex)
         {
             // Deliberately swallowed — see IAlarmStore's doc comment: a Policy DENY handler (or LC-2's
             // periodic evaluator) must never fail just because alarms.db hiccuped.
             _logError?.Invoke(ex, $"Alarm raise failed for key '{raise?.Key}' — this alarm was not recorded.");
+            return AlarmTransition.None;
         }
+
+        // Notify only after BOTH writes committed. A notification for an alarm that was never recorded is
+        // a lie, and the failure path above returns before ever reaching here.
+        NotifySafely(transition, actor: null);
+        return transition;
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // ClearAsync — delete from active_alarms + append "cleared" history. No-op if absent. NEVER throws.
     // ─────────────────────────────────────────────────────────────────────
 
-    public async Task ClearAsync(string key, CancellationToken ct = default)
+    public async Task<AlarmTransition> ClearAsync(string key, CancellationToken ct = default)
     {
+        AlarmTransition transition;
         try
         {
             using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
 
-            var existing = await ReadActiveByKeyAsync(connection, key, ct).ConfigureAwait(false);
-            if (existing is null) return; // no-op — nothing active carries this key.
-
+            Alarm? removed;
             using (var delCmd = connection.CreateCommand())
             {
-                delCmd.CommandText = "DELETE FROM active_alarms WHERE key = @key;";
+                // Task C-1 — DELETE ... RETURNING replaces the previous SELECT-then-DELETE pair for the
+                // same reason RaiseAsync uses RETURNING: one statement has no window in which a concurrent
+                // clear of the same key could make BOTH callers believe they were the one that removed it
+                // (and therefore both announce a "cleared" edge). It also still yields the row's Source/
+                // Code/Priority/Message for the history append, which is what the SELECT was there for.
+                delCmd.CommandText = $"DELETE FROM active_alarms WHERE key = @key RETURNING rowid AS id, {Columns};";
                 delCmd.Parameters.AddWithValue("@key", key);
-                await delCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+                using var reader = await delCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                removed = await reader.ReadAsync(ct).ConfigureAwait(false) ? ReadAlarm(reader) : null;
+                while (await reader.ReadAsync(ct).ConfigureAwait(false)) { }
             }
 
-            await AppendHistoryAsync(connection, key, "cleared", existing.Source, existing.Code, existing.Priority, existing.Message, actor: null, ct)
+            // No-op (not an error) — nothing active carried this key. The evaluator does this on every
+            // tick for every healthy slot, so this is by far the most common outcome.
+            if (removed is null) return AlarmTransition.None;
+
+            await AppendHistoryAsync(connection, key, "cleared", removed.Source, removed.Code, removed.Priority, removed.Message, actor: null, ct)
                 .ConfigureAwait(false);
+
+            transition = new AlarmTransition(AlarmTransitionKind.Cleared, removed with { State = AlarmState.Cleared });
         }
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Alarm clear failed for key '{key}'.");
+            return AlarmTransition.None;
         }
+
+        NotifySafely(transition, actor: null);
+        return transition;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -318,7 +391,14 @@ public sealed class AlarmStore : IAlarmStore
             await AppendHistoryAsync(connection, current.Key, "cleared", current.Source, current.Code, current.Priority, current.Message, actor: by, ct)
                 .ConfigureAwait(false);
 
-            return current with { State = AlarmState.Cleared, AckedUtc = ackedAtUtc, AckedBy = by };
+            var cleared = current with { State = AlarmState.Cleared, AckedUtc = ackedAtUtc, AckedBy = by };
+
+            // Task C-1 — an EVENT alarm (every Policy denial) can leave active_alarms ONLY through this
+            // branch, so this is a genuine "the alarm is over" edge, not a bookkeeping detail. Treating it
+            // as a non-edge would leave a downstream annunciator/relay latched on forever after an
+            // operator acknowledged the very alarm that lit it.
+            NotifySafely(new AlarmTransition(AlarmTransitionKind.Cleared, cleared), actor: by);
+            return cleared;
         }
         else
         {
@@ -335,7 +415,13 @@ public sealed class AlarmStore : IAlarmStore
             await AppendHistoryAsync(connection, current.Key, "acked", current.Source, current.Code, current.Priority, current.Message, actor: by, ct)
                 .ConfigureAwait(false);
 
-            return current with { State = AlarmState.Acked, AckedUtc = ackedAtUtc, AckedBy = by };
+            var acked = current with { State = AlarmState.Acked, AckedUtc = ackedAtUtc, AckedBy = by };
+
+            // Task C-1 — reported on EVERY ack, including a repeat ack of an already-Acked alarm (nothing
+            // here refuses one). Collapsing repeats to a single edge is the notifier's job, not the
+            // store's: the store reports what it did, the detector decides what is news.
+            NotifySafely(new AlarmTransition(AlarmTransitionKind.Acked, acked), actor: by);
+            return acked;
         }
     }
 
@@ -451,15 +537,27 @@ public sealed class AlarmStore : IAlarmStore
     private const string Columns =
         "key, source, code, priority, state, message, runbook, target_id, clear_on_ack, count, first_raised_at, last_raised_at, acked_at, acked_by";
 
-    private static async Task<Alarm?> ReadActiveByKeyAsync(SqliteConnection connection, string key, CancellationToken ct)
+    /// <summary>Task C-1 — hands a completed transition to the notification seam, and is the LAST line of
+    /// defence for <see cref="RaiseAsync"/>/<see cref="ClearAsync"/>'s never-throws contract:
+    /// <see cref="IAlarmNotifier.Notify"/> is documented never-throws, but a documented contract is not an
+    /// enforced one, and a hostile/buggy implementation must not be able to turn "the alarm was recorded"
+    /// into an exception in a policy-deny handler or an evaluator tick. Note the deliberately DIFFERENT
+    /// message from the store's own failure path: the alarm IS in the database here — only the
+    /// notification was lost — and saying otherwise would send an operator hunting the wrong
+    /// problem.</summary>
+    private void NotifySafely(in AlarmTransition transition, string? actor)
     {
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT rowid AS id, {Columns} FROM active_alarms WHERE key = @key;";
-        cmd.Parameters.AddWithValue("@key", key);
-
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return null;
-        return ReadAlarm(reader);
+        try
+        {
+            _notifier.Notify(transition, actor);
+        }
+        catch (Exception ex)
+        {
+            _logError?.Invoke(
+                ex,
+                $"Alarm notification hook threw for key '{transition.Alarm?.Key}' — the alarm itself WAS recorded; " +
+                "only its notification was lost.");
+        }
     }
 
     private static async Task<Alarm?> ReadByRowIdAsync(SqliteConnection connection, long id, CancellationToken ct)
