@@ -166,7 +166,7 @@ export const trainingBatchCommentsRouter = router({
         .where(eq(trainingBatchTags.name, input.name));
 
       if (existing) {
-        throw new TRPCError({ code: "CONFLICT", message: "Tag với tên này đã tồn tại" });
+        throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "trainingBatchTag", field: "name" }, "Tag với tên này đã tồn tại");
       }
 
       const [result] = await db.insert(trainingBatchTags).values({

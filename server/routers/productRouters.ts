@@ -576,7 +576,7 @@ export const productModelRouter = router({
           const duplicate = await db.getProductModelByCode(data.code);
           if (duplicate) {
             // WE-2 bug #2: CONFLICT for consistency with productModel.clone.
-            throw new TRPCError({ code: 'CONFLICT', message: 'Mã sản phẩm đã tồn tại' });
+            throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'productModel', field: 'code' }, 'Mã sản phẩm đã tồn tại');
           }
         } else {
           // Code is not changing, remove it from update data to avoid duplicate key error
@@ -711,7 +711,7 @@ export const productModelRouter = router({
       // Code collision → CONFLICT (the unique index is the tx-level backstop below).
       const duplicate = await db.getProductModelByCode(input.newCode);
       if (duplicate) {
-        throw new TRPCError({ code: "CONFLICT", message: "Mã sản phẩm đã tồn tại" });
+        throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productModel", field: "code" }, "Mã sản phẩm đã tồn tại");
       }
 
       let result: Awaited<ReturnType<typeof db.cloneProductModel>>;
@@ -726,7 +726,7 @@ export const productModelRouter = router({
       } catch (err: any) {
         // Backstop for a race that slips past the pre-check.
         if (err?.code === "23505" || /product_models_code/.test(String(err?.message))) {
-          throw new TRPCError({ code: "CONFLICT", message: "Mã sản phẩm đã tồn tại" });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productModel", field: "code" }, "Mã sản phẩm đã tồn tại");
         }
         throw err;
       }
@@ -1972,7 +1972,7 @@ export const productCategoryRouter = router({
       // Check if code already exists
       const existing = await db.getProductCategoryByCode(input.code);
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Category code already exists' });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'productCategory', field: 'code' }, 'Category code already exists');
       }
       const result = await db.createProductCategory(input);
       return { id: result.id };
@@ -1996,7 +1996,7 @@ export const productCategoryRouter = router({
       if (data.code) {
         const existing = await db.getProductCategoryByCode(data.code);
         if (existing && existing.id !== id) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'Category code already exists' });
+          throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'productCategory', field: 'code' }, 'Category code already exists');
         }
       }
       await db.updateProductCategory(id, data);
@@ -2982,10 +2982,12 @@ export const msaWizardRouter = router({
         input.trialNo,
       );
       if (duplicated) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Observation for (${input.operatorName}, ${input.partLabel}, trial ${input.trialNo}) already exists`,
-        });
+        throw appError(
+          "CONFLICT",
+          "ENTITY_DUPLICATE",
+          { entity: "msaObservation" },
+          `Observation for (${input.operatorName}, ${input.partLabel}, trial ${input.trialNo}) already exists`,
+        );
       }
 
       const value = Number(input.measuredValue);

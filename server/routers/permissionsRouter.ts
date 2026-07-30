@@ -859,7 +859,7 @@ export const permissionsRouter = router({
       const [existing] = await db.select({ id: userRoles.id }).from(userRoles).where(eq(userRoles.name, input.name)).limit(1);
       
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Role name already exists' });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'role', field: 'name' }, 'Role name already exists');
       }
       
       const [newRole] = await db
@@ -953,7 +953,7 @@ export const permissionsRouter = router({
         .where(eq(userRoles.name, input.newName))
         .limit(1);
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Tên role đã tồn tại' });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'role', field: 'name' }, 'Tên role đã tồn tại');
       }
 
       let sourcePermissions: any[];
