@@ -70,7 +70,9 @@ function rethrowCardTableError(err: unknown): never {
   if ((err as { code?: string } | null | undefined)?.code === "42P01") {
     throw appError(
       "PRECONDITION_FAILED",
-      "FEATURE_DISABLED",
+      // F6 (doc 71) — "bảng chưa migrate" chốt về FEATURE_NOT_CONFIGURED trong toàn repo
+      // (cấu hình chưa xong, KHÁC FEATURE_DISABLED — không có công tắc nào để bật).
+      "FEATURE_NOT_CONFIGURED",
       { feature: "modelCardGovernance" },
       "Model card governance requires migration 0303 (ai_model_cards) to be applied first.",
     );

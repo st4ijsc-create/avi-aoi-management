@@ -50,7 +50,7 @@ async function requireProduct(productModelId: number) {
   const d = await db();
   const [p] = await d.select().from(productModels).where(eq(productModels.id, productModelId)).limit(1);
   if (!p) {
-    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Sản phẩm #${productModelId} không tồn tại.`);
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Sản phẩm #${productModelId} không tồn tại.`);
   }
   return p;
 }

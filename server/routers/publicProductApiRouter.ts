@@ -147,7 +147,7 @@ export const publicProductApiRouter = router({
 
       const product = await db.getProductModelByCode(input.code);
       if (!product) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.code}`);
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.code}`);
       }
 
       const measurementPoints = await db.getMeasurementPointDefsByProductModel(product.id);
@@ -229,7 +229,7 @@ export const publicProductApiRouter = router({
 
       const product = await db.getProductModelById(input.id);
       if (!product) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.id}`);
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.id}`);
       }
 
       const measurementPoints = await db.getMeasurementPointDefsByProductModel(product.id);
@@ -308,7 +308,7 @@ export const publicProductApiRouter = router({
 
       const product = await db.getProductModelByCode(input.productCode);
       if (!product) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
       }
 
       const points = await db.getMeasurementPointDefsByProductModel(product.id);
@@ -358,7 +358,7 @@ export const publicProductApiRouter = router({
 
       const product = await db.getProductModelByCode(input.productCode);
       if (!product) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
       }
 
       if (!product.referenceImageUrl && !product.referenceImageKey) {
@@ -421,7 +421,7 @@ export const publicProductApiRouter = router({
       } else if (input.pointCode && input.productCode) {
         const product = await db.getProductModelByCode(input.productCode);
         if (!product) {
-          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
         }
         point = await db.getMeasurementPointDefByCode(product.id, input.pointCode);
       }
@@ -498,7 +498,7 @@ export const publicProductApiRouter = router({
 
       if (input.productCode) {
         const product = await db.getProductModelByCode(input.productCode);
-        if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
+        if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
         productModelId = product.id;
         productInfo = { id: product.id, code: product.code, name: product.name };
       } else {
@@ -656,7 +656,7 @@ export const publicProductApiRouter = router({
       let productModelId: number | null = null;
       if (input.productCode) {
         const product = await db.getProductModelByCode(input.productCode);
-        if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, `Product not found: ${input.productCode}`);
+        if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product not found: ${input.productCode}`);
         productModelId = product.id;
       }
 

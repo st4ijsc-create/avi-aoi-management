@@ -49,7 +49,8 @@ async function assertVariantTableAvailable(): Promise<void> {
   if (!ok) {
     throw appError(
       "PRECONDITION_FAILED",
-      "FEATURE_DISABLED",
+      // F6 (doc 71) — "bảng chưa migrate" chốt về FEATURE_NOT_CONFIGURED trong toàn repo.
+      "FEATURE_NOT_CONFIGURED",
       { feature: "productVariants" },
       "Tính năng biến thể sản phẩm chưa sẵn sàng: cần áp dụng migration 0286 (product_variants). " +
         "Product variants require migration 0286 to be applied.",
@@ -152,7 +153,7 @@ export const productVariantRouter = router({
 
       const model = await db.getProductModelById(input.productModelId);
       if (!model) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, "Không tìm thấy sản phẩm");
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Không tìm thấy sản phẩm");
       }
       // 'BASE' is reserved for the model's inheritance root (created by 0286 /
       // ensureBaseVariant); an author never mints one manually.

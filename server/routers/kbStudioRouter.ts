@@ -194,7 +194,10 @@ export const kbStudioRouter = router({
         });
       } catch (err) {
         if (err instanceof KbStudioTableUnavailableError) {
-          throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "createKbCorpus" }, err.message);
+          // F6 (doc 71) — "bảng chưa migrate" chốt về FEATURE_NOT_CONFIGURED (KHÁC
+          // OPERATION_FAILED cũ ở đây — đây là thiếu cấu hình/migration, không phải một
+          // thao tác cụ thể thất bại). params đổi operation→feature theo appCode mới.
+          throw appError("PRECONDITION_FAILED", "FEATURE_NOT_CONFIGURED", { feature: "kbStudioRegistry" }, err.message);
         }
         rethrowDbError(err, { conflictMessage: `A corpus named "${input.name}" already exists.` });
       }
@@ -229,7 +232,8 @@ export const kbStudioRouter = router({
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "kbCorpus" }, err.message);
         }
         if (err instanceof KbStudioTableUnavailableError) {
-          throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "deleteKbCorpus" }, err.message);
+          // F6 (doc 71) — cùng lý do createCorpus ở trên: chốt FEATURE_NOT_CONFIGURED.
+          throw appError("PRECONDITION_FAILED", "FEATURE_NOT_CONFIGURED", { feature: "kbStudioRegistry" }, err.message);
         }
         throw err;
       }

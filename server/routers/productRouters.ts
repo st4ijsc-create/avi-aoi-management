@@ -572,7 +572,7 @@ export const productModelRouter = router({
       // consistent with measurementPoint/fiducial/panel update.
       const existing = await db.getProductModelById(id);
       if (!existing) {
-        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'product' }, 'Không tìm thấy sản phẩm');
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, 'Không tìm thấy sản phẩm');
       }
 
       // Check if code is being updated and if it's a duplicate
@@ -718,7 +718,7 @@ export const productModelRouter = router({
     .mutation(async ({ ctx, input }) => {
       const source = await db.getProductModelById(input.sourceId);
       if (!source) {
-        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, "Sản phẩm nguồn không tồn tại");
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Sản phẩm nguồn không tồn tại");
       }
       // Code collision → CONFLICT (the unique index is the tx-level backstop below).
       const duplicate = await db.getProductModelByCode(input.newCode);
@@ -1839,7 +1839,7 @@ export const productMachineMappingRouter = router({
         db.getMachineById(input.machineId),
       ]);
       if (!product) {
-        throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "product" }, "Sản phẩm không tồn tại hoặc đã bị xoá — vui lòng chọn lại.");
+        throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "productModel" }, "Sản phẩm không tồn tại hoặc đã bị xoá — vui lòng chọn lại.");
       }
       if (!machine) {
         throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "machine" }, "Máy không tồn tại hoặc đã bị xoá — vui lòng chọn lại.");

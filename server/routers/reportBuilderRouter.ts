@@ -76,7 +76,7 @@ async function assertReportOwnership(id: number, ctx: { user: { id: number; role
     SELECT "createdBy" FROM report_templates WHERE id = ${id}
   `);
   const rows = result.rows || result;
-  if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "report" }, "Không tìm thấy báo cáo");
+  if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportTemplate" }, "Không tìm thấy báo cáo");
   if (rows[0].createdBy == null || rows[0].createdBy !== ctx.user.id) {
     throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "editOrDeleteReport" }, "Bạn không có quyền sửa hoặc xóa báo cáo này");
   }
@@ -142,7 +142,7 @@ export const reportBuilderRouter = router({
           SELECT * FROM report_templates WHERE id = ${id}
         `);
         const rows = result.rows || result;
-        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "report" }, "Không tìm thấy báo cáo");
+        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportTemplate" }, "Không tìm thấy báo cáo");
 
         // IDOR guard: only the owner, an admin, or anyone for a default/public
         // report may read it.
@@ -234,7 +234,7 @@ export const reportBuilderRouter = router({
           SELECT * FROM report_templates WHERE id = ${input.id}
         `);
         const rows = result.rows || result;
-        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "report" }, `Report template ${input.id} not found`);
+        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "reportTemplate" }, `Report template ${input.id} not found`);
 
         const source = rows[0];
         const newTemplate = await db.createReportTemplate({
