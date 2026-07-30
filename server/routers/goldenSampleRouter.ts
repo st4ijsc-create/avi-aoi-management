@@ -121,8 +121,19 @@ async function loadMeasurementImage(m: { imageUrl: string | null; imageKey?: str
       throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "fetchMeasurementImage" }, `Cannot fetch measurement image (HTTP ${res.status})`);
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length === 0 || buf.length > MAX_IMAGE_BYTES) {
-      throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Fetched image is empty or exceeds the 10 MB cap");
+    // Review round 1 (M-4) — cùng bệnh đã sửa ở decodeBase64Image() phía trên (2 nguyên
+    // nhân khác nhau, cùng render "Giá trị không hợp lệ ở hình ảnh."): tách reason cho
+    // ca rỗng, tái dùng KB_FILE_TOO_LARGE{limitMb} cho ca vượt dung lượng.
+    if (buf.length === 0) {
+      throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Fetched image is empty or exceeds the 10 MB cap");
+    }
+    if (buf.length > MAX_IMAGE_BYTES) {
+      throw appError(
+        "BAD_REQUEST",
+        "KB_FILE_TOO_LARGE",
+        { limitMb: Math.round((MAX_IMAGE_BYTES / (1024 * 1024)) * 10) / 10 },
+        "Fetched image is empty or exceeds the 10 MB cap",
+      );
     }
     return buf;
   }

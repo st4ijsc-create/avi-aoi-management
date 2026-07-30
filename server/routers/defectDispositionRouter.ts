@@ -164,10 +164,13 @@ export const defectDispositionRouter = router({
     .mutation(async ({ input, ctx }) => {
       // Mirror _core require2FA for privileged roles (roleProcedure alone does not).
       if (TWO_FA_ROLES.has(ctx.user.role) && !ctx.user.twoFactorEnabled) {
+        // Review round 1 (M-5) — reason chỉ áp cho luồng CẦN 2FA để tiếp tục (setup),
+        // KHÔNG áp cho luồng đang TẮT 2FA (twoFactorRouter.ts disable/userRouters.ts
+        // disable2FA giữ câu trần — chỉ dẫn "đi thiết lập" ngược ý định ở đó).
         throw appError(
           "FORBIDDEN",
           "TWO_FACTOR_NOT_SET_UP",
-          undefined,
+          { reason: "setUpInSecuritySettings" },
           "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
         );
       }

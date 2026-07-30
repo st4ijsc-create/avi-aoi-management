@@ -298,7 +298,9 @@ export const twoFactorRouter = router({
       }
 
       if (!user[0].twoFactorEnabled || !user[0].twoFactorSecret) {
-        throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", undefined, "2FA is not enabled for this account");
+        // Review round 1 (M-5) — verify(): người dùng đang CỐ XÁC THỰC 2FA, cần được
+        // chỉ đường đi thiết lập (KHÁC disable() bên trên — giữ câu trần ở đó).
+        throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", { reason: "setUpInSecuritySettings" }, "2FA is not enabled for this account");
       }
 
       // Try TOTP first
@@ -370,7 +372,9 @@ export const twoFactorRouter = router({
       }
 
       if (!user[0].twoFactorEnabled || !user[0].twoFactorSecret) {
-        throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", undefined, "2FA is not enabled");
+        // Review round 1 (M-5) — regenerateBackupCodes(): cần 2FA đã bật để tiếp tục,
+        // chỉ đường đi thiết lập đúng ý định (KHÁC disable()).
+        throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", { reason: "setUpInSecuritySettings" }, "2FA is not enabled");
       }
 
       // Verify TOTP

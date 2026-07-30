@@ -255,7 +255,10 @@ export const userRouter = router({
       // Get user's 2FA secret
       const status = await db.get2FAStatus(ctx.user.id);
       if (!status?.twoFactorSecret) {
-        throw appError('BAD_REQUEST', 'TWO_FACTOR_NOT_SET_UP', undefined, 'Chưa thiết lập 2FA. Vui lòng thiết lập trước.');
+        // Review round 1 (M-5) — verify2FA(): người dùng đang CỐ BẬT 2FA, cần chỉ
+        // đường đi thiết lập (KHÁC disable2FA() bên dưới — giữ câu trần ở đó, vì
+        // "đi thiết lập" ngược ý định khi người dùng đang TẮT 2FA).
+        throw appError('BAD_REQUEST', 'TWO_FACTOR_NOT_SET_UP', { reason: 'setUpInSecuritySettings' }, 'Chưa thiết lập 2FA. Vui lòng thiết lập trước.');
       }
 
       // Verify token (base32 encoding, ±1 step for clock drift)

@@ -3537,7 +3537,8 @@
     "PERMISSION_DENIED": "您无权：{{action}}。",
     "PERMISSION_DENIED_WITH_REASON": "您无权：{{action}}。{{reason}}",
     "AUTH_REQUIRED": "您需要登录才能使用此功能。",
-    "TWO_FACTOR_NOT_SET_UP": "此账户尚未启用双因素认证。请前往「设置 > 安全」进行设置。",
+    "TWO_FACTOR_NOT_SET_UP": "此账户尚未启用双因素认证。",
+    "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "此账户尚未启用双因素认证。{{reason}}",
     "RATE_LIMITED": "操作过于频繁，请稍后再试。",
     "ACCOUNT_LOCKED": "由于多次登录失败，账户已被临时锁定。请在 {{remainingMinutes}} 分钟后重试。",
     "ACCOUNT_DISABLED": "此账户已被停用。请联系管理员重新启用。",
@@ -3983,7 +3984,8 @@
       "unknownBuiltInRole": "角色不存在。可用角色：{{validRoles}}。",
       "insufficientCpkSamples": "数据不足：{{sampleCount}} 个样本（最少需要 {{minSamples}} 个）。",
       "invalidBase64Image": "无法解码 base64 数据。",
-      "emptyImagePayload": "解码后图像为空。"
+      "emptyImagePayload": "解码后图像为空。",
+      "setUpInSecuritySettings": "请前往「设置 > 安全」进行设置。"
     }
   },
   "export": {

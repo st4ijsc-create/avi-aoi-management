@@ -32,9 +32,38 @@ const PARAM_DICTIONARY_SPACE: Record<string, string> = {
   reason: "reason",
 };
 
+/** Review round 1 (M-2) — reviewer dựng harness i18next THẬT tái hiện: khi một
+ *  giá trị TỰ DO (không phải 1 trong 7 khoá từ điển ở trên — vd `lineName`,
+ *  `productCode`, `validRoles`, do người dùng/admin đặt tên) tình cờ CHỨA cú
+ *  pháp interpolation/nesting của i18next (`{{...}}` hoặc `$t(...)`), template
+ *  nhiều-placeholder có thể lòi placeholder THẬT ra màn hình thô (vd
+ *  `lineName = "{{maxConcurrent}}"` ⇒ "...chỉ hỗ trợ tối đa {{maxConcurrent}}
+ *  lệnh..." không được thay số — placeholder thật bị "cướp chỗ"/không thay).
+ *  KHÔNG phải lỗ injection (`skipOnVariables` đã chặn `$t()` chạy nesting từ
+ *  biến, React tự escape HTML) — nhưng ĐÚNG lớp lỗi "hiện `{{}}` thô cho người
+ *  dùng" mà cả file này tồn tại để diệt, nên vẫn phải chặn. Strip (loại bỏ)
+ *  `{{` và `$t(` khỏi MỌI giá trị chuỗi KHÔNG phải khoá từ điển, trước khi giá
+ *  trị đó được dùng ở BẤT KỲ lời gọi i18n.t nào (kể cả lời gọi lồng cho `reason`
+ *  bên dưới — nếu chỉ làm sạch ở `out` cuối cùng mà không làm sạch trước khi
+ *  truyền vào lời gọi lồng thì lỗ hổng vẫn còn nguyên ở đó). */
+function sanitizeFreeParams(
+  params: Record<string, string | number>,
+): Record<string, string | number> {
+  const dictKeys = new Set(Object.keys(PARAM_DICTIONARY_SPACE));
+  const out: Record<string, string | number> = { ...params };
+  for (const [key, value] of Object.entries(out)) {
+    if (dictKeys.has(key)) continue; // khoá từ điển: xử lý riêng (dùng làm khoá tra, không hiện thẳng)
+    if (typeof value === "string") {
+      out[key] = value.replace(/\{\{/g, "").replace(/\$t\(/g, "");
+    }
+  }
+  return out;
+}
+
 function localizeParams(params: Record<string, string | number> | undefined) {
   if (!params) return undefined;
-  const out: Record<string, string | number> = { ...params };
+  const sanitized = sanitizeFreeParams(params);
+  const out: Record<string, string | number> = { ...sanitized };
   for (const [key, space] of Object.entries(PARAM_DICTIONARY_SPACE)) {
     const raw = out[key];
     if (typeof raw === "string") {
@@ -44,11 +73,12 @@ function localizeParams(params: Record<string, string | number> | undefined) {
       // không đi qua từ điển vì không phải danh từ enum). Trước đây lời gọi lồng
       // này chỉ truyền `{ defaultValue }`, nên placeholder con sẽ hiện THÔ
       // "{{sampleCount}}" thay vì con số thật — bug `{{reason}}` mà Task 3 từng sửa
-      // tái phát ở cấp lồng. Truyền CẢ `params` GỐC (không phải `out` đang dở dang,
-      // để tránh phụ thuộc thứ tự Object.entries ở trên) làm ngữ cảnh nội suy cho
-      // lời gọi lồng — an toàn cho entity/operation/field/feature/action vì các mục
-      // đó là chuỗi thô không có placeholder nào để bị ảnh hưởng.
-      out[key] = i18n.t(`errors.${space}.${raw}`, { ...params, defaultValue: raw });
+      // tái phát ở cấp lồng. Truyền `sanitized` (params gốc ĐÃ làm sạch theo M-2 ở
+      // trên, không phải `out` đang dở dang, để tránh phụ thuộc thứ tự
+      // Object.entries ở trên) làm ngữ cảnh nội suy cho lời gọi lồng — an toàn cho
+      // entity/operation/field/feature/action vì các mục đó là chuỗi thô không có
+      // placeholder nào để bị ảnh hưởng.
+      out[key] = i18n.t(`errors.${space}.${raw}`, { ...sanitized, defaultValue: raw });
     }
   }
   return out;
@@ -69,10 +99,21 @@ export function translateAppError(
   // — tuyệt đại đa số call site hôm nay) sẽ hiện chuỗi rỗng hoặc "{{reason}}" chưa
   // thay — một hồi quy TỆ HƠN hiện trạng. Nên: khoá gốc `errors.${appCode}` GIỮ
   // NGUYÊN VĂN, không đổi; thêm khoá SONG SONG `errors.${appCode}_WITH_REASON` có
-  // {{reason}}. `params.reason` là chuỗi không rỗng ⇒ thử khoá `_WITH_REASON`
-  // TRƯỚC; nếu khoá đó CHƯA được định nghĩa cho appCode này (i18next rơi về
-  // SENTINEL, vd một appCode chưa có bản `_WITH_REASON`) thì lặng lẽ rơi tiếp về
-  // khoá gốc — cùng bất biến "thiếu khoá ⇒ fallback, không sập" của cả file, chỉ
+  // {{reason}}. `params.reason` là chuỗi không rỗng ⇒ thử khoá `_WITH_REASON` TRƯỚC.
+  //
+  // Review round 1 (M-1) — ĐÍNH CHÍNH cơ chế rơi-về-SENTINEL: dự án cấu hình
+  // `fallbackLng: 'vi'` (client/src/i18n/index.ts). Do đó nếu khoá `_WITH_REASON`
+  // CÓ tồn tại ở vi nhưng THIẾU ở en/zh, i18next tự rơi về BẢN VI (qua fallbackLng)
+  // TRƯỚC khi chạm tới `defaultValue`/SENTINEL của ta — tức người dùng en/zh vẫn
+  // đọc được câu (bằng tiếng Việt, không phải khoá gốc, không phải chuỗi rỗng).
+  // SENTINEL/rơi-về-khoá-gốc bên dưới CHỈ thật sự kích hoạt khi khoá
+  // `_WITH_REASON` vắng mặt Ở CẢ vi (tức appCode đó CHƯA TỪNG có bản `_WITH_REASON`
+  // nào — đúng trường hợp ta cố ý chừa cho các appCode chưa migrate). Hành vi thật
+  // AN TOÀN HƠN mô tả cũ (an toàn ở 2 lớp: fallbackLng rồi mới tới khoá gốc), nhưng
+  // vẫn giữ nhánh SENTINEL dưới đây làm lưới an toàn cuối cho đúng ca đó.
+  //
+  // Không có `_WITH_REASON` cho appCode này ở BẤT KỲ locale nào ⇒ lặng lẽ rơi tiếp
+  // về khoá gốc — cùng bất biến "thiếu khoá ⇒ fallback, không sập" của cả file, chỉ
   // khác ở chỗ "fallback" đầu tiên là khoá gốc (mất phần reason, câu vẫn đúng ngữ
   // pháp) trước khi mất luôn cả câu về `fallbackMessage`.
   const hasReason = typeof params?.reason === "string" && params.reason.trim().length > 0;

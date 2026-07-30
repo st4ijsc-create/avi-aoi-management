@@ -3545,7 +3545,8 @@
     "PERMISSION_DENIED": "You don't have permission to: {{action}}.",
     "PERMISSION_DENIED_WITH_REASON": "You don't have permission to: {{action}}. {{reason}}",
     "AUTH_REQUIRED": "You need to log in to use this feature.",
-    "TWO_FACTOR_NOT_SET_UP": "Two-factor authentication is not enabled for this account. Go to Settings > Security to set it up.",
+    "TWO_FACTOR_NOT_SET_UP": "Two-factor authentication is not enabled for this account.",
+    "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "Two-factor authentication is not enabled for this account. {{reason}}",
     "RATE_LIMITED": "You're doing this too fast. Please try again in a few minutes.",
     "ACCOUNT_LOCKED": "Account temporarily locked after too many failed logins. Try again in {{remainingMinutes}} minutes.",
     "ACCOUNT_DISABLED": "This account has been disabled. Contact an administrator to reactivate it.",
@@ -3991,7 +3992,8 @@
       "unknownBuiltInRole": "Unknown role. Available roles: {{validRoles}}.",
       "insufficientCpkSamples": "Insufficient data: {{sampleCount}} samples (minimum {{minSamples}}).",
       "invalidBase64Image": "The base64 data could not be decoded.",
-      "emptyImagePayload": "The image is empty after decoding."
+      "emptyImagePayload": "The image is empty after decoding.",
+      "setUpInSecuritySettings": "Go to Settings > Security to set it up."
     }
   },
   "export": {

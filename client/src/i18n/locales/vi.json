@@ -3546,7 +3546,8 @@
     "PERMISSION_DENIED": "Bạn không có quyền: {{action}}.",
     "PERMISSION_DENIED_WITH_REASON": "Bạn không có quyền: {{action}}. {{reason}}",
     "AUTH_REQUIRED": "Bạn cần đăng nhập để dùng chức năng này.",
-    "TWO_FACTOR_NOT_SET_UP": "Tài khoản này chưa bật xác thực 2 lớp. Vào Cài đặt > Bảo mật để thiết lập.",
+    "TWO_FACTOR_NOT_SET_UP": "Tài khoản này chưa bật xác thực 2 lớp.",
+    "TWO_FACTOR_NOT_SET_UP_WITH_REASON": "Tài khoản này chưa bật xác thực 2 lớp. {{reason}}",
     "RATE_LIMITED": "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
     "ACCOUNT_LOCKED": "Tài khoản tạm khoá do đăng nhập sai nhiều lần. Thử lại sau {{remainingMinutes}} phút.",
     "ACCOUNT_DISABLED": "Tài khoản này đã bị vô hiệu hoá. Liên hệ quản trị viên để được kích hoạt lại.",
@@ -3984,7 +3985,8 @@
       "unknownBuiltInRole": "Vai trò không tồn tại. Vai trò hợp lệ: {{validRoles}}.",
       "insufficientCpkSamples": "Không đủ dữ liệu: {{sampleCount}} mẫu (tối thiểu {{minSamples}}).",
       "invalidBase64Image": "Dữ liệu base64 không đọc được.",
-      "emptyImagePayload": "Ảnh rỗng sau khi giải mã."
+      "emptyImagePayload": "Ảnh rỗng sau khi giải mã.",
+      "setUpInSecuritySettings": "Vào Cài đặt > Bảo mật để thiết lập."
     }
   },
   "export": {

@@ -170,3 +170,70 @@ describe("cổng chặn — mọi appError(..., 'PERMISSION_DENIED', ...) phải
     expect(missing).toEqual([]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Review round 1 (M-3, nêu bởi reviewer Task 5) — CỔNG THỨ BA, đóng đúng lỗ hổng
+// mà chính docstring dòng 148-153 ở trên đã tự thú nhận CHO CA RIÊNG action: hai
+// cổng phía trên chỉ chứng minh khoá TỒN TẠI ở từ điển (`errors.reason.*`,
+// `errors.action`), KHÔNG chứng minh tham số ĐƯỢC TRUYỀN ở call-site. Hôm nay
+// (Task 5) 17/17 call-site dùng `reason` đều truyền đủ tham số placeholder riêng
+// của khoá đó (vd `reason: 'insufficientCpkSamples'` cần cả `sampleCount` lẫn
+// `minSamples`) — nhưng call-site thứ 18 lỡ quên 1 tham số sẽ đẩy "{{minSamples}}"
+// thô ra màn hình mà KHÔNG cổng nào ở trên bắt được (khoá vẫn tồn tại, chỉ thiếu
+// tham số truyền vào nó).
+//
+// Cách làm: đọc `errors.reason.*` ở vi.json làm THAM CHIẾU (i18n-check đã đảm bảo
+// placeholder giống hệt nhau ở cả 3 locale cho cùng 1 khoá, nên chỉ cần đọc 1 bản),
+// rút placeholder `{{xxx}}` của từng khoá reason. Với MỖI lời gọi appError(...) có
+// `reason: 'khoá'`, khẳng định MỌI placeholder của khoá đó đều xuất hiện dạng
+// `tênThamSố:` ngay trong CÙNG lời gọi (cùng call body).
+describe("cổng chặn — mọi placeholder của errors.reason.* phải được truyền ở call-site", () => {
+  function extractPlaceholders(text: string): string[] {
+    const names: string[] = [];
+    const re = /\{\{\s*([\w.]+)\s*\}\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) names.push(m[1]);
+    return names;
+  }
+
+  it("không lời gọi reason:'...' nào thiếu tham số placeholder mà chính khoá đó cần", () => {
+    const reasonDict = loadErrorsBlock("vi").reason as Record<string, string> | undefined;
+    if (!reasonDict) throw new Error("errors.reason rỗng ở vi.json — kiểm tra lại đường dẫn locale");
+
+    // reasonKey -> danh sách tên placeholder KHÁC "reason" mà bản dịch của nó cần.
+    const requiredParamsByReasonKey = new Map<string, string[]>();
+    for (const [key, value] of Object.entries(reasonDict)) {
+      const placeholders = extractPlaceholders(value).filter((p) => p !== "reason");
+      if (placeholders.length > 0) requiredParamsByReasonKey.set(key, placeholders);
+    }
+
+    const missing: string[] = [];
+    for (const file of walkTsFiles(ROUTERS_DIR)) {
+      const src = readFileSync(file, "utf8");
+      if (!src.includes("appError(") || !src.includes("reason")) continue;
+      for (const body of extractAppErrorCallBodies(src)) {
+        const reasonMatch = /\breason\s*:\s*["'`]([^"'`$]+)["'`]/.exec(body);
+        if (!reasonMatch) continue;
+        const reasonKey = reasonMatch[1];
+        const requiredParams = requiredParamsByReasonKey.get(reasonKey);
+        if (!requiredParams) continue; // khoá tĩnh (không placeholder) — không cần tham số gì thêm.
+        for (const paramName of requiredParams) {
+          // Chấp nhận CẢ property tường minh (`key: value`) LẪN shorthand ES6
+          // (`key,` / `key }` — object literal `{ maxConcurrent }` tương đương
+          // `{ maxConcurrent: maxConcurrent }`, hợp lệ và ĐANG được dùng thật ở
+          // productionRouters.ts). Chỉ bắt `\bkey\b` khi theo sau là `:`/`,`/`}` —
+          // đúng 3 vị trí kết thúc một property trong object literal.
+          if (!new RegExp(`\\b${paramName}\\b\\s*(:|,|\\})`).test(body)) {
+            missing.push(
+              `${file.replace(ROUTERS_DIR, "")} :: reason='${reasonKey}' thiếu tham số '${paramName}' (errors.reason.${reasonKey} cần {{${paramName}}})`,
+            );
+          }
+        }
+      }
+    }
+    if (missing.length > 0) {
+      console.error(`[cổng reason→placeholder] ${missing.length} chỗ thiếu:\n` + missing.join("\n"));
+    }
+    expect(missing).toEqual([]);
+  });
+});

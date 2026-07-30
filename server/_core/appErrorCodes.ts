@@ -32,13 +32,20 @@ export const APP_ERROR_CODES = [
   "AUTH_REQUIRED",        // params: {} — chưa đăng nhập (ctx.user null), KHÁC FIELD_REQUIRED
                           // (không phải thiếu một trường nhập) và KHÁC FEATURE_DISABLED.
                           // Task 7 fix round 1 (I-1).
-  "TWO_FACTOR_NOT_SET_UP", // params: {} — 2FA CHƯA BẬT cho TÀI KHOẢN này, KHÁC FEATURE_DISABLED
-                          // (2FA đang bật toàn hệ thống, chỉ tài khoản này chưa dùng).
-                          // Task 7 fix round 1 (I-2). Task 5 (doc 71, F4): chỉ dẫn "Vào Cài đặt >
-                          // Bảo mật để thiết lập" đã mất ở defectDispositionRouter.ts — KHÔNG dùng
-                          // cơ chế `reason?` (chỉ dẫn này ĐÚNG cho MỌI call site, không riêng
-                          // router nào), nên khôi phục thẳng vào câu TĨNH `errors.TWO_FACTOR_NOT_SET_UP`
-                          // (client i18n) — mọi caller hưởng lợi, không cần sửa từng router.
+  "TWO_FACTOR_NOT_SET_UP", // params: { reason? } — 2FA CHƯA BẬT cho TÀI KHOẢN này, KHÁC
+                          // FEATURE_DISABLED (2FA đang bật toàn hệ thống, chỉ tài khoản này
+                          // chưa dùng). Task 7 fix round 1 (I-2).
+                          //
+                          // Task 5 (doc 71, F4) BAN ĐẦU khôi phục "Vào Cài đặt > Bảo mật để
+                          // thiết lập" bằng cách enrich THẲNG câu TĨNH `errors.TWO_FACTOR_NOT_SET_UP`
+                          // — SAI: reviewer round 1 (M-5) chỉ ra 6 call site KHÔNG đồng nhất ý
+                          // định. 4/6 (defectDispositionRouter.ts, twoFactorRouter.ts verify() +
+                          // regenerateBackupCodes(), userRouters.ts verify2FA()) đúng là "cần bật
+                          // 2FA để tiếp tục" ⇒ chỉ dẫn "đi thiết lập" hợp lý. NHƯNG 2/6
+                          // (twoFactorRouter.ts disable(), userRouters.ts disable2FA()) là người
+                          // dùng đang TẮT 2FA — bảo họ "đi thiết lập" NGƯỢC Ý ĐỊNH. Đã trả câu
+                          // TĨNH về nguyên bản (không chỉ dẫn) + dùng `reason?: "setUpInSecuritySettings"`
+                          // (khoá `TWO_FACTOR_NOT_SET_UP_WITH_REASON`) CHỈ ở đúng 4 call site cần.
   "RATE_LIMITED",         // params: {} — vượt hạn mức thao tác (per-IP/per-machine throttle).
                           // Task 8 — gộp 3+ nơi ném TOO_MANY_REQUESTS rải rác (hierarchyRouters
                           // register/claimKey throttle, machineApiRouters heartbeat). Chi tiết

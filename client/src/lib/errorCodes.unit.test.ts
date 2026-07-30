@@ -212,3 +212,79 @@ describe("translateAppError — nội suy lồng dùng tham số động THẬT 
     expect(out).toContain("30");
   });
 });
+
+// Review round 1 (M-2) — reviewer dựng harness i18next THẬT tái hiện: một giá trị
+// TỰ DO (không phải 1 trong 7 khoá từ điển — vd `lineName` do admin đặt tên) tình
+// cờ CHỨA cú pháp `{{...}}`/`$t(...)` của i18next có thể làm LÒI placeholder THẬT
+// ra màn hình thô (giá trị "cướp chỗ" một placeholder khác trong CÙNG template
+// nhiều-placeholder). Test dưới đây dùng ĐÚNG kịch bản reviewer tái hiện:
+// `lineName = "{{maxConcurrent}}"` trong template `lineCapacityExceeded` (có CẢ
+// {{lineName}} lẫn {{maxConcurrent}}).
+describe("translateAppError — M-2: giá trị tự do chứa {{...}}/$t(...) không được làm lòi placeholder khác", () => {
+  for (const locale of LOCALES) {
+    it(`${locale}: lineName="{{maxConcurrent}}" ⇒ maxConcurrent thật vẫn hiện đúng, không lòi {{...}} thô`, async () => {
+      await i18n.changeLanguage(locale);
+      const out = translateAppError(
+        "OPERATION_FAILED",
+        {
+          operation: "rescheduleProductionOrder",
+          reason: "lineCapacityExceeded",
+          lineName: "{{maxConcurrent}}", // giá trị ĐỘC — y hệt ca reviewer tái hiện
+          maxConcurrent: 2,
+          currentCount: 3,
+        },
+        "fallback",
+      );
+      expect(hasUnresolvedPlaceholder(out)).toBe(false);
+      // Giá trị THẬT của maxConcurrent (2) phải xuất hiện, KHÔNG bị giá trị lineName
+      // độc hại "cướp chỗ" — nếu lỗi tái phát, "2" sẽ bị thay bởi chuỗi lineName.
+      expect(out).toContain("2");
+    });
+
+    it(`${locale}: productCode chứa "$t(...)" ⇒ không kích hoạt nesting, không lòi placeholder`, async () => {
+      await i18n.changeLanguage(locale);
+      const out = translateAppError(
+        "OPERATION_FAILED",
+        {
+          operation: "assignProductToMachine",
+          reason: "productReadinessBlocked",
+          productCode: "$t(errors.reason.scheduleConflict)",
+          score: 42,
+        },
+        "fallback",
+      );
+      expect(hasUnresolvedPlaceholder(out)).toBe(false);
+      expect(out).not.toContain("$t(");
+      expect(out).toContain("42");
+    });
+  }
+});
+
+// Review round 1 (M-5) — reviewer chỉ ra lý lẽ "enrich câu TĨNH TWO_FACTOR_NOT_SET_UP
+// có lợi cho cả 6 caller" SAI với 2/6 (disable/disable2FA — người dùng đang TẮT
+// 2FA, bảo "đi thiết lập" là ngược ý định). Câu TĨNH đã trả về nguyên bản (không
+// chỉ dẫn); reason CHỈ áp cho 4/6 call site cần "đi thiết lập".
+describe("translateAppError — TWO_FACTOR_NOT_SET_UP: câu TĨNH trung lập, reason chỉ khi CẦN thiết lập (M-5)", () => {
+  for (const locale of LOCALES) {
+    it(`${locale}: KHÔNG reason (vd luồng disable) ⇒ câu trung lập, KHÔNG chứa chỉ dẫn "đi thiết lập"`, async () => {
+      await i18n.changeLanguage(locale);
+      const out = translateAppError("TWO_FACTOR_NOT_SET_UP", undefined, "2FA is not enabled");
+      expect(hasUnresolvedPlaceholder(out)).toBe(false);
+      expect(hasStrayWhitespaceOrPunctuation(out)).toBe(false);
+    });
+
+    it(`${locale}: CÓ reason='setUpInSecuritySettings' (vd luồng verify/sign) ⇒ câu dài hơn, mang chỉ dẫn`, async () => {
+      await i18n.changeLanguage(locale);
+      const withoutReason = translateAppError("TWO_FACTOR_NOT_SET_UP", undefined, "2FA is not enabled");
+      const withReason = translateAppError(
+        "TWO_FACTOR_NOT_SET_UP",
+        { reason: "setUpInSecuritySettings" },
+        "2FA is not enabled",
+      );
+      expect(hasUnresolvedPlaceholder(withReason)).toBe(false);
+      expect(hasStrayWhitespaceOrPunctuation(withReason)).toBe(false);
+      expect(withReason).not.toBe(withoutReason);
+      expect(withReason.length).toBeGreaterThan(withoutReason.length);
+    });
+  }
+});
