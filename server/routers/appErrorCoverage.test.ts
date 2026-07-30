@@ -64,4 +64,35 @@ describe("phủ mã lỗi trong server/routers", () => {
     const { total } = countLegacyThrows();
     expect(ALLOWED_LEGACY_THROWS).toBe(total);
   });
+
+  it("không còn chuỗi 'Database not available' thô nào bị NÉM (throw) trong router", () => {
+    // Task 5 đợt 1 (§4.5 đợt 1) đã di trú toàn bộ 209 chỗ `throw new
+    // TRPCError({ code, message: "Database not available"/"DB not
+    // available"/"Database not connected"/"...unavailable" })` sang
+    // appError(code, "DB_UNAVAILABLE", undefined, message).
+    //
+    // ⚠ Regex SIẾT theo ngữ cảnh `new TRPCError({...` (không chỉ khớp
+    // `message:` trần) — khác bản brief gốc. Lý do: server/routers/alertRouters.ts:53
+    // có `return { breached, currentValue, message: "Database not available" }`
+    // — đây là GIÁ TRỊ TRẢ VỀ của evaluateAlertSetting (đọc bởi scheduler +
+    // endpoint test thủ công), KHÔNG phải lỗi ném ra, nên bị loại khỏi đợt di
+    // trú (đổi nó là đổi kiểu trả về/hành vi, ngoài phạm vi "một mã, một
+    // chuỗi, cơ học"). Regex trần `message:\s*["'\`](Database|DB) ...` sẽ báo
+    // dương tính giả ở đúng dòng đó. Regex dưới đây chỉ bắt khi "message:" nằm
+    // trong context `new TRPCError({` (bán kính 120 ký tự) — đúng thứ Step 7
+    // muốn kiểm: throw thô còn sót, không phải bất kỳ field "message" nào.
+    //
+    // appError(..., "Database not available") truyền chuỗi ở vị trí tham số
+    // thứ 4 dạng gọi hàm — không có "message:" — nên cũng không bị bắt nhầm.
+    const rawThrowRe = /new TRPCError\(\{[\s\S]{0,120}?message:\s*["'`](?:Database|DB) (?:not available|not connected|unavailable)["'`]/gi;
+    let hits = 0;
+    const offenders: string[] = [];
+    for (const file of walkTsFiles(ROUTERS_DIR)) {
+      const src = readFileSync(file, "utf8");
+      const n = (src.match(rawThrowRe) ?? []).length;
+      if (n > 0) { hits += n; offenders.push(file.replace(ROUTERS_DIR, "")); }
+    }
+    if (hits > 0) console.error("[phủ mã lỗi] còn throw thô ở:", offenders);
+    expect(hits).toBe(0);
+  });
 });
