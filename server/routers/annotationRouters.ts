@@ -1375,6 +1375,13 @@ Respond in JSON format with an array of findings.`
           errors: errors.slice(0, 10), // Limit errors shown
         };
       } catch (err: any) {
+        // I-B (review cuối): lời ném INVALID_VALUE (field importData, phía trên trong cùng
+        // khối try — JSON không phải mảng) rơi vào ĐÚNG khối try này — không có chốt
+        // instanceof TRPCError, nên bị catch bắt lại và ném ĐÈ thành OPERATION_FAILED ở
+        // đây. Lời ném gốc không bao giờ tới được client; JSON hỏng của người dùng và một
+        // sự cố DB/service thật ra chung một câu "Import failed". Rethrow ngay khi đã có
+        // mã đúng — chỉ bọc lỗi CHƯA có mã.
+        if (err instanceof TRPCError) throw err;
         throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'importAnnotations' }, `Import failed: ${err.message}`);
       }
     }),

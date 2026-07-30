@@ -137,7 +137,11 @@ export async function uploadPointReferenceImage(
     const upload = await storagePut(fileKey, buffer, actualMime);
     return upload;
   } catch (error) {
-    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, `Invalid image payload for point ${pointCode}`);
+    // I-C (review cuối): trong khối try này, Buffer.from không ném; inferImageExtension/
+    // nanoid là hàm sync thuần; nguồn ném DUY NHẤT còn lại là `await storagePut(...)`
+    // (đĩa đầy, S3/Forge chết, v.v). INVALID_VALUE{field:"image"} bảo người vận hành đi
+    // soi tấm ảnh — sai hướng khi lỗi thật là ở tầng lưu trữ. Đổi sang OPERATION_FAILED.
+    throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "uploadReferenceImage" }, `Invalid image payload for point ${pointCode}`);
   }
 }
 
@@ -190,7 +194,10 @@ export async function uploadProductReferenceImage(
 
     return { ...upload, imageWidth, imageHeight };
   } catch (error) {
-    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, `Invalid image payload for product model ${productModelId}`);
+    // I-C (review cuối) — cùng lý do như uploadPointReferenceImage ở trên: nguồn ném duy
+    // nhất còn lại trong khối try này là `await storagePut(...)`; sharp đã tự bọc try
+    // riêng ở trên (nuốt lỗi metadata, không ném ra ngoài). Đổi sang OPERATION_FAILED.
+    throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "uploadReferenceImage" }, `Invalid image payload for product model ${productModelId}`);
   }
 }
 
