@@ -79,10 +79,12 @@ function publicClient(r: typeof erpOauthClients.$inferSelect) {
 
 function ensureOauthEnabled() {
   if (!erpOauthEnabled()) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "OAuth2 client-credentials is disabled (ERP_OAUTH_ENABLED). Enable the flag before provisioning clients.",
-    });
+    throw appError(
+      "PRECONDITION_FAILED",
+      "FEATURE_DISABLED",
+      { feature: "erpOauthClientCredentials" },
+      "OAuth2 client-credentials is disabled (ERP_OAUTH_ENABLED). Enable the flag before provisioning clients.",
+    );
   }
 }
 

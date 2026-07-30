@@ -303,7 +303,7 @@ export const userRouter = router({
       // Get 2FA status
       const status = await db.get2FAStatus(ctx.user.id);
       if (!status?.twoFactorEnabled || !status.twoFactorSecret) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: '2FA chưa được bật' });
+        throw appError('BAD_REQUEST', 'FEATURE_DISABLED', { feature: 'twoFactorAuth' }, '2FA chưa được bật');
       }
 
       // Verify token

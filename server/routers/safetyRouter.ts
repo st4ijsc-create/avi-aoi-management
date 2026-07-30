@@ -73,27 +73,27 @@ async function db() {
 
 function requireSafetyFlag() {
   if (!safetyAuditEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Safety audit disabled (set SAFETY_AUDIT_ENABLED=true) — ADVISORY only, not safety-rated" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyAudit" }, "Safety audit disabled (set SAFETY_AUDIT_ENABLED=true) — ADVISORY only, not safety-rated");
   }
 }
 function requireWorkforceFlag() {
   if (!workforceEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Workforce disabled (set WORKFORCE_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "workforce" }, "Workforce disabled (set WORKFORCE_ENABLED=true)");
   }
 }
 function requireSafetyZoneFlag() {
   if (!safetyZoneSwEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Safety zones disabled (set SAFETY_ZONE_SW_ENABLED=true) — ADVISORY only, not SIL" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyZones" }, "Safety zones disabled (set SAFETY_ZONE_SW_ENABLED=true) — ADVISORY only, not SIL");
   }
 }
 function requireSafetyVisionFlag() {
   if (!safetyVisionEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Safety vision disabled (set SAFETY_VISION_ENABLED=true) — ADVISORY only, not SIL; needs a real camera + calibration + exported ONNX model" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyVision" }, "Safety vision disabled (set SAFETY_VISION_ENABLED=true) — ADVISORY only, not SIL; needs a real camera + calibration + exported ONNX model");
   }
 }
 function requireSafetyPlcFlag() {
   if (!safetyPlcAdapterEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Safety-PLC adapter disabled (set SAFETY_PLC_ADAPTER_ENABLED=true) — READ-ONLY monitoring; the certified Safety PLC performs the rated stop itself" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "safetyPlcAdapter" }, "Safety-PLC adapter disabled (set SAFETY_PLC_ADAPTER_ENABLED=true) — READ-ONLY monitoring; the certified Safety PLC performs the rated stop itself");
   }
 }
 

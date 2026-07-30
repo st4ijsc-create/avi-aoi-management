@@ -46,7 +46,7 @@ async function db() {
 /** Guard mutating actions behind the flag (matches the fleetRouter discipline). */
 function requireFlag() {
   if (!fieldV2Enabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Field abstraction v2 disabled (set FIELD_V2_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "fieldAbstractionV2" }, "Field abstraction v2 disabled (set FIELD_V2_ENABLED=true)");
   }
 }
 

@@ -1152,10 +1152,12 @@ export const machineRouter = router({
       const ip = (ctx as { req?: { ip?: string } })?.req?.ip;
       enforceEnrollThrottle(ip);
       if (!enrollmentEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Zero-touch enrollment is disabled on this server (set ENROLLMENT_ENABLED=true to enable)",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "zeroTouchEnrollment" },
+          "Zero-touch enrollment is disabled on this server (set ENROLLMENT_ENABLED=true to enable)",
+        );
       }
 
       try {

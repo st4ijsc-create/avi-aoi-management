@@ -266,7 +266,7 @@ export const kbStudioRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       if (!isKbStudioEnabled()) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Knowledge & Training Studio ingest is disabled." });
+        throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "kbStudioIngest" }, "Knowledge & Training Studio ingest is disabled.");
       }
       try {
         normalizeSourceType(input.mimeOrExt);
@@ -315,10 +315,12 @@ export const kbStudioRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       if (!isKbStudioEnabled() || !isWebIngestEnabled()) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Web URL ingest is disabled (WEB_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
-        });
+        throw appError(
+          "FORBIDDEN",
+          "FEATURE_DISABLED",
+          { feature: "web_ingest" },
+          "Web URL ingest is disabled (WEB_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
+        );
       }
 
       await kbStudioService.ensureCorpusRegistered(input.corpus, ctx.user?.id);

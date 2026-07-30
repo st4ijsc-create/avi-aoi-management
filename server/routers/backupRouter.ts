@@ -45,7 +45,7 @@ export const backupRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const databaseUrl = process.env.DATABASE_URL;
-      if (!databaseUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DATABASE_URL not configured" });
+      if (!databaseUrl) throw appError("INTERNAL_SERVER_ERROR", "FEATURE_DISABLED", { feature: "databaseBackup" }, "DATABASE_URL not configured");
 
       // Resolve tables from selected categories
       const tables = input.categories.flatMap(cat => TABLE_CATEGORIES[cat] ?? []);
@@ -123,7 +123,7 @@ export const backupRouter = router({
       if (!backup.fileUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Bản backup này không có file — không thể restore" });
 
       const databaseUrl = process.env.DATABASE_URL;
-      if (!databaseUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DATABASE_URL not configured" });
+      if (!databaseUrl) throw appError("INTERNAL_SERVER_ERROR", "FEATURE_DISABLED", { feature: "databaseBackup" }, "DATABASE_URL not configured");
 
       const startTime = Date.now();
       const categoriesToRestore = input.categories ?? backup.categories ?? [];

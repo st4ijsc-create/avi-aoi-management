@@ -26,6 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { appError } from "../_core/appError";
 import { validateUpload } from "../_core/uploadValidation";
 import {
   twinLiveEnabled,
@@ -49,14 +50,14 @@ import { SAMPLE_URDF_3DOF_ARM, SAMPLE_URDF_2DOF_PLANAR } from "../services/twin/
 /** Guard mutating actions behind the flag (matches fleetRouter.requireFlag). */
 function requireFlag() {
   if (!twinLiveEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Digital twin live disabled (set TWIN_LIVE_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "twinLive" }, "Digital twin live disabled (set TWIN_LIVE_ENABLED=true)");
   }
 }
 
 /** Guard T2a model-pipeline mutations behind MODEL_PIPELINE_ENABLED. */
 function requireModelPipelineFlag() {
   if (!modelPipelineEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Model pipeline disabled (set MODEL_PIPELINE_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "modelPipeline" }, "Model pipeline disabled (set MODEL_PIPELINE_ENABLED=true)");
   }
 }
 

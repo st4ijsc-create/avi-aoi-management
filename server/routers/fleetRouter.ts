@@ -53,14 +53,14 @@ async function db() {
 /** Guard mutating actions behind the flag (matches the orchestrationRouter discipline). */
 function requireFlag() {
   if (!fleetOrchEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Fleet orchestration disabled (set FLEET_ORCH_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "fleetOrchestration" }, "Fleet orchestration disabled (set FLEET_ORCH_ENABLED=true)");
   }
 }
 
 /** G2 — guard skill/resource/charging mutations behind FLEET_RESOURCE_ENABLED. */
 function requireResourceFlag() {
   if (!fleetResourceEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Fleet resource layer disabled (set FLEET_RESOURCE_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "fleetResourceLayer" }, "Fleet resource layer disabled (set FLEET_RESOURCE_ENABLED=true)");
   }
 }
 

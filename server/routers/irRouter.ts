@@ -69,7 +69,7 @@ export function dpcIrV2Enabled(): boolean {
 
 function requireFlag() {
   if (!dpcIrV2Enabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "IR programming disabled (set DPC_IR_V2_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "irProgramming" }, "IR programming disabled (set DPC_IR_V2_ENABLED=true)");
   }
 }
 

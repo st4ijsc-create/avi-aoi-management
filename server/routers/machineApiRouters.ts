@@ -3161,10 +3161,12 @@ export const machineApiRouter = router({
       if (!processResultIngestEnabled()) {
         // OFF ⇒ the endpoint ships dark. PRECONDITION_FAILED is permanent, so even
         // with store-forward on it is surfaced (never buffered).
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "processResultIngest" },
+          "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
+        );
       }
       if (input.schemaVersion) {
         console.debug(`[submitProcessResult] schemaVersion="${input.schemaVersion}" (serial=${input.serialNumber})`);
@@ -3226,10 +3228,12 @@ export const machineApiRouter = router({
     .input(submitProcessResultBatchInputSchema)
     .mutation(async ({ input, ctx }) => {
       if (!processResultIngestEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "processResultIngest" },
+          "Process result ingest is disabled on this server (PROCESS_RESULT_INGEST_ENABLED).",
+        );
       }
       const headerKey = machineHeaderKey(ctx);
       // AUTH ONCE for the whole batch. A bad credential rejects the batch as a
@@ -4205,10 +4209,12 @@ export const machineApiRouter = router({
     }))
     .query(async ({ input, ctx }) => {
       if (!configSyncGenericEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "configSyncGeneric" },
+          "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
+        );
       }
       const { machine } = await authenticateMachine({
         apiKey: input.apiKey,
@@ -4256,10 +4262,12 @@ export const machineApiRouter = router({
     }))
     .query(async ({ input, ctx }) => {
       if (!configSyncGenericEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "configSyncGeneric" },
+          "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
+        );
       }
       const { machine } = await authenticateMachine({
         apiKey: input.apiKey,
@@ -4322,10 +4330,12 @@ export const machineApiRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       if (!configSyncGenericEnabled()) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "FEATURE_DISABLED",
+          { feature: "configSyncGeneric" },
+          "Generic config-sync is disabled on this server (CONFIG_SYNC_GENERIC_ENABLED).",
+        );
       }
       const { machine } = await authenticateMachine({
         apiKey: input.apiKey,

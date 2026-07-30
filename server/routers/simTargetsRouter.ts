@@ -17,6 +17,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { appError } from "../_core/appError";
 import {
   UrsimClient,
   validateUrscriptOnUrsim,
@@ -97,7 +98,7 @@ export const simTargetsRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!ursimEnabled()) {
-        throw new TRPCError({ code: "CONFLICT", message: "URSim harness disabled (set URSIM_ENABLED=true)" });
+        throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "ursimHarness" }, "URSim harness disabled (set URSIM_ENABLED=true)");
       }
       const ep = resolveEndpoint(input.endpoint);
       if (!ep) {
@@ -113,7 +114,7 @@ export const simTargetsRouter = router({
     .use(requirePermission("machine_control", "canCreate"))
     .mutation(async () => {
       if (!ros2BridgeEnabled()) {
-        throw new TRPCError({ code: "CONFLICT", message: "ROS2 bridge disabled (set ROS2_BRIDGE_ENABLED=true)" });
+        throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "ros2Bridge" }, "ROS2 bridge disabled (set ROS2_BRIDGE_ENABLED=true)");
       }
       if (!rosbridgeUrlFromEnv()) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "ROSBRIDGE_URL is empty" });

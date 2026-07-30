@@ -35,10 +35,12 @@ const canEdit = requirePermission("production_orders", "canEdit");
 
 function ensureEnabled(): void {
   if (!orderLifecycleEnabled()) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "Order lifecycle is disabled (ORDER_LIFECYCLE_ENABLED, default OFF; requires migration 0258).",
-    });
+    throw appError(
+      "PRECONDITION_FAILED",
+      "FEATURE_DISABLED",
+      { feature: "orderLifecycle" },
+      "Order lifecycle is disabled (ORDER_LIFECYCLE_ENABLED, default OFF; requires migration 0258).",
+    );
   }
 }
 

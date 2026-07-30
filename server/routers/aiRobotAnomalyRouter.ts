@@ -83,7 +83,7 @@ export const aiRobotAnomalyRouter = router({
     .input(z.object({ robotId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       if (!isRobotAnomalyEnabled()) {
-        throw new TRPCError({ code: "CONFLICT", message: "Robot anomaly detection disabled (set AI_ROBOT_ANOMALY_ENABLED=true)" });
+        throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "robotAnomalyDetection" }, "Robot anomaly detection disabled (set AI_ROBOT_ANOMALY_ENABLED=true)");
       }
       const anomalies = await detectAndRaiseForRobot(input.robotId);
       return { count: anomalies.length, anomalies };
@@ -115,7 +115,7 @@ export const aiRobotAnomalyRouter = router({
     .input(z.object({ modelId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       if (!isModelAutoRollbackEnabled()) {
-        throw new TRPCError({ code: "CONFLICT", message: "Model auto-rollback disabled (set AI_MODEL_AUTOROLLBACK_ENABLED=true)" });
+        throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "modelAutoRollback" }, "Model auto-rollback disabled (set AI_MODEL_AUTOROLLBACK_ENABLED=true)");
       }
       return runRollbackForModel(input.modelId);
     }),

@@ -23,6 +23,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { appError } from "../_core/appError";
 import { equipmentRegistry } from "../services/equipment/equipmentAdapter";
 import {
   isEqIntegEnabled,
@@ -41,7 +42,7 @@ import { EuromapAdapter, EUROMAP_CAVEAT, EUROMAP_TRANSPORTS, EUROMAP_VENDOR_DEFA
 /** Guard mutations behind the flag (matches equipmentStandardsRouter discipline). */
 function requireFlag(): void {
   if (!isEqIntegEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Equipment integration disabled (set EQ_INTEG_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "equipmentIntegration" }, "Equipment integration disabled (set EQ_INTEG_ENABLED=true)");
   }
 }
 

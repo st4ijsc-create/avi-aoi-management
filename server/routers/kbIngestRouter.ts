@@ -139,7 +139,7 @@ export const kbIngestRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       if (!isKbStudioEnabled()) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Knowledge & Training Studio ingest is disabled." });
+        throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "kbStudioIngest" }, "Knowledge & Training Studio ingest is disabled.");
       }
 
       // MIME/extension allowlist, checked BEFORE decoding the (possibly large) payload.
@@ -210,10 +210,12 @@ export const kbIngestRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       if (!isKbStudioEnabled() || !isWebIngestEnabled()) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Web URL ingest is disabled (WEB_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
-        });
+        throw appError(
+          "FORBIDDEN",
+          "FEATURE_DISABLED",
+          { feature: "web_ingest" },
+          "Web URL ingest is disabled (WEB_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
+        );
       }
 
       try {
@@ -281,10 +283,12 @@ export const kbIngestRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       if (!isKbStudioEnabled() || !isVideoIngestEnabled()) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Video ingest is disabled (VIDEO_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
-        });
+        throw appError(
+          "FORBIDDEN",
+          "FEATURE_DISABLED",
+          { feature: "videoIngest" },
+          "Video ingest is disabled (VIDEO_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
+        );
       }
 
       const buffer = decodeBase64Payload(input.base64, MAX_VIDEO_UPLOAD_BYTES, "Video");

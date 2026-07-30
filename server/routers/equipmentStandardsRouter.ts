@@ -88,7 +88,7 @@ async function db() {
 /** Guard mutating actions behind the flag (matches fleetRouter/safetyRouter discipline). */
 function requireFlag() {
   if (!eqGovernEnabled()) {
-    throw new TRPCError({ code: "CONFLICT", message: "Equipment governance disabled (set EQ_GOVERN_ENABLED=true)" });
+    throw appError("CONFLICT", "FEATURE_DISABLED", { feature: "equipmentGovernance" }, "Equipment governance disabled (set EQ_GOVERN_ENABLED=true)");
   }
 }
 
