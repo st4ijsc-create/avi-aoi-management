@@ -127,7 +127,7 @@ export const andonRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
       const row = await acknowledgeAndon(input.id, ctx.user.id, { id: ctx.user.id, name: ctx.user.name ?? null });
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Andon không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
       return row;
     }),
 
@@ -136,7 +136,7 @@ export const andonRouter = router({
     .input(z.object({ id: z.number().int().positive(), notes: z.string().max(2000).optional() }))
     .mutation(async ({ input, ctx }) => {
       const row = await resolveAndon(input.id, ctx.user.id, input.notes, { id: ctx.user.id, name: ctx.user.name ?? null });
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Andon không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
       return row;
     }),
 
@@ -180,7 +180,7 @@ export const andonRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       const [row] = await db.select().from(andonEvents).where(eq(andonEvents.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Andon không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "andonEvent" }, "Andon không tồn tại.");
       return row;
     }),
 

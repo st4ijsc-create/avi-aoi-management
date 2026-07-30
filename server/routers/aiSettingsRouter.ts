@@ -188,10 +188,7 @@ export const aiSettingsRouter = router({
         .where(eq(aiApiKeys.id, input.id))
         .limit(1);
       if (!existing)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "API key not found",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, "API key not found");
       await db.delete(aiApiKeys).where(eq(aiApiKeys.id, input.id));
       return { success: true };
     }),
@@ -208,10 +205,7 @@ export const aiSettingsRouter = router({
         .where(eq(aiApiKeys.id, input.id))
         .limit(1);
       if (!key)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "API key not found",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, "API key not found");
       // doc 69 W0-4: the system is 100% local (cloud LLM removed at WS-G3) — there is no
       // real provider endpoint to call here. The previous "isValid = encryptedKey.length > 0"
       // check was a FABRICATED pass (doc-51 P0 finding). Report an honest "not supported"
@@ -243,10 +237,7 @@ export const aiSettingsRouter = router({
         .where(eq(aiApiKeys.id, input.id))
         .limit(1);
       if (!key)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "API key not found",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, "API key not found");
       const newStatus = key.status === "active" ? "inactive" : "active";
       const [result] = await db
         .update(aiApiKeys)
@@ -745,7 +736,7 @@ export const aiSettingsRouter = router({
     .query(async ({ ctx, input }) => {
       const { getJob } = await import("../services/aiJobQueue");
       const job = getJob(input.id, ctx.user?.id);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+      if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiJob" }, "Job not found");
       return job;
     }),
 

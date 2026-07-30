@@ -370,7 +370,7 @@ export const aiSpecialistAgentRouter = router({
     .query(async ({ ctx, input }) => {
       const session = await getAiSpecialistSessionDetail(input.sessionId, ctx.user.id);
       if (!session) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "agentSession" }, "Session not found");
       }
       return session;
     }),

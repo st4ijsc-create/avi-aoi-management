@@ -537,7 +537,7 @@ export const annotationRouter = router({
         sql`SELECT annotations FROM annotation_templates WHERE id = ${input.templateId}`
       ) as any;
       if (!templateResult.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationTemplate' }, 'Template not found');
       }
       const templateAnnotations = typeof templateResult[0].annotations === 'string'
         ? JSON.parse(templateResult[0].annotations)
@@ -811,7 +811,7 @@ Respond in JSON format with an array of findings.`
         sql`SELECT "createdBy" FROM image_annotations WHERE id = ${input.id}`
       ) as any;
       if (!existing.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Annotation not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotation' }, 'Annotation not found');
       }
       if (existing[0].createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this annotation' });
@@ -1457,7 +1457,7 @@ export const annotationTemplateRouter = router({
         sql`SELECT "isSystem", "createdBy" FROM annotation_templates WHERE id = ${input.id}`
       ) as any;
       if (!existing.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationTemplate' }, 'Template not found');
       }
       if (existing[0].isSystem) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete system templates' });
@@ -1520,7 +1520,7 @@ export const annotationHistoryRouter = router({
       ) as any;
       
       if (!result.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Version not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationVersion' }, 'Version not found');
       }
       
       const row = result[0];
@@ -1551,7 +1551,7 @@ export const annotationHistoryRouter = router({
       ) as any;
       
       if (!historyResult.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Version not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationVersion' }, 'Version not found');
       }
       
       const historyRow = historyResult[0];
@@ -1594,7 +1594,7 @@ export const annotationHistoryRouter = router({
       ) as any;
       
       if (result.length !== 2) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'One or both versions not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationVersion' }, 'One or both versions not found');
       }
       
       const versions = result.map((row: any) => ({

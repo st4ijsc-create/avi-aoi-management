@@ -7,6 +7,7 @@
 import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import {
   describeDefect,
   compareImages,
@@ -22,7 +23,7 @@ function resolveImagePath(imageKey: string): string {
 function loadImage(imageKey: string): Buffer {
   const imagePath = resolveImagePath(imageKey);
   if (!fs.existsSync(imagePath)) {
-    throw new TRPCError({ code: "NOT_FOUND", message: `Image not found: ${imageKey}` });
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image not found: ${imageKey}`);
   }
   return fs.readFileSync(imagePath);
 }

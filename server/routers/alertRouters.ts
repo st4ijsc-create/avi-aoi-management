@@ -3,6 +3,7 @@ import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { and, eq, gte, sql } from "drizzle-orm";
@@ -249,7 +250,7 @@ export const alertRouter = router({
     .query(async ({ input, ctx }) => {
       const alert = await db.getAlertSettingById(input.id);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       // Only owner or admin can view
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
@@ -299,7 +300,7 @@ export const alertRouter = router({
     .mutation(async ({ input, ctx }) => {
       const alert = await db.getAlertSettingById(input.id);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
@@ -318,7 +319,7 @@ export const alertRouter = router({
     .mutation(async ({ input, ctx }) => {
       const alert = await db.getAlertSettingById(input.id);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
@@ -361,11 +362,11 @@ export const alertRouter = router({
       // owner and reject anyone who is neither the owner nor an admin.
       const historyRow = await db.getAlertHistoryById(input.id);
       if (!historyRow) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alert' }, 'Alert not found');
       }
       const alert = await db.getAlertSettingById(historyRow.alertSettingId);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
@@ -380,7 +381,7 @@ export const alertRouter = router({
     .mutation(async ({ input, ctx }) => {
       const alert = await db.getAlertSettingById(input.id);
       if (!alert) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert setting not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });

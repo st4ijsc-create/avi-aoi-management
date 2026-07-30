@@ -14,6 +14,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import {
   insertDefectSegmentation,
@@ -127,7 +128,7 @@ export const aiSegmentationRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const row = await getDefectSegmentationById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Mask not found" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mask" }, "Mask not found");
       if (row.createdBy !== ctx.user.id && ctx.user.role !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized to delete this mask" });
       }

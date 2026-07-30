@@ -79,7 +79,7 @@ async function db() {
 async function requireMachine(machineId: number) {
   const d = await db();
   const [m] = await d.select().from(machines).where(eq(machines.id, machineId)).limit(1);
-  if (!m) throw new TRPCError({ code: "NOT_FOUND", message: `Machine #${machineId} không tồn tại.` });
+  if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine #${machineId} không tồn tại.`);
   return m;
 }
 

@@ -128,10 +128,7 @@ export const annotationComparisonRouter = router({
         .where(inArray(productInspections.id, input.inspectionIds));
       
       if (inspections.length !== input.inspectionIds.length) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Một hoặc nhiều inspection không tồn tại",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Một hoặc nhiều inspection không tồn tại");
       }
 
       const [result] = await db.insert(annotationComparisonSessions).values({
@@ -213,10 +210,7 @@ export const annotationComparisonRouter = router({
         .where(eq(annotationComparisonSessions.id, input.id));
 
       if (!session) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Session không tồn tại",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comparisonSession" }, "Session không tồn tại");
       }
 
       // Get inspection details
@@ -309,10 +303,7 @@ export const annotationComparisonRouter = router({
         .where(eq(annotationComparisonSessions.id, input.sessionId));
 
       if (!session) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Session không tồn tại",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comparisonSession" }, "Session không tồn tại");
       }
 
       // Get all measurement results for inspections
@@ -456,10 +447,7 @@ export const annotationComparisonRouter = router({
       ]);
 
       if (!inspection1 || !inspection2) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Inspection không tồn tại",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection không tồn tại");
       }
 
       // Get measurement results
