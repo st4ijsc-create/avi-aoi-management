@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import {
@@ -162,7 +163,7 @@ export const aiTimeSeriesRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database unavailable");
 
       const days = ({ "1d": 1, "7d": 7, "30d": 30, "90d": 90 } as const)[input.period] ?? 30;
       const endDate = new Date();

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, roleProcedure, moduleGate } from "../_core/trpc";
 import {
   listSpecialistAgents,
@@ -516,7 +517,7 @@ export const aiSpecialistAgentRouter = router({
     .query(async ({ ctx, input }) => {
       const stats = await getModuleImprovementStats(ctx.user.id, input?.moduleName);
       if (!stats) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database unavailable");
       }
       return stats;
     }),

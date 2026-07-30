@@ -14,6 +14,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, supervisorProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { alertEscalationRules, mqttConnectionAlerts, mqttAlertHistory, users } from "../../drizzle/schema";
@@ -21,7 +22,7 @@ import { desc, eq, isNotNull } from "drizzle-orm";
 
 async function requireDb() {
   const db = await getDb();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   return db;
 }
 
