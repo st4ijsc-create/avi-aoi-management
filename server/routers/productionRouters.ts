@@ -91,10 +91,12 @@ export const productionOrderRouter = router({
           const { assertLineSetupOkForRun } = await import("../services/feederVerifyService");
           const gate = await assertLineSetupOkForRun(lineId, productModelId);
           if (gate.blocked) {
-            throw new TRPCError({
-              code: "PRECONDITION_FAILED",
-              message: `Cannot start production run: ${gate.reason}`,
-            });
+            throw appError(
+              "PRECONDITION_FAILED",
+              "OPERATION_FAILED",
+              { operation: "startProductionRun" },
+              `Cannot start production run: ${gate.reason}`,
+            );
           }
         }
       }
@@ -196,10 +198,12 @@ export const productionOrderRouter = router({
         });
         
         if (overlappingOrders.length > 0) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: `Lịch trùng với ${overlappingOrders.length} lệnh sản xuất khác: ${overlappingOrders.map(o => o.orderCode).join(', ')}. Sử dụng forceOverride=true để bỏ qua.`,
-          });
+          throw appError(
+            'CONFLICT',
+            'OPERATION_FAILED',
+            { operation: 'rescheduleProductionOrder' },
+            `Lịch trùng với ${overlappingOrders.length} lệnh sản xuất khác: ${overlappingOrders.map(o => o.orderCode).join(', ')}. Sử dụng forceOverride=true để bỏ qua.`,
+          );
         }
 
         // Capacity validation - check max concurrent orders
@@ -217,10 +221,12 @@ export const productionOrderRouter = router({
         });
 
         if (concurrentOrders.length >= maxConcurrent) {
-          throw new TRPCError({
-            code: 'PRECONDITION_FAILED',
-            message: `Dây chuyền ${targetLine.name} chỉ hỗ trợ tối đa ${maxConcurrent} lệnh cùng lúc. Hiện đã có ${concurrentOrders.length} lệnh trong khoảng thời gian này. Sử dụng forceOverride=true để bỏ qua.`,
-          });
+          throw appError(
+            'PRECONDITION_FAILED',
+            'OPERATION_FAILED',
+            { operation: 'rescheduleProductionOrder' },
+            `Dây chuyền ${targetLine.name} chỉ hỗ trợ tối đa ${maxConcurrent} lệnh cùng lúc. Hiện đã có ${concurrentOrders.length} lệnh trong khoảng thời gian này. Sử dụng forceOverride=true để bỏ qua.`,
+          );
         }
 
         // Capacity validation - check production capacity
@@ -229,10 +235,12 @@ export const productionOrderRouter = router({
           const maxCapacity = targetLine.capacityPerHour * durationHours;
           
           if (order.targetQuantity > maxCapacity) {
-            throw new TRPCError({
-              code: 'PRECONDITION_FAILED',
-              message: `Số lượng ${order.targetQuantity} vượt quá năng lực dây chuyền (${Math.floor(maxCapacity)} sản phẩm trong ${durationHours.toFixed(1)} giờ với ${targetLine.capacityPerHour} sp/giờ). Sử dụng forceOverride=true để bỏ qua.`,
-            });
+            throw appError(
+              'PRECONDITION_FAILED',
+              'OPERATION_FAILED',
+              { operation: 'rescheduleProductionOrder' },
+              `Số lượng ${order.targetQuantity} vượt quá năng lực dây chuyền (${Math.floor(maxCapacity)} sản phẩm trong ${durationHours.toFixed(1)} giờ với ${targetLine.capacityPerHour} sp/giờ). Sử dụng forceOverride=true để bỏ qua.`,
+            );
           }
         }
       }

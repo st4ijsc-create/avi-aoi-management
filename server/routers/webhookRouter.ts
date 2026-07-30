@@ -214,7 +214,7 @@ export const webhookRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền tạo webhook" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "createWebhook" }, "Chỉ admin mới có quyền tạo webhook");
       }
 
       const [config] = await db.insert(webhookConfigs).values({
@@ -253,7 +253,7 @@ export const webhookRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền cập nhật webhook" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "updateWebhook" }, "Chỉ admin mới có quyền cập nhật webhook");
       }
 
       const { id, ...updateData } = input;
@@ -276,7 +276,7 @@ export const webhookRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền xóa webhook" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "deleteWebhook" }, "Chỉ admin mới có quyền xóa webhook");
       }
 
       // Delete delivery logs first
@@ -376,7 +376,7 @@ export const webhookRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền xóa logs" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "deleteWebhookLogs" }, "Chỉ admin mới có quyền xóa logs");
       }
 
       const cutoffDate = new Date();

@@ -3672,7 +3672,8 @@
       "record": "record",
       "onboardingDraft": "onboarding draft",
       "aiModelCard": "AI model card",
-      "measurementPointVersion": "measurement point version"
+      "measurementPointVersion": "measurement point version",
+      "visionAdapter": "vision adapter"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3757,7 +3758,12 @@
       "approveThreshold": "approve threshold",
       "rejectThreshold": "reject threshold",
       "withdrawThreshold": "withdraw threshold request",
-      "revertThresholdToSnapshot": "revert threshold to prior snapshot"
+      "revertThresholdToSnapshot": "revert threshold to prior snapshot",
+      "euromapIntegration": "Euromap integration",
+      "reviewEquipmentChangeRequest": "review equipment change request",
+      "startProductionRun": "start production run",
+      "rescheduleProductionOrder": "reschedule production order",
+      "startAcquisitionWorker": "start acquisition worker"
     },
     "field": {
       "code": "code",
@@ -3815,7 +3821,15 @@
       "maskData": "mask data",
       "overrideReason": "override reason",
       "recipeParam": "recipe parameter",
-      "codeOrMachineId": "code or machine ID"
+      "codeOrMachineId": "code or machine ID",
+      "euromapOpcuaEndpoint": "Euromap OPC-UA endpoint",
+      "euromapOpcuaNodeMap": "Euromap OPC-UA node-map",
+      "artifactKind": "artifact kind",
+      "projectKind": "project kind",
+      "urdfSource": "URDF source",
+      "to": "end time",
+      "machineCodeOrApiKey": "machine code or API key",
+      "payload": "payload"
     },
     "feature": {
       "web_ingest": "web content ingestion",
@@ -3849,7 +3863,8 @@
       "loraFinetune": "LoRA finetune",
       "productVariants": "product variants",
       "modelCardGovernance": "model card governance",
-      "aiSegmentation": "AI segmentation"
+      "aiSegmentation": "AI segmentation",
+      "twinLocalStorage": "digital twin local storage"
     },
     "action": {
       "viewOthersPermissions": "view another user's permissions",
@@ -3886,7 +3901,12 @@
       "deleteAlertSetting": "delete alert setting",
       "acknowledgeAlert": "acknowledge alert",
       "testAlertSetting": "test alert setting",
-      "withdrawThreshold": "withdraw threshold request"
+      "withdrawThreshold": "withdraw threshold request",
+      "selfReviewChangeRequest": "self-review own change request",
+      "createWebhook": "create webhook",
+      "updateWebhook": "update webhook",
+      "deleteWebhook": "delete webhook",
+      "deleteWebhookLogs": "delete webhook logs"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

@@ -488,10 +488,10 @@ export const equipmentStandardsRouter = router({
       // Doc 54 Wave B — Separation of Duties: the reviewer (reviewedBy=ctx.user) MUST
       // differ from the requester (requestedBy). A requester cannot self-review/approve.
       if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự review/duyệt." });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfReviewChangeRequest" }, "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự review/duyệt.");
       }
       const ns = nextStatus(cr.status as CrStatus, input.to);
-      if (!ns) throw new TRPCError({ code: "CONFLICT", message: `Illegal CR transition ${cr.status} → ${input.to}` });
+      if (!ns) throw appError("CONFLICT", "OPERATION_FAILED", { operation: "reviewEquipmentChangeRequest" }, `Illegal CR transition ${cr.status} → ${input.to}`);
       // Conformance được tính ở SERVER khi duyệt — bỏ hoàn toàn self-attest từ client.
       let conformanceStatus = cr.conformanceStatus;
       if (ns === "approved") {
@@ -557,7 +557,7 @@ export const equipmentStandardsRouter = router({
           publishedAttrs, proposedAttrs,
         });
         if (!decision.ok) {
-          throw new TRPCError({ code: "CONFLICT", message: `Publish rejected: ${decision.rejection}` });
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "publishEquipmentStandard" }, `Publish rejected: ${decision.rejection}`);
         }
         // archive prior published rows of this type
         if (existing.length) {
@@ -581,7 +581,7 @@ export const equipmentStandardsRouter = router({
           backwardIncompatible: decision.breaking ? "true" : "false", publishedAt: new Date(), updatedAt: new Date(),
         }).where(and(eq(deviceTypeChangeRequests.id, input.crId), eq(deviceTypeChangeRequests.status, "approved"))).returning();
         if (updated.length === 0) {
-          throw new TRPCError({ code: "CONFLICT", message: "CR was concurrently modified — publish aborted" });
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "publishEquipmentStandard" }, "CR was concurrently modified — publish aborted");
         }
         return { cr, deviceType: row, decision };
       });

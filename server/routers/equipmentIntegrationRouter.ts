@@ -49,9 +49,9 @@ function requireFlag(): void {
 /** Translate a service Error into a tRPC error (NOT_FOUND for missing recipes, else BAD_REQUEST). */
 function toTrpc(err: unknown): TRPCError {
   const msg = err instanceof Error ? err.message : String(err);
-  if (/not found/i.test(msg)) return new TRPCError({ code: "NOT_FOUND", message: msg });
-  if (/disabled/i.test(msg)) return new TRPCError({ code: "CONFLICT", message: msg });
-  return new TRPCError({ code: "BAD_REQUEST", message: msg });
+  if (/not found/i.test(msg)) return appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, msg);
+  if (/disabled/i.test(msg)) return appError("CONFLICT", "FEATURE_DISABLED", { feature: "equipmentIntegration" }, msg);
+  return appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "euromapIntegration" }, msg);
 }
 
 export const equipmentIntegrationRouter = router({
@@ -129,10 +129,10 @@ export const equipmentIntegrationRouter = router({
       const endpoint = input.endpoint ?? process.env.EUROMAP_OPCUA_ENDPOINT ?? "";
       const nodeMap = parseNodeMap(input.nodeMapJson ?? process.env.EUROMAP_OPCUA_NODEMAP);
       if (!endpoint.trim()) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "No Euromap OPC-UA endpoint (set EUROMAP_OPCUA_ENDPOINT)" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "euromapOpcuaEndpoint" }, "No Euromap OPC-UA endpoint (set EUROMAP_OPCUA_ENDPOINT)");
       }
       if (!nodeMap) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "No Euromap OPC-UA node-map (set EUROMAP_OPCUA_NODEMAP)" });
+        throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "euromapOpcuaNodeMap" }, "No Euromap OPC-UA node-map (set EUROMAP_OPCUA_NODEMAP)");
       }
       const { createDriver } = await import("../services/ot/driverRegistry");
       const driver = createDriver("opcua");

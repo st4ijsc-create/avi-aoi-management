@@ -140,10 +140,12 @@ export const twinRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         if (process.env.STORAGE_MODE !== "local") {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Local storage is off — set STORAGE_MODE=local to upload & serve 3D models.",
-          });
+          throw appError(
+            "CONFLICT",
+            "FEATURE_DISABLED",
+            { feature: "twinLocalStorage" },
+            "Local storage is off — set STORAGE_MODE=local to upload & serve 3D models.",
+          );
         }
         let buf: Buffer;
         try {
@@ -153,10 +155,12 @@ export const twinRouter = router({
         }
         const v = validateUpload(buf, "model3d");
         if (!v.ok) {
-          throw new TRPCError({
-            code: v.status === 413 ? "PAYLOAD_TOO_LARGE" : "BAD_REQUEST",
-            message: v.error ?? "Invalid 3D model file.",
-          });
+          throw appError(
+            v.status === 413 ? "PAYLOAD_TOO_LARGE" : "BAD_REQUEST",
+            "INVALID_VALUE",
+            { field: "twinContent" },
+            v.error ?? "Invalid 3D model file.",
+          );
         }
         const ext = v.detectedMime === "model/gltf-binary" ? ".glb" : ".gltf";
         const uploadsRoot = process.env.LOCAL_STORAGE_DIR
@@ -236,7 +240,7 @@ export const twinRouter = router({
               ? SAMPLE_URDF_2DOF_PLANAR
               : undefined);
         if (!urdfSource) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Provide urdfSource or a sample key." });
+          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "urdfSource" }, "Provide urdfSource or a sample key.");
         }
         return convertUrdfModel({
           urdfSource,
@@ -351,7 +355,7 @@ export const twinRouter = router({
     )
     .query(async ({ input }) => {
       if (input.to.getTime() <= input.from.getTime()) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "`to` must be after `from`" });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "to" }, "`to` must be after `from`");
       }
       return runReplay({ factoryId: input.factoryId, from: input.from, to: input.to, stepSec: input.step });
     }),

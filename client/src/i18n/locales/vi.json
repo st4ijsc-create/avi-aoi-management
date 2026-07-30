@@ -3673,7 +3673,8 @@
       "record": "bản ghi",
       "onboardingDraft": "bản nháp onboarding",
       "aiModelCard": "model card AI",
-      "measurementPointVersion": "phiên bản điểm đo"
+      "measurementPointVersion": "phiên bản điểm đo",
+      "visionAdapter": "adapter thị giác"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3758,7 +3759,12 @@
       "approveThreshold": "duyệt ngưỡng",
       "rejectThreshold": "từ chối ngưỡng",
       "withdrawThreshold": "rút yêu cầu ngưỡng",
-      "revertThresholdToSnapshot": "khôi phục ngưỡng về bản ghi trước"
+      "revertThresholdToSnapshot": "khôi phục ngưỡng về bản ghi trước",
+      "euromapIntegration": "tích hợp Euromap",
+      "reviewEquipmentChangeRequest": "review change-request thiết bị",
+      "startProductionRun": "bắt đầu lượt sản xuất",
+      "rescheduleProductionOrder": "đổi lịch lệnh sản xuất",
+      "startAcquisitionWorker": "khởi động worker thu nhận dữ liệu"
     },
     "field": {
       "code": "mã",
@@ -3816,7 +3822,15 @@
       "maskData": "dữ liệu mask",
       "overrideReason": "lý do override",
       "recipeParam": "tham số công thức",
-      "codeOrMachineId": "mã hoặc mã máy"
+      "codeOrMachineId": "mã hoặc mã máy",
+      "euromapOpcuaEndpoint": "địa chỉ OPC-UA Euromap",
+      "euromapOpcuaNodeMap": "node-map OPC-UA Euromap",
+      "artifactKind": "loại artifact",
+      "projectKind": "loại project",
+      "urdfSource": "nguồn URDF",
+      "to": "thời điểm kết thúc",
+      "machineCodeOrApiKey": "mã máy hoặc khoá API",
+      "payload": "dữ liệu payload"
     },
     "feature": {
       "web_ingest": "nạp nội dung từ web",
@@ -3850,7 +3864,8 @@
       "loraFinetune": "tinh chỉnh LoRA",
       "productVariants": "biến thể sản phẩm",
       "modelCardGovernance": "quản trị model card",
-      "aiSegmentation": "phân đoạn ảnh AI"
+      "aiSegmentation": "phân đoạn ảnh AI",
+      "twinLocalStorage": "lưu trữ cục bộ digital twin"
     },
     "action": {
       "viewOthersPermissions": "xem quyền của người khác",
@@ -3887,7 +3902,12 @@
       "deleteAlertSetting": "xoá cấu hình cảnh báo",
       "acknowledgeAlert": "xác nhận cảnh báo",
       "testAlertSetting": "thử nghiệm cấu hình cảnh báo",
-      "withdrawThreshold": "rút yêu cầu ngưỡng"
+      "withdrawThreshold": "rút yêu cầu ngưỡng",
+      "selfReviewChangeRequest": "tự review change-request của chính mình",
+      "createWebhook": "tạo webhook",
+      "updateWebhook": "cập nhật webhook",
+      "deleteWebhook": "xoá webhook",
+      "deleteWebhookLogs": "xoá nhật ký webhook"
     }
   },
   "export": {

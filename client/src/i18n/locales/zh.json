@@ -3664,7 +3664,8 @@
       "record": "记录",
       "onboardingDraft": "上线草稿",
       "aiModelCard": "AI模型卡",
-      "measurementPointVersion": "测量点版本"
+      "measurementPointVersion": "测量点版本",
+      "visionAdapter": "视觉适配器"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3749,7 +3750,12 @@
       "approveThreshold": "批准阈值",
       "rejectThreshold": "拒绝阈值",
       "withdrawThreshold": "撤回阈值申请",
-      "revertThresholdToSnapshot": "将阈值恢复到之前的快照"
+      "revertThresholdToSnapshot": "将阈值恢复到之前的快照",
+      "euromapIntegration": "Euromap集成",
+      "reviewEquipmentChangeRequest": "审核设备变更请求",
+      "startProductionRun": "开始生产运行",
+      "rescheduleProductionOrder": "调整生产订单排程",
+      "startAcquisitionWorker": "启动数据采集工作进程"
     },
     "field": {
       "code": "编码",
@@ -3807,7 +3813,15 @@
       "maskData": "掩膜数据",
       "overrideReason": "覆盖原因",
       "recipeParam": "配方参数",
-      "codeOrMachineId": "编码或设备编码"
+      "codeOrMachineId": "编码或设备编码",
+      "euromapOpcuaEndpoint": "Euromap OPC-UA地址",
+      "euromapOpcuaNodeMap": "Euromap OPC-UA节点映射",
+      "artifactKind": "产物类型",
+      "projectKind": "项目类型",
+      "urdfSource": "URDF来源",
+      "to": "结束时间",
+      "machineCodeOrApiKey": "设备编码或API密钥",
+      "payload": "负载数据"
     },
     "feature": {
       "web_ingest": "网页内容导入",
@@ -3841,7 +3855,8 @@
       "loraFinetune": "LoRA微调",
       "productVariants": "产品变体",
       "modelCardGovernance": "模型卡治理",
-      "aiSegmentation": "AI图像分割"
+      "aiSegmentation": "AI图像分割",
+      "twinLocalStorage": "数字孪生本地存储"
     },
     "action": {
       "viewOthersPermissions": "查看他人的权限",
@@ -3878,7 +3893,12 @@
       "deleteAlertSetting": "删除告警配置",
       "acknowledgeAlert": "确认告警",
       "testAlertSetting": "测试告警配置",
-      "withdrawThreshold": "撤回阈值申请"
+      "withdrawThreshold": "撤回阈值申请",
+      "selfReviewChangeRequest": "自行审核本人的变更请求",
+      "createWebhook": "创建webhook",
+      "updateWebhook": "更新webhook",
+      "deleteWebhook": "删除webhook",
+      "deleteWebhookLogs": "删除webhook日志"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
