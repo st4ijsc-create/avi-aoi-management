@@ -405,12 +405,30 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     // horizon whose lower-CI crosses the danger threshold.
     for (const fp of forecast) {
       if (fp.lower <= DANGER_HEALTH_THRESHOLD) {
-        timeframeHours = Math.max(0, (fp.timestamp - healthSeries[healthSeries.length - 1].timestamp) / 3600_000);
+        const candidate = Math.max(0, (fp.timestamp - healthSeries[healthSeries.length - 1].timestamp) / 3600_000);
+        // Sprint 5 §5 (backlog E1) — chặn tại NGUỒN: Math.max(0, x) chỉ kẹp x ÂM lên 0,
+        // KHÔNG kẹp NaN (Math.max(0, NaN) === NaN). NaN chỉ có thể sinh ra ở đây nếu
+        // timestamp trong forecast bị hỏng; đo thực nghiệm cho thấy đường gọi hiện tại
+        // (horizonSteps cũng suy từ cùng timestamp) đã tự chặn trường hợp đó bằng cách
+        // trả forecast rỗng — nhưng giữ guard tường minh ở đây để không phụ thuộc vào
+        // một hiệu ứng phụ tình cờ của chỗ khác (phòng khi horizonSteps đổi công thức).
+        if (Number.isFinite(candidate)) timeframeHours = candidate;
         break;
       }
     }
-    // Cap timeframe by MTBF if available
-    if (timeframeHours != null && reliability?.mtbfHours) {
+    // Cap timeframe by MTBF if available.
+    // Sprint 5 §5 (backlog E1) — chặn tại NGUỒN: khác Math.max(0, x), Math.min không
+    // kẹp toán hạng không hữu hạn — reliability.mtbfHours = -Infinity (kiểu number|null,
+    // không có gì đảm bảo hữu hạn khi tới đây) sẽ ép timeframeHours thành -Infinity
+    // NGUYÊN VẸN. B1 (classifySuppression.ts) đã chặn -Infinity ở CỔNG PHÁT cảnh báo;
+    // guard này chặn ở NGUỒN — trước khi giá trị này còn được record xuống DB qua
+    // recordMachineHealthSnapshot (gọi vô điều kiện, không qua cổng phát cảnh báo).
+    // Quyết định có chủ ý: khi mtbfHours không hữu hạn, BỎ QUA việc áp trần (thay vì
+    // null hoá luôn timeframeHours) — timeframeHours ở đây LUÔN đã là một ước lượng
+    // hữu hạn hợp lệ từ forecast xu hướng sức khoẻ (đến từ tín hiệu KHÁC, độc lập với
+    // MTBF); một trường MTBF hỏng không nên xoá một ước lượng hợp lệ đã có, chỉ nên
+    // huỷ đúng bước áp trần dùng dữ liệu hỏng đó.
+    if (timeframeHours != null && reliability?.mtbfHours && Number.isFinite(reliability.mtbfHours)) {
       timeframeHours = Math.min(timeframeHours, reliability.mtbfHours);
     }
     factors.push({
@@ -474,7 +492,16 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
   const confidenceScore = clamp(dataComponent + agreementComponent + ciComponent);
 
   // If trend gave no timeframe but reliability is overdue, fall back to MTBF horizon.
-  if (timeframeHours == null && riskReliability >= 60 && reliability?.mtbfHours && uptimeSinceLastHours != null) {
+  // Sprint 5 §5 (backlog E1) — chặn tại NGUỒN: nếu mtbfHours/uptimeSinceLastHours
+  // không hữu hạn, phép trừ có thể ra NaN hoặc +Infinity mà Math.max(0, x) không kẹp
+  // được (nó chỉ kẹp x ÂM lên 0). Trong thực tế nhánh này khó chạm tới với toán hạng
+  // hỏng vì riskReliability (dùng CÙNG hai biến này ở hazard phía trên) đã bị clamp()
+  // về 0 khi không hữu hạn — nhưng guard tường minh ở đây không phụ thuộc vào việc
+  // đọc-hiểu hiệu ứng phụ đó, nên vẫn giữ cho chắc.
+  if (
+    timeframeHours == null && riskReliability >= 60 && reliability?.mtbfHours &&
+    Number.isFinite(reliability.mtbfHours) && uptimeSinceLastHours != null && Number.isFinite(uptimeSinceLastHours)
+  ) {
     timeframeHours = Math.max(0, reliability.mtbfHours - uptimeSinceLastHours);
   }
 
@@ -502,7 +529,24 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     }
   }
 
-  const recommendedMaintenanceDate = timeframeHours != null
+  // ── Sprint 5 §5 (backlog E1) — CHẶN TẠI NGUỒN (bổ sung cho B1 ở classifySuppression.ts,
+  // vốn chỉ chặn ở CỔNG PHÁT cảnh báo). Đây là điểm hội tụ DUY NHẤT trước khi
+  // `timeframeHours` được dùng để tính `recommendedMaintenanceDate`/`predictedTimeframeHours`
+  // /`rulHours` — bất kể nó không hữu hạn vì lý do gì (Math.min với mtbfHours không hữu
+  // hạn, hay bất kỳ đường mới nào sau này), guard này đảm bảo giá trị không hữu hạn
+  // KHÔNG BAO GIỜ tới được `Math.round()` (vốn giữ nguyên -Infinity/+Infinity/NaN) hay
+  // `new Date()` (vốn sinh Invalid Date — record xuống DB qua recordMachineHealthSnapshot
+  // có thể khiến driver postgres-js/drizzle ném RangeError). Không hữu hạn = KHÔNG ước
+  // lượng được, phải là `null` — KHÔNG phải 0 và KHÔNG phải giá trị không hữu hạn đó.
+  if (timeframeHours != null && !Number.isFinite(timeframeHours)) {
+    timeframeHours = null;
+    // Trung thực: nếu rulMethod từng được gán 'weibull' (dòng rul.method ở trên) mà
+    // timeframeHours cuối cùng lại không hữu hạn, nhãn 'weibull' không còn đúng nữa —
+    // hạ về 'insufficient_data' (giá trị đã có sẵn trong union type, không bịa thêm).
+    rulMethod = "insufficient_data";
+  }
+
+  const recommendedMaintenanceDate = timeframeHours != null && Number.isFinite(timeframeHours)
     ? new Date(Date.now() + timeframeHours * 3600_000)
     : null;
 
@@ -520,13 +564,16 @@ export function computeFailureRiskFromInputs(inputs: RiskInputs): FailureRiskRes
     failureRisk: Math.round(failureRisk),
     confidenceScore: Math.round(confidenceScore),
     predictedTimeframe: describeTimeframe(timeframeHours),
-    predictedTimeframeHours: timeframeHours != null ? Math.round(timeframeHours) : null,
+    // Number.isFinite(timeframeHours) ở đây tưởng thừa (guard hội tụ phía trên đã null
+    // hoá giá trị không hữu hạn) nhưng KHÔNG dựa vào đó — đây là bản vá thứ hai, độc
+    // lập, đúng ngay tại nơi Math.round() từng "nuốt" -Infinity/NaN mà không kiểm tra.
+    predictedTimeframeHours: timeframeHours != null && Number.isFinite(timeframeHours) ? Math.round(timeframeHours) : null,
     recommendedMaintenanceDate,
     maintenanceUrgency: urgencyFromRisk(failureRisk),
     factors,
     dataPoints,
     rulMethod,
-    rulHours: timeframeHours != null ? Math.round(timeframeHours) : null,
+    rulHours: timeframeHours != null && Number.isFinite(timeframeHours) ? Math.round(timeframeHours) : null,
     rulConfidence,
     rulNote,
     failureMode: failureMode
