@@ -358,17 +358,12 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
 
   // Chỉ đóng dấu "đã gửi" khi thật sự có người nhận. Nhà máy chưa cấu hình role
   // nhận (không có user `maintenance`) mà vẫn stamp ⇒ cảnh báo im 4 giờ vì một
-  // lượt gửi không tồn tại.
+  // lượt gửi không tồn tại. LƯU Ý (Sprint 5 debt E3): đây chỉ còn là ĐIỀU KIỆN
+  // ĐỦ ĐỂ THỬ đóng dấu — dấu THẬT SỰ chỉ được ghi SAU khi vòng gửi (:511 trở
+  // xuống) xác nhận đã gửi thành công. willStamp KHÔNG còn được dùng để set
+  // trực tiếp notificationSent/notificationSentAt trong khối ghi predictive_alerts
+  // nữa (xem lý do ở khối ghi bên dưới).
   const willStamp = notifyDecision.notify && targets.length > 0;
-
-  // Sprint 5 debt E2 — nhóm không-máy không có cột notificationSentAt nào để tự
-  // stamp (không có dòng predictive_alerts đại diện "trạng thái đang mở" của
-  // khoá này), nên lưu mốc gửi vào Redis ở đây. CHỈ stamp khi THẬT SỰ có người
-  // nhận — cùng lý do với willStamp: nhà máy chưa cấu hình role quality_inspector
-  // mà vẫn stamp ⇒ cảnh báo im 4h vì một lượt gửi không tồn tại.
-  if (isNoMachineGroup && willStamp) {
-    await setLastNotifyEntry(consolidationKey, { timestamp: Date.now() }, renotifyCooldownMs());
-  }
 
   // WS-4: allow callers (e.g. predictiveMaintenanceService) to pass through
   // predictedTimeframe, confidenceScore, and factors. Backward-compatible —
@@ -430,7 +425,10 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
           // Sprint 5 §2.6(3) — lượt IM LẶNG không gọi LLM, nên payload lúc này
           // không có phần lý giải. Ghi đè sẽ XOÁ lý giải có từ lần báo trước.
           ...(notifyDecision.notify ? { aiAnalysis: aiAnalysisPayload } : {}),
-          ...(willStamp ? { notificationSent: true, notificationSentAt: new Date() } : {}),
+          // Sprint 5 debt E3 — KHÔNG đóng dấu ở đây nữa. Trước đây stamp ngay
+          // trong khối ghi này, TRƯỚC lượt gửi thật (:511) — tiến trình chết
+          // giữa hai việc để lại dấu "đã báo" giả. Dấu THẬT chỉ được ghi bằng
+          // một UPDATE riêng SAU khi gửi xong (xem khối sau vòng gửi bên dưới).
           expiresAt,
           updatedAt: new Date(),
           // KHÔNG đụng createdAt: processAutoEscalation() đo tuổi dòng để leo thang.
@@ -465,8 +463,13 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
           predictedTimeframe: timeframe,
           aiAnalysis: aiAnalysisPayload,
           status: "ACTIVE",
-          notificationSent: willStamp,
-          notificationSentAt: willStamp ? new Date() : null,
+          // Sprint 5 debt E3 — luôn ghi CHƯA GỬI lúc tạo dòng: tới đây lượt gửi
+          // thật (:511) chưa chạy nên KHÔNG thể biết đã gửi hay chưa. Dấu THẬT
+          // chỉ được ghi bằng một UPDATE riêng SAU khi gửi thành công (fail-open
+          // nếu gửi hỏng thì cứ để false/null — còn cơ hội thử lại ở lần tái diễn
+          // kế tiếp, thay vì nói dối "đã báo" trong lúc không ai được báo).
+          notificationSent: false,
+          notificationSentAt: null,
           occurrenceCount: 1,
           lastOccurredAt: new Date(),
           expiresAt,
@@ -509,9 +512,43 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
   // scans the table — nothing to register in process memory.
 
   // Sprint 5 §2.2 — Gửi SAU cùng: tới đây dòng cảnh báo và dòng nhật ký đã yên vị.
+  //
+  // Sprint 5 debt E3 — và giờ ĐÓNG DẤU cũng phải SAU CÙNG NỐT. Trước đây dấu
+  // notificationSentAt được ghi ngay trong khối ghi predictive_alerts phía
+  // trên, TRƯỚC lượt gửi thật ở đây — tiến trình chết đúng khe giữa hai việc
+  // để lại một cảnh báo mang dấu "đã báo" mà KHÔNG ai được báo, im lặng suốt
+  // cooldown (mặc định 4h) về một máy sắp hỏng. Sửa: chỉ đóng dấu SAU khi
+  // sendSmartNotification() xác nhận đã gửi được — allDelivered=false (ví dụ
+  // kênh in-app ném lỗi) ⇒ KHÔNG stamp, còn cơ hội thử lại ở lần tái diễn kế
+  // tiếp thay vì mang một dấu "đã báo" giả.
+  let allDelivered = true;
   if (notifyDecision.notify) {
     for (const target of targets) {
-      await sendSmartNotification(target, event);
+      const delivered = await sendSmartNotification(target, event);
+      if (!delivered) allDelivered = false;
+    }
+  }
+
+  if (willStamp && allDelivered) {
+    if (isNoMachineGroup) {
+      // Sprint 5 debt E2 (nay dời SAU gửi theo E3) — nhóm không-máy không có
+      // dòng predictive_alerts đại diện "đang mở" để tự stamp, nên mượn Redis.
+      await setLastNotifyEntry(consolidationKey, { timestamp: Date.now() }, renotifyCooldownMs());
+    } else if (alertRecord?.id != null) {
+      try {
+        await db
+          .update(predictiveAlerts)
+          .set({ notificationSent: true, notificationSentAt: new Date(), updatedAt: new Date() })
+          .where(eq(predictiveAlerts.id, alertRecord.id));
+      } catch (err) {
+        // FAIL-OPEN: đóng dấu hỏng KHÔNG được phép che mất việc ĐÃ gửi thành
+        // công — chỉ mất dấu vết notificationSentAt cho dòng này, không mất
+        // cảnh báo. Log rõ để vận hành biết cột có thể trễ/thiếu.
+        console.error(
+          `[SmartAlert] đóng dấu notificationSentAt THẤT BẠI cho cảnh báo #${alertRecord.id} (đã gửi thành công, chỉ lỗi ghi dấu):`,
+          (err as Error)?.message ?? err,
+        );
+      }
     }
   }
 
@@ -1157,13 +1194,21 @@ function buildConsolidationKey(event: SmartAlertEvent): string {
   return `${event.type}:${event.machineId ?? "all"}:${event.factoryId ?? "all"}`;
 }
 
+/**
+ * Sprint 5 debt E3 — trả về ĐÃ GỬI ĐƯỢC HAY CHƯA (true nếu ÍT NHẤT một kênh
+ * thành công), để routeAlert() chỉ đóng dấu notificationSentAt SAU KHI xác
+ * nhận thật. Trước đây hàm này tự nuốt hết lỗi và không trả gì — gọi nơi khác
+ * không cách nào biết gửi có thành công hay không, nên dấu "đã báo" bị đóng
+ * dựa trên Ý ĐỊNH gửi chứ không phải KẾT QUẢ gửi.
+ */
 async function sendSmartNotification(
   target: RouteTarget,
   event: SmartAlertEvent,
   isEscalation: boolean = false
-) {
+): Promise<boolean> {
   const prefix = isEscalation ? "[ESCALATED] " : "";
   const title = `${prefix}${event.severity} Alert: ${event.type.replace(/_/g, " ")}`;
+  let delivered = false;
 
   try {
     await sendAlertNotification(target.userId, {
@@ -1171,6 +1216,7 @@ async function sendSmartNotification(
       message: `${event.message}\nRouted to you because: ${target.reason}`,
       priority: event.severity === "CRITICAL" ? "URGENT" : event.severity === "HIGH" ? "HIGH" : "NORMAL",
     });
+    delivered = true;
   } catch (error) {
     console.error(`[Smart Alert] Failed to notify user ${target.username}:`, error);
   }
@@ -1184,10 +1230,13 @@ async function sendSmartNotification(
         currentValue: 0,
         thresholdValue: 0,
       });
+      delivered = true;
     } catch (error) {
       console.error(`[Smart Alert] Failed to email ${target.email}:`, error);
     }
   }
+
+  return delivered;
 }
 
 // ─── Cleanup stale entries ───────────────────────────────────────────────────

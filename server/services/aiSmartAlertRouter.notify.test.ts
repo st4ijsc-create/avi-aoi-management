@@ -25,6 +25,11 @@ let patternExecuteThrows = false;
 // chưa từng thực sự được ghi, giữ đúng quy ước đã dùng cho occurrence ở
 // aiSmartAlertRouter.occurrence.test.ts (case "ghi nhật ký NÉM LỖI").
 let alertInsertThrows = false;
+// Sprint 5 debt E3 — cho sendAlertNotification (kênh in-app) NÉM lỗi thật, để
+// khẳng định routeAlert() KHÔNG đóng dấu notificationSentAt khi gửi thất bại
+// (trước đây dấu đóng ngay trong khối ghi, TRƯỚC cả lượt gửi — không cách nào
+// biết gửi có thành công hay không).
+let sendAlertNotificationThrows = false;
 
 function chain(getRows: () => any[]) {
   const node: any = {
@@ -91,7 +96,12 @@ vi.mock("./aiGgufEngine", () => ({
   isGgufAvailable: vi.fn(async () => false),
 }));
 vi.mock("./notificationService", () => ({
-  sendAlertNotification: vi.fn(async (userId: number) => { notified.push({ userId }); }),
+  sendAlertNotification: vi.fn(async (userId: number) => {
+    if (sendAlertNotificationThrows) {
+      throw new Error("gửi thông báo in-app LỖI (giả lập kênh push hỏng)");
+    }
+    notified.push({ userId });
+  }),
 }));
 vi.mock("./emailService", () => ({ sendAlertEmail: vi.fn(async () => undefined) }));
 
@@ -103,6 +113,7 @@ beforeEach(() => {
   patternQueried = false;
   patternExecuteThrows = false;
   alertInsertThrows = false;
+  sendAlertNotificationThrows = false;
   generateText.mockClear();
   process.env.ALERT_RENOTIFY_COOLDOWN_MINUTES = "240";
   process.env.ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES = "0";
@@ -115,15 +126,24 @@ afterEach(() => {
 const MAINTENANCE = [{ userId: 7, username: "kt1", role: "maintenance", email: null }];
 
 describe("routeAlert — tách gửi thông báo khỏi ghi nhật ký", () => {
-  it("cảnh báo MỚI ⇒ gửi thông báo + stamp notificationSentAt", async () => {
+  // Sprint 5 debt E3 (cập nhật assertion — KHÔNG phải nới lỏng) — bài test này
+  // trước đây khẳng định đúng cái BUG đang sửa: dòng INSERT tự stamp
+  // notificationSent=true/notificationSentAt=Date NGAY LÚC GHI, tức TRƯỚC cả
+  // lượt gửi thật (:517 trở đi trong code). Tiến trình chết giữa hai việc đó
+  // để lại một cảnh báo "đã báo" giả. Nay INSERT phải ghi CHƯA GỬI (false/null)
+  // — dấu thật chỉ xuất hiện ở một UPDATE riêng SAU khi gửi xong.
+  it("cảnh báo MỚI ⇒ gửi thông báo, INSERT ghi CHƯA GỬI, UPDATE riêng SAU đó mới stamp", async () => {
     seedUserRows = MAINTENANCE;
     const { routeAlert } = await import("./aiSmartAlertRouter");
     await routeAlert({ type: "MACHINE_FAILURE", machineId: 8101, severity: "HIGH", message: "x", data: {} } as any);
 
     expect(notified).toHaveLength(1);
     const ins = calls.find((c) => c.kind === "insert")!;
-    expect(ins.payload.notificationSent).toBe(true);
-    expect(ins.payload.notificationSentAt).toBeInstanceOf(Date);
+    expect(ins.payload.notificationSent).toBe(false);      // chưa biết lúc ghi — đúng ý (debt E3)
+    expect(ins.payload.notificationSentAt).toBeNull();
+    const stampUpd = calls.find((c) => c.kind === "update")!; // UPDATE riêng, SAU khi gửi xong
+    expect(stampUpd.payload.notificationSent).toBe(true);
+    expect(stampUpd.payload.notificationSentAt).toBeInstanceOf(Date);
   });
 
   it("tái diễn trong cooldown, mức KHÔNG đổi ⇒ IM LẶNG nhưng VẪN ghi nhật ký", async () => {
@@ -153,6 +173,11 @@ describe("routeAlert — tách gửi thông báo khỏi ghi nhật ký", () => {
     expect(patternQueried).toBe(false);
   });
 
+  // Sprint 5 debt E3 (cập nhật assertion — KHÔNG phải nới lỏng) — trước đây
+  // `calls.find(kind==="update")` (lấy call ĐẦU TIÊN) trúng ngay khối ghi
+  // chính (bump occurrenceCount) vì stamp từng nằm CHUNG khối đó. Nay stamp bị
+  // TÁCH sang một UPDATE riêng chạy SAU lượt gửi ⇒ có 2 lệnh update: cái ĐẦU là
+  // khối ghi chính (không còn field stamp), cái SAU mới là stamp thật.
   it("mức TĂNG (HIGH → CRITICAL) ⇒ báo ngay dù còn trong cooldown", async () => {
     seedUserRows = MAINTENANCE;
     seedOpenAlertRows = [{ id: 57, severity: "HIGH", occurrenceCount: 1, notificationSentAt: new Date() }];
@@ -160,8 +185,10 @@ describe("routeAlert — tách gửi thông báo khỏi ghi nhật ký", () => {
     await routeAlert({ type: "MACHINE_FAILURE", machineId: 8104, severity: "CRITICAL", message: "x", data: {} } as any);
 
     expect(notified).toHaveLength(1);
-    const upd = calls.find((c) => c.kind === "update")!;
-    expect(upd.payload.notificationSentAt).toBeInstanceOf(Date);
+    const updates = calls.filter((c) => c.kind === "update");
+    expect(updates[0].payload.notificationSentAt).toBeUndefined(); // khối ghi chính không còn stamp (debt E3)
+    expect(updates[1].payload.notificationSentAt).toBeInstanceOf(Date); // UPDATE riêng SAU khi gửi xong
+    expect(updates[1].payload.notificationSent).toBe(true);
   });
 
   it("không có người nhận (targets rỗng) ⇒ KHÔNG stamp — nếu không cảnh báo im 4 giờ vì một lượt gửi không tồn tại", async () => {
@@ -172,6 +199,24 @@ describe("routeAlert — tách gửi thông báo khỏi ghi nhật ký", () => {
     const ins = calls.find((c) => c.kind === "insert")!;
     expect(ins.payload.notificationSent).toBe(false);
     expect(ins.payload.notificationSentAt).toBeNull();
+  });
+
+  // Sprint 5 debt E3 — test chốt lõi của mục sửa: gửi thất bại thật (mock ném
+  // lỗi ở sendAlertNotification, kênh in-app) KHÔNG được phép biến thành "đã
+  // báo" giả. MAINTENANCE có email:null nên không có kênh email dự phòng —
+  // allDelivered chắc chắn false, không mập mờ với khả năng email cứu vãn.
+  it("gửi thông báo THẤT BẠI (sendAlertNotification ném lỗi) ⇒ KHÔNG stamp — còn cơ hội thử lại", async () => {
+    seedUserRows = MAINTENANCE;
+    sendAlertNotificationThrows = true;
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    await routeAlert({ type: "MACHINE_FAILURE", machineId: 8109, severity: "HIGH", message: "x", data: {} } as any);
+
+    // Dòng cảnh báo vẫn được ghi (KHÔNG mất cảnh báo)...
+    const ins = calls.find((c) => c.kind === "insert")!;
+    expect(ins.payload.notificationSent).toBe(false);
+    expect(ins.payload.notificationSentAt).toBeNull();
+    // ...nhưng KHÔNG có UPDATE stamp nào chạy tiếp theo — gửi thất bại thật.
+    expect(calls.some((c) => c.kind === "update")).toBe(false);
   });
 
   // Review round 1, Finding 1 — §2.6(2): sau khi đảo trật tự, thông báo gửi
