@@ -3820,9 +3820,6 @@
     },
     "field": {
       "code": "mã",
-      "key": "khoá",
-      "name": "tên",
-      "username": "tên đăng nhập",
       "datasetId": "mã tập dữ liệu",
       "modelCardGovernanceFields": "trường quản trị của model card",
       "annotationIdOrImageUrl": "mã chú thích hoặc URL ảnh",

@@ -170,7 +170,7 @@ export const deviceAdapterRouter = router({
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isUniqueViolation(err)) {
-          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "adapter", field: "code" }, `Mã adapter đã tồn tại.`);
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "adapter" }, `Mã adapter đã tồn tại.`);
         }
         throw err;
       }
@@ -315,7 +315,7 @@ export const deviceAdapterRouter = router({
         } catch (err) {
           if (err instanceof TRPCError) throw err;
           if (isUniqueViolation(err)) {
-            throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "deviceTag", field: "key" }, `Tag key đã tồn tại trong adapter này.`);
+            throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "deviceTag" }, `Tag key đã tồn tại trong adapter này.`);
           }
           throw err;
         }

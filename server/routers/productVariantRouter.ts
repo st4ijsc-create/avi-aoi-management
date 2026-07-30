@@ -240,7 +240,7 @@ export const productVariantRouter = router({
         await db.updateVariant(variantId, data as any);
       } catch (err: any) {
         if (err?.code === "23505" || /uq_product_variants_model_code/.test(String(err?.message))) {
-          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productVariant", field: "code" }, "Mã biến thể đã tồn tại");
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productVariant" }, "Mã biến thể đã tồn tại");
         }
         throw err;
       }

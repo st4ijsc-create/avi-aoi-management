@@ -11,10 +11,16 @@ export const APP_ERROR_CODES = [
   // ── 9 họ phổ quát (§4.1) ──────────────────────────────────────────────────
   "DB_UNAVAILABLE",
   "ENTITY_NOT_FOUND",     // params: { entity }
-  "ENTITY_DUPLICATE",     // params: { entity, field? }
+  "ENTITY_DUPLICATE",     // params: { entity } — KHÔNG có `field`: không template i18n nào
+                          // render {{field}} cho mã này. Đợt di trú trước quảng cáo `field?`
+                          // trong comment này nhưng không ai từng hiện thực template — 12 chỗ
+                          // gọi đã trót truyền field vô ích, dọn ở Task 4 (F5, doc 71).
   "SCOPE_MISMATCH",       // params: { entity, parent }
   "FIELD_REQUIRED",       // params: { field }
-  "INVALID_VALUE",        // params: { field, reason? }
+  "INVALID_VALUE",        // params: { field } — KHÔNG có `reason` (cùng lý do ENTITY_DUPLICATE
+                          // ở trên: comment cũ quảng cáo `reason?` nhưng chưa từng có template
+                          // render {{reason}}). Task 5 (doc 71) sẽ thêm khoá `errors.reason.*` +
+                          // template có {{reason}} — KHÔNG đụng ở đây, để tránh xung đột.
   "FEATURE_DISABLED",     // params: { feature }
   "OPERATION_FAILED",     // params: { operation }
   "PERMISSION_DENIED",    // params: { action? }

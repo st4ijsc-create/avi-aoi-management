@@ -3819,9 +3819,6 @@
     },
     "field": {
       "code": "code",
-      "key": "key",
-      "name": "name",
-      "username": "username",
       "datasetId": "dataset ID",
       "modelCardGovernanceFields": "model card governance fields",
       "annotationIdOrImageUrl": "annotation ID or image URL",

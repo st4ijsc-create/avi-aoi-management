@@ -51,7 +51,7 @@ export const userRouter = router({
       // Check if username already exists
       const existing = await db.getUserByUsername(input.username);
       if (existing) {
-        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'user', field: 'username' }, 'Tên đăng nhập đã tồn tại');
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'user' }, 'Tên đăng nhập đã tồn tại');
       }
       
       // Hash password
