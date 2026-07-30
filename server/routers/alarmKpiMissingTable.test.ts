@@ -21,6 +21,13 @@ import { andonEvents, predictiveAlertOccurrences } from "../../drizzle/schema";
 
 let seedAndonRows: any[] = [];
 let throwOnOccurrenceQuery: (() => never) | null = null;
+// Sprint 5 debt E7(a) — trước đây throwOnOccurrenceQuery kích hoạt ở CẢ truy
+// vấn JOIN (sự kiện) LẪN truy vấn MIN, nhưng truy vấn JOIN luôn chạy TRƯỚC
+// (loadPredRows) nên occurrenceTableAvailable=false ngay từ đó và khối
+// try/catch quanh MIN (:117-126 alarmKpiRouter.ts) bị SKIP hoàn toàn — không
+// test nào ở file này từng thực sự chạm khối đó. Cờ RIÊNG này cho phép truy
+// vấn JOIN thành công còn MIN ném lỗi, cô lập đúng khối try/catch cần kiểm.
+let throwOnMinQuery: (() => never) | null = null;
 
 vi.mock("../db/connection", () => ({
   getDb: async () => ({
@@ -37,17 +44,21 @@ vi.mock("../db/connection", () => ({
                 return Promise.resolve([]);
               },
             }),
-            // Sprint 5 §3.1 — cùng .from() nay còn phục vụ MIN(occurredAt).
+            // Sprint 5 §3.1 — cùng .from() nay còn phục vụ MIN(occurredAt) khi
+            // KHÔNG có input.machineId (await thẳng, không qua .innerJoin() —
+            // debt E6 chỉ join khi cần lọc theo máy). Cờ ném RIÊNG (throwOnMinQuery,
+            // debt E7a) — KHÔNG dùng chung throwOnOccurrenceQuery của truy vấn JOIN
+            // nữa, để hai truy vấn có thể thành/bại độc lập trong cùng một test.
             then: (resolve: any, reject: any) => {
-              if (throwOnOccurrenceQuery) {
-                try { throwOnOccurrenceQuery(); } catch (e) { return Promise.reject(e).catch(reject); }
+              if (throwOnMinQuery) {
+                try { throwOnMinQuery(); } catch (e) { return Promise.reject(e).catch(reject); }
               }
               return Promise.resolve([{ first: null }]).then(resolve, reject);
             },
           };
           return node;
         }
-        // machines / users — không cần dữ liệu cho test này.
+        // machines / users / predictiveAlerts — không cần dữ liệu cho test này.
         return { where: async () => [] };
       },
     }),
@@ -63,6 +74,7 @@ const caller = createCaller({ user: { id: 1, role: "admin" } });
 beforeEach(() => {
   seedAndonRows = [];
   throwOnOccurrenceQuery = null;
+  throwOnMinQuery = null;
 });
 
 describe("alarmKpi.summary — bảng nhật ký lần-tái-diễn chưa tồn tại (migration 0309 chưa chạy)", () => {
@@ -106,5 +118,38 @@ describe("alarmKpi.summary — bảng nhật ký lần-tái-diễn chưa tồn t
     };
 
     await expect(caller.summary({ windowHours: 8 })).rejects.toThrow("connection terminated unexpectedly");
+  });
+
+  // Sprint 5 debt E7(a) — trước bản sửa cờ RIÊNG này, throwOnOccurrenceQuery
+  // kích hoạt ở CẢ hai truy vấn nên MIN không bao giờ được test cô lập (truy
+  // vấn JOIN luôn ném trước, occurrenceTableAvailable=false, khối MIN bị
+  // skip). Ở đây truy vấn JOIN THÀNH CÔNG (throwOnOccurrenceQuery=null), chỉ
+  // MIN ném — khẳng định khối try/catch quanh MIN (:117-133 alarmKpiRouter.ts)
+  // thật sự chạy và tự bắt lỗi độc lập với truy vấn JOIN.
+  describe("debt E7(a) — cô lập try/catch quanh truy vấn MIN(occurredAt)", () => {
+    it("truy vấn JOIN thành công, CHỈ truy vấn MIN ném 42P01 ⇒ available=false, sourceCounts.predictive vẫn đúng", async () => {
+      seedAndonRows = [
+        { id: 1, state: "red", raisedAt: new Date(), acknowledgedAt: null, resolvedAt: null, machineId: 1, stationId: null, lineId: null, title: "trạm lỗi" },
+      ];
+      throwOnMinQuery = () => {
+        const err: any = new Error('relation "predictive_alert_occurrences" does not exist');
+        err.code = "42P01";
+        throw err;
+      };
+
+      const res = await caller.summary({ windowHours: 8 });
+
+      expect(res.occurrenceLog).toEqual({ available: false, firstOccurredAt: null });
+      expect(res.sourceCounts.andon).toBe(1); // Andon KHÔNG bị ảnh hưởng
+      expect(res.sourceCounts.predictive).toBe(0); // truy vấn JOIN thật sự chạy được (trả rỗng theo mock), không bị MIN kéo theo
+    });
+
+    it("truy vấn JOIN thành công, CHỈ truy vấn MIN ném lỗi KHÁC (không phải bảng thiếu) ⇒ vẫn phải NÉM ra ngoài", async () => {
+      throwOnMinQuery = () => {
+        throw new Error("connection terminated unexpectedly (MIN query)");
+      };
+
+      await expect(caller.summary({ windowHours: 8 })).rejects.toThrow("connection terminated unexpectedly (MIN query)");
+    });
   });
 });

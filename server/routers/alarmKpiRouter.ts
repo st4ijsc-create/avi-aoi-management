@@ -74,7 +74,17 @@ export const alarmKpiRouter = router({
       // Wave 4 §4 — KPI đếm theo LẦN TÁI DIỄN, không theo dòng cảnh báo.
       // Wave 3 gộp trùng ⇒ đếm theo dòng làm KPI báo thiếu và làm cảnh báo
       // đang sống rơi khỏi cửa sổ (vì createdAt được cố ý giữ nguyên).
+      //
+      // Debt E6 — lọc theo machineId NGAY TẠI DB. Trước đây câu này luôn quét
+      // TOÀN NHÀ MÁY rồi mới bỏ bớt dòng ở vòng lặp dựng `events` bên dưới, nên
+      // sourceCounts.predictive (= predRows.length) đếm SAI khi màn đã lọc theo
+      // máy — "0 cảnh báo AI" trên một máy im lặng trông như dối trá nếu nhà
+      // máy còn dữ liệu ở máy khác. predictive_alerts KHÔNG có cột lineId (chỉ
+      // machineId) — lineId chỉ lọc được ở nhánh Andon phía trên; đây không
+      // phải thiếu sót, bảng này thật sự không có cột đó.
       const loadPredRows = async () => {
+        const predConds = [gte(predictiveAlertOccurrences.occurredAt, since)];
+        if (input?.machineId) predConds.push(eq(predictiveAlerts.machineId, input.machineId));
         return db
           .select({
             occurrenceId: predictiveAlertOccurrences.id,
@@ -91,7 +101,7 @@ export const alarmKpiRouter = router({
           })
           .from(predictiveAlertOccurrences)
           .innerJoin(predictiveAlerts, eq(predictiveAlerts.id, predictiveAlertOccurrences.alertId))
-          .where(gte(predictiveAlertOccurrences.occurredAt, since));
+          .where(and(...predConds));
       };
       // Vòng sửa cuối §2 — bảng nhật ký (predictive_alert_occurrences, mig
       // 0308/0309) có thể CHƯA tồn tại nếu mã được deploy trước khi migration
@@ -112,12 +122,27 @@ export const alarmKpiRouter = router({
       // Sprint 5 §3.1 — mốc ĐẦU TIÊN của sổ nhật ký, để giao diện phân biệt
       // "0 vì nhà máy yên tĩnh" với "0 vì sổ chưa có dòng nào". Dùng MIN (đi
       // qua idx_alert_occurrences_time) chứ KHÔNG COUNT(*) quét bảng.
+      //
+      // Debt E6 — trước đây MIN quét TOÀN BẢNG bất kể input.machineId: ở màn
+      // đã lọc theo máy, một máy im lặng vẫn không được giải thích ("chưa có
+      // dữ liệu" trong khi nhà máy có dữ liệu ở máy khác — mốc trả về là của
+      // máy KHÁC). predictive_alert_occurrences không có cột machineId (nằm ở
+      // bảng cha predictive_alerts) nên phải JOIN mới lọc được — chỉ join khi
+      // THẬT SỰ cần lọc: giữ nguyên hình dạng truy vấn cũ (quét thẳng theo
+      // idx_alert_occurrences_time, không JOIN) cho trường hợp phổ biến "toàn
+      // nhà máy", không trả giá JOIN khi không cần.
       let firstOccurredAt: string | null = null;
       if (occurrenceTableAvailable) {
         try {
-          const [row] = await db
-            .select({ first: sql<Date | null>`MIN(${predictiveAlertOccurrences.occurredAt})` })
-            .from(predictiveAlertOccurrences);
+          const [row] = input?.machineId
+            ? await db
+                .select({ first: sql<Date | null>`MIN(${predictiveAlertOccurrences.occurredAt})` })
+                .from(predictiveAlertOccurrences)
+                .innerJoin(predictiveAlerts, eq(predictiveAlerts.id, predictiveAlertOccurrences.alertId))
+                .where(eq(predictiveAlerts.machineId, input.machineId))
+            : await db
+                .select({ first: sql<Date | null>`MIN(${predictiveAlertOccurrences.occurredAt})` })
+                .from(predictiveAlertOccurrences);
           firstOccurredAt = row?.first ? new Date(row.first).toISOString() : null;
         } catch (err) {
           if (!isMissingTable(err)) throw err;

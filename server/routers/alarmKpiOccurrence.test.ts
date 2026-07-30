@@ -61,12 +61,34 @@ function columnNamesInCondition(cond: any): string[] {
  * gì. Đây chính là điều khiến ca "KHÔNG BIẾN MẤT" và ca "mệnh đề lọc" thật sự
  * ĐỎ khi code lọc nhầm cột: nếu ai đổi truy vấn về `gte(createdAt, since)`,
  * hàm này sẽ lọc theo `createdAt` của các dòng — đúng như Postgres thật sẽ làm.
+ *
+ * Debt E6 — .where() nay có thể kèm thêm eq(predictiveAlerts.machineId, X).
+ * Bổ sung lọc THEO GIÁ TRỊ THẬT (không chỉ tên cột) để ca kiểm E6 dưới đây
+ * thật sự ĐỎ nếu ai bỏ điều kiện machineId khỏi WHERE — cùng bài học Wave 3
+ * (mock trả cố định là lý do lỗi "biến mất" lọt qua, không lặp lại ở đây).
  */
+function paramValuesInCondition(cond: any): any[] {
+  const values: any[] = [];
+  function walk(node: any, depth: number) {
+    if (node == null || depth > 12) return;
+    if (Array.isArray(node)) { for (const n of node) walk(n, depth); return; }
+    if (typeof node !== "object") return;
+    if ("value" in node && typeof node.columnType !== "string") values.push((node as any).value);
+    if (Array.isArray(node.queryChunks)) walk(node.queryChunks, depth + 1);
+  }
+  walk(cond, 0);
+  return values;
+}
+
 function applyWindowFilter(rows: any[], cond: any, since: Date): any[] {
   const names = columnNamesInCondition(cond);
   const field = names.includes("occurredAt") ? "occurredAt" : names.includes("createdAt") ? "createdAt" : null;
-  if (!field) return rows;
-  return rows.filter((r) => r[field] != null && new Date(r[field]).getTime() >= since.getTime());
+  let filtered = field ? rows.filter((r) => r[field] != null && new Date(r[field]).getTime() >= since.getTime()) : rows;
+  if (names.includes("machineId")) {
+    const machineIdValue = paramValuesInCondition(cond).find((v) => typeof v === "number");
+    if (machineIdValue != null) filtered = filtered.filter((r) => r.machineId === machineIdValue);
+  }
+  return filtered;
 }
 
 /** Mô phỏng INNER JOIN predictive_alert_occurrences ⋈ predictive_alerts thật:
@@ -98,12 +120,40 @@ function joinedOccurrenceRows(): any[] {
 
 vi.mock("../db/connection", () => ({
   getDb: async () => ({
-    select: (_cols?: any) => ({
+    select: (cols?: any) => ({
       from: (table: any) => {
         if (table === andonEvents) {
           return { where: async () => seedAndonRows };
         }
         if (table === predictiveAlertOccurrences) {
+          // Debt E6 — MIN(occurredAt) (select({first:...})) nay CÓ THỂ join sang
+          // predictive_alerts để lọc machineId, dùng CHUNG bảng .from() với truy
+          // vấn sự kiện (nhiều cột) bên dưới. Phân biệt bằng hình dạng cols (có
+          // khoá "first" hay không) — node RIÊNG để không đụng
+          // lastJoinTable/lastJoinCond/lastPredWhereCond (đang phục vụ các ca
+          // duyệt truy vấn SỰ KIỆN ở dưới).
+          const isMinQuery = !!(cols && typeof cols === "object" && "first" in cols);
+          if (isMinQuery) {
+            return {
+              innerJoin: (_joinTable: any, _on: any) => ({
+                where: (cond: any) => {
+                  const machineIdValue = paramValuesInCondition(cond).find((v) => typeof v === "number");
+                  const rows = joinedOccurrenceRows().filter(
+                    (r) => machineIdValue == null || r.machineId === machineIdValue,
+                  );
+                  const first = rows.length > 0
+                    ? rows.reduce((min: any, r: any) => (new Date(r.occurredAt).getTime() < new Date(min).getTime() ? r.occurredAt : min), rows[0].occurredAt)
+                    : null;
+                  return Promise.resolve([{ first }]);
+                },
+              }),
+              // Không machineId ⇒ router KHÔNG gọi .innerJoin(), await thẳng node
+              // này (giữ đúng hình dạng truy vấn cũ, quét thẳng theo
+              // idx_alert_occurrences_time). Không ca nào ở đây assert
+              // occurrenceLog nên trả rỗng mặc định là mô tả trung thực đủ dùng.
+              then: (resolve: any) => resolve([{ first: null }]),
+            };
+          }
           // Truy vấn MỚI (sau Step 3/4): .from(occurrences).innerJoin(predictiveAlerts, ...).where(...)
           const node: any = {
             innerJoin: (joinTable: any, on: any) => {
@@ -406,5 +456,42 @@ describe("alarmKpi — đọc từ nhật ký lần-tái-diễn", () => {
 
     expect(res.distribution.counts.high).toBe(1); // lùi về CRITICAL của dòng cha ⇒ bucket "high"
     expect(res.distribution.counts.low).toBe(0);  // KHÔNG được rớt về mặc định "low" của severity=null
+  });
+
+  /**
+   * Sprint 5 debt E6 — MIN(occurredAt) (occurrenceLog.firstOccurredAt) trước
+   * đây quét TOÀN BẢNG bất kể input.machineId. Ở màn đã lọc theo máy 32 (máy
+   * ĐANG im lặng), mốc trả về SAI là của máy 31 (có cảnh báo từ 60 ngày
+   * trước) — người vận hành sẽ đọc nhầm "sổ máy 32 mới có dữ liệu từ 60 ngày
+   * trước" trong khi thật ra máy 32 chỉ mới phát sinh 2 giờ trước.
+   */
+  it("debt E6 — MIN(occurredAt) lọc theo machineId, KHÔNG lộ mốc của máy khác", async () => {
+    const now = Date.now();
+    sinceForTest = new Date(now - 8 * 3600_000);
+    seedAlertRows = [
+      {
+        id: 701, severity: "LOW", createdAt: new Date(now - 60 * 24 * 3600_000),
+        acknowledgedAt: null, resolvedAt: null, status: "ACTIVE",
+        machineId: 31, machineCode: "M31", title: "máy 31 — cảnh báo cũ",
+      },
+      {
+        id: 702, severity: "LOW", createdAt: new Date(now - 2 * 3600_000),
+        acknowledgedAt: null, resolvedAt: null, status: "ACTIVE",
+        machineId: 32, machineCode: "M32", title: "máy 32 — cảnh báo mới",
+      },
+    ];
+    seedOccurrenceRows = [
+      // Máy 31: lần đầu RẤT SỚM — không liên quan gì tới máy 32 đang lọc.
+      { id: 9800, alertId: 701, occurredAt: new Date(now - 60 * 24 * 3600_000), severity: "LOW" },
+      // Máy 32: lần (và cũng là lần đầu) duy nhất, 2h trước.
+      { id: 9801, alertId: 702, occurredAt: new Date(now - 2 * 3600_000), severity: "LOW" },
+    ];
+
+    const res = await caller.summary({ windowHours: 8, machineId: 32 });
+
+    // Trước sửa: MIN quét toàn bảng ⇒ trả mốc 60 ngày trước của máy 31 — SAI
+    // cho màn đã lọc theo máy 32. Sau sửa: chỉ còn mốc của chính máy 32.
+    expect(res.occurrenceLog.firstOccurredAt).toBe(new Date(now - 2 * 3600_000).toISOString());
+    expect(res.sourceCounts.predictive).toBe(1); // chỉ 1 lần tái diễn của máy 32 trong cửa sổ 8h
   });
 });
