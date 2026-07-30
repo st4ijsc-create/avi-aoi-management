@@ -254,7 +254,7 @@ export const alertRouter = router({
       }
       // Only owner or admin can view
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'viewAlertSetting' }, 'Not authorized');
       }
       return alert;
     }),
@@ -303,7 +303,7 @@ export const alertRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'updateAlertSetting' }, 'Not authorized');
       }
       const { id, threshold, ...updateData } = input;
       await db.updateAlertSetting(id, {
@@ -322,7 +322,7 @@ export const alertRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteAlertSetting' }, 'Not authorized');
       }
       await db.deleteAlertSetting(input.id);
       return { success: true };
@@ -369,7 +369,7 @@ export const alertRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'acknowledgeAlert' }, 'Not authorized');
       }
       await db.acknowledgeAlert(input.id, ctx.user.id);
       return { success: true };
@@ -384,7 +384,7 @@ export const alertRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alertSetting' }, 'Alert setting not found');
       }
       if (alert.userId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'testAlertSetting' }, 'Not authorized');
       }
 
       // Reuse the shared evaluator so the test reflects the SAME breach logic

@@ -71,7 +71,7 @@ const reportDefinitionSchema = z.object({
 async function assertReportOwnership(id: number, ctx: { user: { id: number; role: string } }): Promise<void> {
   if (ctx.user.role === "admin") return;
   const conn = await getDb();
-  if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+  if (!conn) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   const result: any = await conn.execute(sql`
     SELECT "createdBy" FROM report_templates WHERE id = ${id}
   `);
@@ -135,7 +135,7 @@ export const reportBuilderRouter = router({
     .input(z.number())
     .query(async ({ input: id, ctx }) => {
       const conn = await getDb();
-      if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!conn) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       try {
         const result: any = await conn.execute(sql`
@@ -155,7 +155,7 @@ export const reportBuilderRouter = router({
         return report;
       } catch (err: any) {
         if (err.code === "NOT_FOUND" || err.code === "FORBIDDEN") throw err;
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "getReport" }, err.message);
       }
     }),
 
@@ -227,14 +227,14 @@ export const reportBuilderRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const conn = await getDb();
-      if (!conn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!conn) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       try {
         const result: any = await conn.execute(sql`
           SELECT * FROM report_templates WHERE id = ${input.id}
         `);
         const rows = result.rows || result;
-        if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "report" });
 
         const source = rows[0];
         const newTemplate = await db.createReportTemplate({
@@ -247,7 +247,7 @@ export const reportBuilderRouter = router({
         return newTemplate;
       } catch (err: any) {
         if (err.code === "NOT_FOUND") throw err;
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "cloneReport" }, err.message);
       }
     }),
 

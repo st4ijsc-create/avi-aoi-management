@@ -611,7 +611,7 @@ export const annotationRouter = router({
         sql`SELECT annotations FROM image_annotations WHERE "imageUrl" = ${input.sourceImageUrl} ORDER BY "updatedAt" DESC LIMIT 1`
       ) as any;
       if (!sourceResult.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Source image has no annotations' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotation' }, 'Source image has no annotations');
       }
       const sourceAnnotations = typeof sourceResult[0].annotations === 'string'
         ? JSON.parse(sourceResult[0].annotations)
@@ -793,10 +793,7 @@ Respond in JSON format with an array of findings.`
         };
       } catch (error: any) {
         console.error('AI analysis error:', error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `AI analysis failed: ${error.message}`
-        });
+        throw appError('INTERNAL_SERVER_ERROR', 'OPERATION_FAILED', { operation: 'analyzeAnnotationWithAI' }, `AI analysis failed: ${error.message}`);
       }
     }),
 
@@ -814,7 +811,7 @@ Respond in JSON format with an array of findings.`
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotation' }, 'Annotation not found');
       }
       if (existing[0].createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this annotation' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteAnnotation' }, 'Not authorized to delete this annotation');
       }
       await db.execute(sql`DELETE FROM image_annotations WHERE id = ${input.id}`);
       return { success: true };
@@ -1378,7 +1375,7 @@ Respond in JSON format with an array of findings.`
           errors: errors.slice(0, 10), // Limit errors shown
         };
       } catch (err: any) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: `Import failed: ${err.message}` });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'importAnnotations' }, `Import failed: ${err.message}`);
       }
     }),
 });
@@ -1460,10 +1457,10 @@ export const annotationTemplateRouter = router({
         throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'annotationTemplate' }, 'Template not found');
       }
       if (existing[0].isSystem) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete system templates' });
+        throw appError('FORBIDDEN', 'OPERATION_FAILED', { operation: 'deleteAnnotationTemplate' }, 'Cannot delete system templates');
       }
       if (existing[0].createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this template' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'deleteAnnotationTemplate' }, 'Not authorized to delete this template');
       }
       
       await db.execute(sql`DELETE FROM annotation_templates WHERE id = ${input.id}`);

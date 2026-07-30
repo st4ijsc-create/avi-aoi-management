@@ -226,10 +226,12 @@ async function assertRecipeWithinGuardrails(recipe: {
     const guardrail = await resolveRecipeGuardrail(recipe.machineId ?? null, recipe.machineType ?? null, paramKey);
     const check = checkAgainstGuardrail(guardrail, value);
     if (!check.ok) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `Guardrail chặn duyệt recipe: tham số "${paramKey}"=${value} — ${check.detail}`,
-      });
+      throw appError(
+        "BAD_REQUEST",
+        "INVALID_VALUE",
+        { field: "recipeParam" },
+        `Guardrail chặn duyệt recipe: tham số "${paramKey}"=${value} — ${check.detail}`,
+      );
     }
   }
 }
@@ -280,7 +282,7 @@ export const machineRecipeRouter = router({
       }))
       .query(async ({ input }) => {
         if (input.code == null && input.machineId == null) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Cần code hoặc machineId." });
+          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "codeOrMachineId" }, "Cần code hoặc machineId.");
         }
         return (await getActiveRecipe({ code: input.code, machineId: input.machineId })) ?? null;
       }),
@@ -378,7 +380,7 @@ export const machineRecipeRouter = router({
         try {
           return await approveRecipe({ recipeId: input.recipeId, approvedBy: ctx.user.id, note: input.note ?? null });
         } catch (err) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveRecipe" }, err instanceof Error ? err.message : String(err));
         }
       }),
 
@@ -402,7 +404,7 @@ export const machineRecipeRouter = router({
           // changeover.approve). Behaviour identical.
           return await performDeploy(input, ctx.user.id);
         } catch (err) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "deployRecipe" }, err instanceof Error ? err.message : String(err));
         }
       }),
 
@@ -425,7 +427,7 @@ export const machineRecipeRouter = router({
           }
           return deployment;
         } catch (err) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rollbackRecipeDeployment" }, err instanceof Error ? err.message : String(err));
         }
       }),
 
@@ -665,7 +667,7 @@ export const machineRecipeRouter = router({
             ctx.user.id,
           );
         } catch (err) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveChangeoverRequest" }, err instanceof Error ? err.message : String(err));
         }
         const [updated] = await db.update(changeoverRequests).set({
           status: "approved",

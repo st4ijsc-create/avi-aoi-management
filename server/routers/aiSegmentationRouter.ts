@@ -43,8 +43,8 @@ function decodeBase64Image(b64: string): Buffer {
   } catch {
     throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Invalid base64 image");
   }
-  if (buf.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Empty image payload" });
-  if (buf.length > MAX_IMAGE_BYTES) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `Image exceeds ${MAX_IMAGE_BYTES} bytes` });
+  if (buf.length === 0) throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Empty image payload");
+  if (buf.length > MAX_IMAGE_BYTES) throw appError("PAYLOAD_TOO_LARGE", "INVALID_VALUE", { field: "image" }, `Image exceeds ${MAX_IMAGE_BYTES} bytes`);
   return buf;
 }
 
@@ -130,7 +130,7 @@ export const aiSegmentationRouter = router({
       const row = await getDefectSegmentationById(input.id);
       if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mask" }, "Mask not found");
       if (row.createdBy !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized to delete this mask" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "deleteMask" }, "Not authorized to delete this mask");
       }
       await deleteDefectSegmentation(input.id);
       return { success: true };
@@ -145,10 +145,7 @@ export const aiSegmentationRouter = router({
     .query(({ input }) => {
       const m = measureFromMaskData(input.maskData, input.umPerPx ?? null);
       if (!m) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Cannot measure mask: polygon requires >= 3 points (RLE measurement not supported)",
-        });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "maskData" }, "Cannot measure mask: polygon requires >= 3 points (RLE measurement not supported)");
       }
       return m;
     }),
@@ -188,16 +185,14 @@ export const aiSegmentationRouter = router({
         return { ...result, masks, degraded: false as const };
       } catch (err) {
         if (err instanceof SegmentationUnavailableError) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: `MODEL_NOT_AVAILABLE: ${err.message}`,
-            cause: err,
-          });
+          throw appError("PRECONDITION_FAILED", "FEATURE_DISABLED", { feature: "aiSegmentation" }, `MODEL_NOT_AVAILABLE: ${err.message}`);
         }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: err instanceof Error ? err.message : String(err),
-        });
+        throw appError(
+          "INTERNAL_SERVER_ERROR",
+          "OPERATION_FAILED",
+          { operation: "segmentImage" },
+          err instanceof Error ? err.message : String(err),
+        );
       }
     }),
 });

@@ -3670,7 +3670,10 @@
       "sharedResource": "tài nguyên dùng chung",
       "chargerStation": "trạm sạc",
       "referenceImage": "ảnh tham chiếu",
-      "record": "bản ghi"
+      "record": "bản ghi",
+      "onboardingDraft": "bản nháp onboarding",
+      "aiModelCard": "model card AI",
+      "measurementPointVersion": "phiên bản điểm đo"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3727,7 +3730,35 @@
       "changeOwnPassword": "đổi mật khẩu của chính mình",
       "signProductionSession": "ký duyệt phiên sản xuất",
       "closeProductionSession": "đóng phiên sản xuất",
-      "signOffProductionSession": "ký duyệt (supervisor) phiên sản xuất"
+      "signOffProductionSession": "ký duyệt (supervisor) phiên sản xuất",
+      "unloadGgufModel": "gỡ tải model GGUF",
+      "generateText": "sinh văn bản",
+      "chatCompletion": "hoàn thành hội thoại",
+      "analyzeDefect": "phân tích lỗi",
+      "generateQualityInsights": "sinh nhận định chất lượng",
+      "generateEmbedding": "sinh embedding",
+      "countTokens": "đếm token",
+      "promoteAiModelStage": "thăng cấp giai đoạn model AI",
+      "segmentImage": "phân đoạn ảnh",
+      "analyzeAnnotationWithAI": "phân tích chú thích bằng AI",
+      "importAnnotations": "nhập chú thích",
+      "deleteAnnotationTemplate": "xoá mẫu chú thích",
+      "signOnboarding": "ký onboarding máy",
+      "approveRecipe": "duyệt công thức",
+      "deployRecipe": "triển khai công thức",
+      "rollbackRecipeDeployment": "rollback triển khai công thức",
+      "getReport": "lấy báo cáo",
+      "cloneReport": "sao chép báo cáo",
+      "createSafetyZone": "tạo vùng an toàn",
+      "updateSafetyZone": "cập nhật vùng an toàn",
+      "upsertSafetyCalibration": "cập nhật hiệu chuẩn an toàn",
+      "upsertSafetyPlcConfig": "cập nhật cấu hình Safety-PLC",
+      "assignSafetyOperator": "phân công vận hành viên an toàn",
+      "reassignSafetyOperator": "phân công lại vận hành viên an toàn",
+      "approveThreshold": "duyệt ngưỡng",
+      "rejectThreshold": "từ chối ngưỡng",
+      "withdrawThreshold": "rút yêu cầu ngưỡng",
+      "revertThresholdToSnapshot": "khôi phục ngưỡng về bản ghi trước"
     },
     "field": {
       "code": "mã",
@@ -3781,7 +3812,11 @@
       "currentPassword": "mật khẩu hiện tại",
       "password": "mật khẩu",
       "patchJson": "dữ liệu thay đổi (patch)",
-      "supervisorPasswordConfirmed": "xác nhận mật khẩu supervisor"
+      "supervisorPasswordConfirmed": "xác nhận mật khẩu supervisor",
+      "maskData": "dữ liệu mask",
+      "overrideReason": "lý do override",
+      "recipeParam": "tham số công thức",
+      "codeOrMachineId": "mã hoặc mã máy"
     },
     "feature": {
       "web_ingest": "nạp nội dung từ web",
@@ -3813,7 +3848,9 @@
       "licenseServerSdk": "License Server SDK",
       "speechToText": "chuyển giọng nói thành văn bản",
       "loraFinetune": "tinh chỉnh LoRA",
-      "productVariants": "biến thể sản phẩm"
+      "productVariants": "biến thể sản phẩm",
+      "modelCardGovernance": "quản trị model card",
+      "aiSegmentation": "phân đoạn ảnh AI"
     },
     "action": {
       "viewOthersPermissions": "xem quyền của người khác",
@@ -3841,7 +3878,16 @@
       "deleteUser": "xoá người dùng",
       "deleteOwnAccount": "xoá tài khoản của chính mình",
       "manageOwnProductionSession": "thao tác phiên sản xuất của chính mình",
-      "signOffProductionSession": "ký duyệt (supervisor) phiên sản xuất"
+      "signOffProductionSession": "ký duyệt (supervisor) phiên sản xuất",
+      "deleteMask": "xoá mask",
+      "deleteAnnotation": "xoá chú thích",
+      "deleteAnnotationTemplate": "xoá mẫu chú thích",
+      "viewAlertSetting": "xem cấu hình cảnh báo",
+      "updateAlertSetting": "cập nhật cấu hình cảnh báo",
+      "deleteAlertSetting": "xoá cấu hình cảnh báo",
+      "acknowledgeAlert": "xác nhận cảnh báo",
+      "testAlertSetting": "thử nghiệm cấu hình cảnh báo",
+      "withdrawThreshold": "rút yêu cầu ngưỡng"
     }
   },
   "export": {

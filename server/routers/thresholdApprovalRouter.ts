@@ -193,7 +193,7 @@ export const thresholdApprovalRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const row = await getById(input.id);
       if (row.status !== STATUS_PENDING) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot approve from status ${row.status}` });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveThreshold" }, `Cannot approve from status ${row.status}`);
       }
       // OP1 Segregation of Duties — requester ≠ approver. `requestedBy` ≤ 0
       // (AI auto-tune sentinel) or null counts as system/non-self.
@@ -255,7 +255,7 @@ export const thresholdApprovalRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const row = await getById(input.id);
       if (row.status !== STATUS_PENDING) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot reject from status ${row.status}` });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rejectThreshold" }, `Cannot reject from status ${row.status}`);
       }
       const [updated] = await db.update(thresholdApprovals)
         .set({
@@ -282,10 +282,10 @@ export const thresholdApprovalRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const row = await getById(input.id);
       if (row.status !== STATUS_PENDING) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot withdraw from status ${row.status}` });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "withdrawThreshold" }, `Cannot withdraw from status ${row.status}`);
       }
       if (row.requestedBy !== ctx.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Only the requester can withdraw" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "withdrawThreshold" }, "Only the requester can withdraw");
       }
       const [updated] = await db.update(thresholdApprovals)
         .set({
@@ -401,7 +401,7 @@ export const thresholdApprovalRouter = router({
         pointDefId = appr.pointDefId;
       }
       if (pointDefId == null) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Could not resolve a point to revert" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "revertThresholdToSnapshot" }, "Could not resolve a point to revert");
       }
 
       // Latest prior snapshot = the state BEFORE the most recent edit (that is
@@ -413,10 +413,7 @@ export const thresholdApprovalRouter = router({
         .orderBy(desc(measurementPointVersions.version))
         .limit(1);
       if (!snap) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `No prior version snapshot to revert to for point ${pointDefId}`,
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPointVersion" }, `No prior version snapshot to revert to for point ${pointDefId}`);
       }
       const prev = ((snap as any).snapshotJson ?? {}) as Record<string, any>;
 

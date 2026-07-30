@@ -68,13 +68,15 @@ const CARD_ALREADY_EXISTS_MESSAGE = "A model card already exists for this model 
  *  swallowing unrelated errors. */
 function rethrowCardTableError(err: unknown): never {
   if ((err as { code?: string } | null | undefined)?.code === "42P01") {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "Model card governance requires migration 0303 (ai_model_cards) to be applied first.",
-    });
+    throw appError(
+      "PRECONDITION_FAILED",
+      "FEATURE_DISABLED",
+      { feature: "modelCardGovernance" },
+      "Model card governance requires migration 0303 (ai_model_cards) to be applied first.",
+    );
   }
   if (isUniqueViolation(err)) {
-    throw new TRPCError({ code: "CONFLICT", message: CARD_ALREADY_EXISTS_MESSAGE });
+    throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "aiModelCard" }, CARD_ALREADY_EXISTS_MESSAGE);
   }
   throw err;
 }
@@ -319,10 +321,12 @@ export const aiModelRouter = router({
         reason: input.reason,
       });
       if (!result.ok) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `[${result.code}] ${result.reason}`,
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "promoteAiModelStage" },
+          `[${result.code}] ${result.reason}`,
+        );
       }
       // A production promotion changes the served model → evict its inference cache.
       if (input.toStage === "production") {
@@ -392,10 +396,7 @@ export const aiModelRouter = router({
       try {
         const existing = await db.getModelCardByModelId(input.modelId);
         if (existing) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: CARD_ALREADY_EXISTS_MESSAGE,
-          });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "aiModelCard" }, CARD_ALREADY_EXISTS_MESSAGE);
         }
 
         // ModelCard §12.2 back-compat: fall back to the LATEST version's inline
@@ -447,10 +448,7 @@ export const aiModelRouter = router({
       try {
         const existing = await db.getModelCardByModelId(modelId);
         if (!existing) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "No model card exists for this model yet — create one first.",
-          });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModelCard" }, "No model card exists for this model yet — create one first.");
         }
         const updated = await db.updateModelCardByModelId(modelId, patch);
         try {
@@ -476,10 +474,7 @@ export const aiModelRouter = router({
       try {
         const existing = await db.getModelCardByModelId(input.modelId);
         if (!existing) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "No model card exists for this model yet — create one first.",
-          });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModelCard" }, "No model card exists for this model yet — create one first.");
         }
         if (!isCardComplete(existing)) {
           throw appError(

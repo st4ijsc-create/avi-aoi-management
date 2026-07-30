@@ -430,10 +430,7 @@ export const aoiOnboardingRouter = router({
       const machine = await requireMachine(input.machineId);
       const draft = await getDraftRecord(input.machineId);
       if (!draft) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Chưa có bản nháp onboarding cho máy này — hoàn thành các bước wizard trước khi ký.",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "onboardingDraft" }, "Chưa có bản nháp onboarding cho máy này — hoàn thành các bước wizard trước khi ký.");
       }
 
       const snapshot = (draft.configSnapshot ?? {}) as {
@@ -448,16 +445,15 @@ export const aoiOnboardingRouter = router({
       if (!dryRunPassed) {
         const reason = input.overrideReason?.trim() ?? "";
         if (ctx.user.role !== "admin") {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "Máy chưa có dry-run đạt — chạy bước 3 (Dry-run) trước, hoặc nhờ admin ký với lý do override.",
-          });
+          throw appError(
+            "PRECONDITION_FAILED",
+            "OPERATION_FAILED",
+            { operation: "signOnboarding" },
+            "Máy chưa có dry-run đạt — chạy bước 3 (Dry-run) trước, hoặc nhờ admin ký với lý do override.",
+          );
         }
         if (reason.length < 5) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Override cần lý do (≥ 5 ký tự) — sẽ được ghi vào audit log.",
-          });
+          throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "overrideReason" }, "Override cần lý do (≥ 5 ký tự) — sẽ được ghi vào audit log.");
         }
         overridden = true;
       }
@@ -468,7 +464,7 @@ export const aoiOnboardingRouter = router({
         note: input.note?.trim() || null,
       });
       if (!record) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Không promote được bản nháp." });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "signOnboarding" }, "Không promote được bản nháp.");
       }
 
       // Immutable audit row (repo pattern: recordAuditEvent, append-only).
@@ -526,10 +522,7 @@ export const aoiOnboardingRouter = router({
         reason: input.reason.trim(),
       });
       if (!row) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Máy này không có bản ghi commissioning đang hiệu lực.",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "commissioningRecord" }, "Máy này không có bản ghi commissioning đang hiệu lực.");
       }
       try {
         const d = await db();

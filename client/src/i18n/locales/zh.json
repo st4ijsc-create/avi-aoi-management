@@ -3661,7 +3661,10 @@
       "sharedResource": "共享资源",
       "chargerStation": "充电站",
       "referenceImage": "参考图像",
-      "record": "记录"
+      "record": "记录",
+      "onboardingDraft": "上线草稿",
+      "aiModelCard": "AI模型卡",
+      "measurementPointVersion": "测量点版本"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3718,7 +3721,35 @@
       "changeOwnPassword": "更改本人密码",
       "signProductionSession": "签署生产阶段记录",
       "closeProductionSession": "关闭生产阶段",
-      "signOffProductionSession": "主管签核生产阶段"
+      "signOffProductionSession": "主管签核生产阶段",
+      "unloadGgufModel": "卸载GGUF模型",
+      "generateText": "生成文本",
+      "chatCompletion": "聊天补全",
+      "analyzeDefect": "分析缺陷",
+      "generateQualityInsights": "生成质量洞察",
+      "generateEmbedding": "生成嵌入向量",
+      "countTokens": "计算token数",
+      "promoteAiModelStage": "晋升AI模型阶段",
+      "segmentImage": "图像分割",
+      "analyzeAnnotationWithAI": "用AI分析标注",
+      "importAnnotations": "导入标注",
+      "deleteAnnotationTemplate": "删除标注模板",
+      "signOnboarding": "签署机台上线",
+      "approveRecipe": "批准配方",
+      "deployRecipe": "部署配方",
+      "rollbackRecipeDeployment": "回滚配方部署",
+      "getReport": "获取报告",
+      "cloneReport": "克隆报告",
+      "createSafetyZone": "创建安全区域",
+      "updateSafetyZone": "更新安全区域",
+      "upsertSafetyCalibration": "更新安全标定",
+      "upsertSafetyPlcConfig": "更新Safety-PLC配置",
+      "assignSafetyOperator": "分配安全操作员",
+      "reassignSafetyOperator": "重新分配安全操作员",
+      "approveThreshold": "批准阈值",
+      "rejectThreshold": "拒绝阈值",
+      "withdrawThreshold": "撤回阈值申请",
+      "revertThresholdToSnapshot": "将阈值恢复到之前的快照"
     },
     "field": {
       "code": "编码",
@@ -3772,7 +3803,11 @@
       "currentPassword": "当前密码",
       "password": "密码",
       "patchJson": "变更数据(patch)",
-      "supervisorPasswordConfirmed": "主管密码确认"
+      "supervisorPasswordConfirmed": "主管密码确认",
+      "maskData": "掩膜数据",
+      "overrideReason": "覆盖原因",
+      "recipeParam": "配方参数",
+      "codeOrMachineId": "编码或设备编码"
     },
     "feature": {
       "web_ingest": "网页内容导入",
@@ -3804,7 +3839,9 @@
       "licenseServerSdk": "License Server SDK",
       "speechToText": "语音转文字",
       "loraFinetune": "LoRA微调",
-      "productVariants": "产品变体"
+      "productVariants": "产品变体",
+      "modelCardGovernance": "模型卡治理",
+      "aiSegmentation": "AI图像分割"
     },
     "action": {
       "viewOthersPermissions": "查看他人的权限",
@@ -3832,7 +3869,16 @@
       "deleteUser": "删除用户",
       "deleteOwnAccount": "删除本人账户",
       "manageOwnProductionSession": "操作本人的生产阶段",
-      "signOffProductionSession": "主管签核生产阶段"
+      "signOffProductionSession": "主管签核生产阶段",
+      "deleteMask": "删除掩膜",
+      "deleteAnnotation": "删除标注",
+      "deleteAnnotationTemplate": "删除标注模板",
+      "viewAlertSetting": "查看告警配置",
+      "updateAlertSetting": "更新告警配置",
+      "deleteAlertSetting": "删除告警配置",
+      "acknowledgeAlert": "确认告警",
+      "testAlertSetting": "测试告警配置",
+      "withdrawThreshold": "撤回阈值申请"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

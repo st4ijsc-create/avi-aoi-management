@@ -3669,7 +3669,10 @@
       "sharedResource": "shared resource",
       "chargerStation": "charger station",
       "referenceImage": "reference image",
-      "record": "record"
+      "record": "record",
+      "onboardingDraft": "onboarding draft",
+      "aiModelCard": "AI model card",
+      "measurementPointVersion": "measurement point version"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3726,7 +3729,35 @@
       "changeOwnPassword": "change own password",
       "signProductionSession": "sign production session",
       "closeProductionSession": "close production session",
-      "signOffProductionSession": "supervisor sign-off production session"
+      "signOffProductionSession": "supervisor sign-off production session",
+      "unloadGgufModel": "unload GGUF model",
+      "generateText": "generate text",
+      "chatCompletion": "chat completion",
+      "analyzeDefect": "analyze defect",
+      "generateQualityInsights": "generate quality insights",
+      "generateEmbedding": "generate embedding",
+      "countTokens": "count tokens",
+      "promoteAiModelStage": "promote AI model stage",
+      "segmentImage": "segment image",
+      "analyzeAnnotationWithAI": "analyze annotation with AI",
+      "importAnnotations": "import annotations",
+      "deleteAnnotationTemplate": "delete annotation template",
+      "signOnboarding": "sign machine onboarding",
+      "approveRecipe": "approve recipe",
+      "deployRecipe": "deploy recipe",
+      "rollbackRecipeDeployment": "rollback recipe deployment",
+      "getReport": "get report",
+      "cloneReport": "clone report",
+      "createSafetyZone": "create safety zone",
+      "updateSafetyZone": "update safety zone",
+      "upsertSafetyCalibration": "update safety calibration",
+      "upsertSafetyPlcConfig": "update safety-PLC config",
+      "assignSafetyOperator": "assign safety operator",
+      "reassignSafetyOperator": "reassign safety operator",
+      "approveThreshold": "approve threshold",
+      "rejectThreshold": "reject threshold",
+      "withdrawThreshold": "withdraw threshold request",
+      "revertThresholdToSnapshot": "revert threshold to prior snapshot"
     },
     "field": {
       "code": "code",
@@ -3780,7 +3811,11 @@
       "currentPassword": "current password",
       "password": "password",
       "patchJson": "patch data",
-      "supervisorPasswordConfirmed": "supervisor password confirmation"
+      "supervisorPasswordConfirmed": "supervisor password confirmation",
+      "maskData": "mask data",
+      "overrideReason": "override reason",
+      "recipeParam": "recipe parameter",
+      "codeOrMachineId": "code or machine ID"
     },
     "feature": {
       "web_ingest": "web content ingestion",
@@ -3812,7 +3847,9 @@
       "licenseServerSdk": "License Server SDK",
       "speechToText": "speech-to-text",
       "loraFinetune": "LoRA finetune",
-      "productVariants": "product variants"
+      "productVariants": "product variants",
+      "modelCardGovernance": "model card governance",
+      "aiSegmentation": "AI segmentation"
     },
     "action": {
       "viewOthersPermissions": "view another user's permissions",
@@ -3840,7 +3877,16 @@
       "deleteUser": "delete user",
       "deleteOwnAccount": "delete own account",
       "manageOwnProductionSession": "manage own production session",
-      "signOffProductionSession": "supervisor sign-off production session"
+      "signOffProductionSession": "supervisor sign-off production session",
+      "deleteMask": "delete mask",
+      "deleteAnnotation": "delete annotation",
+      "deleteAnnotationTemplate": "delete annotation template",
+      "viewAlertSetting": "view alert setting",
+      "updateAlertSetting": "update alert setting",
+      "deleteAlertSetting": "delete alert setting",
+      "acknowledgeAlert": "acknowledge alert",
+      "testAlertSetting": "test alert setting",
+      "withdrawThreshold": "withdraw threshold request"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

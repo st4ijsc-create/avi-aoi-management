@@ -356,7 +356,7 @@ export const safetyRouter = router({
     .mutation(async ({ input }) => {
       requireSafetyZoneFlag();
       const r = await createZone(input);
-      if (!r.ok && r.enabled) throw new TRPCError({ code: "BAD_REQUEST", message: r.message ?? "invalid safety zone" });
+      if (!r.ok && r.enabled) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "createSafetyZone" }, r.message ?? "invalid safety zone");
       return r;
     }),
 
@@ -383,7 +383,7 @@ export const safetyRouter = router({
     .mutation(async ({ input }) => {
       requireSafetyZoneFlag();
       const r = await updateZone(input);
-      if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "update failed" });
+      if (!r.ok && r.enabled) throw appError(r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", "OPERATION_FAILED", { operation: "updateSafetyZone" }, r.message ?? "update failed");
       return r;
     }),
 
@@ -454,7 +454,7 @@ export const safetyRouter = router({
           | [number, number, number, number, number, number, number, number, number]
           | undefined,
       });
-      if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "calibration upsert failed" });
+      if (!r.ok && r.enabled) throw appError(r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", "OPERATION_FAILED", { operation: "upsertSafetyCalibration" }, r.message ?? "calibration upsert failed");
       return r;
     }),
 
@@ -550,7 +550,7 @@ export const safetyRouter = router({
     .mutation(async ({ input }) => {
       requireSafetyPlcFlag();
       const r = await upsertPlcConfig(input);
-      if (!r.ok && r.enabled) throw new TRPCError({ code: r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", message: r.message ?? "safety-PLC config upsert failed" });
+      if (!r.ok && r.enabled) throw appError(r.message?.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST", "OPERATION_FAILED", { operation: "upsertSafetyPlcConfig" }, r.message ?? "safety-PLC config upsert failed");
       return r;
     }),
 
@@ -694,7 +694,7 @@ export const safetyRouter = router({
       requireWorkforceFlag();
       const r = await assignOperator(input);
       if (!r.ok && r.conflict) {
-        throw new TRPCError({ code: "CONFLICT", message: `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})` });
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "assignSafetyOperator" }, `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})`);
       }
       return r;
     }),
@@ -723,7 +723,7 @@ export const safetyRouter = router({
       const { assignmentId, ...rest } = input;
       const r = await reassignOperator(assignmentId, rest);
       if (!r.ok && r.conflict) {
-        throw new TRPCError({ code: "CONFLICT", message: `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})` });
+        throw appError("CONFLICT", "OPERATION_FAILED", { operation: "reassignSafetyOperator" }, `Double-booking: ${r.conflict.reason} (assignment #${r.conflict.assignmentId})`);
       }
       return r;
     }),
