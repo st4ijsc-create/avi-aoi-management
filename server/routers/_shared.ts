@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import * as db from "../db";
 import { storagePut } from "../storage";
 import { protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
 
 export { protectedProcedure };
 
@@ -196,7 +197,7 @@ export async function uploadProductReferenceImage(
 // Admin procedure - only admin users can access
 export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+    throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'adminAccess' }, 'Admin access required');
   }
   return next({ ctx });
 });

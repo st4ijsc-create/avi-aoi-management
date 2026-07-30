@@ -73,7 +73,7 @@ function machineRegistrationGate(action: "canView" | "canEdit") {
       return requirePermission("machine_registration", action)(opts);
     }
     if (opts.ctx.user?.role !== "admin") {
-      throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+      throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "adminAccess" }, "Admin access required");
     }
     return opts.next({ ctx: opts.ctx });
   };

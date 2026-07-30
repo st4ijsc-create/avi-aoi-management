@@ -84,12 +84,12 @@ export const userRouter = router({
       
       // Prevent admin from deactivating themselves
       if (id === ctx.user.id && inputData.isActive === false) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Không thể vô hiệu hóa tài khoản của chính mình' });
+        throw appError('BAD_REQUEST', 'PERMISSION_DENIED', { action: 'disableOwnAccount' }, 'Không thể vô hiệu hóa tài khoản của chính mình');
       }
       
       // Prevent admin from changing their own role
       if (id === ctx.user.id && inputData.role && inputData.role !== ctx.user.role) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Không thể thay đổi vai trò của chính mình' });
+        throw appError('BAD_REQUEST', 'PERMISSION_DENIED', { action: 'changeOwnRole' }, 'Không thể thay đổi vai trò của chính mình');
       }
       
       // Convert null to undefined for db.updateUser

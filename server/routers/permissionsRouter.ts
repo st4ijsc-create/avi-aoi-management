@@ -542,7 +542,7 @@ export const permissionsRouter = router({
       const db = await getDb();
       // Users can view their own permissions, admins can view any user's permissions
       if (ctx.user.id !== input.userId && ctx.user.role !== 'admin') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'You can only view your own permissions' });
+        throw appError('FORBIDDEN', 'PERMISSION_DENIED', { action: 'viewOwnPermissionsOnly' }, 'You can only view your own permissions');
       }
       
       const userPermissions = await db

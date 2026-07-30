@@ -101,7 +101,7 @@ export const trainingBatchCommentsRouter = router({
       }
 
       if (comment.userId !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Không có quyền sửa comment này" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "editComment" }, "Không có quyền sửa comment này");
       }
 
       await db
@@ -130,7 +130,7 @@ export const trainingBatchCommentsRouter = router({
       }
 
       if (comment.userId !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Không có quyền xóa comment này" });
+        throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "deleteComment" }, "Không có quyền xóa comment này");
       }
 
       // Delete replies first

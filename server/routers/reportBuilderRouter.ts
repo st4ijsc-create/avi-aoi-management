@@ -78,7 +78,7 @@ async function assertReportOwnership(id: number, ctx: { user: { id: number; role
   const rows = result.rows || result;
   if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "report" }, "Không tìm thấy báo cáo");
   if (rows[0].createdBy == null || rows[0].createdBy !== ctx.user.id) {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền sửa hoặc xóa báo cáo này" });
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "editOrDeleteReport" }, "Bạn không có quyền sửa hoặc xóa báo cáo này");
   }
 }
 
@@ -150,7 +150,7 @@ export const reportBuilderRouter = router({
         const isOwner = report.createdBy != null && report.createdBy === ctx.user.id;
         const isPublic = report.isDefault === true;
         if (!isOwner && !isPublic && ctx.user.role !== "admin") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Bạn không có quyền xem báo cáo này" });
+          throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "viewReport" }, "Bạn không có quyền xem báo cáo này");
         }
         return report;
       } catch (err: any) {

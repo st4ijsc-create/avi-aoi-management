@@ -654,7 +654,7 @@ export const machineRecipeRouter = router({
         }
         // Segregation of duties — người duyệt phải KHÁC người yêu cầu.
         if (row.requestedBy === ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "SoD: không thể tự duyệt yêu cầu của chính mình." });
+          throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveChangeover" }, "SoD: không thể tự duyệt yêu cầu của chính mình.");
         }
         let deployment;
         try {
