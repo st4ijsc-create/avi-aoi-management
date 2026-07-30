@@ -123,7 +123,7 @@ export const mqttSoftwareVersionRouter = router({
         .where(eq(mqttSoftwareVersions.id, input.id))
         .limit(1);
       if (!target) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "softwareVersion" }, "Version not found");
-      if (!target.apkFileUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Version must have an APK uploaded before setting as latest" });
+      if (!target.apkFileUrl) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "setLatestSoftwareVersion" }, "Version must have an APK uploaded before setting as latest");
 
       // Clear current latest
       await database

@@ -183,10 +183,7 @@ export const aiQualityGateRouter = router({
         insp.productModelId,
       );
       if (!config) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "No quality gate config found for this machine/product",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateConfig" }, "No quality gate config found for this machine/product");
       }
 
       // Load image from storage

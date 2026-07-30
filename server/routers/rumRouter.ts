@@ -14,6 +14,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { publicProcedure, router } from "../_core/trpc";
 import { observeRumWebVital, type RumWebVitalMetric } from "../_core/metrics";
 
@@ -68,7 +69,7 @@ export const rumRouter = router({
   report: publicProcedure.input(rumReportInputSchema).mutation(({ input, ctx }) => {
     const ip = (ctx as { req?: { ip?: string } }).req?.ip;
     if (!checkRumThrottle(ip)) {
-      throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "RUM report rate limit exceeded" });
+      throw appError("TOO_MANY_REQUESTS", "RATE_LIMITED", undefined, "RUM report rate limit exceeded");
     }
     for (const sample of input.samples) {
       observeRumWebVital(

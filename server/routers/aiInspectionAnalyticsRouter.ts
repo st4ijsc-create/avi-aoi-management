@@ -114,10 +114,16 @@ const analyticsRolloutProcedure = protectedProcedure.use(async ({ ctx, next }) =
     return next();
   }
 
-  throw new TRPCError({
-    code: "FORBIDDEN",
-    message: `AI Analytics is in canary rollout (${rolloutPercent}%).`,
-  });
+  // Canary rollout theo TỪNG NGƯỜI DÙNG (không phải cờ tắt/bật toàn hệ thống) — dùng
+  // PERMISSION_DENIED thay vì FEATURE_DISABLED để không nói sai "tính năng chưa bật
+  // trên hệ thống này" trong khi những người dùng khác trong % rollout đang dùng bình
+  // thường (đúng bài học Task 7 I-2 về 2FA cấp tài khoản vs cấp hệ thống).
+  throw appError(
+    "FORBIDDEN",
+    "PERMISSION_DENIED",
+    { action: "useAiAnalyticsCanary" },
+    `AI Analytics is in canary rollout (${rolloutPercent}%).`,
+  );
 });
 
 /**

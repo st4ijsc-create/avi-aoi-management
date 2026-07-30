@@ -157,7 +157,7 @@ export const sitesRouter = router({
     .mutation(async ({ input }) => {
       const d = await db();
       const [existing] = await d.select().from(sites).where(eq(sites.code, input.code)).limit(1);
-      if (existing) throw new TRPCError({ code: "CONFLICT", message: `Site code '${input.code}' already exists` });
+      if (existing) throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "site" }, `Site code '${input.code}' already exists`);
 
       const [row] = await d
         .insert(sites)

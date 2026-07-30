@@ -3678,7 +3678,8 @@
       "reportArtifact": "saved report artifact",
       "contractSchema": "contract schema",
       "measurementSample": "measurement sample",
-      "metricDefinition": "metric definition"
+      "metricDefinition": "metric definition",
+      "masterDataReference": "reference data"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3797,7 +3798,13 @@
       "manageRouting": "manage routing",
       "computeMetric": "compute metric",
       "retryReportDelivery": "retry report delivery",
-      "testSmtpConnection": "test SMTP connection"
+      "testSmtpConnection": "test SMTP connection",
+      "bootstrapFirstClassifier": "bootstrap first classifier",
+      "createCorporate": "create corporate",
+      "manageHotFolder": "manage hot folder",
+      "issueOperatorBadge": "issue operator badge",
+      "rollbackAiModel": "rollback AI model",
+      "setLatestSoftwareVersion": "set latest software version"
     },
     "field": {
       "code": "code",
@@ -3871,7 +3878,8 @@
       "rosbridgeUrl": "ROSBRIDGE URL",
       "causalGraph": "causal graph",
       "idempotencyKey": "idempotency key",
-      "lotCodeOrProductModelId": "lot code or product model ID"
+      "lotCodeOrProductModelId": "lot code or product model ID",
+      "deviceId": "device ID"
     },
     "feature": {
       "web_ingest": "web content ingestion",
@@ -3950,7 +3958,9 @@
       "deleteWebhook": "delete webhook",
       "deleteWebhookLogs": "delete webhook logs",
       "selfApproveProgramRelease": "self-approve own program release",
-      "accessReportArtifact": "access report artifact"
+      "accessReportArtifact": "access report artifact",
+      "useAiAnalyticsCanary": "use AI Analytics (gradual rollout)",
+      "viewTrustEnforcementCenter": "view Trust & Enforcement Center"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

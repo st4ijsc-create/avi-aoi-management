@@ -80,7 +80,7 @@ export const edgeDeploymentRouter = router({
         deviceId = machine.code;
         deviceName = deviceName ?? machine.name;
       }
-      if (!deviceId) throw new TRPCError({ code: "BAD_REQUEST", message: "deviceId could not be resolved" });
+      if (!deviceId) throw appError("BAD_REQUEST", "FIELD_REQUIRED", { field: "deviceId" }, "deviceId could not be resolved");
 
       const created = await aiAdvancedDb.createEdgeDeployment({
         modelId: input.modelId,

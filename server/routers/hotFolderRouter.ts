@@ -20,6 +20,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import {
@@ -48,10 +49,7 @@ const configShape = {
 };
 
 function asBadRequest(err: unknown): never {
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: err instanceof Error ? err.message : String(err),
-  });
+  throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "manageHotFolder" }, err instanceof Error ? err.message : String(err));
 }
 
 export const hotFolderRouter = router({

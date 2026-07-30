@@ -404,10 +404,7 @@ export const manualMappingRouter = router({
       // Check if machine already has a manual connection
       const existing = await db.getManualConnectionByMachineId(input.machineId);
       if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Máy này đã có cấu hình kết nối thủ công',
-        });
+        throw appError('CONFLICT', 'ENTITY_DUPLICATE', { entity: 'connectionConfig' }, 'Máy này đã có cấu hình kết nối thủ công');
       }
       return db.createManualConnection(input);
     }),

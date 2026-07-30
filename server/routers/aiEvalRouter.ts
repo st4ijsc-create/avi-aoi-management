@@ -220,7 +220,7 @@ export const aiEvalRouter = router({
         });
       } catch (err) {
         if (err instanceof InsufficientLabeledSamplesError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message, cause: err });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "bootstrapFirstClassifier" }, err.message);
         }
         throw err;
       }

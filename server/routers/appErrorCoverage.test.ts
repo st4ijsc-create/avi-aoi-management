@@ -21,12 +21,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_LEGACY_THROWS = 16; // ← task 8 lô 6/N (21 file 2-chỗ: aiAdvancedVisionRouter/aiAnomalyRouter/
-// backupRouter/causalGraphRouter/contractsRouter/defectDispositionRouter/ecnRouter/
-// mappingAsCodeRouter/ncrRouter/orderLifecycleRouter/permissionsRouter/processRouter/
-// productPackageRouter/productPanelRouter/programmingRouter/publicProductApiRouter/
-// routingRouter/semanticsRouter/stationTriangulationRouter/systemRouters/unsMappingRouter
-// — 42 chỗ): 58 - 42 = 16
+const ALLOWED_LEGACY_THROWS = 0; // ← task 8 lô 7/N (CUỐI) — 16 file còn lại chỉ 1 chỗ mỗi file
+// (aiEvalRouter/aiInspectionAnalyticsRouter/aiQualityGateRouter/aiRobotAnomalyRouter/
+// bootstrapRouter/commissioningRouter/edgeDeploymentRouter/hotFolderRouter/masterDataRouter/
+// mqttOeeRouters/mqttSoftwareVersionRouter/operatorBadgeRouter/readinessRouter/rumRouter/
+// sitesRouter/statusTemplateRouters — 16 chỗ): 16 - 16 = 0.
+// TOÀN BỘ server/routers/** đã di trú xong — mọi TRPCError hướng-người-dùng đều qua appError().
 
 const ROUTERS_DIR = dirname(fileURLToPath(import.meta.url));
 

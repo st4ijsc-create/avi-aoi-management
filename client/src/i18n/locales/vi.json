@@ -3679,7 +3679,8 @@
       "reportArtifact": "tệp báo cáo đã lưu",
       "contractSchema": "schema hợp đồng dữ liệu",
       "measurementSample": "mẫu đo",
-      "metricDefinition": "định nghĩa chỉ số"
+      "metricDefinition": "định nghĩa chỉ số",
+      "masterDataReference": "dữ liệu tham chiếu"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3798,7 +3799,13 @@
       "manageRouting": "quản lý routing",
       "computeMetric": "tính chỉ số",
       "retryReportDelivery": "gửi lại báo cáo",
-      "testSmtpConnection": "kiểm tra kết nối SMTP"
+      "testSmtpConnection": "kiểm tra kết nối SMTP",
+      "bootstrapFirstClassifier": "khởi tạo bộ phân loại đầu tiên",
+      "createCorporate": "tạo tổ chức (corporate)",
+      "manageHotFolder": "quản lý hot-folder",
+      "issueOperatorBadge": "cấp thẻ vận hành viên",
+      "rollbackAiModel": "rollback model AI",
+      "setLatestSoftwareVersion": "đặt phiên bản phần mềm mới nhất"
     },
     "field": {
       "code": "mã",
@@ -3872,7 +3879,8 @@
       "rosbridgeUrl": "địa chỉ ROSBRIDGE",
       "causalGraph": "đồ thị nhân quả",
       "idempotencyKey": "khoá idempotency",
-      "lotCodeOrProductModelId": "mã lô hoặc mã model sản phẩm"
+      "lotCodeOrProductModelId": "mã lô hoặc mã model sản phẩm",
+      "deviceId": "mã thiết bị"
     },
     "feature": {
       "web_ingest": "nạp nội dung từ web",
@@ -3951,7 +3959,9 @@
       "deleteWebhook": "xoá webhook",
       "deleteWebhookLogs": "xoá nhật ký webhook",
       "selfApproveProgramRelease": "tự duyệt phiên bản chương trình của chính mình",
-      "accessReportArtifact": "truy cập tệp báo cáo"
+      "accessReportArtifact": "truy cập tệp báo cáo",
+      "useAiAnalyticsCanary": "dùng AI Analytics (đang triển khai dần)",
+      "viewTrustEnforcementCenter": "xem Trust & Enforcement Center"
     }
   },
   "export": {

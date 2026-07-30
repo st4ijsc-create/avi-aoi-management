@@ -3670,7 +3670,8 @@
       "reportArtifact": "已保存的报告",
       "contractSchema": "契约schema",
       "measurementSample": "测量样本",
-      "metricDefinition": "指标定义"
+      "metricDefinition": "指标定义",
+      "masterDataReference": "参考数据"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3789,7 +3790,13 @@
       "manageRouting": "管理工艺路线",
       "computeMetric": "计算指标",
       "retryReportDelivery": "重试报告投递",
-      "testSmtpConnection": "测试SMTP连接"
+      "testSmtpConnection": "测试SMTP连接",
+      "bootstrapFirstClassifier": "初始化首个分类器",
+      "createCorporate": "创建企业组织",
+      "manageHotFolder": "管理热文件夹",
+      "issueOperatorBadge": "签发操作员工牌",
+      "rollbackAiModel": "回滚AI模型",
+      "setLatestSoftwareVersion": "设置最新软件版本"
     },
     "field": {
       "code": "编码",
@@ -3863,7 +3870,8 @@
       "rosbridgeUrl": "ROSBRIDGE地址",
       "causalGraph": "因果图",
       "idempotencyKey": "幂等键",
-      "lotCodeOrProductModelId": "批次代码或产品型号ID"
+      "lotCodeOrProductModelId": "批次代码或产品型号ID",
+      "deviceId": "设备ID"
     },
     "feature": {
       "web_ingest": "网页内容导入",
@@ -3942,7 +3950,9 @@
       "deleteWebhook": "删除webhook",
       "deleteWebhookLogs": "删除webhook日志",
       "selfApproveProgramRelease": "自行批准本人的程序发布版本",
-      "accessReportArtifact": "访问报告文件"
+      "accessReportArtifact": "访问报告文件",
+      "useAiAnalyticsCanary": "使用AI Analytics(灰度发布中)",
+      "viewTrustEnforcementCenter": "查看信任与执行中心"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

@@ -18,6 +18,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -115,7 +116,13 @@ async function requireRef(code: unknown, table: any, label: string): Promise<voi
   if (!db) return;
   const [row] = await db.select({ id: table.id }).from(table).where(eq(table.code, String(code))).limit(1);
   if (!row) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `${label} "${code}" không tồn tại` });
+    // `label` là tên hiển thị TIẾNG VIỆT động (Nhóm vật tư/Đơn vị/Vật tư/Kho…) truyền
+    // theo từng lời gọi requireRef — không thể tham số hoá thành entity tĩnh ở tầng
+    // helper dùng chung này (khác appError() ở từng router, nơi luôn biết entity cụ
+    // thể). entity:"masterDataReference" là khoá CHUNG có chủ đích, giống cách xử lý
+    // entity:"record" ở dbErrors.ts; chi tiết cụ thể (label) vẫn còn nguyên trong
+    // fallbackMessage.
+    throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "masterDataReference" }, `${label} "${code}" không tồn tại`);
   }
 }
 

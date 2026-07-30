@@ -92,10 +92,12 @@ export const bootstrapRouter = router({
             .where(eq(corporates.code, corporateCode))
             .limit(1);
           if (again.length === 0) {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message: err instanceof Error ? err.message : "Failed to create corporate",
-            });
+            throw appError(
+              "INTERNAL_SERVER_ERROR",
+              "OPERATION_FAILED",
+              { operation: "createCorporate" },
+              err instanceof Error ? err.message : "Failed to create corporate",
+            );
           }
         }
       }

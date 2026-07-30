@@ -445,10 +445,12 @@ const readinessProcedure = protectedProcedure.use(async ({ ctx, next }) => {
     checkPermission(user.id, user.role, "machine_control", "canView"),
   ]);
   if (!sys && !ctl) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Cần quyền xem admin_system hoặc machine_control để truy cập Trust & Enforcement Center.",
-    });
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "viewTrustEnforcementCenter" },
+      "Cần quyền xem admin_system hoặc machine_control để truy cập Trust & Enforcement Center.",
+    );
   }
   return next();
 });

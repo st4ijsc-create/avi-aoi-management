@@ -140,7 +140,7 @@ export const aiRobotAnomalyRouter = router({
         input.modelId, input.toVersionId, ctx.user.id, input.reason ?? "Manual rollback",
         { force: input.force === true },
       );
-      if (!outcome.rolledBack) throw new TRPCError({ code: "BAD_REQUEST", message: outcome.reason });
+      if (!outcome.rolledBack) throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rollbackAiModel" }, outcome.reason);
       return outcome;
     }),
 });

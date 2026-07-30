@@ -87,7 +87,7 @@ export const commissioningRouter = router({
       await assertAdapterExists(input.adapterId);
       // Guard against an already-expired expiry (would create a dead record).
       if (input.expiresAt != null && input.expiresAt.getTime() <= Date.now()) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "expiresAt đã ở quá khứ — bản ghi sẽ vô hiệu ngay." });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "expiresAt" }, "expiresAt đã ở quá khứ — bản ghi sẽ vô hiệu ngay.");
       }
       return createRecord({
         adapterId: input.adapterId,

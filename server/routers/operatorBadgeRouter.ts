@@ -143,10 +143,7 @@ export const operatorBadgeRouter = router({
         });
         return { id };
       } catch (err) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: err instanceof Error ? err.message : "Failed to issue badge",
-        });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "issueOperatorBadge" }, err instanceof Error ? err.message : "Failed to issue badge");
       }
     }),
 
