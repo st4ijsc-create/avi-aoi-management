@@ -16,18 +16,31 @@ Implementation: `src/St4i.EngineApi/Alarms/WebhookNotification.cs` (contract + s
 POST <the URL you configured>
 Content-Type: application/json; charset=utf-8
 User-Agent: st4i-machine-simulator-alarm-webhook/1
-X-ST4I-Delivery: 9f0c4a1b2d3e4f5061728394a5b6c7d8      # idempotency key, stable across retries
-X-ST4I-Event: Raised                                    # the edge kind, for routing without parsing
+X-ST4I-Delivery: 9f0c4a1b2d3e4f5061728394a5b6c7d8      # UNSIGNED copy of body.deliveryId — pre-filter only
+X-ST4I-Event: Raised                                    # UNSIGNED copy of body.edge.kind — pre-filter only
 X-ST4I-Signature: v1=<64 lowercase hex chars>           # present only if a signing secret is configured
 X-ST4I-Timestamp: 1785489322                            # unix SECONDS; present iff the signature is
 <optional operator-configured auth header, e.g. Authorization or X-Api-Key>
 ```
 
+> 🔴 **What the signature covers.** Only **`X-ST4I-Timestamp` and the raw body** are covered by the
+> signature. **All other headers are unauthenticated convenience copies.** Any decision that must be
+> trustworthy — dedup, routing, filtering, alerting — **MUST read the body**, after verifying it per §3.
+>
+> This is not hypothetical. Someone who captures one request can replay it inside the 300-second window with
+> `X-ST4I-Delivery` changed to an unused value and `X-ST4I-Event` flipped from `Restored` to `Raised`, and
+> the signature still verifies — because neither header is in the signed material. A receiver that dedups on
+> the *header* has no replay defence at all, and a receiver that filters `Restored` on the *header* has an
+> attacker-controlled filter. Use `body.deliveryId` and `body.edge.kind`.
+>
+> (Signing the timestamp and body only is deliberate and matches Slack and Stripe. The headers exist so a
+> proxy or a router can shed obvious work without a JSON parse — nothing more.)
+
 - **Redirects are not followed.** A 3xx is treated as a permanent failure, because following it would send
   the signature and any auth token to a host the operator did not configure. Store the final URL.
 - The sender **never reads your response body**. Only the status code and reason phrase are used, and only
-  the status code and reason phrase are ever logged. (Deliberate: an echoing endpoint would otherwise
-  reflect the auth header back into our log files.)
+  the status code and reason phrase are ever logged (the phrase truncated to 80 characters). Deliberate: an
+  echoing endpoint would otherwise reflect the auth header back into our log files.
 
 ## 2. The body
 
@@ -54,7 +67,21 @@ X-ST4I-Timestamp: 1785489322                            # unix SECONDS; present 
 Rules a receiver can rely on:
 
 - **Nulls are present, never omitted.** `alarm.ackedBy` exists in every body. Your schema does not have to
-  cope with fields appearing and disappearing per edge kind.
+  cope with fields appearing and disappearing per edge kind — but six fields *can be* `null`, so your
+  schema does have to allow that:
+
+  | Field | Nullable? | When it is `null` |
+  |---|---|---|
+  | `text`, `specVersion`, `type`, `deliveryId`, `sentAtUtc` | never | — |
+  | `source.*` | never | — |
+  | `edge.kind`, `edge.sequence`, `edge.atUtc` | never | — |
+  | `edge.previousPriority` | **yes** | every kind except `Escalated` |
+  | `edge.actor` | **yes** | system-originated edges (`Raised`, `Escalated`, `Restored`, an evaluator `Cleared`) |
+  | `alarm.key`, `.source`, `.code`, `.priority`, `.state`, `.message`, `.clearOnAck`, `.count`, `.firstRaisedUtc`, `.lastRaisedUtc` | never | — |
+  | `alarm.runbook` | **yes** | the source supplied no runbook pointer |
+  | `alarm.targetId` | **yes** | the alarm is fleet-wide rather than about one machine |
+  | `alarm.ackedUtc`, `alarm.ackedBy` | **yes** | the alarm has not been acknowledged |
+
 - **Ignore fields you do not recognise.** Additive fields do not bump `specVersion`.
 - **Timestamps** are ISO-8601 UTC with an explicit `Z` and 7 fractional digits.
 - **Enums** are the member names below, as strings. New members may be added.
@@ -91,7 +118,8 @@ The sender fires on **edges**, never on state. A condition that stays true for a
   alarm without trusting clocks. **It resets to 0 when the engine restarts**; for cross-restart identity use
   `source.host` + `edge.atUtc`.
 - `source.host` is which machine *sent* this. `alarm.targetId` is which machine the alarm is *about*
-  (or `fleet`). One engine runs a whole fleet.
+  — **or `null` when the alarm is fleet-wide.** One engine runs a whole fleet. (`text` substitutes the word
+  `fleet` for display; `alarm.targetId` itself is `null`, never the literal string.)
 - There is deliberately **no numeric alarm id**. The internal one is a SQLite rowid, which SQLite reuses
   after a delete; a receiver keying on it would silently merge two unrelated alarms.
 
@@ -136,10 +164,14 @@ def verify(raw_body: bytes, headers, secret: str) -> bool:
 
 Notes that matter:
 
+- 🔴 **The signature covers `X-ST4I-Timestamp` and the raw body — nothing else.** `X-ST4I-Delivery`,
+  `X-ST4I-Event`, `Content-Type` and every other header are unauthenticated. Step 6 says
+  **`body.deliveryId`** and it means it: dedup on the header instead and a replay with a rewritten header
+  sails through. Same for filtering on `X-ST4I-Event`.
 - **The timestamp is inside the signed material**, so a captured request cannot be re-stamped to slip past
   step 2. A scheme that merely sent a timestamp alongside the body would protect nothing.
 - **Step 6 is not optional.** Within the 300-second tolerance a captured request replays perfectly — that
-  is inherent to every timestamp-bounded scheme. `deliveryId` is what closes it, and the same record
+  is inherent to every timestamp-bounded scheme. `body.deliveryId` is what closes it, and the same record
   gives you correct dedup of the sender's own retries (see §4).
 - The `.` separator is there so that timestamp `1234` + body `5{…}` and timestamp `12345` + body `{…}`
   cannot produce identical signed material.
@@ -158,8 +190,10 @@ Notes that matter:
 - **Bounds:** at most **3 attempts**, per-attempt timeout **5 s**, and a hard **10 s** total per
   notification per destination, backoff 250 ms then 500 ms. `Retry-After` is honoured up to that budget and
   **abandoned beyond it** — the sender will not park its notification loop for a `Retry-After: 300`.
-- **`deliveryId` is stable across retries** and unique per (notification, destination). A retry after a
-  timeout can genuinely duplicate a POST you already processed. **Record `deliveryId` and drop repeats.**
+- **`body.deliveryId` is stable across retries** and unique per (notification, destination). A retry after a
+  timeout can genuinely duplicate a POST you already processed. **Record `body.deliveryId` — the one in the
+  BODY, after verifying the signature — and drop repeats.** The `X-ST4I-Delivery` header is an unsigned copy
+  of it and must not be used for this (§1, §3).
 - 🔴 **There is no delivery guarantee and no queue.** If all attempts fail, that notification is gone; the
   alarm's edge is not re-emitted. The sender counts and logs every such loss, but it will not arrive later.
 

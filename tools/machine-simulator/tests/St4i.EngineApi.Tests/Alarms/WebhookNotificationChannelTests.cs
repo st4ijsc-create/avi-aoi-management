@@ -88,6 +88,25 @@ public sealed class WebhookNotificationChannelTests : IDisposable
             maxAttempts: maxAttempts,
             clock: clock ?? (() => FixedNow));
 
+    /// <summary>Runs raw SQL against the store's own database — for reproducing corruption states the
+    /// store's API cannot produce, which is the whole point of the tests that use it.</summary>
+    private static void ExecuteSql(NotificationConfigStore store, string sql)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={store.DbPath}");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+    }
+
+    /// <summary>Overwrites a stored secret's DPAPI ciphertext with bytes that cannot be unprotected, while
+    /// LEAVING THE ROW — exactly what a <c>notifications.db</c> copied from another machine looks like to
+    /// this one, and the state review round 1 (I-1) found was being silently tolerated.</summary>
+    private static void CorruptStoredSecret(NotificationConfigStore store, string name) =>
+        ExecuteSql(store,
+            $"UPDATE notification_secrets SET secret = X'DEADBEEFDEADBEEF' WHERE name = '{name}';");
+
     /// <summary>🔴 The verification recipe from <see cref="WebhookSigner"/>'s doc comment, implemented HERE
     /// from scratch the way a customer's receiver would — raw BCL <see cref="HMACSHA256"/> over the raw
     /// body bytes. It deliberately shares no code with the production signer: a test that re-used
@@ -580,8 +599,17 @@ public sealed class WebhookNotificationChannelTests : IDisposable
         Assert.Contains("delivery budget elapsed", Assert.Single(warnings), StringComparison.Ordinal);
     }
 
-    /// <summary>The budget's other half: it also refuses to START an attempt there is no room for, so a
-    /// receiver that fails FAST cannot burn the whole attempt allowance and then some.</summary>
+    /// <summary>
+    /// The budget's other half: it also refuses to START an attempt there is no room for, so a receiver
+    /// that fails FAST cannot burn the whole attempt allowance and then some.
+    ///
+    /// <para>🔴 Review round 1 (M-4) — <b>the parameters are chosen so the arithmetic holds regardless of
+    /// how slow the machine is</b>, rather than on the premise that the first attempt returns in a few
+    /// milliseconds. The first version used a 400 ms budget with a 250 ms backoff: on a loaded box a first
+    /// attempt taking &gt;150 ms leaves no room for the backoff and the test sees ONE request instead of
+    /// two. That is a false failure, and this batch has already burned a round on CPU contention being
+    /// mistaken for a test defect.</para>
+    /// </summary>
     [Fact]
     public async Task TheTotalBudget_AlsoRefusesToStartAnAttemptItCannotAfford()
     {
@@ -593,20 +621,23 @@ public sealed class WebhookNotificationChannelTests : IDisposable
         using var channel = NewChannel(
             store, warnings,
             attemptTimeout: TimeSpan.FromSeconds(5),
-            totalBudget: TimeSpan.FromMilliseconds(400),
-            baseBackoff: TimeSpan.FromMilliseconds(250),
+            totalBudget: TimeSpan.FromSeconds(2),
+            baseBackoff: TimeSpan.FromMilliseconds(700),
             maxAttempts: 10);
 
         var stopwatch = Stopwatch.StartNew();
         await channel.DispatchAsync(MakeJob());
         stopwatch.Stop();
 
-        // The arithmetic, so this is a claim and not an observation: attempt 1 returns in a few ms; the
-        // 250ms backoff fits in the ~390ms that remain, so attempt 2 runs at ~270ms; the NEXT backoff is
-        // 500ms and only ~110ms of budget is left, so attempt 3 is never started. Ten attempts were
-        // permitted — the budget, not the attempt count, is what stopped it at two.
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2),
-            $"a 400ms budget took {stopwatch.Elapsed} against a fast-failing receiver.");
+        // The arithmetic, stated so this is a claim rather than an observation — and with both sides having
+        // slack that does not depend on how fast this machine is:
+        //   * backoff 1 (700ms) fits as long as attempt 1 finishes within 1300ms of a 2000ms budget.
+        //   * backoff 2 is 1400ms, and by then AT LEAST 700ms has already been slept, so at most 1300ms of
+        //     budget can remain — 1400 > 1300 ALWAYS, whatever the attempts cost. Attempt 3 can never
+        //     start.
+        // Ten attempts were permitted; the budget, not the attempt count, is what stopped it at two.
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5),
+            $"a 2s budget took {stopwatch.Elapsed} against a fast-failing receiver that permitted 10 attempts.");
         Assert.Equal(2, server.Requests.Count);
         Assert.Equal(2, channel.Stats.Attempts);
         Assert.Equal(1, channel.Stats.Lost);
@@ -1060,6 +1091,218 @@ public sealed class WebhookNotificationChannelTests : IDisposable
         Assert.DoesNotContain(UrlPathSentinel, everythingLogged, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(SigningSentinel, everythingLogged, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(TokenSentinel, everythingLogged, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 🔴 Review round 1 (I-1) — a configured signing secret that cannot be DECRYPTED must not silently
+    /// downgrade to an unsigned POST.
+    ///
+    /// <para><see cref="NotificationConfigStore.GetSecretAsync"/> is never-throws and returns
+    /// <see langword="null"/> for both "no secret stored" and "the DPAPI blob will not decrypt" — which is
+    /// exactly what a <c>notifications.db</c> copied from another machine looks like. Signing with a null
+    /// key means "send unsigned", so before the fix this machine quietly stopped proving its identity,
+    /// delivered anyway, counted a success, warned nobody, and the config API went on reporting
+    /// <c>HasSigningSecret = true</c>. Against a signature-enforcing receiver every alarm then 401s;
+    /// against a permissive one it ships unauthenticated alarm traffic indefinitely.</para>
+    ///
+    /// <para>The corruption here is the real thing, not a stand-in: the ciphertext BLOB is overwritten in
+    /// <c>notifications.db</c> while the row — and therefore <c>HasSigningSecret</c> — stays.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASigningSecretThatCannotBeDecrypted_IsNotSilentlyDowngradedToUnsigned()
+    {
+        await using var server = WebhookLoopbackServer.Start(new ScriptedResponse(200));
+        var store = NewStore();
+        Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, server.Url()));
+        Assert.True(await store.SetSecretAsync(
+            NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret, SigningSentinel));
+
+        CorruptStoredSecret(store, NotificationSecretNames.WebhookSigningSecret);
+
+        // The state under test, pinned: the row still EXISTS (so every public read says the webhook is
+        // healthy) but the value cannot be recovered.
+        Assert.True(Assert.Single(await store.ListAsync()).Webhook!.HasSigningSecret);
+        Assert.Null(await store.GetSecretAsync(
+            NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret));
+
+        var warnings = new List<string>();
+        using var channel = NewChannel(store, warnings);
+        await channel.DispatchAsync(MakeJob());
+
+        // Nothing was sent — an unsigned delivery would have been worse than none.
+        Assert.Empty(server.Requests);
+
+        var stats = channel.Stats;
+        Assert.Equal(1, stats.Lost);
+        Assert.Equal(0, stats.Delivered);
+        Assert.Equal(0, stats.Attempts);
+        Assert.Equal(0, stats.Unsigned); // NOT "unsigned by configuration" — that counter must stay clean
+
+        var warning = Assert.Single(warnings);
+        Assert.Contains("signing secret", warning, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("UNSIGNED", warning, StringComparison.Ordinal);
+        Assert.Contains("NOT", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain(SigningSentinel, warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The other side of I-1, so the fix cannot have been "always fail when unsigned": a webhook
+    /// with NO signing secret row still delivers, unsigned, and counts it. That is the Slack/Teams case and
+    /// it must stay working.</summary>
+    [Fact]
+    public async Task NoSigningSecretRowAtAll_StillDeliversUnsigned_TheFixDoesNotBreakSlack()
+    {
+        await using var server = WebhookLoopbackServer.Start(new ScriptedResponse(200));
+        var store = NewStore();
+        Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, server.Url()));
+
+        var warnings = new List<string>();
+        using var channel = NewChannel(store, warnings);
+        await channel.DispatchAsync(MakeJob());
+
+        Assert.Single(server.Requests);
+        Assert.Equal(1, channel.Stats.Delivered);
+        Assert.Equal(1, channel.Stats.Unsigned);
+        Assert.Equal(0, channel.Stats.Lost);
+        Assert.Empty(warnings);
+    }
+
+    /// <summary>
+    /// 🔴 Review round 1 (M-1) — a webhook that is listed as configured but cannot be read back is a LOSS,
+    /// not a suppression.
+    ///
+    /// <para><c>GetWebhookAsync</c> returns null both when the instance was deleted in the instant between
+    /// the two reads and when the read itself failed (the store is never-throws, so a fault reads as
+    /// "unconfigured"). Only the first is "the operator's configuration working", which is what
+    /// <c>Suppressed</c> is documented to mean.</para>
+    ///
+    /// <para>Reproduced deterministically by deleting the <c>webhook_config</c> side row while leaving the
+    /// <c>notification_channels</c> row — a state the LEFT JOIN in <c>ListAsync</c> still reports as a
+    /// configured Webhook channel while the INNER JOIN in <c>GetWebhookAsync</c> cannot resolve.</para>
+    /// </summary>
+    [Fact]
+    public async Task AWebhookListedButNotReadableBack_IsCountedAsLost_NotSuppressed()
+    {
+        var store = NewStore();
+        Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, "https://mes.plant/hook"));
+
+        ExecuteSql(store, "DELETE FROM webhook_config;");
+        Assert.Null(await store.GetWebhookAsync());
+
+        var warnings = new List<string>();
+        using var channel = NewChannel(store, warnings);
+        await channel.DispatchAsync(MakeJob());
+
+        var stats = channel.Stats;
+        Assert.Equal(1, stats.Lost);
+        Assert.Equal(0, stats.Suppressed);
+        Assert.Equal(0, stats.Attempts);
+
+        var warning = Assert.Single(warnings);
+        Assert.Contains("could not be read back", warning, StringComparison.Ordinal);
+        Assert.Contains("NOT", warning, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴 Review round 1 (M-6) — the class claims it never reads the receiver's response body, because an
+    /// echoing or misconfigured endpoint would reflect our own auth header back into a log file that
+    /// outlives the socket. Nothing pinned it: the loopback server always answered with an empty body.
+    ///
+    /// <para>The control is what makes this sharp rather than a tautology. Sentinel A goes in the REASON
+    /// PHRASE, which the channel does read and does log; sentinel B goes in the BODY. A appearing proves the
+    /// response really arrived and was parsed; B being absent is then about the body specifically, and not
+    /// about the response having been ignored wholesale.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheReceiversResponseBody_IsNeverReadIntoALog_WhileItsReasonPhraseIs()
+    {
+        const string reasonSentinel = "REASON-2b91";
+        const string bodySentinel = "BODYECHO-do-not-leak-3c77";
+
+        await using var server = WebhookLoopbackServer.Start(new ScriptedResponse(
+            400, reasonSentinel, Body: $"{{\"echoed\":\"{bodySentinel}\"}}"));
+
+        var store = NewStore();
+        Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, server.Url()));
+
+        var warnings = new List<string>();
+        var errors = new List<(Exception Cause, string Message)>();
+        using var channel = NewChannel(store, warnings, errors);
+        await channel.DispatchAsync(MakeJob());
+
+        var logged = string.Join("\n", warnings.Concat(errors.Select(e => e.Message + "\n" + e.Cause)));
+
+        Assert.Single(server.Requests);
+        Assert.Equal(1, channel.Stats.Lost);
+        Assert.Contains(reasonSentinel, logged, StringComparison.Ordinal);      // the control
+        Assert.DoesNotContain(bodySentinel, logged, StringComparison.Ordinal);  // the rule
+    }
+
+    /// <summary>🔴 Review round 1 (M-2) — the reason phrase is the one piece of receiver-controlled text
+    /// that reaches a log line, so it is bounded. An untrusted party does not get to choose how much of an
+    /// operator's log file it occupies.</summary>
+    [Fact]
+    public async Task AnAbsurdlyLongReasonPhrase_IsTruncatedBeforeItReachesALog()
+    {
+        var absurd = new string('R', 4000);
+        await using var server = WebhookLoopbackServer.Start(new ScriptedResponse(400, absurd));
+
+        var store = NewStore();
+        Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, server.Url()));
+
+        var warnings = new List<string>();
+        using var channel = NewChannel(store, warnings);
+        await channel.DispatchAsync(MakeJob());
+
+        var warning = Assert.Single(warnings);
+        Assert.DoesNotContain(absurd, warning, StringComparison.Ordinal);
+        // Non-vacuity: it really did come back with that phrase, and a bounded prefix of it IS reported —
+        // so this is truncation, not the phrase having been dropped altogether.
+        Assert.Contains(new string('R', 80), warning, StringComparison.Ordinal);
+        Assert.DoesNotContain(new string('R', 81), warning, StringComparison.Ordinal);
+        Assert.True(warning.Length < 700, $"the warning grew to {warning.Length} characters.");
+    }
+
+    /// <summary>
+    /// 🔴 Review round 1 (I-2) — the PREMISE the channel's post-read cancellation guards rest on, pinned
+    /// so it cannot quietly stop being true.
+    ///
+    /// <para><see cref="NotificationConfigStore"/> is never-throws, which means a read cancelled by shutdown
+    /// comes back as <see langword="null"/> — <b>indistinguishable from "no secret is stored"</b>. The
+    /// channel acts on that null by reporting a MISSING CREDENTIAL and counting a loss, so without a
+    /// <c>ThrowIfCancellationRequested()</c> immediately after every read, a shutdown in that window tells
+    /// an operator their token is missing when it is not, moves the wrong counter, and — because the
+    /// <see cref="OperationCanceledException"/> never propagates — is recorded by C-1's drain loop as a
+    /// successful dispatch.</para>
+    ///
+    /// <para>The channel's fix is a choke point (<c>ReadSecretAsync</c>), not a rule at two call sites. The
+    /// exact interleaving cannot be forced from outside without adding a production seam that exists only
+    /// for a test, so this test pins the store behaviour that makes the guard necessary: if C-2's store ever
+    /// started propagating cancellation, this turns red and the guard's justification can be revisited
+    /// deliberately rather than being carried as folklore.</para>
+    /// </summary>
+    [Fact]
+    public async Task ACancelledSecretRead_ComesBackAsNull_NotAsAnException_WhichIsWhyTheChannelGuards()
+    {
+        var store = NewStore();
+        Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, "https://mes.plant/hook"));
+        Assert.True(await store.SetSecretAsync(
+            NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret, SigningSentinel));
+
+        // The secret really is there and really is readable...
+        Assert.Equal(SigningSentinel, await store.GetSecretAsync(
+            NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret));
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // ...and yet a cancelled read is reported as "there is no such secret", with no exception at all.
+        // That is the whole trap.
+        var underCancellation = await store.GetSecretAsync(
+            NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret, ct: cts.Token);
+        Assert.Null(underCancellation);
+
+        // Same for the configuration read the channel guards on the line after it.
+        Assert.Null(await store.GetWebhookAsync(ct: cts.Token));
     }
 
     /// <summary>The shipped budgets are what the report and the docs claim. Every other test in this file

@@ -28,21 +28,35 @@ public static class WebhookContract
     /// one endpoint switches on this rather than guessing from the shape.</summary>
     public const string EventType = "st4i.alarm.edge";
 
-    /// <summary>Hex-encoded HMAC-SHA256 of the signed material, prefixed with the scheme tag
-    /// <c>v1=</c>. Absent entirely when no signing secret is configured — see
-    /// <see cref="WebhookSigner"/>.</summary>
+    /// <summary>
+    /// Hex-encoded HMAC-SHA256 of the signed material, prefixed with the scheme tag <c>v1=</c>. Absent
+    /// entirely when no signing secret is configured — see <see cref="WebhookSigner"/>.
+    ///
+    /// <para>🔴 <b>THE AUTHENTICATION BOUNDARY, stated once so every other header can point at it.</b> The
+    /// signature covers exactly <see cref="TimestampHeader"/> and the raw body. <b>Every other header —
+    /// <see cref="DeliveryHeader"/>, <see cref="EventHeader"/>, <c>Content-Type</c>, the operator's auth
+    /// header — is UNAUTHENTICATED.</b> Signing timestamp-plus-body is deliberate and is what Slack and
+    /// Stripe do; the consequence that must be documented rather than discovered is that a captured request
+    /// can be replayed inside the tolerance window with <see cref="DeliveryHeader"/> rewritten to an unused
+    /// value and <see cref="EventHeader"/> flipped, and it will still verify. So a receiver that dedups on
+    /// the header has no replay defence, and one that filters on the header has an attacker-controlled
+    /// filter. Any decision that must be trustworthy reads the BODY, after verifying it.</para>
+    /// </summary>
     public const string SignatureHeader = "X-ST4I-Signature";
 
     /// <summary>Unix time in SECONDS at the moment this attempt was built. Part of the signed material, so
     /// it cannot be altered by whoever captured the request. Absent when unsigned.</summary>
     public const string TimestampHeader = "X-ST4I-Timestamp";
 
-    /// <summary>The delivery identifier, duplicated from the body so a receiver can dedup without parsing
-    /// JSON. STABLE across every retry of the same notification to the same webhook instance.</summary>
+    /// <summary>🔴 An <b>UNSIGNED</b> copy of <see cref="WebhookPayload.DeliveryId"/>, for cheap
+    /// pre-filtering only — see the boundary warning on <see cref="SignatureHeader"/>. A receiver must
+    /// dedup on the value in the BODY.</summary>
     public const string DeliveryHeader = "X-ST4I-Delivery";
 
-    /// <summary>The <see cref="AlarmEdgeKind"/>, duplicated from the body so a receiver can route (or
-    /// cheaply drop <see cref="AlarmEdgeKind.Restored"/>) without parsing JSON.</summary>
+    /// <summary>🔴 An <b>UNSIGNED</b> copy of <see cref="WebhookPayloadEdge.Kind"/>, so a proxy or router
+    /// can shed obvious work (dropping <see cref="AlarmEdgeKind.Restored"/>, say) before paying for a JSON
+    /// parse. For cheap pre-filtering only — see the boundary warning on <see cref="SignatureHeader"/>.
+    /// Any filter that must be trustworthy reads the BODY.</summary>
     public const string EventHeader = "X-ST4I-Event";
 
     /// <summary>The scheme tag on <see cref="SignatureHeader"/>. A tag rather than a bare hex digest so a

@@ -11,10 +11,13 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// <param name="Status">The HTTP status code to return.</param>
 /// <param name="Reason">The reason phrase, which the channel reports in its failure message.</param>
 /// <param name="Headers">Extra response headers, e.g. <c>Retry-After</c> or <c>Location</c>.</param>
+/// <param name="Body">Review round 1 (M-6) — a response BODY. The channel documents that it never reads
+/// one; without the ability to send one, nothing pinned that claim.</param>
 internal sealed record ScriptedResponse(
     int Status,
     string Reason = "Scripted",
-    IReadOnlyList<(string Name, string Value)>? Headers = null);
+    IReadOnlyList<(string Name, string Value)>? Headers = null,
+    string? Body = null);
 
 /// <summary>
 /// 🔴 Task C-3 — a REAL in-process HTTP/1.1 receiver for the webhook tests, on a raw
@@ -200,17 +203,20 @@ internal sealed class WebhookLoopbackServer : IAsyncDisposable
     private static async Task WriteResponseAsync(
         NetworkStream stream, ScriptedResponse response, CancellationToken ct)
     {
+        var body = Encoding.UTF8.GetBytes(response.Body ?? "");
+
         var head = new StringBuilder();
         head.Append($"HTTP/1.1 {response.Status} {response.Reason}\r\n");
         foreach (var (name, value) in response.Headers ?? Array.Empty<(string, string)>())
         {
             head.Append($"{name}: {value}\r\n");
         }
-        // Content-Length: 0 plus Connection: close keeps framing unambiguous without keep-alive
-        // bookkeeping; the channel deliberately never reads a response body anyway.
-        head.Append("Content-Length: 0\r\nConnection: close\r\n\r\n");
+        // An explicit Content-Length plus Connection: close keeps framing unambiguous without keep-alive
+        // bookkeeping.
+        head.Append($"Content-Length: {body.Length}\r\nConnection: close\r\n\r\n");
 
         await stream.WriteAsync(Encoding.ASCII.GetBytes(head.ToString()), ct).ConfigureAwait(false);
+        if (body.Length > 0) await stream.WriteAsync(body, ct).ConfigureAwait(false);
         await stream.FlushAsync(ct).ConfigureAwait(false);
     }
 

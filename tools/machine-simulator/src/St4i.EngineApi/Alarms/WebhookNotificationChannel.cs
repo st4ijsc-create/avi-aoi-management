@@ -37,9 +37,12 @@ namespace St4i.EngineApi.Alarms;
 /// above <c>Delivered + Lost</c> means the receiver is flaky.</param>
 /// <param name="Retries">The subset of <paramref name="Attempts"/> that were not the first try for their
 /// delivery.</param>
-/// <param name="Unsigned">Attempts sent with no <c>X-ST4I-Signature</c> because no signing secret is
-/// configured for that instance. Legitimate for Slack/Teams (the URL is the credential), and worth being
-/// able to see for anything else — see <see cref="WebhookSigner"/>.</param>
+/// <param name="Unsigned">Attempts sent with no <c>X-ST4I-Signature</c>, which after review round 1 (I-1)
+/// can only mean ONE thing: no signing secret is configured for that instance. Legitimate for Slack/Teams
+/// (the URL is the credential there), and worth being able to see for anything else — see
+/// <see cref="WebhookSigner"/>. It deliberately does NOT cover "a signing secret is configured but its key
+/// could not be decrypted": that is a channel that has stopped proving its identity, it is counted under
+/// <paramref name="Lost"/>, and nothing is sent.</param>
 public sealed record WebhookChannelStats(
     long Considered,
     long Suppressed,
@@ -327,7 +330,7 @@ public sealed class WebhookNotificationChannel : IDisposable
             // exact silent-loss shape C-1's review found twice.
             ct.ThrowIfCancellationRequested();
 
-            var instances = new List<string>();
+            var instances = new List<(string Instance, bool HasSigningSecret)>();
             foreach (var summary in configured)
             {
                 if (summary.Channel != NotificationChannel.Webhook) continue;
@@ -342,13 +345,18 @@ public sealed class WebhookNotificationChannel : IDisposable
                     continue;
                 }
 
-                instances.Add(summary.Instance);
+                // 🔴 Review round 1 (I-1) — HasSigningSecret is carried forward from here because it is the
+                // ONLY thing that can tell "no secret is configured" from "a secret is configured and its
+                // blob will not decrypt". It is derived from the PRESENCE of a row, never from reading the
+                // value, whereas GetSecretAsync returns null for both. See DeliverAsync.
+                instances.Add((summary.Instance, summary.Webhook?.HasSigningSecret == true));
             }
 
             if (instances.Count == 0) return;
 
             fannedOut = true;
-            await Task.WhenAll(instances.Select(instance => DeliverAndCountAsync(instance, job, ct)))
+            await Task.WhenAll(instances.Select(target =>
+                    DeliverAndCountAsync(target.Instance, target.HasSigningSecret, job, ct)))
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -373,12 +381,13 @@ public sealed class WebhookNotificationChannel : IDisposable
 
     /// <summary>🔴 The accounting choke point: exactly one counter moves per (notification, instance)
     /// pair, and every path through <see cref="DeliverAsync"/> ends at this switch.</summary>
-    private async Task DeliverAndCountAsync(string instance, NotificationJob job, CancellationToken ct)
+    private async Task DeliverAndCountAsync(
+        string instance, bool hasSigningSecret, NotificationJob job, CancellationToken ct)
     {
         DeliveryOutcome outcome;
         try
         {
-            outcome = await DeliverAsync(instance, job, ct).ConfigureAwait(false);
+            outcome = await DeliverAsync(instance, hasSigningSecret, job, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -404,15 +413,42 @@ public sealed class WebhookNotificationChannel : IDisposable
     }
 
     /// <summary>Resolves one instance's configuration and credentials, then posts. Never throws except on
-    /// a genuine shutdown.</summary>
-    private async Task<DeliveryOutcome> DeliverAsync(string instance, NotificationJob job, CancellationToken ct)
+    /// a genuine shutdown.
+    ///
+    /// <para>🔴 <b>Every read of <see cref="NotificationConfigStore"/> in this method is followed
+    /// immediately by <c>ct.ThrowIfCancellationRequested()</c></b> — for the secret reads, structurally, via
+    /// <see cref="ReadSecretAsync"/>. That store is never-throws, so a read cancelled by shutdown returns
+    /// "nothing is stored" rather than an exception; without the guard, a shutdown landing in that window
+    /// is reported to the operator as a MISSING CREDENTIAL, counted as <c>Lost</c> instead of
+    /// <c>Cancelled</c>, and — because the <see cref="OperationCanceledException"/> never propagates —
+    /// counted by C-1's drain loop as <b>Dispatched, i.e. delivered</b>. Review round 1 (I-2) found exactly
+    /// that on the auth-token read.</para></summary>
+    /// <param name="hasSigningSecret">Whether a signing secret ROW exists for this instance, from the
+    /// credential-free summary. See the I-1 comment below: this is the only way to distinguish "unsigned by
+    /// configuration" from "unsigned because the key would not decrypt".</param>
+    private async Task<DeliveryOutcome> DeliverAsync(
+        string instance, bool hasSigningSecret, NotificationJob job, CancellationToken ct)
     {
         var config = await _store.GetWebhookAsync(instance, ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
 
-        // Deleted between the list and this read, or unreadable. Not a loss of THIS notification so much as
-        // a destination that is no longer configured.
-        if (config is null) return DeliveryOutcome.Suppressed;
+        if (config is null)
+        {
+            // 🔴 Review round 1 (M-1) — this used to be Suppressed, and that was the wrong bucket.
+            // GetWebhookAsync returns null for TWO different things: the instance was deleted between the
+            // list read above and this one, and the read FAILED (never-throws, so a fault reads as
+            // "unconfigured"). Only the first is "the operator's configuration working", which is what
+            // Suppressed is documented to mean; the second is a real lost notification. They cannot be told
+            // apart here, so this follows the rule the rest of this class follows — over-reporting a loss
+            // is strictly safer than under-reporting one — and says both possibilities out loud rather than
+            // picking one. The deletion race needs a DELETE to land between two reads inside one dispatch;
+            // a store fault does not.
+            ReportWarning($"Alarm webhook '{instance}' could not be read back after it was listed as " +
+                          "configured — it was either deleted in the last instant, or its configuration " +
+                          $"store could not be read. The notification {job.Edge} '{job.Alarm.Key}' was NOT " +
+                          "sent to it.");
+            return DeliveryOutcome.Lost;
+        }
 
         // 🔴 The authoritative gate, taken on the full configuration through the one shared helper
         // (NotificationDelivery.Delivers) rather than re-derived here — AlarmPriority is declared
@@ -436,17 +472,44 @@ public sealed class WebhookNotificationChannel : IDisposable
             return DeliveryOutcome.Lost;
         }
 
-        var signingSecret = await _store
-            .GetSecretAsync(NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret, instance, ct)
-            .ConfigureAwait(false);
+        var signingSecret = await ReadSecretAsync(
+            NotificationSecretNames.WebhookSigningSecret, instance, ct).ConfigureAwait(false);
+
+        if (hasSigningSecret && string.IsNullOrEmpty(signingSecret))
+        {
+            // 🔴 Review round 1 (I-1) — the case that used to SILENTLY DOWNGRADE to an unsigned POST.
+            //
+            // GetSecretAsync is never-throws and returns null for both "no secret stored" and "the DPAPI
+            // blob would not decrypt" — which is exactly what a notifications.db copied from another
+            // machine looks like. Signing with a null key is not an error in WebhookSigner; it means
+            // "send unsigned". So the machine quietly stopped proving its identity, delivered anyway,
+            // counted a success, warned nobody, and the config API went on reporting HasSigningSecret =
+            // true. Against a signature-enforcing receiver every alarm then 401s; against a permissive one
+            // this ships unauthenticated alarm traffic indefinitely.
+            //
+            // The row's PRESENCE (hasSigningSecret, from the credential-free summary) is what separates the
+            // two, and this is now the exact inverse of nothing: it mirrors the unreadable-URL case above,
+            // for the same reason — a channel that cannot do what it is configured to do must not look
+            // healthy.
+            //
+            // Narrow accepted window: an operator deleting the signing secret between the list read and
+            // this one gets one spurious Lost, then healthy unsigned delivery from the next notification
+            // onwards. Erring toward Lost is this class's stated rule.
+            ReportWarning($"Alarm webhook {identity} has a signing secret stored, but it could not be read " +
+                          "(the encrypted key is unreadable on this machine — typically a notifications.db " +
+                          "copied from another host). Sending UNSIGNED would silently stop this machine " +
+                          $"proving its identity, so the notification {job.Edge} '{job.Alarm.Key}' was NOT " +
+                          "sent. Re-save the signing secret to repair it, or remove it to send unsigned " +
+                          "deliberately.");
+            return DeliveryOutcome.Lost;
+        }
 
         string? authToken = null;
         var authHeaderName = config.AuthHeaderName;
         if (!string.IsNullOrWhiteSpace(authHeaderName))
         {
-            authToken = await _store
-                .GetSecretAsync(NotificationChannel.Webhook, NotificationSecretNames.WebhookAuthToken, instance, ct)
-                .ConfigureAwait(false);
+            authToken = await ReadSecretAsync(
+                NotificationSecretNames.WebhookAuthToken, instance, ct).ConfigureAwait(false);
 
             if (!WebhookAuthHeader.IsValidValue(authToken))
             {
@@ -465,6 +528,30 @@ public sealed class WebhookNotificationChannel : IDisposable
 
         return await SendWithRetriesAsync(
             url, identity, job, instance, signingSecret, authHeaderName, authToken, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 🔴 Review round 1 (I-2) — the ONE way this class reads a secret, and the reason it is a method
+    /// rather than two call sites.
+    ///
+    /// <para><see cref="NotificationConfigStore.GetSecretAsync"/> is never-throws: a read cancelled by
+    /// shutdown comes back as <see langword="null"/>, indistinguishable from "no secret is stored". Both
+    /// callers act on that null by reporting a MISSING CREDENTIAL and returning <c>Lost</c> — so a shutdown
+    /// landing in that window told the operator their token was missing when it was not, moved the wrong
+    /// counter, and, because the <see cref="OperationCanceledException"/> never propagated, was recorded by
+    /// C-1's drain loop as a successful dispatch. The guard used to live after both reads, where an early
+    /// <c>return</c> could step around it — and did. Putting it here makes "a cancelled secret read is a
+    /// cancellation, not a missing secret" true by construction, including for whatever secret C-7 or a
+    /// later channel adds.</para>
+    /// </summary>
+    private async Task<string?> ReadSecretAsync(string name, string instance, CancellationToken ct)
+    {
+        var secret = await _store
+            .GetSecretAsync(NotificationChannel.Webhook, name, instance, ct)
+            .ConfigureAwait(false);
+
+        ct.ThrowIfCancellationRequested();
+        return secret;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -540,12 +627,13 @@ public sealed class WebhookNotificationChannel : IDisposable
                         // every other notification is waiting on.
                         ReportWarning(
                             $"Alarm webhook {identity} was REJECTED with HTTP {status} " +
-                            $"({response.ReasonPhrase}) — a permanent rejection, so it was not retried. " +
+                            $"({SafeReason(response.ReasonPhrase)}) — a permanent rejection, so it was not " +
+                            "retried. " +
                             $"The notification {job.Edge} '{job.Alarm.Key}' is lost." + PermanentHint(status));
                         return DeliveryOutcome.Lost;
                     }
 
-                    failure = $"HTTP {status} ({response.ReasonPhrase})";
+                    failure = $"HTTP {status} ({SafeReason(response.ReasonPhrase)})";
                     cause = null;
                     retryAfter = ReadRetryAfter(response, _clock());
                     verdict = AttemptVerdict.Retryable;
@@ -633,6 +721,26 @@ public sealed class WebhookNotificationChannel : IDisposable
     }
 
     private string BudgetElapsed() => $"the {_totalBudget.TotalSeconds:0.#}s delivery budget elapsed";
+
+    /// <summary>
+    /// 🔴 Review round 1 (M-2) — the reason phrase is the ONE piece of receiver-controlled text this class
+    /// puts in a log line, so it is bounded before it gets there.
+    ///
+    /// <para>It cannot carry a CR or LF (neither survives HTTP/1.1 status-line framing, and HTTP/2 has no
+    /// reason phrase at all), so this is not log injection — it is an untrusted party choosing how much of
+    /// an operator's log file to occupy, once per failed attempt. Eighty characters is more than any real
+    /// phrase ("Service Unavailable" is nineteen) and is a bound rather than a judgement about what a
+    /// receiver ought to send.</para>
+    /// </summary>
+    private const int MaxReasonPhraseLength = 80;
+
+    private static string SafeReason(string? reasonPhrase)
+    {
+        if (string.IsNullOrEmpty(reasonPhrase)) return "no reason phrase";
+        return reasonPhrase.Length <= MaxReasonPhraseLength
+            ? reasonPhrase
+            : reasonPhrase[..MaxReasonPhraseLength] + "…";
+    }
 
     /// <summary>Extra guidance for the permanent statuses whose cause an operator can actually act on —
     /// the difference between "the webhook is broken" and a support call.</summary>
