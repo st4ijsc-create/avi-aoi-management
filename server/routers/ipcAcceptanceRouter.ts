@@ -13,6 +13,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import {
@@ -34,10 +35,7 @@ export const ipcAcceptanceRouter = router({
     .query(async ({ input }) => {
       const defect = await db.getDefectCatalogByCode(input.code);
       if (!defect) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `Defect code not found: ${input.code}`,
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "defectCatalogCode" }, `Defect code not found: ${input.code}`);
       }
       const resolved = resolveDefectForClass(
         defect as unknown as DefectRow,

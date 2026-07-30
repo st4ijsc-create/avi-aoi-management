@@ -81,7 +81,7 @@ export const inspectionRouter = router({
     .query(async ({ input }) => {
       const inspection = await db.getProductInspectionById(input.id);
       if (!inspection) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Inspection not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
       }
       
       const measurements = await db.getMeasurementResultsByInspection(input.id);
@@ -98,7 +98,7 @@ export const inspectionRouter = router({
     .mutation(async ({ input, ctx }) => {
       const inspection = await db.getProductInspectionById(input.id);
       if (!inspection) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Inspection not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'inspection' }, 'Inspection not found');
       }
       if (inspection.originalResult !== 'NG') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only NG results can be marked as NTF' });
@@ -432,7 +432,7 @@ export const measurementResultRouter = router({
     .query(async ({ input }) => {
       const result = await db.getMeasurementResultById(input.id);
       if (!result) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
       
       // Get point definition for reference image
@@ -734,7 +734,7 @@ Respond in JSON format:
       // Get the measurement result
       const result = await db.getMeasurementResultById(input.id);
       if (!result) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
       // W7-B (doc 27 V2): capture the pre-update verdict for the harvest below.
       const originalResult = result.result;
@@ -811,7 +811,7 @@ Respond in JSON format:
 
       const result = await db.getMeasurementResultById(input.id);
       if (!result) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementResult' }, 'Measurement result not found');
       }
 
       // Only NG (or NTF) results should carry a defect classification.
@@ -825,7 +825,7 @@ Respond in JSON format:
       if (input.defectCatalogId !== null) {
         const entry = await db.getDefectCatalogById(input.defectCatalogId);
         if (!entry) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Defect catalog code not found' });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'defectCatalogCode' }, 'Defect catalog code not found');
         }
         defectSeverity = entry.severity ?? null;
         defectCode = entry.code;
@@ -860,7 +860,7 @@ Respond in JSON format:
     .query(async ({ input }) => {
       const productModel = await db.getProductModelById(input.productModelId);
       if (!productModel) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Product model not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'productModel' }, 'Product model not found');
       }
       const stats = await db.getMeasurementPointStatsByProduct({
         productModelId: input.productModelId,

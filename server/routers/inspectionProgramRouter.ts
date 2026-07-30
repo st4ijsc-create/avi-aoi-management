@@ -16,6 +16,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import {
@@ -54,7 +55,7 @@ export const inspectionProgramRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const row = await getReleaseById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Bản phát hành không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "programRelease" }, "Bản phát hành không tồn tại.");
       return row;
     }),
 

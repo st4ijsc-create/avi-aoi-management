@@ -34,6 +34,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, publicProcedure, protectedProcedure, adminProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { licenseService } from "../license/license-service";
@@ -596,7 +597,7 @@ const adminLicenseRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const license = await db.getLicenseById(input.id);
-      if (!license) throw new TRPCError({ code: 'NOT_FOUND', message: 'License không tồn tại' });
+      if (!license) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'license' }, 'License không tồn tại');
       return license;
     }),
 

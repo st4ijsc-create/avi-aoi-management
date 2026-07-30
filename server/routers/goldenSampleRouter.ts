@@ -23,6 +23,7 @@
 import { z } from "zod";
 import fs from "fs";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, qualityProcedure } from "../_core/trpc";
 import {
   resolveActiveReference,
@@ -314,7 +315,7 @@ export const goldenSampleRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const m = await db.getMeasurementResultById(input.measurementResultId);
-      if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "Measurement result not found" });
+      if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementResult" }, "Measurement result not found");
       if (m.result !== "OK") {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -322,7 +323,7 @@ export const goldenSampleRouter = router({
         });
       }
       const inspection = await db.getProductInspectionById(m.inspectionId);
-      if (!inspection) throw new TRPCError({ code: "NOT_FOUND", message: "Inspection not found" });
+      if (!inspection) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
       const productCode = inspection.productModel;
       if (!productCode) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Inspection has no product model — cannot key the golden" });
@@ -446,7 +447,7 @@ export const goldenSampleRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {
       const row = await getReferenceById(input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Golden reference not found" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "goldenReference" }, "Golden reference not found");
       return { id: row.id, thumbnailDataUrl: await referenceThumbnailDataUrl(row) };
     }),
 
@@ -462,7 +463,7 @@ export const goldenSampleRouter = router({
     }))
     .mutation(async ({ input }) => {
       const m = await db.getMeasurementResultById(input.measurementResultId);
-      if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "Measurement result not found" });
+      if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementResult" }, "Measurement result not found");
       const inspection = await db.getProductInspectionById(m.inspectionId);
       if (!inspection?.productModel) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Inspection has no product model — cannot resolve a golden" });

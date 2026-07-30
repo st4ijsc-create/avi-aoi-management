@@ -2,6 +2,7 @@ import { publicProcedure, protectedProcedure, router, roleProcedure } from "../_
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { nanoid } from "nanoid";
 import * as db from "../db";
 import { storagePut } from "../storage";
@@ -866,7 +867,7 @@ export const machineRouter = router({
     }))
     .query(async ({ input }) => {
       const machine = await db.getMachineBySerialNumber(input.serialNumber);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found. Please call register first." });
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found. Please call register first.");
 
       const station = await db.getStationById(machine.stationId);
       const line = await db.getLineByStationId(machine.stationId);
@@ -924,7 +925,7 @@ export const machineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const machine = await db.getMachineById(input.id);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
 
       // M7: the admin may normalise the code at approval — pre-check it against
       // ACTIVE machines so the rename fails as a clean CONFLICT, not a raw 500.
@@ -1051,7 +1052,7 @@ export const machineRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const machine = await db.getMachineById(input.id);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       if (machine.registrationStatus !== "approved") {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -1494,7 +1495,7 @@ export const machineRouter = router({
       let capabilitiesValidation: ReturnType<typeof toStamp> | null | undefined;
       if (capabilities !== undefined) {
         if (!before) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
         }
         if (capabilities === null) {
           capabilitiesValidation = null; // cleared payload → cleared stamp
@@ -1533,7 +1534,7 @@ export const machineRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const machine = await db.getMachineById(input.id);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       const nodes = await loadDeviceTypeNodes();
       const fresh = validateCapabilities(machine.machineType, (machine as { capabilities?: unknown }).capabilities ?? null, nodes);
       return {
@@ -1629,7 +1630,7 @@ export const machineRouter = router({
           throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
         }
         if (e instanceof Error && e.message === "Machine not found") {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
         }
         throw e;
       }
@@ -1671,7 +1672,7 @@ export const machineRouter = router({
           throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
         }
         if (e instanceof Error && e.message === "Machine not found") {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
         }
         throw e;
       }
@@ -1716,7 +1717,7 @@ export const machineRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const machine = await db.getMachineById(input.id);
-      if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: "Machine not found" });
+      if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       const current = ((machine as { lifecycleStatus?: string }).lifecycleStatus ?? "active") as keyof typeof MACHINE_LIFECYCLE_TRANSITIONS;
       return {
         current,

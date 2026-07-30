@@ -45,7 +45,7 @@ export const inspectionVariantRouter = router({
     .query(async ({ input }) => {
       const insp = await (db as any).getProductInspectionById?.(input.inspectionId);
       if (!insp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Inspection not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
       }
       return {
         inspectionId: insp.id,
@@ -63,7 +63,7 @@ export const inspectionVariantRouter = router({
     .mutation(async ({ input }) => {
       const insp = await (db as any).getProductInspectionById?.(input.inspectionId);
       if (!insp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Inspection not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
       }
       const v = validatePayload(input.inspectionType, input.payload);
       if (!v.ok) {

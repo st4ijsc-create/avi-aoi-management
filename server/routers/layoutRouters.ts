@@ -1,6 +1,7 @@
 import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { requirePermission } from "../_core/accessControl";
 
@@ -23,7 +24,7 @@ export const layoutRouter = router({
     .query(async ({ input }) => {
       const layout = await db.getFactoryLayoutById(input.id);
       if (!layout) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'factoryLayout' }, 'Layout not found');
       }
       
       const positions = await db.getMachinePositionsByLayout(input.id);
@@ -59,7 +60,7 @@ export const layoutRouter = router({
       const { id, ...data } = input;
       const existing = await db.getFactoryLayoutById(id);
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'factoryLayout' }, 'Layout not found');
       }
       await db.updateFactoryLayout(id, data);
       return { success: true };
@@ -71,7 +72,7 @@ export const layoutRouter = router({
     .mutation(async ({ input }) => {
       const existing = await db.getFactoryLayoutById(input.id);
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'factoryLayout' }, 'Layout not found');
       }
       await db.deleteFactoryLayout(input.id);
       return { success: true };

@@ -91,7 +91,7 @@ export const interlockRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       const [row] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
       return row;
     }),
 
@@ -125,7 +125,7 @@ export const interlockRouter = router({
       const db = await getDb();
       const { id, threshold, ...rest } = input;
       const [existing] = await db.select().from(interlockRules).where(eq(interlockRules.id, id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
       const patch: Record<string, unknown> = { ...rest, updatedAt: new Date(), updatedBy: ctx.user.id };
       if (threshold !== undefined) patch.threshold = threshold != null ? String(threshold) : null;
       const [row] = await db.update(interlockRules).set(patch).where(eq(interlockRules.id, id)).returning();
@@ -141,7 +141,7 @@ export const interlockRouter = router({
       const db = await getDb();
       // Ghi audit TRƯỚC khi hard-delete rule an toàn (giữ lại chuỗi bất biến about the deleted rule).
       const [existing] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
       await recordAuditEvent(db, { entityType: "interlock_rule", entityId: input.id, action: "delete", actorId: ctx.user.id, before: existing, after: null });
       await db.delete(interlockRules).where(eq(interlockRules.id, input.id));
       return { success: true };
@@ -155,7 +155,7 @@ export const interlockRouter = router({
       // closing the old inline check that bypassed the 2FA requirement.
       const db = await getDb();
       const [existing] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
       const [row] = await db
         .update(interlockRules)
         .set({ approvedBy: ctx.user.id, approvedAt: new Date(), updatedAt: new Date(), updatedBy: ctx.user.id })
@@ -172,7 +172,7 @@ export const interlockRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       const [existing] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
       // SAFETY: cannot enable a rule that has not been approved.
       if (existing.approvedBy == null) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Rule chưa được duyệt (approvedBy=null) — không thể bật." });
@@ -193,7 +193,7 @@ export const interlockRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       const [existing] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
       const [row] = await db
         .update(interlockRules)
         .set({ enabled: false, updatedAt: new Date(), updatedBy: ctx.user.id })
@@ -230,7 +230,7 @@ export const interlockRouter = router({
         .set({ status: "resolved", resolvedAt: new Date(), resolvedBy: ctx.user.id, notes: input.notes })
         .where(eq(interlockEvents.id, input.id))
         .returning();
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Event không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockEvent" }, "Event không tồn tại.");
       return row;
     }),
 
@@ -249,7 +249,7 @@ export const interlockRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       const [rule] = await db.select().from(interlockRules).where(eq(interlockRules.id, input.id)).limit(1);
-      if (!rule) throw new TRPCError({ code: "NOT_FOUND", message: "Rule không tồn tại." });
+      if (!rule) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
 
       const observed = input.observedValue ?? deriveObserved(rule.sourceType as InterlockSourceType, { series: input.series, scalar: input.observedValue });
       const threshold = rule.threshold != null ? Number(rule.threshold) : null;
