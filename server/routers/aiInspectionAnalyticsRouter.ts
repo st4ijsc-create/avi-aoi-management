@@ -106,7 +106,7 @@ const periodInput = z.object({
 const analyticsRolloutProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   const user = ctx.user;
   if (!user) {
-    throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
   }
 
   const rolloutPercent = getRolloutPercent();
@@ -135,7 +135,7 @@ async function applyAnalyticsScope<T extends { factoryCode?: string; machineId?:
   input: T,
 ): Promise<T> {
   if (!ctx.user) {
-    throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
   }
   enforceAiAnalyticsRateLimit(ctx.user.id);
   const { factoryCode } = await enforceAnalyticsFactoryScope({

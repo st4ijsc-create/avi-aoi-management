@@ -18,6 +18,12 @@ export const APP_ERROR_CODES = [
   "FEATURE_DISABLED",     // params: { feature }
   "OPERATION_FAILED",     // params: { operation }
   "PERMISSION_DENIED",    // params: { action? }
+  "AUTH_REQUIRED",        // params: {} — chưa đăng nhập (ctx.user null), KHÁC FIELD_REQUIRED
+                          // (không phải thiếu một trường nhập) và KHÁC FEATURE_DISABLED.
+                          // Task 7 fix round 1 (I-1).
+  "TWO_FACTOR_NOT_SET_UP", // params: {} — 2FA CHƯA BẬT cho TÀI KHOẢN này, KHÁC FEATURE_DISABLED
+                          // (2FA đang bật toàn hệ thống, chỉ tài khoản này chưa dùng).
+                          // Task 7 fix round 1 (I-2).
 
   // ── Nạp tri thức (KB) — Task 3 ────────────────────────────────────────────
   "KB_FILE_TOO_LARGE",        // params: { limitMb }

@@ -81,7 +81,7 @@ async function applyExecutiveReportReadScope(
   input?: { factoryCode?: string },
 ): Promise<{ factoryCode?: string }> {
   if (!ctx.user) {
-    throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
   }
   enforceAiAnalyticsRateLimit(ctx.user.id);
 
@@ -164,7 +164,7 @@ export const executiveReportRouter = router({
   /** Scheduler + flag status for dashboards. No factory-scoped business data returned. */
   schedulerStatus: protectedProcedure.query(async ({ ctx }) => {
     if (!ctx.user) {
-      throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
+      throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
     }
     enforceAiAnalyticsRateLimit(ctx.user.id);
     return getExecutiveReportSchedulerStatus();

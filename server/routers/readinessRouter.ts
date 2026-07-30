@@ -437,7 +437,7 @@ export function collectFlagMatrix(env: NodeJS.ProcessEnv = process.env): Readine
 const readinessProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   const user = ctx.user;
   if (!user) {
-    throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "login" }, "Login required");
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
   }
   if (user.role === "admin") return next();
   const [sys, ctl] = await Promise.all([

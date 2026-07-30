@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_LEGACY_THROWS = 344; // ← task 7 lô 7/N (INVALID_VALUE, 36 chỗ — lô cuối đợt 3): 380 - 36 = 344
+const ALLOWED_LEGACY_THROWS = 343; // ← task 7 fix round 1 (I-2, migrate thêm userRouters.ts:262 "Chưa thiết lập 2FA" sang TWO_FACTOR_NOT_SET_UP cho nhất quán): 344 - 1 = 343
 
 const ROUTERS_DIR = dirname(fileURLToPath(import.meta.url));
 

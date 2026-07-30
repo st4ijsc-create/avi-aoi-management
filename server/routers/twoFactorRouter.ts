@@ -221,7 +221,7 @@ export const twoFactorRouter = router({
       }
 
       if (!user[0].twoFactorEnabled) {
-        throw appError("BAD_REQUEST", "FEATURE_DISABLED", { feature: "twoFactorAuth" }, "2FA is not enabled");
+        throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", undefined, "2FA is not enabled");
       }
 
       // Try to verify as TOTP first
@@ -307,7 +307,7 @@ export const twoFactorRouter = router({
       }
 
       if (!user[0].twoFactorEnabled || !user[0].twoFactorSecret) {
-        throw appError("BAD_REQUEST", "FEATURE_DISABLED", { feature: "twoFactorAuth" }, "2FA is not enabled for this account");
+        throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", undefined, "2FA is not enabled for this account");
       }
 
       // Try TOTP first
@@ -379,7 +379,7 @@ export const twoFactorRouter = router({
       }
 
       if (!user[0].twoFactorEnabled || !user[0].twoFactorSecret) {
-        throw appError("BAD_REQUEST", "FEATURE_DISABLED", { feature: "twoFactorAuth" }, "2FA is not enabled");
+        throw appError("BAD_REQUEST", "TWO_FACTOR_NOT_SET_UP", undefined, "2FA is not enabled");
       }
 
       // Verify TOTP

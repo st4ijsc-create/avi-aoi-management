@@ -255,7 +255,7 @@ export const userRouter = router({
       // Get user's 2FA secret
       const status = await db.get2FAStatus(ctx.user.id);
       if (!status?.twoFactorSecret) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chưa thiết lập 2FA. Vui lòng thiết lập trước.' });
+        throw appError('BAD_REQUEST', 'TWO_FACTOR_NOT_SET_UP', undefined, 'Chưa thiết lập 2FA. Vui lòng thiết lập trước.');
       }
 
       // Verify token (base32 encoding, ±1 step for clock drift)
@@ -303,7 +303,7 @@ export const userRouter = router({
       // Get 2FA status
       const status = await db.get2FAStatus(ctx.user.id);
       if (!status?.twoFactorEnabled || !status.twoFactorSecret) {
-        throw appError('BAD_REQUEST', 'FEATURE_DISABLED', { feature: 'twoFactorAuth' }, '2FA chưa được bật');
+        throw appError('BAD_REQUEST', 'TWO_FACTOR_NOT_SET_UP', undefined, '2FA chưa được bật');
       }
 
       // Verify token
