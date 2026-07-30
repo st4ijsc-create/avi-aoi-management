@@ -62,9 +62,14 @@ public interface IAlarmNotifier
 /// Task C-1 — the DEFAULT <see cref="IAlarmNotifier"/>: does nothing, allocates nothing, starts no
 /// background loop. <see cref="AlarmStore"/> falls back to this whenever its optional <c>notifier</c>
 /// constructor parameter is <see langword="null"/>, which is every pre-existing construction site in this
-/// repository and (until <c>ST4I_ALARM_NOTIFY_ENABLED</c> is set) the production host as well — so the
-/// alarm engine's behaviour with Đợt C merged is byte-identical to its behaviour before, right down to
-/// not having an extra thread.
+/// repository — every test and every non-host caller that constructs an <see cref="AlarmStore"/> directly.
+///
+/// <para>Task C-2 — the PRODUCTION host is no longer one of them. C-1's <c>ST4I_ALARM_NOTIFY_ENABLED</c>
+/// env gate is DELETED, and <c>Program.cs</c> now registers a real <see cref="AlarmNotifier"/>
+/// unconditionally: a seam that is only sometimes present is a seam that can be configured and then
+/// silently never run. Whether anything is actually DELIVERED is decided by
+/// <see cref="NotificationConfigStore"/> alone — see <see cref="NotificationStartupNotices"/> — never by
+/// whether the notifier object happens to exist.</para>
 /// </summary>
 public sealed class NullAlarmNotifier : IAlarmNotifier
 {

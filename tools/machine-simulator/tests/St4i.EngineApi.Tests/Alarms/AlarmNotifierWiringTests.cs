@@ -36,22 +36,23 @@ public sealed class AlarmNotifierWiringTests
     private const string DeletedEnvGate = "ST4I_ALARM_NOTIFY_ENABLED";
 
     /// <param name="configureAChannel">Whether to persist a notification channel into the throwaway
-    /// notifications directory BEFORE the host is built — the C-2 replacement for C-1's env-var switch.</param>
-    /// <param name="channelEnabled">Whether that channel is enabled. Configured-but-disabled must STILL
-    /// register the seam — see <see cref="NotificationStartupNotices.ShouldRunTheSeam"/>.</param>
+    /// notifications directory BEFORE the host is built. Since review round 1 (I5) this no longer decides
+    /// whether the seam is REGISTERED — it always is — only whether there is anything configured for it to
+    /// deliver to.</param>
     /// <param name="legacyEnvGate">A value for the deleted <c>ST4I_ALARM_NOTIFY_ENABLED</c> variable, to
     /// prove it is inert.</param>
     private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(
-        bool configureAChannel, string alarmsDir, bool channelEnabled = true, string? legacyEnvGate = null)
+        bool configureAChannel, string alarmsDir, string? legacyEnvGate = null)
     {
         var notificationsDir = Directory.CreateTempSubdirectory("st4i-notifywire-notifications-").FullName;
         if (configureAChannel)
         {
             // A channel an operator configured in some earlier session. Local annunciation is used because
-            // it is the one channel with no side-table configuration of its own, so this seeds the gate
-            // without asserting anything about a channel implementation that does not exist yet.
+            // it is the one channel with no side-table configuration of its own, so this configures
+            // something real without asserting anything about a channel implementation that does not exist
+            // yet.
             var configStore = new NotificationConfigStore(notificationsDir);
-            Assert.True(await configStore.SaveLocalAnnunciationAsync(channelEnabled, AlarmPriority.High)
+            Assert.True(await configStore.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High)
                 .ConfigureAwait(false));
         }
 
@@ -107,19 +108,23 @@ public sealed class AlarmNotifierWiringTests
         }
     }
 
-    /// <summary>🔴 The batch is additive and DEFAULT-OFF: on a fresh install with NO channel configured,
-    /// the notifier is not registered at all — no background drain loop, no hosted service — and the alarm
-    /// store resolves exactly the object graph it resolved before Đợt C. Task C-2 preserves this exactly;
-    /// only the thing being read changed (an empty config store, not an unset env var).</summary>
+    /// <summary>🔴 Task C-2 review round 1 (I5) — the seam is registered UNCONDITIONALLY, so a fresh
+    /// install with NO channel configured still resolves the whole graph. That is the point: there is no
+    /// state in which a later "enable this channel" can fail to take effect because the notifier was never
+    /// built. Nothing is DELIVERED, of course — that is decided by configuration at the point of delivery
+    /// — and the alarm store still raises/re-raises/clears exactly as it did before Đợt C.</summary>
     [Fact]
-    public async Task NothingConfigured_RegistersNoNotifierAtAll_AndTheAlarmStoreStillWorks()
+    public async Task NothingConfigured_StillRegistersTheSeam_AndTheAlarmStoreStillWorks()
     {
         var alarmsDir = Directory.CreateTempSubdirectory("st4i-notifywire-alarms-").FullName;
         var factory = await CreateFactoryAsync(configureAChannel: false, alarmsDir);
         try
         {
-            Assert.Null(factory.Services.GetService<IAlarmNotifier>());
-            Assert.Null(factory.Services.GetService<AlarmNotifier>());
+            Assert.NotNull(factory.Services.GetService<IAlarmNotifier>());
+            Assert.NotNull(factory.Services.GetService<AlarmNotifier>());
+
+            // Nothing is wired behind it, so every edge is drained and discarded rather than delivered.
+            Assert.False(factory.Services.GetRequiredService<AlarmNotifier>().Stats.Dispatched > 0);
 
             var store = factory.Services.GetRequiredService<IAlarmStore>();
             var raise = new AlarmRaise(
@@ -178,52 +183,26 @@ public sealed class AlarmNotifierWiringTests
     }
 
     /// <summary>
-    /// 🔴 Task C-2 — a channel that is CONFIGURED but DISABLED still brings the seam up.
+    /// 🔴 Task C-2 — the gate really was COLLAPSED, not merely supplemented.
     ///
-    /// <para>This is the deliberate asymmetry in <see cref="NotificationStartupNotices.ShouldRunTheSeam"/>,
-    /// and it exists to stop the C-1 trap being rebuilt one layer down: if registration depended on
-    /// <c>enabled</c>, an operator (or C-7's endpoint) toggling a channel on would change nothing until
-    /// somebody restarted the process, with no error to explain the silence — the exact shape of failure
-    /// this task was written to remove. Because the seam is already running, only the channel's own flag
-    /// has to change.</para>
+    /// <para>C-1's <c>ST4I_ALARM_NOTIFY_ENABLED</c> is set to <c>"0"</c> here — the value that would
+    /// disable the seam under ANY plausible reintroduction of an env gate, whether opt-in or opt-out — and
+    /// the notifier is registered anyway. Worth its own test because "we deleted the env var" is the kind
+    /// of claim that quietly stops being true: somebody restoring it as a convenience switch would
+    /// reintroduce two disagreeing enable mechanisms, and wrapping the registration in a condition again is
+    /// exactly how that would land. This fails the moment it does.</para>
     /// </summary>
     [Fact]
-    public async Task AConfiguredButDisabledChannel_StillRegistersTheSeam_SoARuntimeEnableNeedsNoRestart()
+    public async Task TheDeletedEnvGate_HasNoEffect_TheSeamRunsRegardless()
     {
         var alarmsDir = Directory.CreateTempSubdirectory("st4i-notifywire-alarms-").FullName;
-        var factory = await CreateFactoryAsync(configureAChannel: true, alarmsDir, channelEnabled: false);
+        var factory = await CreateFactoryAsync(configureAChannel: false, alarmsDir, legacyEnvGate: "0");
         try
         {
-            Assert.NotNull(factory.Services.GetService<AlarmNotifier>());
+            Assert.NotNull(factory.Services.GetService<IAlarmNotifier>());
             Assert.Same(
                 factory.Services.GetRequiredService<AlarmNotifier>(),
                 factory.Services.GetRequiredService<IAlarmNotifier>());
-        }
-        finally
-        {
-            factory.Dispose();
-            try { Directory.Delete(alarmsDir, recursive: true); } catch { /* best-effort */ }
-        }
-    }
-
-    /// <summary>
-    /// 🔴 Task C-2 — the gate really was COLLAPSED, not merely supplemented: C-1's
-    /// <c>ST4I_ALARM_NOTIFY_ENABLED</c> is set to <c>"1"</c> here — the value that used to switch the whole
-    /// seam on — and with no channel configured it does exactly nothing.
-    ///
-    /// <para>Worth its own test because "we deleted the env var" is the kind of claim that quietly stops
-    /// being true: someone restoring the variable as a convenience switch would reintroduce two disagreeing
-    /// enable mechanisms, and this test fails the moment they do.</para>
-    /// </summary>
-    [Fact]
-    public async Task TheDeletedEnvGate_HasNoEffect_ConfigurationIsTheOnlySwitch()
-    {
-        var alarmsDir = Directory.CreateTempSubdirectory("st4i-notifywire-alarms-").FullName;
-        var factory = await CreateFactoryAsync(configureAChannel: false, alarmsDir, legacyEnvGate: "1");
-        try
-        {
-            Assert.Null(factory.Services.GetService<IAlarmNotifier>());
-            Assert.Null(factory.Services.GetService<AlarmNotifier>());
         }
         finally
         {

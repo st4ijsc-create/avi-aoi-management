@@ -27,6 +27,16 @@ public sealed record NotificationStartupNotice(NotificationNoticeSeverity Severi
 /// only enable mechanism in the product, and a channel's own <c>enabled</c> flag is the only switch. Two
 /// enable mechanisms cannot disagree if there is only one.</para>
 ///
+/// <para>🔴 <b>Review round 1 (I5) — the seam is registered UNCONDITIONALLY.</b> C-2 originally registered
+/// <see cref="AlarmNotifier"/> only when at least one channel was configured, preserving C-1's zero-cost
+/// "off means off" and leaving one transition — the first channel ever configured on a host that started
+/// with none — needing a restart, bound only by a doc comment telling C-7 to warn about it. The objection
+/// was to the binding, not the arithmetic: a rule that lives in prose is a rule the next task can miss.
+/// Registering always costs one bounded channel and one idle drain loop, and "bit-for-bit identical when
+/// nothing is configured" is only worth defending if somebody is measuring it. Nobody is. So the entire
+/// class of "configured but never registered" is deleted rather than deferred, and whether anything is
+/// DELIVERED is now decided by configuration alone, at the point of delivery.</para>
+///
 /// <para>🔴 <b>The guarantee, stated as a property rather than a list of cases.</b> Deliveries happen only
 /// when at least one channel is enabled AND this build actually has a delivery implementation behind the
 /// seam. So:</para>
@@ -60,29 +70,6 @@ public static class NotificationStartupNotices
     {
         ArgumentNullException.ThrowIfNull(channels);
         return hasDeliveryImplementation && channels.Any(channel => channel.Enabled);
-    }
-
-    /// <summary>
-    /// Whether the host should register <see cref="AlarmNotifier"/> and its seeding service at all.
-    ///
-    /// <para>Keyed on a channel being CONFIGURED rather than ENABLED, deliberately. A fresh install that
-    /// has never configured anything registers nothing at all — C-1's "off means off" (no background
-    /// thread, no allocation, behaviour bit-for-bit identical to before Đợt C) is preserved exactly for
-    /// the only case where it is worth anything. But once ANY channel exists, the seam runs, so C-7 can
-    /// flip a channel's <c>enabled</c> flag at runtime and have it take effect without a restart. Making
-    /// registration depend on <c>enabled</c> instead would have rebuilt the very trap this task exists to
-    /// remove, one layer down: an operator toggles a channel on, nothing happens, and nothing says
-    /// why.</para>
-    ///
-    /// <para><b>The one transition that still needs a restart</b> is the first channel ever configured, on
-    /// a host that started with none. That is a single, detectable event (the channel list going from
-    /// empty to non-empty) rather than a standing condition, and C-7 owns telling the operator about it —
-    /// noted here so C-7 does not have to rediscover it.</para>
-    /// </summary>
-    public static bool ShouldRunTheSeam(IReadOnlyList<NotificationChannelSummary> channels)
-    {
-        ArgumentNullException.ThrowIfNull(channels);
-        return channels.Count > 0;
     }
 
     /// <summary>Everything the host should say at startup about where alarms will and will not go.</summary>
@@ -146,6 +133,24 @@ public static class NotificationStartupNotices
                     $"The SMTP notification channel is configured with NO transport security (host {smtp.Host}:{smtp.Port}) " +
                     "but has a stored password — that password is sent in clear text over the network on every " +
                     "message. Use STARTTLS, or point this at a relay that does not require authentication."));
+            }
+
+            // 🔴 Review round 1 — port 465 is IMPLICIT TLS (SMTPS): the server expects a TLS handshake the
+            // instant the socket opens. System.Net.Mail.SmtpClient, which C-4 must use, implements only
+            // RFC 3207 STARTTLS and cannot do that in either mode — with StartTls it sends EHLO in the
+            // clear to a server waiting for a ClientHello and the connection hangs until it times out;
+            // with None it gets TLS bytes back and fails to parse them. SmtpTlsMode deliberately has no
+            // ImplicitTls member (offering one would be a promise C-4 could not keep without a forbidden
+            // NuGet), but the enum's silence does not help an operator who simply types the port they were
+            // given. Saying it once per boot does.
+            if (channel.Smtp is { Port: 465 } implicitTls)
+            {
+                notices.Add(new NotificationStartupNotice(
+                    NotificationNoticeSeverity.Warning,
+                    $"The SMTP notification channel is configured on port 465 ({implicitTls.Host}:465), which is " +
+                    "implicit TLS (SMTPS). This product sends mail through System.Net.Mail, which supports only " +
+                    "STARTTLS — it cannot complete a handshake on 465 and the attempt will hang rather than fail " +
+                    "quickly. Use port 587 with STARTTLS, or port 25 on an in-plant relay."));
             }
         }
 

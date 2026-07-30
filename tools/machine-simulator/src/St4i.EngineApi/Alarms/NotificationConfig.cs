@@ -90,6 +90,28 @@ public enum RelayTargetKind
 /// </summary>
 public static class NotificationSecretNames
 {
+    /// <summary>
+    /// 🔴 C-3 — the webhook's destination URL, stored ENCRYPTED rather than as a plain column.
+    ///
+    /// <para><b>Review round 1 (I2) moved it here, and the reasoning is worth keeping.</b> The original
+    /// C-2 shape classified the URL secret-bearing and then stored it in the clear, on the argument that
+    /// its realistic exposure was this product's own read API (which the projection split already covers)
+    /// rather than another local account (which the directory ACL covers). That argument missed the
+    /// residual value DPAPI has OVER the ACL under
+    /// <see cref="System.Security.Cryptography.DataProtectionScope.LocalMachine"/>: <b>machine-binding</b>.
+    /// An ACL protects a file that stays put; it does nothing once <c>notifications.db</c> leaves the
+    /// machine in a backup, a support bundle or a <c>%ProgramData%</c> snapshot. A Slack/Teams incoming
+    /// webhook URL is a bearer capability — whoever holds it can post — so a copied database was handing
+    /// over a working capability while the HMAC signing secret sitting in the very same file was not.
+    /// Two capability-grade values in one file with opposite treatment is not a defensible line.</para>
+    ///
+    /// <para><see cref="WebhookChannelConfig.Endpoint"/> and
+    /// <see cref="WebhookChannelConfig.UrlFingerprint"/> remain plain columns — they are derived,
+    /// non-secret facts ABOUT the URL, and they are what makes the capability's absence from every public
+    /// read survivable for an operator (see <see cref="WebhookChannelConfig.UrlFingerprint"/>).</para>
+    /// </summary>
+    public const string WebhookUrl = "webhook.url";
+
     /// <summary>C-3 — the HMAC key the webhook POST is signed with, so the receiver can verify the
     /// request really came from this machine.</summary>
     public const string WebhookSigningSecret = "webhook.signing_secret";
@@ -152,39 +174,66 @@ public static class NotificationDelivery
 /// Task C-2 — the FULL webhook configuration, including <see cref="Url"/>. Engine-internal only (C-3);
 /// never routed to an HTTP response. The credential-free shape is <see cref="WebhookChannelSummary"/>.
 /// </summary>
-/// <param name="Url">🔴 <b>Treated as secret-bearing, and kept out of every public read.</b> An incoming
-/// webhook URL for the two most likely targets in the blueprint's own list — Slack and Teams — IS the
-/// credential: the opaque path segment is all a caller needs to post into somebody's channel, and no
-/// signature or token accompanies it. Storing it in a column that <c>GET</c> can reach would put a
-/// working capability in a response body, which is the one rule this product has enforced through three
-/// batches. It is therefore in <c>webhook_config</c>'s FULL projection and NOT in its summary
-/// projection — the exact structural discipline <c>ConnectorConfigStore</c> applies to <c>map_json</c>,
-/// for the same reason.
-///
-/// <para>It is stored as plaintext rather than DPAPI-sealed like
-/// <see cref="NotificationSecretNames.WebhookSigningSecret"/>, and that is a deliberate line rather than
-/// an inconsistency: DPAPI+ACL defends against ANOTHER LOCAL ACCOUNT reading the file, while this value's
-/// realistic exposure is THIS PRODUCT'S OWN READ API, which the projection split addresses precisely.
-/// Moving it into <c>notification_secrets</c> if a later review disagrees is one ladder entry — the
-/// mechanism is already there.</para></param>
+/// <param name="Url">🔴 The bearer capability, DPAPI-sealed in <c>notification_secrets</c> under
+/// <see cref="NotificationSecretNames.WebhookUrl"/> — see there for why it is encrypted rather than a
+/// plain column. Populated only by the ENGINE-INTERNAL read
+/// (<see cref="NotificationConfigStore.GetWebhookAsync"/>, for C-3); no public projection can reach it,
+/// because it is not a column of <c>webhook_config</c> at all. <see langword="null"/> if the secret is
+/// missing or its blob cannot be unprotected — a channel that cannot be posted to, which C-3 must
+/// handle rather than assume away.</param>
 /// <param name="Endpoint">The derived, deliberately NON-secret display form — scheme, host and
-/// non-default port only, with the path, query and fragment (i.e. every part that can carry a capability
-/// token) discarded. Computed once by <see cref="NotificationConfigStore"/> at save time and stored as
-/// its own column, so the credential-free projection can still answer "is this pointed at Slack or at our
-/// own MES?" without the caller ever holding the URL. This is the same pattern
-/// <c>ConnectorConfigStore</c> already uses for <c>host</c>/<c>port</c> alongside the opaque
-/// <c>map_json</c> it cannot expose.</param>
+/// non-default port only, with the path, query, fragment AND userinfo (i.e. every part that can carry a
+/// capability token) discarded. Computed once by <see cref="NotificationConfigStore"/> at save time and
+/// stored as its own column, the same pattern <c>ConnectorConfigStore</c> uses for <c>host</c>/<c>port</c>
+/// alongside the opaque <c>map_json</c> it cannot expose.
+///
+/// <para><b>Known limitation, doc-only:</b> a token embedded in a SUBDOMAIN would survive this
+/// truncation, since the host is exactly what <see cref="Endpoint"/> preserves. Not live for any target
+/// in the blueprint's list — Slack, Teams, Discord and Zapier all carry their secret in the PATH — but
+/// worth stating rather than letting a future integration assume the host is always safe.</para></param>
+/// <param name="UrlFingerprint">
+/// 🔴 Review round 1 (I3) — what makes the URL's absence from every public read SURVIVABLE.
+///
+/// <para><see cref="Endpoint"/> alone identifies nothing: it is <c>https://hooks.slack.com</c> for EVERY
+/// Slack webhook on earth. So an operator asking "is this still pointed at #line-alerts, or at the
+/// channel we deleted last month?" could not answer it from any read the product offered, and the only
+/// remedy was to blind-re-enter the URL. That is the pressure that would have pushed C-7/C-8 into either
+/// shipping an unverifiable configuration screen or exposing the URL — undoing the encryption
+/// entirely.</para>
+///
+/// <para>A truncated SHA-256 of the full URL answers "did this change?" and "are these two the same?"
+/// without ever returning the capability — the same "opaque token obtainable only by having seen the real
+/// thing" role <c>ConnectorWriteCapability.ComputeFingerprint</c>, <c>DeviceIdentity.Fingerprint</c> and
+/// <c>SiteEndpoints.PemFingerprint</c> already play in this codebase. Truncation is safe here because the
+/// fingerprint is only ever compared, never inverted: recovering the URL would mean guessing the whole
+/// high-entropy path and checking it, which the full digest would allow equally.</para></param>
+/// <param name="Label">Review round 1 (I3) — an optional operator-supplied name ("Ops Slack #line-alerts").
+/// Free text, never derived, never a credential, and shown by every public read: the fingerprint proves
+/// two configurations are the SAME, and this is what tells a human WHICH one it is. Deliberately not
+/// validated beyond a length bound — it is a note to the next operator, not an identifier.</param>
 public sealed record WebhookChannelConfig(
     bool Enabled,
     AlarmPriority MinPriority,
-    string Url,
-    string Endpoint) : INotificationChannelConfig;
+    string Instance,
+    string? Url,
+    string Endpoint,
+    string UrlFingerprint,
+    string? Label) : INotificationChannelConfig;
 
-/// <summary>Task C-2 — the credential-free webhook projection. <see cref="WebhookChannelConfig.Url"/> is
-/// absent because it is not in the SQL the public read runs, not because it was removed afterwards.</summary>
+/// <summary>Task C-2 — the credential-free webhook projection. The URL is absent because it is not a
+/// column of <c>webhook_config</c> at all — it is an encrypted row in another table — not because it was
+/// removed after being fetched.</summary>
+/// <param name="HasUrl">Whether a destination is stored AND could be decrypted. <see langword="false"/>
+/// means this channel cannot post anywhere, which is exactly the kind of thing an operator must be able
+/// to see without being handed the URL.</param>
 /// <param name="HasSigningSecret">Whether <see cref="NotificationSecretNames.WebhookSigningSecret"/> is
 /// set. Derived from the PRESENCE of a row (its <c>name</c> column), never by reading the secret.</param>
-public sealed record WebhookChannelSummary(string Endpoint, bool HasSigningSecret);
+public sealed record WebhookChannelSummary(
+    string Endpoint,
+    string UrlFingerprint,
+    string? Label,
+    bool HasUrl,
+    bool HasSigningSecret);
 
 /// <summary>Task C-2 — the FULL SMTP configuration. Note the password is NOT here: it lives in
 /// <c>notification_secrets</c> under <see cref="NotificationSecretNames.SmtpPassword"/> and is fetched
@@ -196,6 +245,7 @@ public sealed record WebhookChannelSummary(string Endpoint, bool HasSigningSecre
 public sealed record SmtpChannelConfig(
     bool Enabled,
     AlarmPriority MinPriority,
+    string Instance,
     string Host,
     int Port,
     SmtpTlsMode Tls,
@@ -220,7 +270,8 @@ public sealed record SmtpChannelSummary(
 /// the migration ladder if it needs them.</summary>
 public sealed record LocalAnnunciationChannelConfig(
     bool Enabled,
-    AlarmPriority MinPriority) : INotificationChannelConfig;
+    AlarmPriority MinPriority,
+    string Instance) : INotificationChannelConfig;
 
 /// <summary>
 /// 🔴 Task C-2 — the relay target: WHICH machine, and WHICH declared writable point or command.
@@ -253,6 +304,7 @@ public sealed record LocalAnnunciationChannelConfig(
 public sealed record RelayChannelConfig(
     bool Enabled,
     AlarmPriority MinPriority,
+    string Instance,
     string MachineCode,
     RelayTargetKind TargetKind,
     string TargetName) : INotificationChannelConfig;
@@ -274,8 +326,13 @@ public sealed record RelayChannelSummary(
 /// <see langword="null"/> for <see cref="NotificationChannel.LocalAnnunciation"/>, which has no
 /// configuration of its own.
 /// </summary>
+/// <param name="Instance">Review round 1 (I4) — which configured instance of
+/// <paramref name="Channel"/> this is. <c>"default"</c> for every row this build writes; part of the
+/// primary key from v1 so that a second webhook (Slack AND the MES) is a new ROW rather than a three-table
+/// rebuild after field data exists. See <see cref="NotificationConfigStore.DefaultInstance"/>.</param>
 public sealed record NotificationChannelSummary(
     NotificationChannel Channel,
+    string Instance,
     bool Enabled,
     AlarmPriority MinPriority,
     DateTimeOffset UpdatedAtUtc,

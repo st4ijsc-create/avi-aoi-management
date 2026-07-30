@@ -20,7 +20,7 @@ public sealed class NotificationStartupNoticesTests
     private enum ChannelState { Absent, ConfiguredDisabled, ConfiguredEnabled }
 
     private static NotificationChannelSummary Summary(NotificationChannel channel, bool enabled) =>
-        new(channel, enabled, AlarmPriority.High, DateTimeOffset.UtcNow);
+        new(channel, NotificationConfigStore.DefaultInstance, enabled, AlarmPriority.High, DateTimeOffset.UtcNow);
 
     /// <summary>Every assignment of a <see cref="ChannelState"/> to each of the four channels — 3^4 = 81
     /// configurations.</summary>
@@ -174,23 +174,6 @@ public sealed class NotificationStartupNoticesTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // ShouldRunTheSeam — configured, not enabled, is what brings the seam up.
-    // ─────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void ShouldRunTheSeam_IsFalseOnlyWhenNothingIsConfiguredAtAll()
-    {
-        Assert.False(NotificationStartupNotices.ShouldRunTheSeam(Array.Empty<NotificationChannelSummary>()));
-
-        // 🔴 Configured-but-disabled DOES run the seam, so that flipping `enabled` at runtime takes effect
-        // without a restart. If this ever becomes false, C-1's trap has been rebuilt one layer down.
-        Assert.True(NotificationStartupNotices.ShouldRunTheSeam(
-            new[] { Summary(NotificationChannel.Smtp, enabled: false) }));
-        Assert.True(NotificationStartupNotices.ShouldRunTheSeam(
-            new[] { Summary(NotificationChannel.Smtp, enabled: true) }));
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
     // The credential-handling warning.
     // ─────────────────────────────────────────────────────────────────────
 
@@ -200,16 +183,9 @@ public sealed class NotificationStartupNoticesTests
     [Fact]
     public void AnSmtpPasswordWithoutTls_IsWarnedAboutSeparatelyFromTheGate()
     {
-        var channels = new[]
-        {
-            new NotificationChannelSummary(
-                NotificationChannel.Smtp, Enabled: true, AlarmPriority.High, DateTimeOffset.UtcNow,
-                Smtp: new SmtpChannelSummary(
-                    "mail.local", 25, SmtpTlsMode.None, "sim@plant", new[] { "ops@plant" }, "svc",
-                    HasPassword: true)),
-        };
-
-        var notices = NotificationStartupNotices.Describe(channels, hasDeliveryImplementation: true);
+        var notices = NotificationStartupNotices.Describe(
+            new[] { SmtpSummary(25, SmtpTlsMode.None, hasPassword: true) },
+            hasDeliveryImplementation: true);
 
         Assert.Contains(notices, n =>
             n.Severity == NotificationNoticeSeverity.Warning && n.Message.Contains("clear text"));
@@ -220,17 +196,49 @@ public sealed class NotificationStartupNoticesTests
     [Fact]
     public void AnSmtpPasswordWithStartTls_IsNotWarnedAbout()
     {
-        var channels = new[]
-        {
-            new NotificationChannelSummary(
-                NotificationChannel.Smtp, Enabled: true, AlarmPriority.High, DateTimeOffset.UtcNow,
-                Smtp: new SmtpChannelSummary(
-                    "mail.local", 587, SmtpTlsMode.StartTls, "sim@plant", new[] { "ops@plant" }, "svc",
-                    HasPassword: true)),
-        };
-
-        var notices = NotificationStartupNotices.Describe(channels, hasDeliveryImplementation: true);
+        var notices = NotificationStartupNotices.Describe(
+            new[] { SmtpSummary(587, SmtpTlsMode.StartTls, hasPassword: true) },
+            hasDeliveryImplementation: true);
 
         Assert.DoesNotContain(notices, n => n.Message.Contains("clear text"));
+        Assert.DoesNotContain(notices, n => n.Message.Contains("implicit TLS"));
     }
+
+    /// <summary>
+    /// 🔴 Review round 1 — port 465 is implicit TLS (SMTPS), and
+    /// <see cref="System.Net.Mail.SmtpClient"/> — which C-4 must use — implements only RFC 3207 STARTTLS.
+    /// It cannot complete a handshake there in EITHER mode, and the failure is a HANG rather than a clean
+    /// error. <see cref="SmtpTlsMode"/> correctly offers no implicit-TLS member, but an enum's silence
+    /// does not help an operator who simply types the port their mail provider gave them.
+    /// </summary>
+    [Theory]
+    [InlineData(SmtpTlsMode.StartTls)]
+    [InlineData(SmtpTlsMode.None)]
+    public void Port465_IsWarnedAbout_BecauseSystemNetMailCannotSpeakImplicitTls(SmtpTlsMode tls)
+    {
+        var notices = NotificationStartupNotices.Describe(
+            new[] { SmtpSummary(465, tls, hasPassword: false) }, hasDeliveryImplementation: true);
+
+        var warning = Assert.Single(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
+        Assert.Contains("465", warning.Message);
+        Assert.Contains("implicit TLS", warning.Message);
+        Assert.Contains("STARTTLS", warning.Message);
+        Assert.Contains("hang", warning.Message);
+    }
+
+    [Fact]
+    public void Port587_IsNotWarnedAbout()
+    {
+        var notices = NotificationStartupNotices.Describe(
+            new[] { SmtpSummary(587, SmtpTlsMode.StartTls, hasPassword: false) },
+            hasDeliveryImplementation: true);
+
+        Assert.DoesNotContain(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
+    }
+
+    private static NotificationChannelSummary SmtpSummary(int port, SmtpTlsMode tls, bool hasPassword) =>
+        new(NotificationChannel.Smtp, NotificationConfigStore.DefaultInstance, Enabled: true,
+            AlarmPriority.High, DateTimeOffset.UtcNow,
+            Smtp: new SmtpChannelSummary(
+                "mail.local", port, tls, "sim@plant", new[] { "ops@plant" }, "svc", hasPassword));
 }

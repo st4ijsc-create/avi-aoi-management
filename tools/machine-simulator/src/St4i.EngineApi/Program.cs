@@ -463,30 +463,31 @@ Func<St4i.EngineApi.Alarms.NotificationJob, CancellationToken, Task>? alarmDispa
 // Registered ONLY here. The alarm engine runs only in this process — St4i.EdgeService and both WPF apps
 // never host IAlarmStore — so nothing about this reaches them.
 //
-// Keyed on a channel being CONFIGURED rather than ENABLED (see ShouldRunTheSeam's own doc comment): a
-// fresh install that has configured nothing still registers nothing at all, preserving C-1's zero-cost
-// "off means off" for the only case it is worth anything — but once any channel exists the seam runs, so
-// C-7 can toggle a channel on at runtime without needing a restart to make it take effect.
-var alarmNotifyEnabled = St4i.EngineApi.Alarms.NotificationStartupNotices.ShouldRunTheSeam(notificationChannels);
-if (alarmNotifyEnabled)
+// 🔴 Review round 1 (I5) — registered UNCONDITIONALLY, with no gate of any kind in front of it. C-2 first
+// keyed this on "is at least one channel configured", which preserved C-1's zero-cost default-off but left
+// exactly one transition — the first channel ever configured on a host that booted with none — needing a
+// restart, bound only by a doc comment asking C-7 to warn about it. A rule that lives in prose is a rule
+// the next task can miss. The cost of always registering is one bounded channel and one idle drain loop;
+// whether anything is DELIVERED is decided by NotificationConfigStore at the point of delivery, never by
+// whether this object exists. That removes the whole class of "configured but never registered" rather
+// than deferring it.
+//
+// Factory lambda (not the raw-instance overload) so the container OWNS the instance and calls its
+// IAsyncDisposable.DisposeAsync on shutdown — the same reason siteBridgeManager below is registered that
+// way, and the same drain-then-bounded-cancel shutdown HistorianWriter already relies on.
+builder.Services.AddSingleton(sp =>
 {
-    // Factory lambda (not the raw-instance overload) so the container OWNS the instance and calls its
-    // IAsyncDisposable.DisposeAsync on shutdown — the same reason siteBridgeManager below is registered
-    // that way, and the same drain-then-bounded-cancel shutdown HistorianWriter already relies on.
-    builder.Services.AddSingleton(sp =>
-    {
-        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmNotifier");
-        return new St4i.EngineApi.Alarms.AlarmNotifier(
-            dispatch: alarmDispatch, // C-3..C-6 fill this in; until then the loop drains and discards.
-            logWarning: msg => logger.LogWarning("{AlarmNotifyMsg}", msg),
-            logError: (ex, msg) => logger.LogError(ex, "{AlarmNotifyMsg}", msg));
-    });
-    // Forwards the interface to the SAME concrete singleton (same shape as IUnsPublisher -> UnsPublisher
-    // below); AlarmNotifier.DisposeAsync is idempotent, which is what makes being tracked twice safe.
-    builder.Services.AddSingleton<St4i.EngineApi.Alarms.IAlarmNotifier>(
-        sp => sp.GetRequiredService<St4i.EngineApi.Alarms.AlarmNotifier>());
-    builder.Services.AddHostedService<St4i.EngineApi.Alarms.AlarmNotifierSeedService>();
-}
+    var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmNotifier");
+    return new St4i.EngineApi.Alarms.AlarmNotifier(
+        dispatch: alarmDispatch, // C-3..C-6 fill this in; until then the loop drains and discards.
+        logWarning: msg => logger.LogWarning("{AlarmNotifyMsg}", msg),
+        logError: (ex, msg) => logger.LogError(ex, "{AlarmNotifyMsg}", msg));
+});
+// Forwards the interface to the SAME concrete singleton (same shape as IUnsPublisher -> UnsPublisher
+// below); AlarmNotifier.DisposeAsync is idempotent, which is what makes being tracked twice safe.
+builder.Services.AddSingleton<St4i.EngineApi.Alarms.IAlarmNotifier>(
+    sp => sp.GetRequiredService<St4i.EngineApi.Alarms.AlarmNotifier>());
+builder.Services.AddHostedService<St4i.EngineApi.Alarms.AlarmNotifierSeedService>();
 
 builder.Services.AddSingleton<St4i.EngineApi.Alarms.IAlarmStore>(sp =>
     new St4i.EngineApi.Alarms.AlarmStore(

@@ -31,11 +31,18 @@ namespace St4i.EngineApi.Alarms;
 /// A machine is commonly configured interactively by a logged-in engineer but RUNS as a Windows
 /// Service/LocalSystem account; under <see cref="DataProtectionScope.CurrentUser"/> the service could not
 /// decrypt what the interactive session wrote, and the SMTP password would simply stop working on the
-/// next restart with no explanation. The cost is real and is stated rather than hidden: a
-/// <c>LocalMachine</c> blob is decryptable by ANY local account, so the directory ACL — not the DPAPI
-/// scope — is the entire confidentiality boundary. That is why
-/// <see cref="NotificationConfigStore.SetSecretAsync"/> re-applies the ACL on every single save rather
-/// than only when it first creates the directory.</para>
+/// next restart with no explanation.</para>
+///
+/// <para>🔴 <b>What the ACL covers and what DPAPI covers — they are NOT the same threat, and review round
+/// 1 (I2) turned on getting this right.</b> A <c>LocalMachine</c> blob is decryptable by any local
+/// account, so the directory ACL is the confidentiality boundary <i>against another account on this
+/// machine</i> — which is why <see cref="NotificationConfigStore.SetSecretAsync"/> re-applies it on every
+/// save rather than only at first creation. But DPAPI still carries real residual value the ACL cannot:
+/// <b>machine-binding</b>. An ACL protects a file that stays put; it does nothing once the file LEAVES —
+/// in a backup, a support bundle, a <c>%ProgramData%</c> snapshot, a database attached to a bug report.
+/// A DPAPI blob in any of those is inert on any other machine. That is precisely why every
+/// capability-grade value this product stores is sealed here rather than sitting in a plaintext column
+/// next to one that is: a copied <c>notifications.db</c> must not hand anybody a working credential.</para>
 ///
 /// <para><b>Entropy is its own constant</b>, distinct from <c>CredentialStore</c>'s and
 /// <c>DeviceIdentityStore</c>'s. That is what makes a blob from one store unreadable by another even
