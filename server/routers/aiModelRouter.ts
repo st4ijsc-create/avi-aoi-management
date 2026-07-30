@@ -2,6 +2,7 @@ import { protectedProcedure, router, roleProcedure, require2FA } from "../_core/
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { isUniqueViolation } from "../_core/dbErrors";
 import {
@@ -102,7 +103,7 @@ export const aiModelRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const model = await db.getAiModelById(input.id);
-      if (!model) throw new TRPCError({ code: "NOT_FOUND", message: "AI model not found" });
+      if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, "AI model not found");
       return model;
     }),
 
@@ -110,7 +111,7 @@ export const aiModelRouter = router({
     .input(z.object({ code: z.string() }))
     .query(async ({ input }) => {
       const model = await db.getAiModelByCode(input.code);
-      if (!model) throw new TRPCError({ code: "NOT_FOUND", message: "AI model not found" });
+      if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, "AI model not found");
       return model;
     }),
 
@@ -174,7 +175,7 @@ export const aiModelRouter = router({
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       const existing = await db.getAiModelById(id);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "AI model not found" });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, "AI model not found");
       return db.updateAiModel(id, data as any);
     }),
 
@@ -182,7 +183,7 @@ export const aiModelRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const existing = await db.getAiModelById(input.id);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "AI model not found" });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, "AI model not found");
       evictSessionCache(input.id);
       await db.deleteAiModel(input.id);
       return { success: true };
@@ -386,7 +387,7 @@ export const aiModelRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const model = await db.getAiModelById(input.modelId);
-      if (!model) throw new TRPCError({ code: "NOT_FOUND", message: "AI model not found" });
+      if (!model) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, "AI model not found");
 
       try {
         const existing = await db.getModelCardByModelId(input.modelId);

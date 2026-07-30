@@ -93,7 +93,7 @@ export const aiChatRouter = router({
       const [conv] = await db.select().from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.id), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       const messages = await db.select().from(aiChatMessages)
         .where(eq(aiChatMessages.conversationId, input.id))
         .orderBy(aiChatMessages.createdAt)
@@ -135,7 +135,7 @@ export const aiChatRouter = router({
         .set({ ...data, updatedAt: new Date() })
         .where(and(eq(aiChatConversations.id, id), eq(aiChatConversations.userId, ctx.user.id)))
         .returning();
-      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!result) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       return result;
     }),
 
@@ -149,7 +149,7 @@ export const aiChatRouter = router({
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.id), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       // Delete messages first, then conversation
       await db.delete(aiChatMessages).where(eq(aiChatMessages.conversationId, input.id));
       await db.delete(aiChatConversations).where(eq(aiChatConversations.id, input.id));
@@ -172,7 +172,7 @@ export const aiChatRouter = router({
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       return db.select().from(aiChatMessages)
         .where(eq(aiChatMessages.conversationId, input.conversationId))
         .orderBy(aiChatMessages.createdAt)
@@ -190,7 +190,7 @@ export const aiChatRouter = router({
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       await db.delete(aiChatMessages).where(
         and(eq(aiChatMessages.id, input.messageId), eq(aiChatMessages.conversationId, input.conversationId))
       );
@@ -280,7 +280,7 @@ export const aiChatRouter = router({
             .where(and(eq(aiChatConversations.id, convIdNum), eq(aiChatConversations.userId, ctx.user.id)))
             .limit(1);
           if (!conv) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
           }
 
           // Save user message
@@ -326,7 +326,7 @@ export const aiChatRouter = router({
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
-      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!conv) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "conversation" }, "Conversation not found");
       // Save user message
       await db.insert(aiChatMessages).values({
         conversationId: input.conversationId,

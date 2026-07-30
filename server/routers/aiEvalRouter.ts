@@ -15,6 +15,7 @@
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { buildDataset } from "../services/aiDatasetBuilder";
 import { evaluateModelVersion, compareBeforeAfter, evaluateQualityGate } from "../services/aiEvalHarness";
 import { scanInferenceForUncertainty, scanCommitteeDisagreement } from "../services/aiActiveLearningAuto";
@@ -131,7 +132,7 @@ export const aiEvalRouter = router({
     .input(z.object({ modelId: z.number() }))
     .mutation(async ({ input }) => {
       const card = await generateModelCard(input.modelId);
-      if (!card) throw new TRPCError({ code: "NOT_FOUND", message: `Model ${input.modelId} not found` });
+      if (!card) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aiModel" }, `Model ${input.modelId} not found`);
       return card;
     }),
 

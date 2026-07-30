@@ -71,7 +71,7 @@ const batchRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const job = await db.getBatchInferenceJob(input.id);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Batch job not found" });
+      if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "batchJob" }, "Batch job not found");
       return job;
     }),
 
@@ -133,7 +133,7 @@ const trainingRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const job = await db.getTrainingJob(input.id);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Training job not found" });
+      if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingJob" }, "Training job not found");
       return job;
     }),
 
@@ -209,7 +209,7 @@ const trainingRouter = router({
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [deleted] = await database.delete(trainingJobs).where(eq(trainingJobs.id, input.id)).returning({ id: trainingJobs.id });
-      if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "Training job not found" });
+      if (!deleted) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingJob" }, "Training job not found");
       return { success: true, id: deleted.id };
     }),
 
@@ -219,7 +219,7 @@ const trainingRouter = router({
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [dataset] = await database.select().from(trainingDatasets).where(eq(trainingDatasets.id, input.id)).limit(1);
-      if (!dataset) throw new TRPCError({ code: "NOT_FOUND", message: "Training dataset not found" });
+      if (!dataset) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingDataset" }, "Training dataset not found");
       return dataset;
     }),
 
@@ -229,7 +229,7 @@ const trainingRouter = router({
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [deleted] = await database.delete(trainingDatasets).where(eq(trainingDatasets.id, input.id)).returning({ id: trainingDatasets.id });
-      if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "Training dataset not found" });
+      if (!deleted) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingDataset" }, "Training dataset not found");
       return { success: true, id: deleted.id };
     }),
 });
@@ -258,7 +258,7 @@ const abTestRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const exp = await db.getABTestExperiment(input.id);
-      if (!exp) throw new TRPCError({ code: "NOT_FOUND", message: "A/B test experiment not found" });
+      if (!exp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "abTestExperiment" }, "A/B test experiment not found");
       return exp;
     }),
 
@@ -328,7 +328,7 @@ const abTestRouter = router({
       if (updates.description !== undefined) updateData.description = updates.description;
       if (updates.trafficSplit !== undefined) updateData.trafficSplit = updates.trafficSplit;
       const [updated] = await database.update(abTestExperiments).set(updateData).where(eq(abTestExperiments.id, id)).returning();
-      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "A/B test experiment not found" });
+      if (!updated) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "abTestExperiment" }, "A/B test experiment not found");
       return updated;
     }),
 
@@ -339,7 +339,7 @@ const abTestRouter = router({
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       await database.delete(abTestResults).where(eq(abTestResults.experimentId, input.id));
       const [deleted] = await database.delete(abTestExperiments).where(eq(abTestExperiments.id, input.id)).returning({ id: abTestExperiments.id });
-      if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "A/B test experiment not found" });
+      if (!deleted) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "abTestExperiment" }, "A/B test experiment not found");
       return { success: true, id: deleted.id };
     }),
 });
@@ -429,7 +429,7 @@ const edgeRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const dep = await db.getEdgeDeployment(input.id);
-      if (!dep) throw new TRPCError({ code: "NOT_FOUND", message: "Edge deployment not found" });
+      if (!dep) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, "Edge deployment not found");
       return dep;
     }),
 
@@ -519,7 +519,7 @@ const edgeRouter = router({
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [deleted] = await database.delete(edgeDeployments).where(eq(edgeDeployments.id, input.id)).returning({ id: edgeDeployments.id });
-      if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "Edge deployment not found" });
+      if (!deleted) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "edgeDeployment" }, "Edge deployment not found");
       return { success: true, id: deleted.id };
     }),
 });

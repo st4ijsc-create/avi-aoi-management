@@ -93,7 +93,7 @@ export const aiLocalTrainingRouter = router({
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [job] = await database.select().from(trainingJobs).where(eq(trainingJobs.id, input.id)).limit(1);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Training job not found" });
+      if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingJob" }, "Training job not found");
       return job;
     }),
 
@@ -104,7 +104,7 @@ export const aiLocalTrainingRouter = router({
       const database = await getDb();
       if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [deleted] = await database.delete(trainingJobs).where(eq(trainingJobs.id, input.id)).returning({ id: trainingJobs.id });
-      if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "Training job not found" });
+      if (!deleted) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingJob" }, "Training job not found");
       return { success: true, id: deleted.id };
     }),
 });

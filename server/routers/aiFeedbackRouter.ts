@@ -145,7 +145,7 @@ export const aiFeedbackRouter = router({
         .where(eq(aiSuggestions.id, input.suggestionId));
 
       if (!suggestion) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Suggestion không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "suggestion" }, "Suggestion không tồn tại");
       }
 
       // Create feedback
@@ -448,7 +448,7 @@ export const aiFeedbackRouter = router({
         .where(eq(aiTrainingBatches.batchId, input.batchId));
 
       if (!batch) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Training batch không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingBatch" }, "Training batch không tồn tại");
       }
 
       // Get feedback with suggestions

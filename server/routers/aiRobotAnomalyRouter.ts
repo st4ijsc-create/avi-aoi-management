@@ -73,7 +73,7 @@ export const aiRobotAnomalyRouter = router({
         .set({ status: "acknowledged", acknowledgedBy: ctx.user.id, acknowledgedAt: new Date() })
         .where(eq(robotBehaviorAnomalies.id, input.id))
         .returning();
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Anomaly not found" });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "anomaly" }, "Anomaly not found");
       return row;
     }),
 

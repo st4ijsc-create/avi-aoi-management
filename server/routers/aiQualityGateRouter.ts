@@ -71,7 +71,7 @@ export const aiQualityGateRouter = router({
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [config] = await db.select().from(aiQualityGateConfigs).where(eq(aiQualityGateConfigs.id, input.id)).limit(1);
-      if (!config) throw new TRPCError({ code: "NOT_FOUND", message: "Quality gate config not found" });
+      if (!config) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateConfig" }, "Quality gate config not found");
       return config;
     }),
 
@@ -142,7 +142,7 @@ export const aiQualityGateRouter = router({
         .set(updateData)
         .where(eq(aiQualityGateConfigs.id, id))
         .returning();
-      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Config not found" });
+      if (!result) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateConfig" }, "Config not found");
       invalidateConfigCache();
       return result;
     }),
@@ -175,7 +175,7 @@ export const aiQualityGateRouter = router({
         sql`SELECT "machineId", "productModelId" FROM product_inspections WHERE id = ${input.inspectionId}`,
       ) as any;
       const insp = inspResult.rows?.[0];
-      if (!insp) throw new TRPCError({ code: "NOT_FOUND", message: "Inspection not found" });
+      if (!insp) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
 
       // Find matching quality gate config
       const config = await getQualityGateConfig(
@@ -195,7 +195,7 @@ export const aiQualityGateRouter = router({
         : path.join(process.cwd(), "uploads");
       const imagePath = path.join(uploadsRoot, input.imageKey);
       if (!fs.existsSync(imagePath)) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Image file not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, "Image file not found");
       }
       const imageBuffer = fs.readFileSync(imagePath);
 
@@ -257,7 +257,7 @@ export const aiQualityGateRouter = router({
         })
         .where(eq(aiQualityGateResults.id, input.resultId))
         .returning();
-      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Quality gate result not found" });
+      if (!result) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "qualityGateResult" }, "Quality gate result not found");
 
       // Also update the inspection's AI decision based on human review
       const newDecision = input.reviewDecision === "OK" ? "AUTO_OK" : "AUTO_NG";
@@ -456,7 +456,7 @@ export const aiQualityGateRouter = router({
         .set(updateData)
         .where(eq(aiEnsembleConfigs.id, id))
         .returning();
-      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Ensemble config not found" });
+      if (!result) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ensembleConfig" }, "Ensemble config not found");
       return result;
     }),
 

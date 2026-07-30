@@ -293,7 +293,7 @@ export const rootCauseRouter = router({
       const resultRows = (result.rows ?? result ?? []) as any[];
 
       if (!resultRows.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'rcaAnalysis' }, 'Analysis not found');
       }
 
       const row = resultRows[0];
@@ -358,7 +358,7 @@ export const rootCauseRouter = router({
       // pre-read ALWAYS threw NOT_FOUND and the write below never ran.
       const existingRows = (existingResult.rows ?? existingResult ?? []) as any[];
       if (!existingRows.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'rcaAnalysis' }, 'Analysis not found');
       }
 
       const existingRow = existingRows[0];
@@ -406,7 +406,7 @@ export const rootCauseRouter = router({
       ) as any;
       // W0-1 fix (doc 69): db.execute() rows come back directly, not under `.rows`.
       if (!((existingResult.rows ?? existingResult ?? []) as any[]).length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'rcaAnalysis' }, 'Analysis not found');
       }
 
       await db.execute(sql`DELETE FROM root_cause_analysis WHERE id = ${input.id}`);
@@ -503,7 +503,7 @@ export const predictiveAlertRouter = router({
       const resultRows = (result.rows ?? result ?? []) as any[];
 
       if (!resultRows.length) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Alert not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'alert' }, 'Alert not found');
       }
 
       const row = resultRows[0];
