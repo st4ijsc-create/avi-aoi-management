@@ -314,7 +314,7 @@ export const productVariantRouter = router({
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
         }
         if (variant.productModelId !== input.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Biến thể không thuộc sản phẩm này" });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "productVariant", parent: "productModel" }, "Biến thể không thuộc sản phẩm này");
         }
         isNonBaseVariant = !variant.isBase;
         if (isNonBaseVariant) {
@@ -373,7 +373,7 @@ export const productVariantRouter = router({
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Không tìm thấy điểm đo gốc");
       }
       if (basePoint.productModelId !== variant.productModelId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Điểm đo không thuộc sản phẩm của biến thể" });
+        throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "measurementPoint", parent: "productModel" }, "Điểm đo không thuộc sản phẩm của biến thể");
       }
       if (basePoint.variantId != null) {
         throw new TRPCError({

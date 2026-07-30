@@ -539,7 +539,7 @@ export const aiSpecialistAgentRouter = router({
       // (cùng chốt sở hữu), nhưng trả kèm `steps` — nơi chứa `repoContextSummary`.
       const session = await getAiSpecialistSessionDetail(input.sessionId, ctx.user.id);
       if (!session) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Session does not belong to current user" });
+        throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "agentSession", parent: "user" }, "Session does not belong to current user");
       }
       return upsertSpecialistFeedback({
         ...input,

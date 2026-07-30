@@ -5063,7 +5063,7 @@ export const machineApiRouter = router({
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
       if (!owns) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+        throw appError('FORBIDDEN', 'SCOPE_MISMATCH', { entity: 'edgeDeployment', parent: 'machine' }, 'Deployment does not belong to this machine');
       }
       if (!deployment.packageKey || !deployment.packageHash) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Package not ready' });
@@ -5111,7 +5111,7 @@ export const machineApiRouter = router({
       if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
-      if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+      if (!owns) throw appError('FORBIDDEN', 'SCOPE_MISMATCH', { entity: 'edgeDeployment', parent: 'machine' }, 'Deployment does not belong to this machine');
 
       const result = await svcConfirmDeployment(input.deploymentId, input.localHash);
       return { success: result.matched, ...result };
@@ -5140,7 +5140,7 @@ export const machineApiRouter = router({
       if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
-      if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+      if (!owns) throw appError('FORBIDDEN', 'SCOPE_MISMATCH', { entity: 'edgeDeployment', parent: 'machine' }, 'Deployment does not belong to this machine');
 
       const result = await svcRecordHeartbeat(input.deploymentId);
       return { success: true, ...result };
@@ -5179,7 +5179,7 @@ export const machineApiRouter = router({
       if (!deployment) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'edgeDeployment' }, 'Deployment not found');
       const owns = (deployment.machineId != null && deployment.machineId === machine.id)
         || (!!deployment.deviceId && deployment.deviceId === machine.code);
-      if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+      if (!owns) throw appError('FORBIDDEN', 'SCOPE_MISMATCH', { entity: 'edgeDeployment', parent: 'machine' }, 'Deployment does not belong to this machine');
 
       await db.updateMachineHeartbeat(machine.id).catch(() => {});
       // syncEdgeResults is an ingest-volume endpoint → rate-limited like submitInspection.

@@ -1130,7 +1130,7 @@ export const measurementPointRouter = router({
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "samplingPlan" }, `Sampling plan ID ${input.preferredSamplingPlanId} not found`);
         }
         if (samplingPlan.productModelId !== input.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan does not belong to this product model` });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "samplingPlan", parent: "productModel" }, `Sampling plan does not belong to this product model`);
         }
         if (!samplingPlan.isActive) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point` });
@@ -1144,7 +1144,7 @@ export const measurementPointRouter = router({
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productView" }, `Product view ID ${input.productViewId} not found`);
         }
         if (productView.productModelId !== input.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Product view does not belong to this product model` });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "productView", parent: "productModel" }, `Product view does not belong to this product model`);
         }
         if (!productView.isActive) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Product view "${productView.code}" is inactive; cannot assign to measurement point` });
@@ -1321,7 +1321,7 @@ export const measurementPointRouter = router({
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "samplingPlan" }, `Sampling plan ID ${rest.preferredSamplingPlanId} not found`);
         }
         if (samplingPlan.productModelId !== existingPoint.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan does not belong to this product model` });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "samplingPlan", parent: "productModel" }, `Sampling plan does not belong to this product model`);
         }
         if (!samplingPlan.isActive) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point` });
@@ -1335,7 +1335,7 @@ export const measurementPointRouter = router({
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productView" }, `Product view ID ${rest.productViewId} not found`);
         }
         if (productView.productModelId !== existingPoint.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Product view does not belong to this product model` });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "productView", parent: "productModel" }, `Product view does not belong to this product model`);
         }
         if (!productView.isActive) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Product view "${productView.code}" is inactive; cannot assign to measurement point` });
@@ -2928,7 +2928,7 @@ export const msaWizardRouter = router({
         const point = await db.getMeasurementPointDefById(input.measurementPointDefId);
         if (!point) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `Measurement point ID ${input.measurementPointDefId} not found`);
         if (point.productModelId !== input.productModelId) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Measurement point does not belong to this product model" });
+          throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "measurementPoint", parent: "productModel" }, "Measurement point does not belong to this product model");
         }
       }
 
