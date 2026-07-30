@@ -380,6 +380,139 @@ public sealed class OpcUaDriverWriteTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Review fix round 1 (Important #1) — a malformed NodeId in the MAP (B-3's own FromJson validates only
+    // non-blankness, never that a NodeId string actually PARSES) used to construct outside any try, falling
+    // through to the generic backstop's "unexpected failure: {ex.Message}" — losing the one fact that
+    // matters: this never reached the device at all. Now returns Indeterminate with a Detail that says so
+    // explicitly, never the generic backstop text.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task WriteSetpointAsync_MalformedNodeIdInMap_ReturnsActionableDetail_NeverGenericBackstop()
+    {
+        var pkiRoot = NewPkiRoot("write-malformed-nodeid");
+        await using var server = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot);
+
+        var malformedMap = new OpcUaNodeMap
+        {
+            MachineCode = "PLC-OU-WRITE-MALFORMED-NODEID",
+            EndpointUrl = server.EndpointUrl,
+            Nodes = new List<OpcUaNode> { new("ns=zz;s=Speed", "speed", "rpm", new OpcUaWritableSetpoint(CommandArgumentType.Double, 0, 500)) },
+        };
+        await using var driver = new OpcUaDriver(malformedMap, pkiDir: pkiRoot);
+
+        var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
+
+        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+        Assert.Null(result.RejectionReason);
+        // The load-bearing assertions: NOT the generic backstop, and specific enough to send someone to fix
+        // the map rather than physically inspect a machine that was never contacted.
+        Assert.DoesNotContain("unexpected failure", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("never sent to the device", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("speed", result.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InvokeCommandAsync_MalformedNodeIdInMap_ReturnsActionableDetail_NeverGenericBackstop_DeviceUntouched()
+    {
+        var pkiRoot = NewPkiRoot("call-malformed-nodeid");
+        await using var server = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot);
+
+        var malformedMap = new OpcUaNodeMap
+        {
+            MachineCode = "PLC-OU-CALL-MALFORMED-NODEID",
+            EndpointUrl = server.EndpointUrl,
+            Nodes = new List<OpcUaNode> { new("ns=2;s=Speed", "speed", "rpm", new OpcUaWritableSetpoint(CommandArgumentType.Double, 0, 500)) },
+            Commands = new List<OpcUaCommand>
+            {
+                new("start-cycle", "ns=zz;s=Machine", "ns=2;s=StartCycle",
+                    new List<CommandArgumentDeclaration> { new("speed", CommandArgumentType.UInt16, 0, 1000) }),
+            },
+        };
+        await using var driver = new OpcUaDriver(malformedMap, pkiDir: pkiRoot);
+
+        var result = await driver.InvokeCommandAsync(
+            new CommandRequest("start-cycle", new Dictionary<string, object> { ["speed"] = 10L }), CancellationToken.None);
+
+        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+        Assert.Null(result.RejectionReason);
+        Assert.DoesNotContain("unexpected failure", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("never invoked", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("start-cycle", result.Detail, StringComparison.Ordinal);
+        // The load-bearing assertion: an independent, server-side fact — the malformed NodeId means
+        // CallAsync was never even issued, so the method genuinely never ran.
+        Assert.Equal(0, server.Controls.StartCycleInvokedCount);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Review fix round 1 (Important #2) — IsPreInvocationCallRejection's allowlist originally covered only
+    // the argument-shape codes, missing the node/method-IDENTITY codes from the SAME OPC-UA Part 4 §5.11.2
+    // precondition table. Consequence: a map typo (a command/object/method name that does not resolve on the
+    // real server) reported Indeterminate — "check the machine" — for a command that provably never ran.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task InvokeCommandAsync_ObjectNodeIdUnknownToServer_ReportsFailed_NotIndeterminate_DeviceUntouched()
+    {
+        var pkiRoot = NewPkiRoot("call-typo-objectnodeid");
+        await using var server = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot);
+
+        // Parses fine (valid NodeId syntax) but does not resolve to any real node on the server — the exact
+        // shape a commissioning-time map typo produces.
+        var typoMap = new OpcUaNodeMap
+        {
+            MachineCode = "PLC-OU-CALL-TYPO-OBJECT",
+            EndpointUrl = server.EndpointUrl,
+            Nodes = new List<OpcUaNode> { new("ns=2;s=Speed", "speed", "rpm", new OpcUaWritableSetpoint(CommandArgumentType.Double, 0, 500)) },
+            Commands = new List<OpcUaCommand>
+            {
+                new("start-cycle", "ns=2;s=ThisObjectDoesNotExist", "ns=2;s=StartCycle",
+                    new List<CommandArgumentDeclaration> { new("speed", CommandArgumentType.UInt16, 0, 1000) }),
+            },
+        };
+        await using var driver = new OpcUaDriver(typoMap, pkiDir: pkiRoot);
+
+        var result = await driver.InvokeCommandAsync(
+            new CommandRequest("start-cycle", new Dictionary<string, object> { ["speed"] = 10L }), CancellationToken.None);
+
+        Assert.Equal(WriteOutcome.Failed, result.Outcome);
+        Assert.Null(result.RejectionReason);
+        // The load-bearing assertion: a KNOWN "no" (Failed), never Indeterminate — the server's own
+        // invocation counter proves the method genuinely never ran, so telling an operator to go inspect the
+        // physical machine would be pure noise.
+        Assert.Equal(0, server.Controls.StartCycleInvokedCount);
+    }
+
+    [Fact]
+    public async Task InvokeCommandAsync_MethodNodeIdNotAMethod_ReportsFailed_NotIndeterminate_DeviceUntouched()
+    {
+        var pkiRoot = NewPkiRoot("call-typo-methodnodeid");
+        await using var server = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot);
+
+        // "ns=2;s=Speed" is a real node — a VARIABLE, not a method — so the Call service's own precondition
+        // check (is the methodId actually a callable method?) rejects this before ever invoking anything.
+        var typoMap = new OpcUaNodeMap
+        {
+            MachineCode = "PLC-OU-CALL-TYPO-METHOD",
+            EndpointUrl = server.EndpointUrl,
+            Nodes = new List<OpcUaNode> { new("ns=2;s=Speed", "speed", "rpm", new OpcUaWritableSetpoint(CommandArgumentType.Double, 0, 500)) },
+            Commands = new List<OpcUaCommand>
+            {
+                new("start-cycle", "ns=2;s=Machine", "ns=2;s=Speed",
+                    new List<CommandArgumentDeclaration> { new("speed", CommandArgumentType.UInt16, 0, 1000) }),
+            },
+        };
+        await using var driver = new OpcUaDriver(typoMap, pkiDir: pkiRoot);
+
+        var result = await driver.InvokeCommandAsync(
+            new CommandRequest("start-cycle", new Dictionary<string, object> { ["speed"] = 10L }), CancellationToken.None);
+
+        Assert.Equal(WriteOutcome.Failed, result.Outcome);
+        Assert.Null(result.RejectionReason);
+        Assert.Equal(0, server.Controls.StartCycleInvokedCount);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // 6) A write/command that times out reports Indeterminate — and GENUINELY times out (a real loopback
     // server whose handler stalls well past the client's own configured operation-timeout bound).
     // ─────────────────────────────────────────────────────────────────────
@@ -396,10 +529,16 @@ public sealed class OpcUaDriverWriteTests
     {
         var pkiRoot = NewPkiRoot("write-timeout");
         await using var server = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot);
-        server.Controls.MethodDelayMs = GenuineTimeoutServerDelayMs;
         await using var driver = new OpcUaDriver(
             OpcUaLoopbackHarness.BuildWritableMap("PLC-OU-WRITE-TIMEOUT", server.EndpointUrl), pkiDir: pkiRoot,
             operationTimeoutMs: GenuineTimeoutOperationTimeoutMs);
+
+        // Prime the session BEFORE introducing the server-side delay — see the cancellation tests' own
+        // remarks above for the observed flake this avoids (session establishment competing with the bound
+        // under a full test-suite run's heavier concurrent load).
+        var warmup = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 1.0), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Applied, warmup.Outcome);
+        server.Controls.MethodDelayMs = GenuineTimeoutServerDelayMs;
 
         var stopwatch = Stopwatch.StartNew();
         var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
@@ -426,10 +565,14 @@ public sealed class OpcUaDriverWriteTests
     {
         var pkiRoot = NewPkiRoot("call-timeout");
         await using var server = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot);
-        server.Controls.MethodDelayMs = GenuineTimeoutServerDelayMs;
         await using var driver = new OpcUaDriver(
             OpcUaLoopbackHarness.BuildWritableMap("PLC-OU-CALL-TIMEOUT", server.EndpointUrl), pkiDir: pkiRoot,
             operationTimeoutMs: GenuineTimeoutOperationTimeoutMs);
+
+        // Prime the session first — same reasoning as the write test above.
+        var warmup = await driver.InvokeCommandAsync(new CommandRequest("ping"), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Applied, warmup.Outcome);
+        server.Controls.MethodDelayMs = GenuineTimeoutServerDelayMs;
 
         var stopwatch = Stopwatch.StartNew();
         var result = await driver.InvokeCommandAsync(
@@ -470,10 +613,16 @@ public sealed class OpcUaDriverWriteTests
     {
         var pkiRoot = NewPkiRoot("call-noretry");
         await using var server = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot);
-        server.Controls.MethodDelayMs = GenuineTimeoutServerDelayMs;
         await using var driver = new OpcUaDriver(
             OpcUaLoopbackHarness.BuildWritableMap("PLC-OU-CALL-NORETRY", server.EndpointUrl), pkiDir: pkiRoot,
             operationTimeoutMs: GenuineTimeoutOperationTimeoutMs);
+
+        // Prime the session first — same reasoning as the timeout tests above: this test's own assertion
+        // (exactly 1 invocation) depends on CallAsync genuinely being attempted within the bound, which a
+        // session establishment competing with that same bound under full-suite load could otherwise defeat.
+        var warmup = await driver.InvokeCommandAsync(new CommandRequest("ping"), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Applied, warmup.Outcome);
+        server.Controls.MethodDelayMs = GenuineTimeoutServerDelayMs;
 
         var result = await driver.InvokeCommandAsync(
             new CommandRequest("start-cycle", new Dictionary<string, object> { ["speed"] = 1L }), CancellationToken.None);
@@ -497,13 +646,21 @@ public sealed class OpcUaDriverWriteTests
     {
         var pkiRoot = NewPkiRoot("write-cancel");
         await using var server = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot);
-        server.Controls.MethodDelayMs = 15_000;
         // Deliberately a LONG bound (30s): if cancellation did NOT promptly unblock the in-flight write,
         // this test would itself hang for ~30s rather than fail fast — the elapsed-time assertion below is
         // the actual proof, not a guess dressed up as one.
         await using var driver = new OpcUaDriver(
             OpcUaLoopbackHarness.BuildWritableMap("PLC-OU-WRITE-CANCEL", server.EndpointUrl), pkiDir: pkiRoot,
             operationTimeoutMs: 30_000);
+
+        // Prime the session BEFORE introducing any server-side delay, so the 300ms cancellation below lands
+        // inside the ACTUAL write call, never inside session establishment — which, under a full test-suite
+        // run's heavier concurrent load, can itself occasionally take longer than 300ms (observed: this test
+        // flaked under a full-suite run with "could not reach the device" instead, before this fix).
+        var warmup = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 1.0), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Applied, warmup.Outcome);
+
+        server.Controls.MethodDelayMs = 15_000;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
         var stopwatch = Stopwatch.StartNew();
@@ -525,10 +682,16 @@ public sealed class OpcUaDriverWriteTests
     {
         var pkiRoot = NewPkiRoot("call-cancel");
         await using var server = await OpcUaLoopbackHarness.StartWritableServerAsync(pkiRoot);
-        server.Controls.MethodDelayMs = 15_000;
         await using var driver = new OpcUaDriver(
             OpcUaLoopbackHarness.BuildWritableMap("PLC-OU-CALL-CANCEL", server.EndpointUrl), pkiDir: pkiRoot,
             operationTimeoutMs: 30_000);
+
+        // Prime the session first — same reasoning as the setpoint test above (a real, observed flake under
+        // full-suite load: the 300ms cancellation firing during session establishment instead of the call).
+        var warmup = await driver.InvokeCommandAsync(new CommandRequest("ping"), CancellationToken.None);
+        Assert.Equal(WriteOutcome.Applied, warmup.Outcome);
+
+        server.Controls.MethodDelayMs = 15_000;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
         var stopwatch = Stopwatch.StartNew();

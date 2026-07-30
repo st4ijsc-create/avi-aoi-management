@@ -57,7 +57,7 @@ namespace St4i.EdgeCore.Drivers.OpcUa;
 /// <c>RequestHandle</c> over one secure channel, so this driver imposes NO client-side mutual exclusion
 /// around a <see cref="Session.ReadAsync"/>/<see cref="Session.WriteAsync"/>/<see cref="Session.CallAsync"/>
 /// call itself — <see cref="_sessionLock"/> guards ONLY the narrow "ensure a live session exists,
-/// reconnecting from scratch if needed" step (<see cref="AcquireSessionAsync"/>/<see cref="TeardownSessionAsync"/>).
+/// reconnecting from scratch if needed" step (<see cref="AcquireSessionAsync"/>/<see cref="TeardownSessionIfCurrentAsync"/>).
 /// The mutable <see cref="_session"/> FIELD is the actual hazard this closes (a poll iteration and a
 /// write/command could otherwise race to independently rebuild it — the "write during reconnect" case the
 /// task brief calls out, proven closed: task-5-report.md, a real loopback server's own
@@ -341,7 +341,18 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
     /// see the class doc comment's "Concurrency" remarks for why that is safe.</summary>
     private async Task<Session> AcquireSessionAsync(CancellationToken ct)
     {
-        await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // A concurrent DisposeAsync already disposed the lock — re-shape as the SAME cancellation-like
+            // outcome every existing caller already handles safely (write/call: Indeterminate; the poll
+            // loop: yield break) rather than adding a third exception shape for callers to reason about.
+            throw new OperationCanceledException("OpcUaDriver was disposed.", ct);
+        }
+
         try
         {
             await EnsureSessionAsync(ct).ConfigureAwait(false);
@@ -349,38 +360,55 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         }
         finally
         {
-            _sessionLock.Release();
+            ReleaseSessionLock();
         }
     }
 
-    /// <summary>Task B-5 — unconditionally tears the CURRENT session down (acquiring <see cref="_sessionLock"/>
-    /// first), forcing the NEXT <see cref="AcquireSessionAsync"/> call — from either the poll loop or a
-    /// write/command — to rebuild from scratch. Used by the poll loop's own failure handling (mirroring its
-    /// pre-B-5 behaviour exactly). Always waits for the lock with <see cref="CancellationToken.None"/> — this
-    /// is best-effort cleanup, never something a caller's own cancellation should be able to skip.</summary>
-    private async Task TeardownSessionAsync()
+    /// <summary>Review fix round 1 (Minor) — <see cref="_sessionLock"/> is now disposed in
+    /// <see cref="DisposeAsync"/> (it previously never was). A bare <c>_sessionLock.Release()</c> in a
+    /// <c>finally</c> would throw <see cref="ObjectDisposedException"/> if <see cref="DisposeAsync"/> races
+    /// and disposes the semaphore WHILE another caller is still holding it — replacing whatever result/
+    /// exception was already flowing through that `finally`, the EXACT B-4 Critical #2 shape this whole task
+    /// has been careful to avoid reproducing elsewhere. Every <c>Release()</c> call site goes through this
+    /// helper instead, so that race is merely a no-op, never a thrown exception that clobbers a real
+    /// result.</summary>
+    private void ReleaseSessionLock()
     {
-        await _sessionLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            await DisposeSessionAsync().ConfigureAwait(false);
-        }
-        finally
-        {
             _sessionLock.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+            // DisposeAsync already disposed the lock — nothing left to release, and nothing to propagate.
         }
     }
 
-    /// <summary>Task B-5 — the REFERENCE-CHECKED sibling of <see cref="TeardownSessionAsync"/>: tears down
-    /// <see cref="_session"/> ONLY if it is still the SAME object as <paramref name="expected"/> — i.e. only
-    /// if nobody else (a concurrent poll iteration, or a concurrent write/command) has already superseded it
-    /// with a fresh reconnect. Without this check, a write/command that captured a now-stale session
-    /// reference could otherwise tear down a DIFFERENT, perfectly healthy session a concurrent caller just
-    /// finished building — wasteful churn, not silent corruption, but avoidable and caught during this
-    /// task's own design review (task-5-report.md) before it ever shipped.</summary>
+    /// <summary>Task B-5 — tears <see cref="_session"/> down (acquiring <see cref="_sessionLock"/> first),
+    /// but ONLY if it is still the SAME object as <paramref name="expected"/> — i.e. only if nobody else (a
+    /// concurrent poll iteration, or a concurrent write/command) has already superseded it with a fresh
+    /// reconnect. Without this check, a caller holding a now-stale session reference could otherwise tear
+    /// down a DIFFERENT, perfectly healthy session a concurrent caller just finished building — wasteful
+    /// churn, not silent corruption, but avoidable and caught during this task's own design review
+    /// (task-5-report.md) before it ever shipped. Used by the poll loop's own failure handling (mirroring
+    /// its pre-B-5 unconditional-teardown behaviour, now reference-safe) — <see cref="BestEffortReconnectIfUnhealthyAsync"/>
+    /// uses its OWN non-blocking variant instead (review fix round 1, Minor — see that method's own doc
+    /// comment for why blocking here would be wrong for a best-effort caller). Always waits for the lock
+    /// with <see cref="CancellationToken.None"/> — this is best-effort cleanup, never something a caller's
+    /// own cancellation should be able to skip.</summary>
     private async Task TeardownSessionIfCurrentAsync(Session expected)
     {
-        await _sessionLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await _sessionLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // A concurrent DisposeAsync already disposed the lock — and its own DisposeSessionAsync() call
+            // already tore down whatever session existed. Nothing left for this call to do.
+            return;
+        }
+
         try
         {
             if (ReferenceEquals(_session, expected))
@@ -390,7 +418,7 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         }
         finally
         {
-            _sessionLock.Release();
+            ReleaseSessionLock();
         }
     }
 
@@ -398,13 +426,26 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
     /// "Session recovery after a write/command failure" remarks for the full empirical finding: an ordinary
     /// OPC-UA write/call timeout or cancellation does NOT require forcing a session teardown for
     /// correctness). This is a defensive EXTRA, not a required fix: if <paramref name="session"/>'s own
-    /// <see cref="Session.Connected"/> already reports unhealthy, force a teardown (reference-checked via
-    /// <see cref="TeardownSessionIfCurrentAsync"/>) so a driver instance with no ACTIVE poll loop still
-    /// self-heals on its own next write/command attempt.
+    /// <see cref="Session.Connected"/> already reports unhealthy, force a reference-checked teardown so a
+    /// driver instance with no ACTIVE poll loop still self-heals on its own next write/command attempt.
     ///
-    /// <para><b>Why this is wrapped in its own best-effort <c>catch</c> — the B-4 Critical #2 shape,
-    /// audited.</b> B-4's Critical #2 was a <c>finally</c> that restored a Modbus transport setting on an
-    /// object the CANCELLATION path had already disposed BY DESIGN, throwing <see cref="NullReferenceException"/>
+    /// <para><b>Review fix round 1 (Minor) — a NON-BLOCKING lock attempt, deliberately NOT
+    /// <see cref="TeardownSessionIfCurrentAsync"/>'s own blocking wait.</b> This method runs on the
+    /// write/command's OWN return path, after a result has already been produced — <see cref="AcquireSessionAsync"/>
+    /// can hold <see cref="_sessionLock"/> for the FULL connect budget (a session establishment against a
+    /// slow/unresponsive server, bounded only by <see cref="_operationTimeoutMs"/>, e.g. 15s+) if a poll
+    /// iteration or another caller is mid-reconnect. Reusing <see cref="TeardownSessionIfCurrentAsync"/>'s
+    /// blocking <c>WaitAsync(CancellationToken.None)</c> here would let a "best-effort" self-heal step
+    /// withhold an ALREADY-PRODUCED, actionable "check the machine" result from the caller for that same
+    /// 15s+ — including past the caller's OWN cancellation, which this step deliberately ignores by design
+    /// (<see cref="CancellationToken.None"/>, so the housekeeping itself can't be interrupted mid-teardown).
+    /// A zero-timeout <c>WaitAsync(TimeSpan.Zero)</c> is genuinely best-effort instead: if the lock is
+    /// contended, this skip is harmless — the NEXT write/command attempt (or the read loop, if one is
+    /// running) will observe the SAME unhealthy session and retry the self-heal then.</para>
+    ///
+    /// <para><b>Why the whole body is wrapped in its own best-effort <c>catch</c> — the B-4 Critical #2
+    /// shape, audited.</b> B-4's Critical #2 was a <c>finally</c> that restored a Modbus transport setting on
+    /// an object the CANCELLATION path had already disposed BY DESIGN, throwing <see cref="NullReferenceException"/>
     /// and silently discarding the caller's already-produced, carefully-worded <c>Indeterminate</c> result in
     /// favour of a generic backstop message. This method is called from exactly the same kind of place (a
     /// write/command's own failure-handling code, right before returning its real result) and touches the
@@ -419,9 +460,27 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
     {
         try
         {
-            if (!session.Connected)
+            if (session.Connected)
             {
-                await TeardownSessionIfCurrentAsync(session).ConfigureAwait(false);
+                return;
+            }
+
+            if (!await _sessionLock.WaitAsync(TimeSpan.Zero).ConfigureAwait(false))
+            {
+                // Contended — genuinely best-effort: skip rather than wait, see this method's own remarks.
+                return;
+            }
+
+            try
+            {
+                if (ReferenceEquals(_session, session))
+                {
+                    await DisposeSessionAsync().ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                ReleaseSessionLock();
             }
         }
         catch
@@ -736,12 +795,30 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
                 Detail: $"could not reach the device for '{point}': {ex.Message}");
         }
 
-        var writeValue = new WriteValue
+        WriteValue writeValue;
+        try
         {
-            NodeId = new NodeId(nodeId),
-            AttributeId = Attributes.Value,
-            Value = new DataValue(ToVariant(narrowedValue)),
-        };
+            writeValue = new WriteValue
+            {
+                NodeId = new NodeId(nodeId),
+                AttributeId = Attributes.Value,
+                Value = new DataValue(ToVariant(narrowedValue)),
+            };
+        }
+        catch (Exception ex)
+        {
+            // Review fix round 1 (Important #1) — B-3's OpcUaNodeMap.FromJson validates only that a
+            // declared NodeId is non-blank, never that it PARSES (new NodeId(string) can throw
+            // ServiceResultException OR ArgumentException for a malformed string — confirmed empirically,
+            // task-5-report.md). This construction used to sit OUTSIDE any try, so a malformed map's NodeId
+            // fell through to the generic backstop's "unexpected failure: {ex.Message}" — losing the one
+            // fact that actually matters here: NO I/O was attempted at all (this happens before WriteAsync
+            // is ever called), so this is provably a map defect, not a device ambiguity. Consistent with
+            // "could not reach the device" above (also a provably-untouched-device case reported the same
+            // way in this class) — Indeterminate, not Rejected, but with a Detail that says exactly that.
+            return new SetpointWriteResult(point, WriteOutcome.Indeterminate,
+                Detail: $"'{point}' was never sent to the device — its declared nodeId ('{nodeId}') failed to parse ({ex.Message}); fix the map's nodeId for this point.");
+        }
 
         try
         {
@@ -796,12 +873,26 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
                 Detail: $"could not reach the device for '{commandName}': {ex.Message}");
         }
 
-        var callRequest = new CallMethodRequest
+        CallMethodRequest callRequest;
+        try
         {
-            ObjectId = new NodeId(objectNodeId),
-            MethodId = new NodeId(methodNodeId),
-            InputArguments = new VariantCollection(orderedArguments.Select(ToVariant)),
-        };
+            callRequest = new CallMethodRequest
+            {
+                ObjectId = new NodeId(objectNodeId),
+                MethodId = new NodeId(methodNodeId),
+                InputArguments = new VariantCollection(orderedArguments.Select(ToVariant)),
+            };
+        }
+        catch (Exception ex)
+        {
+            // Review fix round 1 (Important #1) — the identical shape as ExecuteWriteAsync's own fix above,
+            // and the HIGHER-risk one: a malformed objectNodeId/methodNodeId used to fall through to the
+            // generic backstop ("unexpected failure: {ex.Message}"), destroying the one message that matters
+            // for a COMMAND — whether it started. This is provably NOT that case (CallAsync is never
+            // reached), so it says so plainly instead of leaving an operator to wonder.
+            return new CommandResult(commandName, WriteOutcome.Indeterminate,
+                Detail: $"'{commandName}' was never invoked — its declared objectNodeId/methodNodeId ('{objectNodeId}' / '{methodNodeId}') failed to parse ({ex.Message}); fix the map's command declaration.");
+        }
 
         try
         {
@@ -841,19 +932,35 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         }
     }
 
-    /// <summary>Task B-5 — the ONLY confidently-provable "the method was never invoked" signal available
-    /// from a <see cref="CallMethodResult"/> without seeing the server's own internals: EITHER a per-argument
-    /// rejection (<see cref="CallMethodResult.InputArgumentResults"/> contains a <c>Bad</c> entry — the OPC-UA
-    /// Call service validates every input argument's presence/type/range BEFORE invoking the method), OR the
-    /// argument-COUNT-level <see cref="StatusCodes.BadArgumentsMissing"/>/<see cref="StatusCodes.BadTooManyArguments"/>
-    /// (the SAME pre-invocation check, one level up — <see cref="CallMethodResult.InputArgumentResults"/>
-    /// stays empty for these two specifically, since there is no single argument to point at). Empirically
-    /// confirmed (task-5-report.md, an instrumented real loopback server with its own invocation counter):
-    /// both shapes reproduce with the counter staying at 0; every OTHER <c>Bad</c> status reproduces WITH the
-    /// counter incrementing — i.e. the method genuinely ran. Deliberately NOT a larger allowlist of "probably
-    /// safe" codes — anything not on this short, spec-guaranteed list is treated as possibly-post-invocation
-    /// (see <see cref="ExecuteCallAsync"/>'s own remarks), because the wrong direction to be confident in
-    /// here is claiming "nothing happened" when it might have.</summary>
+    /// <summary>Task B-5 — the confidently-provable "the method was never invoked" signals available from a
+    /// <see cref="CallMethodResult"/> without seeing the server's own internals, per the OPC-UA specification
+    /// (Part 4 §5.11.2, Call Service) — the FULL precondition table the Call service is specified to check
+    /// BEFORE ever invoking the method's own logic, not just the argument-shape subset of it:
+    /// <list type="bullet">
+    /// <item><description>a per-argument rejection (<see cref="CallMethodResult.InputArgumentResults"/>
+    /// contains a <c>Bad</c> entry — argument presence/type/range, checked before invocation);</description></item>
+    /// <item><description><see cref="StatusCodes.BadArgumentsMissing"/>/<see cref="StatusCodes.BadTooManyArguments"/>
+    /// — the SAME check, one level up (argument COUNT; <see cref="CallMethodResult.InputArgumentResults"/>
+    /// stays empty for these two specifically, since there is no single argument to point at);</description></item>
+    /// <item><description><see cref="StatusCodes.BadNodeIdUnknown"/>/<see cref="StatusCodes.BadNodeIdInvalid"/>
+    /// — the declared <c>objectId</c>/<c>methodId</c> does not resolve to a real node at all (a map typo
+    /// pointing at a NodeId the server has never heard of);</description></item>
+    /// <item><description><see cref="StatusCodes.BadMethodInvalid"/> — the declared <c>methodId</c> resolves
+    /// to a real node, but that node is not a callable method on the given object;</description></item>
+    /// <item><description><see cref="StatusCodes.BadNotExecutable"/>/<see cref="StatusCodes.BadUserAccessDenied"/>
+    /// — the method exists but this session may not currently invoke it (state/permission gate).</description></item>
+    /// </list>
+    /// Review fix round 1 (Important #2) — the original version of this method allowlisted ONLY the
+    /// argument-shape entries above, missing the node/method-identity ones from the SAME spec table, even
+    /// though they satisfy this method's own stated criterion exactly. Consequence, reproduced empirically
+    /// (task-5-report.md): a typo'd command/object/method name in the MAP (never touched by a caller at all)
+    /// produced <see cref="Models.WriteOutcome.Indeterminate"/> — "check the machine" — for a command that
+    /// provably never ran, the server's own invocation counter staying at 0 throughout. Every entry above is
+    /// now empirically confirmed the same way: the counter stays at 0 for each, and increments for anything
+    /// NOT on this list — i.e. the method genuinely ran. Deliberately still NOT a larger allowlist of
+    /// "probably safe" vendor-specific codes beyond this spec-guaranteed table — anything off this list is
+    /// treated as possibly-post-invocation (see <see cref="ExecuteCallAsync"/>'s own remarks), because the
+    /// wrong direction to be confident in is claiming "nothing happened" when it might have.</summary>
     private static bool IsPreInvocationCallRejection(CallMethodResult result)
     {
         if (result.InputArgumentResults is { Count: > 0 } argumentResults)
@@ -867,7 +974,13 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
             }
         }
 
-        return result.StatusCode == StatusCodes.BadArgumentsMissing || result.StatusCode == StatusCodes.BadTooManyArguments;
+        return result.StatusCode == StatusCodes.BadArgumentsMissing
+            || result.StatusCode == StatusCodes.BadTooManyArguments
+            || result.StatusCode == StatusCodes.BadNodeIdUnknown
+            || result.StatusCode == StatusCodes.BadNodeIdInvalid
+            || result.StatusCode == StatusCodes.BadMethodInvalid
+            || result.StatusCode == StatusCodes.BadNotExecutable
+            || result.StatusCode == StatusCodes.BadUserAccessDenied;
     }
 
     /// <summary>Task B-5 — narrows a value already-narrowed by <see cref="OpcUaWritableSetpoint.TryNarrowForWrite"/>/
@@ -891,11 +1004,39 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         _ => throw new ArgumentOutOfRangeException(nameof(value), value, "unreachable — every narrowed value type is listed above."),
     };
 
+    /// <summary>Review fix round 1 — recorded, deliberately NOT fixed, per the reviewer's own instruction to
+    /// write it down rather than silently accept the tradeoff.
+    ///
+    /// <para><b>This method deliberately does NOT acquire <see cref="_sessionLock"/> before mutating
+    /// <see cref="_session"/> (via <see cref="DisposeSessionAsync"/>).</b> Mirrors B-2/B-4's own signed-off
+    /// "disposal never waits on in-flight work, not even boundedly" design (a driver <c>DisposeAsync</c> can
+    /// run while <c>FleetHost._gate</c>/<c>FleetHost.Estop</c> is involved, and this class has no way to know
+    /// that). The PRE-EXISTING GP-6b race this preserves: <see cref="EnsureSessionAsync"/>'s own late
+    /// <c>if (_disposed)</c> check before assigning <c>_session = newSession</c> is not airtight — a narrow
+    /// window between that check and the assignment is not covered by any lock, so <see cref="DisposeAsync"/>
+    /// can still, in principle, complete WHILE a session is being established, landing a live
+    /// <see cref="Session"/> on an already-disposed driver that never gets torn down again. <see cref="_sessionLock"/>
+    /// (introduced by this task) COULD close this — <see cref="DisposeAsync"/> could acquire it before
+    /// tearing down — but deliberately does not, because doing so would make HALT/disposal wait on whatever
+    /// currently holds the lock (a full session-establishment attempt against a slow server, up to
+    /// <see cref="_operationTimeoutMs"/>), recreating exactly the coupling B-2's own design exists to
+    /// forbid. This is a defensible, ACCEPTED tradeoff, not an oversight — written down here so it reads as
+    /// one.</para>
+    ///
+    /// <para><b><see cref="DisposeSessionAsync"/> calls <c>session.CloseAsync(CancellationToken.None)</c> —
+    /// a network round-trip that can block up to this driver's own configured operation timeout (15s by
+    /// default) against a hung server.</b> This runs on <see cref="DisposeAsync"/>'s OWN path, which is also
+    /// the HALT path — a 3-second budget elsewhere in this system (<c>FleetHost</c>'s own teardown budget).
+    /// This task's own dispose-racing-a-stuck-write test (<c>DisposeAsync_WhileCommandIsStuckMidFlight_...</c>)
+    /// only exercises a LIVE server (the stuck command's own connection, not the close call against a
+    /// server that has itself gone unresponsive) — the close-against-a-hung-server case is UNTESTED here.
+    /// B-6/B-8 need to know this before building HALT-path guarantees on top of this driver.</para></summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
         Health = DriverHealthState.Down;
         await DisposeSessionAsync().ConfigureAwait(false);
+        _sessionLock.Dispose();
     }
 }

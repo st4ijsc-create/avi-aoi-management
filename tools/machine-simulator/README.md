@@ -1771,12 +1771,19 @@ Node-map JSON shape (`OpcUaNodeMap.FromJson` — property names matched case-ins
 - A blank `machineCode`/`endpointUrl` or an empty `nodes` list is rejected at load (throws), which
   Program.cs catches — it logs a warning and disables OPC-UA for the run rather than crashing startup.
 
-**Task B-3 — declarative write/command capability** (same posture as the Modbus section above — no driver
-executes any of this yet; `OpcUaDriver` still only ever **reads**): a node may add `"writable": {
-"valueType": "UInt16" | "Int16" | "Int32" | "UInt32" | "Double", "min": <number>, "max": <number> }` —
-`valueType` must be numeric (a boolean/string writable node is a documented, deferred follow-up),
-`min`/`max` are **mandatory** and must fit within `valueType`'s own representable range, and are validated
-at parse time exactly like Modbus's `writable` above. A top-level `"commands": [ { "name": "...",
+**Task B-3 — declarative write/command capability, executed by `OpcUaDriver` since B-5** (see task-5-report.md
+— the "no driver executes any of this yet" framing this paragraph originally shared with the Modbus section
+above is stale for OPC-UA specifically now that B-5 has shipped `WriteSetpointAsync`/`InvokeCommandAsync`;
+left as-is for Modbus per B-8's own coordinated cleanup): a node may add `"writable": { "valueType": "Bool" |
+"Int16" | "UInt16" | "Int32" | "UInt32" | "Double", "min": <number>, "max": <number> }` — `valueType` must be
+`Bool` or numeric; a **string** writable node remains unsupported (its domain isn't similarly bounded). For a
+numeric `valueType`, `min`/`max` are **mandatory** and must fit within that type's own representable range;
+for `Bool`, `min`/`max` must be **absent** (a boolean's domain `{false,true}` is already exhaustively
+bounded — a *stronger* bound than any numeric range, not a missing one — B-3 fix round 1 overruled the
+original numeric-only restriction for exactly this reason: rejecting Bool would have pushed ordinary
+enable/disable and mode-select writes into the command lane, which B-6 gates at a stricter role, a safety
+regression rather than conservatism). Both are validated at parse time exactly like Modbus's `writable`
+above. A top-level `"commands": [ { "name": "...",
 "objectNodeId": "...", "methodNodeId": "...", "arguments": [ ... same shape as Modbus's command arguments
 ... ] } ]` declares an OPC-UA method by BOTH the NodeId of the object it is called on and the method's own
 NodeId (the `Call` service needs both), so a future driver never has to re-derive which object owns a
