@@ -21,6 +21,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, desc, eq } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -59,7 +60,7 @@ function normalize(r: ScheduleRow) {
 
 async function getRow(id: number): Promise<ScheduleRow> {
   const db = await getDb();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
   const [row] = await db.select().from(maintenanceSchedules).where(eq(maintenanceSchedules.id, id)).limit(1);
   if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `maintenance_schedule ${id} not found` });
   return row;
@@ -109,7 +110,7 @@ export const maintenanceScheduleRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const [machine] = await db.select({ code: machines.code, id: machines.id })
         .from(machines).where(eq(machines.id, input.machineId)).limit(1);
       if (!machine) throw new TRPCError({ code: "NOT_FOUND", message: `Machine ${input.machineId} not found` });
@@ -145,7 +146,7 @@ export const maintenanceScheduleRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       await getRow(input.id); // 404 if missing
 
       const patch: Record<string, any> = { updatedAt: new Date() };
@@ -169,7 +170,7 @@ export const maintenanceScheduleRouter = router({
     .input(z.object({ id: z.number().int().positive(), isActive: z.boolean() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       await getRow(input.id);
       const [row] = await db.update(maintenanceSchedules)
         .set({ isActive: input.isActive, updatedAt: new Date() })
@@ -183,7 +184,7 @@ export const maintenanceScheduleRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       await getRow(input.id); // 404 if missing
       await db.delete(maintenanceSchedules).where(eq(maintenanceSchedules.id, input.id));
       return { deleted: true, id: input.id };

@@ -2,6 +2,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { getDb } from "../db/connection";
 import { eq } from "drizzle-orm";
@@ -206,7 +207,7 @@ const trainingRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [deleted] = await database.delete(trainingJobs).where(eq(trainingJobs.id, input.id)).returning({ id: trainingJobs.id });
       if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "Training job not found" });
       return { success: true, id: deleted.id };
@@ -216,7 +217,7 @@ const trainingRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [dataset] = await database.select().from(trainingDatasets).where(eq(trainingDatasets.id, input.id)).limit(1);
       if (!dataset) throw new TRPCError({ code: "NOT_FOUND", message: "Training dataset not found" });
       return dataset;
@@ -226,7 +227,7 @@ const trainingRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [deleted] = await database.delete(trainingDatasets).where(eq(trainingDatasets.id, input.id)).returning({ id: trainingDatasets.id });
       if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "Training dataset not found" });
       return { success: true, id: deleted.id };
@@ -320,7 +321,7 @@ const abTestRouter = router({
     }))
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { id, ...updates } = input;
       const updateData: Record<string, unknown> = {};
       if (updates.name !== undefined) updateData.name = updates.name;
@@ -335,7 +336,7 @@ const abTestRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       await database.delete(abTestResults).where(eq(abTestResults.experimentId, input.id));
       const [deleted] = await database.delete(abTestExperiments).where(eq(abTestExperiments.id, input.id)).returning({ id: abTestExperiments.id });
       if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "A/B test experiment not found" });
@@ -516,7 +517,7 @@ const edgeRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [deleted] = await database.delete(edgeDeployments).where(eq(edgeDeployments.id, input.id)).returning({ id: edgeDeployments.id });
       if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "Edge deployment not found" });
       return { success: true, id: deleted.id };

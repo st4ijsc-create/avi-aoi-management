@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import speakeasy from "speakeasy";
 import QRCode from "qrcode";
@@ -29,7 +30,7 @@ export const twoFactorRouter = router({
   getStatus: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) {
-      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
     }
 
     const user = await db
@@ -65,7 +66,7 @@ export const twoFactorRouter = router({
   generateSecret: protectedProcedure.mutation(async ({ ctx }) => {
     const db = await getDb();
     if (!db) {
-      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
     }
 
     // Check if 2FA is already enabled
@@ -119,7 +120,7 @@ export const twoFactorRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       // Get user's secret
@@ -205,7 +206,7 @@ export const twoFactorRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       // Get user's secret
@@ -298,7 +299,7 @@ export const twoFactorRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       const user = await db
@@ -376,7 +377,7 @@ export const twoFactorRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       const user = await db

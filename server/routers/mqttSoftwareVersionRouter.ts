@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router } from "../_core/trpc";
 import { adminProcedure, protectedProcedure } from "./_shared";
 import * as db from "../db";
@@ -11,7 +12,7 @@ export const mqttSoftwareVersionRouter = router({
     const { mqttSoftwareVersions } = await import("../../drizzle/schema/mqtt");
     const { desc } = await import("drizzle-orm");
     const database = await db.getDb();
-    if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+    if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
     return database
       .select()
       .from(mqttSoftwareVersions)
@@ -47,7 +48,7 @@ export const mqttSoftwareVersionRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { mqttSoftwareVersions } = await import("../../drizzle/schema/mqtt");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
 
       const [version] = await database
         .insert(mqttSoftwareVersions)
@@ -77,7 +78,7 @@ export const mqttSoftwareVersionRouter = router({
       const { mqttSoftwareVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
 
       // Verify version exists
       const [existing] = await database
@@ -113,7 +114,7 @@ export const mqttSoftwareVersionRouter = router({
       const { mqttSoftwareVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
 
       // Verify version exists and has APK
       const [target] = await database
@@ -154,7 +155,7 @@ export const mqttSoftwareVersionRouter = router({
       const { mqttSoftwareVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
 
       const updates: Record<string, unknown> = { updatedAt: new Date() };
       if (input.changelog !== undefined) updates.changelog = input.changelog;
@@ -177,7 +178,7 @@ export const mqttSoftwareVersionRouter = router({
       const { mqttSoftwareVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
       await database.delete(mqttSoftwareVersions).where(eq(mqttSoftwareVersions.id, input.id));
       return { success: true };
     }),

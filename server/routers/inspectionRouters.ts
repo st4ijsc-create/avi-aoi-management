@@ -1,6 +1,7 @@
 ﻿import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { invokeLLM } from "../_core/llm";
 
@@ -641,7 +642,7 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
       
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       const timestamp = new Date().toISOString();
@@ -673,7 +674,7 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
       
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       // For each inspection, add the tag
@@ -703,7 +704,7 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
       
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       await dbInstance.update(productInspections).set({
@@ -727,7 +728,7 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
       
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       // Get the measurement result
@@ -805,7 +806,7 @@ Respond in JSON format:
       const dbInstance = await db.getDb();
 
       if (!dbInstance) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+        throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       }
 
       const result = await db.getMeasurementResultById(input.id);

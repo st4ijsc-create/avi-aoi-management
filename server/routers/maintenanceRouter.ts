@@ -23,6 +23,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
@@ -46,7 +47,7 @@ function buildWorkOrderNumber(machineId: number): string {
 
 async function getRow(id: number) {
   const db = await getDb();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
   const [row] = await db.select().from(maintenanceWorkOrders).where(eq(maintenanceWorkOrders.id, id)).limit(1);
   if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `work_order ${id} not found` });
   return row;
@@ -99,7 +100,7 @@ export const maintenanceRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const [machine] = await db.select({ code: machines.code }).from(machines).where(eq(machines.id, input.machineId)).limit(1);
       const [row] = await db
         .insert(maintenanceWorkOrders)
@@ -137,7 +138,7 @@ export const maintenanceRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const existing = await getRow(input.id);
 
       // Stamp repairStartedAt on first transition into IN_PROGRESS.
@@ -175,7 +176,7 @@ export const maintenanceRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const existing = await getRow(input.id);
       if (existing.status === "COMPLETED") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Work order already completed" });
@@ -211,7 +212,7 @@ export const maintenanceRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       await getRow(input.id); // 404 if missing
       await db.delete(maintenanceWorkOrders).where(eq(maintenanceWorkOrders.id, input.id));
       return { deleted: true, id: input.id };
@@ -254,7 +255,7 @@ export const maintenanceRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
 
       // Validate the work order exists (soft FK — validated here, not in DDL).
       await getRow(input.workOrderId);

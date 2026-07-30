@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 // P1 (doc 11) — unify on the RAG/KB backend. The non-stream `chat` mutation now
 // routes through `answerQuestion` (the SAME pipeline `streamAnswer` uses: tool →
@@ -88,7 +89,7 @@ export const aiChatRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [conv] = await db.select().from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.id), eq(aiChatConversations.userId, ctx.user.id)))
         .limit(1);
@@ -109,7 +110,7 @@ export const aiChatRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [result] = await db.insert(aiChatConversations).values({
         userId: ctx.user.id,
         title: input.title ?? "New Conversation",
@@ -128,7 +129,7 @@ export const aiChatRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { id, ...data } = input;
       const [result] = await db.update(aiChatConversations)
         .set({ ...data, updatedAt: new Date() })
@@ -143,7 +144,7 @@ export const aiChatRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Verify ownership
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.id), eq(aiChatConversations.userId, ctx.user.id)))
@@ -184,7 +185,7 @@ export const aiChatRouter = router({
     .input(z.object({ messageId: z.number(), conversationId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Verify conversation ownership
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
@@ -320,7 +321,7 @@ export const aiChatRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // Verify ownership
       const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
         .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))

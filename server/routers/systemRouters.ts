@@ -2,6 +2,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { pgTable, serial, integer, boolean, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 import * as db from "../db";
 import { withDbErrors } from "../_core/dbErrors";
@@ -170,7 +171,7 @@ export const workstationRouter = router({
     }))
     .mutation(async ({ input }) => {
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { eq, and } = await import("drizzle-orm");
       const existing = await database
         .select({ id: workstationMachines.id })
@@ -200,7 +201,7 @@ export const workstationRouter = router({
     .input(z.object({ workstationId: z.number(), machineId: z.number() }))
     .mutation(async ({ input }) => {
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const { eq, and } = await import("drizzle-orm");
       await database
         .delete(workstationMachines)
@@ -606,7 +607,7 @@ export const scheduledReportRouter = router({
       const { reportTemplates } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const result = await database.select().from(reportTemplates).where(eq(reportTemplates.isActive, true));
       return result;
     }),
@@ -617,7 +618,7 @@ export const scheduledReportRouter = router({
       const { reportTemplates } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const result = await database.select().from(reportTemplates).where(eq(reportTemplates.id, input.id));
       return result[0] || null;
     }),
@@ -628,7 +629,7 @@ export const scheduledReportRouter = router({
       const { reportTemplates } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const result = await database.select().from(reportTemplates).where(eq(reportTemplates.code, input.code));
       return result[0] || null;
     }),
@@ -651,7 +652,7 @@ export const scheduledReportRouter = router({
       const { reportTemplates } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const database = await db.getDb();
-      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const templateResult = await database.select().from(reportTemplates).where(eq(reportTemplates.code, input.templateCode));
       const template = templateResult[0];
       if (!template) {
