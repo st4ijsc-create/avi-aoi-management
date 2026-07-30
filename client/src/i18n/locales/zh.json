@@ -3535,6 +3535,7 @@
     "PERMISSION_DENIED": "您无权：{{action}}。",
     "AUTH_REQUIRED": "您需要登录才能使用此功能。",
     "TWO_FACTOR_NOT_SET_UP": "此账户尚未启用双因素认证。",
+    "RATE_LIMITED": "操作过于频繁，请稍后再试。",
     "KB_FILE_TOO_LARGE": "文件超过 {{limitMb}} MB 限制。",
     "KB_UNSUPPORTED_TYPE": "不支持的格式 \"{{ext}}\"。支持的格式：{{supported}}。",
     "KB_CONTENT_TYPE_MISMATCH": "文件内容与扩展名不符：声称是 {{claimed}}，实际是 {{detected}}。",
@@ -3654,7 +3655,8 @@
       "moduleAuditPreset": "模块审计预设",
       "productCategory": "产品类别",
       "trainingBatchTag": "训练批次标签",
-      "msaObservation": "MSA观测值"
+      "msaObservation": "MSA观测值",
+      "kbCorpus": "知识库(corpus)"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3676,7 +3678,33 @@
       "sendTestEmail": "发送测试邮件",
       "issueMachineClaimToken": "签发设备认领令牌",
       "publishEquipmentStandard": "发布设备标准",
-      "calculateCpkCapability": "计算Cpk能力指数"
+      "calculateCpkCapability": "计算Cpk能力指数",
+      "registerMachine": "注册机台",
+      "claimMachineKey": "领取机台API密钥",
+      "enrollMachine": "零接触注册机台",
+      "transitionMachineLifecycle": "转换机台生命周期状态",
+      "updateMeasurementPoint": "更新测量点",
+      "revertPointsConfigVersion": "回退测量点配置版本",
+      "assignProductToMachine": "将产品分配给机台",
+      "addMsaObservation": "添加MSA观测",
+      "addMsaObservationsBatch": "批量添加MSA观测",
+      "generateMsaMatrix": "生成MSA矩阵",
+      "applyCadImportJob": "应用CAD导入任务",
+      "ingestKbDocument": "导入知识文档",
+      "createKbCorpus": "创建知识库(corpus)",
+      "deleteKbCorpus": "删除知识库(corpus)",
+      "runLoraFinetune": "运行LoRA微调",
+      "fetchMeasurementImage": "获取测量点图像",
+      "manageGoldenSample": "管理Golden样本",
+      "captureGoldenSample": "采集Golden样本",
+      "resolveGoldenSample": "解析Golden样本",
+      "deleteDashboardPreset": "删除仪表板预设",
+      "unshareDashboardPreset": "取消共享仪表板预设",
+      "activateLicense": "激活许可证",
+      "downloadLicenseFile": "下载许可证文件",
+      "generateOfflineActivationRequest": "生成离线激活请求",
+      "applyOfflineLicense": "应用离线许可证",
+      "getHardwareFingerprint": "获取硬件指纹"
     },
     "field": {
       "code": "编码",
@@ -3713,7 +3741,18 @@
       "recipePayload": "配方数据",
       "extraFields": "扩展字段",
       "measuredValue": "测量值",
-      "builtInRole": "内置角色"
+      "builtInRole": "内置角色",
+      "scopes": "权限范围",
+      "capabilities": "设备能力",
+      "imageDimensions": "图像尺寸",
+      "preferredInstrumentId": "首选测量仪器",
+      "preferredSamplingPlanId": "首选抽样计划",
+      "productViewId": "产品视图",
+      "targetProductModelId": "目标产品型号",
+      "fileContent": "文件内容",
+      "videoContent": "视频内容",
+      "confirm": "确认",
+      "dashboardTarget": "仪表板目标"
     },
     "feature": {
       "web_ingest": "网页内容导入",
@@ -3741,7 +3780,10 @@
       "ursimHarness": "URSim测试框架",
       "ros2Bridge": "ROS2桥接",
       "twinLive": "数字孪生实时",
-      "modelPipeline": "模型流水线"
+      "modelPipeline": "模型流水线",
+      "licenseServerSdk": "License Server SDK",
+      "speechToText": "语音转文字",
+      "loraFinetune": "LoRA微调"
     },
     "action": {
       "viewOthersPermissions": "查看他人的权限",
@@ -3753,7 +3795,17 @@
       "selfApproveChangeover": "自我批准换型请求",
       "disableOwnAccount": "禁用自己的账户",
       "changeOwnRole": "更改自己的角色",
-      "selfPublishEquipmentStandard": "自行发布本人的设备变更请求"
+      "selfPublishEquipmentStandard": "自行发布本人的设备变更请求",
+      "changeMachineRegistrationStatus": "更改机台注册状态",
+      "createSharedDashboardPreset": "创建共享仪表板预设",
+      "updateDashboardPreset": "更新仪表板预设",
+      "deleteDashboardPreset": "删除仪表板预设",
+      "exportDashboardPreset": "导出仪表板预设",
+      "cloneDashboardPreset": "克隆仪表板预设",
+      "viewDashboard": "查看仪表板",
+      "exportDashboard": "导出仪表板",
+      "convertDashboardToTemplate": "将仪表板转换为模板",
+      "selfApproveGoldenSample": "自行批准本人的Golden样本"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

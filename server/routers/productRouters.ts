@@ -501,12 +501,13 @@ export const productModelRouter = router({
         const w = input.imageWidth ?? autoImageWidth;
         const h = input.imageHeight ?? autoImageHeight;
         if ((!w || !h) && isProductImageDimsRequired()) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
+          throw appError(
+            'BAD_REQUEST',
+            'INVALID_VALUE',
+            { field: 'imageDimensions' },
+            'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
               'Không xác định được kích thước ảnh — cung cấp imageWidth/imageHeight hoặc tải ảnh hợp lệ.',
-          });
+          );
         }
       }
 
@@ -637,12 +638,13 @@ export const productModelRouter = router({
         }
         // PM8 enforcement: a new image without resolvable dims is refused.
         if ((!finalData.imageWidth || !finalData.imageHeight) && isProductImageDimsRequired()) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
+          throw appError(
+            'BAD_REQUEST',
+            'INVALID_VALUE',
+            { field: 'imageDimensions' },
+            'Could not determine reference image dimensions. Provide imageWidth/imageHeight or upload a valid image. ' +
               'Không xác định được kích thước ảnh — cung cấp imageWidth/imageHeight hoặc tải ảnh hợp lệ.',
-          });
+          );
         }
       }
 
@@ -1114,12 +1116,13 @@ export const measurementPointRouter = router({
           // not portable across machines — block the save until dims are set
           // (via image upload or product.backfillImageDimensions). Default off so
           // the current dim-less dev products still allow authoring.
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "This product has no reference image dimensions; set them before adding points. " +
+          throw appError(
+            "BAD_REQUEST",
+            "INVALID_VALUE",
+            { field: "imageDimensions" },
+            "This product has no reference image dimensions; set them before adding points. " +
               "Sản phẩm chưa có kích thước ảnh — hãy đặt kích thước trước khi thêm điểm đo.",
-          });
+          );
         }
       }
       // P3: Validate preferredInstrument if provided
@@ -1129,7 +1132,7 @@ export const measurementPointRouter = router({
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${input.preferredInstrumentId} not found`);
         }
         if (!instrument.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Instrument "${instrument.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "preferredInstrumentId" }, `Instrument "${instrument.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1143,7 +1146,7 @@ export const measurementPointRouter = router({
           throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "samplingPlan", parent: "productModel" }, `Sampling plan does not belong to this product model`);
         }
         if (!samplingPlan.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "preferredSamplingPlanId" }, `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1157,7 +1160,7 @@ export const measurementPointRouter = router({
           throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "productView", parent: "productModel" }, `Product view does not belong to this product model`);
         }
         if (!productView.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Product view "${productView.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "productViewId" }, `Product view "${productView.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1320,7 +1323,7 @@ export const measurementPointRouter = router({
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${rest.preferredInstrumentId} not found`);
         }
         if (!instrument.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Instrument "${instrument.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "preferredInstrumentId" }, `Instrument "${instrument.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1334,7 +1337,7 @@ export const measurementPointRouter = router({
           throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "samplingPlan", parent: "productModel" }, `Sampling plan does not belong to this product model`);
         }
         if (!samplingPlan.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "preferredSamplingPlanId" }, `Sampling plan "${samplingPlan.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1348,7 +1351,7 @@ export const measurementPointRouter = router({
           throw appError("BAD_REQUEST", "SCOPE_MISMATCH", { entity: "productView", parent: "productModel" }, `Product view does not belong to this product model`);
         }
         if (!productView.isActive) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Product view "${productView.code}" is inactive; cannot assign to measurement point` });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "productViewId" }, `Product view "${productView.code}" is inactive; cannot assign to measurement point`);
         }
       }
 
@@ -1412,33 +1415,38 @@ export const measurementPointRouter = router({
             actualUpdatedAt?: string | null;
           };
           const cur = conflictErr.current ?? {};
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "Điểm đo đã bị người khác thay đổi kể từ khi bạn mở. Tải lại để xem thay đổi, hoặc ghi đè. " +
+          // Sprint 5 §4 — appError() thay cho throw TRPCError trần nhưng PHẢI giữ nguyên payload
+          // `mpConflict` trên cause: errorFormatter (trpc.ts) đọc nó ĐỘC LẬP với
+          // appCode/appParams để forward → shape.data.conflict, thứ mà ProductModels.tsx
+          // dùng để mở dialog "someone else changed X" (Doc 31 UX3) — không đi qua
+          // đường dịch appCode/message chung. Mất trường này là mất tính năng reload/
+          // overwrite-anyway, không chỉ mất câu chữ.
+          const mpConflictErr = appError(
+            "CONFLICT",
+            "OPERATION_FAILED",
+            { operation: "updateMeasurementPoint" },
+            "Điểm đo đã bị người khác thay đổi kể từ khi bạn mở. Tải lại để xem thay đổi, hoặc ghi đè. " +
               "This measurement point was changed by someone else since you opened it.",
-            cause: {
-              // Read by the additive errorFormatter forward (trpc.ts) → data.conflict.
-              mpConflict: {
-                pointDefId: id,
-                expectedUpdatedAt: conflictErr.expectedUpdatedAt ?? null,
-                actualUpdatedAt: conflictErr.actualUpdatedAt ?? null,
-                current: {
-                  code: cur.code ?? null,
-                  name: cur.name ?? null,
-                  lowerLimit: cur.lowerLimit ?? null,
-                  upperLimit: cur.upperLimit ?? null,
-                  nominalValue: cur.nominalValue ?? null,
-                  componentCode: cur.componentCode ?? null,
-                  refDesignator: cur.refDesignator ?? null,
-                  positionX: cur.positionX ?? null,
-                  positionY: cur.positionY ?? null,
-                  radius: cur.radius ?? null,
-                  updatedAt: cur.updatedAt ?? null,
-                },
-              },
-            } as unknown as Error,
-          });
+          );
+          (mpConflictErr.cause as { mpConflict?: unknown }).mpConflict = {
+            pointDefId: id,
+            expectedUpdatedAt: conflictErr.expectedUpdatedAt ?? null,
+            actualUpdatedAt: conflictErr.actualUpdatedAt ?? null,
+            current: {
+              code: cur.code ?? null,
+              name: cur.name ?? null,
+              lowerLimit: cur.lowerLimit ?? null,
+              upperLimit: cur.upperLimit ?? null,
+              nominalValue: cur.nominalValue ?? null,
+              componentCode: cur.componentCode ?? null,
+              refDesignator: cur.refDesignator ?? null,
+              positionX: cur.positionX ?? null,
+              positionY: cur.positionY ?? null,
+              radius: cur.radius ?? null,
+              updatedAt: cur.updatedAt ?? null,
+            },
+          };
+          throw mpConflictErr;
         }
         throw err;
       }
@@ -1692,14 +1700,14 @@ export const measurementPointRouter = router({
     .mutation(async ({ ctx, input }) => {
       const unmappedModelId = await getUnmappedProductModelId();
       if (!unmappedModelId) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "No __UNMAPPED__ model exists — nothing to remap." });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, "No __UNMAPPED__ model exists — nothing to remap.");
       }
       const target = await db.getProductModelById(input.targetProductModelId);
       if (!target) {
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Target product model ${input.targetProductModelId} not found.`);
       }
       if (input.targetProductModelId === unmappedModelId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot remap into the __UNMAPPED__ model itself." });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "targetProductModelId" }, "Cannot remap into the __UNMAPPED__ model itself.");
       }
       const summary = await db.remapMeasurementPoints({
         pointDefIds: input.pointDefIds,
@@ -1751,7 +1759,7 @@ export const measurementPointRouter = router({
       ).catch((err) => {
         // Out-of-range target (target >= current, or non-positive) → 400, not 500.
         if (err instanceof db.RevertVersionError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "revertPointsConfigVersion" }, err.message);
         }
         throw err;
       });
@@ -1844,12 +1852,13 @@ export const productMachineMappingRouter = router({
         try {
           const readiness = await computeProductReadiness(input.productModelId);
           if (readiness && readiness.band === "blocked") {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message:
-                `Sản phẩm "${product.code}" chưa đủ cấu hình để gán máy (readiness ${readiness.score}% — band "blocked"). ` +
+            throw appError(
+              "BAD_REQUEST",
+              "OPERATION_FAILED",
+              { operation: "assignProductToMachine" },
+              `Sản phẩm "${product.code}" chưa đủ cấu hình để gán máy (readiness ${readiness.score}% — band "blocked"). ` +
                 `Hoàn thiện điểm-đo (ngưỡng/tọa độ/golden) trước, hoặc gán với force=true nếu cố ý.`,
-            });
+            );
           }
         } catch (e) {
           if (e instanceof TRPCError) throw e;
@@ -2982,7 +2991,7 @@ export const msaWizardRouter = router({
       const study = await db.getMsaStudyById(input.studyId);
       if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       if (study.status === "completed" || study.status === "cancelled") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Study is closed" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "addMsaObservation" }, "Study is closed");
       }
 
       const duplicated = await db.getMsaObservationByCell(
@@ -3042,7 +3051,7 @@ export const msaWizardRouter = router({
       const study = await db.getMsaStudyById(input.studyId);
       if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       if (study.status === "completed" || study.status === "cancelled") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Study is closed" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "addMsaObservationsBatch" }, "Study is closed");
       }
 
       const skipDuplicates = input.skipDuplicates !== false;
@@ -3119,7 +3128,7 @@ export const msaWizardRouter = router({
       const study = await db.getMsaStudyById(input.studyId);
       if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       if (study.status === "completed" || study.status === "cancelled") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Study is closed" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "generateMsaMatrix" }, "Study is closed");
       }
 
       const result = await db.generateMsaObservationMatrix(input.studyId, {
@@ -3827,7 +3836,7 @@ export const cadImportRouter = router({
       const job = await db.getCadImportJobById(input.jobId);
       if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "cadImportJob" }, "CAD import job not found");
       if (job.status === "applied") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "CAD import job already applied" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "applyCadImportJob" }, "CAD import job already applied");
       }
       const count = await db.applyCadImportJob(input.jobId, ctx.user.id);
       // Doc 51 P1 (R4 / CASE #12) — was a READ-MODIFY-WRITE (read version, +1,

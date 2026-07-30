@@ -3543,6 +3543,7 @@
     "PERMISSION_DENIED": "You don't have permission to: {{action}}.",
     "AUTH_REQUIRED": "You need to log in to use this feature.",
     "TWO_FACTOR_NOT_SET_UP": "Two-factor authentication is not enabled for this account.",
+    "RATE_LIMITED": "You're doing this too fast. Please try again in a few minutes.",
     "KB_FILE_TOO_LARGE": "File exceeds the {{limitMb}} MB limit.",
     "KB_UNSUPPORTED_TYPE": "Unsupported format \"{{ext}}\". Supported formats: {{supported}}.",
     "KB_CONTENT_TYPE_MISMATCH": "File content does not match its extension: claims {{claimed}} but is actually {{detected}}.",
@@ -3662,7 +3663,8 @@
       "moduleAuditPreset": "module audit preset",
       "productCategory": "product category",
       "trainingBatchTag": "training batch tag",
-      "msaObservation": "MSA observation"
+      "msaObservation": "MSA observation",
+      "kbCorpus": "knowledge corpus"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3684,7 +3686,33 @@
       "sendTestEmail": "send test email",
       "issueMachineClaimToken": "issue machine claim token",
       "publishEquipmentStandard": "publish equipment standard",
-      "calculateCpkCapability": "calculate Cpk capability"
+      "calculateCpkCapability": "calculate Cpk capability",
+      "registerMachine": "register machine",
+      "claimMachineKey": "claim machine API key",
+      "enrollMachine": "zero-touch enroll machine",
+      "transitionMachineLifecycle": "transition machine lifecycle",
+      "updateMeasurementPoint": "update measurement point",
+      "revertPointsConfigVersion": "revert points-config version",
+      "assignProductToMachine": "assign product to machine",
+      "addMsaObservation": "add MSA observation",
+      "addMsaObservationsBatch": "add MSA observations batch",
+      "generateMsaMatrix": "generate MSA matrix",
+      "applyCadImportJob": "apply CAD import job",
+      "ingestKbDocument": "ingest knowledge document",
+      "createKbCorpus": "create knowledge corpus",
+      "deleteKbCorpus": "delete knowledge corpus",
+      "runLoraFinetune": "run LoRA finetune",
+      "fetchMeasurementImage": "fetch measurement image",
+      "manageGoldenSample": "manage golden sample",
+      "captureGoldenSample": "capture golden sample",
+      "resolveGoldenSample": "resolve golden sample",
+      "deleteDashboardPreset": "delete dashboard preset",
+      "unshareDashboardPreset": "unshare dashboard preset",
+      "activateLicense": "activate license",
+      "downloadLicenseFile": "download license file",
+      "generateOfflineActivationRequest": "generate offline activation request",
+      "applyOfflineLicense": "apply offline license",
+      "getHardwareFingerprint": "get hardware fingerprint"
     },
     "field": {
       "code": "code",
@@ -3721,7 +3749,18 @@
       "recipePayload": "recipe payload",
       "extraFields": "extra fields",
       "measuredValue": "measured value",
-      "builtInRole": "built-in role"
+      "builtInRole": "built-in role",
+      "scopes": "scopes",
+      "capabilities": "device capabilities",
+      "imageDimensions": "image dimensions",
+      "preferredInstrumentId": "preferred instrument",
+      "preferredSamplingPlanId": "preferred sampling plan",
+      "productViewId": "product view",
+      "targetProductModelId": "target product model",
+      "fileContent": "file content",
+      "videoContent": "video content",
+      "confirm": "confirmation",
+      "dashboardTarget": "dashboard target"
     },
     "feature": {
       "web_ingest": "web content ingestion",
@@ -3749,7 +3788,10 @@
       "ursimHarness": "URSim harness",
       "ros2Bridge": "ROS2 bridge",
       "twinLive": "digital twin live",
-      "modelPipeline": "model pipeline"
+      "modelPipeline": "model pipeline",
+      "licenseServerSdk": "License Server SDK",
+      "speechToText": "speech-to-text",
+      "loraFinetune": "LoRA finetune"
     },
     "action": {
       "viewOthersPermissions": "view another user's permissions",
@@ -3761,7 +3803,17 @@
       "selfApproveChangeover": "self-approve changeover request",
       "disableOwnAccount": "disable own account",
       "changeOwnRole": "change own role",
-      "selfPublishEquipmentStandard": "self-publish own equipment change-request"
+      "selfPublishEquipmentStandard": "self-publish own equipment change-request",
+      "changeMachineRegistrationStatus": "change machine registration status",
+      "createSharedDashboardPreset": "create shared dashboard preset",
+      "updateDashboardPreset": "update dashboard preset",
+      "deleteDashboardPreset": "delete dashboard preset",
+      "exportDashboardPreset": "export dashboard preset",
+      "cloneDashboardPreset": "clone dashboard preset",
+      "viewDashboard": "view dashboard",
+      "exportDashboard": "export dashboard",
+      "convertDashboardToTemplate": "convert dashboard to template",
+      "selfApproveGoldenSample": "self-approve own golden sample"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

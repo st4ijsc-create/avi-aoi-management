@@ -64,9 +64,9 @@ function decodeBase64Image(b64: string): Buffer {
   } catch {
     throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Invalid base64 image");
   }
-  if (buf.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Empty image payload" });
+  if (buf.length === 0) throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Empty image payload");
   if (buf.length > MAX_IMAGE_BYTES) {
-    throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: `Image exceeds ${MAX_IMAGE_BYTES} bytes` });
+    throw appError("PAYLOAD_TOO_LARGE", "INVALID_VALUE", { field: "image" }, `Image exceeds ${MAX_IMAGE_BYTES} bytes`);
   }
   return buf;
 }
@@ -90,7 +90,7 @@ async function loadMeasurementImage(m: { imageUrl: string | null; imageKey?: str
   }
   const url = m.imageUrl;
   if (!url) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Measurement has no stored image (imageUrl/imageKey empty)" });
+    throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "image" }, "Measurement has no stored image (imageUrl/imageKey empty)");
   }
   // data: URL or /uploads/… (resolveImageToDataUrl converts local files to data URLs)
   const resolved = url.startsWith("data:") ? url : await resolveImageToDataUrl(url);
@@ -102,21 +102,23 @@ async function loadMeasurementImage(m: { imageUrl: string | null; imageKey?: str
     try {
       res = await fetch(resolved);
     } catch (err) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `Cannot fetch measurement image: ${err instanceof Error ? err.message : String(err)}`,
-      });
+      throw appError(
+        "BAD_REQUEST",
+        "OPERATION_FAILED",
+        { operation: "fetchMeasurementImage" },
+        `Cannot fetch measurement image: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     if (!res.ok) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot fetch measurement image (HTTP ${res.status})` });
+      throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "fetchMeasurementImage" }, `Cannot fetch measurement image (HTTP ${res.status})`);
     }
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length === 0 || buf.length > MAX_IMAGE_BYTES) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: "Fetched image is empty or exceeds the 10 MB cap" });
+      throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Fetched image is empty or exceeds the 10 MB cap");
     }
     return buf;
   }
-  throw new TRPCError({ code: "BAD_REQUEST", message: `Unresolvable measurement image URL: ${url.slice(0, 80)}` });
+  throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "fetchMeasurementImage" }, `Unresolvable measurement image URL: ${url.slice(0, 80)}`);
 }
 
 /** Serialize a golden row for API responses (metadata only — no gray plane). */
@@ -150,10 +152,10 @@ function rowMeta(r: GoldenSampleReference) {
 /** Map workflow errors to honest TRPC codes (SoD → FORBIDDEN, lifecycle → BAD_REQUEST). */
 function mapGoldenError(err: unknown): never {
   if (err instanceof GoldenSoDError) {
-    throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+    throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfApproveGoldenSample" }, err.message);
   }
   if (err instanceof GoldenStatusError) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+    throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "manageGoldenSample" }, err.message);
   }
   throw err;
 }
@@ -317,16 +319,18 @@ export const goldenSampleRouter = router({
       const m = await db.getMeasurementResultById(input.measurementResultId);
       if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementResult" }, "Measurement result not found");
       if (m.result !== "OK") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Chỉ chụp golden từ điểm đo OK (điểm này: ${m.result})`,
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "captureGoldenSample" },
+          `Chỉ chụp golden từ điểm đo OK (điểm này: ${m.result})`,
+        );
       }
       const inspection = await db.getProductInspectionById(m.inspectionId);
       if (!inspection) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Inspection not found");
       const productCode = inspection.productModel;
       if (!productCode) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Inspection has no product model — cannot key the golden" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "captureGoldenSample" }, "Inspection has no product model — cannot key the golden");
       }
 
       // Point code → roiKey (same join style as measurementResult.getById).
@@ -466,7 +470,7 @@ export const goldenSampleRouter = router({
       if (!m) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementResult" }, "Measurement result not found");
       const inspection = await db.getProductInspectionById(m.inspectionId);
       if (!inspection?.productModel) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Inspection has no product model — cannot resolve a golden" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "resolveGoldenSample" }, "Inspection has no product model — cannot resolve a golden");
       }
       // roiKey = point code (same key InspectionDetail queries with).
       let roiKey: string | null = null;

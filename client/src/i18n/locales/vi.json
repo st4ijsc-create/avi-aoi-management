@@ -3544,6 +3544,7 @@
     "PERMISSION_DENIED": "Bạn không có quyền: {{action}}.",
     "AUTH_REQUIRED": "Bạn cần đăng nhập để dùng chức năng này.",
     "TWO_FACTOR_NOT_SET_UP": "Tài khoản này chưa bật xác thực 2 lớp.",
+    "RATE_LIMITED": "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
     "KB_FILE_TOO_LARGE": "Tệp vượt quá giới hạn {{limitMb}} MB.",
     "KB_UNSUPPORTED_TYPE": "Không hỗ trợ định dạng \"{{ext}}\". Định dạng nhận được: {{supported}}.",
     "KB_CONTENT_TYPE_MISMATCH": "Nội dung tệp không khớp phần mở rộng: khai là {{claimed}} nhưng thực tế là {{detected}}.",
@@ -3663,7 +3664,8 @@
       "moduleAuditPreset": "mẫu kiểm toán module",
       "productCategory": "danh mục sản phẩm",
       "trainingBatchTag": "thẻ lô huấn luyện",
-      "msaObservation": "quan sát MSA"
+      "msaObservation": "quan sát MSA",
+      "kbCorpus": "kho tri thức (corpus)"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3685,7 +3687,33 @@
       "sendTestEmail": "gửi email thử nghiệm",
       "issueMachineClaimToken": "cấp token xác nhận máy",
       "publishEquipmentStandard": "phát hành tiêu chuẩn thiết bị",
-      "calculateCpkCapability": "tính chỉ số năng lực Cpk"
+      "calculateCpkCapability": "tính chỉ số năng lực Cpk",
+      "registerMachine": "đăng ký máy",
+      "claimMachineKey": "nhận khoá API máy (claim key)",
+      "enrollMachine": "đăng ký nhanh máy (zero-touch enroll)",
+      "transitionMachineLifecycle": "chuyển trạng thái vòng đời máy",
+      "updateMeasurementPoint": "cập nhật điểm đo",
+      "revertPointsConfigVersion": "khôi phục phiên bản cấu hình điểm đo",
+      "assignProductToMachine": "gán sản phẩm vào máy",
+      "addMsaObservation": "thêm quan sát MSA",
+      "addMsaObservationsBatch": "thêm hàng loạt quan sát MSA",
+      "generateMsaMatrix": "tạo ma trận MSA",
+      "applyCadImportJob": "áp dụng tác vụ nhập CAD",
+      "ingestKbDocument": "nạp tài liệu vào tri thức",
+      "createKbCorpus": "tạo kho tri thức (corpus)",
+      "deleteKbCorpus": "xoá kho tri thức (corpus)",
+      "runLoraFinetune": "chạy tinh chỉnh LoRA",
+      "fetchMeasurementImage": "tải ảnh điểm đo",
+      "manageGoldenSample": "quản lý golden sample",
+      "captureGoldenSample": "chụp golden sample",
+      "resolveGoldenSample": "tra cứu golden sample",
+      "deleteDashboardPreset": "xoá preset bảng điều khiển",
+      "unshareDashboardPreset": "bỏ chia sẻ preset bảng điều khiển",
+      "activateLicense": "kích hoạt license",
+      "downloadLicenseFile": "tải tệp license",
+      "generateOfflineActivationRequest": "tạo yêu cầu kích hoạt offline",
+      "applyOfflineLicense": "áp dụng license offline",
+      "getHardwareFingerprint": "lấy mã định danh phần cứng"
     },
     "field": {
       "code": "mã",
@@ -3722,7 +3750,18 @@
       "recipePayload": "dữ liệu công thức",
       "extraFields": "trường mở rộng",
       "measuredValue": "giá trị đo",
-      "builtInRole": "vai trò dựng sẵn"
+      "builtInRole": "vai trò dựng sẵn",
+      "scopes": "phạm vi quyền (scopes)",
+      "capabilities": "năng lực thiết bị",
+      "imageDimensions": "kích thước ảnh",
+      "preferredInstrumentId": "thiết bị đo ưu tiên",
+      "preferredSamplingPlanId": "kế hoạch lấy mẫu ưu tiên",
+      "productViewId": "góc nhìn sản phẩm",
+      "targetProductModelId": "model sản phẩm đích",
+      "fileContent": "nội dung tệp",
+      "videoContent": "nội dung video",
+      "confirm": "xác nhận",
+      "dashboardTarget": "đích bảng điều khiển"
     },
     "feature": {
       "web_ingest": "nạp nội dung từ web",
@@ -3750,7 +3789,10 @@
       "ursimHarness": "khung kiểm thử URSim",
       "ros2Bridge": "cầu nối ROS2",
       "twinLive": "digital twin trực tiếp",
-      "modelPipeline": "pipeline mô hình"
+      "modelPipeline": "pipeline mô hình",
+      "licenseServerSdk": "License Server SDK",
+      "speechToText": "chuyển giọng nói thành văn bản",
+      "loraFinetune": "tinh chỉnh LoRA"
     },
     "action": {
       "viewOthersPermissions": "xem quyền của người khác",
@@ -3762,7 +3804,17 @@
       "selfApproveChangeover": "tự duyệt yêu cầu đổi lệnh của chính mình",
       "disableOwnAccount": "vô hiệu hoá tài khoản của chính mình",
       "changeOwnRole": "thay đổi vai trò của chính mình",
-      "selfPublishEquipmentStandard": "tự publish change-request thiết bị của chính mình"
+      "selfPublishEquipmentStandard": "tự publish change-request thiết bị của chính mình",
+      "changeMachineRegistrationStatus": "đổi trạng thái đăng ký máy",
+      "createSharedDashboardPreset": "tạo preset bảng điều khiển dùng chung",
+      "updateDashboardPreset": "cập nhật preset bảng điều khiển",
+      "deleteDashboardPreset": "xoá preset bảng điều khiển",
+      "exportDashboardPreset": "xuất preset bảng điều khiển",
+      "cloneDashboardPreset": "sao chép preset bảng điều khiển",
+      "viewDashboard": "xem bảng điều khiển",
+      "exportDashboard": "xuất bảng điều khiển",
+      "convertDashboardToTemplate": "chuyển bảng điều khiển thành mẫu",
+      "selfApproveGoldenSample": "tự duyệt golden sample của chính mình"
     }
   },
   "export": {

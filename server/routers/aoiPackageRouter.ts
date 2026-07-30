@@ -370,7 +370,7 @@ export const aoiPackageRouter = router({
       }
 
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Check for idempotency - if package with same ID exists, return existing info
       const existing = await database
@@ -482,7 +482,7 @@ export const aoiPackageRouter = router({
       }
 
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Find package
       const pkgs = await database
@@ -504,7 +504,7 @@ export const aoiPackageRouter = router({
 
       // Validate package belongs to this machine
       if (pkg.machineId !== machine.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Package belongs to another machine" });
+        throw appError("FORBIDDEN", "SCOPE_MISMATCH", { entity: "aoiPackage", parent: "machine" }, "Package belongs to another machine");
       }
 
       // Log: commit_start
@@ -1075,7 +1075,7 @@ export const aoiPackageRouter = router({
     }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const conditions: any[] = [];
 
@@ -1147,7 +1147,7 @@ export const aoiPackageRouter = router({
     }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const where = input.id
         ? eq(inspectionPackages.id, input.id)
@@ -1200,7 +1200,7 @@ export const aoiPackageRouter = router({
     }))
     .query(async ({ input, ctx }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Find package
       const pkgs = await database
@@ -1237,7 +1237,7 @@ export const aoiPackageRouter = router({
       }
 
       if (!targetFileName) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot determine image file name" });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "fileName" }, "Cannot determine image file name");
       }
 
       // Build watermark lines
@@ -1290,7 +1290,7 @@ export const aoiPackageRouter = router({
     }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       let pkgId: number;
       if (input.id) {
@@ -1328,7 +1328,7 @@ export const aoiPackageRouter = router({
     }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       let pkgDbId: number;
       let pkgPackageId: string;
@@ -1393,7 +1393,7 @@ export const aoiPackageRouter = router({
     }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const pkgs = await database
         .select()
@@ -1407,7 +1407,7 @@ export const aoiPackageRouter = router({
 
       const pkg = pkgs[0];
       if (!pkg.storageKey) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "ZIP file not available" });
+        throw appError("NOT_FOUND", "OPERATION_FAILED", { operation: "downloadPackageZip" }, "ZIP file not available");
       }
 
       const { url } = await storageGet(pkg.storageKey);
@@ -1449,7 +1449,7 @@ export const aoiPackageRouter = router({
       }
 
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       await database.insert(uploadQueueMetrics).values({
         machineId: machine.id,
@@ -1478,7 +1478,7 @@ export const aoiPackageRouter = router({
     }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       // Get latest metric per machine
       const query = database
@@ -1515,7 +1515,7 @@ export const aoiPackageRouter = router({
     }))
     .query(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const conditions: any[] = [];
       if (input.dateFrom) conditions.push(gte(inspectionPackages.createdAt, new Date(input.dateFrom)));

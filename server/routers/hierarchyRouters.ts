@@ -620,7 +620,7 @@ function enforceIpWindow(
   }
   win.count += 1;
   if (win.count > limit) {
-    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message });
+    throw appError("TOO_MANY_REQUESTS", "RATE_LIMITED", undefined, message);
   }
 }
 
@@ -758,10 +758,12 @@ export const machineRouter = router({
         // approval queue — re-commissioning is an explicit admin decision.
         const lifecycle = (existing as { lifecycleStatus?: string | null }).lifecycleStatus;
         if (lifecycle === "retired" || lifecycle === "decommissioned") {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Machine '${existing.code}' is ${lifecycle} — an admin must re-commission it before it can register again`,
-          });
+          throw appError(
+            "CONFLICT",
+            "OPERATION_FAILED",
+            { operation: "registerMachine" },
+            `Machine '${existing.code}' is ${lifecycle} — an admin must re-commission it before it can register again`,
+          );
         }
         // Nếu đã có, cập nhật thông tin (trừ APIKey)
         await db.updateMachine(existing.id, {
@@ -787,20 +789,24 @@ export const machineRouter = router({
       if (cap > 0) {
         const pending = await db.getPendingMachines();
         if (Array.isArray(pending) && pending.length >= cap) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: `Registration queue is full (${cap} pending machines) — ask an admin to approve/reject pending registrations first`,
-          });
+          throw appError(
+            "PRECONDITION_FAILED",
+            "OPERATION_FAILED",
+            { operation: "registerMachine" },
+            `Registration queue is full (${cap} pending machines) — ask an admin to approve/reject pending registrations first`,
+          );
         }
       }
 
       // M4: resolve + validate the default station instead of hardcoding id 1.
       const defaultStation = await db.getDefaultStation();
       if (!defaultStation) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "No active station configured — create the factory hierarchy before registering machines",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "registerMachine" },
+          "No active station configured — create the factory hierarchy before registering machines",
+        );
       }
 
       // M7: the generated SN-code can collide with an ACTIVE machine that has a
@@ -815,10 +821,12 @@ export const machineRouter = router({
           if (!(await db.getMachineByCode(candidate))) resolved = candidate;
         }
         if (!resolved) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Machine code '${code}' (and suffixed variants) are already in use by active machines — contact an admin`,
-          });
+          throw appError(
+            "CONFLICT",
+            "ENTITY_DUPLICATE",
+            { entity: "machine" },
+            `Machine code '${code}' (and suffixed variants) are already in use by active machines — contact an admin`,
+          );
         }
         code = resolved;
       }
@@ -847,7 +855,7 @@ export const machineRouter = router({
       } catch (e) {
         // Concurrent register racing the pre-check — clean CONFLICT, not a raw 500.
         if (isErrorNamed(e, "MachineCodeCollisionError")) {
-          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "machine" }, (e as Error).message);
         }
         throw e;
       }
@@ -932,10 +940,12 @@ export const machineRouter = router({
       if (input.code && input.code !== machine.code) {
         const holder = await db.getMachineByCode(input.code);
         if (holder && holder.id !== input.id) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `Machine code '${input.code}' is already in use by machine #${holder.id} (${holder.name})`,
-          });
+          throw appError(
+            "CONFLICT",
+            "ENTITY_DUPLICATE",
+            { entity: "machine" },
+            `Machine code '${input.code}' is already in use by machine #${holder.id} (${holder.name})`,
+          );
         }
       }
 
@@ -1062,14 +1072,16 @@ export const machineRouter = router({
         );
       }
       if (machine.isActive === false) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Machine is deleted" });
+        throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "issueMachineClaimToken" }, "Machine is deleted");
       }
       const lifecycle = (machine as { lifecycleStatus?: string | null }).lifecycleStatus;
       if (lifecycle === "retired" || lifecycle === "decommissioned") {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `Machine is ${lifecycle} — re-commission it before issuing a new claim token`,
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "issueMachineClaimToken" },
+          `Machine is ${lifecycle} — re-commission it before issuing a new claim token`,
+        );
       }
 
       const claim = await db.issueMachineClaimToken({ machineId: input.id, issuedBy: ctx.user?.id ?? null });
@@ -1123,10 +1135,12 @@ export const machineRouter = router({
           action: "machine.claimKey", entityType: ENTITY_TYPES.MACHINE, entityId: null,
           metadata: { outcome: "failed", reason, serialNumber: input.serialNumber, ip: ip ?? null },
         });
-        throw new TRPCError({
-          code: reason === "no_key" ? "PRECONDITION_FAILED" : "UNAUTHORIZED",
-          message: (e as Error).message,
-        });
+        throw appError(
+          reason === "no_key" ? "PRECONDITION_FAILED" : "UNAUTHORIZED",
+          "OPERATION_FAILED",
+          { operation: "claimMachineKey" },
+          (e as Error).message,
+        );
       }
     }),
 
@@ -1204,7 +1218,7 @@ export const machineRouter = router({
           reason === "needs_info" ? "BAD_REQUEST" :
           reason === "machine_locked" || reason === "no_station" ? "PRECONDITION_FAILED" :
           "UNAUTHORIZED"; // invalid | expired | exhausted
-        throw new TRPCError({ code, message: (e as Error).message });
+        throw appError(code, "OPERATION_FAILED", { operation: "enrollMachine" }, (e as Error).message);
       }
     }),
 
@@ -1222,10 +1236,12 @@ export const machineRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       if (input.scopes && !input.scopes.every(isValidScopeGrant)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "One or more scopes are not in the published scope vocabulary",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "scopes" },
+          "One or more scopes are not in the published scope vocabulary",
+        );
       }
       const token = await db.issueMachineEnrollmentToken({
         serialPattern: input.serialPattern ?? null,
@@ -1418,10 +1434,12 @@ export const machineRouter = router({
       // instead of a raw 500 from the unique index.
       const dup = await db.getMachineByCode(input.code);
       if (dup) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Mã máy '${input.code}' đã được dùng bởi máy #${dup.id} (${dup.name})`,
-        });
+        throw appError(
+          "CONFLICT",
+          "ENTITY_DUPLICATE",
+          { entity: "machine" },
+          `Mã máy '${input.code}' đã được dùng bởi máy #${dup.id} (${dup.name})`,
+        );
       }
 
       const governanceWarning = commissionGovernanceWarning(input.machineType);
@@ -1434,7 +1452,7 @@ export const machineRouter = router({
         return { id, apiKey, governanceWarning };
       } catch (e) {
         if (isErrorNamed(e, "MachineCodeCollisionError")) {
-          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "machine" }, (e as Error).message);
         }
         rethrowDbError(e, { conflictMessage: `Mã máy '${input.code}' đã tồn tại` });
       }
@@ -1445,7 +1463,7 @@ export const machineRouter = router({
     .mutation(async ({ input, ctx }) => {
       const apiKey = `mach_${nanoid(32)}`;
       const dbInstance = await db.getDb();
-      if (!dbInstance) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      if (!dbInstance) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const { machines } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
@@ -1488,10 +1506,12 @@ export const machineRouter = router({
       // admin so a non-admin (engineer via settings_factory) cannot self-approve a
       // machine registration, bypassing the admin-only `approve` path.
       if (data.registrationStatus !== undefined && ctx.user.role !== "admin") {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Chỉ admin được đổi trạng thái đăng ký máy (dùng duyệt/approve).",
-        });
+        throw appError(
+          "FORBIDDEN",
+          "PERMISSION_DENIED",
+          { action: "changeMachineRegistrationStatus" },
+          "Chỉ admin được đổi trạng thái đăng ký máy (dùng duyệt/approve).",
+        );
       }
       const before = await db.getMachineById(id);
 
@@ -1507,12 +1527,13 @@ export const machineRouter = router({
           const nodes = await loadDeviceTypeNodes();
           const result = validateCapabilities(before.machineType, capabilities, nodes);
           if (capabilitiesValidationEnforced() && result.blockingErrors.length > 0) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message:
-                `Capabilities rejected (CAPABILITIES_VALIDATION_ENFORCED): required attribute(s) invalid — ` +
+            throw appError(
+              "BAD_REQUEST",
+              "INVALID_VALUE",
+              { field: "capabilities" },
+              `Capabilities rejected (CAPABILITIES_VALIDATION_ENFORCED): required attribute(s) invalid — ` +
                 result.blockingErrors.map((e) => `${e.path} (expected ${e.expected}, got ${e.got})`).join("; "),
-            });
+            );
           }
           capabilitiesValidation = toStamp(result, "save");
         }
@@ -1631,7 +1652,7 @@ export const machineRouter = router({
         await db.restoreMachine(input.id);
       } catch (e) {
         if (isErrorNamed(e, "MachineCodeCollisionError")) {
-          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+          throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "machine" }, (e as Error).message);
         }
         if (e instanceof Error && e.message === "Machine not found") {
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
@@ -1675,7 +1696,7 @@ export const machineRouter = router({
         result = await db.transitionMachineLifecycle(input.id, input.status);
       } catch (e) {
         if (isErrorNamed(e, "LifecycleTransitionError")) {
-          throw new TRPCError({ code: "CONFLICT", message: (e as Error).message });
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "transitionMachineLifecycle" }, (e as Error).message);
         }
         if (e instanceof Error && e.message === "Machine not found") {
           throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");

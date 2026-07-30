@@ -75,7 +75,7 @@ const publicLicenseRouter = router({
         ipAddress,
       });
       if (!result.success) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: result.error });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'activateLicense' }, result.error);
       }
       // Force re-check license state after successful activation
       await licenseGuard.forceCheck();
@@ -182,7 +182,7 @@ const publicLicenseRouter = router({
         const fileBase64 = await licenseService.downloadLicenseFile(input.licenseKey, input.hardwareFingerprint);
         return { success: true, fileBase64 };
       } catch (error: any) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'downloadLicenseFile' }, error.message);
       }
     }),
 
@@ -348,7 +348,7 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.validateOnline(input.licenseKey);
     }),
@@ -360,7 +360,7 @@ const publicLicenseRouter = router({
     .input(z.object({ offlineLicenseBase64: z.string().min(1) }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.validateOffline(input.offlineLicenseBase64);
     }),
@@ -379,10 +379,12 @@ const publicLicenseRouter = router({
       try {
         return await licenseService.generateOfflineActivationRequest(input.licenseKey);
       } catch (err: any) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Lỗi tạo yêu cầu kích hoạt offline: ${err.message}`,
-        });
+        throw appError(
+          'INTERNAL_SERVER_ERROR',
+          'OPERATION_FAILED',
+          { operation: 'generateOfflineActivationRequest' },
+          `Lỗi tạo yêu cầu kích hoạt offline: ${err.message}`,
+        );
       }
     }),
 
@@ -399,14 +401,14 @@ const publicLicenseRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       const result = await licenseService.applyOfflineLicense(
         input.offlinePackageBase64,
         input.licenseKey,
       );
       if (!result.success) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: result.error || 'Áp dụng license offline thất bại' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'applyOfflineLicense' }, result.error || 'Áp dụng license offline thất bại');
       }
       // Force re-check license state after successful offline activation
       await licenseGuard.forceCheck();
@@ -420,7 +422,7 @@ const publicLicenseRouter = router({
     try {
       return await licenseService.getHardwareFingerprintDetailed();
     } catch (err: any) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Hardware fingerprint failed: ${err.message}` });
+      throw appError('INTERNAL_SERVER_ERROR', 'OPERATION_FAILED', { operation: 'getHardwareFingerprint' }, `Hardware fingerprint failed: ${err.message}`);
     }
   }),
 
@@ -431,7 +433,7 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .query(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.getAllowedModulesFromServer(input.licenseKey);
     }),
@@ -446,7 +448,7 @@ const publicLicenseRouter = router({
     }))
     .query(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.isModuleAllowedOnServer(input.licenseKey, input.moduleCode);
     }),
@@ -465,7 +467,7 @@ const publicLicenseRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.syncModulesWithServer(input.licenseKey, input.clientModules);
     }),
@@ -475,7 +477,7 @@ const publicLicenseRouter = router({
    */
   productModules: protectedProcedure.query(async () => {
     if (!licenseService.hasSDKClient()) {
-      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+      throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
     }
     return licenseService.getProductModulesFromServer();
   }),
@@ -487,7 +489,7 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.checkoutFloatingLicense(input.licenseKey);
     }),
@@ -502,7 +504,7 @@ const publicLicenseRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.checkinFloatingLicense(input.licenseKey, input.sessionId);
     }),
@@ -517,7 +519,7 @@ const publicLicenseRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.sendFloatingHeartbeat(input.licenseKey, input.sessionId);
     }),
@@ -529,7 +531,7 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .query(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.getFloatingStatus(input.licenseKey);
     }),
@@ -541,7 +543,7 @@ const publicLicenseRouter = router({
     .input(z.object({ licenseKey: z.string().min(1) }))
     .query(async ({ input }) => {
       if (!licenseService.hasSDKClient()) {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'License Server chưa được cấu hình' });
+        throw appError('PRECONDITION_FAILED', 'FEATURE_DISABLED', { feature: 'licenseServerSdk' }, 'License Server chưa được cấu hình');
       }
       return licenseService.checkGracePeriod(input.licenseKey);
     }),

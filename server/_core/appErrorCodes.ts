@@ -24,6 +24,11 @@ export const APP_ERROR_CODES = [
   "TWO_FACTOR_NOT_SET_UP", // params: {} — 2FA CHƯA BẬT cho TÀI KHOẢN này, KHÁC FEATURE_DISABLED
                           // (2FA đang bật toàn hệ thống, chỉ tài khoản này chưa dùng).
                           // Task 7 fix round 1 (I-2).
+  "RATE_LIMITED",         // params: {} — vượt hạn mức thao tác (per-IP/per-machine throttle).
+                          // Task 8 — gộp 3+ nơi ném TOO_MANY_REQUESTS rải rác (hierarchyRouters
+                          // register/claimKey throttle, machineApiRouters heartbeat). Chi tiết
+                          // hạn mức (đơn vị/giờ hay /phút khác nhau tuỳ nơi) giữ ở fallbackMessage,
+                          // không đưa vào template vì không có 1 đơn vị chung cho mọi nơi gọi.
 
   // ── Nạp tri thức (KB) — Task 3 ────────────────────────────────────────────
   "KB_FILE_TOO_LARGE",        // params: { limitMb }

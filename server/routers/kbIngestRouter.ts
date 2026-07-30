@@ -93,10 +93,10 @@ function decodeBase64Payload(b64: string, maxBytes: number, label: string): Buff
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid base64 ${label} payload` });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "fileContent" }, `Invalid base64 ${label} payload`);
   }
   if (buf.length === 0) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `Empty ${label} payload` });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "fileContent" }, `Empty ${label} payload`);
   }
   if (buf.length > maxBytes) {
     // Sprint 5 §4 (Task 3) — trước đây "${label} exceeds ${maxBytes} bytes" (byte thô, không
@@ -167,7 +167,7 @@ export const kbIngestRouter = router({
         // KbIngestDisabledError KHÔNG nằm trong 7 nhóm Task 3 di trú (xem task-3-report.md
         // Step 1) — giữ nguyên như cũ.
         if (err instanceof KbIngestDisabledError) {
-          throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+          throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "kbStudioIngest" }, err.message);
         }
         if (err instanceof KbUnsupportedTypeError) {
           throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
@@ -188,7 +188,7 @@ export const kbIngestRouter = router({
           throw buildParseFailedError(err.message);
         }
         if (err instanceof KbEmbedError || err instanceof KbStoreError) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+          throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "ingestKbDocument" }, err.message);
         }
         throw err;
       }
@@ -223,7 +223,7 @@ export const kbIngestRouter = router({
       } catch (err) {
         // KbIngestDisabledError KHÔNG nằm trong 7 nhóm Task 3 di trú — giữ nguyên như cũ.
         if (err instanceof KbIngestDisabledError) {
-          throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+          throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "kbStudioIngest" }, err.message);
         }
         // Sprint 5 §4 (Task 3) — "tính năng chưa bật" là mã họ phổ quát FEATURE_DISABLED (đã
         // đăng ký ở Task 1), không phải một trong 6 mã KB tài liệu (theo gợi ý của brief).
@@ -252,7 +252,7 @@ export const kbIngestRouter = router({
           throw buildParseFailedError(err.message);
         }
         if (err instanceof KbEmbedError || err instanceof KbStoreError) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+          throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "ingestKbDocument" }, err.message);
         }
         throw err;
       }
@@ -304,13 +304,13 @@ export const kbIngestRouter = router({
         // VideoIngestDisabledError/KbIngestDisabledError/SttUnavailableError/SttValidationError/
         // SttTranscribeError KHÔNG nằm trong 7 nhóm Task 3 di trú — giữ nguyên như cũ.
         if (err instanceof VideoIngestDisabledError || err instanceof KbIngestDisabledError) {
-          throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+          throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "videoIngest" }, err.message);
         }
         if (err instanceof SttUnavailableError) {
-          throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: err.message });
+          throw appError("SERVICE_UNAVAILABLE", "FEATURE_DISABLED", { feature: "speechToText" }, err.message);
         }
         if (err instanceof SttValidationError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "videoContent" }, err.message);
         }
         if (err instanceof KbUnsupportedTypeError) {
           throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
@@ -329,7 +329,7 @@ export const kbIngestRouter = router({
           throw buildParseFailedError(err.message);
         }
         if (err instanceof SttTranscribeError || err instanceof KbEmbedError || err instanceof KbStoreError) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+          throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "ingestKbDocument" }, err.message);
         }
         throw err;
       }

@@ -95,10 +95,10 @@ function decodeBase64Doc(b64: string): Buffer {
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 document payload" });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "fileContent" }, "Invalid base64 document payload");
   }
   if (buf.length === 0) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Empty document payload" });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "fileContent" }, "Empty document payload");
   }
   if (buf.length > MAX_UPLOAD_BYTES) {
     // Sprint 5 §4 (Task 3) — trước đây "Document exceeds 20971520 bytes" (byte thô).
@@ -116,7 +116,7 @@ function mapIngestDocumentError(err: unknown, sourceRef: string): never {
   if (err instanceof TRPCError) throw err;
   // KbIngestDisabledError KHÔNG nằm trong 7 nhóm Task 3 di trú — giữ nguyên như cũ.
   if (err instanceof KbIngestDisabledError) {
-    throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+    throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "kbStudioIngest" }, err.message);
   }
   if (err instanceof KbUnsupportedTypeError) {
     throw buildUnsupportedTypeError(err.input, KB_SUPPORTED_TYPES);
@@ -133,7 +133,7 @@ function mapIngestDocumentError(err: unknown, sourceRef: string): never {
     throw buildParseFailedError(err.message);
   }
   if (err instanceof KbEmbedError || err instanceof KbStoreError) {
-    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+    throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "ingestKbDocument" }, err.message);
   }
   throw err as Error;
 }
@@ -144,7 +144,7 @@ function mapIngestUrlError(err: unknown, url: string): never {
   if (err instanceof TRPCError) throw err;
   // KbIngestDisabledError KHÔNG nằm trong 7 nhóm Task 3 di trú — giữ nguyên như cũ.
   if (err instanceof KbIngestDisabledError) {
-    throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+    throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "kbStudioIngest" }, err.message);
   }
   // Sprint 5 §4 (Task 3) — "tính năng chưa bật" là mã họ phổ quát FEATURE_DISABLED, không phải
   // một trong 6 mã KB tài liệu (theo gợi ý của brief).
@@ -169,7 +169,7 @@ function mapIngestUrlError(err: unknown, url: string): never {
     throw buildParseFailedError(err.message);
   }
   if (err instanceof KbEmbedError || err instanceof KbStoreError) {
-    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+    throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "ingestKbDocument" }, err.message);
   }
   throw err as Error;
 }
@@ -194,7 +194,7 @@ export const kbStudioRouter = router({
         });
       } catch (err) {
         if (err instanceof KbStudioTableUnavailableError) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: err.message });
+          throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "createKbCorpus" }, err.message);
         }
         rethrowDbError(err, { conflictMessage: `A corpus named "${input.name}" already exists.` });
       }
@@ -214,20 +214,22 @@ export const kbStudioRouter = router({
     )
     .mutation(async ({ input }) => {
       if (input.confirm !== input.name) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Confirmation text does not match the corpus name — deletion refused.",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "confirm" },
+          "Confirmation text does not match the corpus name — deletion refused.",
+        );
       }
       try {
         const result = await kbStudioService.deleteCorpus(input.name);
         return { deleted: true as const, name: input.name, ...result };
       } catch (err) {
         if (err instanceof KbCorpusNotFoundError) {
-          throw new TRPCError({ code: "NOT_FOUND", message: err.message });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "kbCorpus" }, err.message);
         }
         if (err instanceof KbStudioTableUnavailableError) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: err.message });
+          throw appError("PRECONDITION_FAILED", "OPERATION_FAILED", { operation: "deleteKbCorpus" }, err.message);
         }
         throw err;
       }
@@ -406,10 +408,10 @@ export const kbStudioRouter = router({
         });
       } catch (err) {
         if (err instanceof LoraFinetuneUnavailableError) {
-          throw new TRPCError({ code: "FORBIDDEN", message: err.message });
+          throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "loraFinetune" }, err.message);
         }
         if (err instanceof LoraFinetuneError) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
+          throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "runLoraFinetune" }, err.message);
         }
         throw err;
       }
