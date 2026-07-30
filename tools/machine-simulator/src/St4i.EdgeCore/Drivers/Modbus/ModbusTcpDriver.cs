@@ -439,7 +439,12 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
             // Final backstop — B-1's contract: neither write method may EVER let an exception propagate,
             // for any reason. Every specific, well-understood failure is already translated inside
             // ExecuteRegisterWriteAsync; this only catches something genuinely unforeseen.
-            return new SetpointWriteResult(request.Point, WriteOutcome.Indeterminate, Detail: $"unexpected failure: {ex.Message}");
+            // Review fix (Important) — same redaction discipline FleetHost's own backstop catches document:
+            // an arbitrary, genuinely-unforeseen exception's Message is not a channel this method controls
+            // the contents of, so only the exception's TYPE name reaches the operator-visible Detail; the
+            // full exception still reaches the logger.
+            _logError?.Invoke(ex, $"Modbus setpoint write to '{request.Point}' failed unexpectedly on {_map.MachineCode}");
+            return new SetpointWriteResult(request.Point, WriteOutcome.Indeterminate, Detail: $"unexpected failure: {ex.GetType().Name}");
         }
     }
 
@@ -490,8 +495,10 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
         }
         catch (Exception ex)
         {
-            // Final backstop — see WriteSetpointAsync's own remarks; identical reasoning.
-            return new CommandResult(request.Command, WriteOutcome.Indeterminate, Detail: $"unexpected failure: {ex.Message}");
+            // Final backstop — see WriteSetpointAsync's own remarks; identical reasoning, including the
+            // redaction discipline (Review fix, Important): TYPE name only in Detail, full exception logged.
+            _logError?.Invoke(ex, $"Modbus command '{request.Command}' failed unexpectedly on {_map.MachineCode}");
+            return new CommandResult(request.Command, WriteOutcome.Indeterminate, Detail: $"unexpected failure: {ex.GetType().Name}");
         }
     }
 
@@ -596,7 +603,11 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
             }
             catch (Exception ex)
             {
-                return new SetpointWriteResult(point, WriteOutcome.Indeterminate, Detail: $"could not reach the device: {ex.Message}");
+                // Review fix (Important) — same redaction discipline as this class's own outer backstop
+                // catches (and FleetHost's): ex.Message dropped from the operator-visible Detail, full
+                // exception still logged.
+                _logError?.Invoke(ex, $"Modbus device unreachable while writing '{point}' on {_map.MachineCode}");
+                return new SetpointWriteResult(point, WriteOutcome.Indeterminate, Detail: $"could not reach the device ({ex.GetType().Name}).");
             }
 
             var master = _master ?? throw new InvalidOperationException("Modbus master not connected.");
@@ -613,7 +624,11 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                 // The device was reached and explicitly said no — a KNOWN "no", not an unknown one. The
                 // connection itself stays healthy (a full, valid response arrived and parsed) — no reason to
                 // force a reconnect.
-                return new SetpointWriteResult(point, WriteOutcome.Failed, Detail: $"device rejected the write: {ex.Message}");
+                // Review fix (Important) — same redaction discipline as this class's other Detail sites:
+                // ex.Message dropped from the operator-visible Detail, full exception (with the device's own
+                // Modbus exception code) still logged.
+                _logError?.Invoke(ex, $"Modbus device rejected the write to '{point}' on {_map.MachineCode}");
+                return new SetpointWriteResult(point, WriteOutcome.Failed, Detail: $"device rejected the write ({ex.GetType().Name}).");
             }
             catch (Exception) when (ct.IsCancellationRequested)
             {
@@ -639,7 +654,10 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                 // NEXT poll iteration reconnects from scratch") — applied here to the write/command path,
                 // which never had it before this fix.
                 DisposeConnection();
-                return new SetpointWriteResult(point, WriteOutcome.Indeterminate, Detail: $"write did not complete: {ex.Message}");
+                // Review fix (Important) — same redaction discipline as this class's other Detail sites:
+                // ex.Message dropped from the operator-visible Detail, full exception still logged.
+                _logError?.Invoke(ex, $"Modbus write to '{point}' did not complete on {_map.MachineCode}");
+                return new SetpointWriteResult(point, WriteOutcome.Indeterminate, Detail: $"write did not complete ({ex.GetType().Name}).");
             }
             finally
             {
@@ -693,7 +711,11 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
             }
             catch (Exception ex)
             {
-                return new CommandResult(commandName, WriteOutcome.Indeterminate, Detail: $"could not reach the device: {ex.Message}");
+                // Review fix (Important) — same redaction discipline as this class's own outer backstop
+                // catches (and FleetHost's): ex.Message dropped from the operator-visible Detail, full
+                // exception still logged.
+                _logError?.Invoke(ex, $"Modbus device unreachable while invoking '{commandName}' on {_map.MachineCode}");
+                return new CommandResult(commandName, WriteOutcome.Indeterminate, Detail: $"could not reach the device ({ex.GetType().Name}).");
             }
 
             var master = _master ?? throw new InvalidOperationException("Modbus master not connected.");
@@ -710,7 +732,11 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                 {
                     // The command never fired at all — a KNOWN "no" from the device itself. The connection
                     // stays healthy (a full response arrived) — no reason to force a reconnect.
-                    return new CommandResult(commandName, WriteOutcome.Failed, Detail: $"device rejected the command: {ex.Message}");
+                    // Review fix (Important) — same redaction discipline as this class's other Detail sites:
+                    // ex.Message dropped from the operator-visible Detail, full exception (with the device's
+                    // own Modbus exception code) still logged.
+                    _logError?.Invoke(ex, $"Modbus device rejected command '{commandName}' on {_map.MachineCode}");
+                    return new CommandResult(commandName, WriteOutcome.Failed, Detail: $"device rejected the command ({ex.GetType().Name}).");
                 }
                 catch (Exception) when (ct.IsCancellationRequested)
                 {
@@ -733,8 +759,11 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                     // latter for every assert-write failure — corrected: that claim only ever held for an
                     // explicit SlaveException).
                     DisposeConnection();
+                    // Review fix (Important) — same redaction discipline as this class's other Detail sites:
+                    // ex.Message dropped from the operator-visible Detail, full exception still logged.
+                    _logError?.Invoke(ex, $"Modbus coil {coilAddress}'s assert write did not complete for command '{commandName}' on {_map.MachineCode}");
                     return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                        Detail: $"coil {coilAddress}'s assert write did not complete — whether it was asserted before the connection gave up is unconfirmed: {ex.Message}");
+                        Detail: $"coil {coilAddress}'s assert write did not complete — whether it was asserted before the connection gave up is unconfirmed ({ex.GetType().Name}).");
                 }
 
                 // The coil is now CONFIRMED asserted — the command's physical effect has already happened.
@@ -757,8 +786,12 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                     // The device is reached and responded (connection healthy, no desync risk) — it just
                     // explicitly refused the RESET half. Still Indeterminate, never Failed/Applied (this
                     // method's own doc comment) — the pulse's primary effect already happened.
+                    // Review fix (Important) — same redaction discipline as this class's other Detail sites:
+                    // ex.Message dropped from the operator-visible Detail, full exception (with the device's
+                    // own Modbus exception code) still logged.
+                    _logError?.Invoke(ex, $"Modbus coil {coilAddress}'s reset write rejected for command '{commandName}' on {_map.MachineCode}");
                     return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                        Detail: $"coil {coilAddress} was asserted but the device rejected the reset write: {ex.Message}");
+                        Detail: $"coil {coilAddress} was asserted but the device rejected the reset write ({ex.GetType().Name}).");
                 }
                 catch (Exception ex)
                 {
@@ -769,8 +802,11 @@ public sealed class ModbusTcpDriver : IWritableDeviceDriver
                     // never fired; reporting Applied would wrongly claim a fully-confirmed clean rest state.
                     // Indeterminate is the only honest answer.
                     DisposeConnection();
+                    // Review fix (Important) — same redaction discipline as this class's other Detail sites:
+                    // ex.Message dropped from the operator-visible Detail, full exception still logged.
+                    _logError?.Invoke(ex, $"Modbus coil {coilAddress}'s reset write did not complete for command '{commandName}' on {_map.MachineCode}");
                     return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                        Detail: $"coil {coilAddress} was asserted but the reset write did not complete — its final rest state is unconfirmed: {ex.Message}");
+                        Detail: $"coil {coilAddress} was asserted but the reset write did not complete — its final rest state is unconfirmed ({ex.GetType().Name}).");
                 }
             }
             finally

@@ -694,7 +694,10 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
             // Final backstop — B-1's contract: neither write method may EVER let an exception propagate, for
             // any reason. Every specific, well-understood failure is already translated inside
             // ExecuteWriteAsync; this only catches something genuinely unforeseen.
-            return new SetpointWriteResult(request.Point, WriteOutcome.Indeterminate, Detail: $"unexpected failure: {ex.Message}");
+            // Review fix (Important) — same redaction discipline FleetHost's own backstop catches document:
+            // only the exception's TYPE name reaches the operator-visible Detail; full exception still logged.
+            _logError?.Invoke(ex, $"OPC-UA setpoint write to '{request.Point}' failed unexpectedly on {_map.MachineCode}");
+            return new SetpointWriteResult(request.Point, WriteOutcome.Indeterminate, Detail: $"unexpected failure: {ex.GetType().Name}");
         }
     }
 
@@ -740,8 +743,10 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         }
         catch (Exception ex)
         {
-            // Final backstop — see WriteSetpointAsync's own remarks; identical reasoning.
-            return new CommandResult(request.Command, WriteOutcome.Indeterminate, Detail: $"unexpected failure: {ex.Message}");
+            // Final backstop — see WriteSetpointAsync's own remarks; identical reasoning, including the
+            // redaction discipline (Review fix, Important): TYPE name only in Detail, full exception logged.
+            _logError?.Invoke(ex, $"OPC-UA command '{request.Command}' failed unexpectedly on {_map.MachineCode}");
+            return new CommandResult(request.Command, WriteOutcome.Indeterminate, Detail: $"unexpected failure: {ex.GetType().Name}");
         }
     }
 
@@ -791,8 +796,14 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         }
         catch (Exception ex)
         {
+            // Review fix (Important) — this catch wraps AcquireSessionAsync/EnsureSessionAsync, the exact
+            // code that consumes _map.Username/_map.Password; an arbitrary exception's Message is not a
+            // channel this method controls the contents of (same reasoning FleetHost.TryWriteSetpointAsync's
+            // own catch already documents — see its doc comment), so only the exception's TYPE name (safe,
+            // non-sensitive) reaches the operator-visible Detail. The full exception still reaches the logger.
+            _logError?.Invoke(ex, $"OPC-UA session unavailable while writing '{point}' on {_map.MachineCode}");
             return new SetpointWriteResult(point, WriteOutcome.Indeterminate,
-                Detail: $"could not reach the device for '{point}': {ex.Message}");
+                Detail: $"could not reach the device for '{point}' ({ex.GetType().Name}).");
         }
 
         WriteValue writeValue;
@@ -816,8 +827,12 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
             // is ever called), so this is provably a map defect, not a device ambiguity. Consistent with
             // "could not reach the device" above (also a provably-untouched-device case reported the same
             // way in this class) — Indeterminate, not Rejected, but with a Detail that says exactly that.
+            // Review fix (Important) — ex.Message dropped from the operator-visible Detail, same redaction
+            // discipline as this method's session-acquire catch above; the full exception still reaches the
+            // logger (the map's own declared nodeId, already shown verbatim, carries the actionable info).
+            _logError?.Invoke(ex, $"OPC-UA nodeId '{nodeId}' failed to parse for point '{point}' on {_map.MachineCode}");
             return new SetpointWriteResult(point, WriteOutcome.Indeterminate,
-                Detail: $"'{point}' was never sent to the device — its declared nodeId ('{nodeId}') failed to parse ({ex.Message}); fix the map's nodeId for this point.");
+                Detail: $"'{point}' was never sent to the device — its declared nodeId ('{nodeId}') failed to parse ({ex.GetType().Name}); fix the map's nodeId for this point.");
         }
 
         try
@@ -844,8 +859,11 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         catch (Exception ex)
         {
             await BestEffortReconnectIfUnhealthyAsync(session).ConfigureAwait(false);
+            // Review fix (Important) — same redaction discipline as this method's session-acquire catch
+            // above: ex.Message dropped from the operator-visible Detail, full exception still logged.
+            _logError?.Invoke(ex, $"OPC-UA write to '{point}' did not complete on {_map.MachineCode}");
             return new SetpointWriteResult(point, WriteOutcome.Indeterminate,
-                Detail: $"write to '{point}' did not complete ({ex.Message}) — whether the device applied the value is unconfirmed.");
+                Detail: $"write to '{point}' did not complete ({ex.GetType().Name}) — whether the device applied the value is unconfirmed.");
         }
     }
 
@@ -869,8 +887,13 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         }
         catch (Exception ex)
         {
+            // Review fix (Important) — same reasoning as ExecuteWriteAsync's own session-acquire catch: this
+            // wraps AcquireSessionAsync/EnsureSessionAsync, the exact code that consumes
+            // _map.Username/_map.Password, so only the exception's TYPE name reaches the operator-visible
+            // Detail (FleetHost's own catches already document this discipline); full exception still logged.
+            _logError?.Invoke(ex, $"OPC-UA session unavailable while invoking '{commandName}' on {_map.MachineCode}");
             return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                Detail: $"could not reach the device for '{commandName}': {ex.Message}");
+                Detail: $"could not reach the device for '{commandName}' ({ex.GetType().Name}).");
         }
 
         CallMethodRequest callRequest;
@@ -890,8 +913,12 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
             // generic backstop ("unexpected failure: {ex.Message}"), destroying the one message that matters
             // for a COMMAND — whether it started. This is provably NOT that case (CallAsync is never
             // reached), so it says so plainly instead of leaving an operator to wonder.
+            // Review fix (Important) — ex.Message dropped from the operator-visible Detail, same redaction
+            // discipline as this method's session-acquire catch above; full exception still logged (the
+            // map's own declared node IDs, already shown verbatim, carry the actionable info).
+            _logError?.Invoke(ex, $"OPC-UA objectNodeId/methodNodeId ('{objectNodeId}' / '{methodNodeId}') failed to parse for command '{commandName}' on {_map.MachineCode}");
             return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                Detail: $"'{commandName}' was never invoked — its declared objectNodeId/methodNodeId ('{objectNodeId}' / '{methodNodeId}') failed to parse ({ex.Message}); fix the map's command declaration.");
+                Detail: $"'{commandName}' was never invoked — its declared objectNodeId/methodNodeId ('{objectNodeId}' / '{methodNodeId}') failed to parse ({ex.GetType().Name}); fix the map's command declaration.");
         }
 
         try
@@ -927,8 +954,11 @@ public sealed class OpcUaDriver : IWritableDeviceDriver
         catch (Exception ex)
         {
             await BestEffortReconnectIfUnhealthyAsync(session).ConfigureAwait(false);
+            // Review fix (Important) — same redaction discipline as this method's session-acquire catch
+            // above: ex.Message dropped from the operator-visible Detail, full exception still logged.
+            _logError?.Invoke(ex, $"OPC-UA command '{commandName}' did not complete on {_map.MachineCode}");
             return new CommandResult(commandName, WriteOutcome.Indeterminate,
-                Detail: $"'{commandName}' did not complete ({ex.Message}) — whether it started is unconfirmed; check the machine before retrying.");
+                Detail: $"'{commandName}' did not complete ({ex.GetType().Name}) — whether it started is unconfirmed; check the machine before retrying.");
         }
     }
 

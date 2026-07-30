@@ -1595,8 +1595,11 @@ Register-map JSON shape (`ModbusRegisterMap.FromJson` — property names matched
   guarded at 5 (`ModbusRegisterMap.MaxRetries`).
 - `registers[]` — required, at least one entry:
   - `address` — the register address (`ushort`).
-  - `type` — `"Holding"` (FC03, read/write on the real device) or `"Input"` (FC04, read-only) — this
-    driver only ever **reads**, regardless of type.
+  - `type` — `"Holding"` (FC03, read/write on the real device) or `"Input"` (FC04, read-only) — the
+    driver polls every register the same way regardless of type; only a `Holding` register can
+    additionally declare `"writable"` (below), which makes the driver execute a real write
+    (`WriteSingleRegisterAsync`) to it — an `"Input"` register can never be declared writable (rejected
+    at parse time) — see §21 for the full write path.
   - `dataType` — `"UInt16"` (raw 16-bit word) or `"Int16"` (the same bits reinterpreted as two's-complement
     signed) — decoded, **then** multiplied by `scale`.
   - `scale` — e.g. a raw `235` with `scale: 0.1` → telemetry value `23.5`; this is the entire
@@ -1679,7 +1682,9 @@ lỗi riêng (§16.3). **MẶC ĐỊNH TẮT** — ngược cực với UNS spin
 trên). Định dạng JSON register-map: `machineCode`, `unitId` (mặc định 1), `pollIntervalMs` (mặc định
 1000), `readTimeoutMs`/`retries` *(tuỳ chọn, Task 9 — xem đoạn "follow-up rollout" bên dưới; sai định dạng
 thì rơi về mặc định suy ra + log cảnh báo, KHÔNG làm hỏng cả map, giới hạn trên lần lượt 60 000ms/5)*,
-`registers[]` gồm `address`/`type` (Holding FC03 hoặc Input FC04, chỉ ĐỌC dù loại nào)/`dataType`
+`registers[]` gồm `address`/`type` (Holding FC03 hoặc Input FC04 — driver luôn ĐỌC mọi thanh ghi như
+nhau bất kể loại; riêng Holding có thể khai `writable` để driver thực thi GHI thật qua
+`WriteSingleRegisterAsync`, Input không bao giờ khai writable được, xem §21)/`dataType`
 (UInt16 hoặc Int16, giải mã XONG mới nhân `scale`)/`scale`/`metric`/`unit`. `machineCode` rỗng hoặc
 `registers` rỗng bị từ chối lúc nạp — Program.cs bắt lỗi này, log cảnh báo, tắt Modbus cho lần chạy đó
 thay vì crash. Khi bật và map nạp thành công, máy Modbus trở thành thành viên fleet CHÍNH THỨC (có tile,
