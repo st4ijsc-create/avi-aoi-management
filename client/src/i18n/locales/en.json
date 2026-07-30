@@ -3544,9 +3544,9 @@
     "KB_FILE_TOO_LARGE": "File exceeds the {{limitMb}} MB limit.",
     "KB_UNSUPPORTED_TYPE": "Unsupported format \"{{ext}}\". Supported formats: {{supported}}.",
     "KB_CONTENT_TYPE_MISMATCH": "File content does not match its extension: claims {{claimed}} but is actually {{detected}}.",
-    "KB_PARSE_FAILED": "Could not read file content: {{reason}}",
+    "KB_PARSE_FAILED": "Could not read file content.",
     "KB_NO_TEXT_EXTRACTED": "File \"{{source}}\" has no text to ingest.",
-    "KB_FETCH_FAILED": "Could not fetch content from {{url}}: {{reason}}",
+    "KB_FETCH_FAILED": "Could not fetch content from {{url}}.",
     "entity": {
       "product": "product",
       "machine": "machine",

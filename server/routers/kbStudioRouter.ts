@@ -41,7 +41,12 @@ import { TRPCError } from "@trpc/server";
 import { router, roleProcedure, require2FA } from "../_core/trpc";
 import { appError } from "../_core/appError";
 import { rethrowDbError } from "../_core/dbErrors";
-import { normalizeSourceType, KbUnsupportedTypeError, KbParseError } from "../services/kbDocParser";
+import {
+  normalizeSourceType,
+  KbUnsupportedTypeError,
+  KbParseError,
+  KbContentTypeMismatchError,
+} from "../services/kbDocParser";
 import {
   ingestDocument,
   isKbStudioEnabled,
@@ -63,6 +68,7 @@ import { startLoraFinetune, LoraFinetuneUnavailableError, LoraFinetuneError } fr
 import {
   buildTooLargeError,
   buildUnsupportedTypeError,
+  buildContentTypeMismatchError,
   buildParseFailedError,
   buildNoTextError,
   buildFetchFailedError,
@@ -118,6 +124,11 @@ function mapIngestDocumentError(err: unknown, sourceRef: string): never {
   if (err instanceof KbIngestValidationError) {
     throw buildNoTextError(sourceRef);
   }
+  // I-2 fix round 1 — PHẢI đứng TRƯỚC nhánh KbParseError chung bên dưới: đây là lớp con
+  // (extends KbParseError), đặt sau thì nhánh này không bao giờ chạy tới.
+  if (err instanceof KbContentTypeMismatchError) {
+    throw buildContentTypeMismatchError(err.claimed, err.detected);
+  }
   if (err instanceof KbParseError) {
     throw buildParseFailedError(err.message);
   }
@@ -148,6 +159,11 @@ function mapIngestUrlError(err: unknown, url: string): never {
   }
   if (err instanceof KbIngestValidationError) {
     throw buildNoTextError(url);
+  }
+  // I-2 fix round 1 — PHẢI đứng TRƯỚC nhánh KbParseError chung bên dưới: đây là lớp con
+  // (extends KbParseError), đặt sau thì nhánh này không bao giờ chạy tới.
+  if (err instanceof KbContentTypeMismatchError) {
+    throw buildContentTypeMismatchError(err.claimed, err.detected);
   }
   if (err instanceof KbParseError) {
     throw buildParseFailedError(err.message);

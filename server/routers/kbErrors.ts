@@ -38,11 +38,10 @@ export function buildUnsupportedTypeError(ext: string, supported: string) {
 }
 
 /** Tệp khai một định dạng nhưng nội dung byte thực tế là định dạng khác (vd. "notes.md" nhưng
- *  bytes là PNG) — KB_CONTENT_TYPE_MISMATCH. Đăng ký sẵn từ Task 1 nhưng KHÔNG có nơi gọi trong
- *  Task 3 (xem task-3-report.md): `kbDocParser.ts` (ngoài phạm vi sửa của Task 3) chỉ ném
- *  `KbParseError` chung cho cả "nội dung sai định dạng" lẫn "file hỏng" — không có trường
- *  `claimed`/`detected` tách rời để router đọc mà không phải soi chuỗi `message`. Giữ hàm này lại
- *  để sẵn sàng cho lúc `kbDocParser.ts` được sửa để ném một lớp lỗi riêng mang hai trường đó. */
+ *  bytes là PNG) — KB_CONTENT_TYPE_MISMATCH. Fix round 1 (I-2): `kbDocParser.ts` giờ ném
+ *  `KbContentTypeMismatchError` (con của `KbParseError`, mang `claimed`/`detected` có cấu trúc)
+ *  tại đúng 2 chỗ phát sinh tình huống này (`toTextChecked`, `parseImage`) — router bắt lớp con
+ *  này TRƯỚC nhánh `KbParseError` chung để gọi đúng hàm này thay vì rơi vào KB_PARSE_FAILED. */
 export function buildContentTypeMismatchError(claimed: string, detected: string) {
   return appError(
     "BAD_REQUEST",
@@ -54,9 +53,16 @@ export function buildContentTypeMismatchError(claimed: string, detected: string)
 
 /** Định dạng được nhận diện nhưng phân tích thất bại (file hỏng, timeout, VLM lỗi, nội dung
  *  nhị phân giả dạng text...) — KB_PARSE_FAILED. `reason` = nguyên văn `KbParseError.message`
- *  (mọi biến thể của `KbParseError` đổ về đây, xem task-3-report.md mục Step 1). */
+ *  (mọi biến thể của `KbParseError` đổ về đây, xem task-3-report.md mục Step 1).
+ *
+ *  Fix round 1 (I-1a): `reason` là lỗi VỀ CHÍNH TỆP người dùng vừa tải lên (không có gì thuộc
+ *  hạ tầng để rò), nhưng vì nó nguyên văn tiếng Anh, KHÔNG được nội suy vào câu i18n nữa — nếu
+ *  không, người vận hành vẫn đọc câu Anh, chỉ thêm tiền tố Việt (đây chính là điều I-1 chỉ ra:
+ *  quy ước `INVALID_VALUE` sẵn có của dự án cũng không render `{{reason}}`). `reason` CHỈ còn
+ *  nằm trong `fallbackMessage` (giữ cho log/API `/v1`) — KHÔNG còn trong `appParams` (không nội
+ *  suy thì không nên đi kèm phản hồi). Câu i18n `errors.KB_PARSE_FAILED` không còn tham số. */
 export function buildParseFailedError(reason: string) {
-  return appError("BAD_REQUEST", "KB_PARSE_FAILED", { reason }, `Failed to parse document: ${reason}`);
+  return appError("BAD_REQUEST", "KB_PARSE_FAILED", undefined, `Failed to parse document: ${reason}`);
 }
 
 /** Phân tích thành công nhưng không còn chữ nào để nạp (rỗng sau khi trim, hoặc 0 chunk sau khi
@@ -73,7 +79,17 @@ export function buildNoTextError(source: string) {
 /** Nạp từ URL thất bại — gộp cả `SsrfBlockedError` (đích bị chặn) lẫn `FetchError` (mọi lỗi
  *  fetch khác: DNS, timeout, quá dung lượng, content-type không cho phép...) vào MỘT mã, vì cả
  *  hai đều là "không tải được nội dung từ URL này" dưới góc nhìn người vận hành — KB_FETCH_FAILED.
- *  `reason` = nguyên văn message của lỗi gốc (giữ đủ chi tiết kỹ thuật cho log/API ngoài). */
+ *
+ *  Fix round 1 (I-1b): KHÁC với KB_PARSE_FAILED — `reason` ở đây CÓ THỂ chứa IP/hostname nội bộ
+ *  đã resolve (vd. `kbWebFetcher.ts`'s SSRF guard: "Host resolves to a blocked/internal address
+ *  (169.254.169.254)..."). Đây là dữ liệu hạ tầng, KHÔNG được ra client bằng bất kỳ đường nào —
+ *  kể cả `fallbackMessage`, vì `TRPCError.message` được gửi thẳng cho client (không chỉ dùng nội
+ *  bộ như tên gọi "fallback" gợi ý). Nên với mã này: `reason` KHÔNG vào `appParams`, KHÔNG vào
+ *  `fallbackMessage` — chỉ `console.error` ở MÁY CHỦ để không mất chẩn đoán. `url` vẫn giữ (client
+ *  tự nhập URL đó, trả lại là hữu ích và không rò gì). */
 export function buildFetchFailedError(url: string, reason: string) {
-  return appError("BAD_REQUEST", "KB_FETCH_FAILED", { url, reason }, `Failed to fetch ${url}: ${reason}`);
+  // Log chẩn đoán MÁY CHỦ duy nhất còn giữ `reason` thô — xem doc comment ở trên cho lý do tách
+  // hai đường (client nhận câu chung ở dưới, log giữ chi tiết đầy đủ cho vận hành/điều tra sự cố).
+  console.error(`[kbErrors] KB_FETCH_FAILED — không tải được nội dung từ "${url}": ${reason}`);
+  return appError("BAD_REQUEST", "KB_FETCH_FAILED", { url }, `Failed to fetch ${url}`);
 }

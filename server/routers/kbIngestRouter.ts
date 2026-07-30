@@ -32,7 +32,12 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, roleProcedure, require2FA } from "../_core/trpc";
 import { appError } from "../_core/appError";
-import { normalizeSourceType, KbUnsupportedTypeError, KbParseError } from "../services/kbDocParser";
+import {
+  normalizeSourceType,
+  KbUnsupportedTypeError,
+  KbParseError,
+  KbContentTypeMismatchError,
+} from "../services/kbDocParser";
 import {
   ingestDocument,
   isKbStudioEnabled,
@@ -59,6 +64,7 @@ import {
 import {
   buildTooLargeError,
   buildUnsupportedTypeError,
+  buildContentTypeMismatchError,
   buildParseFailedError,
   buildNoTextError,
   buildFetchFailedError,
@@ -173,6 +179,11 @@ export const kbIngestRouter = router({
         if (err instanceof KbIngestValidationError) {
           throw buildNoTextError(input.sourceRef);
         }
+        // I-2 fix round 1 — PHẢI đứng TRƯỚC nhánh KbParseError chung bên dưới: đây là lớp con
+        // (extends KbParseError), đặt sau thì nhánh này không bao giờ chạy tới.
+        if (err instanceof KbContentTypeMismatchError) {
+          throw buildContentTypeMismatchError(err.claimed, err.detected);
+        }
         if (err instanceof KbParseError) {
           throw buildParseFailedError(err.message);
         }
@@ -229,6 +240,11 @@ export const kbIngestRouter = router({
         // chữ để nạp" (trang lấy về rỗng) — corpus/url đã được zod bắt ở input schema.
         if (err instanceof KbIngestValidationError) {
           throw buildNoTextError(input.url);
+        }
+        // I-2 fix round 1 — PHẢI đứng TRƯỚC nhánh KbParseError chung bên dưới: đây là lớp con
+        // (extends KbParseError), đặt sau thì nhánh này không bao giờ chạy tới.
+        if (err instanceof KbContentTypeMismatchError) {
+          throw buildContentTypeMismatchError(err.claimed, err.detected);
         }
         if (err instanceof KbParseError) {
           throw buildParseFailedError(err.message);
@@ -299,6 +315,11 @@ export const kbIngestRouter = router({
         // chữ để nạp" (transcript rỗng). `input.filename` là "source" gần nhất router có sẵn.
         if (err instanceof KbIngestValidationError) {
           throw buildNoTextError(input.filename);
+        }
+        // I-2 fix round 1 — PHẢI đứng TRƯỚC nhánh KbParseError chung bên dưới: đây là lớp con
+        // (extends KbParseError), đặt sau thì nhánh này không bao giờ chạy tới.
+        if (err instanceof KbContentTypeMismatchError) {
+          throw buildContentTypeMismatchError(err.claimed, err.detected);
         }
         if (err instanceof KbParseError) {
           throw buildParseFailedError(err.message);

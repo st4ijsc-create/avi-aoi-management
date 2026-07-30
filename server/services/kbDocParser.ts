@@ -55,6 +55,20 @@ export class KbParseError extends Error {
   }
 }
 
+/**
+ * Sprint 5 §4 (Task 3, I-2 fix round 1) — lỗi tệp khai một định dạng nhưng nội dung byte thực
+ * tế lại là định dạng khác (vd. "notes.txt" nhưng bytes là PNG). Đây là MỘT lỗi con của
+ * {@link KbParseError} (không phải lớp độc lập) để mọi chỗ đang bắt `instanceof KbParseError`
+ * VẪN bắt được nó — tương thích ngược 100% với router/test hiện có — nhưng mang thêm hai
+ * trường có cấu trúc (`claimed`/`detected`) để router map sang mã KB_CONTENT_TYPE_MISMATCH
+ * (kèm i18n `{{claimed}}`/`{{detected}}`) thay vì rơi vào bucket chung KB_PARSE_FAILED. */
+export class KbContentTypeMismatchError extends KbParseError {
+  constructor(message: string, public readonly claimed: string, public readonly detected: string) {
+    super(message);
+    this.name = "KbContentTypeMismatchError";
+  }
+}
+
 export interface ParsedDocumentMeta {
   sourceType: KbSourceType;
   charCount: number;
@@ -202,9 +216,14 @@ function toTextChecked(input: Buffer | string, sourceType: "md" | "txt", mimeOrE
   if (Buffer.isBuffer(input)) {
     const detected = detectBinaryContentReason(input);
     if (detected) {
-      throw new KbParseError(
+      // I-2 fix round 1 — trước là KbParseError chung; giờ là KbContentTypeMismatchError (con
+      // của KbParseError) mang claimed/detected có cấu trúc, để router map ra KB_CONTENT_TYPE_
+      // MISMATCH thay vì KB_PARSE_FAILED. Message tiếng Anh giữ NGUYÊN VĂN — test cũ assert nó.
+      throw new KbContentTypeMismatchError(
         `File "${mimeOrExt}" has a ${sourceType.toUpperCase()} (text) extension but its content is ${detected}, ` +
           `not text — refusing to ingest binary bytes as text.`,
+        sourceType.toUpperCase(),
+        detected,
       );
     }
   }
@@ -334,12 +353,31 @@ function parsePlain(raw: string, sourceType: "md" | "txt" | "url" | "video"): Pa
  *    kbStudioService.markJobFailed only ever reads `err.message` regardless of class, so the
  *    Jobs tab / caller-visible behavior is identical either way).
  */
+/** I-2 fix round 1 — dò xem bytes THỰC TẾ khớp định dạng ảnh nào (nếu có), để
+ *  KbContentTypeMismatchError's `detected` là một giá trị có cấu trúc (vd. "a JPEG image")
+ *  thay vì chỉ nói "không khớp" chung chung. Tái dùng matchesImageMagicBytes đã có — không dò
+ *  lại từ đầu. */
+function detectActualImageKind(buf: Buffer): KbImageKind | null {
+  if (matchesImageMagicBytes(buf, "png")) return "png";
+  if (matchesImageMagicBytes(buf, "jpeg")) return "jpeg";
+  if (matchesImageMagicBytes(buf, "webp")) return "webp";
+  return null;
+}
+
 async function parseImage(buf: Buffer, hint: string): Promise<ParsedDocument> {
   const claimedKind = detectImageKindFromLabel(hint);
   if (claimedKind && !matchesImageMagicBytes(buf, claimedKind)) {
-    throw new KbParseError(
+    const actualKind = detectActualImageKind(buf);
+    const detected = actualKind
+      ? `a ${actualKind.toUpperCase()} image`
+      : "content that does not match any recognised image format";
+    // I-2 fix round 1 — KbContentTypeMismatchError (con của KbParseError) thay vì KbParseError
+    // chung, để router map ra KB_CONTENT_TYPE_MISMATCH. Message tiếng Anh giữ NGUYÊN VĂN.
+    throw new KbContentTypeMismatchError(
       `File "${hint}" is labeled as ${claimedKind.toUpperCase()} but its content does not start with the ` +
         `${claimedKind.toUpperCase()} magic bytes — refusing to ingest mismatched bytes as an image.`,
+      claimedKind.toUpperCase(),
+      detected,
     );
   }
 

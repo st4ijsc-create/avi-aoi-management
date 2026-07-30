@@ -3545,9 +3545,9 @@
     "KB_FILE_TOO_LARGE": "Tệp vượt quá giới hạn {{limitMb}} MB.",
     "KB_UNSUPPORTED_TYPE": "Không hỗ trợ định dạng \"{{ext}}\". Định dạng nhận được: {{supported}}.",
     "KB_CONTENT_TYPE_MISMATCH": "Nội dung tệp không khớp phần mở rộng: khai là {{claimed}} nhưng thực tế là {{detected}}.",
-    "KB_PARSE_FAILED": "Không đọc được nội dung tệp: {{reason}}",
+    "KB_PARSE_FAILED": "Không đọc được nội dung tệp.",
     "KB_NO_TEXT_EXTRACTED": "Tệp \"{{source}}\" không có chữ nào để nạp.",
-    "KB_FETCH_FAILED": "Không tải được nội dung từ {{url}}: {{reason}}",
+    "KB_FETCH_FAILED": "Không tải được nội dung từ {{url}}.",
     "entity": {
       "product": "sản phẩm",
       "machine": "máy",

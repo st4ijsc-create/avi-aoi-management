@@ -23,9 +23,9 @@ export const APP_ERROR_CODES = [
   "KB_FILE_TOO_LARGE",        // params: { limitMb }
   "KB_UNSUPPORTED_TYPE",      // params: { ext, supported }
   "KB_CONTENT_TYPE_MISMATCH", // params: { claimed, detected }
-  "KB_PARSE_FAILED",          // params: { reason }
+  "KB_PARSE_FAILED",          // params: {} — reason chỉ ở fallbackMessage (I-1a, xem kbErrors.ts)
   "KB_NO_TEXT_EXTRACTED",     // params: { source }
-  "KB_FETCH_FAILED",          // params: { url, reason }
+  "KB_FETCH_FAILED",          // params: { url } — reason có thể rò IP nội bộ, chỉ log server (I-1b)
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];
