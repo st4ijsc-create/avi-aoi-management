@@ -464,8 +464,17 @@ describe("alarmKpi — đọc từ nhật ký lần-tái-diễn", () => {
    * ĐANG im lặng), mốc trả về SAI là của máy 31 (có cảnh báo từ 60 ngày
    * trước) — người vận hành sẽ đọc nhầm "sổ máy 32 mới có dữ liệu từ 60 ngày
    * trước" trong khi thật ra máy 32 chỉ mới phát sinh 2 giờ trước.
+   *
+   * Review round 1, Important-1 — bản gốc chỉ cho máy 31 MỘT lần tái diễn
+   * 60 NGÀY trước (ngoài cửa sổ 8h). `sourceCounts.predictive` khi đó đúng=1
+   * BẤT KỂ có lọc machineId hay không, vì cửa sổ thời gian một mình nó đã
+   * loại máy 31 — assertion không hề canh phần lọc machineId của loadPredRows()
+   * (`server/routers/alarmKpiRouter.ts`). Thêm cho máy 31 một lần tái diễn
+   * TRONG cửa sổ 8h (3h trước) để `sourceCounts.predictive` thật sự phân biệt
+   * được "có lọc" (=1, chỉ máy 32) với "không lọc" (=2, cả hai máy) — giữ
+   * nguyên dòng 60-ngày để vẫn canh riêng phần MIN không lộ mốc máy khác.
    */
-  it("debt E6 — MIN(occurredAt) lọc theo machineId, KHÔNG lộ mốc của máy khác", async () => {
+  it("debt E6 — MIN(occurredAt) VÀ sourceCounts.predictive đều lọc theo machineId, KHÔNG lộ dữ liệu máy khác", async () => {
     const now = Date.now();
     sinceForTest = new Date(now - 8 * 3600_000);
     seedAlertRows = [
@@ -481,8 +490,13 @@ describe("alarmKpi — đọc từ nhật ký lần-tái-diễn", () => {
       },
     ];
     seedOccurrenceRows = [
-      // Máy 31: lần đầu RẤT SỚM — không liên quan gì tới máy 32 đang lọc.
+      // Máy 31: lần đầu RẤT SỚM (60 ngày, ngoài cửa sổ 8h) — canh riêng MIN.
       { id: 9800, alertId: 701, occurredAt: new Date(now - 60 * 24 * 3600_000), severity: "LOW" },
+      // Máy 31: MỘT lần tái diễn NỮA, lần này TRONG cửa sổ 8h (3h trước) — nếu
+      // không lọc machineId, dòng này sẽ lọt vào sourceCounts.predictive của
+      // máy 32 (đang lọc) và cũng làm ĐỎ assertion firstOccurredAt (mốc cũ
+      // nhất máy 31 vẫn là dòng 60-ngày, dòng này chỉ để canh sourceCounts).
+      { id: 9802, alertId: 701, occurredAt: new Date(now - 3 * 3600_000), severity: "LOW" },
       // Máy 32: lần (và cũng là lần đầu) duy nhất, 2h trước.
       { id: 9801, alertId: 702, occurredAt: new Date(now - 2 * 3600_000), severity: "LOW" },
     ];
@@ -492,6 +506,8 @@ describe("alarmKpi — đọc từ nhật ký lần-tái-diễn", () => {
     // Trước sửa: MIN quét toàn bảng ⇒ trả mốc 60 ngày trước của máy 31 — SAI
     // cho màn đã lọc theo máy 32. Sau sửa: chỉ còn mốc của chính máy 32.
     expect(res.occurrenceLog.firstOccurredAt).toBe(new Date(now - 2 * 3600_000).toISOString());
+    // Máy 31 có 1 lần tái diễn TRONG cùng cửa sổ 8h (dòng 9802) — nếu
+    // loadPredRows() không lọc machineId, con số này sẽ là 2 (lẫn cả máy 31).
     expect(res.sourceCounts.predictive).toBe(1); // chỉ 1 lần tái diễn của máy 32 trong cửa sổ 8h
   });
 });

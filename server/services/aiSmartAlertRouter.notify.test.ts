@@ -30,6 +30,12 @@ let alertInsertThrows = false;
 // (trước đây dấu đóng ngay trong khối ghi, TRƯỚC cả lượt gửi — không cách nào
 // biết gửi có thành công hay không).
 let sendAlertNotificationThrows = false;
+// Review round 1, Minor-3 (nâng lên) — notificationService.sendNotification()
+// trả `null` một cách HỢP LỆ (không ném) khi người dùng tắt in-app hoặc đang
+// trong giờ yên lặng. Cờ này mô phỏng ĐÚNG hình dạng đó (khác với
+// sendAlertNotificationThrows — throw là lỗi kỹ thuật, còn đây là "gửi có chủ
+// đích không tới ai").
+let sendAlertNotificationReturnsNull = false;
 
 function chain(getRows: () => any[]) {
   const node: any = {
@@ -100,7 +106,16 @@ vi.mock("./notificationService", () => ({
     if (sendAlertNotificationThrows) {
       throw new Error("gửi thông báo in-app LỖI (giả lập kênh push hỏng)");
     }
+    if (sendAlertNotificationReturnsNull) {
+      // Review round 1, Minor-3 — "im lặng CÓ CHỦ ĐÍCH" (tắt in-app / giờ yên
+      // lặng): sendNotification() thật trả null, KHÔNG ném. KHÔNG push vào
+      // `notified` — không ai thật sự nhận được thông báo này.
+      return null;
+    }
     notified.push({ userId });
+    // Mô phỏng bản ghi notification THẬT (createNotification trả về, có id) —
+    // sendSmartNotification() giờ kiểm `result != null`, không chỉ "không ném".
+    return { id: notified.length };
   }),
 }));
 vi.mock("./emailService", () => ({ sendAlertEmail: vi.fn(async () => undefined) }));
@@ -114,6 +129,7 @@ beforeEach(() => {
   patternExecuteThrows = false;
   alertInsertThrows = false;
   sendAlertNotificationThrows = false;
+  sendAlertNotificationReturnsNull = false;
   generateText.mockClear();
   process.env.ALERT_RENOTIFY_COOLDOWN_MINUTES = "240";
   process.env.ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES = "0";
@@ -216,6 +232,26 @@ describe("routeAlert — tách gửi thông báo khỏi ghi nhật ký", () => {
     expect(ins.payload.notificationSent).toBe(false);
     expect(ins.payload.notificationSentAt).toBeNull();
     // ...nhưng KHÔNG có UPDATE stamp nào chạy tiếp theo — gửi thất bại thật.
+    expect(calls.some((c) => c.kind === "update")).toBe(false);
+  });
+
+  // Review round 1, Minor-3 (nâng lên) — sendAlertNotification() KHÔNG NÉM khi
+  // người nhận tắt in-app hoặc đang trong giờ yên lặng: nó trả `null` một
+  // cách HỢP LỆ (notificationService.ts). `delivered = !threw` cũ sẽ coi đây
+  // là "đã gửi" dù không ai thật sự nhận được gì ⇒ đúng bug E3, chỉ ở tầng
+  // khác. MAINTENANCE có email:null nên không có kênh dự phòng nào cứu vãn.
+  it("người nhận đang trong giờ yên lặng (sendAlertNotification trả null, KHÔNG ném) ⇒ KHÔNG stamp", async () => {
+    seedUserRows = MAINTENANCE;
+    sendAlertNotificationReturnsNull = true;
+    const { routeAlert } = await import("./aiSmartAlertRouter");
+    await routeAlert({ type: "MACHINE_FAILURE", machineId: 8110, severity: "HIGH", message: "x", data: {} } as any);
+
+    expect(notified).toHaveLength(0); // không ai thật sự nhận được thông báo
+    const ins = calls.find((c) => c.kind === "insert")!;
+    expect(ins.payload.notificationSent).toBe(false);
+    expect(ins.payload.notificationSentAt).toBeNull();
+    // KHÔNG có UPDATE stamp nào chạy tiếp theo — "gửi" không ném lỗi nhưng
+    // cũng không tới tay ai, không được phép đóng dấu "đã báo".
     expect(calls.some((c) => c.kind === "update")).toBe(false);
   });
 

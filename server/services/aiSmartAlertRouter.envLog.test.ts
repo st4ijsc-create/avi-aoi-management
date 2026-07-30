@@ -97,4 +97,42 @@ describe("aiSmartAlertRouter — log một lần lúc nạp module (debt E4)", (
     expect(lines.some((l) => l.includes("CẤU HÌNH") && l.includes("KHÔNG hợp lệ"))).toBe(false);
     expect(lines.some((l) => l.includes("ALERT_RENOTIFY_COOLDOWN_MINUTES") && l.includes("chưa đặt"))).toBe(true);
   });
+
+  // Review round 1, Minor-4 (nâng lên) — bản gốc so CHUỖI (String(effective)
+  // !== raw), nên các giá trị THẬT SỰ HỢP LỆ nhưng lệch ĐỊNH DẠNG chuỗi với
+  // effective (khoảng trắng, số 0 dẫn đầu, ký hiệu khoa học) bị báo NHẦM là
+  // "KHÔNG hợp lệ — rơi về mặc định" — sai cả hai mệnh đề (giá trị vẫn đang
+  // được dùng, và effective không phải mặc định thật). Ba case dưới đây đều
+  // PHẢI được coi là hợp lệ, KHÔNG cảnh báo.
+  it("'60 ' (khoảng trắng cuối, Number() tự trim) ⇒ HỢP LỆ, KHÔNG cảnh báo dù thô≠hiệu lực về mặt chuỗi", async () => {
+    process.env.ALERT_RENOTIFY_COOLDOWN_MINUTES = "60 ";
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.resetModules();
+    await import("./aiSmartAlertRouter");
+
+    const lines = log.mock.calls.map((c) => String(c[0]));
+    expect(lines.some((l) => l.includes("ALERT_RENOTIFY_COOLDOWN_MINUTES") && l.includes("CẤU HÌNH"))).toBe(false);
+    expect(lines.some((l) => l.includes("ALERT_RENOTIFY_COOLDOWN_MINUTES") && l.includes("hiệu lực=60"))).toBe(true);
+  });
+
+  it("'060' (số 0 dẫn đầu) ⇒ HỢP LỆ, KHÔNG cảnh báo", async () => {
+    process.env.ALERT_RENOTIFY_COOLDOWN_MINUTES = "060";
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.resetModules();
+    await import("./aiSmartAlertRouter");
+
+    const lines = log.mock.calls.map((c) => String(c[0]));
+    expect(lines.some((l) => l.includes("ALERT_RENOTIFY_COOLDOWN_MINUTES") && l.includes("CẤU HÌNH"))).toBe(false);
+  });
+
+  it("'1e3' (ký hiệu khoa học, Number()=1000) ⇒ HỢP LỆ cho ROUTE_ALERT_MAX_PER_WINDOW, KHÔNG báo 'rơi về mặc định 1000'", async () => {
+    process.env.ROUTE_ALERT_MAX_PER_WINDOW = "1e3";
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.resetModules();
+    await import("./aiSmartAlertRouter");
+
+    const lines = log.mock.calls.map((c) => String(c[0]));
+    expect(lines.some((l) => l.includes("ROUTE_ALERT_MAX_PER_WINDOW") && l.includes("CẤU HÌNH"))).toBe(false);
+    expect(lines.some((l) => l.includes("ROUTE_ALERT_MAX_PER_WINDOW") && l.includes("hiệu lực=1000"))).toBe(true);
+  });
 });

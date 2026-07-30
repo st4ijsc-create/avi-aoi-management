@@ -64,10 +64,22 @@ function maxPerWindow(): number {
  * hành biết còn phải sửa lại thay vì đoán mò suốt cửa sổ cooldown.
  */
 function logEffectiveAlertRoutingEnvOnce(): void {
-  const describeOne = (envName: string, effective: number, unit: string): void => {
+  const describeOne = (
+    envName: string,
+    effective: number,
+    unit: string,
+    isValidRaw: (n: number) => boolean,
+  ): void => {
     const raw = process.env[envName];
     const rawDisplay = raw === undefined ? "(chưa đặt)" : JSON.stringify(raw);
-    if (raw !== undefined && String(effective) !== raw) {
+    // Review round 1, Minor-4 (nâng lên) — trước đây so CHUỖI
+    // (String(effective) !== raw): "60 " (khoảng trắng cuối), "060", "1e3" đều
+    // là số THẬT SỰ ĐƯỢC DÙNG (Number() parse đúng, hàm validate ở trên chấp
+    // nhận) nhưng lệch ĐỊNH DẠNG chuỗi với `effective` ⇒ bị báo "KHÔNG hợp lệ
+    // — rơi về mặc định" SAI CẢ HAI MỆNH ĐỀ (giá trị vẫn đang được dùng, và
+    // effective không phải mặc định). Phải kiểm ĐÚNG luật hợp lệ của chính hàm
+    // đang mô tả (truyền vào isValidRaw), không suy từ so khớp định dạng chuỗi.
+    if (raw !== undefined && !isValidRaw(Number(raw))) {
       console.log(
         `[SmartAlert] CẤU HÌNH ${envName}=${rawDisplay} KHÔNG hợp lệ — đã ÂM THẦM rơi về ` +
           `mặc định ${effective}${unit}. Nếu bạn định đổi giá trị này (kể cả để TẮT), kiểm ` +
@@ -77,9 +89,11 @@ function logEffectiveAlertRoutingEnvOnce(): void {
     }
     console.log(`[SmartAlert] ${envName}: thô=${rawDisplay} → hiệu lực=${effective}${unit}`);
   };
-  describeOne("ALERT_RENOTIFY_COOLDOWN_MINUTES", renotifyCooldownMs() / 60_000, " phút");
-  describeOne("ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES", criticalCooldownMs() / 60_000, " phút");
-  describeOne("ROUTE_ALERT_MAX_PER_WINDOW", maxPerWindow(), " lượt/cửa sổ");
+  const isValidCooldown = (n: number) => Number.isFinite(n) && n >= 0;
+  const isValidCap = (n: number) => Number.isFinite(n) && n > 0;
+  describeOne("ALERT_RENOTIFY_COOLDOWN_MINUTES", renotifyCooldownMs() / 60_000, " phút", isValidCooldown);
+  describeOne("ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES", criticalCooldownMs() / 60_000, " phút", isValidCooldown);
+  describeOne("ROUTE_ALERT_MAX_PER_WINDOW", maxPerWindow(), " lượt/cửa sổ", isValidCap);
 }
 logEffectiveAlertRoutingEnvOnce();
 
@@ -569,9 +583,11 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
   // trên, TRƯỚC lượt gửi thật ở đây — tiến trình chết đúng khe giữa hai việc
   // để lại một cảnh báo mang dấu "đã báo" mà KHÔNG ai được báo, im lặng suốt
   // cooldown (mặc định 4h) về một máy sắp hỏng. Sửa: chỉ đóng dấu SAU khi
-  // sendSmartNotification() xác nhận đã gửi được — allDelivered=false (ví dụ
-  // kênh in-app ném lỗi) ⇒ KHÔNG stamp, còn cơ hội thử lại ở lần tái diễn kế
-  // tiếp thay vì mang một dấu "đã báo" giả.
+  // sendSmartNotification() xác nhận đã gửi được — allDelivered=false khi
+  // kênh in-app NÉM lỗi HOẶC khi nó trả về `null` một cách hợp lệ (người nhận
+  // tắt in-app / đang trong giờ yên lặng — notificationService.ts, không phải
+  // exception) ⇒ KHÔNG stamp, còn cơ hội thử lại ở lần tái diễn kế tiếp thay
+  // vì mang một dấu "đã báo" giả.
   let allDelivered = true;
   if (notifyDecision.notify) {
     for (const target of targets) {
@@ -590,7 +606,11 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
         await db
           .update(predictiveAlerts)
           .set({ notificationSent: true, notificationSentAt: new Date(), updatedAt: new Date() })
-          .where(eq(predictiveAlerts.id, alertRecord.id));
+          // Review round 1, Minor-2 — cùng lý do đã giải thích ở UPDATE anh em
+          // (:497): lọc lại status='ACTIVE' để nếu alertExpirySweeper đã đóng
+          // dòng này trong khe giữa lượt gửi và đây, UPDATE là no-op thay vì
+          // bump updatedAt trên một dòng đã EXPIRED/RESOLVED.
+          .where(and(eq(predictiveAlerts.id, alertRecord.id), eq(predictiveAlerts.status, "ACTIVE" as any)));
       } catch (err) {
         // FAIL-OPEN: đóng dấu hỏng KHÔNG được phép che mất việc ĐÃ gửi thành
         // công — chỉ mất dấu vết notificationSentAt cho dòng này, không mất
@@ -1262,12 +1282,19 @@ async function sendSmartNotification(
   let delivered = false;
 
   try {
-    await sendAlertNotification(target.userId, {
+    // Review round 1, Minor-3 (nâng lên) — sendAlertNotification() → sendNotification()
+    // (notificationService.ts) KHÔNG NÉM khi người dùng tắt in-app hoặc đang trong
+    // giờ yên lặng (quiet hours, ưu tiên khác URGENT) — nó trả `null` một cách HỢP
+    // LỆ. `delivered=true` chỉ vì không có exception là SAI: target email=null, mức
+    // HIGH, đúng giờ yên lặng ⇒ không ai nhận được gì nhưng vẫn coi là "đã gửi" ⇒
+    // đúng bug E3 đang sửa, chỉ dời xuống một tầng khác. Phải kiểm THẲNG giá trị trả
+    // về, không suy từ việc không ném lỗi.
+    const result = await sendAlertNotification(target.userId, {
       title,
       message: `${event.message}\nRouted to you because: ${target.reason}`,
       priority: event.severity === "CRITICAL" ? "URGENT" : event.severity === "HIGH" ? "HIGH" : "NORMAL",
     });
-    delivered = true;
+    delivered = result != null;
   } catch (error) {
     console.error(`[Smart Alert] Failed to notify user ${target.username}:`, error);
   }
