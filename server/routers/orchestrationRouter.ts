@@ -92,7 +92,7 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflows)
         .where(eq(orchestrationWorkflows.id, input.id))
         .limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Workflow ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, `Workflow ${input.id} not found`);
       return row;
     }),
 
@@ -150,7 +150,7 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflowVersions)
         .where(eq(orchestrationWorkflowVersions.id, input.id))
         .limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Version ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowVersion" }, `Version ${input.id} not found`);
       return row;
     }),
 
@@ -192,7 +192,7 @@ export const orchestrationRouter = router({
     .input(z.object({ runId: z.number().int().positive() }))
     .query(async ({ input }) => {
       const view = await getRun(input.runId);
-      if (!view) throw new TRPCError({ code: "NOT_FOUND", message: `Run ${input.runId} not found` });
+      if (!view) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflowRun" }, `Run ${input.runId} not found`);
       return view;
     }),
 
@@ -267,7 +267,7 @@ export const orchestrationRouter = router({
           .from(orchestrationWorkflows)
           .where(eq(orchestrationWorkflows.ref, input.workflowRef))
           .limit(1);
-        if (!wf) throw new TRPCError({ code: "NOT_FOUND", message: `Workflow "${input.workflowRef}" not found` });
+        if (!wf) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, `Workflow "${input.workflowRef}" not found`);
         def = wf.definitionJson as WorkflowDefinition;
       } else {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Provide either `workflow` or `workflowRef`." });
@@ -348,7 +348,7 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflows)
         .where(input.id != null ? eq(orchestrationWorkflows.id, input.id) : eq(orchestrationWorkflows.ref, input.ref!))
         .limit(1);
-      if (!wf) throw new TRPCError({ code: "NOT_FOUND", message: "Workflow not found" });
+      if (!wf) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, "Workflow not found");
 
       const runs = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.workflowId, wf.id));
       const active = runs.filter((r) => !["completed", "failed", "aborted"].includes(r.status));
@@ -393,7 +393,7 @@ export const orchestrationRouter = router({
         .from(orchestrationWorkflows)
         .where(input.id != null ? eq(orchestrationWorkflows.id, input.id) : eq(orchestrationWorkflows.ref, input.ref!))
         .limit(1);
-      if (!src) throw new TRPCError({ code: "NOT_FOUND", message: "Source workflow not found" });
+      if (!src) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workflow" }, "Source workflow not found");
 
       const newRef = input.newRef.trim();
       const [clash] = await d

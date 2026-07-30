@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
@@ -59,7 +60,7 @@ export const pdfReportRouter = router({
       // Get inspection details
       const inspection = await db.getInspectionById(input.inspectionId);
       if (!inspection) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy inspection" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "inspection" }, "Không tìm thấy inspection");
       }
 
       // Get measurement results

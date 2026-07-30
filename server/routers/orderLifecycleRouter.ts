@@ -15,6 +15,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import {
@@ -87,7 +88,7 @@ export const orderLifecycleRouter = router({
       ensureEnabled();
       try {
         const detail = await getOrderDetail(input.orderId);
-        if (!detail) throw new TRPCError({ code: "NOT_FOUND", message: `Order ${input.orderId} not found` });
+        if (!detail) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, `Order ${input.orderId} not found`);
         return detail;
       } catch (err) {
         toTrpc(err);
@@ -102,7 +103,7 @@ export const orderLifecycleRouter = router({
       ensureEnabled();
       try {
         const trace = await traceOrder(input.orderId);
-        if (!trace) throw new TRPCError({ code: "NOT_FOUND", message: `Order ${input.orderId} not found` });
+        if (!trace) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productionOrder" }, `Order ${input.orderId} not found`);
         return trace;
       } catch (err) {
         toTrpc(err);

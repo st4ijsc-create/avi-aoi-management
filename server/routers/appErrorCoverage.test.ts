@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_LEGACY_THROWS = 624; // ← task 6 lô 6/9 (ENTITY_NOT_FOUND đợt 2, +2 bổ sung quote-miss): 666 - 42 = 624
+const ALLOWED_LEGACY_THROWS = 598; // ← task 6 lô 7/9 (ENTITY_NOT_FOUND đợt 2): 624 - 26 = 598
 
 const ROUTERS_DIR = dirname(fileURLToPath(import.meta.url));
 

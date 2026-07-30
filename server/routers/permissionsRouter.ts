@@ -412,7 +412,7 @@ export const permissionsRouter = router({
       const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
       
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
       await db
@@ -587,7 +587,7 @@ export const permissionsRouter = router({
       const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
       
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
       // Check if permission already exists
@@ -661,7 +661,7 @@ export const permissionsRouter = router({
       const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
       
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
       
       // Delete all existing permissions for this user
@@ -701,7 +701,7 @@ export const permissionsRouter = router({
       const [permission] = await db.select({ id: permissions.id }).from(permissions).where(eq(permissions.id, input.id)).limit(1);
       
       if (!permission) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Permission not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'permission' }, 'Permission not found');
       }
       
       await db
@@ -887,7 +887,7 @@ export const permissionsRouter = router({
       const [existing] = await db.select().from(userRoles).where(eq(userRoles.id, input.id)).limit(1);
       
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'role' }, 'Role not found');
       }
       
       if (existing.isSystem) {
@@ -914,7 +914,7 @@ export const permissionsRouter = router({
       const [existing] = await db.select().from(userRoles).where(eq(userRoles.id, input.id)).limit(1);
       
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'role' }, 'Role not found');
       }
       
       if (existing.isSystem) {
@@ -966,7 +966,7 @@ export const permissionsRouter = router({
           .where(eq(userRoles.id, input.sourceRoleId))
           .limit(1);
         if (!sourceRole) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Source role not found' });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'role' }, 'Source role not found');
         }
         sourcePermissions = (sourceRole.permissions as any[]) || [];
       } else if (input.sourceBuiltInRole && DEFAULT_ROLE_PERMISSIONS[input.sourceBuiltInRole]) {
@@ -1012,7 +1012,7 @@ export const permissionsRouter = router({
         .where(eq(userRoles.id, input.roleId))
         .limit(1);
       if (!role) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'role' }, 'Role not found');
       }
 
       // Validate user exists
@@ -1022,7 +1022,7 @@ export const permissionsRouter = router({
         .where(eq(users.id, input.userId))
         .limit(1);
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
 
       const permTemplates = (role.permissions as any[]) || [];
@@ -1112,7 +1112,7 @@ export const permissionsRouter = router({
         .where(eq(users.id, input.userId))
         .limit(1);
       if (!targetUser) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'User not found');
       }
 
       let applied = 0;
