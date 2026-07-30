@@ -125,6 +125,39 @@ Do review tìm ra trong lúc làm nhóm A + B1, **không** thuộc phạm vi đ�
 
 ---
 
+## 4c. NHÓM F — nợ A4 sau khi di trú xong (2026-07-30)
+
+Cổng đếm `server/routers/**` đã về **0** (1056 → 0, 43 commit). Nhưng review toàn cục chỉ ra mức phủ thật hẹp hơn con số đó gợi ra. Ghi lại trung thực để sprint sau không tưởng nhầm là đã xong.
+
+- **F1. Chỉ ~15% màn hình thật sự hưởng lợi. ⚠ ƯU TIÊN CAO NHẤT.**
+  `translateAppError` chỉ chạy khi lỗi đi qua `mapTrpcError`. Đo trên `client/src` (748 file): **535** handler `onError`, chỉ **82 (15%)** qua `mapTrpcError`; **446 (83%) hiện thẳng `.message`** ở 159 file. Chỉ 19/748 file import `lib/trpcErrors`. `client/src/main.tsx` không có handler lỗi toàn cục.
+  ⇒ 1061 chỗ máy chủ đã có mã, nhưng phần lớn màn hình vẫn hiện y nguyên chuỗi cũ. **Tuyên bố "người dùng Việt thôi đọc tiếng Anh thô" chỉ đúng cho 15% bề mặt.** Việc còn lại là di trú handler client — đó mới là chỗ người dùng thật sự nhận được giá trị.
+
+- **F2. 75 chỗ `throw new Error(...)` trong chính `server/routers/**` — vô hình với cổng cũ.**
+  Trong đó **31 chỗ** là `"Database not available"` — đúng chuỗi mà loạt này tuyên bố đã xoá sổ. tRPC v11 đặt `message = cause?.message` nên chúng đi nguyên vẹn tới client. Đã dựng ngân sách `ALLOWED_RAW_ERROR_THROWS = 75` để không phình thêm; việc di trú là một đợt quét riêng.
+
+- **F3. 64 chỗ / 13 file ngoài `server/routers/**` chưa di trú.** Nặng nhất: `machineAuthService.ts` 17 · `aiAnalyticsScope.ts` 13 · `_core/trpc.ts` 12 (mọi chối-quyền RBAC, mọi gọi chưa đăng nhập) · `securityIdentityRouter.ts` 5 · `thresholdGovernanceService.ts` 5. Hạ tầng lõi + security-critical, cần sprint riêng.
+
+- **F4. Mất thông tin hành-động-được — lớn hơn ước tính ban đầu.**
+  **184 chỗ** `fallbackMessage` vốn ĐÃ là tiếng Việt (di trú ở đó là thuần lỗ), và **76 nhóm** trong đó ≥2 nguyên nhân khác nhau nay render một câu y hệt. Nặng nhất: `productionRouters.ts:201/224/238` mất danh sách lệnh trùng lịch + chỉ dẫn `forceOverride=true` ⇒ người dùng **kẹt hoàn toàn**; `deviceAdapterRouter.ts:188` mất "hãy tắt trước khi xoá"; `defectDispositionRouter.ts:167` mất "Vào Cài đặt > Bảo mật".
+  Gốc: `OPERATION_FAILED`/`INVALID_VALUE` không có chỗ chứa lý do. **Nếu làm lại: thêm không gian từ điển `errors.reason.*` TRƯỚC đợt quét, không phải sau.**
+
+- **F5. Hợp đồng chết trong registry.** `ENTITY_DUPLICATE // params: { entity, field? }` và `INVALID_VALUE // params: { field, reason? }` quảng cáo tham số mà không template nào render — 12 chỗ truyền `field:` vô ích, 36 khoá từ điển không bao giờ hiện. Cùng lớp bug `errors.action.*` đã bắt ở Task 7.
+
+- **F6. Nhất quán chéo task.** "Bảng chưa migrate" có **4** cách xử lý (`FEATURE_DISABLED` / `OPERATION_FAILED` / `PRECONDITION_FAILED` / `throw new Error` thô) · `product` ↔ `productModel` cùng trỏ `product_models` · `report` ↔ `reportTemplate` cùng trỏ `report_templates` · `TWO_FACTOR_NOT_SET_UP` mang cả `FORBIDDEN` lẫn `BAD_REQUEST`.
+
+- **F7. Chất lượng bản dịch.** en: **336/384** câu bắt đầu bằng chữ thường (`"{{entity}} not found."` × entity viết thường ⇒ *"user not found."*) · zh lệch thuật ngữ (`entity.machine`=设备 vs `operation.registerMachine`=机台; `entity.fleetTask`=车队任务 vs `operation.assignFleetTask`=机队) · `errors.feature.web_ingest` là khoá snake_case duy nhất giữa 307 khoá camelCase · `errors.entity.factory` là khoá chết.
+
+- **F8. i18n lười + `fallbackLng:'vi'`.** en/zh nạp bằng `import()` động. Trong cửa sổ chờ hoặc khi chunk hỏng (offline), `translateAppError` trả **chuỗi tiếng Việt** — không phải sentinel — nên fallback tiếng Anh không bao giờ tới. Người dùng en đọc "Không tìm thấy sản phẩm.". **Đường này mới có sau di trú.**
+
+- **F9. Bảo mật đăng nhập, tiền tồn tại, ngoài phạm vi.** Kiểm `isActive`/`lockedUntil` chạy TRƯỚC `bcrypt.compare`, nên chỉ cần username là phân biệt được "tồn tại + vô hiệu/khoá" với "không tồn tại"; nhánh unknown-user bỏ qua bcrypt ⇒ side-channel thời gian. Đợt di trú **không làm tệ hơn** (`INVALID_CREDENTIALS` vẫn gộp chung sai-mật-khẩu với không-có-tài-khoản).
+
+- **F10. Chưa kiểm bằng mắt trên trình duyệt.** 343 chỗ + 198 khoá từ điển của đợt cuối chưa từng render thật lần nào. Cổng tĩnh chứng minh khoá tồn tại, không chứng minh câu ghép ra đọc được. Cần một phiên có uỷ quyền rebuild + restart `:3000`, kiểm 1 ca mỗi họ.
+
+**Công tắc quay lui:** `APP_ERROR_CODES_ENABLED=false` gỡ `appCode` khỏi phản hồi ⇒ client tự rơi về hành vi trước sprint, **không cần build lại FE**.
+
+---
+
 ## 5. KHÔNG phải nợ — ngoại lệ CÓ CHỦ Ý đã chốt
 
 **Đừng "sửa giúp" những mục này ở sprint sau mà không hỏi lại:**
