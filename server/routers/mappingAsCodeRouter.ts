@@ -22,6 +22,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
+import { appError } from "../_core/appError";
 import {
   exportAdapterMapping,
   exportAllMappings,
@@ -45,7 +46,7 @@ function toTrpcError(err: unknown): TRPCError {
     return new TRPCError({ code, message: err.message });
   }
   if (err instanceof TRPCError) return err;
-  return new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Mapping-as-code thất bại. Kiểm tra log server." });
+  return appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "mappingAsCodeSync" }, "Mapping-as-code thất bại. Kiểm tra log server.");
 }
 
 function actorName(user: { username?: string | null; name?: string | null } | null | undefined): string | null {

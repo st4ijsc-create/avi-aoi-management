@@ -3751,7 +3751,8 @@
       "adminAccess": "管理员权限",
       "selfApproveChangeover": "自我批准换型请求",
       "disableOwnAccount": "禁用自己的账户",
-      "changeOwnRole": "更改自己的角色"
+      "changeOwnRole": "更改自己的角色",
+      "selfPublishEquipmentStandard": "自行发布本人的设备变更请求"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",

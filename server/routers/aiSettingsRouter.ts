@@ -151,10 +151,12 @@ export const aiSettingsRouter = router({
       // encryption (doc-51 P0 finding).
       const encryptedKey = encryptSecret(input.apiKey);
       if (!encryptedKey) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to encrypt API key",
-        });
+        throw appError(
+          "INTERNAL_SERVER_ERROR",
+          "OPERATION_FAILED",
+          { operation: "encryptApiKey" },
+          "Failed to encrypt API key",
+        );
       }
       const [result] = await db
         .insert(aiApiKeys)

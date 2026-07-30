@@ -3760,7 +3760,8 @@
       "adminAccess": "quyền quản trị",
       "selfApproveChangeover": "tự duyệt yêu cầu đổi lệnh của chính mình",
       "disableOwnAccount": "vô hiệu hoá tài khoản của chính mình",
-      "changeOwnRole": "thay đổi vai trò của chính mình"
+      "changeOwnRole": "thay đổi vai trò của chính mình",
+      "selfPublishEquipmentStandard": "tự publish change-request thiết bị của chính mình"
     }
   },
   "export": {

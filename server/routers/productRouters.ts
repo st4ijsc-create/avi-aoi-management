@@ -487,7 +487,12 @@ export const productModelRouter = router({
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
+            throw appError(
+              'INTERNAL_SERVER_ERROR',
+              'OPERATION_FAILED',
+              { operation: 'uploadProductModelImage' },
+              `Failed to upload image: ${(error as Error)?.message ?? error}`,
+            );
           }
         }
         // PM8 enforcement: an image was supplied but we could not determine its
@@ -622,7 +627,12 @@ export const productModelRouter = router({
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
+            throw appError(
+              'INTERNAL_SERVER_ERROR',
+              'OPERATION_FAILED',
+              { operation: 'uploadProductModelImage' },
+              `Failed to upload image: ${(error as Error)?.message ?? error}`,
+            );
           }
         }
         // PM8 enforcement: a new image without resolvable dims is refused.

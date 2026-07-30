@@ -240,7 +240,7 @@ async function getOrExtractImage(
     const { url } = await storageGet(pkg.storageKey);
     const response = await fetch(url);
     if (!response.ok) {
-      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to download ZIP from storage" });
+      throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "downloadPackageZip" }, "Failed to download ZIP from storage");
     }
     zipBuffer = Buffer.from(await response.arrayBuffer());
   }
@@ -1035,10 +1035,12 @@ export const aoiPackageRouter = router({
             })
             .where(eq(inspectionPackages.id, pkg.id));
 
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to process package: ${err.message}`,
-          });
+          throw appError(
+            "INTERNAL_SERVER_ERROR",
+            "OPERATION_FAILED",
+            { operation: "processAoiPackage" },
+            `Failed to process package: ${err.message}`,
+          );
         }
       }
 

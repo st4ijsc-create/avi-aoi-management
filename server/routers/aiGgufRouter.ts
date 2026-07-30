@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
 import { adminProcedure } from "./_shared";
 import {
   loadGgufModel,
@@ -57,10 +58,12 @@ export const aiGgufRouter = router({
         const modelId = await loadGgufModel(input);
         return { success: true, modelId };
       } catch (err: any) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to load GGUF model: ${err.message}`,
-        });
+        throw appError(
+          "INTERNAL_SERVER_ERROR",
+          "OPERATION_FAILED",
+          { operation: "loadGgufModel" },
+          `Failed to load GGUF model: ${err.message}`,
+        );
       }
     }),
 

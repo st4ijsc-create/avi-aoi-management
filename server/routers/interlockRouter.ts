@@ -175,7 +175,7 @@ export const interlockRouter = router({
       if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "interlockRule" }, "Rule không tồn tại.");
       // SAFETY: cannot enable a rule that has not been approved.
       if (existing.approvedBy == null) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Rule chưa được duyệt (approvedBy=null) — không thể bật." });
+        throw appError("FORBIDDEN", "OPERATION_FAILED", { operation: "activateInterlockRule" }, "Rule chưa được duyệt (approvedBy=null) — không thể bật.");
       }
       const [row] = await db
         .update(interlockRules)

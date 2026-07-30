@@ -517,7 +517,7 @@ export const machineRecipeRouter = router({
         const recipe = await getRecipeById(input.recipeId);
         if (!recipe) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "recipe" }, "Recipe không tồn tại.");
         if (recipe.status === "archived") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Recipe đã lưu trữ — không thể yêu cầu đổi model." });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "requestRecipeModelChangeover" }, "Recipe đã lưu trữ — không thể yêu cầu đổi model.");
         }
         const [row] = await db.insert(changeoverRequests).values({
           machineId: input.machineId,
@@ -650,7 +650,7 @@ export const machineRecipeRouter = router({
           .where(eq(changeoverRequests.id, input.id)).limit(1);
         if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "changeoverRequest" }, "Yêu cầu không tồn tại.");
         if (row.status !== "pending") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Không thể duyệt từ trạng thái ${row.status}.` });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "approveChangeoverRequest" }, `Không thể duyệt từ trạng thái ${row.status}.`);
         }
         // Segregation of duties — người duyệt phải KHÁC người yêu cầu.
         if (row.requestedBy === ctx.user.id) {
@@ -689,7 +689,7 @@ export const machineRecipeRouter = router({
           .where(eq(changeoverRequests.id, input.id)).limit(1);
         if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "changeoverRequest" }, "Yêu cầu không tồn tại.");
         if (row.status !== "pending") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Không thể từ chối từ trạng thái ${row.status}.` });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "rejectChangeoverRequest" }, `Không thể từ chối từ trạng thái ${row.status}.`);
         }
         const [updated] = await db.update(changeoverRequests).set({
           status: "rejected",

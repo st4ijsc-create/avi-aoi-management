@@ -530,10 +530,10 @@ export const equipmentStandardsRouter = router({
         // Doc 54 Wave B — Separation of Duties: the publisher (ctx.user) MUST differ
         // from the requester (requestedBy). A requester cannot self-publish their CR.
         if (cr.requestedBy != null && cr.requestedBy === ctx.user.id) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự publish." });
+          throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "selfPublishEquipmentStandard" }, "Tách biệt trách nhiệm (SoD): người tạo change-request không được tự publish.");
         }
         if (cr.status !== "approved") {
-          throw new TRPCError({ code: "CONFLICT", message: `CR must be 'approved' to publish (is '${cr.status}')` });
+          throw appError("CONFLICT", "OPERATION_FAILED", { operation: "publishEquipmentStandard" }, `CR must be 'approved' to publish (is '${cr.status}')`);
         }
         const proposed = (cr.proposedSchema ?? {}) as Record<string, unknown>;
         // Conformance được TÍNH LẠI ở server ngay trước publish (không tin cờ đã lưu).

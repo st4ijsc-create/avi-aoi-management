@@ -1054,10 +1054,12 @@ export const machineRouter = router({
       const machine = await db.getMachineById(input.id);
       if (!machine) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, "Machine not found");
       if (machine.registrationStatus !== "approved") {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "Machine must be approved before a claim token can be issued",
-        });
+        throw appError(
+          "PRECONDITION_FAILED",
+          "OPERATION_FAILED",
+          { operation: "issueMachineClaimToken" },
+          "Machine must be approved before a claim token can be issued",
+        );
       }
       if (machine.isActive === false) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Machine is deleted" });

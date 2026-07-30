@@ -550,10 +550,12 @@ export const scheduledReportRouter = router({
           errorMessage: error.message,
         });
 
-        throw new TRPCError({ 
-          code: 'INTERNAL_SERVER_ERROR', 
-          message: `Failed to send test email: ${error.message}` 
-        });
+        throw appError(
+          'INTERNAL_SERVER_ERROR',
+          'OPERATION_FAILED',
+          { operation: 'sendTestEmail' },
+          `Failed to send test email: ${error.message}`,
+        );
       }
     }),
 

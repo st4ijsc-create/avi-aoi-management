@@ -637,7 +637,7 @@ export const cpkTrendRouter = router({
       });
 
       if (rawData.length < 30) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: `Insufficient data: ${rawData.length} samples (minimum 30 required)` });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'calculateCpkCapability' }, `Insufficient data: ${rawData.length} samples (minimum 30 required)`);
       }
 
       // Get spec limits
@@ -661,7 +661,7 @@ export const cpkTrendRouter = router({
       const indices = calculateCapabilityIndices(values, usl, lsl, estimatedSigma, nominal);
 
       if (!indices) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unable to calculate capability indices (zero variance or invalid limits)' });
+        throw appError('BAD_REQUEST', 'OPERATION_FAILED', { operation: 'calculateCpkCapability' }, 'Unable to calculate capability indices (zero variance or invalid limits)');
       }
 
       // Save to history

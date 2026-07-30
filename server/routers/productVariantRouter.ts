@@ -223,7 +223,7 @@ export const productVariantRouter = router({
       if (patch.code !== undefined && patch.code !== existing.code) {
         // The base variant is the model's stable inheritance root — its code never moves.
         if (existing.isBase) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Không thể đổi mã biến thể gốc" });
+          throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "renameRootVariantCode" }, "Không thể đổi mã biến thể gốc");
         }
         if (patch.code.toUpperCase() === BASE_VARIANT_CODE) {
           throw new TRPCError({
@@ -275,7 +275,7 @@ export const productVariantRouter = router({
         throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productVariant" }, "Không tìm thấy biến thể");
       }
       if (existing.isBase) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Không thể xoá biến thể gốc" });
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "deleteRootVariant" }, "Không thể xoá biến thể gốc");
       }
 
       await db.softDeleteVariant(input.variantId);
@@ -354,10 +354,12 @@ export const productVariantRouter = router({
       // Overrides express how a NON-BASE variant diverges FROM the base; the base
       // variant owns the common points directly and cannot override itself.
       if (variant.isBase) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Biến thể gốc không thể ghi đè điểm đo của chính nó",
-        });
+        throw appError(
+          "BAD_REQUEST",
+          "OPERATION_FAILED",
+          { operation: "overrideBaseVariantPoint" },
+          "Biến thể gốc không thể ghi đè điểm đo của chính nó",
+        );
       }
       // action='override' must carry a patch; 'exclude' must not.
       if (input.action === "override" && (!input.patchJson || Object.keys(input.patchJson).length === 0)) {

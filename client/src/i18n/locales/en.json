@@ -3759,7 +3759,8 @@
       "adminAccess": "admin access",
       "selfApproveChangeover": "self-approve changeover request",
       "disableOwnAccount": "disable own account",
-      "changeOwnRole": "change own role"
+      "changeOwnRole": "change own role",
+      "selfPublishEquipmentStandard": "self-publish own equipment change-request"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",

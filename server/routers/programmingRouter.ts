@@ -351,19 +351,23 @@ export const programmingRouter = router({
         } catch (err) {
           if (isUniqueViolation(err) && attempt < MAX_ATTEMPTS) continue; // recompute max + retry
           if (isUniqueViolation(err)) {
-            throw new TRPCError({
-              code: "CONFLICT",
-              message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" do có lưu đồng thời — vui lòng thử lại.`,
-            });
+            throw appError(
+              "CONFLICT",
+              "OPERATION_FAILED",
+              { operation: "createProgramArtifactVersion" },
+              `Không thể cấp phiên bản mới cho nhánh "${input.branch}" do có lưu đồng thời — vui lòng thử lại.`,
+            );
           }
           throw err;
         }
       }
       // Unreachable: the loop always returns a row or throws.
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: `Không thể cấp phiên bản mới cho nhánh "${input.branch}" — vui lòng thử lại.`,
-      });
+      throw appError(
+        "CONFLICT",
+        "OPERATION_FAILED",
+        { operation: "createProgramArtifactVersion" },
+        `Không thể cấp phiên bản mới cho nhánh "${input.branch}" — vui lòng thử lại.`,
+      );
     }),
 
   validateArtifact: protectedProcedure
