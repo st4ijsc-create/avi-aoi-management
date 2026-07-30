@@ -38,16 +38,26 @@ public sealed record NotificationStartupNotice(NotificationNoticeSeverity Severi
 /// DELIVERED is now decided by configuration alone, at the point of delivery.</para>
 ///
 /// <para>🔴 <b>The guarantee, stated as a property rather than a list of cases.</b> Deliveries happen only
-/// when at least one channel is enabled AND this build actually has a delivery implementation behind the
-/// seam. So:</para>
+/// when at least one channel is enabled AND this build actually has a delivery implementation for THAT
+/// channel. So:</para>
 /// <code>
-///   !WillDeliver(channels, hasDelivery)  ⇒  Describe(channels, hasDelivery) contains a Warning
+///   !WillDeliver(channels, implemented)  ⇒  Describe(channels, implemented) contains a Warning
+///   any enabled channel not in `implemented`  ⇒  a Warning naming it
 /// </code>
 /// <para>There is no reachable combination of "somebody configured something" and "nothing will be
 /// delivered" that this host passes over in silence. That is asserted EXHAUSTIVELY over the whole input
-/// space (every subset of channels × enabled/disabled × with/without a delivery implementation) in
+/// space (every channel absent/disabled/enabled × implemented-or-not, 6⁴ = 1296 cases) in
 /// <c>NotificationStartupNoticesTests</c>, not by example — so a future task that adds a fifth channel or a
 /// new quiet state cannot reintroduce the silent-misconfiguration failure without a red suite.</para>
+///
+/// <para>🔴 <b>Task C-3 replaced C-2's <c>bool hasDeliveryImplementation</c> with a SET of implemented
+/// channels, and had to.</b> That flag was a whole-build fact because in C-2 it was uniformly
+/// <see langword="false"/> — nothing was implemented, so nothing distinguished the channels. C-3 makes it
+/// true, and a single boolean then says <b>"Alarm notifications are ACTIVE on 1 channel(s): Smtp"</b> for a
+/// build that cannot send an email: the flag would have been generalised across three call sites (SMTP,
+/// local annunciation, relay) that do not satisfy it. C-4..C-6 each add one member to the set in
+/// <c>Program.cs</c> and this text becomes true for their channel, with no wording to remember to
+/// change.</para>
 ///
 /// <para><b>Why this is a pure function and not inline logic in <c>Program.cs</c>:</b> the same reason
 /// <c>BindingRisk.Describe</c> already is — a startup-only side effect buried in the host's composition
@@ -58,28 +68,33 @@ public static class NotificationStartupNotices
 {
     /// <summary>Whether an alarm edge can actually reach a human in this process, as configured. Both
     /// halves are required: a channel an operator enabled, and something behind the seam that can deliver
-    /// it.</summary>
-    /// <param name="hasDeliveryImplementation">Whether a dispatch delegate is wired behind
-    /// <see cref="AlarmNotifier"/>. 🔴 Derived in <c>Program.cs</c> from the SAME local variable that
-    /// supplies the notifier's own <c>dispatch</c> argument, never hard-coded per task: as of C-2 that
-    /// variable is <see langword="null"/>, so this is <see langword="false"/> and the corresponding
-    /// warning fires — and it stops firing by itself the moment C-3 assigns a real dispatch, with nobody
-    /// having to remember to delete it.</param>
+    /// THAT channel.</summary>
+    /// <param name="implementedChannels">Which channels this build can actually deliver. 🔴 Populated in
+    /// <c>Program.cs</c> at exactly the point the notifier's <c>dispatch</c> delegate is assigned, never
+    /// hard-coded per task — so the "configured, enabled and still silent" warning stops firing for a
+    /// channel the moment that channel's implementation is wired in, with nobody having to remember to
+    /// delete it.</param>
     public static bool WillDeliver(
-        IReadOnlyList<NotificationChannelSummary> channels, bool hasDeliveryImplementation)
+        IReadOnlyList<NotificationChannelSummary> channels,
+        IReadOnlySet<NotificationChannel> implementedChannels)
     {
         ArgumentNullException.ThrowIfNull(channels);
-        return hasDeliveryImplementation && channels.Any(channel => channel.Enabled);
+        ArgumentNullException.ThrowIfNull(implementedChannels);
+        return channels.Any(channel => channel.Enabled && implementedChannels.Contains(channel.Channel));
     }
 
     /// <summary>Everything the host should say at startup about where alarms will and will not go.</summary>
     public static IReadOnlyList<NotificationStartupNotice> Describe(
-        IReadOnlyList<NotificationChannelSummary> channels, bool hasDeliveryImplementation)
+        IReadOnlyList<NotificationChannelSummary> channels,
+        IReadOnlySet<NotificationChannel> implementedChannels)
     {
         ArgumentNullException.ThrowIfNull(channels);
+        ArgumentNullException.ThrowIfNull(implementedChannels);
 
         var notices = new List<NotificationStartupNotice>();
         var enabled = channels.Where(channel => channel.Enabled).ToList();
+        var delivering = enabled.Where(c => implementedChannels.Contains(c.Channel)).ToList();
+        var unimplemented = enabled.Where(c => !implementedChannels.Contains(c.Channel)).ToList();
 
         if (channels.Count == 0)
         {
@@ -101,23 +116,26 @@ public static class NotificationStartupNotices
                 $"({FormatChannels(channels)}) — no alarm will be sent to anyone. Enable at least one, or remove " +
                 "them so this warning stops being the only sign that they exist."));
         }
-        else if (!hasDeliveryImplementation)
-        {
-            // Configured, enabled, and still silent — because this build has nothing behind the seam yet.
-            // Self-clearing: the condition is read from the live notifier, so it disappears when a real
-            // channel implementation is wired in.
-            notices.Add(new NotificationStartupNotice(
-                NotificationNoticeSeverity.Warning,
-                $"{enabled.Count} alarm notification channel(s) are configured and ENABLED ({FormatChannels(enabled)}), " +
-                "but this build has no delivery implementation behind the notification seam — alarm edges are " +
-                "detected and then DISCARDED. Nobody will be notified. This is a build limitation, not a " +
-                "configuration error."));
-        }
-        else
+        else if (delivering.Count > 0)
         {
             notices.Add(new NotificationStartupNotice(
                 NotificationNoticeSeverity.Information,
-                $"Alarm notifications are ACTIVE on {enabled.Count} channel(s): {FormatChannels(enabled)}."));
+                $"Alarm notifications are ACTIVE on {delivering.Count} channel(s): {FormatChannels(delivering)}."));
+        }
+
+        // 🔴 Independent of the branch above, because BOTH states can hold at once: a build that delivers
+        // the webhook but not SMTP, with both enabled, is simultaneously working and silently dropping
+        // half of what an operator configured. C-2's single boolean could not say that, and once C-3 set it
+        // to true it would have reported the whole configuration as ACTIVE — including the channels it
+        // cannot send. Self-clearing per channel as C-4..C-6 land.
+        if (unimplemented.Count > 0)
+        {
+            notices.Add(new NotificationStartupNotice(
+                NotificationNoticeSeverity.Warning,
+                $"{unimplemented.Count} alarm notification channel(s) are configured and ENABLED " +
+                $"({FormatChannels(unimplemented)}), but this build has no delivery implementation for " +
+                "them — alarm edges are detected and then DISCARDED for those channels. Nobody will be " +
+                "notified through them. This is a build limitation, not a configuration error."));
         }
 
         // Independent of the gate, and reported whether or not anything is enabled: a password that
@@ -126,6 +144,24 @@ public static class NotificationStartupNotices
         // it stops being legitimate the moment credentials are attached to it.
         foreach (var channel in channels)
         {
+            // 🔴 Task C-3 — the exact parallel of the SMTP clear-text warning below, for the credential C-3
+            // introduced. A webhook over plain http:// sends its stored auth token in the clear on every
+            // POST, and the HMAC signature does not help: it authenticates, it does not encrypt. Warned
+            // ONLY when a token is actually attached, deliberately — http:// to an in-plant MES on an
+            // isolated network is a legitimate configuration this store accepts, and warning about all of
+            // them would be the fatigue that makes the SMTP warning stop being read too.
+            if (channel.Webhook is { HasAuthToken: true } webhook &&
+                webhook.Endpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            {
+                notices.Add(new NotificationStartupNotice(
+                    NotificationNoticeSeverity.Warning,
+                    $"The Webhook notification channel '{channel.Instance}' posts to {webhook.Endpoint} over " +
+                    $"plain HTTP and carries a stored '{webhook.AuthHeaderName}' credential — that token is " +
+                    "sent in clear text on every alarm, and the destination URL (which is itself the " +
+                    "credential for Slack/Teams-style receivers) is visible to anything on the path. The " +
+                    "HMAC signature proves who sent the request; it does not hide it. Use https://."));
+            }
+
             if (channel.Smtp is { Tls: SmtpTlsMode.None, HasPassword: true } smtp)
             {
                 notices.Add(new NotificationStartupNotice(

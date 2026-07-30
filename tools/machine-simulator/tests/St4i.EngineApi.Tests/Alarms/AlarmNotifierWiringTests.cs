@@ -41,10 +41,18 @@ public sealed class AlarmNotifierWiringTests
     /// deliver to.</param>
     /// <param name="legacyEnvGate">A value for the deleted <c>ST4I_ALARM_NOTIFY_ENABLED</c> variable, to
     /// prove it is inert.</param>
+    /// <param name="configure">Task C-3 — extra configuration to persist before the host boots, so a test
+    /// can point a real webhook channel at a real receiver.</param>
     private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(
-        bool configureAChannel, string alarmsDir, string? legacyEnvGate = null)
+        bool configureAChannel, string alarmsDir, string? legacyEnvGate = null,
+        Func<NotificationConfigStore, Task>? configure = null)
     {
         var notificationsDir = Directory.CreateTempSubdirectory("st4i-notifywire-notifications-").FullName;
+        if (configure is not null)
+        {
+            await configure(new NotificationConfigStore(notificationsDir)).ConfigureAwait(false);
+        }
+
         if (configureAChannel)
         {
             // A channel an operator configured in some earlier session. Local annunciation is used because
@@ -174,6 +182,64 @@ public sealed class AlarmNotifierWiringTests
             var after = notifier.Stats;
             Assert.Equal(1, after.Enqueued);
             Assert.Equal(2, after.Suppressed);
+        }
+        finally
+        {
+            factory.Dispose();
+            try { Directory.Delete(alarmsDir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
+    /// 🔴 Task C-3 — the whole chain, through the REAL host: an alarm raised on the store the host
+    /// resolves reaches a real HTTP receiver, signed.
+    ///
+    /// <para>Every other C-3 test drives <see cref="WebhookNotificationChannel"/> directly. This one is the
+    /// only proof that <c>Program.cs</c> actually connects it: that the channel is registered, that its
+    /// <c>DispatchAsync</c> really is the notifier's dispatch delegate, and that a webhook configured in an
+    /// earlier session is picked up at boot. Wiring is exactly the kind of thing a unit test cannot see.</para>
+    /// </summary>
+    [Fact]
+    public async Task AConfiguredWebhook_ReallyReceivesAnAlarmRaisedThroughTheHost()
+    {
+        await using var receiver = WebhookLoopbackServer.Start(new ScriptedResponse(200, "OK"));
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-notifywire-alarms-").FullName;
+
+        var factory = await CreateFactoryAsync(
+            configureAChannel: false, alarmsDir,
+            configure: async store =>
+            {
+                Assert.True(await store.SaveWebhookAsync(
+                    enabled: true, AlarmPriority.High, receiver.Url("/hooks/wiring"), label: "Wiring test"));
+                Assert.True(await store.SetSecretAsync(
+                    NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret, "wiring-key"));
+            });
+
+        try
+        {
+            Assert.NotNull(factory.Services.GetService<WebhookNotificationChannel>());
+
+            var store = factory.Services.GetRequiredService<IAlarmStore>();
+            await store.RaiseAsync(new AlarmRaise(
+                AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "wiring", TargetId: "slot-3"));
+
+            // The drain loop is a background task; poll rather than sleep a fixed amount.
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
+            while (receiver.Requests.Count == 0 && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(25);
+            }
+
+            var request = Assert.Single(receiver.Requests);
+            Assert.Equal("POST", request.Method);
+            Assert.Equal("/hooks/wiring", request.Target);
+            Assert.Equal("Raised", request.Header(WebhookContract.EventHeader));
+            Assert.StartsWith("v1=", request.Header(WebhookContract.SignatureHeader)!, StringComparison.Ordinal);
+            Assert.Contains("slot-3", request.BodyText, StringComparison.Ordinal);
+
+            var channelStats = factory.Services.GetRequiredService<WebhookNotificationChannel>().Stats;
+            Assert.Equal(1, channelStats.Delivered);
+            Assert.Equal(0, channelStats.Lost);
         }
         finally
         {

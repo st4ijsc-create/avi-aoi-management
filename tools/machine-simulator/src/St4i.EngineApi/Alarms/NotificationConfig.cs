@@ -116,6 +116,19 @@ public static class NotificationSecretNames
     /// request really came from this machine.</summary>
     public const string WebhookSigningSecret = "webhook.signing_secret";
 
+    /// <summary>
+    /// 🔴 C-3 (schema v2) — the COMPLETE value of the header named by
+    /// <see cref="WebhookChannelConfig.AuthHeaderName"/>, for a receiver that authenticates by a static
+    /// token rather than by verifying a signature.
+    ///
+    /// <para>This is the escape hatch C-2 designed and left to C-3: a named secret plus a NON-secret
+    /// header-name column, rather than the free-form header blob C-2 refused (a blob cannot be structurally
+    /// partitioned into secret and non-secret, which is the whole basis of this store's projection
+    /// discipline). See <see cref="WebhookAuthHeader"/> for why the HMAC signature does not cover this case
+    /// and why the stored value is the complete header value, scheme word included.</para>
+    /// </summary>
+    public const string WebhookAuthToken = "webhook.auth_token";
+
     /// <summary>C-4 — the password for <see cref="SmtpChannelConfig.Username"/>. The one value in this
     /// product that belongs to a THIRD PARTY (a mail server operator), not to this machine — which is
     /// exactly why it does not live in <c>CredentialStore</c>; see
@@ -222,6 +235,18 @@ public static class NotificationDelivery
 /// Free text, never derived, never a credential, and shown by every public read: the fingerprint proves
 /// two configurations are the SAME, and this is what tells a human WHICH one it is. Deliberately not
 /// validated beyond a length bound — it is a note to the next operator, not an identifier.</param>
+/// <param name="AuthHeaderName">
+/// 🔴 Task C-3 (schema v2) — the name of the header carrying
+/// <see cref="NotificationSecretNames.WebhookAuthToken"/>, or <see langword="null"/> for a receiver that
+/// needs no static credential (Slack, Teams — the URL is the credential there).
+///
+/// <para><b>Deliberately NOT secret, and visible in every public read.</b> Knowing that a webhook
+/// authenticates with <c>X-Api-Key</c> rather than <c>Authorization</c> authorises nobody, and hiding it
+/// would make the configuration undiagnosable for no gain — the same argument
+/// <see cref="SmtpChannelConfig.Username"/> already makes. The VALUE is the DPAPI blob; the partition
+/// between the two lives in the schema, not in a convention. Validated at save time by
+/// <see cref="WebhookAuthHeader.IsValidName"/>, which rejects the headers the channel sets itself — an
+/// operator must not be able to configure a webhook that overwrites its own signature.</para></param>
 public sealed record WebhookChannelConfig(
     bool Enabled,
     AlarmPriority MinPriority,
@@ -229,7 +254,8 @@ public sealed record WebhookChannelConfig(
     string? Url,
     string Endpoint,
     string UrlFingerprint,
-    string? Label) : INotificationChannelConfig;
+    string? Label,
+    string? AuthHeaderName) : INotificationChannelConfig;
 
 /// <summary>Task C-2 — the credential-free webhook projection. The URL is absent because it is not a
 /// column of <c>webhook_config</c> at all — it is an encrypted row in another table — not because it was
@@ -238,13 +264,22 @@ public sealed record WebhookChannelConfig(
 /// means this channel cannot post anywhere, which is exactly the kind of thing an operator must be able
 /// to see without being handed the URL.</param>
 /// <param name="HasSigningSecret">Whether <see cref="NotificationSecretNames.WebhookSigningSecret"/> is
-/// set. Derived from the PRESENCE of a row (its <c>name</c> column), never by reading the secret.</param>
+/// set. Derived from the PRESENCE of a row (its <c>name</c> column), never by reading the secret.
+/// <see langword="false"/> means the POST is sent UNSIGNED — legitimate for Slack/Teams, and something an
+/// operator pointing this at an MES needs to be able to see.</param>
+/// <param name="AuthHeaderName">Task C-3 — see <see cref="WebhookChannelConfig.AuthHeaderName"/> for why
+/// the header NAME is not a credential.</param>
+/// <param name="HasAuthToken">Whether <see cref="NotificationSecretNames.WebhookAuthToken"/> is set.
+/// <see cref="AuthHeaderName"/> set with this <see langword="false"/> is a webhook that cannot post at all
+/// — the one combination an operator most needs surfaced.</param>
 public sealed record WebhookChannelSummary(
     string Endpoint,
     string UrlFingerprint,
     string? Label,
     bool HasUrl,
-    bool HasSigningSecret);
+    bool HasSigningSecret,
+    string? AuthHeaderName,
+    bool HasAuthToken);
 
 /// <summary>Task C-2 — the FULL SMTP configuration. Note the password is NOT here: it lives in
 /// <c>notification_secrets</c> under <see cref="NotificationSecretNames.SmtpPassword"/> and is fetched

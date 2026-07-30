@@ -432,9 +432,10 @@ var alarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
 var notificationsDir = Environment.GetEnvironmentVariable(St4i.EngineApi.Alarms.NotificationConfigStore.EnvVarDir);
 IReadOnlyList<St4i.EngineApi.Alarms.NotificationChannelSummary> notificationChannels =
     Array.Empty<St4i.EngineApi.Alarms.NotificationChannelSummary>();
+St4i.EngineApi.Alarms.NotificationConfigStore? notificationConfigStore = null;
 try
 {
-    var notificationConfigStore = new St4i.EngineApi.Alarms.NotificationConfigStore(
+    notificationConfigStore = new St4i.EngineApi.Alarms.NotificationConfigStore(
         string.IsNullOrWhiteSpace(notificationsDir) ? null : notificationsDir,
         logError: (ex, msg) => Console.Error.WriteLine($"[notifications] {msg} ({ex.GetType().Name}: {ex.Message})"));
     builder.Services.AddSingleton(notificationConfigStore);
@@ -449,16 +450,47 @@ catch (Exception ex)
     // Never a startup crash over a config store — same posture as every other startup config load here.
     // The consequence is loud rather than silent: with no channels, the notice block below warns that
     // nothing will be sent to anyone.
+    notificationConfigStore = null;
     Console.Error.WriteLine(
         $"[startup] Failed to open the alarm notification configuration store — no notification channel " +
         $"will run this session: {ex.Message}");
 }
 
-// 🔴 The ONE place "does this build have a delivery implementation?" is expressed. C-3..C-6 assign this
-// variable; BOTH the notifier's dispatch AND the startup notice below read it, so the "configured, enabled
-// and still silent" warning stops firing by itself the moment a real channel is wired in — nobody has to
-// remember to delete it. As of C-2 no channel exists, so it is null and that warning is correct.
-Func<St4i.EngineApi.Alarms.NotificationJob, CancellationToken, Task>? alarmDispatch = null;
+// 🔴 The ONE place "which channels can this build actually deliver?" is expressed. C-4..C-6 each add their
+// own member here; BOTH the notifier's dispatch AND the startup notices below are derived from the same
+// two lines, so the "configured, enabled and still silent" warning stops firing for a channel exactly when
+// that channel is wired in — nobody has to remember to delete it.
+//
+// 🔴 Task C-3 turned C-2's `bool hasDeliveryImplementation` into this SET, and had to: with one boolean,
+// the moment the webhook landed the host would have reported "Alarm notifications are ACTIVE on 1
+// channel(s): Smtp" for a build that cannot send an email. See NotificationStartupNotices.
+var implementedNotificationChannels = new HashSet<St4i.EngineApi.Alarms.NotificationChannel>();
+
+// 🔴 Task C-3 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-3-brief.md) — the FIRST
+// channel: the point at which an alarm leaves this machine. It posts a versioned, HMAC-signed JSON body to
+// every configured, enabled webhook instance whose minimum priority the alarm meets.
+//
+// Registered only when the configuration store opened, because that store IS its configuration — with no
+// store there is no destination to read, and the notice block after Build() then correctly reports that
+// nothing is configured. Registering it and adding to the set happen in the same `if`, so "this build can
+// deliver Webhook" and "a webhook channel exists to deliver it" cannot disagree.
+//
+// Factory lambda (not the raw-instance overload) for the same reason as the AlarmNotifier registration
+// below: the container OWNS what a factory returns and disposes it on shutdown, which is what releases the
+// channel's process-lifetime HttpClient.
+if (notificationConfigStore is not null)
+{
+    var storeForWebhook = notificationConfigStore;
+    builder.Services.AddSingleton(sp =>
+    {
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmWebhook");
+        return new St4i.EngineApi.Alarms.WebhookNotificationChannel(
+            storeForWebhook,
+            logError: (ex, msg) => logger.LogError(ex, "{AlarmWebhookMsg}", msg),
+            logWarning: msg => logger.LogWarning("{AlarmWebhookMsg}", msg));
+    });
+    implementedNotificationChannels.Add(St4i.EngineApi.Alarms.NotificationChannel.Webhook);
+}
 
 // Registered ONLY here. The alarm engine runs only in this process — St4i.EdgeService and both WPF apps
 // never host IAlarmStore — so nothing about this reaches them.
@@ -478,8 +510,13 @@ Func<St4i.EngineApi.Alarms.NotificationJob, CancellationToken, Task>? alarmDispa
 builder.Services.AddSingleton(sp =>
 {
     var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmNotifier");
+    // 🔴 Task C-3 filled this in. GetService (not GetRequiredService): the webhook channel is registered
+    // only when the configuration store opened, and a missing one must mean "the loop drains and
+    // discards" — C-1's original state — not a startup crash. C-4..C-6 fan out from here; C-7 owns the
+    // rate limiter that will eventually sit in front of the fan-out.
+    var webhook = sp.GetService<St4i.EngineApi.Alarms.WebhookNotificationChannel>();
     return new St4i.EngineApi.Alarms.AlarmNotifier(
-        dispatch: alarmDispatch, // C-3..C-6 fill this in; until then the loop drains and discards.
+        dispatch: webhook is null ? null : webhook.DispatchAsync,
         logWarning: msg => logger.LogWarning("{AlarmNotifyMsg}", msg),
         logError: (ex, msg) => logger.LogError(ex, "{AlarmNotifyMsg}", msg));
 });
@@ -1383,7 +1420,7 @@ app.Logger.LogInformation(
 // an inline `if` here could cover. Wiring it is these three lines, which cannot be got wrong; the same
 // split BindingRisk.Describe already uses below.
 foreach (var notice in St4i.EngineApi.Alarms.NotificationStartupNotices.Describe(
-             notificationChannels, hasDeliveryImplementation: alarmDispatch is not null))
+             notificationChannels, implementedNotificationChannels))
 {
     if (notice.Severity == St4i.EngineApi.Alarms.NotificationNoticeSeverity.Warning)
     {

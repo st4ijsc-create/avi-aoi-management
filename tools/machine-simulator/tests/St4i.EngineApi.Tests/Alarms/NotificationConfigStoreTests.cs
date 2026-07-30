@@ -36,7 +36,8 @@ public sealed class NotificationConfigStoreTests
         var store = new NotificationConfigStore(TempDir());
 
         using var connection = Open(store);
-        Assert.Equal(1L, UserVersion(connection));
+        // v1 = C-2's five tables; v2 = C-3's webhook auth_header_name append.
+        Assert.Equal(2L, UserVersion(connection));
 
         // Five tables, discovered rather than asserted by name — the same source of truth the structural
         // test below uses.
@@ -63,7 +64,7 @@ public sealed class NotificationConfigStoreTests
 
             using (var connection = Open(reopened))
             {
-                Assert.Equal(1L, UserVersion(connection));
+                Assert.Equal(2L, UserVersion(connection));
             }
 
             var relay = await reopened.GetRelayAsync();
@@ -837,6 +838,186 @@ public sealed class NotificationConfigStoreTests
 
         // A channel that was never configured delivers nothing rather than throwing.
         Assert.False(((SmtpChannelConfig?)null).Delivers(AlarmPriority.Critical));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task C-3 — the auth-header ladder entry (schema v2).
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 The escape hatch C-2 designed and left to C-3, exercised end to end: the header NAME is a plain
+    /// column visible in the public read (knowing a webhook uses <c>X-Api-Key</c> authorises nobody), while
+    /// the TOKEN is a DPAPI blob that the public read can only report the EXISTENCE of.
+    /// </summary>
+    [Fact]
+    public async Task TheAuthHeaderName_IsPubliclyReadable_WhileItsTokenIsOnlyEverReportedAsPresent()
+    {
+        var store = new NotificationConfigStore(TempDir());
+
+        Assert.True(await store.SaveWebhookAsync(
+            enabled: true, AlarmPriority.High, "https://mes.plant/alarm",
+            label: "MES", authHeaderName: "X-Api-Key"));
+        Assert.True(await store.SetSecretAsync(
+            NotificationChannel.Webhook, NotificationSecretNames.WebhookAuthToken, SecretSentinel));
+
+        var summary = Assert.Single(await store.ListAsync()).Webhook!;
+        Assert.Equal("X-Api-Key", summary.AuthHeaderName);
+        Assert.True(summary.HasAuthToken);
+
+        // The whole public read, serialised, still cannot carry the token.
+        var serialised = JsonSerializer.Serialize(await store.ListAsync());
+        Assert.DoesNotContain(SecretSentinel, serialised, StringComparison.Ordinal);
+
+        // The engine-internal read carries the header name; the token comes only from GetSecretAsync.
+        var config = await store.GetWebhookAsync();
+        Assert.Equal("X-Api-Key", config!.AuthHeaderName);
+        Assert.Equal(SecretSentinel, await store.GetSecretAsync(
+            NotificationChannel.Webhook, NotificationSecretNames.WebhookAuthToken));
+
+        // And it is genuinely optional — re-saving without one clears it rather than keeping a stale name.
+        Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, "https://mes.plant/alarm"));
+        Assert.Null(Assert.Single(await store.ListAsync()).Webhook!.AuthHeaderName);
+    }
+
+    /// <summary>
+    /// 🔴 The header a configuration must never be allowed to name.
+    ///
+    /// <para><c>X-ST4I-Signature</c> is the most damaging: a webhook configuration able to set it could
+    /// OVERWRITE THE SIGNATURE the channel just computed, turning an authenticated POST into one carrying
+    /// an attacker-chosen value. The rest are either set by the channel or owned by the HTTP stack, and a
+    /// name containing CR/LF is a request-splitting primitive. All are refused at SAVE time so the bad
+    /// configuration cannot be stored and then silently ignored at send time.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("X-ST4I-Signature")]
+    [InlineData("x-st4i-signature")]     // case-insensitive, as HTTP header names are
+    [InlineData("X-ST4I-Timestamp")]
+    [InlineData("X-ST4I-Delivery")]
+    [InlineData("Content-Type")]
+    [InlineData("Host")]
+    [InlineData("Content-Length")]
+    [InlineData("X-Bad Header")]         // space is not a token character
+    [InlineData("X-Bad\r\nInjected: 1")] // request splitting
+    [InlineData("")]
+    public async Task SaveWebhookAsync_RefusesAnAuthHeaderNameThatIsReservedOrMalformed(string headerName)
+    {
+        var store = new NotificationConfigStore(TempDir());
+
+        Assert.False(await store.SaveWebhookAsync(
+            enabled: true, AlarmPriority.High, "https://mes.plant/alarm", authHeaderName: headerName));
+
+        // Refused means NOT PERSISTED — including the channel row, because the whole save is one
+        // transaction. A half-saved webhook with no auth header is not the failure mode either.
+        Assert.Empty(await store.ListAsync());
+    }
+
+    [Theory]
+    [InlineData("Authorization")]
+    [InlineData("X-Api-Key")]
+    [InlineData("X-Auth-Token")]
+    public async Task SaveWebhookAsync_AcceptsTheHeaderNamesARealReceiverActuallyUses(string headerName)
+    {
+        var store = new NotificationConfigStore(TempDir());
+
+        Assert.True(await store.SaveWebhookAsync(
+            enabled: true, AlarmPriority.High, "https://mes.plant/alarm", authHeaderName: headerName));
+        Assert.Equal(headerName, Assert.Single(await store.ListAsync()).Webhook!.AuthHeaderName);
+    }
+
+    /// <summary>
+    /// 🔴 The first genuine APPEND to this migration ladder, proved against a database that was created at
+    /// v1 — which is the only state the ladder exists for. C-2's v1 was reshaped in place on the grounds
+    /// that no build had ever created the file; that argument does not extend to v2, and this test is what
+    /// makes "appending works" a fact rather than a plan.
+    /// </summary>
+    [Fact]
+    public async Task TheV2Ladder_UpgradesAnExistingV1Database_WithoutLosingItsRows()
+    {
+        var dir = TempDir();
+        var dbPath = Path.Combine(dir, "notifications.db");
+
+        // A v1 database, built by hand exactly as C-2 shipped it: webhook_config with NO auth_header_name.
+        using (var seed = new SqliteConnection($"Data Source={dbPath}"))
+        {
+            seed.Open();
+            foreach (var sql in new[]
+            {
+                "PRAGMA foreign_keys=ON;",
+                """
+                CREATE TABLE notification_channels (
+                  channel TEXT NOT NULL, instance TEXT NOT NULL DEFAULT 'default',
+                  enabled INTEGER NOT NULL, min_priority TEXT NOT NULL,
+                  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                  PRIMARY KEY (channel, instance));
+                """,
+                """
+                CREATE TABLE webhook_config (
+                  channel TEXT NOT NULL, instance TEXT NOT NULL DEFAULT 'default',
+                  endpoint TEXT NOT NULL, url_fingerprint TEXT NOT NULL, label TEXT NULL,
+                  PRIMARY KEY (channel, instance),
+                  FOREIGN KEY (channel, instance)
+                    REFERENCES notification_channels(channel, instance) ON DELETE CASCADE);
+                """,
+                """
+                CREATE TABLE smtp_config (
+                  channel TEXT NOT NULL, instance TEXT NOT NULL DEFAULT 'default',
+                  host TEXT NOT NULL, port INTEGER NOT NULL, tls_mode TEXT NOT NULL,
+                  from_address TEXT NOT NULL, recipients_json TEXT NOT NULL, username TEXT NULL,
+                  PRIMARY KEY (channel, instance),
+                  FOREIGN KEY (channel, instance)
+                    REFERENCES notification_channels(channel, instance) ON DELETE CASCADE);
+                """,
+                """
+                CREATE TABLE relay_config (
+                  channel TEXT NOT NULL, instance TEXT NOT NULL DEFAULT 'default',
+                  machine_code TEXT NOT NULL, target_kind TEXT NOT NULL, target_name TEXT NOT NULL,
+                  PRIMARY KEY (channel, instance),
+                  FOREIGN KEY (channel, instance)
+                    REFERENCES notification_channels(channel, instance) ON DELETE CASCADE);
+                """,
+                """
+                CREATE TABLE notification_secrets (
+                  channel TEXT NOT NULL, instance TEXT NOT NULL DEFAULT 'default', name TEXT NOT NULL,
+                  secret BLOB NOT NULL, updated_at TEXT NOT NULL,
+                  PRIMARY KEY (channel, instance, name),
+                  FOREIGN KEY (channel, instance)
+                    REFERENCES notification_channels(channel, instance) ON DELETE CASCADE);
+                """,
+                """
+                INSERT INTO notification_channels (channel, instance, enabled, min_priority, created_at, updated_at)
+                VALUES ('Relay', 'default', 1, 'Critical', '2026-01-01T00:00:00.0000000+00:00',
+                        '2026-01-01T00:00:00.0000000+00:00');
+                """,
+                """
+                INSERT INTO relay_config (channel, instance, machine_code, target_kind, target_name)
+                VALUES ('Relay', 'default', 'MODBUS-01', 'Command', 'AnnunciatorOn');
+                """,
+                "PRAGMA user_version = 1;",
+            })
+            {
+                using var cmd = seed.CreateCommand();
+                cmd.CommandText = sql;
+                cmd.ExecuteNonQuery();
+            }
+        }
+        SqliteConnection.ClearAllPools();
+
+        // Opening the store applies v2 and only v2.
+        var store = new NotificationConfigStore(dir);
+        using (var connection = Open(store))
+        {
+            Assert.Equal(2L, UserVersion(connection));
+        }
+
+        // The pre-existing row is untouched...
+        var relay = await store.GetRelayAsync();
+        Assert.Equal("MODBUS-01", relay!.MachineCode);
+        Assert.Equal("AnnunciatorOn", relay.TargetName);
+
+        // ...and the new column is usable, defaulting to "no auth header" for anything saved before it.
+        Assert.True(await store.SaveWebhookAsync(
+            enabled: true, AlarmPriority.High, "https://mes.plant/alarm", authHeaderName: "X-Api-Key"));
+        Assert.Equal("X-Api-Key", (await store.GetWebhookAsync())!.AuthHeaderName);
     }
 
     // ─────────────────────────────────────────────────────────────────────

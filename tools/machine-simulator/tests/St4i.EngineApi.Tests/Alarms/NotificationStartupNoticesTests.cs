@@ -10,38 +10,62 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// <para>C-1's review named the exact outcome that must become impossible: an operator configures a
 /// webhook completely correctly and gets "a fully configured, completely silent alarm system with no error
 /// anywhere". The headline test here does not check that outcome on a few examples — it enumerates the
-/// ENTIRE input space of <see cref="NotificationStartupNotices.Describe"/> (every channel absent /
-/// configured-and-disabled / configured-and-enabled, crossed with with-and-without a delivery
-/// implementation) and asserts the property directly.</para>
+/// ENTIRE input space of <see cref="NotificationStartupNotices.Describe"/> and asserts the property
+/// directly.</para>
+///
+/// <para>🔴 <b>Task C-3 widened that input space, and had to.</b> C-2's second argument was a single
+/// <c>bool hasDeliveryImplementation</c>, which was a whole-build fact only because in C-2 it was uniformly
+/// <see langword="false"/>. C-3 is the task that makes it true, at which point one boolean claims a
+/// delivery implementation for SMTP, local annunciation and relay as well — a build that cannot send an
+/// email would have reported "Alarm notifications are ACTIVE on 1 channel(s): Smtp". The parameter is now
+/// the SET of channels this build can deliver, and the space grows from 3⁴ × 2 = 162 to 6⁴ = 1296.</para>
 /// </summary>
 public sealed class NotificationStartupNoticesTests
 {
     /// <summary>What one channel's configuration state is in a generated combination.</summary>
     private enum ChannelState { Absent, ConfiguredDisabled, ConfiguredEnabled }
 
+    private static readonly IReadOnlySet<NotificationChannel> AllImplemented =
+        new HashSet<NotificationChannel>(Enum.GetValues<NotificationChannel>());
+
+    private static readonly IReadOnlySet<NotificationChannel> NoneImplemented =
+        new HashSet<NotificationChannel>();
+
+    private static IReadOnlySet<NotificationChannel> Implemented(params NotificationChannel[] channels) =>
+        new HashSet<NotificationChannel>(channels);
+
     private static NotificationChannelSummary Summary(NotificationChannel channel, bool enabled) =>
         new(channel, NotificationConfigStore.DefaultInstance, enabled, AlarmPriority.High, DateTimeOffset.UtcNow);
 
-    /// <summary>Every assignment of a <see cref="ChannelState"/> to each of the four channels — 3^4 = 81
-    /// configurations.</summary>
-    private static IEnumerable<IReadOnlyList<NotificationChannelSummary>> AllConfigurations()
+    /// <summary>Every assignment, to each of the four channels, of a <see cref="ChannelState"/> AND whether
+    /// this build implements it — (3 × 2)⁴ = 1296 combinations.</summary>
+    private static IEnumerable<(IReadOnlyList<NotificationChannelSummary> Channels,
+                                IReadOnlySet<NotificationChannel> Implemented)> AllConfigurations()
     {
         var channels = Enum.GetValues<NotificationChannel>();
         var states = Enum.GetValues<ChannelState>();
-        var total = (int)Math.Pow(states.Length, channels.Length);
+        var perChannel = states.Length * 2;
+        var total = (int)Math.Pow(perChannel, channels.Length);
 
         for (var combination = 0; combination < total; combination++)
         {
             var list = new List<NotificationChannelSummary>();
+            var implemented = new HashSet<NotificationChannel>();
             var remaining = combination;
+
             foreach (var channel in channels)
             {
-                var state = states[remaining % states.Length];
-                remaining /= states.Length;
+                var slot = remaining % perChannel;
+                remaining /= perChannel;
+
+                if (slot >= states.Length) implemented.Add(channel);
+                var state = states[slot % states.Length];
+
                 if (state == ChannelState.ConfiguredDisabled) list.Add(Summary(channel, enabled: false));
                 else if (state == ChannelState.ConfiguredEnabled) list.Add(Summary(channel, enabled: true));
             }
-            yield return list;
+
+            yield return (list, implemented);
         }
     }
 
@@ -51,12 +75,13 @@ public sealed class NotificationStartupNoticesTests
 
     /// <summary>
     /// 🔴 THE test this task exists to make possible: <b>there is no reachable configuration in which
-    /// nothing will be delivered and the host says nothing about it.</b>
+    /// nothing will be delivered and the host says nothing about it</b> — plus, since C-3, <b>no reachable
+    /// configuration in which a channel an operator ENABLED is silently unimplemented.</b>
     ///
-    /// <para>Asserted over all 81 channel configurations × both delivery-implementation states = 162
-    /// cases, so a future task that adds a fifth channel, or a new quiet state, cannot reintroduce the
-    /// silent-misconfiguration failure without turning this red. The combination count is itself asserted,
-    /// so a generator that silently stopped producing cases could not make this pass vacuously.</para>
+    /// <para>Asserted over all 1296 cases, with every branch count derived independently and asserted, so a
+    /// generator that silently stopped producing cases could not make this pass vacuously. A future task
+    /// that adds a fifth channel, or a new quiet state, cannot reintroduce the silent-misconfiguration
+    /// failure without turning this red.</para>
     /// </summary>
     [Fact]
     public void NoConfigurationCanBeSilentlyInert_OverTheEntireInputSpace()
@@ -64,44 +89,72 @@ public sealed class NotificationStartupNoticesTests
         var cases = 0;
         var silentCases = 0;
         var deliveringCases = 0;
+        var partiallyImplementedCases = 0;
+        var cleanlyDeliveringCases = 0;
 
-        foreach (var channels in AllConfigurations())
+        foreach (var (channels, implemented) in AllConfigurations())
         {
-            foreach (var hasDelivery in new[] { false, true })
+            cases++;
+
+            var willDeliver = NotificationStartupNotices.WillDeliver(channels, implemented);
+            var notices = NotificationStartupNotices.Describe(channels, implemented);
+            var enabledButUnimplemented = channels
+                .Where(c => c.Enabled && !implemented.Contains(c.Channel))
+                .ToList();
+
+            if (willDeliver)
             {
-                cases++;
-                var willDeliver = NotificationStartupNotices.WillDeliver(channels, hasDelivery);
-                var notices = NotificationStartupNotices.Describe(channels, hasDelivery);
+                deliveringCases++;
+                Assert.Contains(notices, notice => notice.Severity == NotificationNoticeSeverity.Information);
+            }
+            else
+            {
+                silentCases++;
+                // The invariant C-2 built this function for.
+                Assert.Contains(notices, notice => notice.Severity == NotificationNoticeSeverity.Warning);
+            }
 
-                if (willDeliver)
-                {
-                    deliveringCases++;
+            if (enabledButUnimplemented.Count > 0)
+            {
+                partiallyImplementedCases++;
 
-                    // The complement matters too: when alarms WILL reach somebody, the host must not cry
-                    // wolf about the gate. (The clear-text-password warning is about credentials, not the
-                    // gate, and cannot occur here — these summaries carry no SMTP configuration.)
-                    Assert.Contains(notices, notice => notice.Severity == NotificationNoticeSeverity.Information);
-                    Assert.DoesNotContain(notices, notice => notice.Severity == NotificationNoticeSeverity.Warning);
-                }
-                else
+                // 🔴 The C-3 addition: each enabled-but-undeliverable channel is NAMED, even when some
+                // other channel is delivering perfectly well and the host is otherwise reporting success.
+                var warning = Assert.Single(
+                    notices,
+                    n => n.Severity == NotificationNoticeSeverity.Warning &&
+                         n.Message.Contains("no delivery implementation", StringComparison.Ordinal));
+                foreach (var channel in enabledButUnimplemented)
                 {
-                    silentCases++;
-                    Assert.Contains(notices, notice => notice.Severity == NotificationNoticeSeverity.Warning);
+                    Assert.Contains(channel.Channel.ToString(), warning.Message, StringComparison.Ordinal);
                 }
+            }
+            else if (willDeliver)
+            {
+                cleanlyDeliveringCases++;
+
+                // The complement matters too: when every enabled channel really will be delivered, the host
+                // must not cry wolf. (The credential warnings are about credentials, not the gate, and
+                // cannot occur here — these summaries carry no SMTP or webhook configuration.)
+                Assert.DoesNotContain(notices, notice => notice.Severity == NotificationNoticeSeverity.Warning);
             }
         }
 
-        // 3^4 channel configurations × 2 delivery states.
-        Assert.Equal(162, cases);
+        // (3 configuration states × implemented-or-not)^4 channels.
+        Assert.Equal(1296, cases);
 
-        // Non-vacuity in both directions: the space really does contain silent AND delivering cases, so
-        // neither branch above went unexercised, and a generator that stopped early cannot pass.
-        //   delivering = hasDelivery(1 of 2) AND at least one channel enabled.
-        //                Configurations with NO enabled channel = 2^4 = 16 (each channel Absent or
-        //                Disabled), so 81 - 16 = 65 have at least one.
-        //   silent     = all 81 with no delivery implementation, plus the 16 with nothing enabled.
-        Assert.Equal(65, deliveringCases);
-        Assert.Equal(81 + 16, silentCases);
+        // Non-vacuity, every count derived rather than observed:
+        //   delivering            = at least one channel is (Enabled AND implemented). Per channel 5 of the
+        //                           6 slots are NOT that, so 6^4 - 5^4 = 1296 - 625 = 671.
+        //   silent                = the complement, 625.
+        //   partiallyImplemented  = at least one channel is (Enabled AND NOT implemented) — the same
+        //                           arithmetic mirrored, 671.
+        //   cleanlyDelivering     = no channel is (Enabled AND NOT implemented) [5^4 = 625] minus those
+        //                           where none is (Enabled AND implemented) either [4^4 = 256] = 369.
+        Assert.Equal(671, deliveringCases);
+        Assert.Equal(625, silentCases);
+        Assert.Equal(671, partiallyImplementedCases);
+        Assert.Equal(369, cleanlyDeliveringCases);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -112,7 +165,7 @@ public sealed class NotificationStartupNoticesTests
     public void NothingConfiguredAtAll_WarnsThatAlarmsReachNobody()
     {
         var notices = NotificationStartupNotices.Describe(
-            Array.Empty<NotificationChannelSummary>(), hasDeliveryImplementation: true);
+            Array.Empty<NotificationChannelSummary>(), AllImplemented);
 
         var warning = Assert.Single(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
         Assert.Contains("No alarm notification channel is configured", warning.Message);
@@ -129,7 +182,7 @@ public sealed class NotificationStartupNoticesTests
             Summary(NotificationChannel.Smtp, enabled: false),
         };
 
-        var notices = NotificationStartupNotices.Describe(channels, hasDeliveryImplementation: true);
+        var notices = NotificationStartupNotices.Describe(channels, AllImplemented);
 
         var warning = Assert.Single(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
         Assert.Contains("CONFIGURED", warning.Message);
@@ -139,20 +192,20 @@ public sealed class NotificationStartupNoticesTests
         Assert.Contains("Smtp", warning.Message);
     }
 
-    /// <summary>The honest C-2 state of the world: an operator can configure and enable a channel today,
-    /// and this build still delivers nothing because no channel implementation exists yet. That must be
-    /// said out loud rather than looking like success.</summary>
+    /// <summary>The honest state of the world for any channel whose task has not landed: an operator can
+    /// configure and enable it today and this build still delivers nothing through it. That must be said
+    /// out loud rather than looking like success.</summary>
     [Fact]
     public void EnabledButThisBuildHasNoDeliveryImplementation_SaysSoInsteadOfLookingHealthy()
     {
         var channels = new[] { Summary(NotificationChannel.Webhook, enabled: true) };
 
-        var notices = NotificationStartupNotices.Describe(channels, hasDeliveryImplementation: false);
+        var notices = NotificationStartupNotices.Describe(channels, NoneImplemented);
 
         var warning = Assert.Single(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
         Assert.Contains("no delivery implementation", warning.Message);
         Assert.Contains("DISCARDED", warning.Message);
-        Assert.False(NotificationStartupNotices.WillDeliver(channels, hasDeliveryImplementation: false));
+        Assert.False(NotificationStartupNotices.WillDeliver(channels, NoneImplemented));
     }
 
     [Fact]
@@ -164,18 +217,98 @@ public sealed class NotificationStartupNoticesTests
             Summary(NotificationChannel.Relay, enabled: false),
         };
 
-        var notices = NotificationStartupNotices.Describe(channels, hasDeliveryImplementation: true);
+        var notices = NotificationStartupNotices.Describe(
+            channels, Implemented(NotificationChannel.Webhook));
 
         var info = Assert.Single(notices);
         Assert.Equal(NotificationNoticeSeverity.Information, info.Severity);
         Assert.Contains("ACTIVE", info.Message);
         Assert.Contains("Webhook", info.Message);
-        Assert.True(NotificationStartupNotices.WillDeliver(channels, hasDeliveryImplementation: true));
+        Assert.True(NotificationStartupNotices.WillDeliver(channels, Implemented(NotificationChannel.Webhook)));
+    }
+
+    /// <summary>
+    /// 🔴 The regression Task C-3 would have shipped with C-2's single boolean, pinned by name.
+    ///
+    /// <para>C-3 is the first task to give the host a real delivery implementation. With one flag, turning
+    /// it on for the webhook turned it on for every channel: this exact configuration — a delivering
+    /// webhook next to an enabled SMTP channel that C-4 has not built yet — would have produced
+    /// <b>"Alarm notifications are ACTIVE on 2 channel(s): Webhook, Smtp"</b> and nothing else. An operator
+    /// who had configured an e-mail recipient would have been told, in so many words, that it was
+    /// working.</para>
+    /// </summary>
+    [Fact]
+    public void AChannelWithNoImplementation_IsStillNamed_EvenWhileAnotherChannelIsDeliveringFine()
+    {
+        var channels = new[]
+        {
+            Summary(NotificationChannel.Webhook, enabled: true),
+            Summary(NotificationChannel.Smtp, enabled: true),
+        };
+
+        var notices = NotificationStartupNotices.Describe(
+            channels, Implemented(NotificationChannel.Webhook));
+
+        var info = Assert.Single(notices, n => n.Severity == NotificationNoticeSeverity.Information);
+        Assert.Contains("ACTIVE", info.Message);
+        Assert.Contains("Webhook", info.Message);
+        // The heart of it: the ACTIVE line must not claim the channel this build cannot send.
+        Assert.DoesNotContain("Smtp", info.Message);
+
+        var warning = Assert.Single(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
+        Assert.Contains("no delivery implementation", warning.Message);
+        Assert.Contains("Smtp", warning.Message);
+        Assert.DoesNotContain("Webhook", warning.Message);
+
+        // And "something will be delivered" is still true, because the webhook will be.
+        Assert.True(NotificationStartupNotices.WillDeliver(channels, Implemented(NotificationChannel.Webhook)));
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // The credential-handling warning.
+    // The credential-handling warnings.
     // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>🔴 Task C-3 — the webhook parallel of the SMTP clear-text warning: a static auth token over
+    /// plain HTTP crosses the network in the clear on every alarm, and the HMAC signature does not help
+    /// because it authenticates rather than encrypts.</summary>
+    [Fact]
+    public void AWebhookAuthTokenOverPlainHttp_IsWarnedAbout()
+    {
+        var notices = NotificationStartupNotices.Describe(
+            new[] { WebhookSummary("http://mes.plant", "X-Api-Key", hasAuthToken: true) },
+            Implemented(NotificationChannel.Webhook));
+
+        var warning = Assert.Single(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
+        Assert.Contains("clear text", warning.Message);
+        Assert.Contains("X-Api-Key", warning.Message);
+        Assert.Contains("https://", warning.Message);
+        // The gate itself is healthy, so the ACTIVE information line is still there.
+        Assert.Contains(notices, n => n.Severity == NotificationNoticeSeverity.Information);
+    }
+
+    [Fact]
+    public void AWebhookAuthTokenOverHttps_IsNotWarnedAbout()
+    {
+        var notices = NotificationStartupNotices.Describe(
+            new[] { WebhookSummary("https://mes.plant", "X-Api-Key", hasAuthToken: true) },
+            Implemented(NotificationChannel.Webhook));
+
+        Assert.DoesNotContain(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
+    }
+
+    /// <summary>The deliberate non-fatigue choice: plain HTTP to an in-plant receiver on an isolated
+    /// network is a configuration this product accepts, and warning about every one of them is how the
+    /// SMTP clear-text warning next door stops being read. The warning fires on a CREDENTIAL crossing the
+    /// wire, not on a scheme.</summary>
+    [Fact]
+    public void AWebhookOverPlainHttpWithNoStoredToken_IsNotWarnedAbout()
+    {
+        var notices = NotificationStartupNotices.Describe(
+            new[] { WebhookSummary("http://mes.plant", authHeaderName: null, hasAuthToken: false) },
+            Implemented(NotificationChannel.Webhook));
+
+        Assert.DoesNotContain(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
+    }
 
     /// <summary>An SMTP password over an unsecured connection is sent in clear text. The store accepts
     /// that configuration (it is legitimate on an isolated in-plant relay with no auth), so the host says
@@ -184,8 +317,7 @@ public sealed class NotificationStartupNoticesTests
     public void AnSmtpPasswordWithoutTls_IsWarnedAboutSeparatelyFromTheGate()
     {
         var notices = NotificationStartupNotices.Describe(
-            new[] { SmtpSummary(25, SmtpTlsMode.None, hasPassword: true) },
-            hasDeliveryImplementation: true);
+            new[] { SmtpSummary(25, SmtpTlsMode.None, hasPassword: true) }, AllImplemented);
 
         Assert.Contains(notices, n =>
             n.Severity == NotificationNoticeSeverity.Warning && n.Message.Contains("clear text"));
@@ -197,8 +329,7 @@ public sealed class NotificationStartupNoticesTests
     public void AnSmtpPasswordWithStartTls_IsNotWarnedAbout()
     {
         var notices = NotificationStartupNotices.Describe(
-            new[] { SmtpSummary(587, SmtpTlsMode.StartTls, hasPassword: true) },
-            hasDeliveryImplementation: true);
+            new[] { SmtpSummary(587, SmtpTlsMode.StartTls, hasPassword: true) }, AllImplemented);
 
         Assert.DoesNotContain(notices, n => n.Message.Contains("clear text"));
         Assert.DoesNotContain(notices, n => n.Message.Contains("implicit TLS"));
@@ -217,7 +348,7 @@ public sealed class NotificationStartupNoticesTests
     public void Port465_IsWarnedAbout_BecauseSystemNetMailCannotSpeakImplicitTls(SmtpTlsMode tls)
     {
         var notices = NotificationStartupNotices.Describe(
-            new[] { SmtpSummary(465, tls, hasPassword: false) }, hasDeliveryImplementation: true);
+            new[] { SmtpSummary(465, tls, hasPassword: false) }, AllImplemented);
 
         var warning = Assert.Single(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
         Assert.Contains("465", warning.Message);
@@ -230,8 +361,7 @@ public sealed class NotificationStartupNoticesTests
     public void Port587_IsNotWarnedAbout()
     {
         var notices = NotificationStartupNotices.Describe(
-            new[] { SmtpSummary(587, SmtpTlsMode.StartTls, hasPassword: false) },
-            hasDeliveryImplementation: true);
+            new[] { SmtpSummary(587, SmtpTlsMode.StartTls, hasPassword: false) }, AllImplemented);
 
         Assert.DoesNotContain(notices, n => n.Severity == NotificationNoticeSeverity.Warning);
     }
@@ -241,4 +371,12 @@ public sealed class NotificationStartupNoticesTests
             AlarmPriority.High, DateTimeOffset.UtcNow,
             Smtp: new SmtpChannelSummary(
                 "mail.local", port, tls, "sim@plant", new[] { "ops@plant" }, "svc", hasPassword));
+
+    private static NotificationChannelSummary WebhookSummary(
+        string endpoint, string? authHeaderName, bool hasAuthToken) =>
+        new(NotificationChannel.Webhook, NotificationConfigStore.DefaultInstance, Enabled: true,
+            AlarmPriority.High, DateTimeOffset.UtcNow,
+            Webhook: new WebhookChannelSummary(
+                endpoint, "0123456789ABCDEF", "Ops MES", HasUrl: true, HasSigningSecret: true,
+                authHeaderName, hasAuthToken));
 }

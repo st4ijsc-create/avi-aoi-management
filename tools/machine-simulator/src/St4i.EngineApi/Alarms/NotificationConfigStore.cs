@@ -52,8 +52,13 @@ internal static class NotificationConfigSchema
     // advertised `created_at` as readable when nothing reads it, which is a promise the type does not keep.
     internal const string ChannelSummaryColumns = "channel, instance, enabled, min_priority, updated_at";
 
-    internal const string WebhookFullColumns = "endpoint, url_fingerprint, label";
-    internal const string WebhookSummaryColumns = "endpoint, url_fingerprint, label";
+    // Task C-3 added `auth_header_name` (schema v2) to BOTH projections. It is a header NAME, never a
+    // value: see WebhookChannelConfig.AuthHeaderName for why that is not a credential, and
+    // WebhookAuthHeader for why the value went into notification_secrets instead. This is exactly the
+    // "named secret plus a non-secret header-name column" ladder entry C-2 predicted, and it needed no
+    // table rebuild — which was the point of doing the `instance` re-key before any field data existed.
+    internal const string WebhookFullColumns = "endpoint, url_fingerprint, label, auth_header_name";
+    internal const string WebhookSummaryColumns = "endpoint, url_fingerprint, label, auth_header_name";
 
     internal const string SmtpFullColumns = "host, port, tls_mode, from_address, recipients_json, username";
     internal const string SmtpSummaryColumns = "host, port, tls_mode, from_address, recipients_json, username";
@@ -99,6 +104,10 @@ internal static class NotificationConfigSchema
         (WebhookTable, "endpoint", false),
         (WebhookTable, "url_fingerprint", false),
         (WebhookTable, "label", false),
+        // Task C-3 (schema v2) — the NAME of the header that carries a static auth token. The token
+        // itself is a DPAPI row in notification_secrets under NotificationSecretNames.WebhookAuthToken;
+        // this column is what makes that partition structural rather than conventional.
+        (WebhookTable, "auth_header_name", false),
 
         (SmtpTable, "channel", false),
         (SmtpTable, "instance", false),
@@ -322,6 +331,22 @@ public sealed class NotificationConfigStore
                 REFERENCES {NotificationConfigSchema.ChannelsTable}(channel, instance) ON DELETE CASCADE);
             """,
         }),
+
+        // 🔴 Task C-3 — the FIRST genuine append to this ladder, and the shape C-2 predicted for it.
+        // C-2's review named the sharpest gap it was leaving: a generic MES or Zabbix receiver that
+        // authenticates by a static bearer token could not be configured at all, and an HMAC signature does
+        // not help it because its auth layer runs before anything that could verify one. C-2 also designed
+        // the answer — a NAMED SECRET plus a NON-SECRET header-name column — and noted it would need no
+        // rebuild. It did not: one nullable ALTER, because the `instance` re-key was done while the schema
+        // had never shipped.
+        //
+        // Deliberately a v2 append rather than a v1 reshape. v1's in-place reshape was justified only by
+        // "no released build has ever created this database"; that argument is about the state of the
+        // world, not a licence, and appending is what the ladder is for.
+        (2, new[]
+        {
+            $"ALTER TABLE {NotificationConfigSchema.WebhookTable} ADD COLUMN auth_header_name TEXT NULL;",
+        }),
     };
 
     /// <param name="directory">Explicit directory override (tests), or <see langword="null"/> to resolve
@@ -465,9 +490,16 @@ public sealed class NotificationConfigStore
     /// DTO is precisely how a secret-bearing field reaches a response body, so C-7's endpoint is made to
     /// read back through <see cref="ListAsync"/> — the one credential-free projection — instead of being
     /// handed a shape this method assembled itself.</returns>
+    /// <param name="authHeaderName">🔴 Task C-3 — the name of the header carrying
+    /// <see cref="NotificationSecretNames.WebhookAuthToken"/>, for a receiver that authenticates by a
+    /// static token. Validated by <see cref="WebhookAuthHeader.IsValidName"/>, which refuses the headers
+    /// the webhook channel sets itself: a configuration able to name <c>X-ST4I-Signature</c> could
+    /// OVERWRITE THE SIGNATURE, which is the most damaging thing a non-secret field could be allowed to
+    /// do. Rejected here rather than skipped at send time, so the bad configuration cannot be stored and
+    /// then quietly ignored.</param>
     public Task<bool> SaveWebhookAsync(
         bool enabled, AlarmPriority minPriority, string url, string? label = null,
-        string instance = DefaultInstance, CancellationToken ct = default) =>
+        string? authHeaderName = null, string instance = DefaultInstance, CancellationToken ct = default) =>
         SaveAsync(NotificationChannel.Webhook, instance, enabled, minPriority, "webhook",
             async (connection, transaction, nowIso) =>
         {
@@ -486,23 +518,32 @@ public sealed class NotificationConfigStore
                 throw new ArgumentException($"A webhook label may be at most {MaxLabelLength} characters.", nameof(label));
             }
 
+            if (authHeaderName is not null && !WebhookAuthHeader.IsValidName(authHeaderName, out var reason))
+            {
+                // `reason` names the header only; the token lives in notification_secrets and is not in
+                // scope here at all.
+                throw new ArgumentException(reason, nameof(authHeaderName));
+            }
+
             using (var cmd = connection.CreateCommand())
             {
                 cmd.Transaction = transaction;
                 cmd.CommandText = $"""
                     INSERT INTO {NotificationConfigSchema.WebhookTable}
-                        (channel, instance, endpoint, url_fingerprint, label)
-                    VALUES (@channel, @instance, @endpoint, @fingerprint, @label)
+                        (channel, instance, endpoint, url_fingerprint, label, auth_header_name)
+                    VALUES (@channel, @instance, @endpoint, @fingerprint, @label, @auth_header_name)
                     ON CONFLICT(channel, instance) DO UPDATE SET
                         endpoint = excluded.endpoint,
                         url_fingerprint = excluded.url_fingerprint,
-                        label = excluded.label;
+                        label = excluded.label,
+                        auth_header_name = excluded.auth_header_name;
                     """;
                 cmd.Parameters.AddWithValue("@channel", nameof(NotificationChannel.Webhook));
                 cmd.Parameters.AddWithValue("@instance", instance);
                 cmd.Parameters.AddWithValue("@endpoint", DeriveEndpoint(parsed));
                 cmd.Parameters.AddWithValue("@fingerprint", ComputeUrlFingerprint(url));
                 cmd.Parameters.AddWithValue("@label", (object?)label ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@auth_header_name", (object?)authHeaderName ?? DBNull.Value);
                 await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -831,7 +872,7 @@ public sealed class NotificationConfigStore
             bool enabled;
             AlarmPriority minPriority;
             string endpoint, fingerprint;
-            string? label;
+            string? label, authHeaderName;
 
             using (var cmd = connection.CreateCommand())
             {
@@ -854,13 +895,15 @@ public sealed class NotificationConfigStore
                 endpoint = reader.GetString(reader.GetOrdinal("endpoint"));
                 fingerprint = reader.GetString(reader.GetOrdinal("url_fingerprint"));
                 label = GetNullableString(reader, "label");
+                authHeaderName = GetNullableString(reader, "auth_header_name");
             }
 
             var url = await ReadSecretAsync(
                 connection, NotificationChannel.Webhook, instance,
                 NotificationSecretNames.WebhookUrl, ct).ConfigureAwait(false);
 
-            return new WebhookChannelConfig(enabled, minPriority, instance, url, endpoint, fingerprint, label);
+            return new WebhookChannelConfig(
+                enabled, minPriority, instance, url, endpoint, fingerprint, label, authHeaderName);
         }
         catch (Exception ex)
         {
@@ -1037,7 +1080,9 @@ public sealed class NotificationConfigStore
                                 reader.GetString(reader.GetOrdinal("url_fingerprint")),
                                 GetNullableString(reader, "label"),
                                 names?.Contains(NotificationSecretNames.WebhookUrl) == true,
-                                names?.Contains(NotificationSecretNames.WebhookSigningSecret) == true)
+                                names?.Contains(NotificationSecretNames.WebhookSigningSecret) == true,
+                                GetNullableString(reader, "auth_header_name"),
+                                names?.Contains(NotificationSecretNames.WebhookAuthToken) == true)
                             : null,
                         Smtp: GetNullableString(reader, "host") is { } smtpHost
                             ? new SmtpChannelSummary(
