@@ -29,6 +29,23 @@ export const APP_ERROR_CODES = [
                           // register/claimKey throttle, machineApiRouters heartbeat). Chi tiết
                           // hạn mức (đơn vị/giờ hay /phút khác nhau tuỳ nơi) giữ ở fallbackMessage,
                           // không đưa vào template vì không có 1 đơn vị chung cho mọi nơi gọi.
+  "ACCOUNT_LOCKED",       // params: { remainingMinutes } — khoá brute-force ĐANG hiệu lực, KHÁC
+                          // RATE_LIMITED (throttle thao tác) và KHÁC PERMISSION_DENIED (thiếu
+                          // quyền) — đây là tài khoản, tạm thời, có thời hạn cụ thể. Review cuối
+                          // (đợt sửa cuối, ca I-A #2): server/routers.ts:265 từng gộp nhầm vào
+                          // RATE_LIMITED, "ít phút" nói giảm so với 15 phút thật.
+  "ACCOUNT_DISABLED",     // params: {} — tài khoản bị admin vô hiệu hoá (users.isActive=false),
+                          // KHÁC PERMISSION_DENIED (thiếu quyền — đi xin quyền là sai hướng, tài
+                          // khoản này cần được kích hoạt lại, không phải cấp thêm quyền). Review
+                          // cuối, ca I-A #3: server/routers.ts:268 từng gộp vào PERMISSION_DENIED.
+  "FEATURE_NOT_CONFIGURED", // params: { feature } — tính năng KHÔNG có công tắc bật/tắt, chỉ
+                          // thiếu cấu hình bắt buộc (biến môi trường/URL bên ngoài) — KHÁC
+                          // FEATURE_DISABLED (có công tắc, ai đó tắt nó). Review cuối, ca I-A #5:
+                          // licenseRouter.ts 12 chỗ dùng FEATURE_DISABLED cho LICENSE_SERVER_URL
+                          // thiếu — không có công tắc nào để "bật" cho người dùng đi bật.
+  "ENTITY_EXPIRED",       // params: { entity } — bản ghi CÓ TỒN TẠI nhưng đã quá hạn lưu trữ/hiệu
+                          // lực, KHÁC ENTITY_NOT_FOUND (chưa từng có/đã bị xoá). Review cuối, ca
+                          // I-A #9: reportArtifactRouter.ts gộp nhánh 'expired' vào ENTITY_NOT_FOUND.
 
   // ── Nạp tri thức (KB) — Task 3 ────────────────────────────────────────────
   "KB_FILE_TOO_LARGE",        // params: { limitMb }
