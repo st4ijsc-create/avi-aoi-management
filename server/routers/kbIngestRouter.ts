@@ -213,7 +213,7 @@ export const kbIngestRouter = router({
         throw appError(
           "FORBIDDEN",
           "FEATURE_DISABLED",
-          { feature: "web_ingest" },
+          { feature: "webIngest" },
           "Web URL ingest is disabled (WEB_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
         );
       }
@@ -228,7 +228,7 @@ export const kbIngestRouter = router({
         // Sprint 5 §4 (Task 3) — "tính năng chưa bật" là mã họ phổ quát FEATURE_DISABLED (đã
         // đăng ký ở Task 1), không phải một trong 6 mã KB tài liệu (theo gợi ý của brief).
         if (err instanceof WebIngestDisabledError) {
-          throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "web_ingest" }, err.message);
+          throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "webIngest" }, err.message);
         }
         // SsrfBlockedError (đích bị chặn) và FetchError (mọi lỗi fetch khác) đều là "không tải
         // được nội dung từ URL này" dưới góc nhìn người vận hành — gộp vào MỘT mã.

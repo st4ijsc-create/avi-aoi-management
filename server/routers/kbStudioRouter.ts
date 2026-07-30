@@ -149,7 +149,7 @@ function mapIngestUrlError(err: unknown, url: string): never {
   // Sprint 5 §4 (Task 3) — "tính năng chưa bật" là mã họ phổ quát FEATURE_DISABLED, không phải
   // một trong 6 mã KB tài liệu (theo gợi ý của brief).
   if (err instanceof WebIngestDisabledError) {
-    throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "web_ingest" }, err.message);
+    throw appError("FORBIDDEN", "FEATURE_DISABLED", { feature: "webIngest" }, err.message);
   }
   if (err instanceof SsrfBlockedError || err instanceof FetchError) {
     throw buildFetchFailedError(url, err.message);
@@ -324,7 +324,7 @@ export const kbStudioRouter = router({
         throw appError(
           "FORBIDDEN",
           "FEATURE_DISABLED",
-          { feature: "web_ingest" },
+          { feature: "webIngest" },
           "Web URL ingest is disabled (WEB_INGEST_ENABLED and/or KB_STUDIO_ENABLED is off).",
         );
       }
