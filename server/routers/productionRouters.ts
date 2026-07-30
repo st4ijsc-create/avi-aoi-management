@@ -201,7 +201,12 @@ export const productionOrderRouter = router({
           throw appError(
             'CONFLICT',
             'OPERATION_FAILED',
-            { operation: 'rescheduleProductionOrder' },
+            // Task 5 (doc 71) — `reason` khôi phục chỉ dẫn forceOverride=true đã mất khi
+            // di trú (câu chuẩn OPERATION_FAILED chỉ có {{operation}}). Danh sách MÃ lệnh
+            // trùng (orderCode) là chuỗi độ-dài-bất-định, KHÔNG đi qua từ điển reason —
+            // giữ nguyên trong fallbackMessage (log/API /v1) theo đúng khuyến cáo brief,
+            // chỉ số LƯỢNG lệnh trùng (conflictCount) được khôi phục qua i18n.
+            { operation: 'rescheduleProductionOrder', reason: 'scheduleConflict', conflictCount: overlappingOrders.length },
             `Lịch trùng với ${overlappingOrders.length} lệnh sản xuất khác: ${overlappingOrders.map(o => o.orderCode).join(', ')}. Sử dụng forceOverride=true để bỏ qua.`,
           );
         }
@@ -224,7 +229,17 @@ export const productionOrderRouter = router({
           throw appError(
             'PRECONDITION_FAILED',
             'OPERATION_FAILED',
-            { operation: 'rescheduleProductionOrder' },
+            // Task 5 (doc 71) — reason KHÁC 'scheduleConflict' ở trên dù CÙNG appCode +
+            // CÙNG operation: đây là bài học "76 nhóm ≥2 nguyên nhân render 1 câu" mà
+            // brief đo được — nếu không tách reason, người dùng đọc y hệt câu dù nguyên
+            // nhân (trùng lịch vs vượt năng lực chuyền) khác hẳn nhau.
+            {
+              operation: 'rescheduleProductionOrder',
+              reason: 'lineCapacityExceeded',
+              lineName: targetLine.name,
+              maxConcurrent,
+              currentCount: concurrentOrders.length,
+            },
             `Dây chuyền ${targetLine.name} chỉ hỗ trợ tối đa ${maxConcurrent} lệnh cùng lúc. Hiện đã có ${concurrentOrders.length} lệnh trong khoảng thời gian này. Sử dụng forceOverride=true để bỏ qua.`,
           );
         }
@@ -238,7 +253,16 @@ export const productionOrderRouter = router({
             throw appError(
               'PRECONDITION_FAILED',
               'OPERATION_FAILED',
-              { operation: 'rescheduleProductionOrder' },
+              // reason THỨ BA, phân biệt với 2 cái trên (xem ghi chú ở nhánh trên) —
+              // nguyên nhân "vượt năng lực sản xuất" (không phải trùng lịch, không phải
+              // vượt số lệnh đồng thời).
+              {
+                operation: 'rescheduleProductionOrder',
+                reason: 'productionCapacityExceeded',
+                quantity: order.targetQuantity,
+                maxCapacity: Math.floor(maxCapacity),
+                hours: durationHours.toFixed(1),
+              },
               `Số lượng ${order.targetQuantity} vượt quá năng lực dây chuyền (${Math.floor(maxCapacity)} sản phẩm trong ${durationHours.toFixed(1)} giờ với ${targetLine.capacityPerHour} sp/giờ). Sử dụng forceOverride=true để bỏ qua.`,
             );
           }
