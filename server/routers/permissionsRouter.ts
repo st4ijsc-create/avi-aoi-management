@@ -1099,10 +1099,12 @@ export const permissionsRouter = router({
       const permTemplates = DEFAULT_ROLE_PERMISSIONS[input.builtInRole];
 
       if (!permTemplates) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `Unknown built-in role: ${input.builtInRole}. Available: ${Object.keys(DEFAULT_ROLE_PERMISSIONS).join(', ')}`,
-        });
+        throw appError(
+          'BAD_REQUEST',
+          'INVALID_VALUE',
+          { field: 'builtInRole' },
+          `Unknown built-in role: ${input.builtInRole}. Available: ${Object.keys(DEFAULT_ROLE_PERMISSIONS).join(', ')}`,
+        );
       }
 
       // Validate user exists

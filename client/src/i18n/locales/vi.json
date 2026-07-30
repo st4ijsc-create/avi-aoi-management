@@ -3720,7 +3720,8 @@
       "irFlow": "luồng IR",
       "recipePayload": "dữ liệu công thức",
       "extraFields": "trường mở rộng",
-      "measuredValue": "giá trị đo"
+      "measuredValue": "giá trị đo",
+      "builtInRole": "vai trò dựng sẵn"
     },
     "feature": {
       "web_ingest": "nạp nội dung từ web",

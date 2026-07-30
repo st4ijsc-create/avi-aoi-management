@@ -89,10 +89,12 @@ const TARGET = z.enum(TRANSPILE_TARGETS as [TranspileTarget, ...TranspileTarget[
 function parseOrThrow(content: string | null): Flow {
   const parsed = parseFlowJson(content ?? "");
   if (!parsed.ok) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Invalid IR flow: ${parsed.errors.map((e) => `${e.path || "<root>"}: ${e.message}`).join("; ")}`,
-    });
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "irFlow" },
+      `Invalid IR flow: ${parsed.errors.map((e) => `${e.path || "<root>"}: ${e.message}`).join("; ")}`,
+    );
   }
   return parsed.flow;
 }

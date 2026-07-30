@@ -3711,7 +3711,8 @@
       "irFlow": "IR流程",
       "recipePayload": "配方数据",
       "extraFields": "扩展字段",
-      "measuredValue": "测量值"
+      "measuredValue": "测量值",
+      "builtInRole": "内置角色"
     },
     "feature": {
       "web_ingest": "网页内容导入",

@@ -3002,7 +3002,7 @@ export const msaWizardRouter = router({
 
       const value = Number(input.measuredValue);
       if (!Number.isFinite(value)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "measuredValue must be numeric" });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "measuredValue" }, "measuredValue must be numeric");
       }
 
       const id = await db.addMsaObservation({

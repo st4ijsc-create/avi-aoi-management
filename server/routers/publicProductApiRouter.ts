@@ -59,21 +59,21 @@ async function validateAccess(input: { apiKey?: string; machineCode?: string; ma
   // Option 1: Master API Key (cho app bên thứ 3 dùng x-master-key)
   if (input.masterKey) {
     if (isValidMasterKey(input.masterKey)) return null;
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid master key" });
+    throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "masterKey" }, "Invalid master key");
   }
   // Option 2: Machine API Key
   if (input.apiKey) {
     const machine = await db.getMachineByApiKey(input.apiKey);
-    if (!machine) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
+    if (!machine) throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "apiKey" }, "Invalid API key");
     return machine;
   }
   // Option 3: Machine Code
   if (input.machineCode) {
     const machine = await db.getMachineByCode(input.machineCode.trim());
-    if (!machine) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid machine code" });
+    if (!machine) throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "machineCode" }, "Invalid machine code");
     return machine;
   }
-  throw new TRPCError({ code: "UNAUTHORIZED", message: "Either masterKey, apiKey, or machineCode must be provided" });
+  throw appError("UNAUTHORIZED", "FIELD_REQUIRED", { field: "masterKeyOrApiKeyOrMachineCode" }, "Either masterKey, apiKey, or machineCode must be provided");
 }
 
 const authInput = z.object({

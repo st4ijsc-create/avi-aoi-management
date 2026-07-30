@@ -171,10 +171,12 @@ function assertRecipePayloadValid(machineType: string | null, payload: unknown):
     );
     return;
   }
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: `Recipe payload không hợp lệ cho "${res.kind}": ${res.errors.join("; ")}`,
-  });
+  throw appError(
+    "BAD_REQUEST",
+    "INVALID_VALUE",
+    { field: "recipePayload" },
+    `Recipe payload không hợp lệ cho "${res.kind}": ${res.errors.join("; ")}`,
+  );
 }
 
 /**

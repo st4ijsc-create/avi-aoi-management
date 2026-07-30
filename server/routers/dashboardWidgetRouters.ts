@@ -660,11 +660,11 @@ h1 { margin-bottom: 8px; } p { color: #666; margin-bottom: 24px; }
       try {
         parsed = JSON.parse(input.jsonContent);
       } catch {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid JSON' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'dashboardImport' }, 'Invalid JSON');
       }
       
       if (!parsed.name || !Array.isArray(parsed.widgets)) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid dashboard format' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'dashboardFormat' }, 'Invalid dashboard format');
       }
       
       return db.createUserCustomDashboard({
@@ -746,7 +746,7 @@ h1 { margin-bottom: 8px; } p { color: #666; margin-bottom: 24px; }
         const dashboard = await db.getUserCustomDashboardById(input.customDashboardId);
         if (!dashboard) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
         if (!dashboard.isPublic) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Role default dashboard must be a PUBLIC custom dashboard' });
+          throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'visibility' }, 'Role default dashboard must be a PUBLIC custom dashboard');
         }
       }
       return db.upsertRoleDashboardDefault({

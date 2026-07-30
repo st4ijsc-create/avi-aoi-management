@@ -3719,7 +3719,8 @@
       "irFlow": "IR flow",
       "recipePayload": "recipe payload",
       "extraFields": "extra fields",
-      "measuredValue": "measured value"
+      "measuredValue": "measured value",
+      "builtInRole": "built-in role"
     },
     "feature": {
       "web_ingest": "web content ingestion",

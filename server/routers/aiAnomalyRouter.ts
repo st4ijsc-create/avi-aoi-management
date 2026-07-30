@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { appError } from "../_core/appError";
 import {
   scoreImage,
   buildMemoryBank,
@@ -32,7 +33,7 @@ function decodeBase64Image(b64: string): Buffer {
   try {
     buf = Buffer.from(cleaned, "base64");
   } catch {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 image" });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Invalid base64 image");
   }
   if (buf.length === 0) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Empty image payload" });

@@ -160,10 +160,7 @@ export const twoFactorRouter = router({
       });
 
       if (!verified) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid verification code. Please try again.",
-        });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid verification code. Please try again.");
       }
 
       // Generate backup codes
@@ -264,10 +261,7 @@ export const twoFactorRouter = router({
       }
 
       if (!verified) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid code. Please enter a valid TOTP or backup code.",
-        });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid code. Please enter a valid TOTP or backup code.");
       }
 
       // Disable 2FA and clear secret
@@ -353,10 +347,7 @@ export const twoFactorRouter = router({
       }
 
       if (!verified) {
-        throw new TRPCError({
-          code: "UNAUTHORIZED",
-          message: "Invalid verification code",
-        });
+        throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid verification code");
       }
 
       return {
@@ -400,10 +391,7 @@ export const twoFactorRouter = router({
       });
 
       if (!verified) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid verification code",
-        });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twoFactorCode" }, "Invalid verification code");
       }
 
       // Generate new backup codes

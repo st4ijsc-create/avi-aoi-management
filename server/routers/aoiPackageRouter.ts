@@ -188,7 +188,7 @@ async function getOrExtractImage(
   // Validate fileName to prevent path traversal (zip-slip)
   const normalizedName = path.normalize(fileName).replace(/^(\.\.(\/|\\|$))+/, '');
   if (normalizedName.includes('..') || path.isAbsolute(normalizedName)) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid file name" });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "fileName" }, "Invalid file name");
   }
 
   const cacheKey = `${pkg.packageId}/${normalizedName}`;
@@ -197,7 +197,7 @@ async function getOrExtractImage(
   // Verify cache path stays within CACHE_DIR
   const resolvedCache = path.resolve(cachePath);
   if (!resolvedCache.startsWith(path.resolve(CACHE_DIR) + path.sep)) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid file name" });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "fileName" }, "Invalid file name");
   }
 
   // Check cache
@@ -366,7 +366,7 @@ export const aoiPackageRouter = router({
         machine = await db.getMachineByCode(input.machineCode.trim());
       }
       if (!machine) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid machine credentials" });
+        throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "machineCredentials" }, "Invalid machine credentials");
       }
 
       const database = await getDb();
@@ -478,7 +478,7 @@ export const aoiPackageRouter = router({
         machine = await db.getMachineByCode(input.machineCode.trim());
       }
       if (!machine) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid machine credentials" });
+        throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "machineCredentials" }, "Invalid machine credentials");
       }
 
       const database = await getDb();
@@ -1445,7 +1445,7 @@ export const aoiPackageRouter = router({
         machine = await db.getMachineByCode(input.machineCode.trim());
       }
       if (!machine) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid machine credentials" });
+        throw appError("UNAUTHORIZED", "INVALID_VALUE", { field: "machineCredentials" }, "Invalid machine credentials");
       }
 
       const database = await getDb();

@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_LEGACY_THROWS = 380; // ← task 7 lô 6/N (OPERATION_FAILED, 24 chỗ + 1 chỗ PERMISSION_DENIED phát hiện thêm ở equipmentStandardsRouter.ts SoD-publish): 405 - 25 = 380
+const ALLOWED_LEGACY_THROWS = 344; // ← task 7 lô 7/N (INVALID_VALUE, 36 chỗ — lô cuối đợt 3): 380 - 36 = 344
 
 const ROUTERS_DIR = dirname(fileURLToPath(import.meta.url));
 

@@ -137,7 +137,7 @@ export async function uploadPointReferenceImage(
     const upload = await storagePut(fileKey, buffer, actualMime);
     return upload;
   } catch (error) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid image payload for point ${pointCode}` });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, `Invalid image payload for point ${pointCode}`);
   }
 }
 
@@ -190,7 +190,7 @@ export async function uploadProductReferenceImage(
 
     return { ...upload, imageWidth, imageHeight };
   } catch (error) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid image payload for product model ${productModelId}` });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, `Invalid image payload for product model ${productModelId}`);
   }
 }
 

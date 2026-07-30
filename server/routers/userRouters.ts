@@ -267,7 +267,7 @@ export const userRouter = router({
       });
 
       if (!valid) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã xác thực không hợp lệ' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'twoFactorCode' }, 'Mã xác thực không hợp lệ');
       }
 
       // Enable 2FA
@@ -315,7 +315,7 @@ export const userRouter = router({
       });
 
       if (!valid) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã xác thực không hợp lệ' });
+        throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'twoFactorCode' }, 'Mã xác thực không hợp lệ');
       }
 
       // Disable 2FA

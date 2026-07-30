@@ -80,7 +80,7 @@ function toExpiry(v: string | Date | null | undefined): Date | null {
   if (v == null || v === "") return null;
   const d = v instanceof Date ? v : new Date(v);
   if (Number.isNaN(d.getTime())) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid expiresAt date" });
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "expiresAt" }, "Invalid expiresAt date");
   }
   return d;
 }

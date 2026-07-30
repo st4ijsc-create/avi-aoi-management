@@ -304,7 +304,7 @@ export const aiChatRouter = router({
             })
             .where(eq(aiChatConversations.id, convIdNum));
         } else {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid conversationId" });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "conversationId" }, "Invalid conversationId");
         }
       }
 

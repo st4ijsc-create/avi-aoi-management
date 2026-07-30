@@ -149,7 +149,7 @@ export const twinRouter = router({
         try {
           buf = Buffer.from(input.contentBase64, "base64");
         } catch {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid base64 content." });
+          throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "twinContent" }, "Invalid base64 content.");
         }
         const v = validateUpload(buf, "model3d");
         if (!v.ok) {

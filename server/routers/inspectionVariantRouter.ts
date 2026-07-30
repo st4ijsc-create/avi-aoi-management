@@ -67,11 +67,13 @@ export const inspectionVariantRouter = router({
       }
       const v = validatePayload(input.inspectionType, input.payload);
       if (!v.ok) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid ${input.inspectionType} payload: ` +
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "inspectionPayload" },
+          `Invalid ${input.inspectionType} payload: ` +
             (v.errors ?? []).map((e) => `${e.path || "(root)"}: ${e.message}`).join("; "),
-        });
+        );
       }
       // Update via raw connection — keeps this router decoupled from a
       // dedicated db helper. If/when an updateProductInspection() helper

@@ -65,11 +65,13 @@ export const mpVariantSubformRouter = router({
         : input.measurementTypeCode;
       const v = validateExtraFields(code, input.payload);
       if (!v.ok) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid extraFields for ${code ?? "(no typeCode)"}: ` +
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "extraFields" },
+          `Invalid extraFields for ${code ?? "(no typeCode)"}: ` +
             v.errors.map((e) => `${e.path || "(root)"}: ${e.message}`).join("; "),
-        });
+        );
       }
       const conn = await (db as any).getDb?.();
       if (!conn) {

@@ -3395,7 +3395,7 @@ export const machineApiRouter = router({
         ? null
         : input.expiresAt instanceof Date ? input.expiresAt : new Date(input.expiresAt);
       if (expiresAt && Number.isNaN(expiresAt.getTime())) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid expiresAt date" });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "expiresAt" }, "Invalid expiresAt date");
       }
       return issueMachineKey({
         machineId: input.machineId,

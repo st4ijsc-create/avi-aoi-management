@@ -145,7 +145,7 @@ export const thresholdApprovalRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       if (!(input.proposedLsl < input.proposedUsl)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "proposedLsl must be < proposedUsl" });
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "proposedLsl" }, "proposedLsl must be < proposedUsl");
       }
       const db = await getDb();
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");

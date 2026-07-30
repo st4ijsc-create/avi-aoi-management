@@ -1317,7 +1317,7 @@ Respond in JSON format with an array of findings.`
       try {
         const importData = JSON.parse(input.data);
         if (!Array.isArray(importData)) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid import data format' });
+          throw appError('BAD_REQUEST', 'INVALID_VALUE', { field: 'importData' }, 'Invalid import data format');
         }
         
         let imported = 0;
