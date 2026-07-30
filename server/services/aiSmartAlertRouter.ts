@@ -48,6 +48,41 @@ function maxPerWindow(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 200;
 }
 
+/**
+ * Sprint 5 debt E4 — biến môi trường sai chính tả/giá trị rơi về mặc định
+ * TRONG IM LẶNG. `Number("abc")` → NaN → validation fail → mặc định 240;
+ * `Number("-1")` → -1 → âm không hợp lệ → cũng rớt về 240 — cả hai không một
+ * dòng log. Người vận hành gõ nhầm TÊN biến hoặc giá trị lúc định TẮT/chỉnh
+ * cooldown sẽ nhận đúng 4h im lặng và không cách nào biết vì sao cấu hình của
+ * họ bị bỏ qua.
+ *
+ * In MỘT LẦN lúc module nạp (không phải mỗi lần routeAlert() gọi — hàm này có
+ * thể chạy hàng trăm lần/phút, log mỗi lượt sẽ làm ồn chính KPI đang cố sửa).
+ * Nêu CẢ giá trị THÔ (raw, có thể undefined/rác) lẫn giá trị HIỆU LỰC
+ * (effective — gọi thẳng 3 hàm ở trên để không lặp lại logic validate và có
+ * nguy cơ lệch nhau). Khi khác nhau ⇒ cấu hình bị bỏ qua, cảnh báo RÕ để vận
+ * hành biết còn phải sửa lại thay vì đoán mò suốt cửa sổ cooldown.
+ */
+function logEffectiveAlertRoutingEnvOnce(): void {
+  const describeOne = (envName: string, effective: number, unit: string): void => {
+    const raw = process.env[envName];
+    const rawDisplay = raw === undefined ? "(chưa đặt)" : JSON.stringify(raw);
+    if (raw !== undefined && String(effective) !== raw) {
+      console.log(
+        `[SmartAlert] CẤU HÌNH ${envName}=${rawDisplay} KHÔNG hợp lệ — đã ÂM THẦM rơi về ` +
+          `mặc định ${effective}${unit}. Nếu bạn định đổi giá trị này (kể cả để TẮT), kiểm ` +
+          `tra lại chính tả/giá trị — cấu hình hiện tại đang bị BỎ QUA.`,
+      );
+      return;
+    }
+    console.log(`[SmartAlert] ${envName}: thô=${rawDisplay} → hiệu lực=${effective}${unit}`);
+  };
+  describeOne("ALERT_RENOTIFY_COOLDOWN_MINUTES", renotifyCooldownMs() / 60_000, " phút");
+  describeOne("ALERT_RENOTIFY_COOLDOWN_CRITICAL_MINUTES", criticalCooldownMs() / 60_000, " phút");
+  describeOne("ROUTE_ALERT_MAX_PER_WINDOW", maxPerWindow(), " lượt/cửa sổ");
+}
+logEffectiveAlertRoutingEnvOnce();
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type AlertType =
