@@ -1,6 +1,7 @@
 import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { adminProcedure } from "./_shared";
 
@@ -229,7 +230,7 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Only owner or admin can update
       if (preset.createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
@@ -246,7 +247,7 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Only owner or admin can delete
       if (preset.createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
@@ -280,7 +281,7 @@ export const dashboardWidgetRouter = router({
     .query(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Check access - user can export their own, public, or system presets
       if (preset.createdBy !== ctx.user.id && !preset.isPublic && preset.presetType !== 'system') {
@@ -416,7 +417,7 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Update preset to be shared and public
       await db.updateWidgetStylePreset(input.id, {
@@ -432,7 +433,7 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Cannot unshare system presets
       if (preset.presetType === 'system') {
@@ -458,7 +459,7 @@ export const dashboardWidgetRouter = router({
     .mutation(async ({ ctx, input }) => {
       const preset = await db.getWidgetStylePresetById(input.id);
       if (!preset) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'widgetStylePreset' }, 'Preset not found');
       }
       // Check if preset is accessible (public or shared)
       if (!preset.isPublic && preset.presetType !== 'shared' && preset.createdBy !== ctx.user.id) {
@@ -499,7 +500,7 @@ export const dashboardWidgetRouter = router({
     .query(async ({ ctx, input }) => {
       const dashboard = await db.getUserCustomDashboardById(input.id);
       if (!dashboard) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Dashboard not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
       }
       // Check access: owner or public
       if (dashboard.userId !== ctx.user.id && !dashboard.isPublic) {
@@ -597,7 +598,7 @@ export const dashboardWidgetRouter = router({
     .query(async ({ ctx, input }) => {
       const dashboard = await db.getUserCustomDashboardById(input.id);
       if (!dashboard) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Dashboard not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
       }
       if (dashboard.userId !== ctx.user.id && !dashboard.isPublic) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
@@ -739,11 +740,11 @@ h1 { margin-bottom: 8px; } p { color: #666; margin-bottom: 24px; }
       }
       if (input.dashboardTemplateId != null) {
         const template = await db.getDashboardTemplateById(input.dashboardTemplateId);
-        if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+        if (!template) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboardTemplate' }, 'Template not found');
       }
       if (input.customDashboardId != null) {
         const dashboard = await db.getUserCustomDashboardById(input.customDashboardId);
-        if (!dashboard) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dashboard not found' });
+        if (!dashboard) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'dashboard' }, 'Dashboard not found');
         if (!dashboard.isPublic) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Role default dashboard must be a PUBLIC custom dashboard' });
         }

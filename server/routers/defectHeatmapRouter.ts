@@ -169,7 +169,7 @@ export const defectHeatmapRouter = router({
         .where(eq(defectHeatmapData.id, input.id));
 
       if (!heatmap) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Heatmap không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "heatmap" }, "Heatmap không tồn tại");
       }
 
       return heatmap;

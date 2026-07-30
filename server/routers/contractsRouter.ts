@@ -203,7 +203,7 @@ export const contractsRouter = router({
         .set({ status: input.action, reviewedBy: ctx.user.id, reviewedAt: new Date() })
         .where(eq(contractQuarantine.id, input.id))
         .returning({ id: contractQuarantine.id, status: contractQuarantine.status });
-      if (updated.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: `Quarantine item ${input.id} not found` });
+      if (updated.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "quarantineItem" }, `Quarantine item ${input.id} not found`);
       return updated[0];
     }),
 
@@ -234,7 +234,7 @@ export const contractsRouter = router({
           source: contractQuarantine.source,
           payload: contractQuarantine.payload,
         });
-      if (updated.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: `Quarantine item ${input.id} not found` });
+      if (updated.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "quarantineItem" }, `Quarantine item ${input.id} not found`);
       return { ...updated[0], reinjected: false as const };
     }),
 });

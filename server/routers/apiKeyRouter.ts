@@ -153,7 +153,7 @@ export const apiKeyRouter = router({
     .mutation(async ({ input }) => {
       const d = await db();
       const [existing] = await d.select().from(apiKeys).where(eq(apiKeys.id, input.id)).limit(1);
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: `API key ${input.id} not found` });
+      if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${input.id} not found`);
 
       const patch: Partial<typeof apiKeys.$inferInsert> = { updatedAt: new Date() };
       if (input.name !== undefined) patch.name = input.name.trim();
@@ -177,7 +177,7 @@ export const apiKeyRouter = router({
         .set({ isActive: false, updatedAt: new Date() })
         .where(eq(apiKeys.id, input.id))
         .returning();
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `API key ${input.id} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${input.id} not found`);
       return publicRow(row);
     }),
 
@@ -189,7 +189,7 @@ export const apiKeyRouter = router({
       const d = await db();
       const removed = await d.delete(apiKeys).where(eq(apiKeys.id, input.id)).returning();
       if (removed.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `API key ${input.id} not found` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${input.id} not found`);
       }
       return { id: input.id, deleted: true };
     }),

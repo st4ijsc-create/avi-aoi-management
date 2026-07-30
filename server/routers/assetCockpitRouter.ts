@@ -24,6 +24,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { machineDetail, robotDetail, machineAlarms } from "../services/ecosystem/assetCockpitService";
@@ -40,7 +41,7 @@ export const assetCockpitRouter = router({
     .query(async ({ input }) => {
       const detail = await machineDetail(input.machineId);
       if (!detail) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Machine ${input.machineId} not found` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine ${input.machineId} not found`);
       }
       return detail;
     }),
@@ -56,7 +57,7 @@ export const assetCockpitRouter = router({
     .query(async ({ input }) => {
       const detail = await robotDetail(input.robotId);
       if (!detail) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Robot ${input.robotId} not found` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, `Robot ${input.robotId} not found`);
       }
       return detail;
     }),

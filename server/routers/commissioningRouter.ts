@@ -42,7 +42,7 @@ async function db() {
 async function assertAdapterExists(adapterId: number): Promise<void> {
   const d = await db();
   const [adapter] = await d.select().from(deviceAdapters).where(eq(deviceAdapters.id, adapterId)).limit(1);
-  if (!adapter) throw new TRPCError({ code: "NOT_FOUND", message: `Adapter #${adapterId} không tồn tại.` });
+  if (!adapter) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "adapter" }, `Adapter #${adapterId} không tồn tại.`);
 }
 
 export const commissioningRouter = router({
@@ -108,10 +108,7 @@ export const commissioningRouter = router({
     .mutation(async ({ input, ctx }) => {
       const row = await revokeRecord(input.recordId, ctx.user.id, input.reason ?? null);
       if (!row) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Bản ghi commissioning không tồn tại hoặc không còn ở trạng thái 'active'.",
-        });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "commissioningRecord" }, "Bản ghi commissioning không tồn tại hoặc không còn ở trạng thái 'active'.");
       }
       return row;
     }),

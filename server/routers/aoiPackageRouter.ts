@@ -16,6 +16,7 @@
 import { z } from "zod";
 import { router, publicProcedure, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { nanoid } from "nanoid";
 import { eq, and, desc, gte, lte, sql, like, inArray, count } from "drizzle-orm";
 import { getDb } from "../db";
@@ -212,7 +213,7 @@ async function getOrExtractImage(
 
   // Extract from ZIP
   if (!pkg.storageKey) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Package storage key not found" });
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package storage key not found");
   }
 
   let zipBuffer: Buffer;
@@ -224,7 +225,7 @@ async function getOrExtractImage(
       : path.join(process.cwd(), "uploads");
     const filePath = path.join(uploadsRoot, pkg.storageKey);
     if (!fs.existsSync(filePath)) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "ZIP file not found on disk" });
+      throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "ZIP file not found on disk");
     }
     zipBuffer = fs.readFileSync(filePath);
   } else {
@@ -243,10 +244,7 @@ async function getOrExtractImage(
   const imageFile = zip.file(imagePath) || zip.file(fileName);
 
   if (!imageFile) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: `Image ${fileName} not found in ZIP package`,
-    });
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image ${fileName} not found in ZIP package`);
   }
 
   let imageBuffer: Buffer = Buffer.from(await imageFile.async("uint8array")) as Buffer;
@@ -487,7 +485,7 @@ export const aoiPackageRouter = router({
         .limit(1);
 
       if (pkgs.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
       }
 
       const pkg = pkgs[0];
@@ -1153,7 +1151,7 @@ export const aoiPackageRouter = router({
         .limit(1);
 
       if (pkgs.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
       }
 
       // Get images
@@ -1203,7 +1201,7 @@ export const aoiPackageRouter = router({
         .limit(1);
 
       if (pkgs.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
       }
 
       const pkg = pkgs[0];
@@ -1296,7 +1294,7 @@ export const aoiPackageRouter = router({
           .limit(1);
 
         if (pkgs.length === 0) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
         }
         pkgId = pkgs[0].id;
       } else {
@@ -1342,7 +1340,7 @@ export const aoiPackageRouter = router({
           .limit(1);
 
         if (pkgs.length === 0) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
         }
         pkgDbId = pkgs[0].id;
         pkgPackageId = pkgs[0].packageId;
@@ -1395,7 +1393,7 @@ export const aoiPackageRouter = router({
         .limit(1);
 
       if (pkgs.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "Package not found");
       }
 
       const pkg = pkgs[0];

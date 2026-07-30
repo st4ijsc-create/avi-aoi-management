@@ -119,7 +119,7 @@ export const backupRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [backup] = await db.select().from(backupLogs).where(eq(backupLogs.id, input.backupId));
-      if (!backup) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy bản backup" });
+      if (!backup) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "backup" }, "Không tìm thấy bản backup");
       if (!backup.fileUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Bản backup này không có file — không thể restore" });
 
       const databaseUrl = process.env.DATABASE_URL;

@@ -15,6 +15,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { rethrowDbError } from "../_core/dbErrors";
@@ -259,14 +260,14 @@ export const componentLibraryRouter = router({
         const [pkg] = await db.select({ id: componentPackages.id }).from(componentPackages)
           .where(and(eq(componentPackages.id, input.packageId), isNull(componentPackages.deletedAt)))
           .limit(1);
-        if (!pkg) throw new TRPCError({ code: "NOT_FOUND", message: `Package #${input.packageId} not found` });
+        if (!pkg) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "componentPackage" }, `Package #${input.packageId} not found`);
       }
       const [row] = await db
         .update(materials)
         .set({ packageId: input.packageId, updatedAt: new Date() })
         .where(eq(materials.id, input.materialId))
         .returning({ id: materials.id, code: materials.code, packageId: materials.packageId });
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `Material #${input.materialId} not found` });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "material" }, `Material #${input.materialId} not found`);
       return row;
     }),
 

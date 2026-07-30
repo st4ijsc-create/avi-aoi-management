@@ -63,7 +63,7 @@ export const commandLogRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       const [row] = await db.select().from(commandLog).where(eq(commandLog.id, input.id)).limit(1);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Command log không tồn tại." });
+      if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "commandLog" }, "Command log không tồn tại.");
       return row;
     }),
 
