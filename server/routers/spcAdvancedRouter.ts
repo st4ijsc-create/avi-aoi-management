@@ -592,7 +592,7 @@ export const spcRuleViolationRouter = router({
   acknowledge: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED');
+      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to acknowledge SPC violation');
       await db.acknowledgeSpcViolation(input.id, ctx.user.id);
       return { success: true };
     }),
@@ -601,7 +601,7 @@ export const spcRuleViolationRouter = router({
   resolve: protectedProcedure
     .input(z.object({ id: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED');
+      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to resolve SPC violation');
       await db.resolveSpcViolation(input.id, ctx.user.id, input.notes);
       return { success: true };
     }),
@@ -784,7 +784,7 @@ export const qualityGateRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const gate = await db.getQualityGate(input.id);
-      if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' });
+      if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' }, `Quality gate ${input.id} not found`);
       return gate;
     }),
 
@@ -854,7 +854,7 @@ export const qualityGateRouter = router({
     }))
     .query(async ({ input }) => {
       const gate = await db.getQualityGate(input.qualityGateId);
-      if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' });
+      if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' }, `Quality gate ${input.qualityGateId} not found`);
 
       // Get recent inspection data for this gate's scope
       const { getDb } = await import('../db/connection');
@@ -976,7 +976,7 @@ export const qualityGateRouter = router({
     }))
     .mutation(async ({ input }) => {
       const gate = await db.getQualityGate(input.qualityGateId);
-      if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' });
+      if (!gate) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'qualityGateConfig' }, `Quality gate ${input.qualityGateId} not found`);
 
       return db.createQualityGateEvent({
         qualityGateId: input.qualityGateId,
@@ -993,7 +993,7 @@ export const qualityGateRouter = router({
   acknowledgeEvent: protectedProcedure
     .input(z.object({ id: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED');
+      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to acknowledge quality gate event');
       await db.acknowledgeQualityGateEvent(input.id, ctx.user.id, input.notes);
       return { success: true };
     }),
@@ -1002,7 +1002,7 @@ export const qualityGateRouter = router({
   resolveEvent: protectedProcedure
     .input(z.object({ id: z.number(), notes: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED');
+      if (!ctx.user?.id) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to resolve quality gate event');
       await db.resolveQualityGateEvent(input.id, ctx.user.id, input.notes);
       return { success: true };
     }),

@@ -164,7 +164,7 @@ export const enhancedAuditRouter = router({
         WHERE al.id = ${id}
       `);
       const rows = result.rows || result;
-      if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "auditLog" });
+      if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "auditLog" }, `Audit log entry ${id} not found`);
 
       const entry = rows[0];
       const details = entry.details || {};

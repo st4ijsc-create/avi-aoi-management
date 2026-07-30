@@ -1271,7 +1271,7 @@ export const mqttAlertRouter = router({
       note: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.user) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED');
+      if (!ctx.user) throw appError('UNAUTHORIZED', 'AUTH_REQUIRED', undefined, 'Authentication required to resolve alert');
       await db.resolveMqttAlert(input.id, ctx.user.id, input.note);
       return { success: true };
     }),

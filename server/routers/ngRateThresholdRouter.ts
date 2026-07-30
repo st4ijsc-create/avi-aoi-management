@@ -231,7 +231,7 @@ export const ngRateThresholdRouter = router({
           .from(mqttNgRateThresholds)
           .where(eq(mqttNgRateThresholds.id, id))
           .limit(1);
-        if (existing.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ngRateThreshold" });
+        if (existing.length === 0) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "ngRateThreshold" }, `NG rate threshold ${id} not found`);
 
         const warning = updateData.warningThreshold ?? Number(existing[0].warningThreshold);
         const critical = updateData.criticalThreshold ?? Number(existing[0].criticalThreshold);

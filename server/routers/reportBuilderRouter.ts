@@ -234,7 +234,7 @@ export const reportBuilderRouter = router({
           SELECT * FROM report_templates WHERE id = ${input.id}
         `);
         const rows = result.rows || result;
-        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "report" });
+        if (!rows[0]) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "report" }, `Report template ${input.id} not found`);
 
         const source = rows[0];
         const newTemplate = await db.createReportTemplate({
