@@ -448,7 +448,7 @@ export function translateAppError(
 ): string {
   const key = `errors.${appCode}`;
   // Sentinel: i18next trả về chính defaultValue khi khoá không tồn tại.
-  const SENTINEL = " __missing__";
+  const SENTINEL = " __missing__";
   const translated = i18n.t(key, { ...localizeParams(params), defaultValue: SENTINEL });
   if (typeof translated !== "string" || translated === SENTINEL) return fallback;
   return translated;
@@ -725,9 +725,11 @@ describe("phủ mã lỗi trong server/routers", () => {
     expect(total).toBeLessThanOrEqual(ALLOWED_LEGACY_THROWS);
   });
 
-  it("ngân sách chỉ được GIẢM — nếu bạn vừa nâng nó, hãy dùng appError() thay thế", () => {
-    // Chốt bằng số: đợt sau đọc lại số này để biết mình phải hạ xuống dưới nó.
-    expect(ALLOWED_LEGACY_THROWS).toBeGreaterThanOrEqual(0);
+  it("ngân sách KHÔNG được nới rộng hơn thực tế — số dư thừa che mất nợ mới", () => {
+    // Ngân sách phải bám SÁT số thật. Nếu nó cao hơn thực tế, ai đó thêm một
+    // `new TRPCError` mới sẽ lọt qua cổng mà không ai biết — cổng hoá vô dụng.
+    const { total } = countLegacyThrows();
+    expect(ALLOWED_LEGACY_THROWS).toBe(total);
   });
 });
 ```
@@ -810,7 +812,12 @@ grep -rho "new TRPCError" server/routers --include=*.ts | wc -l
 
 ```bash
 npx vitest run server/routers/appErrorCoverage.test.ts && npm run check
-git add -A server/routers
+git add <liệt kê ĐÍCH DANH các file của lô này>
+# ⚠ TUYỆT ĐỐI KHÔNG `git add -A` hay `git add -u`. Cây làm việc có sẵn thay đổi CHƯA COMMIT
+# từ công việc trước (sửa antipattern Drizzle `= ANY(array)` → `inArray()`), KHÔNG phải của
+# plan này và KHÔNG được cuốn vào commit di trú:
+#   server/db/product.ts · server/db/twin.ts · server/routers/digitalTwinRouter.ts
+#   server/services/aiActiveLearning.ts · server/services/twin/twinReplay.ts
 git commit -m "refactor(ai/s5-A4): DB_UNAVAILABLE lô N/6 — <danh sách file>
 
 Hạ ALLOWED_LEGACY_THROWS <cũ> → <mới>."
@@ -986,7 +993,8 @@ Chạy ứng dụng, thử **3 ca** ở luồng KB (Task 3): tải tệp quá du
 - [ ] **Step 7: Commit cuối**
 
 ```bash
-git add -A
+git add <liệt kê ĐÍCH DANH các file đã sửa>
+# ⚠ KHÔNG `git add -A` — xem cảnh báo ở Task 5 Step 6 về 5 file chưa commit của công việc trước.
 git commit -m "refactor(ai/s5-A4): hạ ALLOWED_LEGACY_THROWS về 0 — mọi TRPCError trong router đã có mã
 
 Người dùng Việt Nam thôi đọc câu lỗi tiếng Anh thô. Router mới thêm mà quên
