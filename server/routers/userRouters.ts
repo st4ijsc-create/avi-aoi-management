@@ -2,6 +2,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 
 // ============ USER ROUTER ============
@@ -18,7 +19,7 @@ export const userRouter = router({
     .query(async ({ input }) => {
       const user = await db.getUserById(input.id);
       if (!user) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
       // Don't return passwordHash
       const { passwordHash, ...safeUser } = user;
@@ -115,7 +116,7 @@ export const userRouter = router({
     .mutation(async ({ input }) => {
       const user = await db.getUserById(input.id);
       if (!user) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
       
       // Only local users can have password changed
@@ -186,7 +187,7 @@ export const userRouter = router({
     .mutation(async ({ ctx, input }) => {
       const user = await db.getUserById(ctx.user.id);
       if (!user) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
       
       // Only local users can change password
@@ -288,7 +289,7 @@ export const userRouter = router({
       // Get user
       const user = await db.getUserById(ctx.user.id);
       if (!user) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'user' }, 'Không tìm thấy người dùng');
       }
 
       // Verify password for local users

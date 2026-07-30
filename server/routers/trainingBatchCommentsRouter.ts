@@ -36,7 +36,7 @@ export const trainingBatchCommentsRouter = router({
         .where(eq(aiTrainingBatches.batchId, input.batchId));
 
       if (!batch) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Training batch không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trainingBatch" }, "Training batch không tồn tại");
       }
 
       const [result] = await db.insert(trainingBatchComments).values({
@@ -97,7 +97,7 @@ export const trainingBatchCommentsRouter = router({
         .where(eq(trainingBatchComments.id, input.commentId));
 
       if (!comment) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Comment không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comment" }, "Comment không tồn tại");
       }
 
       if (comment.userId !== ctx.user.id && ctx.user.role !== "admin") {
@@ -126,7 +126,7 @@ export const trainingBatchCommentsRouter = router({
         .where(eq(trainingBatchComments.id, input.commentId));
 
       if (!comment) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Comment không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "comment" }, "Comment không tồn tại");
       }
 
       if (comment.userId !== ctx.user.id && ctx.user.role !== "admin") {

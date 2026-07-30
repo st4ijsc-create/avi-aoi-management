@@ -62,7 +62,7 @@ async function getById(id: number) {
     .from(thresholdApprovals)
     .where(eq(thresholdApprovals.id, id))
     .limit(1);
-  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `threshold_approval ${id} not found` });
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "thresholdApproval" }, `threshold_approval ${id} not found`);
   return row;
 }
 
@@ -161,7 +161,7 @@ export const thresholdApprovalRouter = router({
         .where(eq(measurementPointDefs.id, input.pointDefId))
         .limit(1);
       if (!mp) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `measurement_point_def ${input.pointDefId} not found` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `measurement_point_def ${input.pointDefId} not found`);
       }
 
       const [row] = await db.insert(thresholdApprovals).values({
@@ -426,7 +426,7 @@ export const thresholdApprovalRouter = router({
         .where(eq(measurementPointDefs.id, pointDefId))
         .limit(1);
       if (!cur) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `measurement_point_def ${pointDefId} not found` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `measurement_point_def ${pointDefId} not found`);
       }
 
       const restored = {

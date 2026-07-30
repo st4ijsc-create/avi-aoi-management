@@ -179,7 +179,7 @@ export const spcConfigRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const config = await db.getSpcConfiguration(input.id);
-      if (!config) throw new TRPCError({ code: 'NOT_FOUND', message: 'SPC configuration not found' });
+      if (!config) throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'spcConfiguration' }, 'SPC configuration not found');
       return config;
     }),
 

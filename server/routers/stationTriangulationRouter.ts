@@ -9,6 +9,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import {
   summariseSerial,
   summariseLot,
@@ -98,7 +99,7 @@ export const stationTriangulationRouter = router({
     .query(async ({ input }) => {
       const trace = await db.getStationTrace(input.serialNumber);
       if (!trace) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Trace not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "trace" }, "Trace not found");
       }
       return trace;
     }),

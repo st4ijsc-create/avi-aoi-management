@@ -186,7 +186,7 @@ export const webhookRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [config] = await db.select().from(webhookConfigs).where(eq(webhookConfigs.id, input.id));
-      if (!config) throw new TRPCError({ code: "NOT_FOUND", message: "Webhook không tồn tại" });
+      if (!config) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "webhook" }, "Webhook không tồn tại");
 
       const logs = await db.select().from(webhookDeliveryLogs)
         .where(eq(webhookDeliveryLogs.webhookId, input.id))
@@ -294,7 +294,7 @@ export const webhookRouter = router({
       if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const [webhook] = await db.select().from(webhookConfigs).where(eq(webhookConfigs.id, input.id));
-      if (!webhook) throw new TRPCError({ code: "NOT_FOUND", message: "Webhook không tồn tại" });
+      if (!webhook) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "webhook" }, "Webhook không tồn tại");
 
       const testPayload = {
         test: true,

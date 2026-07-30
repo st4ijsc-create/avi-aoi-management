@@ -6,6 +6,7 @@ import { requirePermission } from "../_core/accessControl";
 import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 // Doc 31 Đợt C (MP7/MP8) — deep bulk-import derivation + lifecycle gate.
 import {
@@ -452,10 +453,7 @@ export const manualMappingRouter = router({
     .mutation(async ({ input }) => {
       const connection = await db.getManualConnectionById(input.id);
       if (!connection) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Không tìm thấy cấu hình kết nối',
-        });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'connectionConfig' }, 'Không tìm thấy cấu hình kết nối');
       }
       
       // Update status to pending

@@ -496,12 +496,12 @@ export const scheduledReportRouter = router({
     .mutation(async ({ input }) => {
       const report = await db.getScheduledReportById(input.id);
       if (!report) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'scheduledReport' }, 'Report not found');
       }
 
       const smtpConfig = await db.getSmtpConfig();
       if (!smtpConfig) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'SMTP config not found. Please configure SMTP first.' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'smtpConfig' }, 'SMTP config not found. Please configure SMTP first.');
       }
 
       try {
@@ -563,7 +563,7 @@ export const scheduledReportRouter = router({
     .query(async ({ input }) => {
       const report = await db.getScheduledReportById(input.id);
       if (!report) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'scheduledReport' }, 'Report not found');
       }
 
       // Preview via the shared, reportType-aware builder so the preview matches
@@ -656,7 +656,7 @@ export const scheduledReportRouter = router({
       const templateResult = await database.select().from(reportTemplates).where(eq(reportTemplates.code, input.templateCode));
       const template = templateResult[0];
       if (!template) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'reportTemplate' }, 'Template not found');
       }
 
       // Map template type to schedule
@@ -824,7 +824,7 @@ export const smtpRouter = router({
         // Use saved config from database
         config = await db.getSmtpConfig();
         if (!config) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'SMTP config not found. Please save config first.' });
+          throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'smtpConfig' }, 'SMTP config not found. Please save config first.');
         }
       }
       

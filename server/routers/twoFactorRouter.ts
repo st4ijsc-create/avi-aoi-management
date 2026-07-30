@@ -42,7 +42,7 @@ export const twoFactorRouter = router({
       .limit(1);
 
     if (!user[0]) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
     }
 
     // Count remaining backup codes
@@ -81,7 +81,7 @@ export const twoFactorRouter = router({
       .limit(1);
 
     if (!user[0]) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
     }
 
     if (user[0].twoFactorEnabled) {
@@ -134,7 +134,7 @@ export const twoFactorRouter = router({
         .limit(1);
 
       if (!user[0]) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
       }
 
       if (user[0].twoFactorEnabled) {
@@ -220,7 +220,7 @@ export const twoFactorRouter = router({
         .limit(1);
 
       if (!user[0]) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
       }
 
       if (!user[0].twoFactorEnabled) {
@@ -312,7 +312,7 @@ export const twoFactorRouter = router({
         .limit(1);
 
       if (!user[0]) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
       }
 
       if (!user[0].twoFactorEnabled || !user[0].twoFactorSecret) {
@@ -390,7 +390,7 @@ export const twoFactorRouter = router({
         .limit(1);
 
       if (!user[0]) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, "User not found");
       }
 
       if (!user[0].twoFactorEnabled || !user[0].twoFactorSecret) {
