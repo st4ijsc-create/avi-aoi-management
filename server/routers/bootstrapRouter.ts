@@ -15,6 +15,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import { eq } from "drizzle-orm";
 import { router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
@@ -63,7 +64,7 @@ export const bootstrapRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const d = await getDb();
-      if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
 
       const corporateCode = input.corporateCode.trim();
       const factoryCode = input.factoryCode.trim();
