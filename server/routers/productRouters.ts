@@ -566,7 +566,7 @@ export const productModelRouter = router({
       // consistent with measurementPoint/fiducial/panel update.
       const existing = await db.getProductModelById(id);
       if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy sản phẩm' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'product' }, 'Không tìm thấy sản phẩm');
       }
 
       // Check if code is being updated and if it's a duplicate
@@ -706,7 +706,7 @@ export const productModelRouter = router({
     .mutation(async ({ ctx, input }) => {
       const source = await db.getProductModelById(input.sourceId);
       if (!source) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Sản phẩm nguồn không tồn tại" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "product" }, "Sản phẩm nguồn không tồn tại");
       }
       // Code collision → CONFLICT (the unique index is the tx-level backstop below).
       const duplicate = await db.getProductModelByCode(input.newCode);
@@ -1116,7 +1116,7 @@ export const measurementPointRouter = router({
       if (input.preferredInstrumentId) {
         const instrument = await db.getMeasurementInstrumentById(input.preferredInstrumentId);
         if (!instrument) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Instrument ID ${input.preferredInstrumentId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${input.preferredInstrumentId} not found`);
         }
         if (!instrument.isActive) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Instrument "${instrument.code}" is inactive; cannot assign to measurement point` });
@@ -1127,7 +1127,7 @@ export const measurementPointRouter = router({
       if (input.preferredSamplingPlanId) {
         const samplingPlan = await db.getSamplingPlanById(input.preferredSamplingPlanId);
         if (!samplingPlan) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Sampling plan ID ${input.preferredSamplingPlanId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "samplingPlan" }, `Sampling plan ID ${input.preferredSamplingPlanId} not found`);
         }
         if (samplingPlan.productModelId !== input.productModelId) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan does not belong to this product model` });
@@ -1141,7 +1141,7 @@ export const measurementPointRouter = router({
       if (input.productViewId) {
         const productView = await db.getProductViewById(input.productViewId);
         if (!productView) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Product view ID ${input.productViewId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productView" }, `Product view ID ${input.productViewId} not found`);
         }
         if (productView.productModelId !== input.productModelId) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Product view does not belong to this product model` });
@@ -1283,7 +1283,7 @@ export const measurementPointRouter = router({
       const data: Record<string, unknown> = { ...rest };
       const existingPoint = await db.getMeasurementPointDefById(id);
       if (!existingPoint) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Measurement point not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, "Measurement point not found");
       }
 
       // Doc 31 OP2 (decision #4) — a DIRECT limit change is only allowed while the
@@ -1307,7 +1307,7 @@ export const measurementPointRouter = router({
       if (rest.preferredInstrumentId) {
         const instrument = await db.getMeasurementInstrumentById(rest.preferredInstrumentId);
         if (!instrument) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Instrument ID ${rest.preferredInstrumentId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${rest.preferredInstrumentId} not found`);
         }
         if (!instrument.isActive) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Instrument "${instrument.code}" is inactive; cannot assign to measurement point` });
@@ -1318,7 +1318,7 @@ export const measurementPointRouter = router({
       if (rest.preferredSamplingPlanId) {
         const samplingPlan = await db.getSamplingPlanById(rest.preferredSamplingPlanId);
         if (!samplingPlan) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Sampling plan ID ${rest.preferredSamplingPlanId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "samplingPlan" }, `Sampling plan ID ${rest.preferredSamplingPlanId} not found`);
         }
         if (samplingPlan.productModelId !== existingPoint.productModelId) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Sampling plan does not belong to this product model` });
@@ -1332,7 +1332,7 @@ export const measurementPointRouter = router({
       if (rest.productViewId) {
         const productView = await db.getProductViewById(rest.productViewId);
         if (!productView) {
-          throw new TRPCError({ code: "NOT_FOUND", message: `Product view ID ${rest.productViewId} not found` });
+          throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productView" }, `Product view ID ${rest.productViewId} not found`);
         }
         if (productView.productModelId !== existingPoint.productModelId) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Product view does not belong to this product model` });
@@ -1598,7 +1598,7 @@ export const measurementPointRouter = router({
       // Get point info
       const point = await db.getMeasurementPointDefById(input.pointId);
       if (!point) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement point not found' });
+        throw appError('NOT_FOUND', 'ENTITY_NOT_FOUND', { entity: 'measurementPoint' }, 'Measurement point not found');
       }
 
       // Decode base64 and upload to S3
@@ -1686,7 +1686,7 @@ export const measurementPointRouter = router({
       }
       const target = await db.getProductModelById(input.targetProductModelId);
       if (!target) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Target product model ${input.targetProductModelId} not found.` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Target product model ${input.targetProductModelId} not found.`);
       }
       if (input.targetProductModelId === unmappedModelId) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot remap into the __UNMAPPED__ model itself." });
@@ -1746,7 +1746,7 @@ export const measurementPointRouter = router({
         throw err;
       });
       if (!result) {
-        throw new TRPCError({ code: "NOT_FOUND", message: `Product model ${input.productModelId} not found.` });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model ${input.productModelId} not found.`);
       }
       // Best-effort nudge; machines otherwise converge on their next poll.
       try {
@@ -1821,16 +1821,10 @@ export const productMachineMappingRouter = router({
         db.getMachineById(input.machineId),
       ]);
       if (!product) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Sản phẩm không tồn tại hoặc đã bị xoá — vui lòng chọn lại.",
-        });
+        throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "product" }, "Sản phẩm không tồn tại hoặc đã bị xoá — vui lòng chọn lại.");
       }
       if (!machine) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Máy không tồn tại hoặc đã bị xoá — vui lòng chọn lại.",
-        });
+        throw appError("BAD_REQUEST", "ENTITY_NOT_FOUND", { entity: "machine" }, "Máy không tồn tại hoặc đã bị xoá — vui lòng chọn lại.");
       }
       // doc 54 P0.4 — GO-LIVE READINESS GATE: don't let an under-configured product
       // (points with no thresholds / no coordinates / no golden) be mapped to a machine,
@@ -2235,7 +2229,7 @@ export const fiducialMarkRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const fid = await db.getFiducialMarkById(input.fiducialId);
-      if (!fid) throw new TRPCError({ code: "NOT_FOUND", message: "Fiducial mark not found" });
+      if (!fid) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "fiducialMark" }, "Fiducial mark not found");
       const buffer = Buffer.from(input.imageBase64, "base64");
       const ext = input.mimeType.split("/")[1] || "png";
       const fileKey = `fiducial-marks/${fid.productModelId}/${fid.code}-tpl-${nanoid(8)}.${ext}`;
@@ -2848,7 +2842,7 @@ export const msaWizardRouter = router({
     .mutation(async ({ ctx, input }) => {
       if (input.instrumentId) {
         const inst = await db.getMeasurementInstrumentById(input.instrumentId);
-        if (!inst) throw new TRPCError({ code: "NOT_FOUND", message: `Instrument ID ${input.instrumentId} not found` });
+        if (!inst) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${input.instrumentId} not found`);
       }
 
       const id = await db.upsertMsaCsvMappingPreset({
@@ -2907,7 +2901,7 @@ export const msaWizardRouter = router({
     .query(async ({ input }) => {
       const study = await db.getMsaStudyById(input.studyId);
       if (!study) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       }
       const observations = await db.listMsaObservationsByStudy(input.studyId);
       return { study, observations };
@@ -2928,11 +2922,11 @@ export const msaWizardRouter = router({
     .mutation(async ({ ctx, input }) => {
       if (input.instrumentId) {
         const inst = await db.getMeasurementInstrumentById(input.instrumentId);
-        if (!inst) throw new TRPCError({ code: "NOT_FOUND", message: `Instrument ID ${input.instrumentId} not found` });
+        if (!inst) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, `Instrument ID ${input.instrumentId} not found`);
       }
       if (input.measurementPointDefId) {
         const point = await db.getMeasurementPointDefById(input.measurementPointDefId);
-        if (!point) throw new TRPCError({ code: "NOT_FOUND", message: `Measurement point ID ${input.measurementPointDefId} not found` });
+        if (!point) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "measurementPoint" }, `Measurement point ID ${input.measurementPointDefId} not found`);
         if (point.productModelId !== input.productModelId) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Measurement point does not belong to this product model" });
         }
@@ -2976,7 +2970,7 @@ export const msaWizardRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       if (study.status === "completed" || study.status === "cancelled") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Study is closed" });
       }
@@ -3034,7 +3028,7 @@ export const msaWizardRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       if (study.status === "completed" || study.status === "cancelled") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Study is closed" });
       }
@@ -3111,7 +3105,7 @@ export const msaWizardRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       if (study.status === "completed" || study.status === "cancelled") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Study is closed" });
       }
@@ -3139,7 +3133,7 @@ export const msaWizardRouter = router({
     .input(z.object({ studyId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
 
       const summary = await db.calculateMsaSummary(input.studyId);
       await db.updateMsaStudy(input.studyId, {
@@ -3164,7 +3158,7 @@ export const msaWizardRouter = router({
     .input(z.object({ studyId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const study = await db.getMsaStudyById(input.studyId);
-      if (!study) throw new TRPCError({ code: "NOT_FOUND", message: "MSA study not found" });
+      if (!study) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "msaStudy" }, "MSA study not found");
       await db.updateMsaStudy(input.studyId, { status: "cancelled", isActive: false });
       await db.createAuditLog({
         userId: ctx.user.id,
@@ -3216,7 +3210,7 @@ export const instrumentCalibrationRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const inst = await db.getMeasurementInstrumentById(input.instrumentId);
-      if (!inst) throw new TRPCError({ code: "NOT_FOUND", message: "Instrument not found" });
+      if (!inst) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, "Instrument not found");
       const id = await db.createInstrumentCalibration({ ...input, createdBy: ctx.user.id });
       // Sync convenience: update instrument's lastCalibrationAt / nextCalibrationAt
       if (input.result !== "fail") {
@@ -3283,7 +3277,7 @@ export const instrumentMsaRecordRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const inst = await db.getMeasurementInstrumentById(input.instrumentId);
-      if (!inst) throw new TRPCError({ code: "NOT_FOUND", message: "Instrument not found" });
+      if (!inst) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "instrument" }, "Instrument not found");
       const id = await db.createInstrumentMsaRecord({ ...input, createdBy: ctx.user.id });
       await db.createAuditLog({
         userId: ctx.user.id,
@@ -3819,7 +3813,7 @@ export const cadImportRouter = router({
     .input(z.object({ jobId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const job = await db.getCadImportJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "CAD import job not found" });
+      if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "cadImportJob" }, "CAD import job not found");
       if (job.status === "applied") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "CAD import job already applied" });
       }
@@ -3928,7 +3922,7 @@ export const cadImportRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const job = await db.getCadImportJobById(input.jobId);
-      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "Centroid import job not found" });
+      if (!job) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "cadImportJob" }, "Centroid import job not found");
       return applyCentroidImport({
         jobId: input.jobId,
         appliedBy: ctx.user.id,
