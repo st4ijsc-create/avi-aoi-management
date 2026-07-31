@@ -43,6 +43,7 @@ import {
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 
 type PipelineStatus = 'idle' | 'running' | 'completed' | 'error';
 type AugmentationType = 'flip' | 'rotate' | 'brightness' | 'contrast' | 'noise' | 'crop' | 'resize' | 'blur';
@@ -116,7 +117,7 @@ function DataPipelineSection() {
       toast.success(t('aiDataProcessing.pipeline.started', 'Pipeline started'));
     },
     onError: (err) => {
-      toast.error(`${t('common.error', 'Error')}: ${err.message}`);
+      toastTrpcError(err);
     },
   });
 
@@ -350,7 +351,7 @@ function ImagePreprocessingSection() {
   const { data: savedConfig } = trpc.aiSettings.getPreprocessingConfig.useQuery();
   const saveConfig = trpc.aiSettings.savePreprocessingConfig.useMutation({
     onSuccess: () => toast.success(t('aiDataProcessing.preprocessing.saved', 'Đã lưu cấu hình')),
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   useEffect(() => {
@@ -506,7 +507,7 @@ function AugmentationSection() {
       toast.success(t('aiDataProcessing.augmentation.success', 'Augmentation completed'));
     },
     onError: (err) => {
-      toast.error(`${t('common.error', 'Error')}: ${err.message}`);
+      toastTrpcError(err);
     },
   });
 

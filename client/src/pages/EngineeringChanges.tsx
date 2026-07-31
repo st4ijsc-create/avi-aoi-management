@@ -52,6 +52,7 @@ import { FilterBar, useUrlFilters, type FilterDef } from "@/components/FilterBar
 import { PageHeader, StatusBadge, type BadgeVariant } from "@/components/patterns";
 import { GitPullRequestArrow, AlertTriangle, Wrench, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError, mapTrpcError } from "@/lib/trpcErrors";
 
 const CHANGE_TYPES = ["product", "bom", "recipe", "program", "process", "document"] as const;
 type ChangeType = (typeof CHANGE_TYPES)[number];
@@ -180,11 +181,11 @@ export default function EngineeringChanges() {
 
   const createM = trpc.ecn.create.useMutation({
     onSuccess: () => { toast.success(t("ecn.created", "Đã tạo thay đổi kỹ thuật")); setOpen(false); resetForm(); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const transitionM = trpc.ecn.transition.useMutation({
     onSuccess: () => { toast.success(t("ecn.updated", "Đã cập nhật thay đổi kỹ thuật")); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const submitCreate = () => {
@@ -579,7 +580,7 @@ function ComponentCodeBackfillPanel({ products }: { products: Array<{ id: number
       setResult(r);
       toast.success(t("ecn.backfill.done", `Backfill ${r?.dryRun ? "(dry-run) " : ""}— matched ${r?.matched ?? 0}, updated ${r?.updated ?? 0}`));
     },
-    onError: (e: any) => toast.error(e?.message ?? "Backfill failed"),
+    onError: (e: any) => toast.error(mapTrpcError(e)),
   });
 
   const run = (dryRun: boolean) => {

@@ -29,6 +29,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 const STANDARD_COLORS: Record<string, string> = {
   "IPC-A-610": "bg-blue-500",
@@ -78,7 +79,7 @@ export function QualityGateTemplatesContent() {
       resetForm();
       refetchCustom();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.qualityGateTemplate.deleteCustom.useMutation({
@@ -86,7 +87,7 @@ export function QualityGateTemplatesContent() {
       toast.success(t("qualityGateTemplates.deleteSuccess", "Xóa template thành công"));
       refetchCustom();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const applyMutation = trpc.qualityGateTemplate.applyToLine.useMutation({
@@ -100,7 +101,7 @@ export function QualityGateTemplatesContent() {
       setSelectedTemplate(null);
       setSelectedLineId("");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const resetForm = () => {

@@ -37,6 +37,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -107,7 +108,7 @@ export default function ModelMonitoringPage() {
       toast.success(t('modelMonitoring.alertAcknowledged'));
       refetchAlerts();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const resolveAlert = trpc.aiAdvanced.monitoring.resolveAlert.useMutation({
@@ -116,7 +117,7 @@ export default function ModelMonitoringPage() {
       refetchAlerts();
       refetchHealth();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const handleRefresh = () => {
@@ -487,7 +488,7 @@ function BatchRcaCronCard() {
       toast.success(`Batch RCA: ${r.succeeded}/${r.machinesProcessed} OK in ${r.durationMs}ms`);
       rcaQuery.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const rcaStatus = rcaQuery.data;

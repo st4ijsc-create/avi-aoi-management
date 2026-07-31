@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 export interface KillSwitchBarProps {
   isAdmin: boolean;
@@ -36,14 +37,14 @@ export function KillSwitchBar({ isAdmin }: KillSwitchBarProps) {
       setOpen(false);
       killSwitch.refetch();
     },
-    onError: (err: any) => toast.error(err?.message ?? t("aiBrain.killSwitch.tripError", "Không thể trip công tắc.")),
+    onError: (err: any) => toast.error(t("aiBrain.killSwitch.tripError", "Không thể trip công tắc."), { description: mapTrpcError(err) }),
   });
   const untripMut = trpc.aiAgent.untripKillSwitch.useMutation({
     onSuccess: () => {
       toast.success(t("aiBrain.killSwitch.untripSuccess", "Đã UNTRIP công tắc."));
       killSwitch.refetch();
     },
-    onError: (err: any) => toast.error(err?.message ?? t("aiBrain.killSwitch.untripError", "Không thể untrip công tắc.")),
+    onError: (err: any) => toast.error(t("aiBrain.killSwitch.untripError", "Không thể untrip công tắc."), { description: mapTrpcError(err) }),
   });
 
   const tripped = !!killSwitch.data?.tripped;

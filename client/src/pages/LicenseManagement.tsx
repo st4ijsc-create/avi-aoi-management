@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
   Key,
@@ -185,7 +186,7 @@ function ActivateTab() {
       toast.success(t('license.activateSuccess'));
     },
     onError: (err) => {
-      toast.error(err.message);
+      toastTrpcError(err);
     },
   });
 
@@ -197,7 +198,7 @@ function ActivateTab() {
       toast.success(t('license.offlineRequestCreated'));
     },
     onError: (err) => {
-      toast.error(err.message);
+      toastTrpcError(err);
     },
   });
 
@@ -209,7 +210,7 @@ function ActivateTab() {
       toast.success(t('license.offlineApplySuccess'));
     },
     onError: (err) => {
-      toast.error(err.message);
+      toastTrpcError(err);
     },
   });
 

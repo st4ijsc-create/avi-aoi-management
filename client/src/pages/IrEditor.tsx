@@ -55,6 +55,7 @@ import {
   Boxes, ArrowLeft, Pencil, Undo2, Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   // Shared IR model + pure helpers (ONE source of truth for tree AND graph views).
   BLOCK_ICON, BLOCK_LABEL, PALETTE_GROUPS, COMPARE_OPS, TARGET_DEVICE_TYPES,
@@ -1001,7 +1002,7 @@ export default function IrEditor() {
       toast.info(t("ir.flagOffToast", "IR programming is disabled (preview). Set DPC_IR_V2_ENABLED=true to save/build."));
       void utils.ir.status.invalidate();
     } else {
-      toast.error(e.message);
+      toastTrpcError(e);
     }
   };
 
@@ -1032,7 +1033,7 @@ export default function IrEditor() {
       await utils.programming.listProjects.invalidate();
       toast.success(t("ir.projectCreated", "Project created — selected as the save target."));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const doCreateProject = () => {
     const code = newProjCode.trim();

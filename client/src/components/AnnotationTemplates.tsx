@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { mapTrpcError } from '@/lib/trpcErrors';
 import { 
   Bookmark, 
   Plus, 
@@ -95,7 +96,7 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
       refetch();
     },
     onError: (error) => {
-      toast.error(t('annotation.templates.saveFailed') + ': ' + error.message);
+      toast.error(t('annotation.templates.saveFailed'), { description: mapTrpcError(error) });
     },
   });
 
@@ -105,7 +106,7 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
       refetch();
     },
     onError: (error) => {
-      toast.error(t('annotation.templates.deleteFailed') + ': ' + error.message);
+      toast.error(t('annotation.templates.deleteFailed'), { description: mapTrpcError(error) });
     },
   });
 

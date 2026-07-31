@@ -21,6 +21,7 @@ import {
 import { PageHeader, StatusBadge } from '@/components/patterns';
 import { Target, TrendingUp, AlertTriangle, CheckCircle2, Edit, Trash2, Plus, Shield } from 'lucide-react';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 
 export default function OEETargetSettings() {
   const { t } = useTranslation();
@@ -58,7 +59,7 @@ export default function OEETargetSettings() {
       resetForm();
     },
     onError: (error) => {
-      toast.error(`${t('oee.targetCreateError')}: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 
@@ -70,7 +71,7 @@ export default function OEETargetSettings() {
       resetForm();
     },
     onError: (error) => {
-      toast.error(`${t('oee.targetUpdateError')}: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 
@@ -80,7 +81,7 @@ export default function OEETargetSettings() {
       refetchTargets();
     },
     onError: (error) => {
-      toast.error(`${t('oee.targetDeleteError')}: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 
