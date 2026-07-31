@@ -248,3 +248,71 @@ describe("phủ mã lỗi trong server/routers — ngân sách `throw new Error(
     expect(ALLOWED_RAW_ERROR_THROWS).toBe(total);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Task 10 (F3, doc71) — NGÂN SÁCH THỨ BA, đo `new TRPCError(` NGOÀI
+// `server/routers/**` (server/_core/*, server/services/*, server/utils/*, …).
+//
+// ALLOWED_LEGACY_THROWS ở trên (dòng 37) CHỈ quét server/routers — comment của
+// chính nó (dòng 43-61) đã tự ghi rõ lỗ hổng này từ Task 8 fix round 1: "64
+// chỗ còn lại trong 13 file _core/services/utils CHƯA di trú", cố ý để ngoài
+// phạm vi khi đó ("hạ tầng lõi + security-critical, không nên sửa vội cuối một
+// task lớn"). Task 10 đóng đúng lỗ hổng thứ ba này — ĐỘC LẬP với 2 ngân sách ở
+// trên (một họ throw khác — `new TRPCError`, không phải `throw new Error` —
+// VÀ một vùng quét khác — ngoài routers, không phải trong), không cộng dồn.
+//
+// Đo được tại thời điểm Task 10 bắt đầu (khớp CHÍNH XÁC con số plan đã ghim ở
+// task-10-brief.md/plan doc71 — không lệch như cảnh báo "mã đã đổi nhiều"):
+//   grep -rno "new TRPCError(" server --include=*.ts | grep -v "\.test\.ts" | grep -v "^server/routers/" | grep -v "appError\.ts:" | wc -l
+//   → 64 chỗ / 13 file: machineAuthService.ts 17 · aiAnalyticsScope.ts 13 ·
+//   _core/trpc.ts 12 · securityIdentityRouter.ts 5 · thresholdGovernanceService.ts 5 ·
+//   notification.ts 4 · safeImagePath.ts 2 · sáu file 1 chỗ (instrumentGate.ts,
+//   masterDataIO.ts, faiGateService.ts, voiceTranscription.ts, moduleGate.ts,
+//   accessControl.ts).
+//
+// ⚠ 2 trong 64 (masterDataIO.ts, voiceTranscription.ts) hoá ra là VÍ DỤ MINH
+// HOẠ bên trong docstring (/** ... */), KHÔNG phải mã thực thi — regex đếm ký
+// tự không phân biệt code với comment (cùng hạn chế sẵn có ở
+// ALLOWED_LEGACY_THROWS/ALLOWED_RAW_ERROR_THROWS phía trên, không phải lỗ hổng
+// riêng của ngân sách này). Cả hai docstring đã được cập nhật sang mẫu
+// appError() cho khớp thực tế thay vì dạy sai pattern cho người đọc sau — xem
+// task-10-report.md mục "hai chỗ đo được nhưng không phải nợ thật".
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SERVER_DIR = join(ROUTERS_DIR, "..");
+
+function countTrpcErrorsOutsideRouters(): { total: number; byFile: Array<[string, number]> } {
+  const byFile: Array<[string, number]> = [];
+  let total = 0;
+  for (const file of walkTsFiles(SERVER_DIR)) {
+    const rel = file.replace(SERVER_DIR, "").replace(/\\/g, "/").replace(/^\//, "");
+    if (rel.startsWith("routers/")) continue; // đếm riêng ở ALLOWED_LEGACY_THROWS phía trên
+    if (rel === "_core/appError.ts") continue; // nơi ĐỊNH NGHĨA appError(), không phải call-site
+    const n = (readFileSync(file, "utf8").match(/new TRPCError\(/g) ?? []).length;
+    if (n > 0) { byFile.push([rel, n]); total += n; }
+  }
+  byFile.sort((a, b) => b[1] - a[1]);
+  return { total, byFile };
+}
+
+/** Hạ số này mỗi khi một đợt quét riêng di trú xong `new TRPCError(...)` NGOÀI
+ *  server/routers/** sang appError(). KHÔNG BAO GIỜ nâng lên — số dư thừa che
+ *  mất nợ mới, y hệt 2 ngân sách phía trên. Độc lập, không cộng dồn. */
+const ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS = 64; // ← Task 10 (F3, doc71) — điểm bắt đầu, chưa di trú lô nào.
+
+describe("phủ mã lỗi NGOÀI server/routers/** — ngân sách `new TRPCError(...)` (Task 10, F3)", () => {
+  it(`còn tối đa ${ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS} chỗ new TRPCError(...) ngoài server/routers/** chưa qua appError`, () => {
+    const { total, byFile } = countTrpcErrorsOutsideRouters();
+    if (total > ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS) {
+      console.error("[phủ mã lỗi] còn nợ new TRPCError(...) ngoài routers ở:", byFile.slice(0, 15));
+    }
+    expect(total).toBeLessThanOrEqual(ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS);
+  });
+
+  it("ngân sách new TRPCError(...) ngoài routers KHÔNG được nới rộng hơn thực tế", () => {
+    // Cùng lý do với 2 ngân sách phía trên: ngân sách phải bám SÁT số thật, nếu
+    // không một `new TRPCError(...)` mới ngoài routers sẽ lọt qua mà không ai biết.
+    const { total } = countTrpcErrorsOutsideRouters();
+    expect(ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS).toBe(total);
+  });
+});

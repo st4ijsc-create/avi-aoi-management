@@ -3544,6 +3544,8 @@
     "ACCOUNT_DISABLED": "此账户已被停用。请联系管理员重新启用。",
     "FEATURE_NOT_CONFIGURED": "此系统尚未配置{{feature}}功能。",
     "ENTITY_EXPIRED": "{{entity}}已过期。",
+    "MACHINE_CREDENTIAL_INVALID": "设备认证信息无效。",
+    "MACHINE_CREDENTIAL_INVALID_WITH_REASON": "设备认证信息无效。{{reason}}",
     "KB_FILE_TOO_LARGE": "文件超过 {{limitMb}} MB 限制。",
     "KB_UNSUPPORTED_TYPE": "不支持的格式 \"{{ext}}\"。支持的格式：{{supported}}。",
     "KB_CONTENT_TYPE_MISMATCH": "文件内容与扩展名不符：声称是 {{claimed}}，实际是 {{detected}}。",
@@ -3685,7 +3687,9 @@
       "mqttClientProfile": "MQTT客户端配置文件",
       "qualityGateTemplate": "质量门模板",
       "yieldAlertThreshold": "良率告警阈值",
-      "orderTemplate": "工单模板"
+      "orderTemplate": "工单模板",
+      "deviceCertificate": "设备证书",
+      "serviceIdentity": "服务身份"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3816,7 +3820,13 @@
       "loginWithPassword": "使用密码登录",
       "setupAdmin": "设置首个管理员账户",
       "deleteMqttClientProfile": "删除MQTT客户端配置文件",
-      "queryLocalKb": "查询本地知识库"
+      "queryLocalKb": "查询本地知识库",
+      "acceptFaiProduction": "在未通过FAI的情况下接受生产",
+      "issueDeviceCert": "签发设备证书",
+      "rotateDeviceCert": "轮换设备证书",
+      "issueServiceIdentity": "签发服务身份",
+      "useInstrument": "使用测量仪器",
+      "editThresholdDirectly": "直接修改阈值"
     },
     "field": {
       "code": "编码",
@@ -3890,7 +3900,12 @@
       "lotCodeOrProductModelId": "批次代码或产品型号ID",
       "deviceId": "设备ID",
       "credentials": "登录凭证",
-      "embedding": "嵌入向量"
+      "embedding": "嵌入向量",
+      "notificationTitle": "通知标题",
+      "notificationContent": "通知内容",
+      "apiKeyOrMachineCode": "API密钥或设备码",
+      "factoryCode": "工厂代码",
+      "machineId": "设备ID"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -3927,7 +3942,19 @@
       "modelCardGovernance": "模型卡治理",
       "aiSegmentation": "AI图像分割",
       "twinLocalStorage": "数字孪生本地存储",
-      "qualityGateTemplateRegistry": "质量门模板注册表"
+      "qualityGateTemplateRegistry": "质量门模板注册表",
+      "moduleCorporate": "企业管理",
+      "moduleMonitoring": "设备监控",
+      "moduleAlerts": "告警管理",
+      "moduleProduction": "生产管理",
+      "moduleAnalytics": "分析与报表",
+      "moduleDataManagement": "数据管理",
+      "moduleAi": "AI与本地智能",
+      "moduleOtControl": "OT与设备控制",
+      "moduleFederation": "多站点联合",
+      "moduleQuality": "质量管理",
+      "moduleEngineering": "工程与编程",
+      "unknownModule": "未知模块"
     },
     "action": {
       "viewOthersPermissions": "查看他人的权限",
@@ -3974,7 +4001,19 @@
       "accessReportArtifact": "访问报告文件",
       "useAiAnalyticsCanary": "使用AI Analytics(灰度发布中)",
       "viewTrustEnforcementCenter": "查看信任与执行中心",
-      "login": "登录"
+      "login": "登录",
+      "insufficientRole": "访问此角色限制功能",
+      "modifyData": "修改数据",
+      "canView": "查看",
+      "canCreate": "创建",
+      "canEdit": "编辑",
+      "canDelete": "删除",
+      "canExport": "导出",
+      "machineScope": "使用所需的API作用域",
+      "selfApproveThreshold": "自行审批自己提交的阈值请求",
+      "viewAiAnalytics": "查看AI分析",
+      "generateAiReport": "生成AI报告",
+      "viewGlobalAiReport": "查看全系统AI报告"
     },
     "chartRenderError": "图表渲染错误",
     "cannotLoadDataDescription": "加载数据时出错，请重试。",
@@ -3996,7 +4035,20 @@
       "insufficientCpkSamples": "数据不足：{{sampleCount}} 个样本（最少需要 {{minSamples}} 个）。",
       "invalidBase64Image": "无法解码 base64 数据。",
       "emptyImagePayload": "解码后图像为空。",
-      "setUpInSecuritySettings": "请前往「设置 > 安全」进行设置。"
+      "setUpInSecuritySettings": "请前往「设置 > 安全」进行设置。",
+      "noFactoryAssigned": "您的账户尚未分配任何工厂。",
+      "factoryOutsideScope": "所请求的工厂超出您账户的授权范围。",
+      "machineOutsideScope": "所请求的设备超出您账户授权的工厂范围。",
+      "systemWideReportAdminOnly": "此报告汇总全系统数据——仅全局管理员账户可查看。",
+      "notMachineKey": "此API密钥不是设备专用凭证。",
+      "machineKeyRevoked": "该密钥已被吊销。",
+      "machineKeyExpired": "该密钥已过期。",
+      "machineInactiveOrMissing": "与此密钥关联的设备不存在或已停用。",
+      "mkOnlyRequired": "自动化/物联网类设备必须使用按设备分配的密钥（mk_...）进行认证。",
+      "weakAuthDisabled": "本服务器已禁用共享密钥／仅设备码认证——请配置按设备分配的密钥（mk_...）。",
+      "faiNotPassed": "产品 #{{productModelId}} 需要通过首件检验（FAI）后才能发布/接受生产。",
+      "releasedProgramRequiresApproval": "该产品已有已发布的检验程序——阈值变更须通过审批队列（Threshold Approvals）。",
+      "productLifecycleRequiresApproval": "该产品处于生命周期状态 '{{lifecycleStatus}}'——阈值变更须通过审批队列（Threshold Approvals）。"
     }
   },
   "export": {

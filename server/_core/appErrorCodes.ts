@@ -76,6 +76,15 @@ export const APP_ERROR_CODES = [
   "KB_PARSE_FAILED",          // params: {} — reason chỉ ở fallbackMessage (I-1a, xem kbErrors.ts)
   "KB_NO_TEXT_EXTRACTED",     // params: { source }
   "KB_FETCH_FAILED",          // params: { url } — reason có thể rò IP nội bộ, chỉ log server (I-1b)
+
+  // ── Task 10 (doc71, F3) — xác thực MÁY (server/services/machineAuthService.ts) ──
+  "MACHINE_CREDENTIAL_INVALID", // params: { reason? } — khoá/mã máy trình lên KHÔNG hợp lệ
+                          // (sai/thu hồi/hết hạn/không thuộc máy/không phải khoá máy) — KHÁC
+                          // AUTH_REQUIRED (chưa đăng nhập — đây LÀ một lượt "đăng nhập" bằng khoá
+                          // máy, chỉ là khoá sai) và KHÁC ACCOUNT_LOCKED/ACCOUNT_DISABLED (hai mã
+                          // đó dành cho TÀI KHOẢN NGƯỜI, không phải khoá máy tự động). Không mã nào
+                          // trong 24 mã trên khớp — machine credential là một khái niệm riêng
+                          // (server_api_keys.machineId), không phải RBAC người dùng.
 ] as const;
 
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];

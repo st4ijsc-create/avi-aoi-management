@@ -3553,6 +3553,8 @@
     "ACCOUNT_DISABLED": "Tài khoản này đã bị vô hiệu hoá. Liên hệ quản trị viên để được kích hoạt lại.",
     "FEATURE_NOT_CONFIGURED": "Tính năng {{feature}} chưa được cấu hình trên hệ thống này.",
     "ENTITY_EXPIRED": "Đã hết hạn lưu trữ: {{entity}}.",
+    "MACHINE_CREDENTIAL_INVALID": "Thông tin xác thực máy không hợp lệ.",
+    "MACHINE_CREDENTIAL_INVALID_WITH_REASON": "Thông tin xác thực máy không hợp lệ. {{reason}}",
     "KB_FILE_TOO_LARGE": "Tệp vượt quá giới hạn {{limitMb}} MB.",
     "KB_UNSUPPORTED_TYPE": "Không hỗ trợ định dạng \"{{ext}}\". Định dạng nhận được: {{supported}}.",
     "KB_CONTENT_TYPE_MISMATCH": "Nội dung tệp không khớp phần mở rộng: khai là {{claimed}} nhưng thực tế là {{detected}}.",
@@ -3694,7 +3696,9 @@
       "mqttClientProfile": "hồ sơ client MQTT",
       "qualityGateTemplate": "mẫu cổng chất lượng",
       "yieldAlertThreshold": "ngưỡng cảnh báo hiệu suất",
-      "orderTemplate": "mẫu lệnh sản xuất"
+      "orderTemplate": "mẫu lệnh sản xuất",
+      "deviceCertificate": "chứng chỉ thiết bị",
+      "serviceIdentity": "định danh dịch vụ"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3825,7 +3829,13 @@
       "loginWithPassword": "đăng nhập bằng mật khẩu",
       "setupAdmin": "khởi tạo tài khoản admin đầu tiên",
       "deleteMqttClientProfile": "xoá hồ sơ client MQTT",
-      "queryLocalKb": "truy vấn tri thức cục bộ"
+      "queryLocalKb": "truy vấn tri thức cục bộ",
+      "acceptFaiProduction": "chấp nhận sản xuất khi chưa qua FAI",
+      "issueDeviceCert": "cấp chứng chỉ thiết bị",
+      "rotateDeviceCert": "xoay vòng chứng chỉ thiết bị",
+      "issueServiceIdentity": "cấp định danh dịch vụ",
+      "useInstrument": "sử dụng thiết bị đo",
+      "editThresholdDirectly": "sửa ngưỡng trực tiếp"
     },
     "field": {
       "code": "mã",
@@ -3899,7 +3909,12 @@
       "lotCodeOrProductModelId": "mã lô hoặc mã model sản phẩm",
       "deviceId": "mã thiết bị",
       "credentials": "thông tin đăng nhập",
-      "embedding": "vector embedding"
+      "embedding": "vector embedding",
+      "notificationTitle": "tiêu đề thông báo",
+      "notificationContent": "nội dung thông báo",
+      "apiKeyOrMachineCode": "khoá API hoặc mã máy",
+      "factoryCode": "mã nhà máy",
+      "machineId": "mã máy"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -3936,7 +3951,19 @@
       "modelCardGovernance": "quản trị model card",
       "aiSegmentation": "phân đoạn ảnh AI",
       "twinLocalStorage": "lưu trữ cục bộ digital twin",
-      "qualityGateTemplateRegistry": "sổ đăng ký mẫu cổng chất lượng"
+      "qualityGateTemplateRegistry": "sổ đăng ký mẫu cổng chất lượng",
+      "moduleCorporate": "quản lý doanh nghiệp",
+      "moduleMonitoring": "giám sát máy",
+      "moduleAlerts": "quản lý cảnh báo",
+      "moduleProduction": "quản lý sản xuất",
+      "moduleAnalytics": "phân tích & báo cáo",
+      "moduleDataManagement": "quản lý dữ liệu",
+      "moduleAi": "AI & trí tuệ cục bộ",
+      "moduleOtControl": "điều khiển OT & máy",
+      "moduleFederation": "liên kết đa nhà máy",
+      "moduleQuality": "quản lý chất lượng",
+      "moduleEngineering": "kỹ thuật & lập trình",
+      "unknownModule": "module không xác định"
     },
     "action": {
       "viewOthersPermissions": "xem quyền của người khác",
@@ -3983,7 +4010,19 @@
       "accessReportArtifact": "truy cập tệp báo cáo",
       "useAiAnalyticsCanary": "dùng AI Analytics (đang triển khai dần)",
       "viewTrustEnforcementCenter": "xem Trust & Enforcement Center",
-      "login": "đăng nhập"
+      "login": "đăng nhập",
+      "insufficientRole": "truy cập chức năng giới hạn theo vai trò",
+      "modifyData": "thay đổi dữ liệu",
+      "canView": "xem",
+      "canCreate": "tạo mới",
+      "canEdit": "sửa",
+      "canDelete": "xoá",
+      "canExport": "xuất",
+      "machineScope": "sử dụng phạm vi (scope) API được yêu cầu",
+      "selfApproveThreshold": "tự duyệt yêu cầu ngưỡng của chính mình",
+      "viewAiAnalytics": "xem phân tích AI",
+      "generateAiReport": "tạo báo cáo AI",
+      "viewGlobalAiReport": "xem báo cáo AI toàn hệ thống"
     },
     "reason": {
       "scheduleConflict": "Lịch trùng với {{conflictCount}} lệnh sản xuất khác. Dùng forceOverride=true để bỏ qua.",
@@ -3997,7 +4036,20 @@
       "insufficientCpkSamples": "Không đủ dữ liệu: {{sampleCount}} mẫu (tối thiểu {{minSamples}}).",
       "invalidBase64Image": "Dữ liệu base64 không đọc được.",
       "emptyImagePayload": "Ảnh rỗng sau khi giải mã.",
-      "setUpInSecuritySettings": "Vào Cài đặt > Bảo mật để thiết lập."
+      "setUpInSecuritySettings": "Vào Cài đặt > Bảo mật để thiết lập.",
+      "noFactoryAssigned": "Tài khoản chưa được gán nhà máy nào.",
+      "factoryOutsideScope": "Nhà máy được yêu cầu nằm ngoài phạm vi được gán cho tài khoản này.",
+      "machineOutsideScope": "Máy được yêu cầu nằm ngoài phạm vi nhà máy được gán cho tài khoản này.",
+      "systemWideReportAdminOnly": "Báo cáo này tổng hợp dữ liệu toàn hệ thống — chỉ tài khoản quản trị toàn cục mới được xem.",
+      "notMachineKey": "Khoá API này không phải khoá dành riêng cho máy.",
+      "machineKeyRevoked": "Khoá máy đã bị thu hồi.",
+      "machineKeyExpired": "Khoá máy đã hết hạn.",
+      "machineInactiveOrMissing": "Máy liên kết với khoá này không tồn tại hoặc đã bị vô hiệu hoá.",
+      "mkOnlyRequired": "Thiết bị dòng automation/iot bắt buộc dùng khoá riêng theo từng máy (mk_...).",
+      "weakAuthDisabled": "Xác thực bằng khoá dùng chung / mã máy đã bị tắt trên máy chủ này — cấu hình khoá riêng theo máy (mk_...).",
+      "faiNotPassed": "Cần First-Article Inspection (FAI) đạt PASS cho sản phẩm #{{productModelId}} trước khi phát hành/chấp nhận sản xuất.",
+      "releasedProgramRequiresApproval": "Sản phẩm đã có chương trình kiểm tra được phát hành — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals).",
+      "productLifecycleRequiresApproval": "Sản phẩm đang ở trạng thái vòng đời '{{lifecycleStatus}}' — thay đổi ngưỡng phải qua hàng đợi duyệt (Threshold Approvals)."
     }
   },
   "export": {

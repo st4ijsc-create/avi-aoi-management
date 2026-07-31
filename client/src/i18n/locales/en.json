@@ -3552,6 +3552,8 @@
     "ACCOUNT_DISABLED": "This account has been disabled. Contact an administrator to reactivate it.",
     "FEATURE_NOT_CONFIGURED": "The {{feature}} feature is not configured on this system.",
     "ENTITY_EXPIRED": "The {{entity}} has expired.",
+    "MACHINE_CREDENTIAL_INVALID": "Machine credentials are invalid.",
+    "MACHINE_CREDENTIAL_INVALID_WITH_REASON": "Machine credentials are invalid. {{reason}}",
     "KB_FILE_TOO_LARGE": "File exceeds the {{limitMb}} MB limit.",
     "KB_UNSUPPORTED_TYPE": "Unsupported format \"{{ext}}\". Supported formats: {{supported}}.",
     "KB_CONTENT_TYPE_MISMATCH": "File content does not match its extension: claims {{claimed}} but is actually {{detected}}.",
@@ -3693,7 +3695,9 @@
       "mqttClientProfile": "MQTT client profile",
       "qualityGateTemplate": "quality gate template",
       "yieldAlertThreshold": "yield alert threshold",
-      "orderTemplate": "order template"
+      "orderTemplate": "order template",
+      "deviceCertificate": "device certificate",
+      "serviceIdentity": "service identity"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3824,7 +3828,13 @@
       "loginWithPassword": "log in with password",
       "setupAdmin": "set up the first admin account",
       "deleteMqttClientProfile": "delete MQTT client profile",
-      "queryLocalKb": "query local knowledge base"
+      "queryLocalKb": "query local knowledge base",
+      "acceptFaiProduction": "accept production without a passing FAI",
+      "issueDeviceCert": "issue device certificate",
+      "rotateDeviceCert": "rotate device certificate",
+      "issueServiceIdentity": "issue service identity",
+      "useInstrument": "use the measurement instrument",
+      "editThresholdDirectly": "edit threshold directly"
     },
     "field": {
       "code": "code",
@@ -3898,7 +3908,12 @@
       "lotCodeOrProductModelId": "lot code or product model ID",
       "deviceId": "device ID",
       "credentials": "login credentials",
-      "embedding": "embedding vector"
+      "embedding": "embedding vector",
+      "notificationTitle": "notification title",
+      "notificationContent": "notification content",
+      "apiKeyOrMachineCode": "API key or machine code",
+      "factoryCode": "factory code",
+      "machineId": "machine ID"
     },
     "feature": {
       "webIngest": "web content ingestion",
@@ -3935,7 +3950,19 @@
       "modelCardGovernance": "model card governance",
       "aiSegmentation": "AI segmentation",
       "twinLocalStorage": "digital twin local storage",
-      "qualityGateTemplateRegistry": "quality gate template registry"
+      "qualityGateTemplateRegistry": "quality gate template registry",
+      "moduleCorporate": "corporate management",
+      "moduleMonitoring": "machine monitoring",
+      "moduleAlerts": "alert management",
+      "moduleProduction": "production management",
+      "moduleAnalytics": "analytics & reporting",
+      "moduleDataManagement": "data management",
+      "moduleAi": "AI & local intelligence",
+      "moduleOtControl": "OT & machine control",
+      "moduleFederation": "multi-site federation",
+      "moduleQuality": "quality management",
+      "moduleEngineering": "engineering & programming",
+      "unknownModule": "unknown module"
     },
     "action": {
       "viewOthersPermissions": "view another user's permissions",
@@ -3982,7 +4009,19 @@
       "accessReportArtifact": "access report artifact",
       "useAiAnalyticsCanary": "use AI Analytics (gradual rollout)",
       "viewTrustEnforcementCenter": "view Trust & Enforcement Center",
-      "login": "log in"
+      "login": "log in",
+      "insufficientRole": "access this role-restricted feature",
+      "modifyData": "modify data",
+      "canView": "view",
+      "canCreate": "create",
+      "canEdit": "edit",
+      "canDelete": "delete",
+      "canExport": "export",
+      "machineScope": "use the required API scope",
+      "selfApproveThreshold": "self-approve your own threshold request",
+      "viewAiAnalytics": "view AI analytics",
+      "generateAiReport": "generate AI report",
+      "viewGlobalAiReport": "view system-wide AI report"
     },
     "chartRenderError": "Chart render error",
     "cannotLoadDataDescription": "Cannot load data description",
@@ -4004,7 +4043,20 @@
       "insufficientCpkSamples": "Insufficient data: {{sampleCount}} samples (minimum {{minSamples}}).",
       "invalidBase64Image": "The base64 data could not be decoded.",
       "emptyImagePayload": "The image is empty after decoding.",
-      "setUpInSecuritySettings": "Go to Settings > Security to set it up."
+      "setUpInSecuritySettings": "Go to Settings > Security to set it up.",
+      "noFactoryAssigned": "Your account is not assigned to any factory.",
+      "factoryOutsideScope": "The requested factory is outside your assigned scope.",
+      "machineOutsideScope": "The requested machine is outside your assigned factory scope.",
+      "systemWideReportAdminOnly": "This report aggregates system-wide data — only global admin accounts may view it.",
+      "notMachineKey": "This API key is not a machine-scoped credential.",
+      "machineKeyRevoked": "The machine key has been revoked.",
+      "machineKeyExpired": "The machine key has expired.",
+      "machineInactiveOrMissing": "The machine linked to this key does not exist or is inactive.",
+      "mkOnlyRequired": "Automation/IoT-class devices must authenticate with a per-device key (mk_...).",
+      "weakAuthDisabled": "Shared-key / machine-code-only authentication is disabled on this server — configure a per-machine key (mk_...).",
+      "faiNotPassed": "A passing First-Article Inspection (FAI) is required for product #{{productModelId}} before releasing/accepting production.",
+      "releasedProgramRequiresApproval": "The product already has a released inspection program — threshold changes require approval via the queue (Threshold Approvals).",
+      "productLifecycleRequiresApproval": "The product is in lifecycle status '{{lifecycleStatus}}' — threshold changes require approval via the queue (Threshold Approvals)."
     }
   },
   "export": {
