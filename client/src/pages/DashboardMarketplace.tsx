@@ -14,7 +14,7 @@ import { trpc } from '@/lib/trpc';
 import { templateToCustomDashboardWidgets } from '@/lib/dashboardTemplateApply';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
-import { toastTrpcError } from '@/lib/trpcErrors';
+import { toastTrpcError, mapTrpcError } from '@/lib/trpcErrors';
 import {
   Search, Download, Star, Upload, Grid3X3, LayoutDashboard,
   TrendingUp, Users, Clock, CheckCircle, Filter, Heart, Share2,
@@ -117,7 +117,13 @@ export function DashboardMarketplaceContent() {
       setSelectedTemplate(null);
     },
     onError: (err) => {
-      toastTrpcError(err);
+      // LƯU Ý: khoá `dashboard.templateDownloadError` = "Mẫu Tải xuống Lỗi" (vi.json)
+      // THIẾU placeholder {{message}} — tham số message bị i18next lặng lẽ bỏ qua.
+      // Sửa lại lần 2 (round tự-soát task-8d): bản đầu gỡ hẳn nhãn sang toastTrpcError,
+      // KHÔNG nhất quán với cách xử lý common.errorMessage/importError cùng lớp lỗi —
+      // khôi phục giữ nhãn (mã chết ở phần placeholder, nhưng tiêu đề tĩnh vẫn hiện đúng
+      // như trước khi di trú), chỉ đổi phần lấy chuỗi lỗi. KHÔNG tự sửa khoá (chờ F11).
+      toast.error(t('dashboard.templateDownloadError', { message: mapTrpcError(err) }));
     },
   });
 
