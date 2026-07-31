@@ -11,7 +11,6 @@
 import { useRef, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { mapTrpcError } from "@/lib/trpcErrors";
 import { Upload, Link as LinkIcon, Loader2, X, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";

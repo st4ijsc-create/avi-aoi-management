@@ -20,6 +20,7 @@ import {
   Code2, Copy, ChevronDown, ChevronUp
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { alertSoundService } from "@/lib/alertSoundService";
 import { Volume2, VolumeX, Radio } from "lucide-react";
 import { io, Socket } from "socket.io-client";
@@ -196,8 +197,11 @@ export function MqttDashboardContent() {
       refetchRealtimeStats();
     },
     onError: (error) => {
+      // `lastTestResult` là dump JSON kỹ thuật cho engineer debug test-alert (nút Copy +
+      // hiển thị `JSON.stringify` thô ở dưới) — CỐ Ý giữ error.message nguyên văn ở đây,
+      // khác với toast (câu cho người dùng cuối) đã đổi sang mapTrpcError bên dưới.
       setLastTestResult({ type: 'error', timestamp: new Date().toISOString(), message: error.message, code: error.data?.code });
-      toast.error(t('mqtt.dashboard.errorMsg', { message: error.message }));
+      toast.error(t('mqtt.dashboard.errorMsg', { message: mapTrpcError(error) }));
     },
   });
 

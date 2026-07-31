@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,7 +183,7 @@ export function SPCAnalysisContent() {
   // Lưu spec vào điểm đo (DB) → lần sau tự prefill cho mọi người.
   const saveSpecMutation = trpc.spcAnalysis.saveSpecLimits.useMutation({
     onSuccess: () => { toast.success(t('spc.specSaved')); refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const saveSpec = () => {
     if (!mpId) return;

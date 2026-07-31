@@ -92,7 +92,7 @@ const SCAN_ROOTS: Array<{ dir: string; displayPrefix: string }> = [
 ];
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_RAW_MESSAGE_HANDLERS = 7; // ← Task 8 lượt D, lô 5 (15 file 1-site): 22 → 7 (15 site, xem task-8d-report.md).
+const ALLOWED_RAW_MESSAGE_HANDLERS = 0; // ← Task 8 lượt D, lô 6/CUỐI (7 file 1-site): 7 → 0 (7 site, xem task-8d-report.md). Sprint 5 F1/F4 đóng — mọi onError mới hiện chuỗi thô sẽ làm đỏ cổng ngay.
 
 function walkTsxFiles(dir: string): string[] {
   const out: string[] = [];

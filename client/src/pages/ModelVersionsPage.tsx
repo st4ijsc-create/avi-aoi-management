@@ -31,6 +31,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ModelCardManageButton } from '@/components/ai/ModelCardManageButton';
 import { GitBranch, CheckCircle2, Clock, Archive, RefreshCw, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -77,7 +78,7 @@ export default function ModelVersionsPage() {
       setActivatingId(null);
     },
     onError: (err) => {
-      toast.error(err.message ?? 'Failed to activate version');
+      toastTrpcError(err);
       setActivatingId(null);
     },
   });

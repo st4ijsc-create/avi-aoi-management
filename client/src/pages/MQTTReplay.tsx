@@ -31,6 +31,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { io, Socket } from "socket.io-client";
 import { useTranslation } from 'react-i18next';
 
@@ -88,7 +89,11 @@ export function MQTTReplayContent() {
       refetchDiscovered();
     },
     onError: (err) => {
-      toast.error(t('mqtt.replayPage.registerError', 'Failed to register machine'), { description: err.message });
+      // LƯU Ý: khoá `mqtt.replayPage.registerError` KHÔNG tồn tại trong vi/en/zh.json —
+      // i18next luôn rơi về defaultValue tiếng Anh cứng "Failed to register machine" bất
+      // kể ngôn ngữ. Khác lớp lỗi với F11 (thiếu placeholder) — đây là thiếu hẳn khoá.
+      // Ghi vào task-8d-report.md, KHÔNG tự thêm khoá ở đây (ngoài phạm vi task).
+      toast.error(t('mqtt.replayPage.registerError', 'Failed to register machine'), { description: mapTrpcError(err) });
     },
   });
 
