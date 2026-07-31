@@ -34,6 +34,7 @@ import {
   Filter
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 const roleIcons: Record<string, any> = {
   admin: Shield,
@@ -82,7 +83,7 @@ export function RoleManagement() {
       setSelectedUser(null);
     },
     onError: (error) => {
-      toast.error(`Error: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 
@@ -94,7 +95,7 @@ export function RoleManagement() {
       setSelectedUser(null);
     },
     onError: (error) => {
-      toast.error(`Error: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 

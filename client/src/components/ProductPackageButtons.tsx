@@ -8,6 +8,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Download, Upload, Package, Loader2 } from "lucide-react";
 
 /**
@@ -45,7 +46,7 @@ export function ProductPackageButtons({
       URL.revokeObjectURL(url);
       toast.success(t("products.package.exported"));
     },
-    onError: (e) => toast.error(t("products.package.exportError", { message: e.message })),
+    onError: (e) => toast.error(t("products.package.exportError", { message: mapTrpcError(e) })),
   });
 
   const importMutation = trpc.productPackage.importPackage.useMutation({
@@ -64,7 +65,7 @@ export function ProductPackageButtons({
       setNewName("");
       onImported?.(res.productModelId);
     },
-    onError: (e) => toast.error(t("products.package.importError", { message: e.message })),
+    onError: (e) => toast.error(t("products.package.importError", { message: mapTrpcError(e) })),
   });
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {

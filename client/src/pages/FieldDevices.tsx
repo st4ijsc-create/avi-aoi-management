@@ -57,6 +57,7 @@ import {
   Battery, ShieldAlert, Search, PlusCircle, CircleSlash, Activity, Wifi,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 // ── Typesafe shapes inferred from the fieldRouter output ──────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -148,7 +149,7 @@ export function FieldDevicesContent() {
       toast.info(t("field.flagOffToast", "Field abstraction is disabled (preview). Set FIELD_V2_ENABLED=true to act."));
       void utils.field.status.invalidate();
     } else {
-      toast.error(e.message);
+      toastTrpcError(e);
     }
   };
 

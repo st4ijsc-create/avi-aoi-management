@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Plus, Trash2, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -62,7 +63,7 @@ export function CorpusTab() {
       setNewDesc("");
       void utils.kbStudio.listCorpora.invalidate();
     },
-    onError: (err) => toast.error(err.message || t("kbStudio.corpus.createError")),
+    onError: (err) => toast.error(t("kbStudio.corpus.createError"), { description: mapTrpcError(err) }),
   });
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -82,7 +83,7 @@ export function CorpusTab() {
       void utils.kbStudio.listCorpora.invalidate();
       void utils.kbStudio.listJobs.invalidate();
     },
-    onError: (err) => toast.error(err.message || t("kbStudio.corpus.deleteError")),
+    onError: (err) => toast.error(t("kbStudio.corpus.deleteError"), { description: mapTrpcError(err) }),
   });
 
   const corpora = corporaQuery.data?.corpora ?? [];

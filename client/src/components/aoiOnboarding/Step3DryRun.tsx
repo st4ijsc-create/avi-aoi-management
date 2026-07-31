@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { CheckCircle2, FileUp, Loader2, PlayCircle, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import type { DryRunRenderModel, StepProps } from "./types";
 
 function resultBadgeClass(result: string): string {
@@ -56,7 +57,7 @@ export default function Step3DryRun({ state, update, onNext, onBack, persistDraf
         onFailureCommon(res.error, res.hints ?? []);
       }
     },
-    onError: (err) => onFailureCommon(err.message, []),
+    onError: (err) => onFailureCommon(mapTrpcError(err), []),
   });
 
   // Path B — W2-A's hot-folder dry-run (uploaded FILE; extension-aware parse).
@@ -87,7 +88,7 @@ export default function Step3DryRun({ state, update, onNext, onBack, persistDraf
         );
       }
     },
-    onError: (err) => onFailureCommon(err.message, []),
+    onError: (err) => onFailureCommon(mapTrpcError(err), []),
   });
 
   const busy = pasteDryRun.isPending || fileDryRun.isPending;

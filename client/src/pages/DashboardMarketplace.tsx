@@ -14,6 +14,7 @@ import { trpc } from '@/lib/trpc';
 import { templateToCustomDashboardWidgets } from '@/lib/dashboardTemplateApply';
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 import {
   Search, Download, Star, Upload, Grid3X3, LayoutDashboard,
   TrendingUp, Users, Clock, CheckCircle, Filter, Heart, Share2,
@@ -116,7 +117,7 @@ export function DashboardMarketplaceContent() {
       setSelectedTemplate(null);
     },
     onError: (err) => {
-      toast.error(t('dashboard.templateDownloadError', { message: err.message }));
+      toastTrpcError(err);
     },
   });
 
@@ -176,7 +177,7 @@ export function DashboardMarketplaceContent() {
       setPublishForm({ name: '', description: '', category: 'custom' });
     },
     onError: (err) => {
-      toast.error(err.message);
+      toastTrpcError(err);
     },
   });
 

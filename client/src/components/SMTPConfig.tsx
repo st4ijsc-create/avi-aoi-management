@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 
 export function SMTPConfig() {
@@ -20,7 +21,7 @@ export function SMTPConfig() {
       refetch();
     },
     onError: (error) => {
-      toast.error(`${t('common.error')}: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 
@@ -30,7 +31,7 @@ export function SMTPConfig() {
       setIsTestingConnection(false);
     },
     onError: (error) => {
-      toast.error(`${t('settings.smtpConnectionFailed')}: ${error.message}`);
+      toastTrpcError(error);
       setIsTestingConnection(false);
     },
   });

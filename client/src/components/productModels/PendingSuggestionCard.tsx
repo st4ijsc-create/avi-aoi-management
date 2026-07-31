@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Loader2, Sparkles, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -94,7 +95,7 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided, on
       }
       onDecided?.();
     },
-    onError: (e) => toast.error(e.message || t("productModels.approveFailed", "Duyệt thất bại")),
+    onError: (e) => toast.error(t("productModels.approveFailed", "Duyệt thất bại"), { description: mapTrpcError(e) }),
   });
 
   const rejectM = trpc.thresholdApproval.reject.useMutation({
@@ -104,7 +105,7 @@ export function PendingSuggestionCard({ pointDefId, currentUserId, onDecided, on
       setRejectComment("");
       onDecided?.();
     },
-    onError: (e) => toast.error(e.message || t("productModels.rejectFailed", "Từ chối thất bại")),
+    onError: (e) => toast.error(t("productModels.rejectFailed", "Từ chối thất bại"), { description: mapTrpcError(e) }),
   });
 
   const confirmReject = (id: number) => {

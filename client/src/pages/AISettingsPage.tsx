@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 
 type ApiKeyProvider = 'openai' | 'azure_openai' | 'huggingface' | 'custom';
 type ApiKeyStatus = 'active' | 'inactive' | 'expired' | 'error';
@@ -145,7 +146,7 @@ function ApiKeysSection() {
       setShowAddDialog(false);
     },
     onError: (err) => {
-      toast.error(`${t('common.error', 'Error')}: ${err.message}`);
+      toastTrpcError(err);
     },
   });
   const deleteMutation = trpc.aiSettings.deleteApiKey.useMutation({
@@ -703,7 +704,7 @@ function HybridProviderSection() {
       toast.success(t('aiSettings.hybrid.configUpdated', 'Provider config updated'));
       refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const resetBreaker = trpc.aiSettings.resetHybridBreaker.useMutation({
     onSuccess: () => {

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AdvancedSection } from "@/components/AdvancedSection";
@@ -91,11 +92,11 @@ export default function AdminSettings() {
   // Seed mutations
   const seedDataMutation = trpc.seedData.seed.useMutation({
     onSuccess: (data) => { toast.success(data.message); },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
   const seedInspectionsMutation = trpc.seedData.seedInspections.useMutation({
     onSuccess: (data) => { toast.success(data.message); },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   if (permsLoading) {
