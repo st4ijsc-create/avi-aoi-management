@@ -264,6 +264,56 @@ public sealed class NotificationStartupNoticesTests
         Assert.True(NotificationStartupNotices.WillDeliver(channels, Implemented(NotificationChannel.Webhook)));
     }
 
+    /// <summary>
+    /// 🔴 Task C-4 — <b>the new arm, and the reason the flag was made a SET rather than a bool.</b> C-4
+    /// adds exactly one <c>HashSet</c> member in <c>Program.cs</c>, and this is what that member is worth:
+    /// the "configured, ENABLED and still silent" warning stops firing for SMTP, with no wording anywhere
+    /// having had to be remembered and changed.
+    ///
+    /// <para>Deliberately asserted as a TRANSITION — the same configuration described twice, once against
+    /// the set this build had before C-4 and once against the set it has now — because the property under
+    /// test is that adding a member is sufficient. Asserting only the post-C-4 state would pass equally
+    /// well for a build that had hard-coded the answer.</para>
+    ///
+    /// <para>The two channels C-5 and C-6 own are still enabled and still unimplemented in both cases, so
+    /// this also pins that the warning did not simply stop working.</para>
+    /// </summary>
+    [Fact]
+    public void AddingSmtpToTheImplementedSet_IsTheWholeOfWhatStopsTheSilentChannelWarning()
+    {
+        var channels = new[]
+        {
+            Summary(NotificationChannel.Webhook, enabled: true),
+            Summary(NotificationChannel.Smtp, enabled: true),
+            Summary(NotificationChannel.LocalAnnunciation, enabled: true),
+            Summary(NotificationChannel.Relay, enabled: true),
+        };
+
+        // Before C-4: the webhook delivers, and SMTP is named as silent.
+        var beforeC4 = NotificationStartupNotices.Describe(
+            channels, Implemented(NotificationChannel.Webhook));
+        var beforeWarning = Assert.Single(
+            beforeC4, n => n.Message.Contains("no delivery implementation", StringComparison.Ordinal));
+        Assert.Contains("Smtp", beforeWarning.Message, StringComparison.Ordinal);
+
+        // After C-4: the same configuration, one more set member.
+        var afterC4 = NotificationStartupNotices.Describe(
+            channels, Implemented(NotificationChannel.Webhook, NotificationChannel.Smtp));
+
+        var active = Assert.Single(afterC4, n => n.Severity == NotificationNoticeSeverity.Information);
+        Assert.Contains("ACTIVE on 2 channel(s)", active.Message, StringComparison.Ordinal);
+        Assert.Contains("Webhook", active.Message, StringComparison.Ordinal);
+        Assert.Contains("Smtp", active.Message, StringComparison.Ordinal);
+
+        var afterWarning = Assert.Single(
+            afterC4, n => n.Message.Contains("no delivery implementation", StringComparison.Ordinal));
+        // 🔴 The transition: SMTP has left the silent list, and nothing else has.
+        Assert.DoesNotContain("Smtp", afterWarning.Message, StringComparison.Ordinal);
+        Assert.Contains("LocalAnnunciation", afterWarning.Message, StringComparison.Ordinal);
+        Assert.Contains("Relay", afterWarning.Message, StringComparison.Ordinal);
+        Assert.Contains("2 alarm notification channel(s)", afterWarning.Message, StringComparison.Ordinal);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // The credential-handling warnings.
     // ─────────────────────────────────────────────────────────────────────

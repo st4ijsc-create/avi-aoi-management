@@ -492,6 +492,33 @@ if (notificationConfigStore is not null)
     implementedNotificationChannels.Add(St4i.EngineApi.Alarms.NotificationChannel.Webhook);
 }
 
+// 🔴 Task C-4 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-4-brief.md) — the SECOND
+// channel: e-mail, the one a customer asks for by name and the one this product can least guarantee,
+// because it depends on a mail server nobody here controls.
+//
+// Registered on exactly the same terms as the webhook above — only when the configuration store opened
+// (that store IS its configuration), and adding to `implementedNotificationChannels` happens in the same
+// `if`, so "this build can deliver Smtp" and "an SMTP channel exists to deliver it" cannot disagree. Adding
+// the set member is the whole of what makes the startup notices stop warning that an enabled SMTP channel
+// is silently unimplemented — which is the property C-3 changed that flag from a bool to a set to get.
+//
+// No `using`/factory-disposal concern here, unlike the webhook: this channel holds no process-lifetime
+// client. SmtpClient cannot be shared (it refuses concurrent sends and disposal is the cancellation
+// mechanism), so one is constructed and disposed per attempt inside the channel.
+if (notificationConfigStore is not null)
+{
+    var storeForSmtp = notificationConfigStore;
+    builder.Services.AddSingleton(sp =>
+    {
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmEmail");
+        return new St4i.EngineApi.Alarms.SmtpNotificationChannel(
+            storeForSmtp,
+            logError: (ex, msg) => logger.LogError(ex, "{AlarmEmailMsg}", msg),
+            logWarning: msg => logger.LogWarning("{AlarmEmailMsg}", msg));
+    });
+    implementedNotificationChannels.Add(St4i.EngineApi.Alarms.NotificationChannel.Smtp);
+}
+
 // Registered ONLY here. The alarm engine runs only in this process — St4i.EdgeService and both WPF apps
 // never host IAlarmStore — so nothing about this reaches them.
 //
@@ -510,13 +537,40 @@ if (notificationConfigStore is not null)
 builder.Services.AddSingleton(sp =>
 {
     var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmNotifier");
-    // 🔴 Task C-3 filled this in. GetService (not GetRequiredService): the webhook channel is registered
-    // only when the configuration store opened, and a missing one must mean "the loop drains and
-    // discards" — C-1's original state — not a startup crash. C-4..C-6 fan out from here; C-7 owns the
-    // rate limiter that will eventually sit in front of the fan-out.
-    var webhook = sp.GetService<St4i.EngineApi.Alarms.WebhookNotificationChannel>();
+    // 🔴 Task C-3 filled this in. GetService (not GetRequiredService): a channel is registered only when
+    // the configuration store opened, and a missing one must mean "the loop drains and discards" — C-1's
+    // original state — not a startup crash. C-5/C-6 append to this list; C-7 owns the rate limiter that
+    // will eventually sit in front of the fan-out.
+    var channels = new List<Func<St4i.EngineApi.Alarms.NotificationJob, CancellationToken, Task>>();
+    if (sp.GetService<St4i.EngineApi.Alarms.WebhookNotificationChannel>() is { } webhook)
+    {
+        channels.Add(webhook.DispatchAsync);
+    }
+    if (sp.GetService<St4i.EngineApi.Alarms.SmtpNotificationChannel>() is { } email)
+    {
+        channels.Add(email.DispatchAsync);
+    }
+
+    // 🔴 Task C-4 — composed with Task.WhenAll, NEVER sequentially, which C-3's review made a hard
+    // constraint for C-7 and which first has teeth here, at the moment there are two channels to compose.
+    // Sequentially, one notification's cost becomes the SUM of every channel's budget, and the compounding
+    // is worse than additive in the case that matters: a dead mail relay would keep C-6's physical beacon
+    // dark for its whole budget behind a Critical alarm, worst-case at restart — exactly when the beacon
+    // matters most. Fanning out keeps the drain loop's exposure at ONE budget however many channels are
+    // wired, and both channels use the same 10s budget so that number does not drift either.
+    //
+    // This is composition, not scheduling: ordering BETWEEN notifications is untouched (the drain loop
+    // still hands over one job at a time), and per-channel QUEUES remain C-6's prerequisite rather than
+    // something invented here.
+    Func<St4i.EngineApi.Alarms.NotificationJob, CancellationToken, Task>? dispatch = channels.Count switch
+    {
+        0 => null,
+        1 => channels[0],
+        _ => (job, ct) => Task.WhenAll(channels.Select(channel => channel(job, ct))),
+    };
+
     return new St4i.EngineApi.Alarms.AlarmNotifier(
-        dispatch: webhook is null ? null : webhook.DispatchAsync,
+        dispatch: dispatch,
         logWarning: msg => logger.LogWarning("{AlarmNotifyMsg}", msg),
         logError: (ex, msg) => logger.LogError(ex, "{AlarmNotifyMsg}", msg));
 });

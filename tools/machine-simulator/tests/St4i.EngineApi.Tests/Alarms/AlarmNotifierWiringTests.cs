@@ -249,6 +249,67 @@ public sealed class AlarmNotifierWiringTests
     }
 
     /// <summary>
+    /// 🔴 Task C-4 — the whole chain for the SECOND channel, through the REAL host: an alarm raised on the
+    /// store the host resolves reaches a real SMTP relay.
+    ///
+    /// <para>Every other C-4 test drives <see cref="SmtpNotificationChannel"/> directly. This is the only
+    /// proof that <c>Program.cs</c> actually connects it — and, because a webhook is configured at the same
+    /// time, that the two dispatch delegates are composed rather than one replacing the other. That
+    /// composition is the thing a unit test structurally cannot see, and getting it wrong (a channel that
+    /// silently shadows another) is exactly the wiring failure that would otherwise reach a customer.</para>
+    /// </summary>
+    [Fact]
+    public async Task AConfiguredEmailChannel_ReallyReceivesAnAlarm_AlongsideTheWebhook()
+    {
+        await using var webhookReceiver = WebhookLoopbackServer.Start(new ScriptedResponse(200, "OK"));
+        await using var relay = SmtpLoopbackServer.Start();
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-notifywire-alarms-").FullName;
+
+        var factory = await CreateFactoryAsync(
+            configureAChannel: false, alarmsDir,
+            configure: async store =>
+            {
+                Assert.True(await store.SaveSmtpAsync(
+                    enabled: true, AlarmPriority.High, SmtpLoopbackServer.Host, relay.Port,
+                    SmtpTlsMode.None, "alarms@plant.local", new[] { "ops@plant.local" }, username: null));
+                Assert.True(await store.SaveWebhookAsync(
+                    enabled: true, AlarmPriority.High, webhookReceiver.Url("/hooks/wiring")));
+            });
+
+        try
+        {
+            Assert.NotNull(factory.Services.GetService<SmtpNotificationChannel>());
+
+            var store = factory.Services.GetRequiredService<IAlarmStore>();
+            await store.RaiseAsync(new AlarmRaise(
+                AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "wiring", TargetId: "slot-3"));
+
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+            while ((relay.Messages.Count == 0 || webhookReceiver.Requests.Count == 0) &&
+                   DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(25);
+            }
+
+            var received = Assert.Single(relay.Messages);
+            Assert.Equal("alarms@plant.local", received.MailFrom);
+            Assert.Equal("ops@plant.local", Assert.Single(received.RcptTo));
+            Assert.Contains("CRITICAL RAISED", received.Header("Subject")!, StringComparison.Ordinal);
+            Assert.Contains("slot-3", received.Body, StringComparison.Ordinal);
+
+            // 🔴 BOTH channels fired for the one alarm — the composition, not one shadowing the other.
+            Assert.Single(webhookReceiver.Requests);
+            Assert.Equal(1, factory.Services.GetRequiredService<SmtpNotificationChannel>().Stats.Delivered);
+            Assert.Equal(1, factory.Services.GetRequiredService<WebhookNotificationChannel>().Stats.Delivered);
+        }
+        finally
+        {
+            factory.Dispose();
+            try { Directory.Delete(alarmsDir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
     /// 🔴 Task C-2 — the gate really was COLLAPSED, not merely supplemented.
     ///
     /// <para>C-1's <c>ST4I_ALARM_NOTIFY_ENABLED</c> is set to <c>"0"</c> here — the value that would

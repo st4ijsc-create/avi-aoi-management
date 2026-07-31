@@ -176,6 +176,27 @@ internal static class NotificationConfigSchema
 /// transient SQLite hiccup into a lost alarm, so every member here swallows and reports through
 /// <c>logError</c> instead, returning "nothing configured" (which every caller must already handle).</para>
 ///
+/// <para>🔴 <b>Task C-4 — never-throws has exactly ONE exception, and it is a CANCELLATION, not a
+/// failure.</b> Every <c>catch</c> in this class is now preceded by
+/// <c>catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }</c>. Without it, a
+/// read cancelled by shutdown came back as <see langword="null"/>/empty — <b>indistinguishable from
+/// "nothing is stored"</b> — and C-3's review (I-2) traced where that ends up: the channel reported a
+/// MISSING CREDENTIAL that was not missing, moved <c>Lost</c> instead of <c>Cancelled</c>, and, because no
+/// <see cref="OperationCanceledException"/> ever propagated, C-1's drain loop recorded the abandoned job as
+/// <b>successfully dispatched</b>. One swallowed cancellation became a false success three layers up.</para>
+///
+/// <para>C-3 fixed that inside its own class, at a choke point. The trap, however, is HERE — every channel
+/// C-4..C-6 reads the same way and would have inherited it with none of the fix, which is why C-4 moved the
+/// fix to where it lives. This is <b>consistent with</b> never-throws rather than a violation of it: C-1's
+/// drain loop already establishes that a shutdown must not be swallowed. Never-throws means a <i>failure</i>
+/// must not throw; it never meant a cancellation must be disguised as a failure. Applied UNIFORMLY to all
+/// nine members — including the writes, where the caller already learns "it did not commit" either way —
+/// because a rule applied to some members and not others is precisely how the original gap survived one
+/// review round. Callers already handle it: every guard C-3 placed after a store read catches an
+/// <see cref="OperationCanceledException"/> whose token is theirs, so behaviour is unchanged for all of
+/// them (see <c>WebhookNotificationChannel</c>, whose per-call guards are now defence in depth against
+/// cancellation landing BETWEEN the read and the use of its result).</para>
+///
 /// <para>🔴 <b>How a secret is kept out of a public read: structurally, not defensively.</b> After review
 /// round 1 (I2) there is ONE rule and no exceptions to it — <b>every credential is a DPAPI blob in
 /// <c>notification_secrets</c>, addressed by (channel, instance, NAME)</b>. No plaintext table holds a
@@ -669,6 +690,11 @@ public sealed class NotificationConfigStore
             transaction.Commit();
             return true;
         }
+        // 🔴 Task C-4 — a shutdown is not a save failure. See this class's own doc comment. The transaction
+        // is not committed on this path, so a caller learns exactly what it learned before (nothing was
+        // persisted) — but it now learns WHY, and C-7's endpoint can answer a cancelled request as a
+        // cancellation rather than reporting a store fault that did not happen.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Saving the {label} notification channel ('{instance}') failed — it was NOT persisted.");
@@ -692,6 +718,7 @@ public sealed class NotificationConfigStore
             cmd.Parameters.AddWithValue("@instance", instance);
             return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false) > 0;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Deleting the {channel} notification channel ('{instance}') failed.");
@@ -734,6 +761,7 @@ public sealed class NotificationConfigStore
             transaction.Commit();
             return true;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Storing the '{name}' secret for the {channel} notification channel ('{instance}') failed — it was NOT saved.");
@@ -799,6 +827,10 @@ public sealed class NotificationConfigStore
             using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
             return await ReadSecretAsync(connection, channel, instance, name, ct).ConfigureAwait(false);
         }
+        // 🔴 Task C-4 — THE one that mattered most, and the reason the fix moved here from C-3's class.
+        // Returning null under cancellation is indistinguishable from "no secret is stored", and every
+        // caller acts on that null by reporting a missing credential. See the class doc comment.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Reading the '{name}' secret for the {channel} notification channel ('{instance}') failed — treating it as unset.");
@@ -842,6 +874,7 @@ public sealed class NotificationConfigStore
             cmd.Parameters.AddWithValue("@name", name);
             return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false) > 0;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Deleting the '{name}' secret for the {channel} notification channel ('{instance}') failed.");
@@ -905,6 +938,7 @@ public sealed class NotificationConfigStore
             return new WebhookChannelConfig(
                 enabled, minPriority, instance, url, endpoint, fingerprint, label, authHeaderName);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Reading the Webhook notification channel ('{instance}') failed — treating it as unconfigured.");
@@ -958,6 +992,7 @@ public sealed class NotificationConfigStore
             if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return null;
             return new LocalAnnunciationChannelConfig(ReadEnabled(reader), ReadMinPriority(reader), instance);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Reading the local-annunciation notification channel ('{instance}') failed — treating it as unconfigured.");
@@ -988,6 +1023,7 @@ public sealed class NotificationConfigStore
             if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return null;
             return map(ReadEnabled(reader), ReadMinPriority(reader), reader);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
             _logError?.Invoke(ex, $"Reading the {channel} notification channel ('{instance}') failed — treating it as unconfigured.");
@@ -1105,6 +1141,10 @@ public sealed class NotificationConfigStore
 
             return results;
         }
+        // 🔴 Task C-4 — an EMPTY list under cancellation reads as "no channel is configured", which is the
+        // same silent-loss shape as the null above: a channel would move no counter at all and the
+        // notification would vanish. See the class doc comment.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             _logError?.Invoke(ex, "Listing notification channels failed — reporting none configured.");

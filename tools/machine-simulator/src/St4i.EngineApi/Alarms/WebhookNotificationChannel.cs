@@ -331,10 +331,12 @@ public sealed class WebhookNotificationChannel : IDisposable
 
             var configured = await _store.ListAsync(ct).ConfigureAwait(false);
 
-            // 🔴 NotificationConfigStore is never-throws, so a read cancelled by shutdown comes back as an
-            // EMPTY list rather than as an exception. Without this check that is indistinguishable from
-            // "no webhook is configured", and the notification would vanish with no counter moving — the
-            // exact silent-loss shape C-1's review found twice.
+            // 🔴 Kept after Task C-4 moved cancellation-propagation into the store (see ReadSecretAsync's
+            // comment for the full argument). ListAsync now throws when cancelled DURING the read; this
+            // covers a shutdown landing after it returned, before anything is dispatched. Without one or
+            // the other, an empty list is indistinguishable from "no webhook is configured" and the
+            // notification vanishes with no counter moving — the exact silent-loss shape C-1's review
+            // found twice.
             ct.ThrowIfCancellationRequested();
 
             var instances = new List<(string Instance, bool HasSigningSecret)>();
@@ -424,12 +426,13 @@ public sealed class WebhookNotificationChannel : IDisposable
     ///
     /// <para>🔴 <b>Every read of <see cref="NotificationConfigStore"/> in this method is followed
     /// immediately by <c>ct.ThrowIfCancellationRequested()</c></b> — for the secret reads, structurally, via
-    /// <see cref="ReadSecretAsync"/>. That store is never-throws, so a read cancelled by shutdown returns
-    /// "nothing is stored" rather than an exception; without the guard, a shutdown landing in that window
-    /// is reported to the operator as a MISSING CREDENTIAL, counted as <c>Lost</c> instead of
-    /// <c>Cancelled</c>, and — because the <see cref="OperationCanceledException"/> never propagates —
-    /// counted by C-1's drain loop as <b>Dispatched, i.e. delivered</b>. Review round 1 (I-2) found exactly
-    /// that on the auth-token read.</para></summary>
+    /// <see cref="ReadSecretAsync"/>. Since Task C-4 the store itself throws when a read is cancelled while
+    /// it is running; these guards close the remaining window, in which a shutdown arrives after the read
+    /// has returned but before its result is acted on. Either gap has the same ending: a shutdown reported
+    /// to the operator as a MISSING CREDENTIAL, counted as <c>Lost</c> instead of <c>Cancelled</c>, and —
+    /// because no <see cref="OperationCanceledException"/> propagates — counted by C-1's drain loop as
+    /// <b>Dispatched, i.e. delivered</b>. Review round 1 (I-2) found exactly that on the auth-token
+    /// read.</para></summary>
     /// <param name="hasSigningSecret">Whether a signing secret ROW exists for this instance, from the
     /// credential-free summary. See the I-1 comment below: this is the only way to distinguish "unsigned by
     /// configuration" from "unsigned because the key would not decrypt".</param>
@@ -541,15 +544,23 @@ public sealed class WebhookNotificationChannel : IDisposable
     /// 🔴 Review round 1 (I-2) — the ONE way this class reads a secret, and the reason it is a method
     /// rather than two call sites.
     ///
-    /// <para><see cref="NotificationConfigStore.GetSecretAsync"/> is never-throws: a read cancelled by
-    /// shutdown comes back as <see langword="null"/>, indistinguishable from "no secret is stored". Both
-    /// callers act on that null by reporting a MISSING CREDENTIAL and returning <c>Lost</c> — so a shutdown
-    /// landing in that window told the operator their token was missing when it was not, moved the wrong
-    /// counter, and, because the <see cref="OperationCanceledException"/> never propagated, was recorded by
-    /// C-1's drain loop as a successful dispatch. The guard used to live after both reads, where an early
-    /// <c>return</c> could step around it — and did. Putting it here makes "a cancelled secret read is a
-    /// cancellation, not a missing secret" true by construction, including for whatever secret C-7 or a
-    /// later channel adds.</para>
+    /// <para><b>Originally:</b> <see cref="NotificationConfigStore.GetSecretAsync"/> was never-throws in the
+    /// strong sense, so a read cancelled by shutdown came back as <see langword="null"/>, indistinguishable
+    /// from "no secret is stored". Both callers act on that null by reporting a MISSING CREDENTIAL and
+    /// returning <c>Lost</c> — so a shutdown landing in that window told the operator their token was
+    /// missing when it was not, moved the wrong counter, and, because the
+    /// <see cref="OperationCanceledException"/> never propagated, was recorded by C-1's drain loop as a
+    /// successful dispatch.</para>
+    ///
+    /// <para>🔴 <b>Task C-4 moved that fix into the store itself</b>, where the trap actually lived — a
+    /// cancelled read now THROWS, for this channel and for every channel added after it, instead of each
+    /// class re-deriving the same workaround. <b>This guard is deliberately KEPT, and it is no longer the
+    /// same claim.</b> The store's throw covers cancellation landing DURING the read; this covers
+    /// cancellation landing BETWEEN the read returning and the caller acting on its result — a window the
+    /// store cannot see and which ends in the same wrong warning and the same wrong counter. The two are
+    /// complementary rather than redundant, which is why the belt was kept when the braces arrived. Its cost
+    /// is one line and one branch; the alternative is a class whose correctness depends on a race being
+    /// narrow.</para>
     /// </summary>
     private async Task<string?> ReadSecretAsync(string name, string instance, CancellationToken ct)
     {

@@ -1263,25 +1263,27 @@ public sealed class WebhookNotificationChannelTests : IDisposable
     }
 
     /// <summary>
-    /// 🔴 Review round 1 (I-2) — the PREMISE the channel's post-read cancellation guards rest on, pinned
-    /// so it cannot quietly stop being true.
+    /// 🔴 Review round 1 (I-2), <b>inverted by Task C-4</b> — this test used to pin the TRAP; it now pins
+    /// the FIX, and the inversion is the whole point of C-4's first change.
     ///
-    /// <para><see cref="NotificationConfigStore"/> is never-throws, which means a read cancelled by shutdown
-    /// comes back as <see langword="null"/> — <b>indistinguishable from "no secret is stored"</b>. The
-    /// channel acts on that null by reporting a MISSING CREDENTIAL and counting a loss, so without a
-    /// <c>ThrowIfCancellationRequested()</c> immediately after every read, a shutdown in that window tells
-    /// an operator their token is missing when it is not, moves the wrong counter, and — because the
-    /// <see cref="OperationCanceledException"/> never propagates — is recorded by C-1's drain loop as a
-    /// successful dispatch.</para>
+    /// <para><b>What it asserted before.</b> That <see cref="NotificationConfigStore"/> returned
+    /// <see langword="null"/> for a cancelled read — indistinguishable from "no secret is stored" — which is
+    /// why this channel needed a <c>ThrowIfCancellationRequested()</c> after every read. C-3's review round
+    /// 2 recorded that as an explicitly UNTESTED invariant: pinning the premise did not protect anything,
+    /// it merely made the dependency loud.</para>
     ///
-    /// <para>The channel's fix is a choke point (<c>ReadSecretAsync</c>), not a rule at two call sites. The
-    /// exact interleaving cannot be forced from outside without adding a production seam that exists only
-    /// for a test, so this test pins the store behaviour that makes the guard necessary: if C-2's store ever
-    /// started propagating cancellation, this turns red and the guard's justification can be revisited
-    /// deliberately rather than being carried as folklore.</para>
+    /// <para><b>What it asserts now.</b> The store propagates the cancellation itself, so "a cancelled read
+    /// is a cancellation, not a missing credential" holds for every channel that reads it — C-4's SMTP
+    /// channel and C-5/C-6 included — rather than only for whichever class remembered to guard. The
+    /// exception's token is asserted to be the caller's, because that is what makes C-1's drain-loop filter
+    /// (<c>when (ct.IsCancellationRequested)</c>) match and count the job as dropped rather than as a
+    /// dispatch failure.</para>
+    ///
+    /// <para>Both store members the channel reads are covered, plus the write path, so the rule is shown to
+    /// be uniform rather than applied to the one method that had a bug filed against it.</para>
     /// </summary>
     [Fact]
-    public async Task ACancelledSecretRead_ComesBackAsNull_NotAsAnException_WhichIsWhyTheChannelGuards()
+    public async Task ACancelledStoreRead_NowThrows_SoItCanNeverBeMistakenForAMissingCredential()
     {
         var store = NewStore();
         Assert.True(await store.SaveWebhookAsync(enabled: true, AlarmPriority.High, "https://mes.plant/hook"));
@@ -1295,14 +1297,28 @@ public sealed class WebhookNotificationChannelTests : IDisposable
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        // ...and yet a cancelled read is reported as "there is no such secret", with no exception at all.
-        // That is the whole trap.
-        var underCancellation = await store.GetSecretAsync(
-            NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret, ct: cts.Token);
-        Assert.Null(underCancellation);
+        // ...and a cancelled read now says so, instead of claiming the secret is not there.
+        var secretFailure = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.GetSecretAsync(
+            NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret, ct: cts.Token));
+        Assert.Equal(cts.Token, secretFailure.CancellationToken);
 
-        // Same for the configuration read the channel guards on the line after it.
-        Assert.Null(await store.GetWebhookAsync(ct: cts.Token));
+        // The configuration read the channel guards on the line after it, and the public list read that
+        // C-3's DispatchAsync guards — an empty list was the same trap wearing a different shape.
+        var configFailure = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => store.GetWebhookAsync(ct: cts.Token));
+        Assert.Equal(cts.Token, configFailure.CancellationToken);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.ListAsync(cts.Token));
+
+        // Uniform, not per-method: the writes propagate too. Nothing was persisted either way, but a
+        // cancelled save no longer reports itself as a store fault that did not happen.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.SaveWebhookAsync(
+            enabled: true, AlarmPriority.High, "https://mes.plant/other", ct: cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.SetSecretAsync(
+            NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret, "x", ct: cts.Token));
+
+        // 🔴 Non-vacuity: a FAILURE still does not throw. The rule is "a cancellation is not a failure",
+        // not "the store throws now" — reading a channel that was never configured must still be null.
+        Assert.Null(await store.GetSmtpAsync());
     }
 
     /// <summary>
