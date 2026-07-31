@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
+import { mapTrpcError } from '@/lib/trpcErrors';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -62,7 +63,7 @@ export function BulkAnnotationToolbar({
       onRefresh?.();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`Lỗi: ${mapTrpcError(error)}`);
     },
   });
 
@@ -74,7 +75,7 @@ export function BulkAnnotationToolbar({
       onRefresh?.();
     },
     onError: (error) => {
-      toast.error(`${t('common.error')}: ${error.message}`);
+      toast.error(`${t('common.error')}: ${mapTrpcError(error)}`);
     },
   });
 
@@ -86,7 +87,7 @@ export function BulkAnnotationToolbar({
       onRefresh?.();
     },
     onError: (error) => {
-      toast.error(`${t('common.error')}: ${error.message}`);
+      toast.error(`${t('common.error')}: ${mapTrpcError(error)}`);
     },
   });
 

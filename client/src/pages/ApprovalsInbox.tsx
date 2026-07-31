@@ -29,6 +29,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useActuationReadiness } from "@/hooks/useActuationReadiness";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -186,11 +187,11 @@ export default function ApprovalsInbox() {
 
   const approveM = trpc.thresholdApproval.approve.useMutation({
     onSuccess: () => { toast.success(t("approvalsInbox.threshold.approved", "Threshold approved")); invalidateThreshold(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const rejectM = trpc.thresholdApproval.reject.useMutation({
     onSuccess: () => { toast.success(t("approvalsInbox.threshold.rejected", "Threshold rejected")); setRejectTarget(null); invalidateThreshold(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const [rejectTarget, setRejectTarget] = useState<ThresholdApproval | null>(null);
 
@@ -268,11 +269,11 @@ export default function ApprovalsInbox() {
       }
       invalidateDeploys();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const rejectDeployM = trpc.programming.rejectDeployment.useMutation({
     onSuccess: () => { toast.success(t("approvalsInbox.deploy.rejectedOk", "Đã từ chối yêu cầu deploy")); setRejectDeployTarget(null); invalidateDeploys(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const [rejectDeployTarget, setRejectDeployTarget] = useState<DeployApproval | null>(null);
   const [diffOpenId, setDiffOpenId] = useState<number | null>(null);

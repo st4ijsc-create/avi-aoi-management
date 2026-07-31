@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { getActiveLocale } from "@/lib/format";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,7 +64,7 @@ export default function ApsSchedulingPanel({ factoryId = 1 }: { factoryId?: numb
       if (data?.runId) setSelectedRunId(data.runId);
       refetchRuns();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const applyMutation = trpc.productionOrder.applyScheduleRun.useMutation({
@@ -72,7 +73,7 @@ export default function ApsSchedulingPanel({ factoryId = 1 }: { factoryId?: numb
       refetchRuns();
       utils.productionOrder.list.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const dismissMutation = trpc.productionOrder.dismissScheduleRun.useMutation({
@@ -80,7 +81,7 @@ export default function ApsSchedulingPanel({ factoryId = 1 }: { factoryId?: numb
       toast.success(t("aps.dismissed", "Run dismissed"));
       refetchRuns();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // compareScheduleKpi is a query — fetched on demand via utils (read-only).

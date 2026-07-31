@@ -14,6 +14,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,14 +62,14 @@ export function ChangeoverQueue({ machineId }: { machineId: number | undefined }
       setNote("");
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const approveM = trpc.machineRecipe.changeover.approve.useMutation({
     onSuccess: () => {
       toast.success(t("changeover.approved", "Đã duyệt — recipe được triển khai (ledger)."));
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const rejectM = trpc.machineRecipe.changeover.reject.useMutation({
     onSuccess: () => {
@@ -76,7 +77,7 @@ export function ChangeoverQueue({ machineId }: { machineId: number | undefined }
       setRejectReason("");
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const canShowApprover = pending.isSuccess;

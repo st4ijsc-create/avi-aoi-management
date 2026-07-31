@@ -10,6 +10,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
@@ -90,7 +91,7 @@ export default function ApiKeysPage() {
       invalidate();
       toast.success(t("apiKeys.toastCreated", "Đã tạo khoá API"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Edit dialog ──
@@ -108,18 +109,18 @@ export default function ApiKeysPage() {
 
   const updateM = trpc.apiKey.update.useMutation({
     onSuccess: () => { setEditRow(null); invalidate(); toast.success(t("apiKeys.toastUpdated", "Đã cập nhật khoá")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const revokeM = trpc.apiKey.revoke.useMutation({
     onSuccess: () => { invalidate(); toast.success(t("apiKeys.toastRevoked", "Đã thu hồi khoá")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const deleteM = trpc.apiKey.delete.useMutation({
     onSuccess: () => { setDeleteId(null); invalidate(); toast.success(t("apiKeys.toastDeleted", "Đã xoá khoá")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const toggleScope = (list: string[], setList: (v: string[]) => void, scope: string) => {

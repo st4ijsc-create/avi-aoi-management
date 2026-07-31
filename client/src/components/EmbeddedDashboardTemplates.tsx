@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   templateToCustomDashboardWidgets,
   type TemplateLayoutItem,
@@ -161,7 +162,7 @@ export default function EmbeddedDashboardTemplates({ embedded = false }: { embed
       setApplyingId(null);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
       setApplyingId(null);
     },
   });
@@ -195,7 +196,7 @@ export default function EmbeddedDashboardTemplates({ embedded = false }: { embed
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -205,7 +206,7 @@ export default function EmbeddedDashboardTemplates({ embedded = false }: { embed
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 

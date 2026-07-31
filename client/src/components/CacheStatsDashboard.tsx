@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
+import { mapTrpcError } from '@/lib/trpcErrors';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -71,7 +72,7 @@ function CacheWarmingSection() {
       refetch();
     },
     onError: (error) => {
-      toast.error('Failed to trigger warming', { description: error.message });
+      toast.error('Failed to trigger warming', { description: mapTrpcError(error) });
     },
   });
 
@@ -82,7 +83,7 @@ function CacheWarmingSection() {
       setShowConfig(false);
     },
     onError: (error) => {
-      toast.error(t('cache.warming.configSaveError'), { description: error.message });
+      toast.error(t('cache.warming.configSaveError'), { description: mapTrpcError(error) });
     },
   });
 
@@ -288,7 +289,7 @@ export function CacheStatsDashboard() {
       refetchStats();
     },
     onError: (error) => {
-      toast.error(t('cache.clearError'), { description: error.message });
+      toast.error(t('cache.clearError'), { description: mapTrpcError(error) });
     },
   });
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -128,7 +129,7 @@ export default function Users() {
       refetchUsers();
     },
     onError: (error) => {
-      toast.error(error.message || t('users.createError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -140,7 +141,7 @@ export default function Users() {
       refetchUsers();
     },
     onError: (error) => {
-      toast.error(error.message || t('users.updateError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -151,7 +152,7 @@ export default function Users() {
       setPasswordForm({ newPassword: "", confirmPassword: "" });
     },
     onError: (error) => {
-      toast.error(error.message || t('users.passwordChangeError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -163,7 +164,7 @@ export default function Users() {
       refetchUsers();
     },
     onError: (error) => {
-      toast.error(error.message || t('users.deleteError'));
+      toast.error(mapTrpcError(error));
     },
   });
 

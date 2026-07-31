@@ -19,6 +19,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
@@ -266,19 +267,19 @@ function PmSchedulesTab() {
 
   const createM = trpc.maintenanceSchedule.create.useMutation({
     onSuccess: () => { toast.success(t("cmms.pm.created", "Đã tạo lịch PM")); setCreateOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateM = trpc.maintenanceSchedule.update.useMutation({
     onSuccess: () => { toast.success(t("cmms.pm.updated", "Đã cập nhật lịch PM")); setEditing(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const removeM = trpc.maintenanceSchedule.remove.useMutation({
     onSuccess: () => { toast.success(t("cmms.pm.removed", "Đã xóa lịch PM")); setConfirmDelete(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const setEnabledM = trpc.maintenanceSchedule.setEnabled.useMutation({
     onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const rows = (listQ.data ?? []) as PmSchedule[];

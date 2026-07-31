@@ -34,6 +34,7 @@ import { useLocation } from "wouter";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
@@ -182,7 +183,7 @@ export default function RobotModelHealth() {
       }
       void utils.aiRobotAnomaly.status.invalidate();
     } else {
-      toast.error(e.message);
+      toastTrpcError(e);
     }
   };
 

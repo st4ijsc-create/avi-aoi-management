@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -105,21 +106,21 @@ export function ModelCardManageButton({
       toast.success(t("modelCard.saved", "Model card saved"));
       invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
   const updateCard = trpc.aiModel.updateCard.useMutation({
     onSuccess: () => {
       toast.success(t("modelCard.saved", "Model card saved"));
       invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
   const approveCard = trpc.aiModel.approveCard.useMutation({
     onSuccess: () => {
       toast.success(t("modelCard.approvedToast", "Model card approved"));
       invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const hasCard = !!query.data?.card;

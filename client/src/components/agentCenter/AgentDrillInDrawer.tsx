@@ -41,6 +41,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/patterns";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { fmtIntCompact, relTimeShort } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -131,14 +132,14 @@ function OrchestratorDetail({ entry, sessions, currentUserId, onMutated }: { ent
       detailQuery.refetch();
       onMutated();
     },
-    onError: (err: any) => toast.error(err?.message ?? t("agentCenter.drawer.approveError", "Không thể duyệt kế hoạch.")),
+    onError: (err: any) => toast.error(mapTrpcError(err)),
   });
   const confirmMut = trpc.aiAgent.confirmStep.useMutation({
     onSuccess: () => {
       detailQuery.refetch();
       onMutated();
     },
-    onError: (err: any) => toast.error(err?.message ?? t("agentCenter.drawer.pendingWrite.confirmError", "Không thể xác nhận thao tác.")),
+    onError: (err: any) => toast.error(mapTrpcError(err)),
   });
   const cancelMut = trpc.aiAgent.cancelSession.useMutation({
     onSuccess: () => {
@@ -146,7 +147,7 @@ function OrchestratorDetail({ entry, sessions, currentUserId, onMutated }: { ent
       detailQuery.refetch();
       onMutated();
     },
-    onError: (err: any) => toast.error(err?.message ?? t("aiBrain.agentOps.cancelError", "Không thể hủy phiên agent.")),
+    onError: (err: any) => toast.error(mapTrpcError(err)),
   });
 
   const busy = approveMut.isPending || confirmMut.isPending || cancelMut.isPending;
