@@ -148,3 +148,73 @@ Reviewer tự chạy lại SQL — bảng §1 khớp 100%; xác nhận độc l�
 - **Ghi thêm cho Task 7** (không phải lỗi, theo yêu cầu reviewer): thêm mục "⚠ Giới hạn quan trọng cho Task 7" — `ai_model_metrics` cũng 0 dòng, không có nguồn thay thế cho code/fim trong DB hiện tại.
 
 Không đụng mã sản xuất, không đụng `.env` trong vòng sửa này — chỉ sửa văn bản báo cáo.
+
+---
+
+## §2 Tráo model & KV cache (Task 2)
+
+**Câu hỏi:** roster hiện tại (2 model 30B riêng: `Qwen3-30B-A3B-Instruct` cho default + `Qwen3-Coder-30B-A3B` cho code) có đuổi nhau (LRU evict) nhiều hơn roster A (gộp default=code=cùng 1 file 30B) không? Phải đo được **cả hai chiều** — brief giả thuyết hiện tại evict>0, A evict=0.
+
+**⚠ Kết quả bất ngờ — báo trung thực, không ép khớp giả thuyết:** cả hai roster đều đo ra **0 lần evict**. KHÔNG phải vì roster A "đủ chỗ" như giả thuyết — mà vì trong môi trường đo hôm nay, **không có model 30B nào (Instruct hay Coder, ở roster nào) từng nạp thành công dù chỉ 1 lần**: 45/45 lượt thử đều lỗi `cudaMalloc failed: out of memory`, kể cả khi VRAM đang dùng chỉ 58-71% (không phải do thiếu VRAM tổng như bài toán "34GB>32,6GB" giả định — hỏng sớm hơn thế). Cơ chế LRU-evict không có gì để đuổi vì không có gì nạp được để mà đuổi.
+
+### Phương pháp
+
+Lặp lại đúng phiên đại diện 4 nhóm ≥5 lượt của Task 1 Bước 2 (chat/RCA+report/code/vision), 1 lần cho mỗi roster, đo qua `npm run dev > log 2>&1` (log evict ra thẳng stdout, xác nhận đọc mã `aiGgufEngine.ts:341-390` — có **2 đường log evict khác định dạng**: `console.warn` dòng 366 chữ thường "evicted LRU model "X" before loading" [nhánh `enforceVramGuard()` theo %VRAM] và `console.log` dòng 388 chữ Hoa "Evicted LRU model: X" [nhánh `evictLRU()`, gọi từ cả guard lẫn nhánh catch-retry-OOM ở `loadGgufModel()` dòng 622-645] — brief chỉ nhắm đường #1, đã đo cả hai để không bỏ sót). VRAM đỉnh đo song song bằng `nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -l 1` ghi ra CSV riêng.
+
+Roster hiện tại chạy qua **3 tiến trình** `npm run dev` (2 lần crash tiến trình giữa chừng — xem "Phát hiện thêm" bên dưới); roster A qua **2 tiến trình** (1 lần crash). Restart sạch giữa mỗi lần crash, không đo tiếp trên tiến trình cũ.
+
+### Bảng kết quả
+
+| Roster | Evict (log #1, brief) | Evict (log #2) | Lượt thử 30B / thành công | Lỗi `cudaMalloc` | VRAM đỉnh | Crash tiến trình |
+|---|---|---|---|---|---|---|
+| **Hiện tại** (`GGUF_DEFAULT_MODEL=Qwen3-30B-A3B-Instruct`, `GGUF_CODE_MODEL=Qwen3-Coder-30B-A3B`, khác file) | **0** | **0** | 24 / **0** | 24 | 19039 MiB (58% / 32.607 MiB) | 2 |
+| **A** (`GGUF_DEFAULT_MODEL=GGUF_CODE_MODEL=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf`, cùng 1 file) | **0** | **0** | 21 / **0** | 21 | 23298 MiB (71% / 32.607 MiB) | 1 |
+
+Lệnh tạo bảng (chạy trên từng file log/csv của từng roster, gộp lại):
+```bash
+grep -c "evicted LRU model" do0-roster-*.log         # đường #1 (brief) — tất cả = 0
+grep -c "Evicted LRU model:" do0-roster-*.log        # đường #2 — tất cả = 0
+grep -c "cudaMalloc failed" do0-roster-*.log         # 2+5+17=24 (hiện tại) · 2+19=21 (A)
+grep -c "Loading model:.*Qwen3-30B-A3B-Instruct\|Loading model:.*Qwen3-Coder-30B" do0-roster-*.log
+cat do0-vram-*.csv | sort -n | tail -3               # peak per roster
+```
+
+Model **duy nhất** nạp thành công ở CẢ HAI roster: `Qwen3-Embedding-0.6B-f16`, `Qwen3-4B-Instruct-2507` (fast tier), `Qwen2.5-Coder-1.5B-Instruct` (FIM). Không có lượt 30B nào (Instruct hay Coder, roster nào) thành công.
+
+### Điều tra thêm — vì sao ngay cả 1 model 30B đơn lẻ cũng không nạp nổi
+
+Vượt khỏi yêu cầu tối thiểu của brief, nhưng cần thiết để báo cáo không bị hiểu lầm thành "cả hai roster đều ổn" (SAI — cả hai đều hỏng, chỉ khác cách hỏng):
+
+1. **Race điều kiện thật trong mã, tái hiện 100% mọi lần boot:** `aiGgufEngine.ts:1078` (`initDeepModelWarmup`) VÀ `aiLocalKnowledgeService.ts:2395` (setTimeout riêng, tự nhận "doc 48 R1 — WARM ORDER FIX") **độc lập với nhau cùng gọi `warmModel(GGUF_DEFAULT_MODEL)`** ngay sau boot. `loadGgufModel()` không khoá model đang nạp dở dang → 2 lời gọi cùng modelId race nhau, cả hai cùng xin cấp phát ~17GB đồng thời (34GB > 32,6GB) → OOM chắc chắn. Xác nhận: mọi tiến trình `npm run dev` trong khảo sát này đều có đúng 2 dòng `Loading model:` liên tiếp cho cùng 1 model ngay sau boot.
+2. **Không giải thích hết** — mọi lượt thử SAU race (phút thứ 2, thứ 5...) cũng lỗi giống hệt dù VRAM free 18-23GB theo `nvidia-smi`. `nvidia-smi -q -d MEMORY` cho thấy **BAR1 chỉ 256 MiB tổng, gần đầy (227/256 MiB)** — nghi vấn Resizable BAR/Smart Access Memory chưa bật đủ, có thể là nút thắt cho cấp phát buffer đơn khối ~17GB độc lập với %VRAM tổng còn trống. **Giả thuyết có bằng chứng gián tiếp, chưa chứng minh dứt điểm** (cần quyền BIOS/driver để xác nhận, ngoài phạm vi phần mềm).
+3. Đường mã nạp+context **tự nó không hỏng**: quét KV cache bằng model 4B (xem bên dưới) nạp+tạo context tới tận `GGUF_MAX_CTX`=32768 thành công 4/4 lần liên tiếp.
+4. **3 lần crash tiến trình hoàn toàn** (không chỉ leak VRAM như Task1 mô tả) — log dừng im lặng, không JS stack trace, VRAM về baseline ngay lập tức trong 1 khoảng poll (1s). Khác nhánh OOM-có-catch (case đó IN RA stack trace và server vẫn sống). Dấu hiệu crash gốc native trong add-on CUDA — độc lập xác nhận, MẠNH HƠN mối lo mức-tin-cậy-trung-bình của Task1 (không có `dispose()` ở nhánh catch `loadGgufModel()` dòng 622-645).
+
+### KV cache dưới ngữ cảnh tối đa (`GGUF_MAX_CTX`=32768)
+
+**Không đo được qua tier deep/code** — cả hai model 30B không nạp nổi phần TRỌNG SỐ (không liên quan KV cache), không tách được ảnh hưởng riêng của context lớn. Đo thay thế bằng model tin cậy nhất (`GGUF_FAST_MODEL`=Qwen3-4B), gọi trực tiếp `loadGgufModel`/`generateText`/`unloadGgufModel` (cùng code path production) qua script cô lập, quét contextSize 4096→32768, unload giữa mỗi lần:
+
+| contextSize | VRAM trước | VRAM sau (Δ) | Kết quả |
+|---|---|---|---|
+| 4096 | 1169 MiB | 6702 MiB (+5533) | OK |
+| 8192 | 1664 MiB | 9005 MiB (+7341) | OK |
+| 16384 | 1663 MiB | 13603 MiB (+11940) | OK |
+| 32768 (trần cứng) | 1653 MiB | 22819 MiB (+21166) | OK |
+
+4/4 thành công, unload trả VRAM về baseline mỗi lần (không leak khi nạp THÀNH CÔNG). Không tìm được "mốc bắt đầu thiếu" cho model 4B (32768 chỉ tốn 68% VRAM). **Không đo được cho tier 30B** — lý do nêu trên, không ngoại suy.
+
+### Lỗi phương pháp trong brief — `.env` không được git track
+
+Brief Bước 4 dùng `git diff --stat .env` + `git checkout -- .env` để xác nhận hoàn nguyên. **Không hoạt động**: `.env` nằm trong `.gitignore` → `git diff --stat .env` LUÔN rỗng bất kể nội dung thật, và `git checkout -- .env` **LỖI** (`pathspec did not match`) — không hoàn nguyên gì. Phát hiện ngay khi chạy (thấy lỗi thay vì thành công im lặng) → hoàn nguyên **thủ công** bằng cách sửa lại đúng dòng đã đổi rồi xác nhận bằng đọc nội dung file (không dùng git). Task1 cũng dùng đúng công thức này để "xác nhận" — vô hại vì họ chưa từng sửa `.env`, nhưng phép xác nhận đó chưa từng thực sự chứng minh được gì. Khuyến nghị: Task nào sau này còn phải sửa `.env` tạm thời thì xác nhận hoàn nguyên bằng `grep`/đọc nội dung, không dùng lệnh git cho file bị `.gitignore` chặn.
+
+**Xác nhận `.env` đã hoàn nguyên** (thủ công):
+```bash
+grep -n "^GGUF_DEFAULT_MODEL=" .env
+# → GGUF_DEFAULT_MODEL=Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf   (đúng giá trị gốc)
+```
+
+### Kết luận cho Task 7
+
+**Không thể trả lời câu hỏi gốc của Đợt 0 ("roster nào evict nhiều hơn") bằng dữ liệu hôm nay** — cả hai roster đều evict=0 vì tier deep hỏng hoàn toàn ở MỌI roster (nguyên nhân: race điều kiện double-warm lúc boot + nghi vấn BAR1, không phải do thiết kế roster), không phải vì 1 trong 2 thiết kế tốt hơn trên trục evict. Câu hỏi cần đo lại SAU KHI môi trường/driver ổn định (không còn OOM 100% như hôm nay). Dữ liệu hôm nay CÓ giá trị khác: nó cho thấy hệ hiện đang hỏng nặng hơn cả hai giả thuyết roster — bất kể chọn roster nào, cần vá race điều kiện double-warm + điều tra BAR1/crash trước khi roster nào có cơ hội hoạt động đúng thiết kế.
+
+Bản đầy đủ (điều tra chi tiết, log excerpt, script KV-cache-scan): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-2-report.md` (không commit — `.superpowers/sdd/*` bị `.gitignore` chặn).
