@@ -3687,7 +3687,14 @@
       "contractSchema": "schema hợp đồng dữ liệu",
       "measurementSample": "mẫu đo",
       "metricDefinition": "định nghĩa chỉ số",
-      "masterDataReference": "dữ liệu tham chiếu"
+      "masterDataReference": "dữ liệu tham chiếu",
+      "factory": "nhà máy",
+      "workshop": "xưởng",
+      "workstation": "trạm làm việc",
+      "mqttClientProfile": "hồ sơ client MQTT",
+      "qualityGateTemplate": "mẫu cổng chất lượng",
+      "yieldAlertThreshold": "ngưỡng cảnh báo hiệu suất",
+      "orderTemplate": "mẫu lệnh sản xuất"
     },
     "operation": {
       "extractAoiPackageImage": "trích xuất ảnh từ gói AOI",
@@ -3816,7 +3823,9 @@
       "setLatestSoftwareVersion": "đặt phiên bản phần mềm mới nhất",
       "connectRos2Bridge": "kết nối cầu nối ROS2",
       "loginWithPassword": "đăng nhập bằng mật khẩu",
-      "setupAdmin": "khởi tạo tài khoản admin đầu tiên"
+      "setupAdmin": "khởi tạo tài khoản admin đầu tiên",
+      "deleteMqttClientProfile": "xoá hồ sơ client MQTT",
+      "queryLocalKb": "truy vấn tri thức cục bộ"
     },
     "field": {
       "code": "mã",
@@ -3889,7 +3898,8 @@
       "idempotencyKey": "khoá idempotency",
       "lotCodeOrProductModelId": "mã lô hoặc mã model sản phẩm",
       "deviceId": "mã thiết bị",
-      "credentials": "thông tin đăng nhập"
+      "credentials": "thông tin đăng nhập",
+      "embedding": "vector embedding"
     },
     "feature": {
       "webIngest": "nạp nội dung từ web",
@@ -3925,7 +3935,8 @@
       "productVariants": "biến thể sản phẩm",
       "modelCardGovernance": "quản trị model card",
       "aiSegmentation": "phân đoạn ảnh AI",
-      "twinLocalStorage": "lưu trữ cục bộ digital twin"
+      "twinLocalStorage": "lưu trữ cục bộ digital twin",
+      "qualityGateTemplateRegistry": "sổ đăng ký mẫu cổng chất lượng"
     },
     "action": {
       "viewOthersPermissions": "xem quyền của người khác",

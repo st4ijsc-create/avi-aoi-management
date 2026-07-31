@@ -3686,7 +3686,14 @@
       "contractSchema": "contract schema",
       "measurementSample": "measurement sample",
       "metricDefinition": "metric definition",
-      "masterDataReference": "reference data"
+      "masterDataReference": "reference data",
+      "factory": "factory",
+      "workshop": "workshop",
+      "workstation": "workstation",
+      "mqttClientProfile": "MQTT client profile",
+      "qualityGateTemplate": "quality gate template",
+      "yieldAlertThreshold": "yield alert threshold",
+      "orderTemplate": "order template"
     },
     "operation": {
       "extractAoiPackageImage": "extract image from AOI package",
@@ -3815,7 +3822,9 @@
       "setLatestSoftwareVersion": "set latest software version",
       "connectRos2Bridge": "connect ROS2 bridge",
       "loginWithPassword": "log in with password",
-      "setupAdmin": "set up the first admin account"
+      "setupAdmin": "set up the first admin account",
+      "deleteMqttClientProfile": "delete MQTT client profile",
+      "queryLocalKb": "query local knowledge base"
     },
     "field": {
       "code": "code",
@@ -3888,7 +3897,8 @@
       "idempotencyKey": "idempotency key",
       "lotCodeOrProductModelId": "lot code or product model ID",
       "deviceId": "device ID",
-      "credentials": "login credentials"
+      "credentials": "login credentials",
+      "embedding": "embedding vector"
     },
     "feature": {
       "webIngest": "web content ingestion",
@@ -3924,7 +3934,8 @@
       "productVariants": "product variants",
       "modelCardGovernance": "model card governance",
       "aiSegmentation": "AI segmentation",
-      "twinLocalStorage": "digital twin local storage"
+      "twinLocalStorage": "digital twin local storage",
+      "qualityGateTemplateRegistry": "quality gate template registry"
     },
     "action": {
       "viewOthersPermissions": "view another user's permissions",

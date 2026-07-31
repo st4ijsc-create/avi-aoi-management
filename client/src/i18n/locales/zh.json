@@ -3678,7 +3678,14 @@
       "contractSchema": "契约schema",
       "measurementSample": "测量样本",
       "metricDefinition": "指标定义",
-      "masterDataReference": "参考数据"
+      "masterDataReference": "参考数据",
+      "factory": "工厂",
+      "workshop": "车间",
+      "workstation": "工位",
+      "mqttClientProfile": "MQTT客户端配置文件",
+      "qualityGateTemplate": "质量门模板",
+      "yieldAlertThreshold": "良率告警阈值",
+      "orderTemplate": "工单模板"
     },
     "operation": {
       "extractAoiPackageImage": "从AOI数据包提取图像",
@@ -3807,7 +3814,9 @@
       "setLatestSoftwareVersion": "设置最新软件版本",
       "connectRos2Bridge": "连接ROS2桥接",
       "loginWithPassword": "使用密码登录",
-      "setupAdmin": "设置首个管理员账户"
+      "setupAdmin": "设置首个管理员账户",
+      "deleteMqttClientProfile": "删除MQTT客户端配置文件",
+      "queryLocalKb": "查询本地知识库"
     },
     "field": {
       "code": "编码",
@@ -3880,7 +3889,8 @@
       "idempotencyKey": "幂等键",
       "lotCodeOrProductModelId": "批次代码或产品型号ID",
       "deviceId": "设备ID",
-      "credentials": "登录凭证"
+      "credentials": "登录凭证",
+      "embedding": "嵌入向量"
     },
     "feature": {
       "webIngest": "网页内容导入",
@@ -3916,7 +3926,8 @@
       "productVariants": "产品变体",
       "modelCardGovernance": "模型卡治理",
       "aiSegmentation": "AI图像分割",
-      "twinLocalStorage": "数字孪生本地存储"
+      "twinLocalStorage": "数字孪生本地存储",
+      "qualityGateTemplateRegistry": "质量门模板注册表"
     },
     "action": {
       "viewOthersPermissions": "查看他人的权限",
