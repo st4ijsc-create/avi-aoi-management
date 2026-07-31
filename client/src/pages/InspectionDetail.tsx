@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { 
   ArrowLeft,
   CheckCircle2,
@@ -231,7 +231,7 @@ export default function InspectionDetail() {
       refetch();
     },
     onError: (error) => {
-      toastTrpcError(error);
+      toast.error(t('inspection.analysisError'), { description: mapTrpcError(error) });
     },
     onSettled: () => {
       setAnalyzingId(null);

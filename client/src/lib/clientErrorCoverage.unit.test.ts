@@ -45,6 +45,36 @@
  *
  * Tự đo lại: chạy hàm countRawMessageSites() ở dưới trên "client/src" (không có
  * lệnh shell một-dòng tương đương vì cần cân bằng ngoặc + tra cứu — xem trên).
+ *
+ * ── ĐIỂM MÙ ĐÃ VÁ (review round 1 — Important) — "không phân giải được" phải ỒN
+ * ÀO, không được im lặng ─────────────────────────────────────────────────────
+ * resolveNamedDef() ở dưới CHỈ tìm định nghĩa dạng `const/let/var NAME = (...) =>`
+ * hoặc `function NAME(...)` trong CÙNG FILE. Reviewer dựng 3 fixture chứng minh cả
+ * ba đều trả về `null` mà bản gốc của file này lặng lẽ `continue` (bỏ qua, KHÔNG
+ * đếm là vi phạm, CŨNG KHÔNG đếm là đã-di-trú — biến mất hoàn toàn khỏi hai con số
+ * trên):
+ *   1. `onError: sharedHandler` với `sharedHandler` IMPORT từ file khác (không có
+ *      định nghĩa `const sharedHandler = ...` trong file đang quét).
+ *   2. `const onError = useMemo(() => (e) => {...}, [])` — vế phải của `const
+ *      onError =` không phải trực tiếp `(params) =>` (là `useMemo(` trước) nên
+ *      regex định nghĩa không khớp.
+ *   3. `const onError = createHandler();` (factory-call) rồi dùng `onError,`
+ *      viết tắt — cùng lý do (2), vế phải không phải arrow trực tiếp.
+ * Nguy hiểm: cổng này ĐIỀU KHIỂN Task 8/9/10 di trú 531 site còn lại — đúng loại
+ * việc hay dẫn tới hoist handler dùng chung ra file/hook riêng (import) hoặc bọc
+ * `useCallback`/`useMemo` cho ổn định tham chiếu. Nếu điều đó xảy ra mà không ai
+ * biết, cổng vẫn xanh (vì "không đếm là vi phạm") trong khi con số 531 không còn
+ * đúng nữa — sai LẶNG LẼ, tệ hơn cổng đỏ.
+ *
+ * Sửa: analyzeFile() giờ GHI NHẬN riêng mọi site có tham chiếu KHÔNG giải được
+ * (danh sách `unresolved`, không gộp vào `violations`/`total` vì không biết chắc
+ * đó CÓ phải vi phạm hay không — có thể handler đó đã dùng đúng mapTrpcError rồi,
+ * chỉ là cổng không đọc được). `ALLOWED_UNRESOLVED_ONERROR_REFS` bên dưới là một
+ * ngân sách RIÊNG, luôn phải là 0 tại thời điểm này (đo được: 0) — hễ tăng lên,
+ * cổng ĐỎ NGAY, buộc người thêm handler dạng đó phải hoặc (a) viết lại thành dạng
+ * cổng đọc được (định nghĩa cùng file), hoặc (b) mở rộng resolveNamedDef() để hỗ
+ * trợ dạng mới rồi hạ ngân sách về đúng 0 lại, KHÔNG được nâng ngân sách lên để
+ * "cho qua".
  */
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -133,11 +163,19 @@ function resolveNamedDef(src: string, name: string): string | null {
 
 /** Đếm mỗi SITE `onError` (khoá trong options object của react-query) hiện message
  *  thô. Xem docstring đầu file để biết vì sao cần cân bằng ngoặc + tra cứu tham
- *  chiếu, thay vì một regex đơn giản. */
-function analyzeFile(file: string): { violations: number; lines: number[] } {
+ *  chiếu, thay vì một regex đơn giản.
+ *
+ *  `unresolved` = site có tham chiếu (`onError: name` / viết tắt `onError,`) mà
+ *  resolveNamedDef() KHÔNG tìm được định nghĩa trong cùng file (import từ nơi
+ *  khác / useMemo·useCallback bọc ngoài / factory-call gián tiếp — xem docstring
+ *  "ĐIỂM MÙ ĐÃ VÁ" đầu file). Đây KHÔNG phải violations (không biết chắc đúng/sai)
+ *  nhưng PHẢI được báo riêng — im lặng bỏ qua là chính điểm mù bị review round 1
+ *  bắt lỗi. */
+function analyzeFile(file: string): { violations: number; lines: number[]; unresolved: Array<{ line: number; refName: string }> } {
   const src = readFileSync(file, "utf8");
   let violations = 0;
   const lines: number[] = [];
+  const unresolved: Array<{ line: number; refName: string }> = [];
   let idx = 0;
   while (true) {
     const found = src.indexOf("onError", idx);
@@ -175,7 +213,11 @@ function analyzeFile(file: string): { violations: number; lines: number[] } {
 
     if (refName) {
       const resolved = resolveNamedDef(src, refName);
-      if (resolved === null) continue; // không rõ — tránh báo dương tính giả
+      if (resolved === null) {
+        // ĐIỂM MÙ ĐÃ VÁ: trước đây `continue` lặng lẽ ở đây — giờ ghi nhận ồn ào.
+        unresolved.push({ line: src.slice(0, found).split("\n").length, refName });
+        continue;
+      }
       body = resolved;
     }
 
@@ -184,7 +226,7 @@ function analyzeFile(file: string): { violations: number; lines: number[] } {
       lines.push(src.slice(0, found).split("\n").length);
     }
   }
-  return { violations, lines };
+  return { violations, lines, unresolved };
 }
 
 function countRawMessageSites(): { total: number; byFile: Array<[string, number]> } {
@@ -198,6 +240,20 @@ function countRawMessageSites(): { total: number; byFile: Array<[string, number]
     }
   }
   byFile.sort((a, b) => b[1] - a[1]);
+  return { total, byFile };
+}
+
+/** Tổng site KHÔNG giải được tham chiếu (xem docstring "ĐIỂM MÙ ĐÃ VÁ" đầu file). */
+function countUnresolvedRefs(): { total: number; byFile: Array<[string, string, number]> } {
+  const byFile: Array<[string, string, number]> = [];
+  let total = 0;
+  for (const file of walkTsxFiles(CLIENT_SRC_DIR)) {
+    const { unresolved } = analyzeFile(file);
+    for (const u of unresolved) {
+      byFile.push([file.replace(CLIENT_SRC_DIR, "client/src"), `${u.refName}:${u.line}`, 1]);
+      total++;
+    }
+  }
   return { total, byFile };
 }
 
@@ -216,5 +272,29 @@ describe("phủ mã lỗi trong client/src (onError → mapTrpcError/toastTrpcEr
     // `onError: (e) => toast.error(e.message)` mới sẽ lọt qua cổng mà không ai biết.
     const { total } = countRawMessageSites();
     expect(ALLOWED_RAW_MESSAGE_HANDLERS).toBe(total);
+  });
+});
+
+/** Hạ số này về 0 nếu >0 ở đây nghĩa là cổng CHÍNH bên trên đang có site mù (xem
+ *  docstring "ĐIỂM MÙ ĐÃ VÁ" đầu file). KHÔNG BAO GIỜ nâng lên để "cho qua" — nếu
+ *  một tham chiếu hợp lệ mới thật sự không giải được, MỞ RỘNG resolveNamedDef() để
+ *  cổng đọc được nó rồi hạ ngân sách về đúng 0, đừng nới ngân sách. */
+const ALLOWED_UNRESOLVED_ONERROR_REFS = 0; // ← review round 1 (Important) — đo được: 0 tại thời điểm vá.
+
+describe("phủ mã lỗi trong client/src — site onError KHÔNG giải được tham chiếu (review round 1)", () => {
+  it(`còn tối đa ${ALLOWED_UNRESOLVED_ONERROR_REFS} site onError không truy được định nghĩa (import/useMemo/factory-call...)`, () => {
+    const { total, byFile } = countUnresolvedRefs();
+    if (total > ALLOWED_UNRESOLVED_ONERROR_REFS) {
+      console.error(
+        "[phủ mã lỗi client] site onError KHÔNG giải được tham chiếu — không rõ đã di trú hay chưa, cần soát thủ công:",
+        byFile,
+      );
+    }
+    expect(total).toBeLessThanOrEqual(ALLOWED_UNRESOLVED_ONERROR_REFS);
+  });
+
+  it("ngân sách site-không-giải-được KHÔNG được nới rộng hơn thực tế", () => {
+    const { total } = countUnresolvedRefs();
+    expect(ALLOWED_UNRESOLVED_ONERROR_REFS).toBe(total);
   });
 });
