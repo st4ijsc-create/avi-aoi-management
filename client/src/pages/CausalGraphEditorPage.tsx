@@ -33,6 +33,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { PageHeader, PageContainer } from "@/components/patterns";
@@ -308,8 +309,7 @@ export function CausalGraphEditorPageContent() {
     return m;
   }, [nodes]);
 
-  const onErr = (e: { message?: string }) =>
-    toast.error(e?.message || t("causalGraph.toastError", "Thao tác thất bại"));
+  const onErr = (e: unknown) => toast.error(mapTrpcError(e));
   const onOk = () => { invalidate(); toast.success(t("causalGraph.toastSaved", "Đã lưu đồ thị nhân quả")); };
 
   // ── Node mutations ──

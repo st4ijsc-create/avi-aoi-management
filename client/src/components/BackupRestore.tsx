@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -85,7 +86,7 @@ export default function BackupRestore() {
       setDescription("");
       refetchBackups();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const restoreBackupMutation = trpc.backup.restoreBackup.useMutation({
@@ -95,7 +96,7 @@ export default function BackupRestore() {
       setRestoreTarget(null);
       refetchBackups();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteBackupMutation = trpc.backup.deleteBackup.useMutation({
@@ -103,7 +104,7 @@ export default function BackupRestore() {
       toast.success(t('backup.backupDeleted'));
       refetchBackups();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const createScheduledMutation = trpc.backup.createScheduled.useMutation({
@@ -117,7 +118,7 @@ export default function BackupRestore() {
       });
       refetchSchedules();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const toggleScheduledMutation = trpc.backup.toggleScheduled.useMutation({
@@ -125,7 +126,7 @@ export default function BackupRestore() {
       toast.success(data.message);
       refetchSchedules();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteScheduledMutation = trpc.backup.deleteScheduled.useMutation({
@@ -133,7 +134,7 @@ export default function BackupRestore() {
       toast.success(t('backup.scheduleDeleted'));
       refetchSchedules();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const toggleCategory = (category: string) => {

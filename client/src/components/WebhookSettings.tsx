@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -89,7 +90,7 @@ export default function WebhookSettings() {
       closeDialog();
       refetchWebhooks();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateMutation = trpc.webhook.update.useMutation({
@@ -98,7 +99,7 @@ export default function WebhookSettings() {
       closeDialog();
       refetchWebhooks();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.webhook.delete.useMutation({
@@ -106,7 +107,7 @@ export default function WebhookSettings() {
       toast.success(t("webhook.deleteSuccess"));
       refetchWebhooks();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const toggleMutation = trpc.webhook.toggle.useMutation({
@@ -114,7 +115,7 @@ export default function WebhookSettings() {
       toast.success(data.message);
       refetchWebhooks();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const testMutation = trpc.webhook.test.useMutation({
@@ -126,7 +127,7 @@ export default function WebhookSettings() {
       }
       refetchLogs();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const clearLogsMutation = trpc.webhook.clearLogs.useMutation({
@@ -134,7 +135,7 @@ export default function WebhookSettings() {
       toast.success(data.message);
       refetchLogs();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const closeDialog = () => {

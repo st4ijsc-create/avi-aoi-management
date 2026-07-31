@@ -19,6 +19,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
@@ -137,31 +138,31 @@ export default function InterlockRuleManagement() {
 
   const createRule = trpc.interlock.create.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastCreated")); setRuleOpen(false); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateRule = trpc.interlock.update.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastUpdated")); setRuleOpen(false); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteRule = trpc.interlock.delete.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastDeleted")); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const approveRule = trpc.interlock.approve.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastApproved")); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const enableRule = trpc.interlock.enable.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastEnabled")); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const disableRule = trpc.interlock.disable.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastDisabled")); invalidateRules(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const resolveEvent = trpc.interlock.resolveEvent.useMutation({
     onSuccess: () => { toast.success(t("interlockRules.toastResolved")); invalidateEvents(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Test (dry-run) dialog ──

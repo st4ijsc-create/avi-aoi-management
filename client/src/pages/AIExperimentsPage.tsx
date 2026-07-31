@@ -11,6 +11,7 @@ import {
   chartAxisTick,
 } from '@/components/patterns';
 import { trpc } from '@/lib/trpc';
+import { toastTrpcError } from '@/lib/trpcErrors';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -111,7 +112,7 @@ function EvalBeforeAfterSection() {
       setReport(data as unknown as CompareReportShape);
       toast.success(t('aiEval.compareDone', 'Đã so sánh xong'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const toPct = (n: number | undefined) => ((n ?? 0) * 100);
@@ -321,11 +322,11 @@ function CanaryComparisonSection() {
 
   const start = trpc.aiQualityGate.canaryStart.useMutation({
     onSuccess: () => { toast.success(t('canary.started', 'Đã khởi động canary')); refresh(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const pause = trpc.aiQualityGate.canaryPause.useMutation({
     onSuccess: () => { toast.success(t('canary.paused', 'Đã tạm dừng canary')); refresh(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const guardrail = trpc.aiQualityGate.canaryGuardrail.useMutation({
     onSuccess: (d: any) => {
@@ -336,15 +337,15 @@ function CanaryComparisonSection() {
       );
       refresh();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const promote = trpc.aiQualityGate.canaryPromote.useMutation({
     onSuccess: () => { toast.success(t('canary.promoted', 'Đã promote model B')); refresh(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const rollback = trpc.aiQualityGate.canaryRollback.useMutation({
     onSuccess: () => { toast.success(t('canary.rolledBack', 'Đã rollback về model A')); refresh(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const pct = (n: number | undefined) => `${((n ?? 0) * 100).toFixed(1)}%`;

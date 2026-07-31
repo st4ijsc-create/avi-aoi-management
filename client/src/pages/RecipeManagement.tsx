@@ -15,6 +15,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -160,7 +161,7 @@ export default function RecipeManagement() {
 
   const createRecipe = trpc.machineRecipe.recipes.create.useMutation({
     onSuccess: () => { toast.success(t("recipes.toastCreated")); setCreateOpen(false); setForm(emptyNewVersion); invalidateAll(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Approve dialog (W2-9 — second-approver / segregation of duties) ──
@@ -168,7 +169,7 @@ export default function RecipeManagement() {
   const [approveNote, setApproveNote] = useState("");
   const approve = trpc.machineRecipe.recipes.approve.useMutation({
     onSuccess: () => { toast.success(t("recipes.toastApproved")); setApproveTarget(null); setApproveNote(""); invalidateAll(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Deploy dialog ──
@@ -178,27 +179,27 @@ export default function RecipeManagement() {
 
   const deploy = trpc.machineRecipe.recipes.deploy.useMutation({
     onSuccess: () => { toast.success(t("recipes.toastDeployed")); setDeployRecipeId(null); setDeployMachineId(""); setDeployNotes(""); invalidateAll(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Rollback (AlertDialog) ──
   const [rollbackMachineId, setRollbackMachineId] = useState<number | null>(null);
   const rollback = trpc.machineRecipe.recipes.rollback.useMutation({
     onSuccess: () => { toast.success(t("recipes.toastRolledBack")); setRollbackMachineId(null); invalidateAll(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── W5-22 (a): Golden/master toggle ──
   const setGolden = trpc.machineRecipe.recipes.setGolden.useMutation({
     onSuccess: (row) => { toast.success(row.isGolden ? t("recipes.toastGoldenSet") : t("recipes.toastGoldenUnset")); invalidateAll(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Archive (AlertDialog confirm) ──
   const [archiveTarget, setArchiveTarget] = useState<{ id: number; version: number } | null>(null);
   const archive = trpc.machineRecipe.recipes.archive.useMutation({
     onSuccess: () => { toast.success(t("recipes.toastArchived")); setArchiveTarget(null); invalidateAll(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── W3-11: xem payload (JSON read-only) + so sánh 2 phiên bản (diff) ──

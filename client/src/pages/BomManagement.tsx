@@ -30,6 +30,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
@@ -122,11 +123,11 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
   const [newCode, setNewCode] = useState("");
   const createDef = trpc.bom.createDefinition.useMutation({
     onSuccess: () => { toast.success(t("bom.toastCreated")); setNewCode(""); list.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const archiveDef = trpc.bom.archiveDefinition.useMutation({
     onSuccess: () => { toast.success(t("bom.toastArchived")); setSelectedBomId(null); list.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const materialOptions = useMaterialOptions();
@@ -135,11 +136,11 @@ function BomPanel({ canCreate, canDelete }: { canCreate: boolean; canDelete: boo
   );
   const addLine = trpc.bom.addLineItem.useMutation({
     onSuccess: () => { toast.success(t("bom.toastLineAdded")); setLi({ componentCode: "", materialId: null, qtyPer: "1", refDesignator: "" }); utils.bom.getDefinition.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const delLine = trpc.bom.deleteLineItem.useMutation({
     onSuccess: () => { toast.success(t("bom.toastLineDeleted")); utils.bom.getDefinition.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   return (
@@ -256,7 +257,7 @@ function FeederPanel({ canCreate }: { canCreate: boolean }) {
   );
   const assign = trpc.bom.assignFeederMaterial.useMutation({
     onSuccess: () => { toast.success(t("bom.toastFeederAssigned")); feeders.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   return (

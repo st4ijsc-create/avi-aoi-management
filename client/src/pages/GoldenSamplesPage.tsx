@@ -28,6 +28,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { toast } from "sonner";
 import { useIsReadOnly } from "@/components/PermissionGate";
 import {
@@ -146,24 +147,24 @@ export default function GoldenSamplesPage() {
       setCapFile(null); setCapNotes("");
       onMutated();
     },
-    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + e.message),
+    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + mapTrpcError(e)),
   });
 
   const approveMutation = trpc.goldenSample.approve.useMutation({
     onSuccess: () => { toast.success(t("goldenSamples.approved", "Đã phê duyệt — golden này giờ là ACTIVE")); closeAction(); onMutated(); },
-    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + e.message),
+    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + mapTrpcError(e)),
   });
   const rejectMutation = trpc.goldenSample.reject.useMutation({
     onSuccess: () => { toast.success(t("goldenSamples.rejected", "Đã từ chối bản nháp")); closeAction(); onMutated(); },
-    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + e.message),
+    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + mapTrpcError(e)),
   });
   const retireMutation = trpc.goldenSample.retire.useMutation({
     onSuccess: () => { toast.success(t("goldenSamples.retired", "Đã thu hồi golden khỏi sản xuất")); closeAction(); onMutated(); },
-    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + e.message),
+    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + mapTrpcError(e)),
   });
   const alignMutation = trpc.goldenSample.setAlignBeforeDiff.useMutation({
     onSuccess: () => onMutated(),
-    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + e.message),
+    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + mapTrpcError(e)),
   });
   const diffMutation = trpc.goldenSample.diffWithUpload.useMutation({
     onSuccess: (r) => {
@@ -173,7 +174,7 @@ export default function GoldenSamplesPage() {
       }
       setDiffResult(r as NonNullable<typeof diffResult> & { found: true });
     },
-    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + e.message),
+    onError: (e) => toast.error(t("common.error", "Lỗi") + ": " + mapTrpcError(e)),
   });
 
   const closeAction = () => { setActionRow(null); setActionKind(null); setActionNote(""); };

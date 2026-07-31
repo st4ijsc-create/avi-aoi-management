@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { toast } from "sonner";
@@ -1145,22 +1146,22 @@ export default function OrchestrationStudio() {
       if (r?.ok) { toast.success(t("studio.deployed", "Workflow saved / deployed")); void workflowsQ.refetch(); }
       else toast.error(r?.message ?? t("studio.deployFail", "Deploy failed"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const startRunM = trpc.orchestration.startRun.useMutation({
     onSuccess: (r) => {
       toast.success(t("studio.runStarted", "Run started (run #{{id}})", { id: r?.runId ?? "?" }));
       void runsQ.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const resumeM = trpc.orchestration.resumeRun.useMutation({
     onSuccess: () => { void runsQ.refetch(); void utils.orchestration.getRun.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const abortM = trpc.orchestration.abortRun.useMutation({
     onSuccess: () => { void runsQ.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Saved-workflow delete / duplicate ──
@@ -1170,11 +1171,11 @@ export default function OrchestrationStudio() {
 
   const deleteWfM = trpc.orchestration.deleteWorkflow.useMutation({
     onSuccess: () => { toast.success(t("studio.wfDeleted", "Workflow deleted")); setDeleteWf(null); void workflowsQ.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const duplicateWfM = trpc.orchestration.duplicateWorkflow.useMutation({
     onSuccess: () => { toast.success(t("studio.wfDuplicated", "Workflow duplicated")); setDupWf(null); setDupNewRef(""); void workflowsQ.refetch(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── W3-11: version history panel (diff 2 phiên bản + rollback) ──
@@ -1200,7 +1201,7 @@ export default function OrchestrationStudio() {
         toast.error(r?.message ?? t("studio.rollbackFail", "Khôi phục thất bại"));
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const selectedStep = selectedId ? findStep(def.steps, selectedId) : null;
