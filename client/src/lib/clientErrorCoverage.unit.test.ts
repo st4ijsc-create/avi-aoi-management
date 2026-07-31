@@ -32,11 +32,16 @@
  * ── SỐ ĐO ──────────────────────────────────────────────────────────────────────
  * Task 7 Step 1 (trước khi di trú bất kỳ file nào): 575 site trong 170 file
  * (client/src/pages + client/src/components; không có site nào ngoài hai thư mục
- * này tại thời điểm đo — hooks/lib/_core sạch). Lô 1 (sản xuất + kiểm tra — 9
- * file: ProductionOrders/ProductionScheduling/ProductionSessionSignOff/
- * ProductChangeoverWizard/FeederVerify/InspectionDetail/RepairStation/
- * NonconformanceReports/QualityHome) di trú 25 site → hạ còn 550. Các lô tiếp
- * theo (cảnh báo · thiết bị · andon, rồi phần còn lại — Task 8) sẽ hạ tiếp.
+ * này tại thời điểm đo — hooks/lib/_core sạch).
+ *   Lô 1 (sản xuất + kiểm tra — 9 file: ProductionOrders/ProductionScheduling/
+ *   ProductionSessionSignOff/ProductChangeoverWizard/FeederVerify/
+ *   InspectionDetail/RepairStation/NonconformanceReports/QualityHome) — 25 site
+ *   → hạ 575 → 550.
+ *   Lô 2 (cảnh báo + thiết bị + andon — 8 file: Alerts/ShellAlertChip/
+ *   UnifiedDeviceMonitor/MachineCockpit/OperatorSessionControl/WorkOrdersPage/
+ *   AndonBoard/OperatorHome) — 19 site → hạ 550 → 531.
+ * Tổng Task 7 (F1 phần A): 44 site / 17 file di trú. Phần còn lại (531 site /
+ * 153 file) là việc của Task 8 — danh sách đầy đủ nằm trong task-7-report.md.
  *
  * Tự đo lại: chạy hàm countRawMessageSites() ở dưới trên "client/src" (không có
  * lệnh shell một-dòng tương đương vì cần cân bằng ngoặc + tra cứu — xem trên).
@@ -50,7 +55,7 @@ const LIB_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_SRC_DIR = join(LIB_DIR, ".."); // client/src
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_RAW_MESSAGE_HANDLERS = 550; // ← Task 7 Step 3 lô 1/2 (F1 phần A) — sản xuất + kiểm tra, 25 site / 9 file.
+const ALLOWED_RAW_MESSAGE_HANDLERS = 531; // ← Task 7 Step 3 lô 2/2 (F1 phần A, HẾT) — cảnh báo+thiết bị+andon, 19 site / 8 file. Tổng Task 7 = 44/17. Task 8 tiếp tục.
 
 function walkTsxFiles(dir: string): string[] {
   const out: string[] = [];

@@ -13,6 +13,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,11 +55,11 @@ export function ShellAlertChip({ className }: { className?: string }) {
   const invalidate = () => void utils.andon.active.invalidate();
   const ackM = trpc.andon.acknowledge.useMutation({
     onSuccess: () => { toast.success(t("andonChip.acked", "Đã tiếp nhận (MTTA đã ghi).")); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const resolveM = trpc.andon.resolve.useMutation({
     onSuccess: () => { toast.success(t("andonChip.resolved", "Đã xử lý xong (MTTR đã ghi).")); setNote(""); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ISA-101 — im lặng khi không có gì bất thường (kể cả khi query lỗi/không quyền).

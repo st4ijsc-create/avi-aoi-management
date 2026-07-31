@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Wrench, Plus, Pencil, Trash2, AlertTriangle, CheckCircle2, Package, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 const STATUSES = ["OPEN", "SCHEDULED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"] as const;
 const TYPES = ["PREVENTIVE", "PREDICTIVE", "CORRECTIVE", "BREAKDOWN", "INSPECTION"] as const;
@@ -125,19 +126,19 @@ export default function WorkOrdersPage() {
 
   const createM = trpc.maintenance.createWorkOrder.useMutation({
     onSuccess: () => { toast.success(t("workOrders.created")); setCreateOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateM = trpc.maintenance.updateWorkOrder.useMutation({
     onSuccess: () => { toast.success(t("workOrders.updated")); setDetail(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const closeM = trpc.maintenance.closeWorkOrder.useMutation({
     onSuccess: () => { toast.success(t("workOrders.closed")); setDetail(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteM = trpc.maintenance.deleteWorkOrder.useMutation({
     onSuccess: () => { toast.success(t("workOrders.deleted")); setConfirmDelete(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const rows = (listQ.data ?? []) as WorkOrder[];
@@ -547,7 +548,7 @@ function WorkOrderPartsPanel({
       setPartCode(""); setQty("1"); setNotes("");
       void utils.maintenance.listPartsForWorkOrder.invalidate({ workOrderId });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const rows = (partsQ.data ?? []) as Array<{

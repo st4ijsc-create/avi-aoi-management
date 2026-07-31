@@ -45,6 +45,7 @@ import { trpc } from "@/lib/trpc";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ProcessAnalyticsPanel } from "./ProcessAnalytics";
 import { MetricCard, PageHeader, StatusBadge, SectionCard, EmptyState } from "@/components/patterns";
@@ -741,7 +742,7 @@ export function MachineCockpitBody({ machineId, embedded = false }: { machineId:
       toast.success(t("cockpit.model3dUploaded", "3D model uploaded & registered."));
       detailQ.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const handleModelFile = (file: File) => {
     const reader = new FileReader();

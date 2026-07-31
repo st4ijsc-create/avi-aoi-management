@@ -31,6 +31,7 @@ import { useScopeWired } from "@/contexts/AssetScopeContext";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { AlertTriangle, Check, Loader2, Megaphone, MonitorOff, Settings } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -230,7 +231,7 @@ export default function AndonBoard() {
       toast.success(t("andonBoard.ackDone", "Đã xác nhận Andon"));
       void utils.dashboard.getAndonBoard.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
     onSettled: () => setAckingId(null),
   });
   const handleAck = (id: number) => {

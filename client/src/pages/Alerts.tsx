@@ -31,6 +31,7 @@ import {
   Cpu
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { navItems } from "@/lib/navigation";
 import { useState } from "react";
 import { useCanWrite, ViewOnlyBadge } from "@/components/PermissionGate";
@@ -96,7 +97,7 @@ export default function Alerts() {
       resetForm();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -107,7 +108,7 @@ export default function Alerts() {
       setEditingAlert(null);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -117,7 +118,7 @@ export default function Alerts() {
       utils.alert.list.invalidate();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -131,7 +132,7 @@ export default function Alerts() {
       }
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 

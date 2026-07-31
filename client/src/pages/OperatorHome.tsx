@@ -53,6 +53,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   ScanLine,
   AlertTriangle,
@@ -184,7 +185,7 @@ export default function OperatorHome() {
     },
     onError: (err) => {
       toast.error(t("operator.maintenanceCallError", "Không gọi được bảo trì"), {
-        description: err.message,
+        description: mapTrpcError(err),
       });
     },
   });

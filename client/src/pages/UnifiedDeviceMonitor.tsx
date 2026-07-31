@@ -57,6 +57,7 @@ import {
   ChevronRight, ChevronDown, ExternalLink, Loader2, Maximize2, Minimize2, Rows3, Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 /** Wire shape received on telemetry:sample (mirrors server TelemetryBroadcastSample). */
 interface TelemetrySample {
@@ -245,7 +246,7 @@ export function UnifiedDeviceMonitorContent() {
       if (res.ok) toast.success(t("deviceMonitor.testOk", "Kết nối OK") + ` (${res.latencyMs}ms)`);
       else toast.error(t("deviceMonitor.testFail", "Kết nối thất bại") + `: ${res.error ?? "unknown"}`);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Realtime: telemetry:sample + machine:status_update ──

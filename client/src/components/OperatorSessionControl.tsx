@@ -27,6 +27,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { LogIn, Pause, Play, Square, Clock, ShieldAlert } from "lucide-react";
 
 /** Compute planned start/end ISO strings for a shift config applied to today. */
@@ -88,19 +89,19 @@ export default function OperatorSessionControl() {
       setShiftId(null); setLineId(null);
       refetchLive();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const pauseMut = trpc.productionSession.pause.useMutation({
     onSuccess: () => { toast.success(t("opSession.paused", "Đã tạm dừng phiên")); refetchLive(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const resumeMut = trpc.productionSession.resume.useMutation({
     onSuccess: () => { toast.success(t("opSession.resumed", "Đã tiếp tục phiên")); refetchLive(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const closeMut = trpc.productionSession.close.useMutation({
     onSuccess: () => { toast.success(t("opSession.closed", "Đã kết thúc ca — phiên đã đóng")); refetchLive(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const doClockIn = () => {
