@@ -255,3 +255,137 @@ Reviewer: spec ✅ đạt, diff sạch, `.env` hoàn nguyên đúng, đo cả ha
 Không vá race điều kiện (đúng ràng buộc — đó là phát hiện của khảo sát, để đợt vá sau). Không đụng mã sản xuất, không đụng `.env` trong vòng sửa này — chỉ chạy thêm 2 lệnh `bench.mjs` (đọc, không ghi) + sửa văn bản báo cáo.
 
 Bản đầy đủ (điều tra chi tiết, log excerpt, script KV-cache-scan): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-2-report.md` (không commit — `.superpowers/sdd/*` bị `.gitignore` chặn).
+
+---
+
+## §3 Bench ba roster (Task 3)
+
+**Câu hỏi:** đo hiệu năng thật (load ms · prefill/decode tok/s · VRAM đỉnh) của 3 roster ứng viên bằng harness có sẵn `scripts/ai-bench/bench.mjs`, **không sửa harness**, **chỉ đo**.
+
+### Phương pháp
+
+Đọc `scripts/ai-bench/README.md` trước khi chạy (Bước 1) — harness tự nạp `node-llama-cpp` trực tiếp, đọc `GGUF_*` từ `.env` qua `dotenv`, không boot app. Backup `.env` thủ công trước khi sửa dòng nào (`.env` không git-track — bài học Task 2):
+```bash
+cp .env .env.do0-backup
+```
+Mỗi roster chạy `npm run ai:bench -- --label <tên>` (full run mặc định: `deep,fast,code,fim,embed`, `warmup=1 iters=3 maxTokens=256 prefill=128,1024` — không truyền cờ nào khác, đúng cấu hình mặc định của harness). Sau mỗi lượt: xác nhận `nvidia-smi` VRAM về baseline (~1,1-1,2 GB) và không còn `node.exe` (`tasklist | grep node.exe`).
+
+### Roster hiện tại làm mốc (Bước 2) — không đổi `.env`
+
+Lệnh:
+```bash
+npm run ai:bench -- --label roster-current-do0-3
+```
+5/5 model đo được, 0 skip. Ghi `scripts/ai-bench/baselines/roster-current-do0-3.json`. VRAM sau chạy: 1189 MiB (so baseline trước chạy 1183 MiB) — sạch, không `node.exe` treo.
+
+### Roster A (Bước 3) — `GGUF_DEFAULT_MODEL=GGUF_CODE_MODEL`=Coder-30B (cùng 1 file)
+
+Sửa `.env` dòng 120: `GGUF_DEFAULT_MODEL=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf` (giữ nguyên `GGUF_CODE_MODEL` đã sẵn là Coder-30B). Lệnh:
+```bash
+npm run ai:bench -- --label roster-A
+```
+5/5 model đo được, 0 skip → `scripts/ai-bench/baselines/roster-A.json`. VRAM sau chạy 1094 MiB, không `node.exe` treo.
+
+### Roster B (Bước 4) — `GGUF_DEFAULT_MODEL`=Qwen3-4B (nhỏ), `GGUF_CODE_MODEL`=Coder-30B (không đổi)
+
+Sửa `.env` dòng 120: `GGUF_DEFAULT_MODEL=Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf`. Lệnh:
+```bash
+npm run ai:bench -- --label roster-B
+```
+5/5 model đo được, 0 skip → `scripts/ai-bench/baselines/roster-B.json`. VRAM sau chạy 1104 MiB, không `node.exe` treo.
+
+### Roster C (Bước 5) — **KHÔNG đo được**, nêu rõ vì sao
+
+Roster C cần đẩy General-30B sang RAM 64GB (partial GPU offload — một phần layer trên GPU, phần còn lại CPU/RAM). Đã tìm biến điều khiển số lớp GPU theo đúng gợi ý brief (`GGUF_GPU_LAYERS` hoặc tương đương) — **không tồn tại**:
+
+- `grep -rn "GGUF_GPU_LAYERS"` toàn repo (trừ `node_modules`) chỉ khớp 1 dòng trong `knowledge/chunks.jsonl` (chunk RAG, không phải mã nguồn thực thi) — không có biến này ở bất kỳ đâu trong `server/` hay `scripts/`.
+- `server/services/aiGgufEngine.ts:50` khai báo `gpuLayers?: number | "max" | "auto"` trong `GgufModelConfig`, nhưng dòng 612 `const requestedGpuLayers = config.gpuLayers ?? "max"` — **không có nơi nào gán giá trị này từ env**; toàn bộ call site chỉ dùng mặc định `"max"` (full GPU offload). Nhánh `"auto"` (dòng 644) chỉ được engine **tự động** chọn khi retry sau lỗi OOM (`cudaMalloc failed`) — không phải tham số operator điều khiển được từ ngoài.
+- `scripts/ai-bench/bench.mjs:516` hardcode `gpuLayers: gpuEnabled ? "max" : 0` — **nhị phân tuyệt đối**: full GPU hoặc full CPU (`--cpu`/`GGUF_GPU=false`), không có cờ CLI nào cho số lớp cụ thể (đối chiếu toàn bộ danh sách flag `--selfcheck/--cpu/--models/--warmup/--iters/--maxTokens/--prefill/--ctx/--label/--out`, không có `--gpuLayers`).
+
+**Kết luận:** không có cách nào ép "một phần layer GPU + phần còn lại RAM" cho General-30B qua harness hiện có mà không sửa mã (`bench.mjs` hoặc `aiGgufEngine.ts`) — bị cấm ở đợt này. Roster C **chưa đo được**, không bịa số. Đây là kết quả hợp lệ đã được duyệt trước trong brief, không phải thiếu sót của task.
+
+### Bảng so sánh 3 roster (roster hiện tại · A · B) — lệnh tạo bảng
+
+```bash
+node -e "
+const fs=require('fs');
+for(const f of ['roster-current-do0-3','roster-A','roster-B']){
+  const j=JSON.parse(fs.readFileSync('scripts/ai-bench/baselines/'+f+'.json','utf8'));
+  for(const m of j.models){ /* in load/vram/prefill/decode từ m.loadTimeMs, m.vram, m.results[i] */ }
+}"
+```
+(script đầy đủ đã chạy trong phiên, output dưới)
+
+| Roster | logical | file | load ms | VRAM Δ (MiB) | VRAM đỉnh (MiB) | prefill tok/s @128 / @1024 (median) | decode tok/s @128 / @1024 (median) |
+|---|---|---|---|---|---|---|---|
+| **Hiện tại** | deep | Qwen3-30B-A3B-**Instruct** | 9346.9 | 17750 | 18930 | 3938.4 / 8492.6 | 277.4 / 246.9 |
+| Hiện tại | fast | Qwen3-4B-Instruct | 7036.0 | 3491 | 4671 | 7528.3 / 14406.7 | 288.5 / 276.0 |
+| Hiện tại | code | Qwen3-**Coder**-30B-A3B | 40968.5 | 17737 | 18917 | 3770.1 / 8322.2 | 265.9 / 253.3 |
+| Hiện tại | fim | Qwen2.5-Coder-1.5B | 3479.0 | 1811 | 2991 | 11120.6 / 23042.4 | 472.7 / 481.0 |
+| Hiện tại | embed | Qwen3-Embedding-0.6B | 3924.3 | 5664 | 6844 | embedMs=6.4ms, inputTok/s=5166.2 | — |
+| **A** | deep(=code) | Qwen3-Coder-30B-A3B | 8852.5 | 17729 | 18851 | 3683.0 / 8300.4 | 227.2 / 242.9 |
+| A | fast | Qwen3-4B-Instruct | 2029.0 | 3464 | 4586 | 8053.1 / 14918.5 | 272.0 / 267.2 |
+| A | code(=deep) | Qwen3-Coder-30B-A3B | 8828.2 | 17698 | 18820 | 3990.2 / 8507.1 | 268.3 / 254.4 |
+| A | fim | Qwen2.5-Coder-1.5B | 1104.0 | 1774 | 2896 | 11268.2 / 21815.5 | 458.1 / 459.7 |
+| A | embed | Qwen3-Embedding-0.6B | 1296.2 | 5628 | 6750 | embedMs=8.1ms, inputTok/s=4097.2 | — |
+| **B** | deep(=fast) | Qwen3-4B-Instruct | 2341.6 | 3481 | 4594 | 7595.9 / 14320.2 | 264.2 / 275.7 |
+| B | fast | Qwen3-4B-Instruct | 2017.0 | 3474 | 4587 | 7584.4 / 14493.2 | 286.6 / 277.4 |
+| B | code | Qwen3-Coder-30B-A3B | 8805.7 | 17716 | 18829 | 3753.5 / 8185.0 | 267.4 / 240.4 |
+| B | fim | Qwen2.5-Coder-1.5B | 1076.4 | 1786 | 2899 | 12526.2 / 23222.6 | 490.5 / 482.7 |
+| B | embed | Qwen3-Embedding-0.6B | 1219.1 | 5652 | 6765 | embedMs=6.8ms, inputTok/s=4864.5 | — |
+| **C** | — | — | **CHƯA ĐO ĐƯỢC** (không có biến điều khiển GPU-layers, xem trên) | | | | |
+
+### Xác nhận bằng đo lường: hai model 30B **KHÔNG** thể cùng thường trú trên 32,6 GB VRAM
+
+`bench.mjs` nạp/xoá (`dispose()`) tuần tự từng logical model — không giữ nhiều model cùng lúc — nên VRAM đồng thời dưới đây là **cộng dồn arithmetic** từ các delta đo riêng lẻ (không phải đo trực tiếp lúc 2 model cùng resident), nhưng vì delta VRAM của một model 30B ổn định qua nhiều lượt đo độc lập (17698–17801 MiB, dao động <0,6%, xem mục lệch-baseline bên dưới), phép cộng này đáng tin cậy:
+
+```
+Roster hiện tại (deep 30B-Instruct + code 30B-Coder cùng resident):
+  baseline 1180 + deepΔ 17750 + codeΔ 17737 = 36667 MiB > 32607 MiB tổng VRAM
+  → VƯỢT 4060 MiB (~4 GB), TRƯỚC KHI tính buffer KV-cache/generation thêm (mỗi model +470-940 MiB nữa lúc sinh token thật).
+```
+
+**Đây là xác nhận bằng đo lường cho tiền đề gốc của Đợt 0**: delta ~17,7 GB cho MỘT model 30B (nhất quán qua ≥5 lượt đo độc lập trong Task 2 và Task 3, cả hai file 30B, cả 3 roster) ⇒ hai model 30B riêng biệt cùng thường trú cần ~35,5 GB > 32,6 GB VRAM thật của máy — **không thể**. Task 2 đã đo được delta này nhưng **chưa nêu kết luận cộng dồn** này; Task 3 bổ sung phép tính trên để xác nhận rõ ràng.
+
+Ngược lại, roster A và B (chỉ giữ **một** bản 30B duy nhất, không phải hai) đều **VỪA** trong ngân sách nếu 4 logical-slot còn lại (deep/fast/code/fim/embed, trừ trùng file) cùng thường trú:
+```
+Roster A (1 model 30B dùng chung deep+code, + fast + fim + embed):
+  1122 + 17729 + 3464 + 1774 + 5628 = 29717 MiB < 32607 MiB  (dư ~2890 MiB)
+Roster B (fast=deep 4B dùng chung, + code 30B riêng + fim + embed):
+  1113 + 3474 + 17716 + 1786 + 5652 = 29741 MiB < 32607 MiB  (dư ~2866 MiB)
+```
+(Lệnh tạo 2 phép cộng trên: script `node -e` inline đọc `scripts/ai-bench/baselines/{roster-A,roster-B}.json`, lấy `hardware.vramUsedBaselineMib` + từng `models[].vram.modelDeltaMib` — đã chạy trong phiên.) Đây là bằng chứng số cho lý do roster A/B là ứng viên hợp lý còn roster hiện tại thì không, trên đúng trục VRAM.
+
+### Lệch so với `baseline-2026-07-05.json` — nói thật
+
+1. **Phần cứng đã đổi giữa 05/07 và hôm nay** — không phải lỗi đo, là thay đổi máy thật: baseline 07-05 ghi `cpu: "i7-12700KF"`, `cpuCores: 20`, `totalMemGb: 47.8`; cả 3 roster hôm nay đều ghi `cpu: "i9-12900K"`, `cpuCores: 24`, `totalMemGb: 63.8`. **Task 7 cần biết: máy đã được nâng cấp CPU+RAM sau 05/07** (GPU RTX 5090 32.607 MiB không đổi).
+2. **`deep` load time lệch lớn**: baseline 07-05 = 40260,5 ms; roster hiện tại hôm nay = 9346,9 ms (nhanh hơn ~4,3 lần). Đã truy được nguyên nhân nhiều khả năng nhất, không phải suy đoán suông: **hiệu ứng OS file-cache trong phiên**, không phải khác biệt cấu hình. Bằng chứng trực tiếp: model `code` (Coder-30B) đọc **lần đầu trong phiên** (roster hiện tại) mất 40968,5 ms — chậm y hệt kiểu baseline 07-05 — nhưng file **giống hệt** đọc lại vài phút sau ở slot `deep` của roster A chỉ mất 8852,5 ms, và slot `code` của roster A (đọc lần 3 trong phiên) chỉ 8828,2 ms. Cùng file, cùng máy, cách nhau vài phút, chênh lệch 4,6 lần — khớp mô hình "lần đọc đĩa đầu chậm, các lần sau ăn cache OS (63,8 GB RAM đủ cache thoải mái 1 file 17,7 GB)". Không loại trừ phần cứng CPU mới cũng góp phần, nhưng cache-effect giải thích trực tiếp và đủ cho phần lớn chênh lệch.
+3. **`decode` tok/s cao hơn baseline 07-05 khoảng 20-30%** (vd. deep @128 decode median: 212,7 → 277,4). Không có baseline `code`/`fim` trên 07-05 để so (biến `GGUF_CODE_MODEL`/`GGUF_FIM_MODEL` khi đó chưa cấu hình — file `baseline-2026-07-05.json` chỉ có 3 model `deep/fast/embed`). Hướng nghi vấn hợp lý: CPU mới (24 nhân) hoặc driver/CUDA Toolkit cập nhật giữa hai lần đo — **chưa xác nhận, chỉ ghi nhận độ lệch**.
+4. **VRAM delta của `deep` ổn định bất chấp mọi lệch trên**: 17801 MiB (07-05) → 17750/17729/... MiB (hôm nay, 3 roster) — dao động <0,3%. Đây là con số quan trọng nhất cho quyết định roster (mục VRAM ở trên), và nó **không bị ảnh hưởng** bởi các lệch phần cứng/cache kể trên — đáng tin cậy để dùng cho Task 7.
+
+### Vệ sinh tiến trình / VRAM — xác nhận từng lượt
+
+| Lượt | VRAM sau khi chạy | `node.exe` còn sống? |
+|---|---|---|
+| Roster hiện tại | 1189 MiB | Không |
+| Roster A | 1094 MiB | Không |
+| Roster B | 1104 MiB | Không |
+
+Không gặp `cudaMalloc failed` hay VRAM không-trả-về-baseline ở bất kỳ lượt nào trong 3 lượt — khác hẳn Task 1/2 (đường boot app, race điều kiện). Củng cố thêm kết luận Task 2: đường `bench.mjs` (race-free, không boot app) ổn định, đáng tin cậy để đo model 30B đơn lẻ.
+
+### Xác nhận `.env` đã hoàn nguyên
+
+```bash
+cp .env.do0-backup .env && diff .env .env.do0-backup && echo "ĐÃ HOÀN NGUYÊN ĐÚNG" && rm .env.do0-backup
+grep -n "^GGUF_DEFAULT_MODEL=\|^GGUF_CODE_MODEL=\|^GGUF_FAST_MODEL=" .env
+# GGUF_DEFAULT_MODEL=Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf   (đúng giá trị gốc)
+# GGUF_FAST_MODEL=Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf           (không đổi, chưa từng sửa)
+# GGUF_CODE_MODEL=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf     (đúng giá trị gốc, chưa từng sửa)
+```
+`diff` rỗng → hoàn nguyên đúng.
+
+### Mối lo / lưu ý cho Task 7
+
+1. Máy đã nâng cấp phần cứng (CPU+RAM) từ 05/07 đến nay — số tok/s so với `baseline-2026-07-05.json` không so ngang hàng tuyệt đối được (nhanh hơn ~20-30% ở decode), **nhưng VRAM delta thì có** (ổn định qua cả 2 mốc thời gian) — Task 7 nên ưu tiên dùng trục VRAM (đáng tin) hơn trục tok/s tuyệt đối khi so với baseline cũ.
+2. Roster C không đo được vì thiếu cơ chế điều khiển GPU-layers trong cả `aiGgufEngine.ts` lẫn `bench.mjs` — nếu chủ dự án muốn số thật cho roster C, cần: (a) thêm tham số/CLI cho partial-offload vào `bench.mjs` (đổi hành vi harness, ngoài phạm vi "chỉ đo" của Đợt 0), hoặc (b) chấp nhận ước lượng lý thuyết dựa trên tỷ lệ layer thay vì đo thật.
+3. `bench.mjs` không đo được kịch bản "2 model cùng resident" trực tiếp (luôn dispose tuần tự) — số 36667 MiB / 29717 MiB / 29741 MiB ở trên là suy ra bằng cộng dồn delta, không phải đo trực tiếp lúc contention thật. Phù hợp hướng với phát hiện evict=0 của Task 2 (đường app hỏng vì race, chưa đo được contention thật qua app) — Task 3 lấp phần này bằng suy luận số học có căn cứ, không phải đo trực tiếp.
