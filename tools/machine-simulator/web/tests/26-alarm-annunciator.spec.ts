@@ -406,6 +406,51 @@ test.describe("alarm annunciator — the in-page surface", () => {
     await expect(banner.getByText(CRITICAL.message)).toHaveCount(1)
   })
 
+  /**
+   * 🔴 Review round 1 (M-6) — the de-duplication window must never collapse to zero.
+   *
+   * <p>The seen-set is capped, and the first version EMPTIED it at the cap — so an annunciation arriving
+   * in the instant after the 512th distinct sequence was re-announced even though it had been seen
+   * moments earlier. Rotating two generations instead means the youngest `SEEN_LIMIT` sequences are
+   * always still remembered.</p>
+   *
+   * <p>Driven at the real boundary: 513 distinct sequences (one past the cap, which forces exactly one
+   * rotation), then the very FIRST sequence again, pushed after the sound gate so only de-duplication
+   * can suppress it.</p>
+   */
+  test("the de-duplication window survives its own size cap", async ({ page }) => {
+    await installHarness(page, { state: "running", allowResume: true })
+    await gotoAlarmCenter(page)
+    await push(page, "ready", ARMED_READY)
+
+    // One burst, one round trip — 513 separate evaluate() calls would dominate the test's runtime.
+    await page.evaluate(
+      ({ template, count }) => {
+        const harness = (window as unknown as {
+          __annunciator: { sources: Array<{ emit: (t: string, d: unknown) => void }> }
+        }).__annunciator
+        const source = harness.sources[harness.sources.length - 1]
+        for (let i = 1; i <= count; i++) {
+          source.emit("annunciation", { ...template, sequence: i, key: `K-${i}`, code: `C${i}` })
+        }
+      },
+      { template: CRITICAL, count: 513 }
+    )
+
+    // The burst is inside one sound gate, so exactly one tone: 3 pulses for Critical.
+    await expect.poll(async () => (await readHarness(page)).audio.oscillatorStarts).toBe(3)
+
+    await page.waitForTimeout(1_800)
+    // Sequence 1 is in the ROTATED-OUT generation. A single-generation cache has forgotten it by now.
+    await push(page, "annunciation", { ...CRITICAL, sequence: 1, key: "K-1", code: "C1" })
+    await page.waitForTimeout(300)
+
+    expect(
+      (await readHarness(page)).audio.oscillatorStarts,
+      "an alarm seen moments ago sounded again — the de-duplication window collapsed at its size cap"
+    ).toBe(3)
+  })
+
   /** A DIFFERENT edge after the gate really does sound again — the control that proves the test above
    * is about de-duplication rather than about the annunciator having gone quiet. */
   test("a different alarm after the sound gate really does sound again", async ({ page }) => {

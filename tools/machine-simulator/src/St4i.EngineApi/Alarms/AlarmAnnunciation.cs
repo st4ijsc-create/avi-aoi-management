@@ -73,6 +73,52 @@ public sealed record AlarmAnnunciation(
             alarm.Message, alarm.Runbook, alarm.TargetId, alarm.ClearOnAck, alarm.Count,
             job.PreviousPriority, job.Actor);
     }
+
+    /// <summary>
+    /// 🔴 Review round 1 (I-2) — projects an alarm that is STANDING RIGHT NOW onto the wire, for the
+    /// connect-time replay in <see cref="St4i.EngineApi.Hubs.AlarmAnnunciationStreamEndpoint"/>. Not an
+    /// edge: nothing changed, this alarm was already on when the page arrived.
+    ///
+    /// <para><see cref="AlarmEdgeKind.Restored"/> is reused rather than a sixth kind invented, because it
+    /// already means exactly this — "was ALREADY standing before you started listening, this is not a new
+    /// condition" — and every client that renders it already says so.</para>
+    ///
+    /// <para>🔴 <b><see cref="Sequence"/> is the NEGATED <see cref="Alarm.FirstRaisedUtc"/> tick count, and
+    /// each of those three properties is load-bearing.</b> The client de-duplicates on this value, so a
+    /// replay token must be:
+    /// <list type="bullet">
+    /// <item><description><b>Negative</b>, so it can never collide with <see cref="AlarmNotifier"/>'s
+    /// per-process ordinals, which start at 1 and only ever increase. A replayed alarm and a live edge for
+    /// the same alarm must both get through.</description></item>
+    /// <item><description><b>Stable</b> for as long as the alarm is standing, so a page that reconnects
+    /// after a transient blip is not sounded again for something it is already showing.
+    /// <see cref="Alarm.FirstRaisedUtc"/> is preserved across re-raises by
+    /// <see cref="AlarmStore"/> — that is exactly what makes it stable and
+    /// <see cref="Alarm.LastRaisedUtc"/> unusable here.</description></item>
+    /// <item><description><b>Free of stored state</b>, so the engine keeps no per-key table that has to be
+    /// grown, bounded and expired.</description></item>
+    /// </list>
+    /// The one imperfection, stated rather than waved at: two alarms first raised within the SAME 100 ns
+    /// tick would share a token, so the second contributes no additional tone. It still appears — the
+    /// client's standing set is keyed by <see cref="Key"/>, not by sequence — and the client's 1.5 s sound
+    /// gate would have coalesced two simultaneous alarms into one tone anyway, so there is no observable
+    /// difference at all.</para>
+    ///
+    /// <para><see cref="Alarm.Id"/> is still absent, for the reason on this record: SQLite reuses deleted
+    /// rowids, so it is not an identity. It is also why the rowid is NOT used as the replay token.</para>
+    /// </summary>
+    /// <param name="atUtc">When the replay was served — NOT when the alarm was raised, which the client
+    /// gets from the alarm's own fields. A client ordering annunciations by this sees the replay arrive
+    /// when it actually arrived.</param>
+    public static AlarmAnnunciation FromStanding(Alarm alarm, string instance, DateTimeOffset atUtc)
+    {
+        ArgumentNullException.ThrowIfNull(alarm);
+        return new AlarmAnnunciation(
+            -alarm.FirstRaisedUtc.UtcTicks, AlarmEdgeKind.Restored, atUtc, instance,
+            alarm.Key, alarm.Source, alarm.Code, alarm.Priority, alarm.State,
+            alarm.Message, alarm.Runbook, alarm.TargetId, alarm.ClearOnAck, alarm.Count,
+            PreviousPriority: null, Actor: null);
+    }
 }
 
 /// <summary>
@@ -105,11 +151,23 @@ public sealed record AlarmAnnunciation(
 /// </summary>
 public sealed class AlarmAnnunciationHub
 {
-    /// <summary>Per-listener queue depth. An annunciation is an EDGE, not a tick (C-1 absorbs the 5 s
-    /// re-raise storm before this channel ever sees anything), and a live browser drains within a frame —
-    /// so a listener that has fallen 64 behind is wedged, not busy. The one legitimate burst is
-    /// <see cref="AlarmEdgeKind.Restored"/> at engine start, which emits one job per standing alarm; 64
-    /// covers a fleet in a genuinely bad state, and beyond that the loss is counted rather than hidden.</summary>
+    /// <summary>
+    /// Per-listener queue depth. An annunciation is an EDGE, not a tick (C-1 absorbs the 5 s re-raise storm
+    /// before this channel ever sees anything), and a live browser drains within a frame — so a listener
+    /// that has fallen 64 behind is wedged, not busy.
+    ///
+    /// <para>🔴 <b>Review round 1 (I-2) corrected the justification, which named a burst no listener could
+    /// ever receive.</b> This used to read "the one legitimate burst is <see cref="AlarmEdgeKind.Restored"/>
+    /// at engine start, which emits one job per standing alarm". Those jobs are emitted by
+    /// <see cref="AlarmNotifierSeedService"/> milliseconds after boot, before any browser can possibly have
+    /// connected, so they always publish to ZERO listeners and this queue never sees them. The standing set
+    /// now reaches a page through
+    /// <see cref="St4i.EngineApi.Hubs.AlarmAnnunciationStreamEndpoint"/>'s connect-time replay, which writes
+    /// straight to that connection's response and does not pass through here either.</para>
+    ///
+    /// <para>What 64 actually covers is a burst of LIVE edges — a fleet going down a machine at a time, or a
+    /// wave of policy denials — arriving faster than one browser can drain. Beyond that the loss is counted
+    /// rather than hidden.</para></summary>
     public const int DefaultListenerCapacity = 64;
 
     private readonly int _capacity;

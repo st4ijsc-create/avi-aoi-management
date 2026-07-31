@@ -546,8 +546,10 @@ if (notificationConfigStore is not null)
         return new St4i.EngineApi.Alarms.LocalAnnunciationChannel(
             storeForAnnunciation,
             sp.GetRequiredService<St4i.EngineApi.Alarms.AlarmAnnunciationHub>(),
-            logError: (ex, msg) => logger.LogError(ex, "{AlarmAnnunciationMsg}", msg),
-            logWarning: msg => logger.LogWarning("{AlarmAnnunciationMsg}", msg));
+            // 🔴 Review round 1 (M-1) — no logWarning, unlike the two channels above, and its absence is
+            // the point: this channel has no warning path to wire, so a delegate here would be one that
+            // provably never fires. See LocalAnnunciationChannel's own field comment.
+            logError: (ex, msg) => logger.LogError(ex, "{AlarmAnnunciationMsg}", msg));
     });
     implementedNotificationChannels.Add(St4i.EngineApi.Alarms.NotificationChannel.LocalAnnunciation);
 }

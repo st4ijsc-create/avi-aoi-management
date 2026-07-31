@@ -28,12 +28,17 @@ namespace St4i.EngineApi.Hubs;
 /// severe alarm that will annunciate anywhere. <see langword="null"/> when nothing is enabled. Reported as
 /// the most permissive rather than the strictest because it is the honest answer to the only question a
 /// screen can ask: "what is the quietest thing I will hear about?"</param>
+/// <param name="Instance">Which enabled instance supplied <paramref name="MinPriority"/> — i.e. the one
+/// doing the most work. <see langword="null"/> when nothing is enabled. Carried so the connect-time standing
+/// replay can name a real configured instance rather than assuming
+/// <see cref="NotificationConfigStore.DefaultInstance"/>.</param>
 /// <param name="HeartbeatSeconds">How often this stream emits an SSE comment while idle, so a client can
 /// tell "quiet" from "dead" without guessing.</param>
 public sealed record AlarmAnnunciationReady(
     bool Configured,
     bool Enabled,
     AlarmPriority? MinPriority,
+    string? Instance,
     int HeartbeatSeconds);
 
 /// <summary>
@@ -66,13 +71,33 @@ public sealed record AlarmAnnunciationReady(
 /// upgrade does not always. <c>X-Accel-Buffering: no</c> is set for the one proxy behaviour that WOULD break
 /// it — response buffering, which turns a live stream into a stalled one.</para>
 ///
-/// <para>🔴 <b>There is deliberately NO backfill and no <c>id:</c>/<c>Last-Event-ID</c> replay</b>, which is
-/// the opposite of <see cref="InspectorStreamEndpoint"/>'s 200-event catch-up. An annunciator announces what
-/// is happening NOW; replaying edges from before the page opened would make a page reload sound an alarm
-/// that was dealt with an hour ago, which is how an annunciator becomes noise. The standing state after the
-/// fact is what <c>GET /v1/alarms</c> is for, and it is on the same screen. The one edge kind that carries
-/// history — <see cref="AlarmEdgeKind.Restored"/> — is emitted once per process start by C-1 and is
-/// therefore only heard by a page that was already open across the restart, which is exactly right.</para>
+/// <para>🔴 <b>No EDGE backfill, but a bounded replay of what is STANDING — and review round 1 (I-2) is why
+/// those are different things.</b> This endpoint still does not replay history, and still has no
+/// <c>id:</c>/<c>Last-Event-ID</c> mechanism, unlike <see cref="InspectorStreamEndpoint"/>'s 200-event
+/// catch-up next door: replaying EDGES would make a page reload sound an alarm that was dealt with an hour
+/// ago, which is how an annunciator becomes noise.</para>
+///
+/// <para><b>But the first version of this class then claimed something false, and the falsehood hid a real
+/// hole.</b> It said <see cref="AlarmEdgeKind.Restored"/> — the edge kind that carries standing state across
+/// a restart — was "only heard by a page that was already open across the restart, which is exactly right".
+/// It is heard by nobody, ever. <see cref="AlarmNotifierSeedService"/> emits those jobs from its
+/// <c>StartAsync</c>, milliseconds after boot; a page that WAS open across the restart had its connection
+/// severed when the process died and does not come back until its <c>retry:</c> elapses. So every
+/// <c>Restored</c> published at seed time reaches zero listeners and is correctly counted <c>Unheard</c> —
+/// and the consequence was that <b>after any engine restart a standing Critical alarm annunciated to
+/// nobody, while the page went on reporting "Armed"</b>. That is the brief's own "a mute annunciator that
+/// looks armed is worse than none", one level up.</para>
+///
+/// <para>🔴 <b>The fix, and why it is not the backfill this class refuses.</b> On connect, a client is sent
+/// the alarms that are ACTIVE RIGHT NOW — not edges that happened, but state that is true. An alarm still in
+/// <c>active_alarms</c> is by definition NOT dealt with, which is the whole difference: the noise argument
+/// above is about re-announcing things that are over. Bounded at <see cref="MaxStandingReplay"/>, filtered
+/// by the same threshold the channel itself applies, ordered most-severe-first by
+/// <see cref="IAlarmStore.ListActiveAsync"/>, sent only when the channel is enabled (a disabled channel
+/// annunciates nothing, so there is nothing to replay), and de-duplicated by the client through the ordinary
+/// <c>sequence</c> mechanism — see <see cref="AlarmAnnunciation.FromStanding"/> for how a replay token is
+/// made stable and collision-free with no server-side state. The complete list, unbounded, is
+/// <c>GET /v1/alarms</c> on the same screen.</para>
 ///
 /// <para><b>Operator, not Engineer</b>, unlike the inspector stream next door: this carries alarm content,
 /// and <c>GET /v1/alarms</c> — the same content, in table form — is already Operator.</para>
@@ -95,6 +120,17 @@ public static class AlarmAnnunciationStreamEndpoint
     /// keeps an idle stream alive through proxies that close quiet connections. Fifteen seconds is well
     /// inside the 60 s idle timeout that is the common default.</summary>
     public const int HeartbeatSeconds = 15;
+
+    /// <summary>
+    /// 🔴 Review round 1 (I-2) — how many currently-standing alarms a connecting client is told about.
+    ///
+    /// <para>An annunciator's job is to get somebody's attention, and twenty cards plus a tone does that as
+    /// well as two hundred would; past that it is a wall of red that annunciates nothing and a page that
+    /// takes a visible moment to render. <see cref="IAlarmStore.ListActiveAsync"/> returns most-severe-first,
+    /// so the twenty an operator sees are the twenty that matter most — the truncation is by severity, not
+    /// arbitrary. Nothing is lost by it: the alarms are all still in <c>GET /v1/alarms</c>, unbounded, on the
+    /// very screen this strip sits on.</para></summary>
+    public const int MaxStandingReplay = 20;
 
     /// <summary>An SSE COMMENT (a line starting with <c>:</c>), which every conforming client ignores — so
     /// the heartbeat cannot be mistaken for an event by a client that does not know about it.</summary>
@@ -151,6 +187,13 @@ public static class AlarmAnnunciationStreamEndpoint
 
         try
         {
+            // 🔴 Review round 1 (I-2) — BEFORE the loop but AFTER the subscription, and that order is the
+            // whole reason there is no gap: an edge arriving during the replay lands in this listener's
+            // queue and is written the moment the loop starts, so it can neither be lost nor overtaken.
+            // (A live edge for an alarm that was also replayed simply replaces it on the client, whose
+            // standing set is keyed by the alarm key.)
+            await ReplayStandingAsync(context, response.Body, ready, ct).ConfigureAwait(false);
+
             while (!ct.IsCancellationRequested)
             {
                 bool hasItems;
@@ -194,13 +237,76 @@ public static class AlarmAnnunciationStreamEndpoint
     }
 
     /// <summary>
+    /// 🔴 Review round 1 (I-2) — tells a connecting client what is standing RIGHT NOW, so an engine restart
+    /// stops leaving a Critical alarm annunciated to nobody. See the class doc comment for why this is not
+    /// the edge backfill this endpoint still refuses.
+    ///
+    /// <para>Silent when the channel is not enabled: a disabled or unconfigured channel annunciates nothing,
+    /// so there is nothing to replay, and replaying anyway would be this endpoint annunciating on a channel
+    /// the operator switched off.</para>
+    ///
+    /// <para>Never throws. A failure to read the alarm store must not take down a stream whose LIVE path is
+    /// unaffected by it — the connection is still perfectly able to annunciate every edge from this moment
+    /// on, which is more than the caller had before. A write failure is the client going away and is handled
+    /// by the loop that follows.</para>
+    /// </summary>
+    private static async Task ReplayStandingAsync(
+        HttpContext context, Stream body, AlarmAnnunciationReady ready, CancellationToken ct)
+    {
+        if (!ready.Enabled || ready.MinPriority is not { } threshold || ready.Instance is not { } instance)
+        {
+            return;
+        }
+
+        var alarms = context.RequestServices.GetService<IAlarmStore>();
+        if (alarms is null) return;
+
+        IReadOnlyList<Alarm> active;
+        try
+        {
+            active = await alarms.ListActiveAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // See the doc comment: the live path does not depend on this, so a store failure degrades the
+            // connection rather than failing it. IAlarmStore reports its own failures.
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var sent = 0;
+        foreach (var alarm in active)
+        {
+            if (sent >= MaxStandingReplay) break;
+            // The same comparison the channel itself applies, through the same shared helper — most-severe-
+            // first means this is `<=`, and C-2 put it in one place so nothing re-derives it.
+            if (!NotificationDelivery.MeetsThreshold(alarm.Priority, threshold)) continue;
+
+            await WriteEventAsync(
+                    body, "annunciation",
+                    JsonSerializer.Serialize(
+                        AlarmAnnunciation.FromStanding(alarm, instance, now), ApiJson.Options),
+                    ct)
+                .ConfigureAwait(false);
+            sent++;
+        }
+
+        if (sent > 0) await body.FlushAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// What this engine will annunciate, as of this connection. Never throws: the store is never-throws for
     /// failures, and a cancelled read here simply means the client is already gone.
     /// </summary>
     private static async Task<AlarmAnnunciationReady> ReadReadyStateAsync(
         NotificationConfigStore? store, CancellationToken ct)
     {
-        if (store is null) return new AlarmAnnunciationReady(false, false, null, HeartbeatSeconds);
+        var nothing = new AlarmAnnunciationReady(false, false, null, null, HeartbeatSeconds);
+        if (store is null) return nothing;
 
         IReadOnlyList<NotificationChannelSummary> channels;
         try
@@ -209,7 +315,7 @@ public static class AlarmAnnunciationStreamEndpoint
         }
         catch (OperationCanceledException)
         {
-            return new AlarmAnnunciationReady(false, false, null, HeartbeatSeconds);
+            return nothing;
         }
 
         var configured = channels
@@ -217,15 +323,22 @@ public static class AlarmAnnunciationStreamEndpoint
             .ToList();
         var enabled = configured.Where(c => c.Enabled).ToList();
 
-        // AlarmPriority is declared MOST-severe-first, so the most PERMISSIVE threshold is the largest
-        // underlying value — the same inversion NotificationDelivery.MeetsThreshold exists to keep in one
-        // place, restated here because this is a Max rather than a comparison and cannot go through it.
-        AlarmPriority? minPriority = enabled.Count == 0
-            ? null
-            : enabled.Max(c => c.MinPriority);
+        // 🔴 AlarmPriority is declared MOST-severe-first (Critical = 0 … Low = 3), so the most PERMISSIVE
+        // threshold — the least severe alarm that will annunciate ANYWHERE — is the LARGEST underlying
+        // value, i.e. MaxBy, not MinBy.
+        //
+        // Review round 1 (I-1): this is the one place in the channel that cannot go through
+        // NotificationDelivery.Delivers, because it is a selection rather than a comparison — so it is also
+        // the one place the inversion C-2 centralised can come back. The reviewer proved it was unpinned by
+        // flipping it to MinBy and watching all 297 alarm tests stay green: every test until then configured
+        // a single enabled instance, where Max and Min are the same value.
+        // AlarmAnnunciationStreamTests.TwoEnabledInstances_… now configures two at different thresholds, so
+        // the flip is a red suite.
+        var mostPermissive = enabled.Count == 0 ? null : enabled.MaxBy(c => c.MinPriority);
 
         return new AlarmAnnunciationReady(
-            configured.Count > 0, enabled.Count > 0, minPriority, HeartbeatSeconds);
+            configured.Count > 0, enabled.Count > 0,
+            mostPermissive?.MinPriority, mostPermissive?.Instance, HeartbeatSeconds);
     }
 
     private static Task WriteEventAsync(Stream body, string name, string json, CancellationToken ct)

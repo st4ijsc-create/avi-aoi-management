@@ -111,9 +111,16 @@ public sealed record LocalAnnunciationStats(
 /// the horn" on an ack, release the latch on a clear. A channel that published only
 /// <see cref="AlarmEdgeKind.Raised"/> would leave the screen shouting about an alarm an operator had already
 /// taken responsibility for, which is how an annunciator trains people to ignore it.
-/// <see cref="AlarmEdgeKind.Restored"/> is published for C-1's own stated reason: a stateful annunciator
-/// that ignored it would sit dark through a Critical alarm that was standing before this process
-/// started.</para>
+/// <see cref="AlarmEdgeKind.Restored"/> is published too, but review round 1 (I-2) established that
+/// <b>nothing can hear it</b>: <see cref="AlarmNotifierSeedService"/> emits those jobs during host start,
+/// milliseconds after boot, when no browser can be attached — so every one of them is published to zero
+/// listeners and correctly counted <see cref="LocalAnnunciationStats.Unheard"/>. It is still published
+/// rather than filtered out, because "nobody was listening" is a fact this channel should report rather
+/// than a case it should hide. <b>What actually keeps a restart from leaving a standing Critical alarm
+/// unannunciated is the connect-time replay in
+/// <see cref="St4i.EngineApi.Hubs.AlarmAnnunciationStreamEndpoint"/></b>, which serves the currently-active
+/// set to each client as it attaches — a different mechanism, deliberately, because it is per-connection
+/// state rather than a broadcast edge.</para>
 ///
 /// <para><b>It does not write to the alarm store</b>, deliberately, for C-1's reason: a channel calling back
 /// into <see cref="IAlarmStore"/> would take the store's write gate from the drain thread and couple drain
@@ -123,8 +130,14 @@ public sealed class LocalAnnunciationChannel
 {
     private readonly NotificationConfigStore _store;
     private readonly AlarmAnnunciationHub _hub;
+    /// <summary>🔴 Review round 1 (M-1) — there is NO <c>logWarning</c> companion, unlike C-3 and C-4.
+    /// Theirs report per-delivery conditions an operator can act on (a rejected status, an unreadable
+    /// credential); this channel has no credential and no remote, so after the single-read simplification
+    /// its only non-success outcomes are <c>Unheard</c> — deliberately a counter rather than a log line, see
+    /// <see cref="Announce"/> — and an internal fault, which is an error. A warning parameter copied over
+    /// from the siblings and never invoked is worse than absent: it is a hook a maintainer reasonably
+    /// assumes fires, and it made half of <c>AThrowingLogDelegate_IsNotItselfAFailure</c> inert.</summary>
     private readonly Action<Exception, string>? _logError;
-    private readonly Action<string>? _logWarning;
 
     private long _considered;
     private long _suppressed;
@@ -155,8 +168,7 @@ public sealed class LocalAnnunciationChannel
     public LocalAnnunciationChannel(
         NotificationConfigStore store,
         AlarmAnnunciationHub hub,
-        Action<Exception, string>? logError = null,
-        Action<string>? logWarning = null)
+        Action<Exception, string>? logError = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(hub);
@@ -164,7 +176,6 @@ public sealed class LocalAnnunciationChannel
         _store = store;
         _hub = hub;
         _logError = logError;
-        _logWarning = logWarning;
     }
 
     /// <summary>Cumulative counters — see <see cref="LocalAnnunciationStats"/>.</summary>
@@ -365,10 +376,5 @@ public sealed class LocalAnnunciationChannel
     private void ReportError(Exception ex, string message)
     {
         try { _logError?.Invoke(ex, message); } catch { /* nothing left to report it to */ }
-    }
-
-    private void ReportWarning(string message)
-    {
-        try { _logWarning?.Invoke(message); } catch { /* nothing left to report it to */ }
     }
 }

@@ -279,11 +279,21 @@ export function AnnunciatorProvider({ children }: { children: React.ReactNode })
     let cancelled = false
     let source: EventSource | null = null
     let retryTimer: ReturnType<typeof setTimeout> | undefined
+    // 🔴 Review round 1 (M-6) — TWO generations, not one set that is emptied.
+    //
+    // A single set cleared at `SEEN_LIMIT` forgets everything at once, so an annunciation arriving in the
+    // instant after the clear is re-announced even though it was seen a moment earlier. Rotating instead
+    // means the youngest `SEEN_LIMIT` sequences are ALWAYS remembered (the previous generation is still
+    // consulted), so the window never collapses to zero — the cost is at most 2 x SEEN_LIMIT numbers held.
     let seen = new Set<number>()
+    let seenPrevious = new Set<number>()
 
     function apply(annunciation: AlarmAnnunciation) {
-      if (seen.has(annunciation.sequence)) return
-      if (seen.size >= SEEN_LIMIT) seen = new Set<number>()
+      if (seen.has(annunciation.sequence) || seenPrevious.has(annunciation.sequence)) return
+      if (seen.size >= SEEN_LIMIT) {
+        seenPrevious = seen
+        seen = new Set<number>()
+      }
       seen.add(annunciation.sequence)
 
       if (annunciation.edge === "Acked" || annunciation.edge === "Cleared") {
@@ -336,8 +346,11 @@ export function AnnunciatorProvider({ children }: { children: React.ReactNode })
         if (source?.readyState === EventSource.CLOSED) {
           source.close()
           // The engine's edge ordinals restart with the engine, so a fresh connection must not carry
-          // a seen-set that would swallow the new process's first annunciations.
+          // a seen-set that would swallow the new process's first annunciations — including the
+          // connect-time replay of what is standing, which is the whole reason a restart is annunciated
+          // at all (see the C# endpoint's own I-2 note).
           seen = new Set<number>()
+          seenPrevious = new Set<number>()
           retryTimer = setTimeout(connect, RECONNECT_DELAY_MS)
         }
       }

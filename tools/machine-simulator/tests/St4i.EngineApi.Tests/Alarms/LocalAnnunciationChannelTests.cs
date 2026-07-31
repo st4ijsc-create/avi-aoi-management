@@ -64,14 +64,15 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
         long sequence = 91) =>
         new(sequence, edge, alarm ?? MakeAlarm(), FixedNow, previousPriority, actor);
 
+    /// <summary>🔴 Review round 1 (M-1) — there is no <c>warnings</c> parameter, because the channel has no
+    /// <c>logWarning</c> to collect from. It briefly had both, copied from C-3/C-4 where they are used, and
+    /// the dead delegate made half of <see cref="AThrowingLogDelegate_IsNotItselfAFailure"/> inert.</summary>
     private static LocalAnnunciationChannel NewChannel(
         NotificationConfigStore store,
         AlarmAnnunciationHub hub,
-        ICollection<string>? warnings = null,
         ICollection<(Exception Cause, string Message)>? errors = null) =>
         new(store, hub,
-            logError: (ex, msg) => { if (errors is not null) lock (errors) errors.Add((ex, msg)); },
-            logWarning: msg => { if (warnings is not null) lock (warnings) warnings.Add(msg); });
+            logError: (ex, msg) => { if (errors is not null) lock (errors) errors.Add((ex, msg)); });
 
     /// <summary>Drains everything a listener has RIGHT NOW. Publishing is synchronous and has already
     /// completed by the time <c>DispatchAsync</c> returns, so this never has to wait for anything.</summary>
@@ -571,8 +572,15 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
         Assert.Contains("NOT annunciated", message, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Reporting a failure must never itself become a failure — the log delegates are
-    /// caller-supplied and are reached from inside never-throws paths.</summary>
+    /// <summary>
+    /// Reporting a failure must never itself become a failure — <c>logError</c> is caller-supplied and is
+    /// reached from inside never-throws paths.
+    ///
+    /// <para>🔴 Review round 1 (M-1) — this test used to pass a throwing <c>logWarning</c> too, and that
+    /// half was INERT: the channel never invoked it. The parameter is gone, and the assertion below is now
+    /// only about the delegate that genuinely runs. A non-vacuity guard proves it really was invoked, so
+    /// this cannot silently become inert again the way its predecessor did.</para>
+    /// </summary>
     [Fact]
     public async Task AThrowingLogDelegate_IsNotItselfAFailure()
     {
@@ -580,14 +588,21 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
         Assert.True(await store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.Low));
 
         var hub = new AlarmAnnunciationHub();
+        var invoked = 0;
         var channel = new LocalAnnunciationChannel(
             store, hub,
-            logError: (_, _) => throw new InvalidOperationException("the logger is broken too"),
-            logWarning: _ => throw new InvalidOperationException("the logger is broken too"));
+            logError: (_, _) =>
+            {
+                Interlocked.Increment(ref invoked);
+                throw new InvalidOperationException("the logger is broken too");
+            });
 
         await channel.DispatchAsync(new NotificationJob(1, AlarmEdgeKind.Raised, null!, FixedNow));
 
         Assert.Equal(1, channel.Stats.Lost);
+        // Non-vacuity: the throwing delegate really ran, so "did not become a failure" is about a throw
+        // that happened rather than about a hook that was never called.
+        Assert.Equal(1, invoked);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -698,6 +713,14 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
 
         var stats = channel.Stats;
         Assert.Equal(Iterations, stats.Considered);
+        // 🔴 Review round 1 (M-2) — the race must actually have raced, on BOTH sides. Without these two
+        // guards this test would pass for a sweep that never cancelled anything (or one that cancelled
+        // everything), asserting an invariant over a case it never reached. `TheHubTolerates…` in this file
+        // guards its own race the same way; this one was missing it.
+        Assert.True(threw > 0, "no iteration was cancelled — the sweep never reached the race at all.");
+        Assert.True(threw < Iterations,
+            $"every one of the {Iterations} iterations was cancelled — the sweep never reached the " +
+            "completing side, so the invariant was only checked against one outcome.");
         // 🔴 The invariant. Every dispatch is accounted for exactly once, whichever side of the race it
         // fell on, and nothing was absorbed.
         Assert.Equal(Iterations, stats.Cancelled + stats.Announced + stats.Unheard + stats.Lost);

@@ -38,8 +38,12 @@ public sealed class AlarmAnnunciationStreamTests
         Converters = { new JsonStringEnumConverter() },
     };
 
+    /// <param name="alarmsDir">🔴 Review round 1 (I-2) — supplied by the standing-replay tests so an alarm
+    /// can be left in <c>alarms.db</c> BEFORE the host boots, which is the only way to reproduce the case
+    /// that matters: C-1's <c>Restored</c> edge firing at seed time with nobody connected.</param>
     private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(
-        Func<NotificationConfigStore, Task>? configure = null)
+        Func<NotificationConfigStore, Task>? configure = null,
+        string? alarmsDir = null)
     {
         var notificationsDir = Directory.CreateTempSubdirectory("st4i-annunstream-notifications-").FullName;
         if (configure is not null)
@@ -54,7 +58,8 @@ public sealed class AlarmAnnunciationStreamTests
             ["ST4I_WAL_DIR"] = Directory.CreateTempSubdirectory("st4i-annunstream-wal-").FullName,
             ["ST4I_SETTINGS_DIR"] = Directory.CreateTempSubdirectory("st4i-annunstream-settings-").FullName,
             ["ST4I_ASSETS_DIR"] = Directory.CreateTempSubdirectory("st4i-annunstream-assets-").FullName,
-            ["ST4I_ALARMS_DIR"] = Directory.CreateTempSubdirectory("st4i-annunstream-alarms-").FullName,
+            ["ST4I_ALARMS_DIR"] = alarmsDir
+                ?? Directory.CreateTempSubdirectory("st4i-annunstream-alarms-").FullName,
             ["ST4I_IDENTITY_DIR"] = Directory.CreateTempSubdirectory("st4i-annunstream-identity-").FullName,
             ["ST4I_SITELINK_DIR"] = Directory.CreateTempSubdirectory("st4i-annunstream-sitelink-").FullName,
             ["ST4I_BRIDGE_SPOOL_DIR"] = Directory.CreateTempSubdirectory("st4i-annunstream-bridgespool-").FullName,
@@ -234,6 +239,256 @@ public sealed class AlarmAnnunciationStreamTests
         Assert.True(ready!.Configured);
         Assert.False(ready.Enabled);
         Assert.Null(ready.MinPriority);
+    }
+
+    /// <summary>
+    /// 🔴 <b>Review round 1 (I-1) — the one place in this channel that re-derives the severity comparison,
+    /// and until now nothing pinned it.</b>
+    ///
+    /// <para><c>AlarmPriority</c> is declared MOST-severe-first, so the most PERMISSIVE threshold — the
+    /// least severe alarm that will annunciate anywhere — is the LARGEST underlying value. Every other
+    /// comparison in this channel goes through <c>NotificationDelivery.Delivers</c>, which C-2 created so
+    /// four channels could not each get the inversion wrong; this is a SELECTION rather than a comparison
+    /// and cannot, which makes it exactly where the inversion can come back.</para>
+    ///
+    /// <para>The reviewer proved it was unpinned by flipping <c>MaxBy</c> to <c>MinBy</c> and watching all
+    /// 297 alarm tests stay green — every test until now configured a SINGLE enabled instance, where the two
+    /// are the same value. Two enabled instances at different thresholds is the whole point of this test:
+    /// with Critical and Low configured, the strip must read "Low and above", because an alarm at Low really
+    /// will annunciate. Reporting Critical would tell an operator the annunciator is quieter than it
+    /// is.</para>
+    ///
+    /// <para>The DISABLED instance is the second half: a disabled instance annunciates nothing, so its
+    /// threshold must not widen the reported one either.</para>
+    /// </summary>
+    [Fact]
+    public async Task TwoEnabledInstances_ReportTheMostPermissiveThreshold_NotTheStrictest()
+    {
+        await using var factory = await CreateFactoryAsync(async store =>
+        {
+            Assert.True(await store.SaveLocalAnnunciationAsync(true, AlarmPriority.Critical, "strict"));
+            Assert.True(await store.SaveLocalAnnunciationAsync(true, AlarmPriority.Low, "permissive"));
+            // Enabled=false, and the MOST permissive threshold of the three — so if a disabled instance
+            // were counted, the answer would still be Low but for the wrong reason. It is Medium instead:
+            // more permissive than Critical, stricter than Low, so it can only ever be the reported value
+            // if disabled instances are wrongly included.
+            Assert.True(await store.SaveLocalAnnunciationAsync(false, AlarmPriority.Medium, "off"));
+        });
+        using var client = await LoginAsOperatorAsync(factory);
+
+        using var response = await client.GetAsync(
+            "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
+        await using var body = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(body);
+        var frame = await ReadFrameAsync(reader, TimeSpan.FromSeconds(10));
+
+        var ready = JsonSerializer.Deserialize<AlarmAnnunciationReady>(frame!.Data, JsonOptionsWithEnums);
+        Assert.True(ready!.Configured);
+        Assert.True(ready.Enabled);
+        Assert.Equal(AlarmPriority.Low, ready.MinPriority);
+        Assert.Equal("permissive", ready.Instance);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Review round 1 (I-2) — the connect-time standing replay.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>The hole I-2 found: after an engine restart a standing Critical alarm annunciated to NOBODY,
+    /// while the page went on reporting "Armed".</b>
+    ///
+    /// <para>C-1's <c>Restored</c> edges are emitted by <c>AlarmNotifierSeedService.StartAsync</c>,
+    /// milliseconds after boot. No browser can be connected then — a page that WAS open across the restart
+    /// had its stream severed when the process died and does not return until its <c>retry:</c> elapses. So
+    /// every <c>Restored</c> reaches zero listeners and is counted <c>Unheard</c>, correctly, and the
+    /// standing alarm is never annunciated at all.</para>
+    ///
+    /// <para>This test reproduces the whole shape: an alarm is left standing in <c>alarms.db</c> by a
+    /// "previous process", the host boots, and only THEN does a client connect — exactly the ordering the
+    /// old design could not serve. The alarm must arrive on connect, as <c>Restored</c>, so the operator is
+    /// told that a Critical condition is on right now.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnAlarmStandingFromBeforeTheHostStarted_IsAnnunciatedToAClientThatConnectsAfterwards()
+    {
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-annunstream-standing-").FullName;
+        // A previous "process" leaves a Critical alarm standing. Nothing is listening when the host's seed
+        // service fires its Restored edge — which is the entire point.
+        await new AlarmStore(alarmsDir).RaiseAsync(new AlarmRaise(
+            AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "left over", TargetId: "slot-9"));
+
+        await using var factory = await CreateFactoryAsync(
+            store => store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High),
+            alarmsDir);
+        using var client = await LoginAsOperatorAsync(factory);
+
+        // The seed really did publish to nobody — the premise, asserted rather than assumed.
+        var channel = factory.Services.GetRequiredService<LocalAnnunciationChannel>();
+        var seeded = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (channel.Stats.Considered == 0 && DateTimeOffset.UtcNow < seeded) await Task.Delay(10);
+        Assert.Equal(1, channel.Stats.Unheard);
+        Assert.Equal(0, channel.Stats.Announced);
+
+        using var response = await client.GetAsync(
+            "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
+        await using var body = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(body);
+        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+
+        var frame = await ReadFrameAsync(reader, TimeSpan.FromSeconds(15));
+        Assert.NotNull(frame);
+        Assert.Equal("annunciation", frame!.Event);
+
+        var annunciation = JsonSerializer.Deserialize<AlarmAnnunciation>(frame.Data, JsonOptionsWithEnums);
+        Assert.Equal(AlarmEdgeKind.Restored, annunciation!.Edge);
+        Assert.Equal(AlarmPriority.Critical, annunciation.Priority);
+        Assert.Equal("slot-9", annunciation.TargetId);
+        Assert.Equal("left over", annunciation.Message);
+        // Negative, so a replay token can never collide with AlarmNotifier's per-process ordinals, which
+        // start at 1 and only increase.
+        Assert.True(annunciation.Sequence < 0, $"replay sequence {annunciation.Sequence} is not negative.");
+    }
+
+    /// <summary>The replay token must be STABLE while the alarm stands, or a page that reconnects after a
+    /// blip would be sounded again for something it is already showing. Two independent connections must
+    /// therefore see the SAME sequence for the same standing alarm.</summary>
+    [Fact]
+    public async Task TheReplayTokenIsStableAcrossConnections_SoAReconnectDoesNotReAnnunciate()
+    {
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-annunstream-standing-").FullName;
+        var alarms = new AlarmStore(alarmsDir);
+        var raise = new AlarmRaise(
+            AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "stable", TargetId: "slot-2");
+        await alarms.RaiseAsync(raise);
+
+        await using var factory = await CreateFactoryAsync(
+            store => store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High),
+            alarmsDir);
+        using var client = await LoginAsOperatorAsync(factory);
+
+        var first = await ReadFirstAnnunciationAsync(client);
+
+        // A re-raise between the two connections — the 5s evaluator tick this product does constantly. It
+        // moves LastRaisedUtc and Count but PRESERVES FirstRaisedUtc, which is exactly why the token is
+        // built from the latter. Using LastRaisedUtc would make the second connection re-sound.
+        await factory.Services.GetRequiredService<IAlarmStore>().RaiseAsync(raise);
+
+        var second = await ReadFirstAnnunciationAsync(client);
+
+        Assert.Equal(first.Sequence, second.Sequence);
+        Assert.Equal(first.Key, second.Key);
+    }
+
+    private static async Task<AlarmAnnunciation> ReadFirstAnnunciationAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync(
+            "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
+        await using var body = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(body);
+        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+        var frame = await ReadFrameAsync(reader, TimeSpan.FromSeconds(15));
+        Assert.Equal("annunciation", frame!.Event);
+        return JsonSerializer.Deserialize<AlarmAnnunciation>(frame.Data, JsonOptionsWithEnums)!;
+    }
+
+    /// <summary>A standing alarm BELOW the configured threshold must not be replayed — the replay applies
+    /// exactly the gate the channel applies, or connecting would annunciate things an operator configured
+    /// the channel to ignore.</summary>
+    [Fact]
+    public async Task AStandingAlarmBelowTheThreshold_IsNotReplayed()
+    {
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-annunstream-standing-").FullName;
+        var alarms = new AlarmStore(alarmsDir);
+        await alarms.RaiseAsync(new AlarmRaise(
+            AlarmSource.NgRate, "HIGH", AlarmPriority.High, "below threshold", TargetId: "fleet"));
+        await alarms.RaiseAsync(new AlarmRaise(
+            AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "above threshold", TargetId: "slot-1"));
+
+        await using var factory = await CreateFactoryAsync(
+            store => store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.Critical),
+            alarmsDir);
+        using var client = await LoginAsOperatorAsync(factory);
+
+        using var response = await client.GetAsync(
+            "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
+        await using var body = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(body);
+        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+
+        var first = await ReadFrameAsync(reader, TimeSpan.FromSeconds(15));
+        var admitted = JsonSerializer.Deserialize<AlarmAnnunciation>(first!.Data, JsonOptionsWithEnums);
+        Assert.Equal(AlarmPriority.Critical, admitted!.Priority);
+
+        // Nothing else follows: the High alarm is below the Critical threshold. A short read that times out
+        // is the assertion — the heartbeat is 15s, so anything arriving inside 3s is a replayed frame.
+        Assert.Null(await ReadFrameAsync(reader, TimeSpan.FromSeconds(3)));
+    }
+
+    /// <summary>A DISABLED channel replays nothing. Replaying anyway would be this endpoint annunciating on
+    /// a channel the operator switched off — which is the same class of fault as the host claiming delivery
+    /// for a channel it cannot deliver.</summary>
+    [Fact]
+    public async Task ADisabledChannel_ReplaysNothing_EvenWithAlarmsStanding()
+    {
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-annunstream-standing-").FullName;
+        await new AlarmStore(alarmsDir).RaiseAsync(new AlarmRaise(
+            AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "standing", TargetId: "slot-3"));
+
+        await using var factory = await CreateFactoryAsync(
+            store => store.SaveLocalAnnunciationAsync(enabled: false, AlarmPriority.Low),
+            alarmsDir);
+        using var client = await LoginAsOperatorAsync(factory);
+
+        using var response = await client.GetAsync(
+            "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
+        await using var body = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(body);
+        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+
+        Assert.Null(await ReadFrameAsync(reader, TimeSpan.FromSeconds(3)));
+    }
+
+    /// <summary>The replay is BOUNDED. Twenty cards plus a tone annunciates as well as two hundred would,
+    /// and past that it is a wall of red that renders slowly and says nothing; the complete list is
+    /// <c>GET /v1/alarms</c> on the same screen. <c>ListActiveAsync</c> returns most-severe-first, so what
+    /// survives the truncation is what matters most.</summary>
+    [Fact]
+    public async Task TheStandingReplayIsBounded_AndKeepsTheMostSevere()
+    {
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-annunstream-standing-").FullName;
+        var alarms = new AlarmStore(alarmsDir);
+        const int Standing = AlarmAnnunciationStreamEndpoint.MaxStandingReplay + 7;
+        // Deliberately raised least-severe FIRST, so an implementation that truncated by insertion order
+        // rather than by severity would keep the wrong ones.
+        for (var i = 0; i < Standing; i++)
+        {
+            var priority = i < 7 ? AlarmPriority.High : AlarmPriority.Critical;
+            await alarms.RaiseAsync(new AlarmRaise(
+                AlarmSource.DriverHealth, "DOWN", priority, $"standing {i}", TargetId: $"slot-{i}"));
+        }
+
+        await using var factory = await CreateFactoryAsync(
+            store => store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.Low),
+            alarmsDir);
+        using var client = await LoginAsOperatorAsync(factory);
+
+        using var response = await client.GetAsync(
+            "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
+        await using var body = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(body);
+        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+
+        var replayed = new List<AlarmAnnunciation>();
+        while (await ReadFrameAsync(reader, TimeSpan.FromSeconds(3)) is { } frame)
+        {
+            Assert.Equal("annunciation", frame.Event);
+            replayed.Add(JsonSerializer.Deserialize<AlarmAnnunciation>(frame.Data, JsonOptionsWithEnums)!);
+        }
+
+        Assert.Equal(AlarmAnnunciationStreamEndpoint.MaxStandingReplay, replayed.Count);
+        // 🔴 Truncation by SEVERITY, not by arbitrary order: all 20 kept are Critical, and none of the 7
+        // High ones displaced one.
+        Assert.All(replayed, item => Assert.Equal(AlarmPriority.Critical, item.Priority));
     }
 
     // ─────────────────────────────────────────────────────────────────────
