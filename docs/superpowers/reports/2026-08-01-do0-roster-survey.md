@@ -294,15 +294,40 @@ npm run ai:bench -- --label roster-B
 ```
 5/5 model đo được, 0 skip → `scripts/ai-bench/baselines/roster-B.json`. VRAM sau chạy 1104 MiB, không `node.exe` treo.
 
-### Roster C (Bước 5) — **KHÔNG đo được**, nêu rõ vì sao
+### Roster C (Bước 5, **sửa sau review round 1**) — ĐO ĐƯỢC, không cần sửa mã
 
-Roster C cần đẩy General-30B sang RAM 64GB (partial GPU offload — một phần layer trên GPU, phần còn lại CPU/RAM). Đã tìm biến điều khiển số lớp GPU theo đúng gợi ý brief (`GGUF_GPU_LAYERS` hoặc tương đương) — **không tồn tại**:
+**Bản đầu kết luận "chưa đo được" — SAI, đã sửa.** Bản đầu chỉ tìm biến env/cờ CLI (`GGUF_GPU_LAYERS`, `--gpuLayers` trên `bench.mjs`) — đúng là **không tồn tại** ở 2 nơi đó, nhưng dừng tìm quá sớm. Reviewer lần mã tiếp và chỉ ra cơ chế partial-offload **đã có sẵn, đang vận hành**, chỉ chưa lộ qua `bench.mjs`:
 
-- `grep -rn "GGUF_GPU_LAYERS"` toàn repo (trừ `node_modules`) chỉ khớp 1 dòng trong `knowledge/chunks.jsonl` (chunk RAG, không phải mã nguồn thực thi) — không có biến này ở bất kỳ đâu trong `server/` hay `scripts/`.
-- `server/services/aiGgufEngine.ts:50` khai báo `gpuLayers?: number | "max" | "auto"` trong `GgufModelConfig`, nhưng dòng 612 `const requestedGpuLayers = config.gpuLayers ?? "max"` — **không có nơi nào gán giá trị này từ env**; toàn bộ call site chỉ dùng mặc định `"max"` (full GPU offload). Nhánh `"auto"` (dòng 644) chỉ được engine **tự động** chọn khi retry sau lỗi OOM (`cudaMalloc failed`) — không phải tham số operator điều khiển được từ ngoài.
-- `scripts/ai-bench/bench.mjs:516` hardcode `gpuLayers: gpuEnabled ? "max" : 0` — **nhị phân tuyệt đối**: full GPU hoặc full CPU (`--cpu`/`GGUF_GPU=false`), không có cờ CLI nào cho số lớp cụ thể (đối chiếu toàn bộ danh sách flag `--selfcheck/--cpu/--models/--warmup/--iters/--maxTokens/--prefill/--ctx/--label/--out`, không có `--gpuLayers`).
+- `server/routers/aiGgufRouter.ts:47-55` — mutation `aiGguf.loadModel` nhận thẳng `gpuLayers: z.number().min(-1).max(200).optional()`, nối trực tiếp tới `loadGgufModel(input)` (import từ `aiGgufEngine.ts`, dòng 612/620 `const requestedGpuLayers = config.gpuLayers ?? "max"` → `llama.loadModel({ ..., gpuLayers: requestedGpuLayers })`).
+- Đây chính là hàm **production thật** mà mọi lượt nạp model trong app đi qua — không phải API thử nghiệm.
 
-**Kết luận:** không có cách nào ép "một phần layer GPU + phần còn lại RAM" cho General-30B qua harness hiện có mà không sửa mã (`bench.mjs` hoặc `aiGgufEngine.ts`) — bị cấm ở đợt này. Roster C **chưa đo được**, không bịa số. Đây là kết quả hợp lệ đã được duyệt trước trong brief, không phải thiếu sót của task.
+**Cách đo:** thay vì đi qua Express + tRPC HTTP + router (rủi ro dính 2 racer boot-warm mà Task 2 phát hiện), viết script tạm **import thẳng `loadGgufModel`/`unloadGgufModel`/`generateText`/`getLoadedGgufModels` từ `server/services/aiGgufEngine.ts`** (script tạm `scripts/ai-bench/_roster-c-probe.ts`, chạy bằng `npx tsx`, **xoá ngay sau khi chạy xong**, không commit). Import module này một mình **không** boot Express app ⇒ **không** trigger `backgroundJobs.ts`'s `initDeepModelWarmup()` lẫn `aiLocalKnowledgeApi.ts`'s `warmUpOllamaModels()` (cả hai chỉ chạy khi Express app khởi động các route/job của nó) — nên **không cần đổi `GGUF_WARM_DEEP_MODEL_ON_BOOT`, không cần sửa `.env` gì cho bước này**. Đây là lựa chọn sạch hơn gợi ý ban đầu của reviewer (tắt 1 racer qua app), vì né được **cả hai** racer bằng cấu trúc thay vì tắt được 1.
+
+Trước khi chọn số lớp, đọc metadata thật của file Instruct-30B bằng `readGgufFileInfo` (export nhẹ của `node-llama-cpp`, không cần load full model):
+```bash
+node -e "const {readGgufFileInfo}=await import('node-llama-cpp'); const info=await readGgufFileInfo('D:/SOURCES/16.AI/Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf'); console.log(info.architectureMetadata);" --input-type=module
+# → { block_count: 48, ... expert_count: 128, expert_used_count: 8, ... }
+```
+→ Instruct-30B có **48 layer**. Chọn `gpuLayers=8` (≈17% trên GPU, ~83% đẩy sang CPU/RAM) làm đại diện cụ thể cho tinh thần "đẩy sang RAM 64GB" của roster C.
+
+**Kết quả (script chạy 1 lần, log đầy đủ, VRAM trước 1070 MiB):**
+
+| Bước | Model | gpuLayers | load ms | VRAM sau (MiB) | VRAM Δ (MiB) |
+|---|---|---|---|---|---|
+| 1 | General-30B (Instruct) | 8 / 48 | 5671 | 4770 | 3700 |
+| 2 | Coder-30B (trong khi General **vẫn resident**) | max | 45249 | 23283 | +18513 (so bước 1) |
+
+→ **CẢ HAI model 30B cùng resident thành công** — 23283 MiB / 32607 MiB = **71,4%**, dưới ngưỡng `GGUF_VRAM_GUARD_PCT=90` nên không có eviction nào xảy ra, không lỗi `cudaMalloc`.
+
+`generateText()` (cùng hàm, cùng script, cùng đơn vị đo — so sánh nội bộ đáng tin dù không cùng thang với `bench.mjs`, xem chú thích dưới bảng chính):
+- General-30B (`gpuLayers=8`, 49 token sinh ra): **2,9 tok/s** — rất chậm, phần lớn tính toán chạy trên CPU.
+- Coder-30B (`gpuLayers=max`, 27 token sinh ra): **30,5 tok/s**.
+
+⚠ **Hai con số trên KHÔNG so trực tiếp được với cột "decode tok/s" của bảng bench.mjs chính** (khác định nghĩa: `generateText()`'s `tokensPerSecond` gộp cả prefill+decode vào 1 tổng, còn `bench.mjs` tách riêng TTFT/decode; thêm nữa lượt gọi này **không có warmup** — bench.mjs luôn bỏ 1 lượt warmup trước khi đo — nên có overhead lần-gọi-đầu (biên dịch kernel CUDA lần đầu, cấp phát bộ nhớ) bị tính vào, làm số bị đánh giá thấp hơn thực tế ổn định). Con số **đáng tin nhất và có ý nghĩa nhất** là tỷ lệ **nội bộ, cùng script, cùng định nghĩa metric**: General (partial, 8 layer) chậm hơn Code (full GPU) khoảng **10,5 lần** (2,9 vs 30,5 tok/s) — đây là chi phí thật của việc "đẩy sang RAM" mà roster C phải trả.
+
+Dispose cả hai (`unloadGgufModel`) → VRAM về 1563 MiB (gần baseline 1070, dao động nhỏ bình thường — xác nhận lại vài giây sau: 1062 MiB), không `node.exe` treo, `getLoadedGgufModels()` rỗng.
+
+**Kết luận roster C:** ĐO ĐƯỢC, không cần sửa mã sản xuất — chỉ cần **dùng** đúng tham số `gpuLayers` mà `loadGgufModel()`/mutation `aiGguf.loadModel` đã hỗ trợ sẵn. Đây là roster **DUY NHẤT** giữ được cả hai model 30B cùng lúc, nhưng cái giá là model bị đẩy sang RAM chạy chậm ~10 lần so với model còn lại chạy full GPU — trade-off VRAM-vs-tốc-độ rõ ràng, số liệu ở trên đủ cho Task 7 cân nhắc (ví dụ: 2,9 tok/s cho model "General/chat" nghĩa là câu trả lời dài sẽ mất hàng chục giây → có thể không chấp nhận được cho tương tác thời gian thực, tuỳ ngưỡng UX chủ dự án đặt ra).
 
 ### Bảng so sánh 3 roster (roster hiện tại · A · B) — lệnh tạo bảng
 
@@ -333,19 +358,40 @@ for(const f of ['roster-current-do0-3','roster-A','roster-B']){
 | B | code | Qwen3-Coder-30B-A3B | 8805.7 | 17716 | 18829 | 3753.5 / 8185.0 | 267.4 / 240.4 |
 | B | fim | Qwen2.5-Coder-1.5B | 1076.4 | 1786 | 2899 | 12526.2 / 23222.6 | 490.5 / 482.7 |
 | B | embed | Qwen3-Embedding-0.6B | 1219.1 | 5652 | 6765 | embedMs=6.8ms, inputTok/s=4864.5 | — |
-| **C** | — | — | **CHƯA ĐO ĐƯỢC** (không có biến điều khiển GPU-layers, xem trên) | | | | |
+| **C** | General(gpuLayers=8/48) | Qwen3-30B-A3B-Instruct | 5671 | 3700 | 4770 | (không đo prefill/decode tách riêng — xem `generateText()` bên dưới) | **2,9 tok/s** (gộp prefill+decode, không warmup) |
+| C | Coder(gpuLayers=max, cùng resident) | Qwen3-Coder-30B-A3B | 45249 | +18513 (từ mốc bước 1) | 23283 | (như trên) | **30,5 tok/s** (gộp prefill+decode, không warmup) |
+
+⚠ **M-1 (sửa sau review round 1) — đọc cột "load ms" trong bảng trên cẩn thận, KHÔNG phải khác biệt giữa các roster.** Lệch lớn nhất trong bảng (`code` ở roster hiện tại = 40968,5 ms vs `deep`/`code` ở roster A chỉ ~8800 ms — chênh **4,7 lần**) là **hiệu ứng OS file-cache trong cùng 1 phiên đo** (lần đọc đĩa đầu tiên của 1 file luôn chậm hơn các lần đọc lại sau, xem giải thích đầy đủ + bằng chứng chéo-roster ở mục "Lệch so với baseline-2026-07-05" bên dưới), **không phải** do cấu hình roster A/B khác roster hiện tại. Đừng đọc bảng này như "roster A/B nạp nhanh hơn roster hiện tại" — thứ tự chạy (hiện tại → A → B) mới là biến chi phối load-ms, không phải roster nào.
 
 ### Xác nhận bằng đo lường: hai model 30B **KHÔNG** thể cùng thường trú trên 32,6 GB VRAM
 
-`bench.mjs` nạp/xoá (`dispose()`) tuần tự từng logical model — không giữ nhiều model cùng lúc — nên VRAM đồng thời dưới đây là **cộng dồn arithmetic** từ các delta đo riêng lẻ (không phải đo trực tiếp lúc 2 model cùng resident), nhưng vì delta VRAM của một model 30B ổn định qua nhiều lượt đo độc lập (17698–17801 MiB, dao động <0,6%, xem mục lệch-baseline bên dưới), phép cộng này đáng tin cậy:
+**Sửa sau review round 1 — nâng từ "suy luận cộng dồn" lên "đã xác nhận bằng đo trực tiếp".** Bản đầu chỉ có phép cộng arithmetic dưới đây (vì `bench.mjs` nạp/xoá tuần tự, không giữ 2 model cùng lúc) và tự nhận đó là giới hạn. Reviewer chỉ ra có phép kiểm trực tiếp rẻ (~44s, không sửa mã): nạp cả 2 model 30B trong **cùng 1 tiến trình**, **không** dispose model đầu trước khi nạp model hai, bằng chính API `node-llama-cpp` mà `bench.mjs` dùng. Tôi tự chạy lại độc lập (không chép số reviewer) bằng script tạm `scripts/ai-bench/_double-load-probe.mjs` (xoá ngay sau khi chạy, không commit):
 
 ```
-Roster hiện tại (deep 30B-Instruct + code 30B-Coder cùng resident):
+[probe] vram before: {"total":32607,"used":1078}
+[probe] loading model #1 (deep) gpuLayers=max ...
+[probe] model #1 loaded in 9449ms
+[probe] vram after model #1: {"total":32607,"used":18206}
+[probe] loading model #2 (code) gpuLayers=max, model #1 STILL RESIDENT (no dispose) ...
+[probe] model #2 load REJECTED — exact error message:
+[probe] >>> Not enough VRAM to fit the model with the specified settings
+[probe] vram at rejection: {"total":32607,"used":18206}
+[probe] disposing...
+[probe] vram after dispose: {"total":32607,"used":1501}
+```
+(xác nhận lại vài giây sau: VRAM ổn định ở 1071 MiB, không `node.exe` treo.)
+
+**Kết quả khớp chính xác với phép cộng arithmetic bên dưới** — model #2 bị từ chối ngay khi VRAM đã dùng ~18,2 GB (từ model #1) cộng thêm ~17,7 GB cần cho model #2 sẽ vượt 32,6 GB. Không có bằng chứng phân mảnh làm tệ hơn dự đoán (VRAM về sạch sau dispose, không rơi rớt), cũng không có chia sẻ buffer làm tốt hơn dự đoán (model #2 bị từ chối thẳng, không "gần vừa"). Phép cộng arithmetic dưới đây giờ có **cả suy luận số học LẪN đo trực tiếp cùng một tiến trình** làm bằng chứng — mức tin cậy cao nhất trong toàn Đợt 0:
+
+```
+Roster hiện tại (deep 30B-Instruct + code 30B-Coder cùng resident, số liệu bench.mjs):
   baseline 1180 + deepΔ 17750 + codeΔ 17737 = 36667 MiB > 32607 MiB tổng VRAM
   → VƯỢT 4060 MiB (~4 GB), TRƯỚC KHI tính buffer KV-cache/generation thêm (mỗi model +470-940 MiB nữa lúc sinh token thật).
 ```
 
-**Đây là xác nhận bằng đo lường cho tiền đề gốc của Đợt 0**: delta ~17,7 GB cho MỘT model 30B (nhất quán qua ≥5 lượt đo độc lập trong Task 2 và Task 3, cả hai file 30B, cả 3 roster) ⇒ hai model 30B riêng biệt cùng thường trú cần ~35,5 GB > 32,6 GB VRAM thật của máy — **không thể**. Task 2 đã đo được delta này nhưng **chưa nêu kết luận cộng dồn** này; Task 3 bổ sung phép tính trên để xác nhận rõ ràng.
+**Đây là xác nhận bằng đo lường cho tiền đề gốc của Đợt 0**, giờ có 2 nguồn độc lập: (a) delta ~17,7 GB cho MỘT model 30B tại một thời điểm — đo trên **2 file GGUF khác nhau** (Instruct-30B và Coder-30B, xem chú thích M-2 ngay dưới), nhất quán qua ≥5 lượt trong Task 2 và Task 3; (b) phép kiểm trực tiếp vừa chạy — nạp cả hai TRONG CÙNG TIẾN TRÌNH, không dispose, bị từ chối đúng như dự đoán. ⇒ hai model 30B riêng biệt cùng thường trú cần ~35,5 GB > 32,6 GB VRAM thật của máy — **không thể, đã xác nhận cả bằng suy luận số học lẫn đo trực tiếp**. Task 2 đã đo được delta (a) nhưng chưa nêu kết luận cộng dồn; Task 3 bổ sung cả phép cộng lẫn phép đo trực tiếp (b) để xác nhận dứt điểm.
+
+⚠ **M-2 (sửa sau review round 1) — làm rõ "delta ổn định" là qua HAI FILE KHÁC NHAU, không phải 1 file đo lặp lại.** Câu ở mục "lệch baseline" bên dưới ("17801→17750→17729...") liệt kê các lần đo `deep`/`code` xen kẽ — nhưng `deep` (roster hiện tại) = **Qwen3-30B-A3B-Instruct-2507** (file 1), còn `code` (roster hiện tại, roster A×2, roster B) = **Qwen3-Coder-30B-A3B-Instruct** (file 2, khác file 1 — kiến trúc/kích thước tương tự nhưng KHÔNG phải cùng 1 file đọc lặp lại nhiều lần). Kết luận "delta VRAM ~17,7GB ổn định cho 1 model 30B" vẫn ĐÚNG — cả hai file có delta gần như giống hệt nhau (17698–17801 MiB, <0,6% dao động) — nhưng đó là **hai model 30B kiến trúc MoE giống nhau (48 layer, qwen3moe) cho ra delta gần bằng nhau**, không phải bằng chứng "đo lặp lại 1 file luôn ra cùng 1 số" (dù điều đó cũng đúng riêng — roster A's `deep` và `code` cùng trỏ 1 file Coder-30B, delta 17729 vs 17698, chênh <0,2%, đó MỚI là phép đo-lặp-lại-1-file thật).
 
 Ngược lại, roster A và B (chỉ giữ **một** bản 30B duy nhất, không phải hai) đều **VỪA** trong ngân sách nếu 4 logical-slot còn lại (deep/fast/code/fim/embed, trừ trùng file) cùng thường trú:
 ```
@@ -361,7 +407,7 @@ Roster B (fast=deep 4B dùng chung, + code 30B riêng + fim + embed):
 1. **Phần cứng đã đổi giữa 05/07 và hôm nay** — không phải lỗi đo, là thay đổi máy thật: baseline 07-05 ghi `cpu: "i7-12700KF"`, `cpuCores: 20`, `totalMemGb: 47.8`; cả 3 roster hôm nay đều ghi `cpu: "i9-12900K"`, `cpuCores: 24`, `totalMemGb: 63.8`. **Task 7 cần biết: máy đã được nâng cấp CPU+RAM sau 05/07** (GPU RTX 5090 32.607 MiB không đổi).
 2. **`deep` load time lệch lớn**: baseline 07-05 = 40260,5 ms; roster hiện tại hôm nay = 9346,9 ms (nhanh hơn ~4,3 lần). Đã truy được nguyên nhân nhiều khả năng nhất, không phải suy đoán suông: **hiệu ứng OS file-cache trong phiên**, không phải khác biệt cấu hình. Bằng chứng trực tiếp: model `code` (Coder-30B) đọc **lần đầu trong phiên** (roster hiện tại) mất 40968,5 ms — chậm y hệt kiểu baseline 07-05 — nhưng file **giống hệt** đọc lại vài phút sau ở slot `deep` của roster A chỉ mất 8852,5 ms, và slot `code` của roster A (đọc lần 3 trong phiên) chỉ 8828,2 ms. Cùng file, cùng máy, cách nhau vài phút, chênh lệch 4,6 lần — khớp mô hình "lần đọc đĩa đầu chậm, các lần sau ăn cache OS (63,8 GB RAM đủ cache thoải mái 1 file 17,7 GB)". Không loại trừ phần cứng CPU mới cũng góp phần, nhưng cache-effect giải thích trực tiếp và đủ cho phần lớn chênh lệch.
 3. **`decode` tok/s cao hơn baseline 07-05 khoảng 20-30%** (vd. deep @128 decode median: 212,7 → 277,4). Không có baseline `code`/`fim` trên 07-05 để so (biến `GGUF_CODE_MODEL`/`GGUF_FIM_MODEL` khi đó chưa cấu hình — file `baseline-2026-07-05.json` chỉ có 3 model `deep/fast/embed`). Hướng nghi vấn hợp lý: CPU mới (24 nhân) hoặc driver/CUDA Toolkit cập nhật giữa hai lần đo — **chưa xác nhận, chỉ ghi nhận độ lệch**.
-4. **VRAM delta của `deep` ổn định bất chấp mọi lệch trên**: 17801 MiB (07-05) → 17750/17729/... MiB (hôm nay, 3 roster) — dao động <0,3%. Đây là con số quan trọng nhất cho quyết định roster (mục VRAM ở trên), và nó **không bị ảnh hưởng** bởi các lệch phần cứng/cache kể trên — đáng tin cậy để dùng cho Task 7.
+4. **VRAM delta của model 30B ổn định bất chấp mọi lệch trên** (sửa cách viết theo M-2 — tách rõ theo TỪNG FILE, không gộp): **Instruct-30B** (logical `deep`, chỉ đo được ở roster-hiện-tại vì roster A/B trỏ `GGUF_DEFAULT_MODEL` sang file khác) — 17801 MiB (07-05) → 17750 MiB (hôm nay) — 2 điểm, lệch 0,3%. **Coder-30B** (logical `code`, cả 3 roster; cũng là logical `deep` ở riêng roster A vì trùng file) — không có baseline 07-05 để so (chưa cấu hình khi đó) — 4 điểm hôm nay: 17737 (hiện tại) / 17729 (A, slot deep) / 17698 (A, slot code — phép đo-lặp-lại-1-file thật, cùng 1 file trong cùng 1 lượt chạy) / 17716 (B) — dao động 17698–17737, <0,3%. Gộp cả 2 file: 17698–17801 MiB toàn bộ, <0,6%. Đây là con số quan trọng nhất cho quyết định roster (mục VRAM ở trên), và nó **không bị ảnh hưởng** bởi các lệch phần cứng/cache kể trên — đáng tin cậy để dùng cho Task 7, nay còn được củng cố bằng phép đo trực tiếp (mục "Xác nhận bằng đo lường").
 
 ### Vệ sinh tiến trình / VRAM — xác nhận từng lượt
 
@@ -382,10 +428,21 @@ grep -n "^GGUF_DEFAULT_MODEL=\|^GGUF_CODE_MODEL=\|^GGUF_FAST_MODEL=" .env
 # GGUF_FAST_MODEL=Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf           (không đổi, chưa từng sửa)
 # GGUF_CODE_MODEL=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf     (đúng giá trị gốc, chưa từng sửa)
 ```
-`diff` rỗng → hoàn nguyên đúng.
+`diff` rỗng → hoàn nguyên đúng. (Xác nhận này bao trùm toàn bộ Bước 2-4. Phép đo roster C ở vòng sửa 1 và phép kiểm trực tiếp Important-1 **không đụng `.env`** — cả hai chạy bằng script tạm import thẳng module, không boot app, không cần đổi biến nào.)
 
 ### Mối lo / lưu ý cho Task 7
 
 1. Máy đã nâng cấp phần cứng (CPU+RAM) từ 05/07 đến nay — số tok/s so với `baseline-2026-07-05.json` không so ngang hàng tuyệt đối được (nhanh hơn ~20-30% ở decode), **nhưng VRAM delta thì có** (ổn định qua cả 2 mốc thời gian) — Task 7 nên ưu tiên dùng trục VRAM (đáng tin) hơn trục tok/s tuyệt đối khi so với baseline cũ.
-2. Roster C không đo được vì thiếu cơ chế điều khiển GPU-layers trong cả `aiGgufEngine.ts` lẫn `bench.mjs` — nếu chủ dự án muốn số thật cho roster C, cần: (a) thêm tham số/CLI cho partial-offload vào `bench.mjs` (đổi hành vi harness, ngoài phạm vi "chỉ đo" của Đợt 0), hoặc (b) chấp nhận ước lượng lý thuyết dựa trên tỷ lệ layer thay vì đo thật.
-3. `bench.mjs` không đo được kịch bản "2 model cùng resident" trực tiếp (luôn dispose tuần tự) — số 36667 MiB / 29717 MiB / 29741 MiB ở trên là suy ra bằng cộng dồn delta, không phải đo trực tiếp lúc contention thật. Phù hợp hướng với phát hiện evict=0 của Task 2 (đường app hỏng vì race, chưa đo được contention thật qua app) — Task 3 lấp phần này bằng suy luận số học có căn cứ, không phải đo trực tiếp.
+2. **Roster C đo được (sửa sau review round 1)** — là roster **duy nhất** giữ cả hai 30B cùng lúc, nhưng model bị đẩy sang RAM (`gpuLayers=8/48`) chạy **~10,5 lần chậm hơn** model còn lại full-GPU (2,9 vs 30,5 tok/s, cùng script/cùng định nghĩa metric — xem mục Roster C). Task 7 cần tự quyết: 2,9 tok/s có chấp nhận được cho use-case "General/chat" không? Chỉ đo 1 điểm `gpuLayers=8`; chưa quét dải giá trị (vd. 12, 16, 24) để tìm điểm cân bằng tốc độ/VRAM tốt hơn — nếu cần, đó là việc đo thêm ngoài phạm vi thời gian hợp lý của Task 3.
+3. `bench.mjs` không đo được kịch bản "2 model cùng resident" trực tiếp (luôn dispose tuần tự) — số 36667 MiB / 29717 MiB / 29741 MiB ở mục VRAM là suy ra bằng cộng dồn delta, **nhưng nay đã có phép đo TRỰC TIẾP xác nhận đúng chiều** (script `_double-load-probe.mjs`, mục "Xác nhận bằng đo lường" — model #2 bị từ chối với thông điệp `"Not enough VRAM to fit the model with the specified settings"` đúng như phép cộng dự đoán). Không còn là suy luận thuần — có cả đo trực tiếp cho roster hiện tại (2 model full-GPU, thất bại) VÀ roster C (1 full + 1 partial, thành công).
+
+### Vòng sửa 1 (review)
+
+Reviewer: spec ✅ đạt, diff sạch (0 mã sản xuất), `bench.mjs`/`aiGgufEngine.ts` xác nhận không bị sửa, `.env` hoàn nguyên đúng, 15/15 hàng bảng gốc khớp 100% với JSON thô. 2 Important + 2 Minor, cả 4 đã xử lý trong bản này:
+
+- **Important 1 — con số cộng dồn 36667 MiB đáng lẽ phải kiểm bằng đo trực tiếp, không chỉ để ở mức suy luận.** Reviewer tự chạy phép kiểm rẻ (~44s, không sửa mã): nạp 2 model 30B cùng tiến trình, không dispose model đầu, ra thông điệp từ chối `"Not enough VRAM to fit the model with the specified settings"`. Tôi **tự chạy lại độc lập** (không chép số reviewer) bằng script tạm `scripts/ai-bench/_double-load-probe.mjs` (raw `node-llama-cpp`, cùng cách bench.mjs gọi) — xác nhận **cùng thông điệp, cùng hành vi** (model #1 nạp OK 9449ms/18206 MiB, model #2 bị từ chối ngay, VRAM về sạch sau dispose). Đã nâng mục "Xác nhận bằng đo lường" từ "chỉ cộng dồn arithmetic" lên "cộng dồn + đo trực tiếp cùng xác nhận". Bài học: có công cụ (script cô lập gọi thẳng `node-llama-cpp`/production function, đúng kỹ thuật Task 2 làm mẫu) mà không dùng để tự kiểm con số trung tâm nhất của báo cáo — lần sau ưu tiên đo trực tiếp trước khi dừng ở suy luận, khi chi phí đo thấp (ở đây chỉ ~1 phút).
+- **Important 2 — kết luận "roster C không đo được nếu không sửa mã" SAI, đã sửa thành ĐO ĐƯỢC.** Bản đầu dừng tìm ở `bench.mjs`/env sau khi xác nhận cả hai không hỗ trợ số lớp GPU cụ thể — đúng nhưng KHÔNG ĐẦY ĐỦ, chưa lần tới router. Reviewer chỉ ra `server/routers/aiGgufRouter.ts:47-55` (`aiGguf.loadModel`, `gpuLayers: z.number()`) và `GGUF_WARM_DEEP_MODEL_ON_BOOT=false` (tắt 1 trong 2 racer boot Task 2 phát hiện). Tôi đã đo bằng cách **tốt hơn** gợi ý ban đầu (import thẳng `loadGgufModel` từ `aiGgufEngine.ts` qua script tạm, né **cả hai** racer bằng cấu trúc thay vì tắt 1 racer qua `.env`+boot app) — kết quả: cả 2 model 30B cùng resident thành công với General ở `gpuLayers=8/48` (23283/32607 MiB = 71,4%), nhưng chậm ~10,5 lần so với model full-GPU (2,9 vs 30,5 tok/s). Bài học: dừng tìm ngay sau khi 2 chỗ đầu tiên (harness + config type) không ra kết quả — trong khi mã production (router mutation) là nơi thứ 3 chưa xét tới, và tồn tại sẵn không cần sửa gì.
+- **M-1 — cảnh báo file-cache chỉ nằm ở mục so-baseline-07-05, chưa gắn vào bảng 3-roster chính nơi lệch 4,7 lần dễ bị hiểu nhầm là khác biệt giữa các roster.** Đã thêm cảnh báo ngay dưới bảng chính.
+- **M-2 — câu "VRAM delta ổn định 17801→17750→17729" ghép 2 file GGUF khác nhau (Instruct-30B và Coder-30B) như 1 phép đo lặp lại.** Đã tách rõ theo từng file ở cả mục "Xác nhận bằng đo lường" và mục "Lệch so với baseline" — kết luận không đổi (delta vẫn ổn định, <0,6% dù gộp 2 file), chỉ cách trình bày rõ ràng hơn.
+
+Không đụng mã sản xuất, không đụng `bench.mjs`, không đụng `.env` trong vòng sửa này (roster C + phép kiểm trực tiếp đều dùng script tạm import module, không boot app) — 2 script tạm đã xoá ngay sau khi chạy, không commit.
