@@ -52,10 +52,16 @@ namespace St4i.EngineApi.Alarms;
 /// 🔴 Writes after which <b>nobody knows whether the coil moved</b> (<see cref="WriteOutcome.Indeterminate"/>).
 ///
 /// <para>B-1 made this first-class precisely because a timed-out write does not tell you whether the device
-/// applied it, and collapsing that into "failed" reads as "safe to try again". <b>It is not retried, and the
-/// channel's own belief about the coil becomes UNKNOWN rather than reverting to the previous value</b> — so
-/// the next real transition writes unconditionally instead of being suppressed as redundant. That is the
-/// only handling that cannot leave a beacon dark on a state this process merely assumed.</para></param>
+/// applied it, and collapsing that into "failed" reads as "safe to try again". <b>It is not re-issued</b>,
+/// and the state moves in two halves: <see cref="RelayInstanceState.Commanded"/> takes the level that WAS
+/// issued (so the same level is never issued again — that is what no-retry means, and it is what keeps the
+/// latch absorbing a storm behind an indeterminate write), while
+/// <see cref="RelayInstanceState.Energised"/> becomes UNKNOWN (nobody knows what the device did).
+///
+/// <para>🔴 Review round 1 (C-1) found this the hard way: gating the write on <c>Energised</c> meant that
+/// after ONE indeterminate write every subsequent latch input wrote again — 20 distinct alarms in one
+/// episode produced 20 writes instead of 1, and for a <see cref="RelayTargetKind.Command"/> target every one
+/// of those is a real actuation. The class doc was right and the code was wrong.</para></param>
 /// <param name="Refused">🔴 Attempts the Đợt B gate REFUSED before any I/O — overwhelmingly "the HALT latch
 /// is engaged". Not an error and not a loss: it is the batch's one non-negotiable invariant working. See
 /// <see cref="RelayNotificationChannel"/> for what an operator sees, and for why a refused OFF write leaves
@@ -111,15 +117,26 @@ public sealed record RelayChannelStats(
 /// <param name="Instance">The configured instance key.</param>
 /// <param name="LatchedAlarms">How many qualifying alarm keys are currently active for this instance. The
 /// latch is asserted iff this is greater than zero.</param>
-/// <param name="Energised">🔴 <see langword="true"/> = this channel last successfully commanded the
-/// annunciator ON; <see langword="false"/> = OFF; <see langword="null"/> = <b>UNKNOWN</b> — either nothing
-/// has been commanded in this process yet, or the last write came back
-/// <see cref="WriteOutcome.Indeterminate"/>. Never inferred from the device.</param>
+/// <param name="Commanded">
+/// 🔴 Review round 1 (C-1) — the level this channel last ISSUED A WRITE FOR, which is a different question
+/// from <see cref="Energised"/> and is the one the write gate asks.
+///
+/// <para>It moves on <see cref="WriteOutcome.Applied"/> AND on <see cref="WriteOutcome.Indeterminate"/>,
+/// because in both cases a write for that level reached the device and <b>must not be issued again</b> —
+/// that is what "no retry" means. It does NOT move on <see cref="WriteOutcome.Failed"/>,
+/// <see cref="WriteOutcome.Rejected"/>, a policy refusal or an unresolvable driver, because nothing reached
+/// the device and the next edge should try again.</para></param>
+/// <param name="Energised">🔴 What this channel BELIEVES the annunciator is doing: <see langword="true"/> =
+/// last successfully commanded ON; <see langword="false"/> = OFF; <see langword="null"/> = <b>UNKNOWN</b> —
+/// either nothing has been commanded in this process yet, or the last write came back
+/// <see cref="WriteOutcome.Indeterminate"/>. Never inferred from the device, and deliberately NOT what the
+/// write gate consults — see <paramref name="Commanded"/>.</param>
 /// <param name="LastAttemptUtc">When a write was last ATTEMPTED (including one the gate refused), which is
 /// what the rate limiter measures from.</param>
 public sealed record RelayInstanceState(
     string Instance,
     int LatchedAlarms,
+    bool? Commanded,
     bool? Energised,
     DateTimeOffset? LastAttemptUtc);
 
@@ -143,6 +160,26 @@ public sealed record RelayInstanceState(
 /// means <see cref="Policy.Rules.EstopGuardRule"/>, <see cref="Policy.Rules.CriticalAlarmGuardRule"/> and
 /// <see cref="Policy.Rules.RoleObligationRule"/> all run, and any rule added later runs too without this
 /// class being edited. <b>HALT latched ⇒ the beacon does not light.</b></para>
+///
+/// <para>🔴 <b>Review round 1 (I-1) — but only ONE of those three rules can actually deny this caller, and
+/// saying "all three run" without saying that reads as defence-in-depth that is not there.</b>
+/// <list type="bullet">
+/// <item><description><see cref="Policy.Rules.EstopGuardRule"/> — <b>the sole enforcement</b>. Nothing below
+/// it re-checks the halt latch: <c>FleetHost.TryWriteSetpointAsync</c> does not consult it, so if this rule
+/// did not deny, the write would reach the device.</description></item>
+/// <item><description><see cref="Policy.Rules.CriticalAlarmGuardRule"/> — <b>structurally inert here</b>,
+/// because this caller resolves <see cref="PolicyRequest.CriticalAlarmActive"/> as a literal
+/// <see langword="false"/> (the derivation is below). It runs and always returns "does not
+/// apply".</description></item>
+/// <item><description><see cref="Policy.Rules.RoleObligationRule"/> — <b>can never deny this caller</b>,
+/// because <see cref="MachineWriteGate.ActionFor"/> and <see cref="MachineWriteGate.RoleFor"/> switch on the
+/// same <see cref="RelayTargetKind"/>: the relay always presents exactly the role its own action requires.
+/// It is a real check that this caller cannot fail by construction, which is not the same as a check that
+/// protects it.</description></item>
+/// </list>
+/// The value of going through the engine is therefore NOT redundancy — it is that the HALT check is the
+/// engine's, under the same action id a human uses, so it cannot drift from the human path and any rule
+/// added later applies here automatically.</para>
 ///
 /// <para>The reason is not ceremony. <b>The system cannot know that a coil an operator declared
 /// <c>annunciator</c> is a beacon rather than a conveyor.</b> The register map IS the safety boundary — Đợt
@@ -182,9 +219,13 @@ public sealed record RelayInstanceState(
 /// <h3>The latch, and the energise/de-energise decision</h3>
 /// <para><b>Edge-driven, not tick-driven, and stateful.</b> Each instance keeps the SET of qualifying alarm
 /// keys that are currently active. The latch is asserted iff that set is non-empty. A write happens only
-/// when the DERIVED level differs from what this channel last successfully commanded — so a hundred alarms
-/// raising produce ONE energise, and the 5 s evaluator re-raising the same alarm forever produces none at
-/// all (C-1's edge detector never even hands those over).</para>
+/// when the DERIVED level differs from the level this channel last ISSUED A WRITE FOR
+/// (<see cref="RelayInstanceState.Commanded"/> — <b>not</b>
+/// <see cref="RelayInstanceState.Energised"/>; review round 1's Critical was exactly that confusion) — so a
+/// hundred alarms raising produce ONE energise, and the 5 s evaluator re-raising the same alarm forever
+/// produces none at all (C-1's edge detector never even hands those over). <b>That absorption holds after an
+/// <see cref="WriteOutcome.Indeterminate"/> write too</b>, which is the whole reason the two are separate
+/// pieces of state.</para>
 /// <list type="bullet">
 /// <item><description><see cref="AlarmEdgeKind.Raised"/>/<see cref="AlarmEdgeKind.Escalated"/>/
 /// <see cref="AlarmEdgeKind.Restored"/> ADD the key (if it meets the threshold).
@@ -243,7 +284,7 @@ public sealed record RelayInstanceState(
 /// means one thing in all cases: <i>this product last commanded ON and has not since observed everything
 /// clear.</i>
 /// <para><b>What an operator has to do about it.</b> On restart the latch is re-derived from
-/// <see cref="AlarmEdgeKind.Restored"/> and, because <see cref="RelayInstanceState.Energised"/> starts
+/// <see cref="AlarmEdgeKind.Restored"/> and, because <see cref="RelayInstanceState.Commanded"/> starts
 /// UNKNOWN, the first derived level is written unconditionally — so a restart into standing alarms re-asserts
 /// ON, and the eventual clear writes OFF. The residual case is a beacon lit by a process that died while the
 /// alarms cleared underneath it AND whose relay was disabled or reconfigured before the restart: then
@@ -251,6 +292,30 @@ public sealed record RelayInstanceState(
 /// the coil by hand. That case is visible — <see cref="RelayInstanceState.Energised"/> reads
 /// <see langword="null"/> with an empty <see cref="RelayInstanceState.LatchedAlarms"/> — and C-7's "send
 /// test" is the affordance that resolves it.</para></description></item>
+/// <item><description>🔴 <b>Review round 1 (m-3) — a relay ENABLED part-way through an alarm episode never
+/// lights for it, and its eventual clear writes OFF to a coil this product never lit.</b> The latch is built
+/// from EDGES and there is no backfill, so an alarm that raised before the instance was enabled is not in the
+/// latch set; the first thing the instance sees is that alarm's <see cref="AlarmEdgeKind.Cleared"/>, which
+/// removes nothing, derives OFF, and — because <see cref="RelayInstanceState.Commanded"/> is still UNKNOWN —
+/// is written unconditionally. So the unconditional first write is NOT only the restart re-assert: it is also
+/// what makes a mid-episode enable converge, and the price is one de-energise of an already-dark annunciator.
+/// Writing OFF to something already off is idempotent for a
+/// <see cref="RelayTargetKind.Point"/> target and impossible for a <see cref="RelayTargetKind.Command"/> one
+/// (which cannot release at all), so the cost is a spurious audit row rather than an actuation — but it is a
+/// real, reachable behaviour and it is enumerated here rather than discovered. The alternative, seeding the
+/// latch from <c>active_alarms</c> at enable time, needs a store read this channel deliberately does not
+/// have (see the <see cref="PolicyRequest.CriticalAlarmActive"/> derivation) and an enable-time hook that
+/// only C-7 can provide.</description></item>
+/// <item><description>🔴 <b>Review round 1 (m-4) — a <see cref="AlarmEdgeKind.Cleared"/> edge EVICTED from
+/// this channel's own saturated queue leaves its key latched forever.</b> C-6's per-channel queues are
+/// <see cref="System.Threading.Channels.BoundedChannelFullMode.DropOldest"/>, so under sustained saturation
+/// an edge is lost; losing a <c>Cleared</c> means the key is never removed, the latch never empties, and for
+/// a non-recurring alarm nothing later re-derives it — the same end state as the process-death residual
+/// above, and with the same remedy. Remote rather than theoretical: it needs roughly
+/// <see cref="AlarmNotifier.DefaultCapacity"/> queued edges against a consumer this channel deliberately
+/// rate-limits to 0.5 Hz. It is not silent — the loss is counted on
+/// <see cref="AlarmNotifierChannelStats.Dropped"/> for the <c>Relay</c> channel by name, which is exactly
+/// what the per-channel split was built to make visible.</description></item>
 /// <item><description>🔴 <b>HALT is latched while the beacon is on: the gate refuses the OFF write too, and
 /// this channel does NOT pretend otherwise.</b> No exception is carved for the release — the rule has no
 /// exceptions, and a rule with one exception is a rule that will get a second. So the OFF write is
@@ -260,16 +325,22 @@ public sealed record RelayInstanceState(
 /// a <c>Warning</c> naming the machine, the point, and the fact that the annunciator is STILL ENERGISED and
 /// will stay that way until the latch is reset; an audit row under this channel's own identity; and, in C-7,
 /// <c>Energised = true</c> beside an empty alarm list. When HALT is reset, the next edge finds
-/// <c>Energised</c> still disagreeing with the (empty) latch set and writes OFF.</description></item>
+/// <see cref="RelayInstanceState.Commanded"/> still disagreeing with the (empty) latch set and writes
+/// OFF.</description></item>
 /// <item><description>The declared point does not resolve, or the machine is not in the roster: all four of
 /// Đợt B's cases are counted separately and none is collapsed — see
 /// <see cref="RelayChannelStats.MachineNotFound"/> and its three neighbours.</description></item>
 /// <item><description>The write returns <see cref="WriteOutcome.Rejected"/> because a limit in the map
-/// refuses the value: counted, logged with the driver's own rejection reason, and NOT retried — the
-/// configuration is wrong and a retry cannot fix it. The channel's belief is left unchanged, because
-/// nothing was written.</description></item>
-/// <item><description>🔴 <see cref="WriteOutcome.Indeterminate"/>: <b>never retried, reported as itself, and
-/// the belief becomes UNKNOWN.</b> See <see cref="RelayChannelStats.Indeterminate"/>.</description></item>
+/// refuses the value: counted, logged with the driver's own rejection reason, and not re-issued for that
+/// edge. Neither half of the state moves, because nothing was written — so the NEXT edge attempts it again,
+/// deliberately: a rejection is a statement about the configuration, and an operator who fixes the point's
+/// declared range must not also have to manufacture a level transition to get the beacon
+/// working.</description></item>
+/// <item><description>🔴 <see cref="WriteOutcome.Indeterminate"/>: <b>never re-issued, reported as itself,
+/// and the two halves of the state move differently</b> —
+/// <see cref="RelayInstanceState.Commanded"/> moves (a write for that level was issued and must not be
+/// issued again) while <see cref="RelayInstanceState.Energised"/> becomes UNKNOWN (nobody knows what the
+/// device did). See <see cref="RelayChannelStats.Indeterminate"/>.</description></item>
 /// </list>
 ///
 /// <h3>Shape</h3>
@@ -363,7 +434,15 @@ public sealed class RelayNotificationChannel
     private sealed class InstanceState
     {
         public readonly HashSet<string> Latched = new(StringComparer.Ordinal);
+
+        /// <summary>🔴 Review round 1 (C-1) — the level a write was last ISSUED for. What the write gate
+        /// consults. See <see cref="RelayInstanceState.Commanded"/>.</summary>
+        public bool? Commanded;
+
+        /// <summary>What the channel BELIEVES the device is doing. Reporting only — never the gate. See
+        /// <see cref="RelayInstanceState.Energised"/>.</summary>
         public bool? Energised;
+
         public DateTimeOffset? LastAttemptUtc;
     }
 
@@ -435,7 +514,8 @@ public sealed class RelayNotificationChannel
             {
                 return _instances
                     .Select(kv => new RelayInstanceState(
-                        kv.Key, kv.Value.Latched.Count, kv.Value.Energised, kv.Value.LastAttemptUtc))
+                        kv.Key, kv.Value.Latched.Count, kv.Value.Commanded, kv.Value.Energised,
+                        kv.Value.LastAttemptUtc))
                     .OrderBy(s => s.Instance, StringComparer.Ordinal)
                     .ToList();
             }
@@ -591,15 +671,24 @@ public sealed class RelayNotificationChannel
                     break;
 
                 case AlarmEdgeKind.Cleared:
-                    // 🔴 Deliberately NOT threshold-filtered, and this is belt-and-braces rather than a
-                    // reachable branch — recorded rather than left as folklore. A key can only be in this
-                    // set because it passed the threshold on the way in, and AlarmNotifier's high-water-mark
-                    // rule means a key's priority can only ratchet UP within a raise-run, so a Cleared job
-                    // always carries at least the priority that let the key in. Filtering here is therefore
-                    // unreachable TODAY and no test can kill it. It is kept because the day AlarmNotifier
-                    // treats de-escalation as an edge — something its own doc comment explicitly reserves —
-                    // filtering would start failing to remove keys, and a key that cannot be removed is a
-                    // beacon that never goes out. Do not delete this as redundant without answering that.
+                    // 🔴 Deliberately NOT threshold-filtered. Belt-and-braces rather than a reachable branch
+                    // today — recorded rather than left as folklore, and review round 1 (m-1) corrected the
+                    // REASON, which matters because the original one was wrong in a way that would have
+                    // justified deleting this line.
+                    //
+                    // The high-water mark does NOT protect this. It lives in AlarmNotifier's own private
+                    // KeyState; the job carries the STORE's Alarm, and AlarmStore's upsert sets
+                    // `priority = excluded.priority` — so a source re-raising the same key at a LOWER
+                    // priority lowers the priority the eventual Cleared job carries, with no change to
+                    // AlarmNotifier at all. Threshold-filtering here would then fail to remove a key that
+                    // had legitimately been latched.
+                    //
+                    // What actually makes it unreachable is narrower and more fragile: no source in this
+                    // build ever re-raises a key at a lower priority (Policy's code and priority are 1:1,
+                    // NgRate/DriverHealth/Identity are fixed). The day one does — or the day de-escalation
+                    // becomes an edge, which AlarmNotifier's doc explicitly reserves — filtering here would
+                    // start stranding keys, and a key that cannot be removed is a beacon that never goes
+                    // out. Do not delete this as redundant without answering that.
                     state.Latched.Remove(job.Alarm.Key);
                     break;
 
@@ -614,11 +703,23 @@ public sealed class RelayNotificationChannel
 
             desired = state.Latched.Count > 0;
 
-            // 🔴 THE line that makes this channel edge-driven rather than tick-driven. Energised is null
-            // (UNKNOWN) at process start and after an Indeterminate write, so the first derived level after
-            // either is always written — which is what re-asserts the beacon on a restart into standing
-            // alarms, and what stops an assumed state from being treated as a known one.
-            if (state.Energised == desired) return RelayOutcome.Unchanged;
+            // 🔴 THE line that makes this channel edge-driven rather than tick-driven — and it consults
+            // Commanded (what a write was last ISSUED for), never Energised (what the device is BELIEVED to
+            // be doing). Review round 1 (C-1) found that distinction the hard way.
+            //
+            // Gating on Energised meant that after ONE Indeterminate write the belief was null, `null ==
+            // true` is false, and so EVERY subsequent latch input wrote again — not just a level transition.
+            // Measured: 20 distinct alarms in one episode produced 20 writes instead of 1, and for a
+            // RelayTargetKind.Command every one of those is a real actuation, not a redundant attempt at the
+            // same one. That contradicted this class's own no-retry warning, and the doc was right where the
+            // code was wrong ("the next real TRANSITION writes unconditionally").
+            //
+            // Commanded is null only at process start, so the first derived level is still always written —
+            // which is what re-asserts the beacon on a restart into standing alarms. After an Indeterminate
+            // it holds the level that WAS issued, so a storm behind it is absorbed exactly as it would have
+            // been after a clean Applied, while Energised stays null and keeps reporting UNKNOWN, which is
+            // the honest thing to report and is load-bearing for the operator.
+            if (state.Commanded == desired) return RelayOutcome.Unchanged;
         }
 
         return await WriteAsync(config, desired, job, ct).ConfigureAwait(false);
@@ -633,9 +734,19 @@ public sealed class RelayNotificationChannel
         {
             lock (_gate)
             {
-                // The belief still moves to "not energised": there is nothing asserted to hold, and the next
-                // episode must pulse again rather than being suppressed as redundant.
-                if (_instances.TryGetValue(config.Instance, out var s)) s.Energised = false;
+                if (_instances.TryGetValue(config.Instance, out var s))
+                {
+                    // The LATCH is released, so the next episode must pulse again rather than being
+                    // suppressed as redundant.
+                    s.Commanded = false;
+
+                    // 🔴 Review round 1 (m-5) — the BELIEF becomes UNKNOWN, not false. Nothing was written,
+                    // so claiming the annunciator is off would be this product asserting something about a
+                    // physical output it did not command and cannot observe. What a pulse left behind is
+                    // whatever the device does with a pulse, which is exactly what this channel does not
+                    // know.
+                    s.Energised = null;
+                }
             }
 
             ReportWarning(
@@ -643,6 +754,16 @@ public sealed class RelayNotificationChannel
                 $"configured as a COMMAND target ('{config.TargetName}' on machine '{config.MachineCode}') and a " +
                 "command is an argument-less pulse with no release. The annunciator was NOT de-energised by this " +
                 "product. Use a writable POINT target if the annunciator must latch and release.");
+
+            // 🔴 Review round 1 (m-5) — audited, even though no device was touched. §8 claims every attempt
+            // is recorded; this is not an attempt, but it IS the product changing what it believes about a
+            // physical output, and an investigator reconstructing "why did the beacon stay on" needs the row
+            // that says the release was structurally impossible rather than merely refused.
+            await AuditAsync(
+                MachineWriteGate.CommandAction, config, job, desired, value: null,
+                MachineWriteGate.RoleFor(config.TargetKind),
+                new { attempted = false, releaseUnsupported = true }).ConfigureAwait(false);
+
             return RelayOutcome.ReleaseUnsupported;
         }
 
@@ -678,10 +799,12 @@ public sealed class RelayNotificationChannel
 
         if (!decision.IsPermitted)
         {
-            // 🔴 The channel's belief is deliberately NOT changed here. Nothing was written, so if the
-            // beacon was on it is STILL ON — and the product must never believe otherwise. See the class
-            // doc comment's HALT paragraph.
-            var stillEnergised = !desired && CurrentlyEnergised(config.Instance) == true;
+            // 🔴 NEITHER half of the state is changed here. Nothing was written, so if the beacon was on it
+            // is STILL ON — the product must never believe otherwise — and leaving Commanded alone is what
+            // makes the next edge re-attempt once the refusal is lifted. See the class doc's HALT paragraph.
+            var believed = CurrentlyEnergised(config.Instance);
+            var stillEnergised = !desired && believed == true;
+            var maybeEnergised = !desired && believed is null;
             ReportWarning(
                 $"Alarm relay '{config.Instance}': {(desired ? "energising" : "de-energising")} " +
                 $"'{config.TargetName}' on machine '{config.MachineCode}' was REFUSED by the machine-write " +
@@ -689,7 +812,13 @@ public sealed class RelayNotificationChannel
                 (stillEnergised
                     ? "🔴 The annunciator is STILL ENERGISED and this product cannot turn it off while the " +
                       "refusal stands — clear the refusal, or de-energise it at the panel."
-                    : "The annunciator was NOT driven.") +
+                    : maybeEnergised
+                        // Review round 1 — after an INDETERMINATE write the belief is UNKNOWN, and reporting
+                        // "was NOT driven" here would read as "it is off", which is precisely the claim this
+                        // channel must never make.
+                        ? "🔴 The annunciator's state is UNKNOWN to this product (an earlier write was " +
+                          "indeterminate) and this refusal means it cannot be turned off either — look at it."
+                        : "The annunciator was NOT driven.") +
                 " (This annunciator is not a safety device; a light or horn that must work while HALT is " +
                 "engaged has to be hardwired.)");
 
@@ -701,6 +830,7 @@ public sealed class RelayNotificationChannel
                     message = decision.Message,
                     attempted = false,
                     stillEnergised,
+                    believedEnergised = believed,
                 }).ConfigureAwait(false);
 
             return RelayOutcome.Refused;
@@ -753,38 +883,63 @@ public sealed class RelayNotificationChannel
             case WriteOutcome.Applied:
                 lock (_gate)
                 {
-                    if (_instances.TryGetValue(config.Instance, out var s)) s.Energised = desired;
+                    if (_instances.TryGetValue(config.Instance, out var s))
+                    {
+                        s.Commanded = desired;
+                        s.Energised = desired;
+                    }
                 }
                 return RelayOutcome.Applied;
 
             case WriteOutcome.Rejected:
-                // The map refused the value before touching the device. Nothing was written, so the belief
-                // is left exactly as it was. NOT retried: a rejection is a statement about the
-                // configuration, and the same value will be rejected again.
+                // The map refused the value before touching the device. Nothing was written, so NEITHER
+                // Commanded nor Energised moves — which means the next edge will attempt it again, and that
+                // is deliberate: a rejection is a statement about the CONFIGURATION, and an operator fixing
+                // the point's declared range must not also have to manufacture a level transition to get the
+                // beacon working.
+                //
+                // 🔴 Review round 1 (m-2) — "not retried" below means THIS write is not re-issued for this
+                // edge; it does not mean the channel gives up. Said explicitly because the previous wording
+                // promised more than the code does: 20 alarms in one episode produce 20 rejected attempts
+                // (no device touched, and rate-limited to 0.5 Hz, so this is noise rather than actuation).
                 ReportWarning(
                     $"Alarm relay '{config.Instance}': the driver REJECTED " +
                     $"{(desired ? "energising" : "de-energising")} '{config.TargetName}' on machine " +
                     $"'{config.MachineCode}' ({rejection ?? "no reason given"}) — the register map refused it and " +
-                    "no device was touched. Not retried. Check the point's declared range and writability.");
+                    "no device was touched. This write is not re-issued; the next alarm edge WILL attempt it " +
+                    "again, and will keep being rejected until the configuration is fixed. Check the point's " +
+                    "declared range and writability.");
                 return RelayOutcome.Rejected;
 
             case WriteOutcome.Failed:
-                // Definitively not applied. Belief unchanged; not retried (B-1 forbids implicit retries on
-                // any write outcome, and this channel does not second-guess it).
+                // Definitively not applied, so nothing reached the device and neither Commanded nor Energised
+                // moves. Not re-issued for this edge (B-1 forbids implicit retries on any write outcome, and
+                // this channel does not second-guess it); the next edge attempts it again.
                 ReportWarning(
                     $"Alarm relay '{config.Instance}': the write to '{config.TargetName}' on machine " +
                     $"'{config.MachineCode}' FAILED ({detail ?? "no detail"}) — the annunciator was not driven. " +
-                    "Not retried; the next alarm edge will try again.");
+                    "Not re-issued; the next alarm edge will try again.");
                 return RelayOutcome.Failed;
 
             default:
                 // 🔴 Indeterminate. The device may or may not have applied it, and re-pulsing a coil that
                 // may already have been pulsed is the wrong move — B-1 made this outcome first-class for
-                // exactly this reason. The belief becomes UNKNOWN rather than reverting, so the next real
-                // transition writes unconditionally instead of being suppressed as redundant.
+                // exactly this reason.
+                //
+                // 🔴 Review round 1 (C-1) — the two halves of the state move DIFFERENTLY here, and that is
+                // the whole point. Commanded moves to `desired`: a write for that level WAS issued and must
+                // not be issued again, which is what no-retry means and what stops the next twenty alarms in
+                // the same episode from each producing another actuation. Energised becomes UNKNOWN: the
+                // product genuinely does not know what the device did, and saying so is the honest report.
+                // Gating the write on Energised — as this class originally did — silently turned "do not
+                // retry" into "retry on every subsequent latch input".
                 lock (_gate)
                 {
-                    if (_instances.TryGetValue(config.Instance, out var s)) s.Energised = null;
+                    if (_instances.TryGetValue(config.Instance, out var s))
+                    {
+                        s.Commanded = desired;
+                        s.Energised = null;
+                    }
                 }
 
                 ReportWarning(

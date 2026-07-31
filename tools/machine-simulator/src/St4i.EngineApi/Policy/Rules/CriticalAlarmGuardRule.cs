@@ -2,7 +2,33 @@ namespace St4i.EngineApi.Policy.Rules;
 
 /// <summary>
 /// Task B-6 (.superpowers/sdd/2026-07-29-dotB-machine-control-blueprint/task-6-brief.md) — the
-/// Critical-alarm decision. <see cref="St4i.EngineApi.Line.LineController"/> already redirects <c>line.start</c>
+/// Critical-alarm decision.
+///
+/// <para>🔴 <b>Task C-6 review round 1 (I-1) — READ THIS FIRST IF YOU ARE AUDITING WHAT THIS RULE COVERS.
+/// This rule does NOT gate every machine write in the product.</b> It gates whatever the CALLER tells it to,
+/// because <see cref="PolicyRequest.CriticalAlarmActive"/> is resolved by the caller before the engine runs
+/// (see that property's own doc comment for why every <see cref="IPolicyRule"/> must stay synchronous).
+/// There are two callers of the two actions below:
+/// <list type="bullet">
+/// <item><description><see cref="St4i.EngineApi.Endpoints.MachineWriteEndpoints"/> — the HTTP path. Resolves
+/// it for real via <see cref="MachineWriteGate.AnyCriticalAlarmActiveAsync"/>, so this rule fully applies to
+/// every human write.</description></item>
+/// <item><description>🔴 <see cref="St4i.EngineApi.Alarms.RelayNotificationChannel"/> — the automatic alarm
+/// annunciator. Resolves it as a literal <see langword="false"/>, so <b>this rule is inert for that
+/// caller</b>. The reason is not laziness: <see cref="St4i.EngineApi.Alarms.AlarmPriority"/> is
+/// most-severe-first, so a Critical alarm meets EVERY relay threshold and is therefore always one the relay
+/// is itself annunciating — the INPUT to the write rather than an independent reason to withhold it. With
+/// this rule live, a relay configured at <see cref="St4i.EngineApi.Alarms.AlarmPriority.Critical"/> could
+/// never light at all, because the very alarm that should light the beacon is the one that would block the
+/// write. The full derivation, and the test that pins its premise, are on
+/// <see cref="St4i.EngineApi.Alarms.RelayNotificationChannel"/>. That channel is still refused by
+/// <see cref="EstopGuardRule"/> exactly as a human is.</description></item>
+/// </list>
+/// This rule itself is unchanged by C-6 and needs no exception; the note exists because this file is the
+/// artefact a future safety reviewer reads, and unqualified "covers both machine-write actions" would be
+/// read as coverage that, for one caller, is not there.</para>
+///
+/// <para><see cref="St4i.EngineApi.Line.LineController"/> already redirects <c>line.start</c>
 /// to Held and rejects <c>line.unhold</c> while a Critical alarm is active (see that class's own doc comment).
 /// A write to a machine that is CURRENTLY in a Critical alarm state is at least as consequential — arguably
 /// more, since it is a NEW capability landing directly against a device that is, right now, in the worst

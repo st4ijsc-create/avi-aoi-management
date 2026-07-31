@@ -54,7 +54,7 @@ README §20.5 dòng 3654 tự khai:
 
 ### 4.1 Đính chính / bổ sung sau khi C-6 xây xong (2026-07-31)
 
-Mọi điều ở §4 vẫn đúng. Sáu điểm C-6 phải **quyết** mà kế hoạch chưa nói, ghi lại ở đây để người đọc kế hoạch không phải suy diễn:
+Mọi điều ở §4 vẫn đúng. **Tám điểm** C-6 phải **quyết** mà kế hoạch chưa nói, ghi lại ở đây để người đọc kế hoạch không phải suy diễn:
 
 1. 🔴 **Lệnh ghi của relay dùng ĐÚNG hai `action id` của Đợt B** — `machine.setpoint.write` (point) và `machine.command.invoke` (command) — chạy qua **cùng một** `PolicyEngine` singleton mà endpoint HTTP dùng. Không có action id riêng: `EstopGuardRule` so khớp **ordinal**, nên một id riêng sẽ **đi lọt** qua chốt HALT. Hai hằng số nay nằm ở `MachineWriteGate` (một chỗ duy nhất), và `MachineWriteEndpoints` gọi cùng chỗ đó.
 
@@ -72,7 +72,13 @@ Mọi điều ở §4 vẫn đúng. Sáu điểm C-6 phải **quyết** mà kế
 
 7. 🔴 **HALT gài trong lúc đèn đang sáng ⇒ lệnh ghi TẮT cũng bị từ chối.** Không mở ngoại lệ. Hệ quả trung thực: đếm `Refused`, và **`Energised` giữ nguyên `true`** — sản phẩm không bao giờ tin là đèn đã tắt trong khi nó đang sáng. Cảnh báo nói thẳng "STILL ENERGISED". Reset HALT xong, cạnh kế tiếp thấy bất đồng và ghi tắt.
 
-8. **Rate limit: 2 giây tối thiểu giữa hai lần THỬ ghi trên một instance** — **hoãn, không bao giờ bỏ** (bỏ một lệnh nhả là để đèn sáng mãi). Bão *raise* đã bị chính chốt hấp thụ (100 alarm = 1 lệnh ghi); limiter chỉ ăn vào trường hợp **flap**. 2 s nằm dưới mọi tốc độ cạnh hợp lệ (`AlarmEvaluator` tick 5 s) nên vận hành bình thường không bị hoãn gì.
+8.1 🔴 **Sửa sau review vòng 1 (Critical):** trạng thái phải tách làm **hai** — mức đã **RA LỆNH** (`Commanded`) và mức **TIN LÀ ĐÃ ÁP DỤNG** (`Energised`). Cổng ghi hỏi `Commanded`; `Energised` chỉ để báo cáo. Sau một lệnh ghi `Indeterminate`, `Energised` là UNKNOWN — đúng và cần thiết — nhưng nếu cổng ghi hỏi `Energised` thì **mọi** alarm tiếp theo trong cùng một đợt lại ghi tiếp (đo được: 20 alarm ⇒ 20 lần, và với target `Command` mỗi lần là một cú actuate thật). `Commanded` dịch chuyển khi `Applied` **và** khi `Indeterminate` (đã phát lệnh cho mức đó thì không phát lại — đó chính là nghĩa của "không thử lại"), và **không** dịch chuyển khi `Failed`/`Rejected`/bị từ chối/không phân giải được driver (không có gì tới thiết bị, nên cạnh sau phải thử lại).
+
+8.2 🔴 **Cũng từ review vòng 1 (I-1):** trong ba luật, **chỉ `EstopGuardRule` mới có thể từ chối** lệnh ghi của relay. `CriticalAlarmGuardRule` luôn trả `null` (fact được giải là `false`), còn `RoleObligationRule` **không bao giờ** từ chối được vì relay luôn trình đúng vai mà chính action của nó đòi. Nói ra để không ai đọc "cả ba luật đều chạy" thành phòng-thủ-nhiều-lớp mà thực ra không có.
+
+8.3 🔴 **(I-2, ràng buộc cứng cho C-7):** lưu một dòng relay với `TargetKind = Command` khiến sản phẩm **tự động và lâu dài** thực hiện một hành động mà người thật cần quyền Admin. Đường ghi cấu hình relay **phải gác ở mức Admin**, ít nhất cho target `Command`.
+
+9. **Rate limit: 2 giây tối thiểu giữa hai lần THỬ ghi trên một instance** — **hoãn, không bao giờ bỏ** (bỏ một lệnh nhả là để đèn sáng mãi). Bão *raise* đã bị chính chốt hấp thụ (100 alarm = 1 lệnh ghi); limiter chỉ ăn vào trường hợp **flap**. 2 s nằm dưới mọi tốc độ cạnh hợp lệ (`AlarmEvaluator` tick 5 s) nên vận hành bình thường không bị hoãn gì.
 
 ## 5. 🔴 Chống bão — điều kiện sống của cả đợt
 

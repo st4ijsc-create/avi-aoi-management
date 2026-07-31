@@ -59,6 +59,23 @@ public static class MachineWriteGate
     /// explicitly configured as a <see cref="RelayTargetKind.Command"/> target presents Admin. The tier is a
     /// property of the ACT (B-6: "setting a value and starting a motion are different acts"), not of a
     /// person, which is what makes it meaningful for a non-human actor at all.</para>
+    ///
+    /// <para>🔴🔴 <b>Task C-6 review round 1 (I-2) — A HARD CONSTRAINT ON WHOEVER BUILDS THE RELAY-CONFIG
+    /// WRITE PATH (C-7).</b> Because this method returns <see cref="Roles.Admin"/> for a
+    /// <see cref="RelayTargetKind.Command"/> target and the relay presents it,
+    /// <b>saving a relay row with <c>TargetKind = Command</c> makes this product perform, automatically and
+    /// for as long as the row exists, an action a human needs Admin for.</b> The configuration write is
+    /// therefore a privilege-granting act, not an ordinary settings change.</para>
+    ///
+    /// <para>Not exploitable today — no endpoint writes this configuration yet (verified: nothing under
+    /// <c>Endpoints/</c> calls <c>NotificationConfigStore.SaveRelayAsync</c>) — but every other
+    /// config-mutation endpoint in this product is Engineer-tier, so following that precedent would hand an
+    /// Engineer Admin-tier command authority through a config row.
+    /// <b>The relay-config write path must be Admin-gated, at minimum for
+    /// <see cref="RelayTargetKind.Command"/> targets.</b> Lowering the role returned here instead is NOT the
+    /// fix: it would make every command relay permanently denied, which is a configuration the store accepts
+    /// and the channel could never honour — precisely the fault C-2 refused an <c>ImplicitTls</c> mode
+    /// over.</para>
     /// </summary>
     public static string RoleFor(RelayTargetKind kind) =>
         kind == RelayTargetKind.Command ? Roles.Admin : Roles.Engineer;

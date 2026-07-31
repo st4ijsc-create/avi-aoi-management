@@ -780,6 +780,87 @@ public sealed class RelayNotificationChannelTests : IDisposable
         Assert.Equal(0L, driver.LastSetpoint?.Value);
     }
 
+    /// <summary>
+    /// 🔴🔴 <b>Review round 1 (C-1) — the test that was missing, and the defect it would have caught.</b>
+    ///
+    /// <para>The write gate used to consult <c>Energised</c>, which an <see cref="WriteOutcome.Indeterminate"/>
+    /// write sets to <see langword="null"/>. <c>null == true</c> is false, so while the belief was UNKNOWN
+    /// <b>every subsequent latch input wrote again</b> — not merely a level transition. Twenty distinct
+    /// alarms in ONE episode produced twenty writes instead of one, and for a
+    /// <see cref="RelayTargetKind.Command"/> target every one of those is a real actuation, not a redundant
+    /// attempt at the same one. It contradicted the brief, the class doc and this channel's own
+    /// "will NOT retry" warning string all at once.</para>
+    ///
+    /// <para>It went untested because the original Indeterminate test only ever followed the indeterminate
+    /// write with a <see cref="AlarmEdgeKind.Cleared"/> — which IS a real transition, and so writes
+    /// correctly either way. This test drives the case that is not a transition: N more raises in the same
+    /// episode. Run for BOTH target kinds, because the Point case is a harmless idempotent re-write and the
+    /// Command case is the one that actuates.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(RelayTargetKind.Point)]
+    [InlineData(RelayTargetKind.Command)]
+    public async Task AfterAnIndeterminateWrite_FurtherAlarmsInTheSameEpisode_DoNotWriteAgain(RelayTargetKind kind)
+    {
+        const int FurtherAlarms = 20;
+
+        var store = new NotificationConfigStore(NewTempDir());
+        Assert.True(kind == RelayTargetKind.Command
+            ? await store.SaveRelayAsync(
+                enabled: true, AlarmPriority.Critical, MachineCode, RelayTargetKind.Command, CommandName)
+            : await SavePointRelayAsync(store));
+
+        var host = CreateHost();
+        var driver = await StartWritableFleetAsync(
+            host, new FakeAnnunciatorDriver { Outcome = WriteOutcome.Indeterminate });
+        var (audit, _) = NewAudit();
+        var channel = NewChannel(store, host, audit);
+
+        // The energise comes back INDETERMINATE — nobody knows whether the device took it.
+        await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "alarm-0", sequence: 1));
+        Assert.Equal(1, channel.Stats.Indeterminate);
+
+        // ...and now the rest of the storm arrives. The latch is already asserted, so none of it is a level
+        // transition, so NONE of it may reach the device again.
+        for (var i = 1; i <= FurtherAlarms; i++)
+        {
+            await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, $"alarm-{i}", sequence: 1 + i));
+        }
+
+        var writes = kind == RelayTargetKind.Command ? driver.CommandCallCount : driver.WriteCallCount;
+        Assert.Equal(1, writes);
+        Assert.Equal(FurtherAlarms, channel.Stats.Unchanged);
+        Assert.Equal(1, channel.Stats.Indeterminate);   // still exactly one attempt, ever
+
+        // The belief is still honestly UNKNOWN — suppressing the re-writes must NOT be done by pretending
+        // the indeterminate write succeeded.
+        var state = Assert.Single(channel.InstanceStates);
+        Assert.Null(state.Energised);
+        Assert.True(state.Commanded);                   // ...while the COMMANDED level is recorded
+        Assert.Equal(FurtherAlarms + 1, state.LatchedAlarms);
+
+        // And the episode still ends correctly: the last clear IS a real transition, so it writes.
+        driver.Outcome = WriteOutcome.Applied;
+        for (var i = 0; i <= FurtherAlarms; i++)
+        {
+            await channel.DispatchAsync(Job(AlarmEdgeKind.Cleared, $"alarm-{i}", sequence: 100 + i));
+        }
+
+        if (kind == RelayTargetKind.Command)
+        {
+            // A command cannot release — asserted here too so this test cannot pass by the Command case
+            // silently behaving like the Point case.
+            Assert.Equal(1, driver.CommandCallCount);
+            Assert.Equal(1, channel.Stats.ReleaseUnsupported);
+        }
+        else
+        {
+            Assert.Equal(2, driver.WriteCallCount);
+            Assert.Equal(0L, driver.LastSetpoint?.Value);
+            Assert.False(Assert.Single(channel.InstanceStates).Energised);
+        }
+    }
+
     /// <summary>A value the register map refuses is <see cref="WriteOutcome.Rejected"/>: counted separately,
     /// reported with the driver's own reason, never retried, and — because no device was touched — the
     /// channel's belief about the coil is left exactly as it was.</summary>
