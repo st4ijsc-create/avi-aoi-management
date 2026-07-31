@@ -147,14 +147,27 @@ for entry in "${SUITES[@]}"; do
   # 7.7s across 30s. It was not hung: a suite that legitimately AWAITS a timer (this repository
   # has spool, WAL-maintenance and retry-backoff tests that do) burns no CPU while it waits, and
   # is indistinguishable from a hang over any single window. So the fast path now needs
-  # HUNG_SAMPLES consecutive flat observations. A real hang is flat forever and is still caught,
-  # just later; a legitimate idle of up to ~2 minutes survives. That trade is deliberately
-  # lopsided, because the two errors do not cost the same: waiting an extra two minutes on a
-  # genuine hang costs two minutes, while killing a healthy suite costs the whole run, orphans a
-  # test host, and breaks the NEXT build -- which is trap 1, manufactured by the checker.
+  # 🔴 TRAP 7(c), found by C-7's review AFTER 7(a) and 7(b) were fixed. The comparison used to
+  # be WITHIN one window only -- cpu1 at t+60, cpu2 at t+90 -- so the 60s BETWEEN windows was
+  # never compared to anything. A suite busy in the unsampled gaps and idle across each sampled
+  # window reads as flat five times running and is killed, while the very notes it prints show
+  # the number CLIMBING (10s, 20s, 30s...). Not exotic on this repo: Windows quantises
+  # TotalProcessorTime to the scheduler tick, so an I/O-bound suite (SQLite fsync, socket waits)
+  # genuinely reads identical across 30s while making real progress. The fix is one variable --
+  # carry the LAST OBSERVED sample across iterations, so "flat" means flat across the whole
+  # elapsed period rather than across a sampling window we happened to choose.
+  #
+  # Tolerance, stated correctly (the first version of this comment was wrong by ~3x, which is
+  # exactly the sort of number a future maintainer would tune from): each iteration costs
+  # sleep 60 + sleep 30 = 90s, so HUNG_SAMPLES=5 means a legitimate idle survives ~7.5 minutes
+  # and a genuine hang is caught ~7.5 minutes late. That trade is deliberately lopsided, because
+  # the two errors do not cost the same: waiting out a real hang costs minutes, while killing a
+  # healthy suite costs the whole run, orphans a test host, and breaks the NEXT build -- which
+  # is trap 1, manufactured by the checker itself.
   HUNG_SAMPLES=5
   hung=0
   flat=0
+  last_cpu=""
   while kill -0 "$test_pid" 2>/dev/null; do
     sleep 60
     kill -0 "$test_pid" 2>/dev/null || break
@@ -162,19 +175,25 @@ for entry in "${SUITES[@]}"; do
     sleep 30
     cpu2=$(testhost_cpu_seconds)
 
-    if [[ -z "${cpu1:-}" || "$cpu1" != "${cpu2:-}" ]]; then
-      flat=0            # progress, or nothing to sample -- either way, not evidence of a hang
+    # Flat means flat against BOTH the in-window sample and the previous iteration's reading.
+    # An empty sample means "cannot tell" and must never read as "flat".
+    if [[ -z "${cpu1:-}" || -z "${cpu2:-}" ]] \
+       || [[ "$cpu1" != "$cpu2" ]] \
+       || { [[ -n "$last_cpu" ]] && [[ "$cpu2" != "$last_cpu" ]]; }; then
+      flat=0            # progress somewhere, or nothing to sample -- either way, not a hang
+      last_cpu="${cpu2:-$last_cpu}"
       continue
     fi
 
+    last_cpu="$cpu2"
     flat=$((flat + 1))
     if [[ $flat -lt $HUNG_SAMPLES ]]; then
-      note "$name: no CPU progress for 30s (${flat}/${HUNG_SAMPLES}) at ${cpu1}s -- waiting, a suite may be awaiting a timer"
+      note "$name: no CPU progress for 90s (${flat}/${HUNG_SAMPLES}) at ${cpu1}s -- waiting, a suite may be awaiting a timer"
       continue
     fi
 
     hung=1
-    note "$name: HUNG (test host CPU flat at ${cpu1}s of processor time across ${HUNG_SAMPLES} consecutive 30s windows while alive) -- killing"
+    note "$name: HUNG (test host CPU flat at ${cpu1}s of processor time across ${HUNG_SAMPLES} consecutive 90s periods while alive) -- killing"
     kill -9 "$test_pid" 2>/dev/null || true
     taskkill //F //IM testhost.exe //T >/dev/null 2>&1 || true
     break
@@ -186,7 +205,13 @@ for entry in "${SUITES[@]}"; do
     continue
   fi
 
-  if grep -qE 'Aborted|Test host process crashed' "$log"; then
+  # Anchor to vstest's OWN summary token. The unanchored form matched TEST NAMES --
+  # `Abort_FromExecute_TransitionsToAborted_...`, `Reset_FromAborted_...` all print under -v q
+  # when they fail -- so an ordinary red test was reported as a host crash and the loop skipped
+  # reading the real counts, sending the next reader hunting a phantom. It could not produce a
+  # false green, only a misleading red; but a checker that misattributes failures gets ignored
+  # just as fast as one that cries wolf.
+  if grep -qE '^Aborted!|Test host process crashed' "$log"; then
     FAILURES+=("$name: run ABORTED (host crash) -- any count printed is truncated")
     note "$name: ABORTED"
     continue
