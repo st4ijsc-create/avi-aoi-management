@@ -151,12 +151,16 @@ Sửa `.env` **tạm thời**: đặt `GGUF_DEFAULT_MODEL=Qwen3-Coder-30B-A3B-In
 
 - [ ] **Step 4: HOÀN NGUYÊN `.env`**
 
+⚠ **`.env` KHÔNG được git track** (nằm trong `.gitignore`). Nên `git checkout -- .env` **vô tác dụng** — nó không hoàn nguyên gì cả. Phải tự sao lưu trước khi sửa:
+
 ```bash
-git diff --stat .env    # phải rỗng sau khi hoàn nguyên
-git checkout -- .env
-git diff --stat .env    # xác nhận rỗng
+cp .env .env.do0-backup          # TRƯỚC khi sửa bất kỳ dòng nào
+# … sửa, đo …
+cp .env.do0-backup .env          # hoàn nguyên
+diff .env .env.do0-backup && echo "ĐÃ HOÀN NGUYÊN ĐÚNG"
+rm .env.do0-backup
 ```
-⚠ **Bắt buộc.** Global constraint: không commit thay đổi `.env`.
+⚠ **Bắt buộc.** Global constraint: không để lại thay đổi `.env` nào sau khi task xong.
 
 - [ ] **Step 5: Đo KV cache dưới phiên dài nhất hệ hỗ trợ**
 
@@ -207,7 +211,7 @@ Roster C đẩy General-30B sang RAM. Tìm biến điều khiển số lớp tr�
 - [ ] **Step 6: HOÀN NGUYÊN `.env` + commit**
 
 ```bash
-git checkout -- .env && git diff --stat .env
+cp .env.do0-backup .env && diff .env .env.do0-backup && rm .env.do0-backup   # .env KHÔNG git-track, phải sao lưu thủ công
 git add scripts/ai-bench/baselines/roster-A.json scripts/ai-bench/baselines/roster-B.json docs/superpowers/reports/2026-08-01-do0-roster-survey.md
 git commit -m "docs(do0-3): §3 bench ba roster ứng viên"
 ```
@@ -283,7 +287,7 @@ tok/s không phải thứ người gõ cảm nhận — **thời gian tới toke
 - [ ] **Step 4: HOÀN NGUYÊN `.env` + ghi báo cáo + commit**
 
 ```bash
-git checkout -- .env && git diff --stat .env
+cp .env.do0-backup .env && diff .env .env.do0-backup && rm .env.do0-backup   # .env KHÔNG git-track, phải sao lưu thủ công
 git add docs/superpowers/reports/2026-08-01-do0-roster-survey.md
 git commit -m "docs(do0-5): §5 độ trễ FIM — 1.5B so với 30B"
 ```
