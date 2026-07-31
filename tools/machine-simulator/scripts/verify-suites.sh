@@ -57,13 +57,20 @@ EXPECT_ABSTRACTIONS=151
 EXPECT_CONFORMANCE=22
 EXPECT_EDGECORE=735
 EXPECT_EDGESERVICE=28
-# Task C-7 raised this from 1087 to 1116: +29 tests, all in St4i.EngineApi.Tests.
-#   +24  NotificationEndpointsTests           (new file — the eleven notification routes)
-#   + 2  RbacPolicyTests                      (the relay Admin gate end to end; the reads not being Operator)
-#   + 2  AlarmAnnunciationStreamTests         (the SSE subscriber cap's 503; the shipped cap's value)
-#   + 1  LocalAnnunciationChannelTests        (the hub-level subscriber cap)
+# Task C-7 raised this from 1087 to 1122 across two rounds.
+#   +29 in the implementation round:
+#     +24  NotificationEndpointsTests    (new file — the eleven notification routes)
+#     + 2  RbacPolicyTests               (the relay Admin gate end to end; the reads not being Operator)
+#     + 2  AlarmAnnunciationStreamTests  (the SSE subscriber cap's 503; the shipped cap's value)
+#     + 1  LocalAnnunciationChannelTests (the hub-level subscriber cap)
+#   + 6 in the review round, all NotificationEndpointsTests:
+#     + 2  I-1  a failed credential write must not answer 200 (webhook, smtp)
+#     + 1  I-2  webhook instance cardinality is capped
+#     + 1  I-4  the limiter RECOVERS — the previous test could not tell a bound from a wall
+#     + 1  M-3  hub gauges survive a degraded host
+#     + 1  M-5  the SMTP send test's bound is measured, not inherited
 # No other suite is touched: C-7 adds no code outside St4i.EngineApi.
-EXPECT_ENGINEAPI=1116
+EXPECT_ENGINEAPI=1122
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"
@@ -164,6 +171,19 @@ for entry in "${SUITES[@]}"; do
   # the two errors do not cost the same: waiting out a real hang costs minutes, while killing a
   # healthy suite costs the whole run, orphans a test host, and breaks the NEXT build -- which
   # is trap 1, manufactured by the checker itself.
+  # 🔴 TRAP 7(d) — a STRUCTURAL limit of the CPU heuristic, not a bug in it. Found by C-7 when
+  # DeviceIdentityStoreTests' real-mTLS-handshake test wedged EdgeCore for ~20 MINUTES at
+  # 9.77s CPU, creeping ~16ms at a time. That creep is enough to reset the consecutive-flat
+  # counter on every iteration, so the detector below waits on it FOREVER. A process that is
+  # stopped but not idle is invisible to "is the CPU flat" by construction.
+  #
+  # So the CPU heuristic gets a companion it cannot argue with: a hard wall-clock ceiling.
+  # The two answer different questions -- "is it doing anything?" and "has it taken longer than
+  # any healthy run ever does?" -- and a hang only has to trip one. The ceiling is generous
+  # (the slowest suite here runs ~3-4 min; 25 min is ~6x) because killing a healthy suite costs
+  # the whole run, orphans a test host and breaks the NEXT build.
+  SUITE_CEILING_SECONDS=1500
+  started=$SECONDS
   HUNG_SAMPLES=5
   hung=0
   flat=0
@@ -171,6 +191,14 @@ for entry in "${SUITES[@]}"; do
   while kill -0 "$test_pid" 2>/dev/null; do
     sleep 60
     kill -0 "$test_pid" 2>/dev/null || break
+
+    if [[ $((SECONDS - started)) -ge $SUITE_CEILING_SECONDS ]]; then
+      hung=1
+      note "$name: EXCEEDED the ${SUITE_CEILING_SECONDS}s ceiling ($((SECONDS - started))s) -- killing. A suite creeping slowly is invisible to the CPU check."
+      kill -9 "$test_pid" 2>/dev/null || true
+      taskkill //F //IM testhost.exe //T >/dev/null 2>&1 || true
+      break
+    fi
     cpu1=$(testhost_cpu_seconds)
     sleep 30
     cpu2=$(testhost_cpu_seconds)
