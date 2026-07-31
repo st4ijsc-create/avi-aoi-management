@@ -291,10 +291,13 @@ async function buildPrompts() {
   const { gatherKpis } = await import(svc("aiExecutiveReport.ts"));
   // `now` cố định vào 2026-07-14 (thay vì mặc định = giờ chạy script) — xác nhận bằng SQL
   // trực tiếp (lệnh: SELECT date_trunc('day',"createdAt"),count(*) FROM product_inspections
-  // GROUP BY 1 ORDER BY count(*) DESC) rằng 2026-07-13 là ngày có NHIỀU dữ liệu kiểm tra
-  // thật nhất trong DB dev hiện tại (3540 lượt); 24h gần thời điểm chạy script (2026-08-01)
-  // trả về 0 (không có traffic dev gần đây) — dùng "now" THẬT nhưng lùi lại mốc thời gian có
-  // dữ liệu, KHÔNG BỊA số liệu nào, `now` vẫn là tham số hợp lệ của gatherKpis() production.
+  // GROUP BY 1 ORDER BY count(*) DESC) rằng 2026-07-13 có 3540 lượt kiểm tra thật — NHIỀU
+  // (review round 1, Minor: bản đầu ghi nhầm "nhiều NHẤT"; 2026-07-12 có 5370 lượt, nhiều
+  // hơn — đã sửa chữ dùng, KHÔNG đổi mốc vì không cần chạy lại model 30B chỉ vì chọn ngày
+  // chưa phải ngày đông nhất, dữ liệu 07-13 vẫn thật và đủ phong phú để so sánh). 24h gần
+  // thời điểm chạy script (2026-08-01) trả về 0 (không có traffic dev gần đây) — dùng "now"
+  // THẬT nhưng lùi lại mốc thời gian có dữ liệu, KHÔNG BỊA số liệu nào, `now` vẫn là tham số
+  // hợp lệ của gatherKpis() production.
   const kpis = await gatherKpis("day", "vi", new Date("2026-07-14T00:00:00.000Z")); // global (không factoryCode), giống scheduler mặc định
 
   const prompts = [
@@ -309,7 +312,18 @@ async function buildPrompts() {
         "`sys` verbatim từ nguồn. PHÁT HIỆN: sys/userPrompt KHÔNG có nhánh tiếng Việt nào (tham số " +
         "`lang` không được dùng trong synthesize(), dù mặc định lang=\"vi\") — model có thể trả lời " +
         "bằng tiếng Anh dù đây là luồng RCA cho người vận hành nói tiếng Việt. EVIDENCE tái dựng từ " +
-        "Pareto thật (gatherKpis), không gọi được gatherEvidence() (nội bộ, cần 6 nguồn phụ).",
+        "Pareto thật (gatherKpis), không gọi được gatherEvidence() (nội bộ, cần 6 nguồn phụ). " +
+        "⚠ KHAI BÁO CƠ CHẾ SINH (review round 1, Important 2): sản xuất THẬT gọi `generateJSON()` " +
+        "(aiRcaCopilot.ts:527-539) — ràng buộc theo RCA_JSON_SCHEMA bằng GBNF grammar (chỉ cho phép " +
+        "field cause/confidence/evidence/recommendedFix đúng kiểu). Lượt sinh dưới đây dùng " +
+        "`generateText()` TỰ DO (không ràng buộc schema) — CỐ Ý, không phải sai sót: mục tiêu Task 4 " +
+        "là chấm CHẤT LƯỢNG VĂN XUÔI tiếng Việt, mà GBNF ép đúng khuôn JSON gần như không còn văn " +
+        "xuôi tự nhiên để chấm (chỉ còn field ngắn, không phải câu/đoạn). Hệ quả quan sát được: cả 2 " +
+        "model dưới đây đều KHÔNG khớp RCA_JSON_SCHEMA thật (thiếu field bắt buộc, tự đặt field lạ như " +
+        "\"rank\"/\"evidenceSupport\") — vì không bị ép theo schema. Điều này áp dụng ĐỀU cho cả 2 " +
+        "model (không phá tính công bằng của phép so) nhưng làm P1 kém đại diện cho ĐƯỜNG CHẠY THẬT " +
+        "hơn 3 prompt còn lại — người đọc nên cân nhắc P1 là \"cùng system+user prompt nhưng cơ chế " +
+        "ràng buộc đầu ra khác sản xuất\", không phải \"y hệt sản xuất\".",
     },
     {
       id: "P2_EXEC",
@@ -449,6 +463,27 @@ async function main() {
   md += `Sinh lúc: ${now}\n\n`;
   md += `**Không kết luận model nào hay hơn trong file này — chỉ trình bày cặp câu trả lời cạnh nhau. ` +
     `Chủ dự án chấm.** Bảng ánh xạ nhãn↔model thật ở file riêng (không commit).\n\n`;
+
+  // Review round 1 (coordinator) — hai phát hiện phụ được nâng lên mục riêng, đứng ngay đầu
+  // file (không chôn trong "Ghi chú" của từng prompt) vì "chúng không phải phụ lục, chúng là
+  // thứ chủ dự án cần biết". Cả hai ĐỘC LẬP với câu hỏi "model nào viết tiếng Việt hay hơn".
+  md += `## ⚠ Phát hiện quan trọng (độc lập với việc chọn model — không phải kết luận A/B)\n\n`;
+  md += `1. **RCA copilot sinh tiếng Anh, không phải tiếng Việt, dù \`lang\` mặc định "vi".** ` +
+    `\`synthesize(input, lang, ev)\` (\`server/services/aiRcaCopilot.ts\`) nhận tham số \`lang\` ` +
+    `nhưng KHÔNG hề tham chiếu nó trong thân hàm — \`sys\`/\`userPrompt\` 100% tiếng Anh, không có ` +
+    `nhánh ngôn ngữ nào. Xác nhận bằng lượt sinh thật ở Prompt 1 bên dưới: cả 2 model đều trả lời ` +
+    `tiếng Anh. Đây là **bug sản phẩm thật**, không liên quan tới việc chọn roster model nào thường ` +
+    `trú — **KHÔNG vá trong khảo sát này** (phát hiện của khảo sát, sửa là việc đợt khác).\n`;
+  md += `2. **"Cố vấn ngưỡng" (threshold advisor) không hề gọi LLM.** Đã grep 7 file liên quan ` +
+    `(\`aiThresholdAdvisor.ts\`, \`aiSetupAdvisor.ts\`, \`aiThresholdTuneScheduler.ts\`, ` +
+    `\`aiCalibration.ts\`, \`aiAnomalyCalibration.ts\`, \`thresholdGovernanceService.ts\`, ` +
+    `\`aiAutoProposer.ts\`) cho pattern gọi model (\`generateText|generateNarrative|generateJSON|` +
+    `routeInference|aiGgufEngine|aiProviderRouter\`) → **0 khớp**. Toàn bộ domain này là thống kê ` +
+    `thuần (\`suggestThresholds()\`) + chuỗi đa ngôn ngữ TĨNH, không phải LLM sinh — nếu quyết định ` +
+    `roster dựa một phần vào "ảnh hưởng tới cố vấn ngưỡng", trục này **không hề bị ảnh hưởng** bởi ` +
+    `việc đổi model 30B nào thường trú. Prompt 3 bên dưới dùng bản THAY THẾ (\`aiReportGenerator.ts\`) ` +
+    `vì lý do này — xem "Ghi chú" của Prompt 3.\n\n`;
+
   md += `## Tham số sinh (giống hệt nhau cho cả 2 model, cả 4 prompt)\n\n`;
   md += `| Tham số | Giá trị |\n|---|---|\n`;
   md += `| temperature | ${GEN_PARAMS.temperature} (greedy — xem lý do trong mã script) |\n`;
@@ -484,8 +519,13 @@ async function main() {
   md += `| Mốc | VRAM (MiB used/total) |\n|---|---|\n`;
   md += `| Trước khi bắt đầu | ${JSON.stringify(vramStart)} |\n`;
   md += `| Sau dọn model embed (trước Phase 1) | ${JSON.stringify(vramAfterKb)} |\n`;
-  md += `| Sau dispose General (Phase 1) | ${JSON.stringify(vramAfterGeneral)} |\n`;
-  md += `| Sau dispose Coder (Phase 2, cuối cùng) | ${JSON.stringify(vramEnd)} |\n\n`;
+  // Review fix (Important 1) — bản đầu in thẳng "General"/"Coder" ở đây, rò tên model
+  // thật ngay trong CHÍNH file khai là ẩn danh (dù nhãn Model 1/2 ở trên không bị ảnh
+  // hưởng — không đủ để suy ra ánh xạ — vẫn vi phạm đúng trục brief nhấn mạnh nhất).
+  // Nhãn trung lập theo THỨ TỰ NẠP (không phải theo Model 1/2, để không lộ thêm suy luận
+  // "model nạp trước luôn là Model X").
+  md += `| Sau dispose model đầu tiên nạp (Phase 1) | ${JSON.stringify(vramAfterGeneral)} |\n`;
+  md += `| Sau dispose model thứ hai nạp (Phase 2, cuối cùng) | ${JSON.stringify(vramEnd)} |\n\n`;
   md += `Lệnh đo (chạy độc lập sau khi script kết thúc):\n\`\`\`bash\nnvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits\ntasklist | grep node.exe   # (PowerShell: Get-Process node -ErrorAction SilentlyContinue)\n\`\`\`\n`;
 
   out(md);
