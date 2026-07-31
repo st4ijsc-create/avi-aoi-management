@@ -63,8 +63,13 @@ internal static class NotificationConfigSchema
     internal const string SmtpFullColumns = "host, port, tls_mode, from_address, recipients_json, username";
     internal const string SmtpSummaryColumns = "host, port, tls_mode, from_address, recipients_json, username";
 
-    internal const string RelayFullColumns = "machine_code, target_kind, target_name";
-    internal const string RelaySummaryColumns = "machine_code, target_kind, target_name";
+    // 🔴 Task C-6 added `on_value`/`off_value` (schema v3) to BOTH projections — the ladder entry C-2
+    // predicted for the energise/de-energise values, and one nullable ALTER each, exactly as predicted.
+    // They are in the SUMMARY as well as the FULL projection deliberately: "what value does this product
+    // write to that coil?" is the single most auditable fact about a channel that moves something physical,
+    // and nothing about it is a credential. See RelayChannelConfig.OnValueJson.
+    internal const string RelayFullColumns = "machine_code, target_kind, target_name, on_value, off_value";
+    internal const string RelaySummaryColumns = "machine_code, target_kind, target_name, on_value, off_value";
 
     /// <summary>🔴 The ONLY projection in this store that names the <c>secret</c> column — used by
     /// <see cref="NotificationConfigStore.GetSecretAsync"/> alone, which is engine-internal. This, not
@@ -123,6 +128,10 @@ internal static class NotificationConfigSchema
         (RelayTable, "machine_code", false),
         (RelayTable, "target_kind", false),
         (RelayTable, "target_name", false),
+        // 🔴 Task C-6 (schema v3) — the latch's energise/de-energise values. Not secret-bearing, and
+        // deliberately public: see RelayChannelConfig.OnValueJson.
+        (RelayTable, "on_value", false),
+        (RelayTable, "off_value", false),
 
         (SecretsTable, "channel", false),
         (SecretsTable, "instance", false),
@@ -367,6 +376,23 @@ public sealed class NotificationConfigStore
         (2, new[]
         {
             $"ALTER TABLE {NotificationConfigSchema.WebhookTable} ADD COLUMN auth_header_name TEXT NULL;",
+        }),
+
+        // 🔴 Task C-6 — the SECOND append, and the one C-2 named in advance. C-2 deliberately did not store
+        // the relay's energise/de-energise values because their domain follows from how the latch is
+        // implemented, and predicted "C-6 adds two nullable columns through the migration ladder once it has
+        // made that decision — which is exactly what the ladder is for". It did, and it is: two nullable
+        // ALTERs, no rebuild, no data movement.
+        //
+        // NULLABLE rather than NOT NULL with a default, for the reason C-2 refused to invent the values at
+        // all: a DEFAULT here would write a value of this product's choosing to a coil it cannot prove is a
+        // lamp rather than a conveyor. They are NULL for a Command target (which takes no value) and
+        // REQUIRED for a Point target — a rule the DATABASE cannot express with one shared table, so
+        // SaveRelayAsync enforces it and refuses to persist a configuration it could not honour.
+        (3, new[]
+        {
+            $"ALTER TABLE {NotificationConfigSchema.RelayTable} ADD COLUMN on_value TEXT NULL;",
+            $"ALTER TABLE {NotificationConfigSchema.RelayTable} ADD COLUMN off_value TEXT NULL;",
         }),
     };
 
@@ -619,32 +645,71 @@ public sealed class NotificationConfigStore
         SaveAsync(NotificationChannel.LocalAnnunciation, instance, enabled, minPriority,
             "local annunciation", null, ct);
 
-    /// <summary>🔴 Saves the relay channel — see <see cref="RelayChannelConfig"/> for what is stored, what
-    /// is deliberately NOT (an address; the energise/de-energise values), and why.</summary>
+    /// <summary>
+    /// 🔴 Saves the relay channel — see <see cref="RelayChannelConfig"/> for what is stored, what is
+    /// deliberately NOT (an address), and why.
+    ///
+    /// <para>🔴 <b>Task C-6 — the point/command asymmetry is enforced HERE, and returning
+    /// <see langword="false"/> rather than storing something unhonourable is the whole point.</b> A
+    /// <see cref="RelayTargetKind.Point"/> target without both latch values is a beacon that can never
+    /// light; a <see cref="RelayTargetKind.Command"/> target WITH them is a configuration carrying values
+    /// the channel provably ignores. Both are refused, on the identical principle C-2 used to refuse an
+    /// <c>ImplicitTls</c> SMTP mode: a store whose values the implementing task must silently ignore is
+    /// worse than one that never accepted them.</para>
+    /// </summary>
+    /// <param name="onValueJson">The raw JSON scalar written to energise — see
+    /// <see cref="RelayChannelConfig.OnValueJson"/> and <see cref="RelayValue"/>. Required for
+    /// <see cref="RelayTargetKind.Point"/>, must be <see langword="null"/> for
+    /// <see cref="RelayTargetKind.Command"/>.</param>
+    /// <param name="offValueJson">The raw JSON scalar written to release. Same rules.</param>
     public Task<bool> SaveRelayAsync(
         bool enabled, AlarmPriority minPriority, string machineCode, RelayTargetKind targetKind,
-        string targetName, string instance = DefaultInstance, CancellationToken ct = default) =>
+        string targetName, string? onValueJson = null, string? offValueJson = null,
+        string instance = DefaultInstance, CancellationToken ct = default) =>
         SaveAsync(NotificationChannel.Relay, instance, enabled, minPriority, "relay",
-            async (connection, transaction, _) =>
+            async (connection, transaction, _unusedNowIso) =>
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(machineCode);
             ArgumentException.ThrowIfNullOrWhiteSpace(targetName);
+
+            if (targetKind == RelayTargetKind.Point)
+            {
+                if (!RelayValue.TryParse(onValueJson, out _, out var onError))
+                {
+                    throw new ArgumentException($"onValue: {onError}", nameof(onValueJson));
+                }
+
+                if (!RelayValue.TryParse(offValueJson, out _, out var offError))
+                {
+                    throw new ArgumentException($"offValue: {offError}", nameof(offValueJson));
+                }
+            }
+            else if (onValueJson is not null || offValueJson is not null)
+            {
+                throw new ArgumentException(
+                    "A Command relay target takes no energise/de-energise value — it is an argument-less " +
+                    "pulse. Storing one would persist a value the channel provably ignores.",
+                    nameof(onValueJson));
+            }
 
             using var cmd = connection.CreateCommand();
             cmd.Transaction = transaction;
             cmd.CommandText = $"""
                 INSERT INTO {NotificationConfigSchema.RelayTable}
-                    (channel, instance, machine_code, target_kind, target_name)
-                VALUES (@channel, @instance, @machine_code, @target_kind, @target_name)
+                    (channel, instance, machine_code, target_kind, target_name, on_value, off_value)
+                VALUES (@channel, @instance, @machine_code, @target_kind, @target_name, @on_value, @off_value)
                 ON CONFLICT(channel, instance) DO UPDATE SET
                     machine_code = excluded.machine_code, target_kind = excluded.target_kind,
-                    target_name = excluded.target_name;
+                    target_name = excluded.target_name,
+                    on_value = excluded.on_value, off_value = excluded.off_value;
                 """;
             cmd.Parameters.AddWithValue("@channel", nameof(NotificationChannel.Relay));
             cmd.Parameters.AddWithValue("@instance", instance);
             cmd.Parameters.AddWithValue("@machine_code", machineCode);
             cmd.Parameters.AddWithValue("@target_kind", targetKind.ToString());
             cmd.Parameters.AddWithValue("@target_name", targetName);
+            cmd.Parameters.AddWithValue("@on_value", (object?)onValueJson ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@off_value", (object?)offValueJson ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }, ct);
 
@@ -970,7 +1035,9 @@ public sealed class NotificationConfigStore
                 enabled, min, instance,
                 reader.GetString(reader.GetOrdinal("machine_code")),
                 Enum.Parse<RelayTargetKind>(reader.GetString(reader.GetOrdinal("target_kind"))),
-                reader.GetString(reader.GetOrdinal("target_name"))), ct);
+                reader.GetString(reader.GetOrdinal("target_name")),
+                GetNullableString(reader, "on_value"),
+                GetNullableString(reader, "off_value")), ct);
 
     /// <summary>The local-annunciation configuration — C-5 only. No side table, so this reads the channel
     /// row alone.</summary>
@@ -1134,7 +1201,9 @@ public sealed class NotificationConfigStore
                             ? new RelayChannelSummary(
                                 machineCode,
                                 Enum.Parse<RelayTargetKind>(reader.GetString(reader.GetOrdinal("target_kind"))),
-                                reader.GetString(reader.GetOrdinal("target_name")))
+                                reader.GetString(reader.GetOrdinal("target_name")),
+                                GetNullableString(reader, "on_value"),
+                                GetNullableString(reader, "off_value"))
                             : null));
                 }
             }

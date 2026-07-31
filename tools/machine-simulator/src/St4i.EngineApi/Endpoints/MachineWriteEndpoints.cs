@@ -168,8 +168,12 @@ namespace St4i.EngineApi.Endpoints;
 /// </summary>
 public static class MachineWriteEndpoints
 {
-    private const string SetpointAction = "machine.setpoint.write";
-    private const string CommandAction = "machine.command.invoke";
+    // 🔴 Task C-6 moved these two ids (and AnyCriticalAlarmActiveAsync below) to MachineWriteGate, because
+    // the alarm relay is now a SECOND caller of this same gate and a second private copy of an action id is
+    // how one gate quietly becomes two. See MachineWriteGate's own doc comment. The names are re-exported as
+    // private aliases so every reference in this file reads exactly as B-6 wrote it.
+    private const string SetpointAction = MachineWriteGate.SetpointAction;
+    private const string CommandAction = MachineWriteGate.CommandAction;
 
     public static void MapMachineWriteEndpoints(this IEndpointRouteBuilder app)
     {
@@ -369,11 +373,13 @@ public static class MachineWriteEndpoints
     /// <c>MachineWriteEndpoints</c>' own class doc comment, "The Critical-alarm decision," for why lowering
     /// <c>SAFETY_BLOCKED</c>'s alarm priority instead was rejected (an existing, unrelated
     /// <c>LineEndpointsTests</c> assertion already pins it Critical).</summary>
-    private static async Task<bool> AnyCriticalAlarmActiveAsync(IAlarmStore alarms, CancellationToken ct)
-    {
-        var active = await alarms.ListActiveAsync(ct).ConfigureAwait(false);
-        return active.Any(a => a.Priority == AlarmPriority.Critical && a.Source != AlarmSource.Policy);
-    }
+    ///
+    /// <para>🔴 Task C-6 — the BODY moved to <see cref="MachineWriteGate.AnyCriticalAlarmActiveAsync"/> and
+    /// this is now a forwarder. Unchanged in behaviour; shared because the alarm relay resolves the same
+    /// fact and a second copy of the Policy exclusion is exactly how finding I1 comes back somewhere nobody
+    /// is looking.</para></summary>
+    private static Task<bool> AnyCriticalAlarmActiveAsync(IAlarmStore alarms, CancellationToken ct) =>
+        MachineWriteGate.AnyCriticalAlarmActiveAsync(alarms, ct);
 
     /// <summary>Re-parses a bound <see cref="JsonElement"/> through <see cref="ConnectorJson.Options"/>'s own
     /// registered <c>object?</c> converter — the SAME already-hardened <c>double | bool | string | null</c>

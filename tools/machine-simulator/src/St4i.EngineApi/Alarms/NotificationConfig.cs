@@ -368,6 +368,68 @@ public sealed record LocalAnnunciationChannelConfig(
     string Instance) : INotificationChannelConfig;
 
 /// <summary>
+/// 🔴 Task C-6 — the two values a <see cref="RelayTargetKind.Point"/> relay writes to assert and to release
+/// its latch, and the ONE place they are parsed.
+///
+/// <para><b>Stored as raw JSON scalar TEXT, and read back through
+/// <see cref="St4i.Connector.Abstractions.Json.ConnectorJson.Options"/>' own <c>object?</c> converter</b> —
+/// the SAME converter <c>MachineWriteEndpoints</c> re-parses an HTTP request body through, so the value
+/// domain a relay may write (<c>double | bool | string | null</c>) is defined once and cannot drift from
+/// the domain <see cref="St4i.Connector.Abstractions.IWritableDeviceDriver.WriteSetpointAsync"/> accepts. A
+/// column typed <c>REAL</c> or <c>INTEGER</c> would have silently narrowed it — an OPC-UA <c>Boolean</c>
+/// setpoint wants <c>true</c>, a Modbus holding register wants <c>1</c>, and those are genuinely different
+/// values, not two spellings of one.</para>
+///
+/// <para><b>Validated at SAVE time, never only at fire time.</b> C-2 refused an <c>ImplicitTls</c> member on
+/// the principle that a store which accepts a configuration the channel provably cannot honour is worse
+/// than one that never accepted it. The same principle applies harder here, because the thing that cannot
+/// be honoured is a beacon.</para>
+/// </summary>
+public static class RelayValue
+{
+    /// <summary>Upper bound on a stored value's JSON text. Generous for a scalar and bounded for the same
+    /// reason <see cref="NotificationConfigStore.MaxLabelLength"/> is.</summary>
+    public const int MaxJsonLength = 200;
+
+    /// <summary>Parses one stored value. Never throws: a malformed value is a configuration fault the caller
+    /// must report, not an exception on the drain thread.</summary>
+    /// <param name="json">The raw JSON scalar as persisted (<c>true</c>, <c>0</c>, <c>"ON"</c>).</param>
+    /// <param name="value">The connector-domain value, or <see langword="null"/> on failure OR for a
+    /// legitimate JSON <c>null</c> — use the return value to tell those apart, never the out
+    /// parameter.</param>
+    public static bool TryParse(string? json, out object? value, out string? error)
+    {
+        value = null;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            error = "a relay value is required and must be a JSON scalar (for example: true, false, 1, 0).";
+            return false;
+        }
+
+        if (json.Length > MaxJsonLength)
+        {
+            error = $"a relay value may be at most {MaxJsonLength} characters.";
+            return false;
+        }
+
+        try
+        {
+            value = System.Text.Json.JsonSerializer.Deserialize<object?>(
+                json, St4i.Connector.Abstractions.Json.ConnectorJson.Options);
+            error = null;
+            return true;
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            // ConnectorJson's object? converter rejects arrays/objects/decimals outright — exactly the
+            // out-of-domain values a driver could not write anyway.
+            error = $"a relay value must be a JSON scalar the driver can write: {ex.Message}";
+            return false;
+        }
+    }
+}
+
+/// <summary>
 /// 🔴 Task C-2 — the relay target: WHICH machine, and WHICH declared writable point or command.
 ///
 /// <para><b>No address, ever.</b> Đợt B settled that points and commands are NAMED and that the register
@@ -377,17 +439,33 @@ public sealed record LocalAnnunciationChannelConfig(
 /// <c>FleetHost.TryWriteSetpointAsync</c>/<c>TryInvokeCommandAsync</c> path, which means the map's own
 /// bounds and <c>EstopGuardRule</c> both still apply.</para>
 ///
-/// <para>🔴 <b>Known gap this task deliberately did not guess at — the energise/de-energise VALUES.</b>
-/// A <see cref="RelayTargetKind.Command"/> target needs none (it is an argument-less pulse). A
-/// <see cref="RelayTargetKind.Point"/> target does: the blueprint (§4) decided the relay LATCHES — on
-/// when the first alarm becomes active, off when the last one clears — and a latch over a named point
-/// means writing one value to assert and another to release. Those values are not stored here because
-/// their domain (<c>bool</c> for an OPC-UA Bool setpoint, a number for a Modbus holding register) is a
-/// consequence of how C-6 chooses to latch, and inventing them now would either be dead columns or a
-/// silently wrong write to a point the system cannot prove is a lamp rather than a conveyor. C-6 adds two
-/// nullable columns through the migration ladder once it has made that decision — which is exactly what
-/// the ladder is for.</para>
+/// <para>🔴 <b>Task C-6 CLOSED C-2's deliberate gap — the energise/de-energise VALUES — as the ladder entry
+/// C-2 predicted (schema v3, two nullable columns, no rebuild).</b> The decision C-2 left open, and the
+/// answer:
+/// <list type="bullet">
+/// <item><description>A <see cref="RelayTargetKind.Point"/> target REQUIRES both
+/// <see cref="OnValueJson"/> and <see cref="OffValueJson"/>. There is deliberately NO default. A default
+/// would be this product choosing what to write to a coil it cannot prove is a lamp rather than a conveyor
+/// — which is the one thing the blueprint §4 said it must not do — and <c>true</c>/<c>false</c> is simply
+/// wrong for a Modbus holding register, where the answer is <c>1</c>/<c>0</c>. The store REFUSES to save a
+/// point relay without both, on C-2's own <c>ImplicitTls</c> principle.</description></item>
+/// <item><description>A <see cref="RelayTargetKind.Command"/> target must have NEITHER, and the store
+/// refuses both. A command is an argument-less pulse; storing a value it provably ignores is the same
+/// defect in the other direction. See <see cref="RelayNotificationChannel"/> for what a command target can
+/// and cannot express — it can assert the latch and it CANNOT release it, which is stated plainly rather
+/// than papered over.</description></item>
+/// </list></para>
 /// </summary>
+/// <param name="OnValueJson">🔴 Task C-6 (schema v3) — the value written to <see cref="TargetName"/> when
+/// the first qualifying alarm becomes active, as a raw JSON scalar; see <see cref="RelayValue"/> for the
+/// domain and why it is TEXT. Required for <see cref="RelayTargetKind.Point"/>, forbidden for
+/// <see cref="RelayTargetKind.Command"/>. Deliberately NOT a secret and visible in every public read: "what
+/// exactly does this product write to that coil?" is the single most important thing an operator can audit
+/// about this channel.</param>
+/// <param name="OffValueJson">The value written when the LAST qualifying alarm clears. Same rules as
+/// <see cref="OnValueJson"/>. It is a separate value rather than a derived inverse because the map's
+/// declared range for the point is the authority on what "off" is, and this product must not infer
+/// it.</param>
 /// <param name="MachineCode">Stored verbatim. Resolved case-INSENSITIVELY against the live roster at fire
 /// time (the convention every endpoint in this codebase already uses), and deliberately not validated
 /// against the roster at save time: the roster changes at runtime, so a save-time check would prove
@@ -401,17 +479,22 @@ public sealed record RelayChannelConfig(
     string Instance,
     string MachineCode,
     RelayTargetKind TargetKind,
-    string TargetName) : INotificationChannelConfig;
+    string TargetName,
+    string? OnValueJson = null,
+    string? OffValueJson = null) : INotificationChannelConfig;
 
 /// <summary>Task C-2 — the credential-free relay projection. Identical in content to
 /// <see cref="RelayChannelConfig"/>'s target fields because a machine code and a DECLARED point/command
 /// name are not secrets — they are exactly what an operator must be able to audit ("what is this product
 /// allowed to energise?"), and Đợt B's own framing argues FOR maximum visibility of what a map
-/// grants.</summary>
+/// grants. 🔴 Task C-6 added the two latch values for the same reason, one step further: knowing the coil is
+/// named <c>beacon</c> is not the same as knowing this product writes <c>1</c> to it.</summary>
 public sealed record RelayChannelSummary(
     string MachineCode,
     RelayTargetKind TargetKind,
-    string TargetName);
+    string TargetName,
+    string? OnValueJson = null,
+    string? OffValueJson = null);
 
 /// <summary>
 /// Task C-2 — the ONE credential-free shape every public read returns, and the shape C-7's endpoint will

@@ -75,7 +75,42 @@ public sealed class AuditRecorder
         object? oldValue = null, object? newValue = null, CancellationToken ct = default) =>
         AppendAsync(SystemActor, SystemActor, action, targetType, targetId, oldValue, newValue, correlationId: null, clientIp: null, ct);
 
-    private const string SystemActor = "(system)";
+    /// <summary>
+    /// 🔴 Task C-6 — the same non-HTTP path as <see cref="RecordSystemAsync"/>, but under a NAMED automation
+    /// identity and an explicit authorisation ROLE.
+    ///
+    /// <para><b>Why <c>"(system)"</c> was not enough.</b> Đợt C's relay channel writes to a real machine with
+    /// no human in the loop, under the same action ids and the same <see cref="Policy.PolicyEngine"/> gate a
+    /// human uses. Six months later an investigator reading <c>machine.setpoint.write</c> rows must be able
+    /// to separate "an engineer did this" from "the alarm relay did this" — and, among automated writers,
+    /// WHICH one. A single shared <c>"(system)"</c> actor collapses the second distinction the day a second
+    /// automatic writer exists, which is the same collapse C-3 had to undo when a whole-build
+    /// <c>bool hasDeliveryImplementation</c> met a second channel.</para>
+    ///
+    /// <para>The ROLE is recorded as the tier the action was actually authorised at (Engineer for a
+    /// setpoint, Admin for a command — see <see cref="Policy.MachineWriteGate.RoleFor"/>) rather than as the
+    /// literal <c>"(system)"</c>, because the audit row's job is to record the authority the act was
+    /// performed under, and an automation acting at Admin tier is precisely the thing worth being able to
+    /// find.</para>
+    ///
+    /// <para>Same NEVER-throws policy as its two siblings. <c>correlationId</c>/<c>clientIp</c> are
+    /// genuinely absent — there is no request.</para>
+    /// </summary>
+    /// <param name="actor">The automation's own identity. Conventionally parenthesised and prefixed
+    /// <c>(system:...)</c> so it can never collide with a real account name, which this product's own
+    /// account rules forbid parentheses in.</param>
+    /// <param name="role">The role the policy engine evaluated this action under.</param>
+    public Task RecordSystemActorAsync(
+        string actor, string role, string action, string? targetType = null, string? targetId = null,
+        object? oldValue = null, object? newValue = null, CancellationToken ct = default) =>
+        AppendAsync(
+            string.IsNullOrWhiteSpace(actor) ? SystemActor : actor,
+            string.IsNullOrWhiteSpace(role) ? SystemActor : role,
+            action, targetType, targetId, oldValue, newValue, correlationId: null, clientIp: null, ct);
+
+    /// <summary>The actor/role recorded for a system event with no more specific identity — today, only the
+    /// startup <c>system.startup</c> row. Public so a test can assert an automation row is NOT this.</summary>
+    public const string SystemActor = "(system)";
 
     private async Task AppendAsync(
         string actor, string role, string action, string? targetType, string? targetId,

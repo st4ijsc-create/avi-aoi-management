@@ -36,8 +36,8 @@ public sealed class NotificationConfigStoreTests
         var store = new NotificationConfigStore(TempDir());
 
         using var connection = Open(store);
-        // v1 = C-2's five tables; v2 = C-3's webhook auth_header_name append.
-        Assert.Equal(2L, UserVersion(connection));
+        // v1 = C-2's five tables; v2 = C-3's webhook auth_header_name append; v3 = C-6's relay on/off values.
+        Assert.Equal(3L, UserVersion(connection));
 
         // Five tables, discovered rather than asserted by name — the same source of truth the structural
         // test below uses.
@@ -64,7 +64,7 @@ public sealed class NotificationConfigStoreTests
 
             using (var connection = Open(reopened))
             {
-                Assert.Equal(2L, UserVersion(connection));
+                Assert.Equal(3L, UserVersion(connection));
             }
 
             var relay = await reopened.GetRelayAsync();
@@ -399,7 +399,9 @@ public sealed class NotificationConfigStoreTests
             "sim@plant", new[] { "ops@plant", "maint@plant" }, "svc-account"));
         Assert.True(await store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High));
         Assert.True(await store.SaveRelayAsync(
-            enabled: true, AlarmPriority.Critical, "MODBUS-01", RelayTargetKind.Point, "annunciator"));
+            enabled: true, AlarmPriority.Critical, "MODBUS-01", RelayTargetKind.Point, "annunciator",
+            // 🔴 Task C-6 (schema v3) — a POINT target requires both latch values; see RelayChannelConfig.
+            onValueJson: "1", offValueJson: "0"));
 
         // A fresh instance over the same directory — restart survival, the same technique
         // ConnectorConfigStoreTests uses.
@@ -716,8 +718,11 @@ public sealed class NotificationConfigStoreTests
             enabled: true, AlarmPriority.High, "smtp.plant", 587, SmtpTlsMode.StartTls,
             "sim@plant", new[] { "ops@plant" }, null));
         Assert.False(await store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High));
+        // 🔴 Task C-6 — a COMMAND target deliberately, so this row's falseness can ONLY come from the
+        // broken store. A Point target without latch values is now refused by validation, which would have
+        // made this assertion pass vacuously against a perfectly healthy store.
         Assert.False(await store.SaveRelayAsync(
-            enabled: true, AlarmPriority.High, "M-1", RelayTargetKind.Point, "annunciator"));
+            enabled: true, AlarmPriority.High, "M-1", RelayTargetKind.Command, "annunciator"));
         Assert.False(await store.DeleteAsync(NotificationChannel.Webhook));
         Assert.False(await store.SetSecretAsync(NotificationChannel.Webhook, "n", "v"));
         Assert.Null(await store.GetSecretAsync(NotificationChannel.Webhook, "n"));
@@ -929,9 +934,14 @@ public sealed class NotificationConfigStoreTests
     /// v1 — which is the only state the ladder exists for. C-2's v1 was reshaped in place on the grounds
     /// that no build had ever created the file; that argument does not extend to v2, and this test is what
     /// makes "appending works" a fact rather than a plan.
+    ///
+    /// <para>🔴 Task C-6 extended it to cover v3 (the relay's <c>on_value</c>/<c>off_value</c> append) on the
+    /// SAME seeded v1 database, so what is proved is a TWO-step catch-up from v1 → v3 in one open, not two
+    /// independent one-step upgrades. That is the case an install skipping a release actually hits, and it is
+    /// the one an "each version was tested against its own predecessor" ladder can silently fail.</para>
     /// </summary>
     [Fact]
-    public async Task TheV2Ladder_UpgradesAnExistingV1Database_WithoutLosingItsRows()
+    public async Task TheLadder_UpgradesAnExistingV1DatabaseTwoStepsToV3_WithoutLosingItsRows()
     {
         var dir = TempDir();
         var dbPath = Path.Combine(dir, "notifications.db");
@@ -1002,22 +1012,35 @@ public sealed class NotificationConfigStoreTests
         }
         SqliteConnection.ClearAllPools();
 
-        // Opening the store applies v2 and only v2.
+        // Opening the store catches up BOTH pending versions in one go.
         var store = new NotificationConfigStore(dir);
         using (var connection = Open(store))
         {
-            Assert.Equal(2L, UserVersion(connection));
+            Assert.Equal(3L, UserVersion(connection));
         }
 
-        // The pre-existing row is untouched...
+        // The pre-existing row is untouched by either step...
         var relay = await store.GetRelayAsync();
         Assert.Equal("MODBUS-01", relay!.MachineCode);
         Assert.Equal("AnnunciatorOn", relay.TargetName);
+        // ...and its v3 columns read back as NULL, which is exactly right for a Command target.
+        Assert.Null(relay.OnValueJson);
+        Assert.Null(relay.OffValueJson);
 
-        // ...and the new column is usable, defaulting to "no auth header" for anything saved before it.
+        // v2's column is usable, defaulting to "no auth header" for anything saved before it.
         Assert.True(await store.SaveWebhookAsync(
             enabled: true, AlarmPriority.High, "https://mes.plant/alarm", authHeaderName: "X-Api-Key"));
         Assert.Equal("X-Api-Key", (await store.GetWebhookAsync())!.AuthHeaderName);
+
+        // 🔴 And v3's columns are usable: the same instance can be re-saved as a POINT target carrying the
+        // latch values C-2 deliberately left for C-6 to decide.
+        Assert.True(await store.SaveRelayAsync(
+            enabled: true, AlarmPriority.Critical, "MODBUS-01", RelayTargetKind.Point, "annunciator",
+            onValueJson: "true", offValueJson: "false"));
+        var upgraded = await store.GetRelayAsync();
+        Assert.Equal(RelayTargetKind.Point, upgraded!.TargetKind);
+        Assert.Equal("true", upgraded.OnValueJson);
+        Assert.Equal("false", upgraded.OffValueJson);
     }
 
     // ─────────────────────────────────────────────────────────────────────

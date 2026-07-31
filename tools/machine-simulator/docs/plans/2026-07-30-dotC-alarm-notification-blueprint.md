@@ -52,6 +52,28 @@ README §20.5 dòng 3654 tự khai:
 - Audit dưới danh tính hệ thống riêng, phân biệt được với người thật.
 - Nếu ghi trả `Indeterminate`, **không thử lại** — đúng hợp đồng B-1.
 
+### 4.1 Đính chính / bổ sung sau khi C-6 xây xong (2026-07-31)
+
+Mọi điều ở §4 vẫn đúng. Sáu điểm C-6 phải **quyết** mà kế hoạch chưa nói, ghi lại ở đây để người đọc kế hoạch không phải suy diễn:
+
+1. 🔴 **Lệnh ghi của relay dùng ĐÚNG hai `action id` của Đợt B** — `machine.setpoint.write` (point) và `machine.command.invoke` (command) — chạy qua **cùng một** `PolicyEngine` singleton mà endpoint HTTP dùng. Không có action id riêng: `EstopGuardRule` so khớp **ordinal**, nên một id riêng sẽ **đi lọt** qua chốt HALT. Hai hằng số nay nằm ở `MachineWriteGate` (một chỗ duy nhất), và `MachineWriteEndpoints` gọi cùng chỗ đó.
+
+2. 🔴 **Ngoại lệ DUY NHẤT, và nó không phải ngoại lệ trong luật mà là một *fact do caller giải*.** `PolicyRequest.CriticalAlarmActive` theo thiết kế Đợt B là do **caller** giải trước khi engine chạy (B-6 tự nó đã loại `AlarmSource.Policy` ra vì lý do self-latch). Relay giải fact đó là `false`, và đây là suy dẫn:
+   `AlarmPriority` khai theo thứ tự nặng-trước (`Critical = 0`), `MeetsThreshold` là `priority <= min` ⇒ **alarm Critical thoả MỌI ngưỡng relay**. Vậy mọi alarm Critical đều là alarm mà chính relay đang báo — nó là **đầu vào** của lệnh ghi, không phải lý do độc lập để từ chối. Nếu giải là `true`, một relay cấu hình ở ngưỡng `Critical` — chính là cấu hình chủ đạo — **vĩnh viễn không bao giờ sáng được**: đúng cái alarm đáng lẽ bật đèn lại là cái chặn lệnh ghi. Đèn chắc chắn tối đúng lúc nhà máy tệ nhất còn tệ hơn không có đèn.
+   Tiền đề này **được test ghim** (`ACriticalAlarmMeetsEveryRelayThreshold_…`); thêm một mức ưu tiên trên Critical là test đỏ và phải suy dẫn lại. `CriticalAlarmGuardRule` **không bị sửa** và vẫn áp dụng đầy đủ cho mọi lệnh ghi HTTP. Đây cũng là chỗ **duy nhất** đường tự động rộng hơn đường con người, và nói thẳng ra ở đây.
+
+3. **Giá trị đóng/mở (schema v3).** Target `Point` **bắt buộc** cả hai giá trị (lưu dạng JSON scalar thô, đọc qua đúng converter mà `MachineWriteEndpoints` dùng); **không có mặc định**, vì mặc định là sản phẩm tự chọn giá trị ghi vào một coil nó không chứng minh được là đèn. Target `Command` **không được** có giá trị nào. Store **từ chối lưu** cả hai vi phạm — đúng nguyên tắc C-2 đã dùng để từ chối `ImplicitTls`.
+
+4. **`Command` chốt được nhưng KHÔNG nhả được.** Command là xung không tham số, không có "un-pulse". Kênh đếm `ReleaseUnsupported` và cảnh báo, chứ không giả vờ đã tắt. Cần đèn chốt/nhả thì phải dùng target `Point`.
+
+5. **`Acked` KHÔNG nhả chốt.** ISA-18.2 "ack = tắt còi" và C-5 tôn trọng điều đó vì C-5 **biết** nó đang phát ra tiếng. Kênh này không biết nó đang lái cái gì; tắt một cái **đèn** vì có người đã ack sẽ giấu đi điều kiện vẫn đang tồn tại. (Ack của alarm `ClearOnAck` — mọi denial Policy — vẫn nhả, vì C-1 báo nó là `Cleared`: hàng thật sự đã biến mất.)
+
+6. 🔴 **Chết máy khi đèn đang sáng ⇒ đèn ở nguyên.** Với thiết bị báo động, **tối giả** tệ hơn **sáng giả**: đèn tối bị đọc là "không có sự cố". Và tắt-khi-thoát chỉ chạy được ở lối thoát êm; mất điện thì coil ở nguyên — một bảo đảm chỉ đúng ở ca dễ thì không phải bảo đảm. Khi khởi động lại, chốt được dựng lại từ `Restored` và trạng thái tin-tưởng bắt đầu ở **UNKNOWN**, nên mức đầu tiên suy ra luôn được ghi.
+
+7. 🔴 **HALT gài trong lúc đèn đang sáng ⇒ lệnh ghi TẮT cũng bị từ chối.** Không mở ngoại lệ. Hệ quả trung thực: đếm `Refused`, và **`Energised` giữ nguyên `true`** — sản phẩm không bao giờ tin là đèn đã tắt trong khi nó đang sáng. Cảnh báo nói thẳng "STILL ENERGISED". Reset HALT xong, cạnh kế tiếp thấy bất đồng và ghi tắt.
+
+8. **Rate limit: 2 giây tối thiểu giữa hai lần THỬ ghi trên một instance** — **hoãn, không bao giờ bỏ** (bỏ một lệnh nhả là để đèn sáng mãi). Bão *raise* đã bị chính chốt hấp thụ (100 alarm = 1 lệnh ghi); limiter chỉ ăn vào trường hợp **flap**. 2 s nằm dưới mọi tốc độ cạnh hợp lệ (`AlarmEvaluator` tick 5 s) nên vận hành bình thường không bị hoãn gì.
+
 ## 5. 🔴 Chống bão — điều kiện sống của cả đợt
 
 `AlarmEvaluator` tick mỗi **5 giây**. `DriverHealth` và `NgRate` **raise lại vô điều kiện mỗi tick** trong suốt thời gian điều kiện còn đúng (đã biết, đã tài liệu hoá). `Identity` thì dedup theo ngày.

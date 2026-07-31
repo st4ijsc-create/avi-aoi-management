@@ -554,6 +554,48 @@ if (notificationConfigStore is not null)
     implementedNotificationChannels.Add(St4i.EngineApi.Alarms.NotificationChannel.LocalAnnunciation);
 }
 
+// 🔴🔴 Task C-6 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-6-brief.md) — the FOURTH
+// and last channel, and the ONLY one in this product where a notification moves something physical: a beacon
+// or a horn, driven automatically from the alarm stream with no human in the loop.
+//
+// 🔴 NOT A SAFETY DEVICE. It is an ordinary machine write on an ordinary software path — it goes through the
+// full Đợt B gate under the SAME action ids a human uses, which means the HALT latch refuses it exactly as it
+// refuses POST /v1/machines/{code}/setpoint. Anyone who needs a light or horn that works while HALT is
+// engaged, or while this process is not running, must HARDWIRE it. See RelayNotificationChannel's own doc
+// comment for the full argument and for every failure mode this channel decides.
+//
+// Registered on exactly the same terms as the three channels above — only when the configuration store
+// opened, with the implementedNotificationChannels member added in the same `if` (the disagreement C-5 caught
+// by mutation: deleting that one line left the host delivering perfectly while telling the operator at every
+// boot that the channel is DISCARDED).
+//
+// DEFAULT OFF is not enforced here but by the store: nothing is driven unless an operator has explicitly
+// named a machine and a declared point/command AND enabled the row.
+//
+// It resolves FleetHost/PolicyEngine/AuditRecorder — all singletons registered above, none of which depends
+// on IAlarmStore, so registering this inside the notifier's own factory graph introduces no cycle. It
+// deliberately does NOT take IAlarmStore: see the channel's own comment on why its
+// PolicyRequest.CriticalAlarmActive is resolved without one.
+if (notificationConfigStore is not null)
+{
+    var storeForRelay = notificationConfigStore;
+    builder.Services.AddSingleton(sp =>
+    {
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmRelay");
+        return new St4i.EngineApi.Alarms.RelayNotificationChannel(
+            storeForRelay,
+            sp.GetRequiredService<FleetHost>(),
+            sp.GetRequiredService<St4i.EngineApi.Policy.PolicyEngine>(),
+            sp.GetRequiredService<AuditRecorder>(),
+            logError: (ex, msg) => logger.LogError(ex, "{AlarmRelayMsg}", msg),
+            // 🔴 This channel has a real warning path, unlike C-5's: a refused write, a rejected value, an
+            // unresolvable machine and an INDETERMINATE outcome are all things an operator standing next to
+            // the machine needs to read, and none of them is an internal fault.
+            logWarning: msg => logger.LogWarning("{AlarmRelayMsg}", msg));
+    });
+    implementedNotificationChannels.Add(St4i.EngineApi.Alarms.NotificationChannel.Relay);
+}
+
 // Registered ONLY here. The alarm engine runs only in this process — St4i.EdgeService and both WPF apps
 // never host IAlarmStore — so nothing about this reaches them.
 //
@@ -574,47 +616,53 @@ builder.Services.AddSingleton(sp =>
     var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmNotifier");
     // 🔴 Task C-3 filled this in. GetService (not GetRequiredService): a channel is registered only when
     // the configuration store opened, and a missing one must mean "the loop drains and discards" — C-1's
-    // original state — not a startup crash. C-5/C-6 append to this list; C-7 owns the rate limiter that
-    // will eventually sit in front of the fan-out.
-    var channels = new List<Func<St4i.EngineApi.Alarms.NotificationJob, CancellationToken, Task>>();
+    // original state — not a startup crash.
+    //
+    // 🔴 Task C-6 replaced C-4's `Task.WhenAll` composition with ONE QUEUE AND ONE DRAIN LOOP PER CHANNEL,
+    // and had to. WhenAll bounded ONE notification's cost at max(budget) rather than sum(budget), which was
+    // the right fix while every channel was a network client — but it could not bound the NEXT
+    // notification: the single drain loop does not read job N+1 until job N's WhenAll has completed, so a
+    // webhook wedged for its whole 10s budget still held every other channel for 10s PER EDGE. With a
+    // physical annunciator behind one of those channels that is a beacon held dark for 10s per standing
+    // alarm at boot — a restart into a dead webhook, which is exactly when a beacon matters most. Per
+    // channel, that delay is structurally impossible rather than merely bounded: there is no shared queue
+    // and no shared thread left for a dead receiver to hold.
+    //
+    // ORDER NO LONGER MATTERS, and C-5's "APPENDED, never inserted" note is retired with the composition it
+    // was about: every channel has its own loop, so no channel is "first". AlarmNotifierWiringTests'
+    // concurrency test was rewritten to discriminate the property that DOES still exist — see
+    // AWedgedChannelDoesNotDelayAnotherChannelsNEXTNotification_MeasuredInElapsedTime.
+    //
+    // The lane names are the NotificationChannel member names, deliberately: AlarmNotifier.ChannelStats and
+    // the "queue for channel 'X' saturated" warning then speak the same vocabulary as the configuration
+    // store and C-7's endpoint, instead of inventing a second set of channel names.
+    var channels = new List<St4i.EngineApi.Alarms.AlarmNotificationChannel>();
     if (sp.GetService<St4i.EngineApi.Alarms.WebhookNotificationChannel>() is { } webhook)
     {
-        channels.Add(webhook.DispatchAsync);
+        channels.Add(new St4i.EngineApi.Alarms.AlarmNotificationChannel(
+            nameof(St4i.EngineApi.Alarms.NotificationChannel.Webhook), webhook.DispatchAsync));
     }
     if (sp.GetService<St4i.EngineApi.Alarms.SmtpNotificationChannel>() is { } email)
     {
-        channels.Add(email.DispatchAsync);
+        channels.Add(new St4i.EngineApi.Alarms.AlarmNotificationChannel(
+            nameof(St4i.EngineApi.Alarms.NotificationChannel.Smtp), email.DispatchAsync));
     }
-    // 🔴 Task C-5 — APPENDED, never inserted. AlarmNotifierWiringTests' concurrency test discriminates
-    // sequential from concurrent composition only while the FIRST-dispatched channel's budget exceeds that
-    // test's 5s deadline; the webhook's 10s budget is what provides that, so the webhook must stay at index
-    // 0. This channel has no budget at all (see LocalAnnunciationChannel) and would destroy the
-    // discriminator if it were dispatched first.
     if (sp.GetService<St4i.EngineApi.Alarms.LocalAnnunciationChannel>() is { } annunciation)
     {
-        channels.Add(annunciation.DispatchAsync);
+        channels.Add(new St4i.EngineApi.Alarms.AlarmNotificationChannel(
+            nameof(St4i.EngineApi.Alarms.NotificationChannel.LocalAnnunciation), annunciation.DispatchAsync));
+    }
+    // 🔴 Task C-6 — the FOURTH channel, and the only one in this batch that moves something physical. Its
+    // own queue and its own drain thread (above) are what stop a dead webhook or an unreachable mail relay
+    // from holding a beacon dark.
+    if (sp.GetService<St4i.EngineApi.Alarms.RelayNotificationChannel>() is { } relay)
+    {
+        channels.Add(new St4i.EngineApi.Alarms.AlarmNotificationChannel(
+            nameof(St4i.EngineApi.Alarms.NotificationChannel.Relay), relay.DispatchAsync));
     }
 
-    // 🔴 Task C-4 — composed with Task.WhenAll, NEVER sequentially, which C-3's review made a hard
-    // constraint for C-7 and which first has teeth here, at the moment there are two channels to compose.
-    // Sequentially, one notification's cost becomes the SUM of every channel's budget, and the compounding
-    // is worse than additive in the case that matters: a dead mail relay would keep C-6's physical beacon
-    // dark for its whole budget behind a Critical alarm, worst-case at restart — exactly when the beacon
-    // matters most. Fanning out keeps the drain loop's exposure at ONE budget however many channels are
-    // wired, and both channels use the same 10s budget so that number does not drift either.
-    //
-    // This is composition, not scheduling: ordering BETWEEN notifications is untouched (the drain loop
-    // still hands over one job at a time), and per-channel QUEUES remain C-6's prerequisite rather than
-    // something invented here.
-    Func<St4i.EngineApi.Alarms.NotificationJob, CancellationToken, Task>? dispatch = channels.Count switch
-    {
-        0 => null,
-        1 => channels[0],
-        _ => (job, ct) => Task.WhenAll(channels.Select(channel => channel(job, ct))),
-    };
-
     return new St4i.EngineApi.Alarms.AlarmNotifier(
-        dispatch: dispatch,
+        channels,
         logWarning: msg => logger.LogWarning("{AlarmNotifyMsg}", msg),
         logError: (ex, msg) => logger.LogError(ex, "{AlarmNotifyMsg}", msg));
 });

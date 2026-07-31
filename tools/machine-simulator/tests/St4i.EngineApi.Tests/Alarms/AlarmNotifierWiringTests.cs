@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -319,29 +320,37 @@ public sealed class AlarmNotifierWiringTests
     }
 
     /// <summary>
-    /// 🔴 Task C-4 review (I-4) — <b>the host composes its channels CONCURRENTLY, and this is the only test
-    /// that can tell.</b>
+    /// 🔴 Task C-4 review (I-4), <b>rewritten by Task C-6 because the original stopped discriminating.</b>
     ///
-    /// <para>The reviewer proved the gap: replacing <c>Program.cs</c>'s <c>Task.WhenAll</c> composition with
-    /// a sequential <c>foreach</c> left all five wiring tests passing. That composition is C-7's hard
-    /// constraint precisely because sequential fan-out makes one notification cost the SUM of every
-    /// channel's budget — and the case that matters is a dead network receiver keeping C-6's physical beacon
-    /// dark for minutes behind a Critical alarm, worst-case at restart.</para>
+    /// <para><b>What it used to pin, and why that is no longer the whole property.</b> C-4's version raised
+    /// ONE alarm against two black-holed destinations and asserted both were contacted within 5 s. That
+    /// separated <c>Task.WhenAll</c> from a sequential <c>foreach</c> — the only two compositions that
+    /// existed then. C-6 replaced the composition entirely with one queue and one drain loop per channel, and
+    /// under that shape the old assertion passes for a reason it was never testing: a single shared queue
+    /// composed with <c>WhenAll</c> would ALSO pass it. Left as it was, it would have gone on passing while
+    /// the property C-6 exists to deliver was absent.</para>
     ///
-    /// <para><b>Measured by arrival, not by elapsed time, deliberately.</b> Both destinations black-hole
-    /// their connections, so the host's real 10 s budget applies and a wall-clock test would have to run for
-    /// 10 s (concurrent) or 20 s (sequential). Instead this asserts that BOTH destinations are contacted
-    /// promptly: fanned out they are reached within milliseconds of each other, while under sequential
-    /// composition the second is not contacted until the first channel's entire 10 s budget has expired. A
-    /// 5 s deadline separates those two cases cleanly and the test finishes in well under a second.</para>
+    /// <para>🔴 <b>What it pins now: the NEXT notification.</b> <c>Task.WhenAll</c> bounded ONE edge's cost
+    /// at <c>max(budget)</c>, but the single drain loop does not read edge N+1 until edge N's <c>WhenAll</c>
+    /// has completed — so a webhook wedged for its whole 10 s budget still held every other channel for 10 s
+    /// PER EDGE. That is the real failure: a plant restarting into a dead webhook replays its standing
+    /// alarms and the beacon is dark 10 s behind each one. So: the webhook is black-holed, the SMTP relay
+    /// ANSWERS, and TWO alarms are raised. The second alarm's mail must arrive promptly.</para>
+    ///
+    /// <para><b>Asserted in ELAPSED TIME from the second raise</b>, not merely by arrival: C-3 and C-4 both
+    /// shipped budget tests that passed with the guard deleted because only wall-clock differed and nothing
+    /// measured it. Under any shared-queue composition the second message cannot arrive before the webhook's
+    /// 10 s budget expires; the 5 s bound separates that from the sub-second reality cleanly. The FIRST
+    /// message's arrival is asserted too, and separately, so a regression that broke the whole SMTP channel
+    /// reports as that rather than as a queueing failure.</para>
     /// </summary>
     [Fact]
-    public async Task TheHostDispatchesToItsChannelsConcurrently_SoOneDeadReceiverCannotDelayAnother()
+    public async Task AWedgedChannelDoesNotDelayAnotherChannelsNextNotification_MeasuredInElapsedTime()
     {
-        // Neither destination ever answers, so whichever is dispatched first would occupy the drain loop
-        // for its whole budget if the composition were sequential.
+        // The webhook never answers, so its channel is occupied for its full 10s budget per notification.
         await using var webhookReceiver = WebhookLoopbackServer.Start(_ => null);
-        await using var relay = SmtpLoopbackServer.Start(_ => null);
+        // The relay DOES answer — it is the live channel whose promptness is being measured.
+        await using var relay = SmtpLoopbackServer.Start();
         var alarmsDir = Directory.CreateTempSubdirectory("st4i-notifywire-alarms-").FullName;
 
         var factory = await CreateFactoryAsync(
@@ -358,24 +367,34 @@ public sealed class AlarmNotifierWiringTests
         try
         {
             var store = factory.Services.GetRequiredService<IAlarmStore>();
+
             await store.RaiseAsync(new AlarmRaise(
-                AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "concurrency", TargetId: "slot-7"));
+                AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "first", TargetId: "slot-7"));
 
-            // 🔴 5s is the discriminator: concurrently both are contacted almost immediately; sequentially
-            // the second waits out the first channel's full 10s budget and cannot arrive in time.
-            var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
-            while ((relay.Connections == 0 || webhookReceiver.Requests.Count == 0) &&
-                   DateTimeOffset.UtcNow < deadline)
-            {
-                await Task.Delay(10);
-            }
+            var firstDeadline = DateTimeOffset.UtcNow.AddSeconds(20);
+            while (relay.Messages.Count < 1 && DateTimeOffset.UtcNow < firstDeadline) await Task.Delay(10);
+            Assert.True(relay.Messages.Count >= 1, "the SMTP relay never received the FIRST alarm at all.");
 
-            Assert.True(webhookReceiver.Requests.Count > 0,
-                "the webhook receiver was never contacted at all.");
-            Assert.True(relay.Connections > 0,
-                "the SMTP relay was not contacted within 5s of the alarm, while a dead webhook was holding " +
-                "the drain loop — the host's dispatch composition has been sequentialised, which makes one " +
-                "notification cost the SUM of every channel's budget.");
+            // Non-vacuity: the webhook channel really is wedged on the first notification by now, so the
+            // second one below is genuinely racing a held channel rather than an idle one.
+            Assert.True(webhookReceiver.Requests.Count > 0, "the webhook receiver was never contacted.");
+
+            var raisedAt = Stopwatch.StartNew();
+            await store.RaiseAsync(new AlarmRaise(
+                AlarmSource.NgRate, "NG_RATE_HIGH", AlarmPriority.Critical, "second", TargetId: "fleet"));
+
+            var secondDeadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while (relay.Messages.Count < 2 && DateTimeOffset.UtcNow < secondDeadline) await Task.Delay(10);
+            var elapsed = raisedAt.Elapsed;
+
+            Assert.True(relay.Messages.Count >= 2,
+                $"the SMTP relay did not receive the SECOND alarm within {elapsed.TotalSeconds:0.#}s while a " +
+                "dead webhook was still occupied with the first — the notification channels are sharing a " +
+                "queue again, which makes every channel wait out the slowest one's budget PER EDGE.");
+
+            // 🔴 ELAPSED, not a counter. Sharing a queue puts this at >= the webhook's 10s budget.
+            Assert.True(elapsed < TimeSpan.FromSeconds(5),
+                $"the second alarm took {elapsed.TotalSeconds:0.#}s to reach the live channel.");
         }
         finally
         {
@@ -416,12 +435,21 @@ public sealed class AlarmNotifierWiringTests
                     enabled: true, AlarmPriority.High, SmtpLoopbackServer.Host, relay.Port,
                     SmtpTlsMode.None, "alarms@plant.local", new[] { "ops@plant.local" }, username: null));
                 Assert.True(await store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High));
+                // 🔴 Task C-6 — the fourth channel, pointed at a machine this host's roster does not carry.
+                // That is deliberate: what THIS test is about is composition, and MachineNotFound is a
+                // counter only the real relay channel, really dispatched, can move. Whether a real coil
+                // moves is RelayNotificationChannelTests' subject, against a real writable driver.
+                Assert.True(await store.SaveRelayAsync(
+                    enabled: true, AlarmPriority.High, "NOT-IN-THIS-ROSTER", RelayTargetKind.Point, "beacon",
+                    onValueJson: "1", offValueJson: "0"));
             });
 
         try
         {
             var channel = factory.Services.GetService<LocalAnnunciationChannel>();
             Assert.NotNull(channel);
+            var relayChannel = factory.Services.GetService<RelayNotificationChannel>();
+            Assert.NotNull(relayChannel);
 
             var hub = factory.Services.GetRequiredService<AlarmAnnunciationHub>();
             using var listener = hub.Subscribe();
@@ -432,16 +460,20 @@ public sealed class AlarmNotifierWiringTests
 
             var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
             while ((relay.Messages.Count == 0 || webhookReceiver.Requests.Count == 0 ||
-                    channel!.Stats.Announced == 0) && DateTimeOffset.UtcNow < deadline)
+                    channel!.Stats.Announced == 0 || relayChannel!.Stats.Considered == 0) &&
+                   DateTimeOffset.UtcNow < deadline)
             {
                 await Task.Delay(25);
             }
 
-            // 🔴 All THREE fired for the one alarm.
+            // 🔴 All FOUR fired for the one alarm — a C-6 wiring that had replaced the channel list rather
+            // than appending to it, or registered the channel without composing it, fails here.
             Assert.Single(webhookReceiver.Requests);
             Assert.Single(relay.Messages);
             Assert.Equal(1, channel!.Stats.Announced);
             Assert.Equal(0, channel.Stats.Unheard);
+            Assert.Equal(1, relayChannel!.Stats.Considered);
+            Assert.Equal(1, relayChannel.Stats.MachineNotFound);
 
             Assert.True(listener.Reader.TryRead(out var annunciation));
             Assert.Equal(AlarmEdgeKind.Raised, annunciation!.Edge);
@@ -472,6 +504,17 @@ public sealed class AlarmNotifierWiringTests
     /// <para>Asserted against what the host ACTUALLY SAYS — the notices it logs at startup — because that is
     /// the artefact an operator reads and the only thing that can disagree with the delivery the other
     /// wiring tests prove.</para>
+    ///
+    /// <para>🔴 <b>Task C-6 rewrote the assertions, because C-5's control disappeared when the fourth channel
+    /// landed.</b> C-5 could keep Relay enabled-and-unimplemented as a live control proving this test could
+    /// still SEE an undeliverable channel. With all four channels implemented there is no fifth to hold in
+    /// reserve, so the shape changed: the ACTIVE notice must name all four AND the "no delivery
+    /// implementation" warning must be ABSENT ENTIRELY. That pair still kills each of the four
+    /// <c>implementedNotificationChannels.Add(...)</c> lines individually and in both directions — deleting
+    /// one makes the ACTIVE notice say 3 and omit it, and simultaneously makes the warning appear naming it.
+    /// The ability of the notice machinery to produce that warning at all is covered exhaustively next door
+    /// by <c>NotificationStartupNoticesTests</c> (every channel × absent/disabled/enabled ×
+    /// implemented-or-not, 1296 cases), which is the control this test no longer carries itself.</para>
     /// </summary>
     [Fact]
     public async Task TheHostsOwnStartupNotice_NamesEveryChannelItCanActuallyDeliver_AndNoOther()
@@ -491,8 +534,9 @@ public sealed class AlarmNotifierWiringTests
                     enabled: true, AlarmPriority.High, SmtpLoopbackServer.Host, relay.Port,
                     SmtpTlsMode.None, "alarms@plant.local", new[] { "ops@plant.local" }, username: null));
                 Assert.True(await store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High));
-                // C-6's channel, enabled and genuinely unimplemented — the control that proves this test
-                // can still SEE an undeliverable channel rather than having stopped looking.
+                // 🔴 Task C-6 — the fourth channel, now IMPLEMENTED. Its target is never driven here (no
+                // alarm is raised), so this configures the channel without asserting anything about a
+                // machine write; RelayNotificationChannelTests owns that.
                 Assert.True(await store.SaveRelayAsync(
                     enabled: true, AlarmPriority.High, "MODBUS-01", RelayTargetKind.Command, "beacon"));
             },
@@ -501,18 +545,16 @@ public sealed class AlarmNotifierWiringTests
         try
         {
             var active = Assert.Single(notices.Messages, m => m.Contains("ACTIVE on", StringComparison.Ordinal));
-            Assert.Contains("ACTIVE on 3 channel(s)", active, StringComparison.Ordinal);
+            Assert.Contains("ACTIVE on 4 channel(s)", active, StringComparison.Ordinal);
             Assert.Contains("Webhook", active, StringComparison.Ordinal);
             Assert.Contains("Smtp", active, StringComparison.Ordinal);
             Assert.Contains("LocalAnnunciation", active, StringComparison.Ordinal);
-            Assert.DoesNotContain("Relay", active, StringComparison.Ordinal);
+            Assert.Contains("Relay", active, StringComparison.Ordinal);
 
-            var silent = Assert.Single(
+            // 🔴 And NOTHING is reported as undeliverable. Deleting any one of the four
+            // implementedNotificationChannels.Add(...) lines fails BOTH halves at once.
+            Assert.DoesNotContain(
                 notices.Messages, m => m.Contains("no delivery implementation", StringComparison.Ordinal));
-            Assert.Contains("Relay", silent, StringComparison.Ordinal);
-            Assert.DoesNotContain("LocalAnnunciation", silent, StringComparison.Ordinal);
-            Assert.DoesNotContain("Webhook", silent, StringComparison.Ordinal);
-            Assert.DoesNotContain("Smtp", silent, StringComparison.Ordinal);
         }
         finally
         {
