@@ -29,6 +29,7 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -391,7 +392,7 @@ export function IrMergePanel({
       if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
         toast.info(t("ir.merge.flagOffToast", "IR programming is disabled (preview). Set DPC_IR_V2_ENABLED=true to save."));
       } else {
-        toast.error(e.message);
+        toastTrpcError(e);
       }
     },
   });

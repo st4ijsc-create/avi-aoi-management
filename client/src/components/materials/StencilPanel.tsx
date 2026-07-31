@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { AlertTriangle, Gauge, Layers, RefreshCw, Search } from "lucide-react";
 
 export default function StencilPanel() {
@@ -53,7 +54,7 @@ export default function StencilPanel() {
       status.refetch();
       usage.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const onSelect = () => {

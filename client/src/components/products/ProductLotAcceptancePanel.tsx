@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,7 +66,7 @@ export function ProductLotAcceptancePanel({ productModelId, canEdit }: Props) {
       setCode(""); setName(""); setLotSize(""); setSampleSize("");
       setAcceptanceQty("0"); setRejectionQty("1"); setAqlMajor(""); setAqlMinor(""); setAqlCritical("");
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const save = () => {

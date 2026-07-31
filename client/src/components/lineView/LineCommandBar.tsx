@@ -23,6 +23,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -83,7 +84,7 @@ export function LineCommandBar({ lineId, lineCode, state, canControl, onSettled 
 
   const commandMutation = trpc.lineController.command.useMutation({
     // TRPCError thật (mất mạng / role-floor / 2FA) — khác với ok:false nghiệp vụ.
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const cmdLabel = (c: LineViewCommand): string =>

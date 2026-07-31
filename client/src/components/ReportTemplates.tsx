@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +49,10 @@ export function ReportTemplates() {
       resetForm();
     },
     onError: (error) => {
-      toast.error(t('common.errorMessage', { message: error.message }));
+      // LƯU Ý: khoá `common.errorMessage` = "Lỗi Tin nhắn" (vi.json) THIẾU placeholder
+      // {{message}} — tham số message bị i18next lặng lẽ bỏ qua, người dùng chỉ thấy
+      // câu tĩnh. Đã biết từ task-8b/8c, chờ task F11 dọn — KHÔNG tự sửa khoá ở đây.
+      toast.error(t('common.errorMessage', { message: mapTrpcError(error) }));
     },
   });
 

@@ -12,6 +12,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -174,7 +175,7 @@ export default function CustomDashboardViewer() {
       if (result?.id) setSelectedDashboardId(String(result.id));
       toast.success(t("dashboard.templateApplied", "Đã áp dụng template"));
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const widgets: WidgetConfig[] = useMemo(() => {
