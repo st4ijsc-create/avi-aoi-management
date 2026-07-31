@@ -66,7 +66,7 @@ async function getOne(table: any, id: number) {
 
 async function insertOne(table: any, values: Record<string, any>): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   try {
     const [row] = await db.insert(table).values(values).returning({ id: table.id });
     return row.id;
@@ -77,7 +77,7 @@ async function insertOne(table: any, values: Record<string, any>): Promise<numbe
 
 async function updateOne(table: any, id: number, patch: Record<string, any>) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   try {
     const [row] = await db
       .update(table)
@@ -92,7 +92,7 @@ async function updateOne(table: any, id: number, patch: Record<string, any>) {
 
 async function deleteOne(table: any, id: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   await db.delete(table).where(eq(table.id, id));
   return { success: true };
 }
@@ -161,7 +161,7 @@ async function importByCode(
   } = {},
 ): Promise<ImportOutcome> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   const out: ImportOutcome = { inserted: 0, updated: 0, failed: 0, errors: [] };
   let rowNum = 0;
   for (const raw of rows) {
@@ -211,7 +211,7 @@ const bulkSetActiveInput = bulkIdsInput.extend({ isActive: z.boolean() });
  */
 async function bulkDeleteByIds(table: any, ids: number[]): Promise<BulkOutcome> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   const out: BulkOutcome = { deleted: 0, failed: 0, errors: [] };
   for (const id of ids) {
     try {
@@ -228,7 +228,7 @@ async function bulkDeleteByIds(table: any, ids: number[]): Promise<BulkOutcome> 
 /** Bật/tắt isActive hàng loạt theo id (cập nhật updatedAt). Đếm updated/failed như trên. */
 async function bulkSetActiveByIds(table: any, ids: number[], isActive: boolean): Promise<BulkOutcome> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   const out: BulkOutcome = { updated: 0, failed: 0, errors: [] };
   for (const id of ids) {
     try {
@@ -733,7 +733,7 @@ const userCertificationsRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const expires = input.expiresAt ? new Date(input.expiresAt) : null;
       const level = input.level ?? "trainee";
       // TRUE upsert on unique (userId,skillId) — INSERT-only would throw on the
@@ -1037,7 +1037,7 @@ const calendarRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [row] = await withDbErrors(async () => db
         .insert(calendarDayShifts)
         .values({
@@ -1175,7 +1175,7 @@ const inventoryRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       // doc 42 Đợt 4A #2 — mã vật tư / kho / đơn vị phải TỒN TẠI (chặn mã rác qua API).
       await requireRef(input.materialCode, materials, "Vật tư");
       await requireRef(input.warehouseCode, warehouses, "Kho");

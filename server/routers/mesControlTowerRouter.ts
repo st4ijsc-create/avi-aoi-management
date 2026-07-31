@@ -9,6 +9,7 @@
  * empty (Giai đoạn 2 mới tạo schema). Không phụ thuộc hạ tầng mới.
  */
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { createNcr } from "../services/ncrService"; // W4-B: optional lot-disposition → NCR link
@@ -279,7 +280,7 @@ export const mesControlTowerRouter = router({
     }))
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new Error("Database not available");
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const supplierId = await resolveSupplierId(database, input.supplierId, input.supplierCode);
       const materialId = await resolveMaterialId(database, input.materialId, input.materialCode);
       const [row] = await database.insert(materialReceipts).values({
@@ -321,7 +322,7 @@ export const mesControlTowerRouter = router({
     }))
     .mutation(async ({ input }) => {
       const database = await getDb();
-      if (!database) throw new Error("Database not available");
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const materialId = await resolveMaterialId(database, input.materialId, input.materialCode);
       const [row] = await database.insert(supplierLots).values({
         supplierLotNumber: input.supplierLotNumber,
@@ -353,7 +354,7 @@ export const mesControlTowerRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const database = await getDb();
-      if (!database) throw new Error("Database not available");
+      if (!database) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const [row] = await database.insert(lotDisposition).values({
         lotNumber: input.lotNumber,
         supplierLotId: input.supplierLotId ?? null,

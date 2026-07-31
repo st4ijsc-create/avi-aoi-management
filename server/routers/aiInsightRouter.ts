@@ -3,6 +3,7 @@
  * Advisory data produced by the AI orchestration watcher. No action execution here.
  */
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { aiInsights } from "../../drizzle/schema";
@@ -32,7 +33,7 @@ export const aiInsightRouter = router({
     .input(z.object({ id: z.number(), status: z.enum(["acknowledged", "dismissed", "new"]) }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const [row] = await db.update(aiInsights)
         .set({ status: input.status, acknowledgedBy: ctx.user?.id ?? null })
         .where(eq(aiInsights.id, input.id))

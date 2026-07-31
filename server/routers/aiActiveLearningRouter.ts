@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import path from "path";
 import fs from "fs";
@@ -25,7 +26,7 @@ function resolveImagePath(imageKey: string): string {
 async function loadImage(imageKey: string): Promise<Buffer> {
   const fullPath = resolveImagePath(imageKey);
   if (!fs.existsSync(fullPath)) {
-    throw new Error(`Image not found: ${imageKey}`);
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image not found: ${imageKey}`);
   }
   return fs.promises.readFile(fullPath);
 }

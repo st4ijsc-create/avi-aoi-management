@@ -203,7 +203,9 @@ describe("phủ mã lỗi trong server/routers", () => {
  *  appError(). KHÔNG BAO GIỜ nâng lên — số dư thừa che mất nợ mới, y hệt
  *  ALLOWED_LEGACY_THROWS ở trên. Ngân sách này ĐỘC LẬP với ALLOWED_LEGACY_THROWS
  *  (hai họ throw khác nhau: `new TRPCError` vs `new Error`), không cộng dồn. */
-const ALLOWED_RAW_ERROR_THROWS = 75; // ← đo được ở đợt sửa cuối (C-1), 20 file, tiền tồn tại.
+const ALLOWED_RAW_ERROR_THROWS = 46; // ← Task 9 (F2, doc71) lô 1/3 — di trú 29 chỗ (7 file:
+// componentLibraryRouter/masterDataRouter/robotRouter/mesControlTowerRouter/aiInsightRouter/
+// alarmKpiRouter/aiActiveLearningRouter, toàn bộ DB_UNAVAILABLE + 2 ENTITY_NOT_FOUND). 75 → 46.
 
 function countRawErrorThrows(): { total: number; byFile: Array<[string, number]> } {
   const byFile: Array<[string, number]> = [];

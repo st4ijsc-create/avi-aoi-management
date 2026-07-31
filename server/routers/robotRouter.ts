@@ -4,6 +4,7 @@
  * robotCommandDispatcher (HITL/dry-run gated), mirroring the OT design.
  */
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure, actuationProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
@@ -108,7 +109,7 @@ export const robotRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const [row] = await db.insert(robots).values({ ...input, isEnabled: false }).returning();
       return row;
     }),
@@ -126,7 +127,7 @@ export const robotRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const { id, ...rest } = input;
       const [row] = await db.update(robots).set({ ...rest, updatedAt: new Date() }).where(eq(robots.id, id)).returning();
       return row;
@@ -136,7 +137,7 @@ export const robotRouter = router({
     .input(z.object({ id: z.number(), enabled: z.boolean() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const [row] = await db.update(robots)
         .set({ isEnabled: input.enabled, updatedAt: new Date() })
         .where(eq(robots.id, input.id)).returning();
@@ -148,9 +149,9 @@ export const robotRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "DB unavailable");
       const [r] = await db.select().from(robots).where(eq(robots.id, input.id)).limit(1);
-      if (!r) throw new Error("robot not found");
+      if (!r) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "robot" }, "robot not found");
       const { createRobotDriver } = await import("../services/robot");
       const driver = createRobotDriver(r.vendor);
       try {

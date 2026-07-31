@@ -97,7 +97,7 @@ export const componentLibraryRouter = router({
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
         const { bodyLengthMm, bodyWidthMm, bodyHeightMm, pitchMm, ...rest } = input;
         try {
           const [row] = await db.insert(componentPackages).values({
@@ -121,7 +121,7 @@ export const componentLibraryRouter = router({
       .input(idInput.extend(packageBody))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
         const { id, bodyLengthMm, bodyWidthMm, bodyHeightMm, pitchMm, ...rest } = input;
         const patch = clean({
           ...rest,
@@ -145,7 +145,7 @@ export const componentLibraryRouter = router({
       .input(idInput)
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
         await db
           .update(componentPackages)
           .set({ deletedAt: new Date(), isActive: false, updatedAt: new Date() })
@@ -160,7 +160,7 @@ export const componentLibraryRouter = router({
       .input(idInput)
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
         await db
           .update(componentPackages)
           .set({ deletedAt: null, isActive: true, updatedAt: new Date() })
@@ -199,7 +199,7 @@ export const componentLibraryRouter = router({
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
         try {
           const [row] = await db.insert(componentFootprints).values(input as InsertComponentFootprint)
             .returning({ id: componentFootprints.id });
@@ -224,7 +224,7 @@ export const componentLibraryRouter = router({
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
         const { id, ...rest } = input;
         const [row] = await db
           .update(componentFootprints)
@@ -239,7 +239,7 @@ export const componentLibraryRouter = router({
       .input(idInput)
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
+        if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
         await db.delete(componentFootprints).where(eq(componentFootprints.id, input.id));
         return { success: true };
       }),
@@ -255,7 +255,7 @@ export const componentLibraryRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       if (input.packageId != null) {
         const [pkg] = await db.select({ id: componentPackages.id }).from(componentPackages)
           .where(and(eq(componentPackages.id, input.packageId), isNull(componentPackages.deletedAt)))
@@ -280,7 +280,7 @@ export const componentLibraryRouter = router({
     .use(requirePermission(MODULE, "canEdit"))
     .mutation(async () => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const result = await db.execute(sql`
         UPDATE "materials" m
         SET "packageId" = cp."id", "updatedAt" = now()

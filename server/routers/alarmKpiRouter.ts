@@ -11,6 +11,7 @@
  */
 import { z } from "zod";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { andonEvents, predictiveAlerts, predictiveAlertOccurrences, machines, users } from "../../drizzle/schema";
@@ -47,7 +48,7 @@ export const alarmKpiRouter = router({
     )
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) throw new Error("Database not available");
+      if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
       const windowHours = input?.windowHours ?? 8;
       const now = Date.now();
       const since = new Date(now - windowHours * 3600_000);
