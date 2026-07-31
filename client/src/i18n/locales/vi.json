@@ -17711,8 +17711,8 @@
     "loadError": "Không tải được danh sách NCR."
   },
   "routing": {
-    "loadError": "Không tải được danh sách routing.",
-    "loadStepsError": "Không tải được các bước routing.",
+    "loadError": "Không tải được danh sách định tuyến sản xuất.",
+    "loadStepsError": "Không tải được các bước định tuyến sản xuất.",
     "productRequired": "Chọn sản phẩm",
     "codeRequired": "Cần nhập mã"
   },

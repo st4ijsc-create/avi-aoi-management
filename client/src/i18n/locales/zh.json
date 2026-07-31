@@ -17737,8 +17737,8 @@
   "routing": {
     "productRequired": "请选择产品",
     "codeRequired": "请输入代码",
-    "loadError": "无法加载routing列表。",
-    "loadStepsError": "无法加载routing步骤。"
+    "loadError": "无法加载生产路由列表。",
+    "loadStepsError": "无法加载生产路由步骤。"
   },
   "changeoverWizard": {
     "step3": {

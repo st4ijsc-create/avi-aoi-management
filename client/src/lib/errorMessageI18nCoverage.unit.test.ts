@@ -31,14 +31,39 @@
  *      `||`/`??`/`?:`/`(...)`/`as`/`!`/template literal (khớp cách đóng gói THẬT
  *      trong repo, vd `err.message || "Unknown"` ở LicenseManagement.tsx).
  *  (b) lời gọi có phải "đường thông điệp lỗi" hay không — bên trong `onError:` của
- *      mutation, `.catch(`, hoặc nhánh DƯƠNG (không bị `!` phủ định) của điều kiện
+ *      mutation, `.catch(` (method-chain) HAY catch CLAUSE (`try {} catch (e) {}`,
+ *      hai cấu trúc AST khác nhau — round 1 review chỉ ra cổng ban đầu chỉ bắt
+ *      method-chain), `toast.error(...)`, lời gọi setter React tên bắt đầu "set" và
+ *      chứa "error" (vd `setError(t(...))`/`setScanError(...)` — round 1 review:
+ *      không cần biết setter render ở đâu, bản thân việc SET state lỗi đã xác định
+ *      đường đi), hoặc nhánh DƯƠNG (không bị `!` phủ định) của điều kiện
  *      `x.error`/`x.isError` (if/&&/?:) — PHÂN BIỆT NHÁNH để không đếm nhầm nhánh
  *      rỗng/thành-công đứng cạnh nhánh lỗi (bug thật gặp phải khi dựng cổng này:
  *      `!searchQuery.isError && kbOff` bị đếm nhầm vì regex đơn giản khớp cả
  *      "isError" trong đoạn phủ định).
  *
+ * ── LỊCH SỬ round 1 (review) — 4 pattern lỗi thật cổng ban đầu KHÔNG bắt, reviewer
+ * tự dựng probe xác nhận. 2 pattern rẻ/phổ biến đã ĐÓNG (xem (b) ở trên, có bằng
+ * chứng đỏ→xanh ở task-F11-report.md mục "vòng sửa 1"); 2 pattern CÒN MỞ, liệt kê
+ * dưới "Giới hạn ĐÃ BIẾT" — không phải bỏ sót, mà chi phí cú pháp (parse-only,
+ * không TypeChecker) không đủ để nhận diện đáng tin cậy:
+ *  1. ĐÃ ĐÓNG — `setError(t(...))` rồi RENDER ở JSX khác (banner/Alert) — có thật ở
+ *     `BarcodeScanner.tsx:86-96`.
+ *  2. CÒN MỞ — `<Alert variant="destructive">{t(...)}</Alert>`/banner JSX hiện lỗi
+ *     TRỰC TIẾP, không qua state setter tên chứa "error" và không có điều kiện
+ *     `.error`/`.isError` bao quanh — không có tín hiệu cú pháp đáng tin (tên biến/
+ *     className/variant tuỳ ý) để phân biệt với JSX thường mà không dùng
+ *     TypeChecker + quy ước component (`variant="destructive"` không phải chuẩn
+ *     cứng, nhiều thư viện UI khác nhau).
+ *  3. CÒN MỞ — helper-function indirection: `function showErr(msg) { toast.error(t(msg)) }`
+ *     rồi gọi `showErr(...)` từ nơi khác — cần lần theo lời gọi HÀM (call-graph),
+ *     ngoài phạm vi parse-only 1-file. Cùng giới hạn đã ghi ở
+ *     `clientErrorCoverage.unit.test.ts` cho `findNamedHandlerInFile()`.
+ *  4. ĐÃ ĐÓNG — `try {} catch (e) { ...t(...)... }` (catch CLAUSE, khác `.catch(fn)`
+ *     method-chain) — có thật ở `BarcodeScanner.tsx` `initializeScanner()`.
+ *
  * Giới hạn ĐÃ BIẾT (cùng lớp với clientErrorCoverage.unit.test.ts — parse-only,
- * không phải TypeChecker):
+ * không phải TypeChecker) — KHÔNG BẮT ĐƯỢC, đọc kỹ trước khi tin cổng này là đủ:
  *  - Biến trung gian đặt tên khác rồi mới gán vào param (vd
  *    `const reason = mapTrpcError(err); t(key, { reason })`) — KHÔNG lần theo được
  *    initializer của biến; `reason` không nằm trong danh sách tên nhận diện Lớp 1
@@ -46,6 +71,9 @@
  *    cổng khác chuyên trị ở appErrorParamsCoverage.test.ts).
  *  - `t()` với khoá KHÔNG PHẢI string literal (biến động, template có `${}`) — bỏ
  *    qua có chủ đích, không đoán.
+ *  - JSX render lỗi TRỰC TIẾP không qua setter/điều kiện `.error`/`.isError` (mục 2
+ *    ở trên) — cổng MÙ với pattern này, không phải "coi là an toàn".
+ *  - Helper-function indirection (mục 3 ở trên) — cổng MÙ, không phải "coi là an toàn".
  */
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -181,6 +209,14 @@ function isErrorPathCall(node: ts.CallExpression): boolean {
         if (callee.name.text === "error" && ts.isIdentifier(callee.expression) && callee.expression.text === "toast") return true;
         if (callee.name.text === "catch") return true;
       }
+      // Review round 1 — pattern `setError(t(...))` (React state setter): t() nằm TRỰC TIẾP
+      // trong đối số của một lời gọi hàm tên bắt đầu "set" và chứa "error"/"Error" (quy ước
+      // useState setter, vd `setError`/`setScanError`/`setFormError`). KHÔNG cần biết setter
+      // này được RENDER ở đâu (banner/Alert/JSX khác) — bản thân việc gọi setter lỗi ĐÃ xác
+      // định đây là đường thông điệp lỗi, giống hệt lý do `onError:`/`toast.error(...)` được
+      // tính mà không cần biết nó render ra sao. Có thật trong repo: BarcodeScanner.tsx
+      // (`setError(t('common.noCameraFound'))`).
+      if (ts.isIdentifier(callee) && /^set[A-Za-z]*error/i.test(callee.text)) return true;
     }
     if (ts.isPropertyAssignment(cur) || ts.isShorthandPropertyAssignment(cur)) {
       const nameNode = cur.name;
@@ -198,6 +234,13 @@ function isErrorPathCall(node: ts.CallExpression): boolean {
       return true;
     }
     if (ts.isConditionalExpression(cur) && hasPositiveErrorClause(cur.condition.getText()) && prev === cur.whenTrue) return true;
+    // Review round 1 — pattern `try { } catch (e) { ...t(...)... }` (catch CLAUSE, khác
+    // `.catch(fn)` method-chain đã bắt ở trên). Bất kỳ t() nào nằm trong khối catch đều CHẮC
+    // CHẮN là đường xử lý lỗi — không cần branch-aware vì catch KHÔNG có "nhánh thành công"
+    // song song để nhầm (khác `.error`/`.isError` — nơi nhánh phủ định đứng cạnh nhánh dương
+    // trong CÙNG điều kiện, xem hasPositiveErrorClause). Có thật trong repo: BarcodeScanner.tsx
+    // `initializeScanner()` — `catch (err) { ... setError(t(...)) ... }`.
+    if (ts.isCatchClause(cur)) return true;
     prev = cur;
     cur = cur.parent;
   }
