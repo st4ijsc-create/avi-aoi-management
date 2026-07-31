@@ -27,7 +27,18 @@ namespace St4i.EngineApi.Endpoints;
 /// <param name="SigningSecret">The HMAC key the POST is signed with. Tri-state (see above). Absent for
 /// Slack and Teams, which verify nothing and treat the URL as the credential.</param>
 /// <param name="AuthToken">The COMPLETE value of <paramref name="AuthHeaderName"/>'s header, scheme word
-/// included (<c>Bearer eyJhb…</c> for a bearer token, the bare key for <c>X-Api-Key</c>). Tri-state.</param>
+/// included (<c>Bearer eyJhb…</c> for a bearer token, the bare key for <c>X-Api-Key</c>). Tri-state.
+///
+/// <para>🔴 <b>Review round 1 (M-4) — the ONE case where the tri-state above does not hold, and a UI can
+/// lose a credential by omission.</b> This field's "absent = keep" is overridden by
+/// <paramref name="AuthHeaderName"/>: leaving the HEADER NAME out of a request clears it, and clearing it
+/// DELETES the stored token with it (a token that names no header can never be sent). So a form that PUTs a
+/// label change without re-sending <paramref name="AuthHeaderName"/> silently wipes the token even though
+/// it said nothing about the token at all. That follows from PUT meaning full replacement here, but it is
+/// the kind of thing a caller discovers in production, so: <b>a client editing an existing webhook must
+/// re-send every non-secret field it is not deliberately clearing, including
+/// <paramref name="AuthHeaderName"/>.</b> The secret fields are the only ones with keep-on-absent
+/// semantics.</para></param>
 public sealed record WebhookConfigRequest(
     bool Enabled,
     string? MinPriority,
@@ -181,8 +192,12 @@ public sealed record SmtpStatusDto(SmtpChannelStats Stats, string? PartialDelive
 /// <param name="UnheardMeaning">🔴 The long form of <see cref="LocalAnnunciationStats.Unheard"/>, carried in
 /// the payload rather than left to a screen to invent, because the short form ("alarms nobody was told
 /// about") is false — see <see cref="LocalAnnunciationStats"/>.</param>
+/// <param name="Stats">🔴 <see langword="null"/> when the local-annunciation CHANNEL is not running — which
+/// happens whenever the configuration store could not be opened. The hub gauges beside it are still real:
+/// review round 1 (M-3) found that requiring both made every listener gauge, and the refused-stream warning,
+/// vanish on exactly the degraded host where the subscriber cap is still turning browsers away.</param>
 public sealed record LocalAnnunciationStatusDto(
-    LocalAnnunciationStats Stats,
+    LocalAnnunciationStats? Stats,
     int Listeners,
     int MaxListeners,
     long RejectedListeners,

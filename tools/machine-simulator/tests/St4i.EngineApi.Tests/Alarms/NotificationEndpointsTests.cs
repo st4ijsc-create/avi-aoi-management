@@ -192,8 +192,10 @@ public sealed class NotificationEndpointsTests : IDisposable
         // And the audit rows exist and name what changed — a credential CHANGE is recorded as a boolean.
         Assert.Contains(h.Audit.Rows, r => r.Action == "notification.webhook.save");
         Assert.Contains(h.Audit.Rows, r => r.Action == "notification.smtp.save");
-        Assert.Contains("signingSecretChanged", auditJson, StringComparison.Ordinal);
-        Assert.Contains("passwordChanged", auditJson, StringComparison.Ordinal);
+        // Review round 1 (I-1) — recorded by OUTCOME NAME rather than as a boolean, so "the store refused
+        // this credential" is distinguishable in the log from "the request carried none".
+        Assert.Contains("\"signingSecret\":\"Changed\"", auditJson, StringComparison.Ordinal);
+        Assert.Contains("\"password\":\"Changed\"", auditJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -303,6 +305,160 @@ public sealed class NotificationEndpointsTests : IDisposable
         Assert.False((await store.ListAsync()).Single().Webhook!.HasSigningSecret);
     }
 
+    /// <summary>
+    /// 🔴🔴 Review round 1 (I-1) — <b>a credential that did not commit must never answer 200.</b>
+    ///
+    /// <para>The chain the review traced: <c>SetSecretAsync</c> is never-throws and returns
+    /// <see langword="false"/> only on failure; that <see langword="false"/> was folded into a flag whose
+    /// other meaning was "the request carried no secret"; the channel row committed and the secret did not;
+    /// the API answered 200 and the audit row said the secret had not changed; and because
+    /// <c>HasSigningSecret</c> stayed false, <see cref="WebhookNotificationChannel"/> took its "no signing
+    /// secret is configured" branch and <b>posted UNSIGNED</b>. A machine that had silently stopped proving
+    /// its identity, after a green save.</para>
+    ///
+    /// <para>The failure is induced the way this suite already induces store failures: replace the database
+    /// with a file that is not one, AFTER the channel row exists, so the secret write is the thing that
+    /// fails.</para>
+    /// </summary>
+    [Fact]
+    public async Task ACredentialThatFailedToStore_FailsTheRequest_RatherThanReturning200AndPostingUnsigned()
+    {
+        var store = NewStore();
+        var h = NewHarness(store);
+        var url = "https://hooks.example.test/services/abc";
+
+        // A healthy save first, so the control below is a real comparison.
+        Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
+            WebhookRequest(url, SigningSentinel), h.Context, h.Recorder, default))).Status);
+
+        CorruptDatabase(store);
+
+        var (status, body) = await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
+            WebhookRequest(url, signingSecret: "a-new-key-that-cannot-be-stored"),
+            h.Context, h.Recorder, default));
+
+        // With the store broken the CHANNEL row cannot commit either, so this is the ordinary save failure —
+        // what matters is that it is NOT a 200.
+        Assert.NotEqual(200, status);
+        Assert.DoesNotContain("a-new-key-that-cannot-be-stored", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 🔴🔴 Review round 1 (I-1), the NARROW case and the dangerous one: <b>the channel row commits and only
+    /// the CREDENTIAL fails.</b> That is precisely the state the old code answered <c>200</c> for.
+    ///
+    /// <para><b>Reached deterministically, and the mechanism is the point.</b> It has to be SMTP: the
+    /// webhook's channel save writes its URL secret in the SAME transaction, so breaking the secrets table
+    /// rolls the channel row back too and the request never reaches this branch.
+    /// <c>SaveSmtpAsync</c> writes no secret at all — the password is a separate
+    /// <c>SetSecretAsync</c> call — so dropping <c>notification_secrets</c> after the channel exists fails
+    /// exactly one of the two writes, which is the real-world shape (a DPAPI failure, a disk error, a
+    /// permissions change) without having to simulate any of them.</para>
+    /// </summary>
+    [Fact]
+    public async Task AFailedSecretWrite_IsReportedAsAFailure_AndNamesWhichCredential()
+    {
+        var store = NewStore();
+        var h = NewHarness(store);
+
+        SmtpConfigRequest Request(string? password) => new(
+            true, nameof(AlarmPriority.High), "mail.example.test", 587, nameof(SmtpTlsMode.StartTls),
+            "alarms@example.test", new[] { "ops@example.test" }, "alarm-bot", password);
+
+        // A healthy save first, so the control at the end is a real comparison and the channel row exists.
+        Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveSmtpAsync(
+            Request(PasswordSentinel), h.Context, h.Recorder, default))).Status);
+        Assert.True((await store.ListAsync()).Single().Smtp!.HasPassword);
+
+        DropSecretsTable(store);
+
+        var h2 = NewHarness(store);
+        var (status, body) = await ReadAsync(await NotificationEndpoints.SaveSmtpAsync(
+            Request("a-new-password-that-cannot-be-stored"), h2.Context, h2.Recorder, default));
+
+        // 🔴 NOT a 200. The old code returned one here.
+        Assert.Equal(500, status);
+        Assert.Contains("password", body, StringComparison.Ordinal);
+        // The consequence is named, because a bare 500 does not tell an operator that the channel is now
+        // live and credential-less.
+        Assert.Contains("behave as though no", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("a-new-password-that-cannot-be-stored", body, StringComparison.Ordinal);
+
+        // 🔴 The channel row really did commit — that is what made the old 200 dangerous rather than merely
+        // wrong: the configuration is LIVE and the credential is gone. Counted straight out of the channels
+        // table, because ListAsync joins the secrets table this test just removed and now reports nothing at
+        // all — which is itself the "a failed read looks like nothing configured" property §7 surfaces.
+        Assert.Equal(1, CountChannelRows(store));
+
+        // And the audit row distinguishes "failed to store" from "the request carried none". The boolean it
+        // replaced could not: both were false.
+        Assert.Contains(
+            "\"password\":\"Failed\"",
+            Assert.Single(h2.Audit.Rows, r => r.Action == "notification.smtp.save").NewValueJson,
+            StringComparison.Ordinal);
+
+        // The control: on a healthy store the same request records Changed and answers 200, so "Failed" is
+        // not simply what this field always says.
+        var healthy = NewStore();
+        var h3 = NewHarness(healthy);
+        Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveSmtpAsync(
+            Request(PasswordSentinel), h3.Context, h3.Recorder, default))).Status);
+        Assert.Contains(
+            "\"password\":\"Changed\"",
+            Assert.Single(h3.Audit.Rows, r => r.Action == "notification.smtp.save").NewValueJson,
+            StringComparison.Ordinal);
+
+        // And a request carrying NO password records Unchanged — the third state the boolean collapsed.
+        var h4 = NewHarness(healthy);
+        Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveSmtpAsync(
+            Request(null), h4.Context, h4.Recorder, default))).Status);
+        Assert.Contains(
+            "\"password\":\"Unchanged\"",
+            Assert.Single(h4.Audit.Rows, r => r.Action == "notification.smtp.save").NewValueJson,
+            StringComparison.Ordinal);
+        Assert.True((await healthy.ListAsync()).Single().Smtp!.HasPassword);
+    }
+
+    /// <summary>
+    /// 🔴 Review round 1 (I-2) — instance keys are caller-supplied and were unbounded in COUNT, and the
+    /// webhook channel delivers to every configured instance on every qualifying edge. So an authenticated
+    /// Engineer could turn one alarm into N outbound messages through the config route, which carries no
+    /// rate limiter — defeating the send-test limiter's stated goal through the door it left open.
+    /// </summary>
+    [Fact]
+    public async Task TheNumberOfInstancesPerChannelIsCapped_BecauseEachOneMultipliesEveryAlarmEdge()
+    {
+        var store = NewStore();
+        var h = NewHarness(store);
+
+        for (var i = 0; i < NotificationEndpoints.MaxInstancesPerChannel; i++)
+        {
+            Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
+                WebhookRequest($"https://hooks.example.test/services/{i}", instance: $"hook-{i}"),
+                h.Context, h.Recorder, default))).Status);
+        }
+
+        var (status, body) = await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
+            WebhookRequest("https://hooks.example.test/services/overflow", instance: "one-too-many"),
+            h.Context, h.Recorder, default));
+
+        Assert.Equal(409, status);
+        Assert.Contains("multiplier", body, StringComparison.Ordinal);
+        Assert.Equal(NotificationEndpoints.MaxInstancesPerChannel, (await store.ListAsync()).Count);
+
+        // 🔴 A full channel must stay FIXABLE: re-saving an instance that already exists is the idempotent
+        // case and is never refused, or an operator could not correct a bad URL on a full channel.
+        Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
+            WebhookRequest("https://hooks.example.test/services/corrected", instance: "hook-0"),
+            h.Context, h.Recorder, default))).Status);
+
+        // And the cap is PER CHANNEL, not global: a full webhook channel does not block SMTP.
+        Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveSmtpAsync(
+            new SmtpConfigRequest(true, nameof(AlarmPriority.High), "mail.example.test", 587,
+                nameof(SmtpTlsMode.StartTls), "alarms@example.test", new[] { "ops@example.test" }, null),
+            h.Context, h.Recorder, default))).Status);
+    }
+
     [Fact]
     public async Task AWebhookSaveWithoutAUrl_IsA400ThatSaysWhyRatherThanA500()
     {
@@ -408,7 +564,19 @@ public sealed class NotificationEndpointsTests : IDisposable
         using var channel = NewWebhookChannel(store);
         var h = NewHarness(store, webhook: channel, rateLimit: interval);
 
-        const int attempts = 12;
+        // 🔴 Review round 1 (I-4) — the loop is SPACED, and the spacing is the whole difference between a
+        // test of a bound and a test of a wall. The first version fired twelve requests back to back; the
+        // reviewer instrumented the passing run and got accepted=1, refused=11, elapsed=88 ms. Every
+        // inequality below was then satisfied trivially (88 >= 0, 1 <= 1) and `accepted > 0` — whose stated
+        // job was to rule out a wall — was satisfied by the single acceptance that ANY limiter, including a
+        // permanent one, would have granted. Proved by mutation: making TryAcquire accept once per process
+        // and refuse forever left all 24 tests green. In production that mutant is a send-test button that
+        // works once per engine restart and then 429s forever with a Retry-After that never comes true.
+        //
+        // Spacing at 40% of the interval over ~24 attempts spans roughly three intervals, so several
+        // acceptances are separated by real waiting and (accepted - 1) * interval is a number with teeth.
+        const int attempts = 24;
+        var spacing = TimeSpan.FromMilliseconds(interval.TotalMilliseconds * 0.4);
         var accepted = 0;
         var refused = 0;
 
@@ -422,8 +590,18 @@ public sealed class NotificationEndpointsTests : IDisposable
             if (status == 200) accepted++;
             else if (status == 429) refused++;
             else Assert.Fail($"Unexpected status {status} from a send test.");
+
+            await Task.Delay(spacing);
         }
         elapsed.Stop();
+
+        // 🔴 The limiter must have RECOVERED repeatedly, not once. Without this the two inequalities below
+        // are satisfiable by a permanent wall, which is what the review found.
+        Assert.True(
+            accepted >= 3,
+            $"Only {accepted} send test(s) were ever accepted across {elapsed.ElapsedMilliseconds} ms and " +
+            $"{attempts} attempts at a {interval.TotalMilliseconds} ms interval. A limiter that accepts once " +
+            "and then refuses forever is a WALL, not a bound, and would pass the inequalities below.");
 
         // The bound itself. Every accepted send after the first had to wait a whole interval.
         Assert.True(
@@ -436,13 +614,47 @@ public sealed class NotificationEndpointsTests : IDisposable
             accepted <= (int)(elapsed.Elapsed.TotalMilliseconds / interval.TotalMilliseconds) + 1,
             $"{accepted} accepted in {elapsed.ElapsedMilliseconds} ms exceeds the interval bound.");
 
-        // Non-vacuity in both directions: the limiter did refuse, and it is not a permanent block.
+        // Non-vacuity in the other direction: it really did refuse.
         Assert.True(refused > 0, "No request was refused, so this test proves nothing about a limiter.");
-        Assert.True(accepted > 0, "Nothing was accepted at all, so the limiter is a wall rather than a bound.");
 
         // 🔴 What the third party actually received. A limiter that returned 429 while still sending would
         // pass every assertion above.
         Assert.Equal(accepted, server.Requests.Count);
+    }
+
+    /// <summary>
+    /// 🔴 Review round 1 (I-4) — recovery, on its own, stated as the property rather than inferred from a
+    /// count. A refused caller that waits the interval it was told to wait must get through; a
+    /// <c>Retry-After</c> that never comes true is worse than no limiter, because the caller believes it.
+    /// </summary>
+    [Fact]
+    public async Task ARefusedSendTest_IsAcceptedAgainOnceItsRetryAfterHasElapsed()
+    {
+        await using var server = WebhookLoopbackServer.Start(_ => new ScriptedResponse(200, "OK"));
+        var store = NewStore();
+        await store.SaveWebhookAsync(true, AlarmPriority.High, server.Url());
+
+        var interval = TimeSpan.FromMilliseconds(400);
+        using var channel = NewWebhookChannel(store);
+        var h = NewHarness(store, webhook: channel, rateLimit: interval);
+
+        async Task<int> SendAsync() => (await ReadAsync(await NotificationEndpoints.SendTestAsync(
+            new NotificationTestRequest(nameof(NotificationChannel.Webhook)),
+            h.Context, h.Limiter, h.Recorder, default))).Status;
+
+        Assert.Equal(200, await SendAsync());
+        Assert.Equal(429, await SendAsync());
+
+        // Wait out the interval the 429 promised, and the limiter must let the caller through.
+        await Task.Delay(interval + TimeSpan.FromMilliseconds(150));
+        Assert.Equal(200, await SendAsync());
+
+        // 🔴 And it is still a limiter afterwards, not one that has given up: the very next attempt is
+        // refused again. Without this, "recovered" would also be satisfied by a limiter that switched
+        // itself off.
+        Assert.Equal(429, await SendAsync());
+
+        Assert.Equal(2, server.Requests.Count);
     }
 
     [Fact]
@@ -473,7 +685,14 @@ public sealed class NotificationEndpointsTests : IDisposable
         Assert.Single(server.Requests);
         // 🔴 And exactly ONE audit row: a refusal deliberately writes none, or the refused path would cost
         // more than the accepted one — the wrong shape for a limiter.
-        Assert.Single(h.Audit.Rows, r => r.Action == "notification.test");
+        var row = Assert.Single(h.Audit.Rows, r => r.Action == "notification.test");
+
+        // 🔴 Review round 1 (M-2) — the row records the OUTCOME, never `outcome.Detail`. Detail can carry an
+        // HttpRequestException message, which is provider-controlled text: exactly what
+        // NotificationConfigStoreHealth refuses to store for being destined for a response, and the audit
+        // chain is the longest-lived store in this product.
+        Assert.Contains("\"ok\":true", row.NewValueJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("detail", row.NewValueJson, StringComparison.OrdinalIgnoreCase);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -741,6 +960,57 @@ public sealed class NotificationEndpointsTests : IDisposable
             "have elapsed — it failed for a reason other than the receiver's silence.");
     }
 
+    /// <summary>
+    /// 🔴 Review round 1 (M-5) — the SMTP send test's "bounded, never blocks" claim, MEASURED. It was
+    /// previously asserted only for the webhook, and inherited for e-mail through the newly-extracted
+    /// <c>SendMessageAsync</c> — but that extraction is new in this task, and C-4's measurement is what the
+    /// claim actually rests on: <c>SmtpClient</c> honours its token in every phase EXCEPT a pending TCP
+    /// connect, where a cancelled token did not return for <b>21 seconds</b> until C-4 backed it with a
+    /// registration that DISPOSES the client. A refactor that dropped that registration would be invisible
+    /// to every other test here and would hang a request for 21 s per configured instance.
+    ///
+    /// <para>The relay accepts the connection and then never sends its <c>220</c> banner — the shape that
+    /// makes the bound observable, since a refused connection fails on its own.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheEmailSendTestIsBounded_ARelayThatNeverGreets_CannotHoldTheRequest_InElapsedTime()
+    {
+        await using var server = SmtpLoopbackServer.Start(new SmtpScript(Greeting: null));
+        var store = NewStore();
+        await store.SaveSmtpAsync(
+            true, AlarmPriority.High, SmtpLoopbackServer.Host, server.Port, SmtpTlsMode.None,
+            "alarms@example.test", new[] { "ops@example.test" }, null);
+
+        var attemptTimeout = TimeSpan.FromSeconds(2);
+        var channel = new SmtpNotificationChannel(
+            store, sourceHost: "TEST-ENGINE",
+            attemptTimeout: attemptTimeout, totalBudget: TimeSpan.FromSeconds(60),
+            baseBackoff: TimeSpan.FromMilliseconds(10), maxAttempts: 1);
+        var h = NewHarness(store, smtp: channel);
+
+        var elapsed = Stopwatch.StartNew();
+        var (status, body) = await ReadAsync(await NotificationEndpoints.SendTestAsync(
+            new NotificationTestRequest(nameof(NotificationChannel.Smtp)),
+            h.Context, h.Limiter, h.Recorder, default));
+        elapsed.Stop();
+
+        Assert.Equal(200, status);
+        Assert.False(JsonSerializer.Deserialize<NotificationTestOutcome>(body, Json)!.Ok);
+
+        // 🔴 The bound. Loose enough not to measure the scheduler, and far below both the 60 s budget and
+        // the 21 s OS connect timeout that C-4's disposal mechanism exists to pre-empt.
+        Assert.True(
+            elapsed.Elapsed < TimeSpan.FromSeconds(15),
+            $"The e-mail send test took {elapsed.ElapsedMilliseconds} ms against a relay that never greets " +
+            $"— the {attemptTimeout.TotalSeconds:0.#}s attempt bound did not hold.");
+
+        // Non-vacuity: it waited for the silence rather than failing instantly for another reason.
+        Assert.True(
+            elapsed.Elapsed >= attemptTimeout,
+            $"The e-mail send test returned in {elapsed.ElapsedMilliseconds} ms, before its attempt timeout " +
+            "could have elapsed — it failed for a reason other than the relay's silence.");
+    }
+
     [Fact]
     public async Task AnUnreachableWebhookTest_IsAn200WithOkFalse_NotAnErrorStatus()
     {
@@ -922,6 +1192,40 @@ public sealed class NotificationEndpointsTests : IDisposable
         Assert.Contains(status.Attention, a => a.Contains("could not be read", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 🔴 Review round 1 (M-3) — the degraded host, which §8 says is exactly when somebody looks at this
+    /// page. <c>Program.cs</c> registers the annunciation hub UNCONDITIONALLY and maps
+    /// <c>GET /v1/alarms/annunciations</c> unconditionally, while the local-annunciation CHANNEL exists only
+    /// when the configuration store opened. Keying the block off both meant the listener gauges and the
+    /// refused-stream warning vanished on precisely the host where the 503 subscriber cap is live and
+    /// turning browsers away — the reader would have seen nothing about a stream actively refusing pages.
+    /// </summary>
+    [Fact]
+    public async Task WithTheHubButNoChannel_TheListenerGaugesAndTheRefusedStreamWarningAreStillReported()
+    {
+        // A hub at capacity with a listener attached and one refused — the state a degraded host can be in.
+        var hub = new AlarmAnnunciationHub(maxListeners: 1);
+        using var attached = hub.TrySubscribe();
+        Assert.NotNull(attached);
+        Assert.False(hub.TryAdmitListener());
+
+        // No store, therefore no channel — but the hub is real, as in production.
+        var h = NewHarness(store: null, local: null, hub: hub);
+
+        var (status, body) = await ReadAsync(NotificationEndpoints.GetStatusAsync(h.Context));
+        Assert.Equal(200, status);
+
+        var dto = JsonSerializer.Deserialize<NotificationStatusDto>(body, Json)!;
+        Assert.NotNull(dto.LocalAnnunciation);
+        Assert.Equal(1, dto.LocalAnnunciation!.Listeners);
+        Assert.Equal(1, dto.LocalAnnunciation.MaxListeners);
+        Assert.Equal(1, dto.LocalAnnunciation.RejectedListeners);
+        // The channel's own counters are genuinely absent, and that is honest — there is no channel.
+        Assert.Null(dto.LocalAnnunciation.Stats);
+        // 🔴 And the refusal is hoisted, so a reader is told a page was turned away.
+        Assert.Contains(dto.Attention, a => a.Contains("REFUSED an alarm-annunciation stream", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task WithNoConfigurationStoreAtAll_EveryRouteAnswersHonestlyRatherThanFailingToBind()
     {
@@ -1035,6 +1339,30 @@ public sealed class NotificationEndpointsTests : IDisposable
     /// <summary>Replaces <c>notifications.db</c> with something that is not a database, so a read genuinely
     /// FAILS rather than merely returning nothing. The WAL sidecars go too — SQLite would otherwise recover
     /// the real file from them.</summary>
+    /// <summary>🔴 Review round 1 (I-1) — breaks ONLY the credential store, leaving the channel tables
+    /// writable, so a save can commit its row and fail its secret. See the test for why that asymmetry
+    /// cannot be produced through the webhook.</summary>
+    private static void DropSecretsTable(NotificationConfigStore store)
+    {
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={store.DbPath}");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "DROP TABLE notification_secrets;";
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Rows in <c>notification_channels</c>, read directly — the only way to see that a channel
+    /// committed once <see cref="DropSecretsTable"/> has made <c>ListAsync</c> unable to answer.</summary>
+    private static long CountChannelRows(NotificationConfigStore store)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={store.DbPath}");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM notification_channels;";
+        return Convert.ToInt64(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private static void CorruptDatabase(NotificationConfigStore store)
     {
         // ClearAllPools first: Microsoft.Data.Sqlite POOLS connections, so the file stays locked after a

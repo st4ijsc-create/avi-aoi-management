@@ -16,14 +16,32 @@ namespace St4i.EngineApi.Endpoints;
 ///
 /// <h3>🔴 What is deliberately NOT limited, argued</h3>
 /// <list type="bullet">
-/// <item><description><b>The configuration writes (PUT/DELETE).</b> They are bounded-cost local SQLite
-/// upserts behind an authenticated Engineer or Admin session, they are idempotent, and they reach nothing
-/// outside this machine. Against that, the cost of limiting them is real and lands at the worst moment: the
-/// time an operator most needs to re-point a webhook or fix a recipient list is during an incident, when
-/// they are typing fast and getting it wrong twice. <b>A configuration write refused during an alarm storm
-/// is a worse failure than the flood it would prevent.</b> What actually addresses a stuck script here is
-/// the audit row every one of those routes writes — which names the actor, the role and the change — and
-/// that is forensics a rate limit does not provide.</description></item>
+/// <item><description>
+/// <b>The configuration writes (PUT/DELETE).</b> They are bounded-cost local SQLite upserts behind an
+/// authenticated Engineer or Admin session, and they reach nothing outside this machine. Against that, the
+/// cost of limiting them is real and lands at the worst moment: the time an operator most needs to re-point
+/// a webhook or fix a recipient list is during an incident, when they are typing fast and getting it wrong
+/// twice. <b>A configuration write refused during an alarm storm is a worse failure than the flood it would
+/// prevent.</b> What actually addresses a stuck script here is the audit row every one of those routes
+/// writes — which names the actor, the role and the change — and that is forensics a rate limit does not
+/// provide.
+///
+/// <para>🔴 <b>Review round 1 (I-2) — the first version of this argument also said these writes are
+/// "idempotent", and that word was doing work it could not support.</b> They are idempotent PER INSTANCE
+/// KEY and not ACROSS them: re-saving <c>default</c> a thousand times changes nothing, while saving a
+/// thousand DISTINCT keys creates a thousand destinations — and
+/// <see cref="St4i.EngineApi.Alarms.WebhookNotificationChannel.DispatchAsync"/> delivers to every one of
+/// them on every qualifying alarm edge. So an unlimited config-write route WAS a way to make this product
+/// emit N outbound messages per edge, which is precisely the quantity this class exists to bound, reached
+/// through the door it left open. That is closed by a CARDINALITY bound rather than a rate one
+/// (<see cref="NotificationEndpoints.MaxInstancesPerChannel"/>), because the harm is a standing multiplier
+/// on every future alarm rather than a burst.</para>
+///
+/// <para><b>The residual, stated rather than left implied:</b> within that cap, one alarm edge still costs
+/// up to eight sends per channel. That is inherent to configuring eight destinations — an operator who
+/// wants eight is asking for eight — and it is bounded, auditable and visible in
+/// <c>GET /v1/notifications/channels</c>. What is no longer possible is an unbounded
+/// one.</para></description></item>
 /// <item><description><b>The reads (GET).</b> Local SQLite reads and in-memory counters. Limiting them would
 /// refuse a monitoring poller, and <c>GET /v1/notifications/status</c> is precisely the thing somebody
 /// polls while an incident is in progress.</description></item>

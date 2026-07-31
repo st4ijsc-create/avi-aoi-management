@@ -75,6 +75,35 @@ public static class NotificationEndpoints
     private static readonly Regex InstancePattern =
         new("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// 🔴 How many configured instances one channel may have.
+    ///
+    /// <para><b>Review round 1 (I-2) — without this, the send-test rate limiter's stated goal is defeated
+    /// through the routes it deliberately does not limit.</b> <see cref="InstancePattern"/> validates a
+    /// key's SHAPE and said nothing about how many exist, and <see cref="NotificationConfigStore"/> has no
+    /// quota of its own (its doc comment says so). Meanwhile
+    /// <see cref="WebhookNotificationChannel.DispatchAsync"/> fans out to EVERY configured, enabled instance
+    /// concurrently. So the same authenticated Engineer the limiter is written against could create N
+    /// webhook instances pointing at one third party and turn every alarm edge — and every
+    /// <see cref="AlarmEdgeKind.Restored"/> at every restart — into N outbound messages, through a path with
+    /// no limiter in front of it at all. The 5 s bucket bounds the BUTTON; this bounds the FAN-OUT.</para>
+    ///
+    /// <para>🔴 It also corrects an argument I made and got wrong: the configuration writes were left
+    /// unlimited partly on the grounds that they are "idempotent". That is true PER INSTANCE KEY and false
+    /// ACROSS them — re-saving <c>default</c> a thousand times changes nothing, while saving a thousand
+    /// DISTINCT keys creates a thousand destinations. Idempotence was never the property that made the key
+    /// space safe; a bound is.</para>
+    ///
+    /// <para><b>Eight, argued.</b> The blueprint's own target list is Slack, Teams, MES and Zabbix — four —
+    /// and this build writes exactly one (<see cref="NotificationConfigStore.DefaultInstance"/>). Eight is
+    /// double the largest configuration anyone has described, and it bounds the worst case an alarm edge can
+    /// cost at eight concurrent sends per channel rather than at whatever a script felt like creating.
+    /// Deliberately enforced at the ENDPOINT rather than in the store: the store is engine-internal and its
+    /// existing callers (C-3..C-6) only ever read, so this is a boundary rule about untrusted input, in the
+    /// same place <see cref="InstancePattern"/> is.</para>
+    /// </summary>
+    public const int MaxInstancesPerChannel = 8;
+
     public static void MapNotificationEndpoints(this IEndpointRouteBuilder app)
     {
         // ── Reads. Engineer, not Operator: these carry the whole notification CONFIGURATION — SMTP
@@ -176,8 +205,15 @@ public static class NotificationEndpoints
         var smtpDto = smtp is null ? null : BuildSmtpStatus(smtp.Stats);
         if (smtpDto?.PartialDelivery is { } partial) attention.Add(partial);
 
-        var localDto = local is null || hub is null ? null : BuildLocalStatus(local.Stats, hub);
-        if (localDto is not null && hub!.Rejected > 0)
+        // 🔴 Review round 1 (M-3) — keyed off the HUB alone, not off the hub AND the channel. Program.cs
+        // registers the hub UNCONDITIONALLY and maps GET /v1/alarms/annunciations unconditionally, while the
+        // channel exists only when the configuration store opened. Requiring both meant that on exactly the
+        // degraded host this page exists for, the listener gauges and the refused-stream warning disappeared
+        // while the 503 subscriber cap was live and refusing browsers — the reader would have seen nothing
+        // at all about a stream that was actively turning pages away. The channel's own counters are
+        // optional now, because they are the part that genuinely does not exist without a channel.
+        var localDto = hub is null ? null : BuildLocalStatus(local?.Stats, hub);
+        if (hub is not null && hub.Rejected > 0)
         {
             attention.Add(
                 $"{hub.Rejected.ToString(CultureInfo.InvariantCulture)} browser session(s) were REFUSED an " +
@@ -227,7 +263,7 @@ public static class NotificationEndpoints
               "The rejected addresses are named in the host log. Correct or remove them.");
 
     private static LocalAnnunciationStatusDto BuildLocalStatus(
-        LocalAnnunciationStats stats, AlarmAnnunciationHub hub) => new(
+        LocalAnnunciationStats? stats, AlarmAnnunciationHub hub) => new(
         stats,
         Listeners: hub.ListenerCount,
         MaxListeners: hub.MaxListeners,
@@ -370,17 +406,19 @@ public static class NotificationEndpoints
             return Bad("A webhook URL must be an absolute http:// or https:// URL.");
         }
 
-        var before = await FindAsync(store, NotificationChannel.Webhook, instance, ct).ConfigureAwait(false);
+        var (before, atCap) = await LoadForSaveAsync(store, NotificationChannel.Webhook, instance, ct)
+            .ConfigureAwait(false);
+        if (atCap is not null) return atCap;
 
         var saved = await store.SaveWebhookAsync(
                 body.Enabled, minPriority, body.Url, label, authHeaderName, instance, ct)
             .ConfigureAwait(false);
 
-        var signingChanged = false;
-        var tokenChanged = false;
+        var signing = SecretOutcome.Unchanged;
+        var token = SecretOutcome.Unchanged;
         if (saved)
         {
-            signingChanged = await ApplySecretAsync(
+            signing = await ApplySecretAsync(
                 store, NotificationChannel.Webhook, NotificationSecretNames.WebhookSigningSecret,
                 body.SigningSecret, instance, ct).ConfigureAwait(false);
 
@@ -388,14 +426,17 @@ public static class NotificationEndpoints
             {
                 // Clearing the header name removes the token with it. A token that names no header can never
                 // be sent, and a credential retained for a purpose that no longer exists is a credential
-                // nobody is auditing.
-                tokenChanged = await store.DeleteSecretAsync(
+                // nobody is auditing. A false here means there was no token row to remove, which is the
+                // intent already satisfied — never a failure.
+                token = await store.DeleteSecretAsync(
                     NotificationChannel.Webhook, NotificationSecretNames.WebhookAuthToken, instance, ct)
-                    .ConfigureAwait(false);
+                    .ConfigureAwait(false)
+                    ? SecretOutcome.Changed
+                    : SecretOutcome.Unchanged;
             }
             else
             {
-                tokenChanged = await ApplySecretAsync(
+                token = await ApplySecretAsync(
                     store, NotificationChannel.Webhook, NotificationSecretNames.WebhookAuthToken,
                     body.AuthToken, instance, ct).ConfigureAwait(false);
             }
@@ -405,14 +446,28 @@ public static class NotificationEndpoints
             ? await FindAsync(store, NotificationChannel.Webhook, instance, ct).ConfigureAwait(false)
             : before;
 
-        // 🔴 The audit row carries the credential-free SUMMARY and two BOOLEANS. Never the URL, never the
-        // signing secret, never the token: an audit log is the longest-lived store in this product.
+        // 🔴 The audit row carries the credential-free SUMMARY and the two credential OUTCOMES. Never the
+        // URL, never the signing secret, never the token: an audit log is the longest-lived store in this
+        // product. Review round 1 (I-1) — the outcomes are recorded by NAME rather than as booleans, so a
+        // credential that FAILED to store is distinguishable in the log from one the request never carried.
         await recorder.RecordAsync(
             context, "notification.webhook.save", "notification", $"Webhook/{instance}",
-            before, new { Saved = saved, Config = after, SigningSecretChanged = signingChanged, AuthTokenChanged = tokenChanged },
+            before,
+            new
+            {
+                Saved = saved, Config = after,
+                SigningSecret = signing.ToString(), AuthToken = token.ToString(),
+            },
             ct).ConfigureAwait(false);
 
-        return saved ? Results.Ok(SaveResult(after, store)) : SaveFailed("webhook");
+        if (!saved) return SaveFailed("webhook");
+        // 🔴 Review round 1 (I-1). A committed channel row with a credential that did not commit is the one
+        // state that must never answer 200: every channel reads a missing secret as "none is configured",
+        // and for the webhook that means posting UNSIGNED from now on.
+        if (signing == SecretOutcome.Failed) return SecretFailed("webhook", "signing secret");
+        if (token == SecretOutcome.Failed) return SecretFailed("webhook", "authentication token");
+
+        return Results.Ok(SaveResult(after, store));
     }
 
     internal static Task<IResult> DeleteWebhookAsync(
@@ -463,17 +518,19 @@ public static class NotificationEndpoints
         }
 
         var username = Blank(body.Username);
-        var before = await FindAsync(store, NotificationChannel.Smtp, instance, ct).ConfigureAwait(false);
+        var (before, atCap) = await LoadForSaveAsync(store, NotificationChannel.Smtp, instance, ct)
+            .ConfigureAwait(false);
+        if (atCap is not null) return atCap;
 
         var saved = await store.SaveSmtpAsync(
                 body.Enabled, minPriority, body.Host, body.Port, tls, body.FromAddress, recipients,
                 username, instance, ct)
             .ConfigureAwait(false);
 
-        var passwordChanged = false;
+        var password = SecretOutcome.Unchanged;
         if (saved)
         {
-            passwordChanged = await ApplySecretAsync(
+            password = await ApplySecretAsync(
                 store, NotificationChannel.Smtp, NotificationSecretNames.SmtpPassword,
                 body.Password, instance, ct).ConfigureAwait(false);
         }
@@ -484,10 +541,17 @@ public static class NotificationEndpoints
 
         await recorder.RecordAsync(
             context, "notification.smtp.save", "notification", $"Smtp/{instance}",
-            before, new { Saved = saved, Config = after, PasswordChanged = passwordChanged },
+            before, new { Saved = saved, Config = after, Password = password.ToString() },
             ct).ConfigureAwait(false);
 
-        return saved ? Results.Ok(SaveResult(after, store)) : SaveFailed("SMTP");
+        if (!saved) return SaveFailed("SMTP");
+        // 🔴 Review round 1 (I-1). SMTP survived the old bug only by luck — a stored username with no
+        // readable password lands in CredentialPlan.PasswordMissing and the channel refuses to send rather
+        // than downgrading — but "saved by luck" is not a property, and an ANONYMOUS relay configuration
+        // whose password silently failed to store would have sent anonymously with no complaint at all.
+        if (password == SecretOutcome.Failed) return SecretFailed("SMTP", "password");
+
+        return Results.Ok(SaveResult(after, store));
     }
 
     internal static Task<IResult> DeleteSmtpAsync(
@@ -508,8 +572,9 @@ public static class NotificationEndpoints
         if (!TryInstance(body.Instance, out var instance, out var instanceError)) return Bad(instanceError!);
         if (!TryPriority(body.MinPriority, out var minPriority, out var priorityError)) return Bad(priorityError!);
 
-        var before = await FindAsync(store, NotificationChannel.LocalAnnunciation, instance, ct)
+        var (before, atCap) = await LoadForSaveAsync(store, NotificationChannel.LocalAnnunciation, instance, ct)
             .ConfigureAwait(false);
+        if (atCap is not null) return atCap;
 
         var saved = await store
             .SaveLocalAnnunciationAsync(body.Enabled, minPriority, instance, ct)
@@ -573,7 +638,9 @@ public static class NotificationEndpoints
                 "target also CANNOT release the latch: use a Point target for a latching beacon.");
         }
 
-        var before = await FindAsync(store, NotificationChannel.Relay, instance, ct).ConfigureAwait(false);
+        var (before, atCap) = await LoadForSaveAsync(store, NotificationChannel.Relay, instance, ct)
+            .ConfigureAwait(false);
+        if (atCap is not null) return atCap;
 
         var saved = await store.SaveRelayAsync(
                 body.Enabled, minPriority, body.MachineCode, targetKind, body.TargetName,
@@ -693,10 +760,19 @@ public static class NotificationEndpoints
 
         // Audited: this reaches a third party and puts a message in front of people. `POST /v1/connectors/test`
         // is deliberately NOT audited because it only reads from a device on the plant's own network; this
-        // one sends. The outcome is prose the channel wrote and contains no credential (see those methods).
+        // one sends.
+        //
+        // 🔴 Review round 1 (M-2) — the audit row records the OUTCOME and not `outcome.Detail`. Detail can
+        // carry an `HttpRequestException` message, which is provider-controlled text: exactly what
+        // NotificationConfigStoreHealth refuses to record for being "destined for an HTTP response", and the
+        // audit chain is the longest-lived store in this product. No leak was demonstrated — the reviewer
+        // could not construct a .NET message carrying the URL path or query, only the authority, which C-2
+        // already classifies non-secret — so this is consistency and defence in depth rather than a fix.
+        // The full text still reaches the operator in the RESPONSE, where it is transient and is the whole
+        // point of running a test.
         await recorder.RecordAsync(
             context, "notification.test", "notification", $"{channel}/{instance}",
-            null, new { outcome.Ok, outcome.Detail }, ct).ConfigureAwait(false);
+            null, new { outcome.Ok }, ct).ConfigureAwait(false);
 
         return Results.Ok(outcome);
     }
@@ -743,6 +819,33 @@ public static class NotificationEndpoints
     }
 
     /// <summary>
+    /// 🔴 What happened to one stored credential — <b>three outcomes, not two</b>.
+    ///
+    /// <para><b>Review round 1 (I-1) made this an enum, and the <see cref="bool"/> it replaced was a real
+    /// silent downgrade.</b> <see cref="NotificationConfigStore.SetSecretAsync"/> is never-throws and returns
+    /// <see langword="false"/> ONLY on failure — but the caller folded that <see langword="false"/> into a
+    /// flag whose other meaning was "the request carried no secret", answered <c>200</c>, and wrote
+    /// <c>"signingSecretChanged": false</c> to the audit log. The channel row had committed and the secret
+    /// had not, so <c>HasSigningSecret</c> stayed <see langword="false"/> and
+    /// <see cref="WebhookNotificationChannel"/> took its "no signing secret is configured" branch and
+    /// <b>posted UNSIGNED</b> — a machine that had quietly stopped proving its identity, after a green save.
+    /// That is the exact shape C-3's own I-1 was about, one layer up, and the shape
+    /// <see cref="SmtpNotificationChannel"/>'s credential planner refuses three separate ways.</para>
+    /// </summary>
+    private enum SecretOutcome
+    {
+        /// <summary>The request carried no value for this credential, so the stored one is untouched.</summary>
+        Unchanged,
+
+        /// <summary>The credential was written or deleted, as asked.</summary>
+        Changed,
+
+        /// <summary>🔴 The store was asked to SET a value and did not commit it. The caller must fail the
+        /// request: the alternative is a configuration that looks saved and is not.</summary>
+        Failed,
+    }
+
+    /// <summary>
     /// The tri-state a secret field carries, in one place: <see langword="null"/> (or absent) leaves the
     /// stored credential alone, <c>""</c> DELETES it, and any other value replaces it.
     ///
@@ -750,20 +853,43 @@ public static class NotificationEndpoints
     /// to be carried by the empty string rather than by which of the two arrived. Stated on the request
     /// records too, because a caller that guesses wrong here either fails to clear a credential or wipes one
     /// it meant to keep.</para>
+    ///
+    /// <para>🔴 <b>A failed DELETE is deliberately NOT a failure</b>, unlike a failed set.
+    /// <see cref="NotificationConfigStore.DeleteSecretAsync"/> returns <see langword="false"/> when no row
+    /// was removed, and "there was nothing stored to clear" is the operator's intent already satisfied. A
+    /// failed SET is the opposite: the credential the operator just typed is not there, and every channel
+    /// reads its absence as "none is configured".</para>
     /// </summary>
-    /// <returns>Whether the stored credential changed.</returns>
-    private static async Task<bool> ApplySecretAsync(
+    private static async Task<SecretOutcome> ApplySecretAsync(
         NotificationConfigStore store, NotificationChannel channel, string name, string? value,
         string instance, CancellationToken ct)
     {
-        if (value is null) return false;
+        if (value is null) return SecretOutcome.Unchanged;
+
         if (value.Length == 0)
         {
-            return await store.DeleteSecretAsync(channel, name, instance, ct).ConfigureAwait(false);
+            var deleted = await store.DeleteSecretAsync(channel, name, instance, ct).ConfigureAwait(false);
+            return deleted ? SecretOutcome.Changed : SecretOutcome.Unchanged;
         }
 
-        return await store.SetSecretAsync(channel, name, value, instance, ct).ConfigureAwait(false);
+        var stored = await store.SetSecretAsync(channel, name, value, instance, ct).ConfigureAwait(false);
+        return stored ? SecretOutcome.Changed : SecretOutcome.Failed;
     }
+
+    /// <summary>🔴 The response for a credential that did not commit — the secret-write analogue of
+    /// <see cref="SaveFailed"/>, and it names WHICH credential so an operator knows what to re-enter. The
+    /// channel row itself HAS committed at this point, which is why the message says so: the configuration
+    /// is live and the credential is missing, and that combination is what makes the channel behave as
+    /// though none was ever configured.</summary>
+    private static IResult SecretFailed(string channel, string credential) => Results.Json(
+        new ApiErrorDto(
+            $"The {channel} configuration was saved, but its {credential} was NOT stored — the " +
+            "configuration store could not commit it. 🔴 This channel will behave as though no " +
+            $"{credential} is configured (for a webhook that means posting UNSIGNED, or being rejected by a " +
+            "receiver that requires a token), so it must not be left in this state. Re-submit this save to " +
+            "store the credential again; the host log names the underlying failure and " +
+            "GET /v1/notifications/status reports the store's health."),
+        statusCode: StatusCodes.Status500InternalServerError);
 
     /// <summary>Reads ONE channel instance back through <see cref="NotificationConfigStore.ListAsync"/> —
     /// the one credential-free projection. 🔴 Deliberately not through the engine-internal <c>Get*Async</c>
@@ -774,6 +900,38 @@ public static class NotificationEndpoints
         var all = await store.ListAsync(ct).ConfigureAwait(false);
         return all.FirstOrDefault(
             c => c.Channel == channel && string.Equals(c.Instance, instance, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 🔴 Review round 1 (I-2) — the one read every save does, answering both "what was here before?" (for
+    /// the audit row) and "may a NEW instance be created at all?" (see
+    /// <see cref="MaxInstancesPerChannel"/>) from a single <see cref="NotificationConfigStore.ListAsync"/>.
+    ///
+    /// <para>The cap applies only to a genuinely new key: re-saving an instance that already exists is the
+    /// idempotent case and must never be refused because the channel happens to be full — that would make a
+    /// full channel unfixable.</para>
+    /// </summary>
+    /// <returns><c>AtCap</c> non-null means stop and return it.</returns>
+    private static async Task<(NotificationChannelSummary? Existing, IResult? AtCap)> LoadForSaveAsync(
+        NotificationConfigStore store, NotificationChannel channel, string instance, CancellationToken ct)
+    {
+        var all = await store.ListAsync(ct).ConfigureAwait(false);
+
+        var existing = all.FirstOrDefault(
+            c => c.Channel == channel && string.Equals(c.Instance, instance, StringComparison.Ordinal));
+        if (existing is not null) return (existing, null);
+
+        var configured = all.Count(c => c.Channel == channel);
+        if (configured < MaxInstancesPerChannel) return (null, null);
+
+        return (null, Results.Json(
+            new ApiErrorDto(
+                $"This engine already has {configured.ToString(CultureInfo.InvariantCulture)} configured " +
+                $"{channel} instance(s), which is the maximum ({MaxInstancesPerChannel}). Every configured, " +
+                "enabled instance is delivered to on every qualifying alarm edge, so the instance count is " +
+                "an outbound-traffic multiplier rather than a bookkeeping detail. Delete an instance you no " +
+                "longer need, or re-save an existing one by name."),
+            statusCode: StatusCodes.Status409Conflict));
     }
 
     private static NotificationSaveResultDto SaveResult(
