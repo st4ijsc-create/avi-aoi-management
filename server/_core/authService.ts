@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import type { Request, Response } from "express";
 import * as db from "../db";
@@ -52,6 +53,38 @@ function auditCtxFromRequest(req: Request): AuditCtx {
   };
 }
 
+/**
+ * F9 (Sprint 5, doc71 task 11) — cost factor bcrypt "rounds" MUST match every
+ * real password hash in this app, hoặc thủ thuật hash-giả bên dưới chỉ THU
+ * HẸP side-channel thời gian thay vì đóng hẳn. Đo bằng grep — MỌI lời gọi
+ * `bcrypt.hash(..., N)` trong repo đều dùng N=10: server/db/auth.ts:228,
+ * server/routers/userRouters.ts:59/128/206,
+ * server/routers/twoFactorRouter.ts:20, server/services/mqttService.ts:337.
+ * Không hardcode một chuỗi bcrypt có sẵn — sinh ra tại runtime bằng đúng cost
+ * factor thật này (xem getDummyPasswordHash).
+ */
+const PASSWORD_HASH_COST_FACTOR = 10;
+
+/**
+ * Hash giả dùng làm đối số cho bcrypt.compare() khi user không tồn tại (hoặc
+ * không có passwordHash, vd. tài khoản chỉ đăng nhập SSO) — để bcrypt.compare
+ * vẫn tốn đúng khoảng thời gian CPU như so với một hash thật, đóng side-
+ * channel thời gian (F9). Tính MỘT LẦN, nhớ lại (memo hoá theo module, sống
+ * suốt vòng đời process) rồi dùng lại cho mọi lần gọi sau — plaintext nguồn
+ * không quan trọng (không bao giờ so khớp với gì thật), chỉ cost factor mới
+ * quan trọng.
+ */
+let dummyPasswordHashPromise: Promise<string> | null = null;
+function getDummyPasswordHash(bcryptModule: typeof import("bcryptjs")): Promise<string> {
+  if (!dummyPasswordHashPromise) {
+    dummyPasswordHashPromise = bcryptModule.hash(
+      randomBytes(32).toString("hex"),
+      PASSWORD_HASH_COST_FACTOR,
+    );
+  }
+  return dummyPasswordHashPromise;
+}
+
 async function recordAudit(
   status: "success" | "failure",
   user: Pick<User, "id" | "name"> | null,
@@ -93,6 +126,24 @@ export async function verifyCredentials(
   const bcrypt = await import("bcryptjs");
 
   const user = await db.getUserByUsername(username);
+
+  // F9 (side-channel đăng nhập, tiền tồn tại) — LUÔN chạy bcrypt.compare
+  // TRƯỚC khi kiểm isActive/lockedUntil/tồn tại/hỗ trợ mật khẩu, dùng hash
+  // giả (cost factor khớp hash thật — xem getDummyPasswordHash) khi user
+  // không tồn tại hoặc không có passwordHash. Trước đây nhánh "user không
+  // tồn tại" bỏ qua bcrypt HOÀN TOÀN nên trả lời nhanh hơn hẳn các nhánh
+  // khác ⇒ chỉ cần đo thời gian phản hồi là dò được username có thật. Kết
+  // quả `passwordMatches` được dùng THẬT cho nhánh user tồn tại + có hash;
+  // bị bỏ qua có chủ đích ở các nhánh throw sớm bên dưới (không đổi logic
+  // chặn — chỉ để bcrypt luôn tốn đúng thời gian, bất kể nhánh nào sẽ chạy
+  // sau đó). Thứ tự các nhánh throw bên dưới GIỮ NGUYÊN như trước khi sửa
+  // (không tồn tại → vô hiệu hoá → đang khoá → không hỗ trợ mật khẩu → sai
+  // mật khẩu) — chỉ có lời gọi bcrypt.compare là được đưa lên đầu.
+  const passwordMatches = await bcrypt.compare(
+    password,
+    user?.passwordHash ?? (await getDummyPasswordHash(bcrypt)),
+  );
+
   if (!user) {
     await recordAudit("failure", null, username, audit, { reason: "unknown_user" });
     throw new LoginError("INVALID_CREDENTIALS", "Tên đăng nhập hoặc mật khẩu không đúng");
@@ -103,7 +154,8 @@ export async function verifyCredentials(
     throw new LoginError("ACCOUNT_DISABLED", "Tài khoản đã bị vô hiệu hóa");
   }
 
-  // Brute-force lockout check (must run BEFORE password compare).
+  // Brute-force lockout check — vẫn chạy TRƯỚC khi dùng kết quả bcrypt: tài
+  // khoản đang bị khoá bị từ chối dù mật khẩu vừa nhập ĐÚNG.
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     const remaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000);
     await recordAudit("failure", user, username, audit, { reason: "account_locked" });
@@ -122,8 +174,7 @@ export async function verifyCredentials(
     );
   }
 
-  const isValid = await bcrypt.compare(password, user.passwordHash);
-  if (!isValid) {
+  if (!passwordMatches) {
     const newAttempts = (user.loginAttempts ?? 0) + 1;
     const lockedUntil =
       newAttempts >= MAX_LOGIN_ATTEMPTS
