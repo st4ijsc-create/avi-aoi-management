@@ -303,6 +303,215 @@ public sealed class WebhookNotificationChannel : IDisposable
         Interlocked.Read(ref _unsigned));
 
     // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task C-7 — the SEND TEST. One bounded attempt, no retries, no counter moved.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 Task C-7 — posts ONE <see cref="WebhookTestPayload"/> to a configured instance and reports what
+    /// that established.
+    ///
+    /// <para><b>It lives here, not in the endpoint, for one structural reason:</b> the destination URL, the
+    /// signing secret and the authentication token are all DPAPI blobs, and the only code allowed to hold
+    /// their plaintext is the code that sends. An endpoint that resolved them itself would be a second path
+    /// to <see cref="NotificationConfigStore.GetSecretAsync"/> — the thing C-3 and C-4 were each told not to
+    /// create — and the first place a credential reaches an HTTP handler is the last place before it reaches
+    /// a response body. What crosses this boundary is a <see cref="NotificationTestOutcome"/>, whose fields
+    /// are prose this class wrote.</para>
+    ///
+    /// <para><b>ONE attempt, deliberately, where a notification gets three.</b> Retries exist because a
+    /// notification is unrepeatable — the edge will not be re-emitted — so a transient failure has to be
+    /// absorbed or the alarm is lost. A test is repeatable by definition: the operator is standing there and
+    /// can press it again. Retrying instead would hide exactly the flakiness the test is being run to find,
+    /// and would multiply what an endpoint can be made to emit per request. Bounded by
+    /// <see cref="DefaultAttemptTimeout"/>, which is what the "never blocks" claim rests on.</para>
+    ///
+    /// <para>🔴 <b>It moves no counter.</b> Every field of <see cref="WebhookChannelStats"/> is documented in
+    /// units of (notification, instance) pairs or of the attempts made for them, and an accounting invariant
+    /// holds across four of them. A test is not a notification, so counting it would corrupt the invariant,
+    /// and NOT counting it leaves the counters meaning exactly what they say. The test's own outcome is
+    /// returned to the caller and written to the audit log instead.</para>
+    ///
+    /// <para>A DISABLED instance is still tested, and the outcome says so — an operator configures, tests,
+    /// and only then switches on, and a test that refused to run until the channel was live would make the
+    /// obvious order impossible.</para>
+    /// </summary>
+    public async Task<NotificationTestOutcome> SendTestAsync(
+        string instance, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(instance);
+
+        // The summary read first, exactly as DispatchAsync does, and for the same non-obvious reason: it is
+        // the ONLY way to tell "no signing secret is configured" from "a signing secret is configured and
+        // its blob will not decrypt" — GetSecretAsync returns null for both.
+        var configured = await _store.ListAsync(ct).ConfigureAwait(false);
+        var summary = configured.FirstOrDefault(
+            c => c.Channel == NotificationChannel.Webhook &&
+                 string.Equals(c.Instance, instance, StringComparison.Ordinal));
+
+        if (summary is null)
+        {
+            return new NotificationTestOutcome(false,
+                $"No webhook named '{instance}' is configured on this engine, so there is nothing to test. " +
+                "Save the webhook first.");
+        }
+
+        var config = await _store.GetWebhookAsync(instance, ct).ConfigureAwait(false);
+        if (config is null)
+        {
+            return new NotificationTestOutcome(false,
+                $"The webhook '{instance}' is listed as configured but could not be read back — it was " +
+                "either deleted in the last instant, or its configuration store could not be read. See " +
+                "the configuration-store health beside the channel statistics.");
+        }
+
+        var identity = new WebhookIdentity(instance, config.Endpoint, config.UrlFingerprint, config.Label);
+
+        if (config.Url is null || !Uri.TryCreate(config.Url, UriKind.Absolute, out var url) ||
+            (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
+        {
+            return new NotificationTestOutcome(false,
+                $"The webhook {identity} has no usable destination: its encrypted URL is missing, or cannot " +
+                "be decrypted on this machine (typically a notifications.db copied from another host). " +
+                "Re-save the webhook URL to repair it.");
+        }
+
+        var signingSecret = await ReadSecretAsync(
+            NotificationSecretNames.WebhookSigningSecret, instance, ct).ConfigureAwait(false);
+
+        var hasSigningSecret = summary.Webhook?.HasSigningSecret == true;
+        if (hasSigningSecret && string.IsNullOrEmpty(signingSecret))
+        {
+            // The same refusal DispatchAsync makes, and for the identical reason: sending unsigned would
+            // silently stop this machine proving its identity, and a test that quietly downgraded would
+            // report a green result for a configuration that does not do what it says.
+            return new NotificationTestOutcome(false,
+                $"The webhook {identity} has a signing secret stored, but it could not be read (the " +
+                "encrypted key is unreadable on this machine). Nothing was sent: posting UNSIGNED would " +
+                "silently stop this machine proving its identity. Re-save the signing secret to repair it, " +
+                "or remove it to send unsigned deliberately.");
+        }
+
+        string? authToken = null;
+        var authHeaderName = config.AuthHeaderName;
+        if (!string.IsNullOrWhiteSpace(authHeaderName))
+        {
+            authToken = await ReadSecretAsync(
+                NotificationSecretNames.WebhookAuthToken, instance, ct).ConfigureAwait(false);
+
+            if (!WebhookAuthHeader.IsValidValue(authToken))
+            {
+                return new NotificationTestOutcome(false,
+                    $"The webhook {identity} is configured to authenticate with the '{authHeaderName}' " +
+                    "header, but no usable token is stored for it. Nothing was sent — a receiver would have " +
+                    "answered 401, which reads as a WRONG token rather than a missing one.");
+            }
+        }
+
+        var deliveryId = Guid.NewGuid().ToString("N");
+        var now = _clock();
+        var body = WebhookTestPayload.From(_sourceHost, instance, deliveryId, now).ToUtf8Bytes();
+        var unixSeconds = now.ToUnixTimeSeconds();
+        var signature = WebhookSigner.Sign(body, unixSeconds, signingSecret);
+
+        using var request = BuildRequest(
+            url, body, signature, unixSeconds, deliveryId, WebhookContract.TestEventHeaderValue,
+            authHeaderName, authToken, out var headerProblem);
+
+        if (headerProblem is not null)
+        {
+            return new NotificationTestOutcome(false, $"The webhook {identity}: {headerProblem}");
+        }
+
+        using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        attemptCts.CancelAfter(_attemptTimeout);
+
+        try
+        {
+            using var response = await _http
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, attemptCts.Token)
+                .ConfigureAwait(false);
+
+            var status = (int)response.StatusCode;
+            if (!response.IsSuccessStatusCode)
+            {
+                return new NotificationTestOutcome(false,
+                    $"The webhook {identity} answered HTTP {status} ({SafeReason(response.ReasonPhrase)})." +
+                    PermanentHint(status));
+            }
+
+            return new NotificationTestOutcome(true,
+                $"The webhook {identity} accepted the test message (HTTP {status}).",
+                Proves: DescribeTestProof(signature is not null, authHeaderName, status),
+                DoesNotProve: DescribeTestLimits(summary.Enabled, summary.MinPriority));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // A genuine shutdown or an aborted request. Never a result about the webhook.
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            return new NotificationTestOutcome(false,
+                $"The webhook {identity} did not answer within {_attemptTimeout.TotalSeconds:0.#}s. Check " +
+                "that the destination is reachable from this machine and that nothing is holding the " +
+                "connection open without responding.");
+        }
+        catch (HttpRequestException ex)
+        {
+            // Refused, DNS, TLS, reset. ex.Message can carry host:port, which is exactly Endpoint — C-2
+            // classifies that non-secret and every public read already returns it. The capability-bearing
+            // path and query cannot appear in it.
+            return new NotificationTestOutcome(false,
+                $"The webhook {identity} could not be reached: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex, $"Alarm webhook {identity}: the test request could not be sent.");
+            return new NotificationTestOutcome(false,
+                $"The webhook {identity} could not be tested: {ex.GetType().Name}. See the host log.");
+        }
+    }
+
+    /// <summary>🔴 What a green webhook test actually establishes — written out rather than left implied,
+    /// because "it worked" is the claim an operator will otherwise make on this product's behalf.</summary>
+    private static string DescribeTestProof(bool signed, string? authHeaderName, int status)
+    {
+        var credentials = (signed, !string.IsNullOrWhiteSpace(authHeaderName)) switch
+        {
+            (true, true) =>
+                $"The request was SIGNED with the stored signing secret and carried the '{authHeaderName}' " +
+                "authentication header, so the receiver accepted both.",
+            (true, false) =>
+                "The request was SIGNED with the stored signing secret, so if the receiver verifies " +
+                "signatures it accepted this one.",
+            (false, true) =>
+                $"The request carried the '{authHeaderName}' authentication header, so the receiver " +
+                "accepted that credential. It was NOT signed — no signing secret is stored.",
+            (false, false) =>
+                "The request was UNSIGNED and carried no authentication header, because none is configured " +
+                "— for Slack and Teams the URL itself is the credential, so this is normal there.",
+        };
+
+        return $"The stored destination URL is reachable from this machine and answered HTTP {status} to a " +
+               $"POST carrying the same headers an alarm notification carries. {credentials}";
+    }
+
+    /// <summary>🔴 The honest limit on a green webhook test.</summary>
+    private static string DescribeTestLimits(bool enabled, AlarmPriority minPriority)
+    {
+        var disabled = enabled
+            ? ""
+            : "🔴 This webhook is currently DISABLED, so no alarm will be delivered through it however " +
+              "well it tests — enable it to make this configuration live. ";
+
+        return disabled +
+               "The message sent was a test body (type \"" + WebhookContract.TestEventType + "\"), not an " +
+               "alarm, so this does not prove the receiver will route, render or page on an alarm body. It " +
+               $"also says nothing about which alarms qualify: this instance delivers {minPriority} and " +
+               "above.";
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Dispatch — the delegate AlarmNotifier's drain loop calls.
     // ─────────────────────────────────────────────────────────────────────
 
@@ -617,7 +826,7 @@ public sealed class WebhookNotificationChannel : IDisposable
                     var signature = WebhookSigner.Sign(body, unixSeconds, signingSecret);
 
                     using var request = BuildRequest(
-                        url, body, signature, unixSeconds, deliveryId, job.Edge,
+                        url, body, signature, unixSeconds, deliveryId, job.Edge.ToString(),
                         authHeaderName, authToken, out var headerProblem);
 
                     if (headerProblem is not null)
@@ -821,9 +1030,14 @@ public sealed class WebhookNotificationChannel : IDisposable
     /// happen is a stored auth header the HTTP stack refuses, which is a configuration fault to be reported
     /// and counted, not an exception to be thrown out of a never-throws channel. Names the header, never
     /// the value.</param>
+    /// <param name="eventHeaderValue">🔴 What goes in <see cref="WebhookContract.EventHeader"/> — an
+    /// <see cref="AlarmEdgeKind"/> member name for a notification, and
+    /// <see cref="WebhookContract.TestEventHeaderValue"/> for a send test. Typed as a string rather than as
+    /// an <see cref="AlarmEdgeKind"/> precisely so a test cannot be forced to claim an edge kind it does not
+    /// have.</param>
     private static HttpRequestMessage BuildRequest(
         Uri url, byte[] body, string? signature, long unixSeconds, string deliveryId,
-        AlarmEdgeKind edge, string? authHeaderName, string? authToken, out string? headerProblem)
+        string eventHeaderValue, string? authHeaderName, string? authToken, out string? headerProblem)
     {
         headerProblem = null;
 
@@ -840,7 +1054,7 @@ public sealed class WebhookNotificationChannel : IDisposable
         };
 
         request.Headers.TryAddWithoutValidation(WebhookContract.DeliveryHeader, deliveryId);
-        request.Headers.TryAddWithoutValidation(WebhookContract.EventHeader, edge.ToString());
+        request.Headers.TryAddWithoutValidation(WebhookContract.EventHeader, eventHeaderValue);
 
         if (signature is not null)
         {

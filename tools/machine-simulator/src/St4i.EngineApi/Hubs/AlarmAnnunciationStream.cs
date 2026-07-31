@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
@@ -151,6 +152,32 @@ public static class AlarmAnnunciationStreamEndpoint
         var ct = context.RequestAborted;
 
         var response = context.Response;
+
+        // 🔴 Task C-7 — the subscriber cap, checked BEFORE a single byte of the stream is written.
+        //
+        // The ordering is forced and it is worth stating. This handler deliberately registers its listener
+        // only AFTER the opening frame has flushed (see the class doc comment), so that a registered
+        // listener is one whose client has already received bytes. Doing the capacity check at that point
+        // would mean the refusal arrived mid-stream, on a response already committed as a 200 text/event-
+        // stream — a browser would see an armed annunciator that ends immediately, which is the exact
+        // "looks armed, is not" shape C-5 exists to refuse. So capacity is checked here, where an honest
+        // status code is still available, and TrySubscribe below closes the residual race (two connections
+        // passing this check together) by simply ending one of them.
+        if (!hub.TryAdmitListener())
+        {
+            response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            response.ContentType = "text/plain; charset=utf-8";
+            // EventSource retries on its own (see ReconnectDelayMs), so this client attaches as soon as a
+            // slot frees. Retry-After is set for every non-browser caller, which does not.
+            response.Headers.RetryAfter = (ReconnectDelayMs / 1000).ToString(CultureInfo.InvariantCulture);
+            await response.WriteAsync(
+                    $"This engine already has its maximum of {hub.MaxListeners} alarm-annunciation " +
+                    "listener(s) attached, so this page would NOT be annunciated. Close another page that " +
+                    "has the alarm screen open, or wait — this connection is retried automatically.", ct)
+                .ConfigureAwait(false);
+            return;
+        }
+
         response.StatusCode = StatusCodes.Status200OK;
         response.ContentType = "text/event-stream; charset=utf-8";
         response.Headers.CacheControl = "no-cache, no-store";
@@ -182,7 +209,14 @@ public static class AlarmAnnunciationStreamEndpoint
         }
 
         // 🔴 Registered only now: see the class doc comment. Everything above has already reached the wire.
-        using var listener = hub.Subscribe();
+        //
+        // Task C-7 — TrySubscribe, not Subscribe: the capacity check above cannot be atomic with this call
+        // (the ready frame has to be written in between), so two connections can pass it together and one
+        // of them must lose. Losing here means ending a stream that has already sent its `ready` frame,
+        // which is the same thing the client sees when the engine restarts — and its EventSource reconnects.
+        // Throwing instead would be a 500 for a condition that is not an error.
+        using var listener = hub.TrySubscribe();
+        if (listener is null) return;
         var reader = listener.Reader;
 
         try

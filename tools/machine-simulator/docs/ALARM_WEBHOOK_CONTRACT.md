@@ -18,6 +18,7 @@ Content-Type: application/json; charset=utf-8
 User-Agent: st4i-machine-simulator-alarm-webhook/1
 X-ST4I-Delivery: 9f0c4a1b2d3e4f5061728394a5b6c7d8      # UNSIGNED copy of body.deliveryId — pre-filter only
 X-ST4I-Event: Raised                                    # UNSIGNED copy of body.edge.kind — pre-filter only
+                                                        # (or the literal `Test` for a send test — see §2.5)
 X-ST4I-Signature: v1=<64 lowercase hex chars>           # present only if a signing secret is configured
 X-ST4I-Timestamp: 1785489322                            # unix SECONDS; present iff the signature is
 <optional operator-configured auth header, e.g. Authorization or X-Api-Key>
@@ -110,6 +111,9 @@ field is what lets a single body post unmodified to Slack, to Teams, and to a cu
 The sender fires on **edges**, never on state. A condition that stays true for an hour produces one
 `Raised`, not 720 messages. So: do not treat every message as "an alarm is happening".
 
+🔴 And do not treat every *body* as an alarm either: a send test carries no `edge` object at all and a
+different `type` — see §2.5.
+
 ### Identity and ordering
 
 - `alarm.key` (source + code + target) is the **stable** identity. Correlate a `Cleared` back to its
@@ -143,6 +147,38 @@ The sender fires on **edges**, never on state. A condition that stays true for a
 - `alarm.source`: `Policy` | `DriverHealth` | `NgRate` | `Identity`
 - `alarm.priority`: `Critical` | `High` | `Medium` | `Low` (only `Critical` and `High` occur today)
 - `alarm.state`: `Active` | `Acked` | `Cleared`
+
+---
+
+## 2.5 🔴 The SEND TEST body — a different `type`, and why you must switch on it
+
+Task C-7 added a **"send test"** button to this product's configuration screen. It posts to the same URL, with
+the **same signature and the same authentication header** as a real notification — that is the whole point of
+testing — but the body is a **different shape with a different `type`**:
+
+```json
+{
+  "text": "[TEST] ST4I machine simulator on PLANT-ENGINE-01: this is a configuration test of the alarm webhook 'default'. No alarm is active and no action is required.",
+  "specVersion": 1,
+  "type": "st4i.notification.test",
+  "deliveryId": "3f8b1c9e0d7a4b62a1c5e8f0d3b7a942",
+  "sentAtUtc": "2026-07-31T22:41:07.1234567Z",
+  "source": { "product": "st4i-machine-simulator", "host": "PLANT-ENGINE-01", "channelInstance": "default" }
+}
+```
+
+- **There is no `alarm` object and no `edge` object.** There is nothing here to mistake for a condition.
+- The header pre-filter carries **`X-ST4I-Event: Test`**, which is deliberately **not** one of the
+  `edge.kind` values in §2.
+- 🔴 **This is why §2 tells you to switch on `type`.** A receiver that assumes every body from this sender is
+  an alarm — because until C-7 every body was — will read a test as an alarm with missing fields. A receiver
+  that switches on `type` and ignores what it does not recognise (which §2 already asks of you) drops it, and
+  that is the correct behaviour for a test.
+- It is **not retried** (a real notification gets up to three attempts; a test gets one) and it is **rate
+  limited** at the sender, so it cannot arrive in a burst.
+
+If you want a test to be visible to a human — reasonable, since that is what the operator pressing the button
+is checking — render `text`. Slack and Teams do that by default.
 
 ---
 

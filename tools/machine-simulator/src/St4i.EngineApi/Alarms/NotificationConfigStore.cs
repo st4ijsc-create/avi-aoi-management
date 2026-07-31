@@ -167,6 +167,42 @@ internal static class NotificationConfigSchema
 }
 
 /// <summary>
+/// 🔴 Task C-7 — <b>the one loss family no channel can count.</b>
+///
+/// <para><see cref="NotificationConfigStore.ListAsync"/> is never-throws: a read that FAILS returns an empty
+/// list, and every channel then reports exactly what it reports when nothing is configured — it moves
+/// <c>Considered</c> and nothing else. So "no channel is configured" and "the configuration could not be
+/// read" are the same observation from every counter in this batch, and an operator looking at four sets of
+/// zeroes cannot tell a quiet plant from a broken database. C-3, C-4, C-5 and C-6 each recorded this as
+/// something the endpoint task had to surface; this record is that surface.</para>
+///
+/// <para>🔴 <b>Nothing here can carry a credential, structurally.</b> The failure is described by the
+/// EXCEPTION TYPE NAME and a fixed, code-authored operation label — never <c>ex.Message</c>, which is
+/// provider-controlled text this class cannot make a promise about. That is deliberately less detail than a
+/// log line: <see cref="NotificationConfigStore"/>'s <c>logError</c> callback still gets the full exception,
+/// and it goes to the host log rather than to an HTTP response.</para>
+/// </summary>
+/// <param name="ReadFailures">Reads that failed and were reported to their caller as "nothing configured" —
+/// <see cref="NotificationConfigStore.ListAsync"/>, the per-channel full reads, and
+/// <see cref="NotificationConfigStore.GetSecretAsync"/>. 🔴 Non-zero means at least one alarm may have been
+/// silently not delivered while every channel counter stayed honest-looking.</param>
+/// <param name="WriteFailures">Saves and deletes that did not commit. Less severe than a read failure
+/// because the caller already learns it (they return <see langword="false"/>), and counted here so one
+/// number answers "is this store healthy at all?".</param>
+/// <param name="LastFailureOperation">A fixed label naming WHICH operation failed most recently
+/// (<c>list</c>, <c>read-channel</c>, <c>read-secret</c>, <c>save</c>, …). Code-authored, never
+/// interpolated from caller input.</param>
+/// <param name="LastFailureType">The exception's type name (<c>SqliteException</c>), which is what tells a
+/// file-permission problem from a schema problem without quoting provider text.</param>
+/// <param name="LastFailureUtc">When that failure happened.</param>
+public sealed record NotificationConfigStoreHealth(
+    long ReadFailures,
+    long WriteFailures,
+    string? LastFailureOperation,
+    string? LastFailureType,
+    DateTimeOffset? LastFailureUtc);
+
+/// <summary>
 /// Task C-2 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-2-brief.md) — where the
 /// answer to "tell whom, how" lives, and the first place in this product that stores a THIRD-PARTY
 /// credential.
@@ -264,6 +300,60 @@ public sealed class NotificationConfigStore
     public string RootDirectory { get; }
 
     private readonly Action<Exception, string>? _logError;
+
+    private long _readFailures;
+    private long _writeFailures;
+    private readonly object _healthGate = new();
+    private string? _lastFailureOperation;
+    private string? _lastFailureType;
+    private DateTimeOffset? _lastFailureUtc;
+
+    /// <summary>
+    /// 🔴 Task C-7 — see <see cref="NotificationConfigStoreHealth"/>. The ONE thing this store knows that no
+    /// channel can: that a read failed, rather than that nothing was configured.
+    /// </summary>
+    public NotificationConfigStoreHealth Health
+    {
+        get
+        {
+            lock (_healthGate)
+            {
+                return new NotificationConfigStoreHealth(
+                    Interlocked.Read(ref _readFailures),
+                    Interlocked.Read(ref _writeFailures),
+                    _lastFailureOperation,
+                    _lastFailureType,
+                    _lastFailureUtc);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 🔴 The ONE place a swallowed failure is both reported and counted, called from every never-throws
+    /// <c>catch</c> in this class.
+    ///
+    /// <para>Reporting and counting are done together, in one call, for the reason
+    /// <c>AlarmNotifier</c>'s catch-all states: a log line saying an alarm configuration could not be read,
+    /// next to a counter reading zero, says the opposite of the log. <paramref name="operation"/> is a fixed
+    /// literal at every call site — never a value derived from a caller — so nothing an operator or a
+    /// request can influence reaches this record.</para>
+    /// </summary>
+    private void ReportFailure(bool isRead, string operation, Exception ex, string message)
+    {
+        if (isRead) Interlocked.Increment(ref _readFailures);
+        else Interlocked.Increment(ref _writeFailures);
+
+        lock (_healthGate)
+        {
+            _lastFailureOperation = operation;
+            // The TYPE only. ex.Message is provider-controlled text, and this value is destined for an HTTP
+            // response — see NotificationConfigStoreHealth.
+            _lastFailureType = ex.GetType().Name;
+            _lastFailureUtc = DateTimeOffset.UtcNow;
+        }
+
+        _logError?.Invoke(ex, message);
+    }
 
     private static readonly string[] OpenPragmas =
     {
@@ -772,7 +862,8 @@ public sealed class NotificationConfigStore
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            _logError?.Invoke(ex, $"Saving the {label} notification channel ('{instance}') failed — it was NOT persisted.");
+            ReportFailure(isRead: false, "save", ex,
+                $"Saving the {label} notification channel ('{instance}') failed — it was NOT persisted.");
             return false;
         }
     }
@@ -796,7 +887,8 @@ public sealed class NotificationConfigStore
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
-            _logError?.Invoke(ex, $"Deleting the {channel} notification channel ('{instance}') failed.");
+            ReportFailure(isRead: false, "delete", ex,
+                $"Deleting the {channel} notification channel ('{instance}') failed.");
             return false;
         }
     }
@@ -839,7 +931,8 @@ public sealed class NotificationConfigStore
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
-            _logError?.Invoke(ex, $"Storing the '{name}' secret for the {channel} notification channel ('{instance}') failed — it was NOT saved.");
+            ReportFailure(isRead: false, "save-secret", ex,
+                $"Storing the '{name}' secret for the {channel} notification channel ('{instance}') failed — it was NOT saved.");
             return false;
         }
     }
@@ -908,7 +1001,8 @@ public sealed class NotificationConfigStore
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            _logError?.Invoke(ex, $"Reading the '{name}' secret for the {channel} notification channel ('{instance}') failed — treating it as unset.");
+            ReportFailure(isRead: true, "read-secret", ex,
+                $"Reading the '{name}' secret for the {channel} notification channel ('{instance}') failed — treating it as unset.");
             return null;
         }
     }
@@ -952,7 +1046,8 @@ public sealed class NotificationConfigStore
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
-            _logError?.Invoke(ex, $"Deleting the '{name}' secret for the {channel} notification channel ('{instance}') failed.");
+            ReportFailure(isRead: false, "delete-secret", ex,
+                $"Deleting the '{name}' secret for the {channel} notification channel ('{instance}') failed.");
             return false;
         }
     }
@@ -1016,7 +1111,8 @@ public sealed class NotificationConfigStore
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
-            _logError?.Invoke(ex, $"Reading the Webhook notification channel ('{instance}') failed — treating it as unconfigured.");
+            ReportFailure(isRead: true, "read-channel", ex,
+                $"Reading the Webhook notification channel ('{instance}') failed — treating it as unconfigured.");
             return null;
         }
     }
@@ -1103,7 +1199,8 @@ public sealed class NotificationConfigStore
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // C-4 — see the class doc.
         catch (Exception ex)
         {
-            _logError?.Invoke(ex, $"Reading the {channel} notification channel ('{instance}') failed — treating it as unconfigured.");
+            ReportFailure(isRead: true, "read-channel", ex,
+                $"Reading the {channel} notification channel ('{instance}') failed — treating it as unconfigured.");
             return null;
         }
     }
@@ -1226,7 +1323,8 @@ public sealed class NotificationConfigStore
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            _logError?.Invoke(ex, "Listing notification channels failed — reporting none configured.");
+            ReportFailure(isRead: true, "list", ex,
+                "Listing notification channels failed — reporting none configured.");
             return Array.Empty<NotificationChannelSummary>();
         }
     }

@@ -29,6 +29,23 @@ public static class WebhookContract
     public const string EventType = "st4i.alarm.edge";
 
     /// <summary>
+    /// 🔴 Task C-7 — the <c>type</c> a SEND TEST carries, and the reason a test is not an alarm body with a
+    /// flag on it.
+    ///
+    /// <para>C-7's send test posts to a real destination — very often a Slack or Teams channel a shift reads.
+    /// Reusing <see cref="EventType"/> with fabricated alarm fields would put a message that IS an alarm, by
+    /// its own discriminator, in front of people whose job is to act on alarms, and any receiver routing on
+    /// <c>type</c> (which this contract tells receivers to do) would page for it. A distinct type is
+    /// additive — receivers are already told to ignore what they do not recognise — and a receiver that does
+    /// not recognise it drops it, which is the correct behaviour for a test.</para>
+    ///
+    /// <para>The body carries <b>no <c>alarm</c> and no <c>edge</c> object at all</b>, so there is nothing
+    /// for a receiver to misread as a condition; what it carries is <c>source</c> (which machine, which
+    /// configured instance) and a <c>text</c> that says in words that this is a configuration test.</para>
+    /// </summary>
+    public const string TestEventType = "st4i.notification.test";
+
+    /// <summary>
     /// Hex-encoded HMAC-SHA256 of the signed material, prefixed with the scheme tag <c>v1=</c>. Absent
     /// entirely when no signing secret is configured — see <see cref="WebhookSigner"/>.
     ///
@@ -56,8 +73,17 @@ public static class WebhookContract
     /// <summary>🔴 An <b>UNSIGNED</b> copy of <see cref="WebhookPayloadEdge.Kind"/>, so a proxy or router
     /// can shed obvious work (dropping <see cref="AlarmEdgeKind.Restored"/>, say) before paying for a JSON
     /// parse. For cheap pre-filtering only — see the boundary warning on <see cref="SignatureHeader"/>.
-    /// Any filter that must be trustworthy reads the BODY.</summary>
+    /// Any filter that must be trustworthy reads the BODY.
+    ///
+    /// <para>🔴 Task C-7 — a SEND TEST carries <see cref="TestEventHeaderValue"/> here, which is NOT an
+    /// <see cref="AlarmEdgeKind"/> member. It has to: a router filtering on this header would otherwise see
+    /// a test arrive as <c>Raised</c>, which is the same lie the separate <see cref="TestEventType"/> exists
+    /// to prevent in the body.</para></summary>
     public const string EventHeader = "X-ST4I-Event";
+
+    /// <summary>🔴 Task C-7 — the <see cref="EventHeader"/> value a send test carries. Deliberately not one
+    /// of <see cref="AlarmEdgeKind"/>'s member names.</summary>
+    public const string TestEventHeaderValue = "Test";
 
     /// <summary>The scheme tag on <see cref="SignatureHeader"/>. A tag rather than a bare hex digest so a
     /// future scheme (a different hash, a different signed material) can be introduced alongside this one
@@ -273,6 +299,45 @@ public sealed record WebhookPayload(
     /// <summary>The exact bytes that are POSTed AND the exact bytes that are signed. One method so those two
     /// can never be different bytes — the failure that makes a signature unverifiable in a way nobody can
     /// debug from the receiving end.</summary>
+    public byte[] ToUtf8Bytes() => JsonSerializer.SerializeToUtf8Bytes(this, WebhookContract.Json);
+}
+
+/// <summary>
+/// 🔴 Task C-7 — the body a SEND TEST posts. See <see cref="WebhookContract.TestEventType"/> for why this is
+/// a separate shape rather than an alarm body with a flag on it.
+///
+/// <para>It is signed and authenticated <b>exactly</b> like an alarm POST — same
+/// <see cref="WebhookSigner"/>, same timestamp binding, same operator-configured authentication header — so
+/// a receiver that verifies signatures exercises that path, and a test that passes is evidence about the
+/// credentials an alarm would actually use. That is the whole value of testing at all; a probe that skipped
+/// the signature would prove only that a TCP connection can be made.</para>
+/// </summary>
+/// <param name="Text">The Slack/Teams display line — see <see cref="WebhookPayload.Text"/> for why this
+/// field is what makes one body reach all four target families. 🔴 It states in words that this is a
+/// configuration test and that no alarm is active, because on a Slack channel this line is the ENTIRE
+/// message a human sees.</param>
+public sealed record WebhookTestPayload(
+    [property: JsonPropertyName("text")] string Text,
+    [property: JsonPropertyName("specVersion")] int SpecVersion,
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("deliveryId")] string DeliveryId,
+    [property: JsonPropertyName("sentAtUtc")] string SentAtUtc,
+    [property: JsonPropertyName("source")] WebhookPayloadSource Source)
+{
+    /// <summary>Builds the test body. Pure — no I/O, no clock beyond <paramref name="sentAtUtc"/>.</summary>
+    public static WebhookTestPayload From(
+        string sourceHost, string channelInstance, string deliveryId, DateTimeOffset sentAtUtc) =>
+        new(
+            Text: $"[TEST] ST4I machine simulator on {sourceHost}: this is a configuration test of the " +
+                  $"alarm webhook '{channelInstance}'. No alarm is active and no action is required.",
+            SpecVersion: WebhookContract.SpecVersion,
+            Type: WebhookContract.TestEventType,
+            DeliveryId: deliveryId,
+            SentAtUtc: WebhookContract.FormatUtc(sentAtUtc),
+            Source: new WebhookPayloadSource("st4i-machine-simulator", sourceHost, channelInstance));
+
+    /// <summary>The exact bytes POSTed AND the exact bytes signed — one method, for
+    /// <see cref="WebhookPayload.ToUtf8Bytes"/>'s reason.</summary>
     public byte[] ToUtf8Bytes() => JsonSerializer.SerializeToUtf8Bytes(this, WebhookContract.Json);
 }
 

@@ -438,7 +438,15 @@ try
     notificationConfigStore = new St4i.EngineApi.Alarms.NotificationConfigStore(
         string.IsNullOrWhiteSpace(notificationsDir) ? null : notificationsDir,
         logError: (ex, msg) => Console.Error.WriteLine($"[notifications] {msg} ({ex.GetType().Name}: {ex.Message})"));
-    builder.Services.AddSingleton(notificationConfigStore);
+    // 🔴 Task C-7 closed a carried item here: AddSingleton used to sit INSIDE this try, above the read
+    // below, and the registration and the local could then disagree in both directions. A throwing
+    // CONSTRUCTOR left the type unregistered while every later `is not null` check still saw the local
+    // (which the catch does clear — but only after the registration had already been skipped); and a throw
+    // from anything AFTER the registration left the type registered while the local was nulled, so the
+    // channels below were not created but a handler resolving the store found one. It is now registered
+    // once, after the whole load has either succeeded or failed, so "the local is non-null" and "the
+    // container has one" are the same fact. Handlers resolve it with GetService and answer honestly when it
+    // is absent — see NotificationEndpoints.
     // Blocking read, same "read a startup-only store synchronously before Build()" idiom as
     // connectorConfigStore.LoadAllAsync()/deviceIdentityStore.LoadOrCreate below.
     //
@@ -461,6 +469,21 @@ catch (Exception ex)
         $"[startup] Failed to open the alarm notification configuration store — no notification channel " +
         $"will run this session: {ex.Message}");
 }
+
+// 🔴 Task C-7 — registered HERE, outside the try, and only when the store is genuinely usable. See the
+// comment above for the two ways the previous placement could make the container and this local disagree.
+if (notificationConfigStore is not null)
+{
+    builder.Services.AddSingleton(notificationConfigStore);
+}
+
+// 🔴 Task C-7 — the first rate limiter in this product (Đợt B's top carried item). One global bucket in
+// front of POST /v1/notifications/test, which is the only route that makes this engine emit a message to a
+// third party. NotificationTestRateLimiter's own doc comment argues what is deliberately NOT limited.
+// Registered unconditionally: the endpoint exists whether or not the configuration store opened, and a
+// limiter that vanished with the store would leave the one outbound route unbounded on exactly the hosts
+// that are already degraded.
+builder.Services.AddSingleton<St4i.EngineApi.Endpoints.NotificationTestRateLimiter>();
 
 // 🔴 The ONE place "which channels can this build actually deliver?" is expressed. C-4..C-6 each add their
 // own member here; BOTH the notifier's dispatch AND the startup notices below are derived from the same
@@ -1445,6 +1468,15 @@ app.MapAlarmEndpoints();
 // all, rather than a minute late, in a background tab a browser has throttled). Mapped unconditionally —
 // with nothing configured it opens, says so in its `ready` frame and stays quiet.
 app.MapAlarmAnnunciationStream();
+// 🔴 Task C-7 — the notification CONFIGURATION surface: eleven routes that finally let the four channels
+// C-3..C-6 built be configured without hand-editing a SQLite file, plus the stats those channels have been
+// producing for nobody. Mapped unconditionally — the store may be unavailable, and a route that answers
+// "the configuration store could not be opened" is worth strictly more than one that is not there.
+//
+// 🔴🔴 PUT/DELETE /v1/notifications/relay are ADMIN and every other route here is not: saving a relay row
+// with TargetKind = Command makes this engine perform an Admin-tier machine command automatically, for as
+// long as the row exists. See NotificationEndpoints' doc comment and MachineWriteGate.RoleFor.
+app.MapNotificationEndpoints();
 // GĐ3 sub-4 LC-3 — the LineController HTTP surface (GET /v1/line, POST /v1/line/{command}).
 app.MapLineEndpoints();
 // GĐ3 EC-3 — the Site-link status/config + device-identity HTTP surface over EC-2's SiteBridgeManager.

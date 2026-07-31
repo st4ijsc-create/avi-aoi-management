@@ -43,7 +43,8 @@ public sealed class AlarmAnnunciationStreamTests
     /// that matters: C-1's <c>Restored</c> edge firing at seed time with nobody connected.</param>
     private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(
         Func<NotificationConfigStore, Task>? configure = null,
-        string? alarmsDir = null)
+        string? alarmsDir = null,
+        int? maxListeners = null)
     {
         var notificationsDir = Directory.CreateTempSubdirectory("st4i-annunstream-notifications-").FullName;
         if (configure is not null)
@@ -77,7 +78,16 @@ public sealed class AlarmAnnunciationStreamTests
             Environment.SetEnvironmentVariable("ST4I_DEMO_ENABLED", null);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
-            var factory = new WebApplicationFactory<Program>();
+            // 🔴 Task C-7 — the subscriber cap is a PRODUCTION constant of 32, and a test that opened 33
+            // real SSE connections to observe it would be slow, flaky and would prove the same thing. The
+            // last AddSingleton wins, so this replaces the hub Program.cs registered with one whose cap the
+            // test chose. The production DEFAULT is asserted separately, so shrinking it here cannot
+            // quietly change what ships.
+            var factory = maxListeners is null
+                ? new WebApplicationFactory<Program>()
+                : new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+                    builder.ConfigureServices(services =>
+                        services.AddSingleton(new AlarmAnnunciationHub(maxListeners: maxListeners.Value))));
             _ = factory.Server; // build AND start the host now, while the env vars above are still set.
             return factory;
         }
@@ -585,5 +595,78 @@ public sealed class AlarmAnnunciationStreamTests
         var detached = DateTimeOffset.UtcNow.AddSeconds(20);
         while (hub.ListenerCount > 0 && DateTimeOffset.UtcNow < detached) await Task.Delay(20);
         Assert.Equal(0, hub.ListenerCount);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task C-7 — the subscriber cap.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 Task C-7 — until this task <c>AlarmAnnunciationHub.Subscribe()</c> had NO cap, so an ordinary
+    /// authenticated GET could be opened without limit by one client. The cost is per LIVE CONNECTION rather
+    /// than per connect — each listener holds a bounded queue and a per-iteration linked CTS and timer, and
+    /// <c>Publish</c> is O(listeners) on C-1's DRAIN THREAD, the same thread a beacon write waits behind —
+    /// which is why the bound is a concurrency cap and not a rate limit.
+    ///
+    /// <para><b>And it is refused with a 503 BEFORE any stream byte is written.</b> A refusal delivered
+    /// mid-stream would arrive on a response already committed as a 200 <c>text/event-stream</c>: the page
+    /// would see an annunciator that opened and then went quiet, which is the C-5 brief's "a mute
+    /// annunciator that looks armed is worse than none", one level up.</para>
+    /// </summary>
+    [Fact]
+    public async Task AtTheSubscriberCap_ANewStreamIsRefusedWith503_BeforeAnyStreamByteIsWritten()
+    {
+        await using var factory = await CreateFactoryAsync(
+            store => store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High),
+            maxListeners: 1);
+        using var client = await LoginAsOperatorAsync(factory);
+        var hub = factory.Services.GetRequiredService<AlarmAnnunciationHub>();
+
+        var first = await client.GetAsync("/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
+        var firstBody = await first.Content.ReadAsStreamAsync();
+        var firstReader = new StreamReader(firstBody);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal("ready", (await ReadFrameAsync(firstReader, TimeSpan.FromSeconds(10)))!.Event);
+
+        var attached = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (hub.ListenerCount == 0 && DateTimeOffset.UtcNow < attached) await Task.Delay(10);
+        Assert.Equal(1, hub.ListenerCount);
+
+        using (var second = await client.GetAsync(
+                   "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, second.StatusCode);
+            // 🔴 Not an event-stream: the refusal never pretends to be a stream that will annunciate.
+            Assert.NotEqual("text/event-stream", second.Content.Headers.ContentType?.MediaType);
+            Assert.NotNull(second.Headers.RetryAfter);
+
+            var body = await second.Content.ReadAsStringAsync();
+            Assert.Contains("would NOT be annunciated", body, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(1, hub.Rejected);
+
+        // 🔴 And it is a CAP, not a wall: closing the first connection frees the slot and the next page
+        // attaches. A browser's own EventSource retry (3 s) is what makes that automatic.
+        firstReader.Dispose();
+        await firstBody.DisposeAsync();
+        first.Dispose();
+
+        var detached = DateTimeOffset.UtcNow.AddSeconds(20);
+        while (hub.ListenerCount > 0 && DateTimeOffset.UtcNow < detached) await Task.Delay(20);
+        Assert.Equal(0, hub.ListenerCount);
+
+        using var third = await client.GetAsync(
+            "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
+        Assert.Equal(HttpStatusCode.OK, third.StatusCode);
+    }
+
+    /// <summary>The production cap is asserted here, so a test that shrinks it for its own convenience
+    /// cannot quietly change what ships.</summary>
+    [Fact]
+    public void TheDocumentedSubscriberCap_IsWhatTheHubActuallyUses()
+    {
+        Assert.Equal(32, AlarmAnnunciationHub.DefaultMaxListeners);
+        Assert.Equal(AlarmAnnunciationHub.DefaultMaxListeners, new AlarmAnnunciationHub().MaxListeners);
     }
 }

@@ -190,20 +190,62 @@ public sealed class AlarmAnnunciationHub
     /// rather than hidden.</para></summary>
     public const int DefaultListenerCapacity = 64;
 
+    /// <summary>
+    /// 🔴 Task C-7 — how many SSE sessions may be attached AT ONCE, across the whole process.
+    ///
+    /// <para><b>Why a cap at all, and why a CONCURRENCY cap rather than a rate limit.</b> Until C-7 this
+    /// class had none: <see cref="Subscribe"/> accepted every caller, so <c>GET /v1/alarms/annunciations</c>
+    /// — an ordinary authenticated GET — could be opened without limit by one client. The cost is not per
+    /// CONNECT, it is per LIVE CONNECTION: each listener holds a bounded queue of
+    /// <see cref="DefaultListenerCapacity"/> annunciations, its handler allocates a linked
+    /// <see cref="CancellationTokenSource"/> and a timer per heartbeat iteration, and
+    /// <see cref="Publish"/> is O(listeners) ON C-1'S DRAIN THREAD — the same thread a beacon write is
+    /// waiting behind. A rate limit on connects would therefore bound the wrong quantity: a caller that
+    /// opens one connection per second and never closes them stays inside any connect rate you choose while
+    /// the per-publish cost grows without bound. A cap bounds the thing that actually costs.</para>
+    ///
+    /// <para><b>Why 32.</b> A plant has a control-room screen, an office screen and a phone or two; the
+    /// desktop shell's WebView2 is one more. 32 is an order of magnitude above any real deployment and still
+    /// bounds the drain thread's per-publish work at 32 non-blocking <c>TryWrite</c>s. A browser's own
+    /// <c>EventSource</c> reconnect (3 s — see
+    /// <see cref="St4i.EngineApi.Hubs.AlarmAnnunciationStreamEndpoint.ReconnectDelayMs"/>) means a refused
+    /// client retries by itself and attaches as soon as a slot frees, so the cap degrades the newest
+    /// connection rather than breaking an established one.</para>
+    ///
+    /// <para>🔴 <b>Refusing is the honest failure and it must stay visible.</b> A refused listener is one
+    /// browser that will not annunciate, so the endpoint answers <c>503</c> with a reason rather than serving
+    /// a stream that silently carries nothing, and <see cref="Rejected"/> counts it. A page cannot be allowed
+    /// to look armed while it is not — the C-5 brief's rule, one level up.</para></summary>
+    public const int DefaultMaxListeners = 32;
+
     private readonly int _capacity;
+    private readonly int _maxListeners;
     private readonly ConcurrentDictionary<long, Listener> _listeners = new();
     private long _nextListenerId;
     private long _published;
     private long _fannedOut;
     private long _overflowed;
+    private long _rejected;
 
-    public AlarmAnnunciationHub(int listenerCapacity = DefaultListenerCapacity)
+    public AlarmAnnunciationHub(
+        int listenerCapacity = DefaultListenerCapacity, int maxListeners = DefaultMaxListeners)
     {
         _capacity = Math.Max(1, listenerCapacity);
+        _maxListeners = Math.Max(1, maxListeners);
     }
 
     /// <summary>How many browser sessions are attached RIGHT NOW. A gauge, not a counter.</summary>
     public int ListenerCount => _listeners.Count;
+
+    /// <summary>🔴 Task C-7 — the ceiling <see cref="ListenerCount"/> is checked against. Surfaced so an
+    /// operator reading "0 listeners" next to "32 of 32 attached" can tell an empty control room from a
+    /// stream that is refusing new pages.</summary>
+    public int MaxListeners => _maxListeners;
+
+    /// <summary>🔴 Task C-7 — subscriptions REFUSED because <see cref="MaxListeners"/> was already reached.
+    /// Cumulative. Non-zero means at least one browser was told, honestly, that it would not be
+    /// annunciated.</summary>
+    public long Rejected => Interlocked.Read(ref _rejected);
 
     /// <summary>Annunciations offered to the hub, whether or not anybody was listening.</summary>
     public long Published => Interlocked.Read(ref _published);
@@ -217,15 +259,72 @@ public sealed class AlarmAnnunciationHub
     /// session.</summary>
     public long Overflowed => Interlocked.Read(ref _overflowed);
 
-    /// <summary>Registers a listener. The caller MUST dispose it (the SSE handler does so in a
-    /// <c>finally</c>), which both unregisters it and completes its reader so a pending read returns.</summary>
-    public Listener Subscribe()
+    /// <summary>
+    /// 🔴 Task C-7 — registers a listener, or returns <see langword="null"/> when
+    /// <see cref="MaxListeners"/> are already attached. The caller MUST dispose what it gets (the SSE
+    /// handler does so with a <c>using</c>), which both unregisters it and completes its reader so a pending
+    /// read returns.
+    ///
+    /// <para>The capacity check and the insert are done under a lock rather than as a
+    /// <c>Count</c>-then-add: <see cref="ConcurrentDictionary{TKey,TValue}.Count"/> read outside one lets N
+    /// concurrent connects all observe the same under-capacity count and all insert, which is exactly the
+    /// burst the cap exists for. The lock is held for a dictionary insert and nothing else — no I/O, no
+    /// user code — and <see cref="Publish"/> deliberately does NOT take it, so a slow drain thread can never
+    /// be delayed by a connecting client.</para>
+    /// </summary>
+    public Listener? TrySubscribe()
     {
-        var id = Interlocked.Increment(ref _nextListenerId);
-        var listener = new Listener(this, id, _capacity);
-        _listeners[id] = listener;
-        return listener;
+        lock (_subscribeGate)
+        {
+            if (_listeners.Count >= _maxListeners)
+            {
+                Interlocked.Increment(ref _rejected);
+                return null;
+            }
+
+            var id = Interlocked.Increment(ref _nextListenerId);
+            var listener = new Listener(this, id, _capacity);
+            _listeners[id] = listener;
+            return listener;
+        }
     }
+
+    /// <summary>
+    /// 🔴 Task C-7 — whether a new listener would be admitted right now, <b>counting the refusal</b> when it
+    /// would not.
+    ///
+    /// <para>It exists because the SSE endpoint has to decide BEFORE it writes any bytes: a refusal
+    /// delivered at <see cref="TrySubscribe"/> time would arrive on a response already committed as a 200
+    /// <c>text/event-stream</c>, and a page that opens and then goes quiet is exactly the "looks armed, is
+    /// not" failure C-5 exists to refuse. The refusal is counted HERE rather than at the endpoint so that
+    /// <see cref="Rejected"/> means "a page was refused" whichever of the two capacity checks refused it —
+    /// a counter that only saw one of two refusal paths would under-report by design.</para>
+    ///
+    /// <para>It reserves nothing, deliberately: a reservation would have to be released on every exit path
+    /// of an SSE handler that can fault mid-write, and a leaked reservation is a slot lost for the process's
+    /// lifetime. The residual — two connections passing this together, one then losing at
+    /// <see cref="TrySubscribe"/> — costs that one connection a silently-ended stream and an automatic
+    /// browser reconnect, and it is counted exactly once either way.</para>
+    /// </summary>
+    public bool TryAdmitListener()
+    {
+        lock (_subscribeGate)
+        {
+            if (_listeners.Count < _maxListeners) return true;
+            Interlocked.Increment(ref _rejected);
+            return false;
+        }
+    }
+
+    /// <summary>Registers a listener, throwing if <see cref="MaxListeners"/> is already reached. Kept for
+    /// callers that legitimately cannot handle a refusal (tests, and anything that would rather fail loudly
+    /// than serve a dark stream); the SSE endpoint uses <see cref="TrySubscribe"/> and answers
+    /// <c>503</c>.</summary>
+    public Listener Subscribe() =>
+        TrySubscribe() ?? throw new InvalidOperationException(
+            $"The alarm annunciation hub already has its maximum of {_maxListeners} attached listener(s).");
+
+    private readonly object _subscribeGate = new();
 
     /// <summary>Offers one annunciation to every attached listener.</summary>
     /// <returns>How many listeners accepted it. <c>0</c> means it annunciated NOWHERE — either nobody had

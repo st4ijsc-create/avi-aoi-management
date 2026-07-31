@@ -196,6 +196,67 @@ public static class SmtpMessageBuilder
     }
 
     /// <summary>
+    /// 🔴 Task C-7 — the SEND TEST message. Pure, like <see cref="Build"/>.
+    ///
+    /// <para><b>Why it is not an alarm message with the word "test" in it.</b> This lands in the same
+    /// mailbox as real alarms, in front of people who are trained to act on them, and quite possibly on a
+    /// phone lock screen at 02:00. Every filtering affordance the alarm message offers is therefore
+    /// deliberately ABSENT here: no <see cref="SmtpContract.AlarmKeyHeader"/>, no
+    /// <see cref="SmtpContract.PriorityHeader"/>, no <see cref="SmtpContract.EdgeHeader"/> and no
+    /// <see cref="SmtpContract.SourceHeader"/> — a Sieve rule or an on-call escalation keyed on any of them
+    /// cannot match this message at all. It is never urgent, and its subject leads with the word TEST
+    /// immediately after <see cref="SmtpContract.SubjectTag"/>, so a filter that catches everything this
+    /// product sends still catches it while a human reading a message list sees what it is.</para>
+    ///
+    /// <para>It carries no <c>References</c>/<c>In-Reply-To</c> either: threading exists to collapse the
+    /// edges of ONE alarm into one conversation, and a test belongs to no alarm. The two headers that ARE
+    /// kept are the two that must never be dropped — <see cref="SmtpContract.AutoSubmittedHeader"/> and
+    /// <see cref="SmtpContract.AutoResponseSuppressHeader"/>, without which an out-of-office responder
+    /// answers the test.</para>
+    /// </summary>
+    public static SmtpMessagePlan BuildTest(
+        string sourceHost, string instance, string fromDomain, string deliveryId, DateTimeOffset sentAtUtc)
+    {
+        var subject =
+            $"{SmtpContract.SubjectTag} TEST - alarm e-mail configuration '{Clip(instance, MaxSubjectValueLength)}' " +
+            $"({Clip(sourceHost, MaxSubjectValueLength)})";
+
+        var body = new StringBuilder();
+        body.Append("This is a TEST message. No alarm is active and no action is required.\r\n\r\n");
+        body.Append("It was sent because somebody used \"send test\" on the alarm e-mail configuration of\r\n");
+        body.Append("the ST4I machine simulator on ").Append(sourceHost).Append(", to check that this\r\n");
+        body.Append("mailbox actually receives what this machine sends.\r\n\r\n");
+        body.Append("WHAT THIS PROVES\r\n");
+        body.Append("  The relay accepted a message from this machine for this address.\r\n\r\n");
+        body.Append("WHAT IT DOES NOT PROVE\r\n");
+        // 🔴 C-4 measured this and it is the reason NotificationTestOutcome.DoesNotProve exists. It is
+        // repeated in the message itself because the person reading this mailbox is often not the person
+        // who clicked the button, and they are the one who would otherwise conclude "e-mail is working".
+        body.Append("  That the stored SMTP password was used, or is correct. The mail client this\r\n");
+        body.Append("  product is built on continues UNAUTHENTICATED whenever the relay refuses, never\r\n");
+        body.Append("  offers, or rejects authentication, and reports no authentication result at all.\r\n");
+        body.Append("  A relay that accepts anonymous mail therefore produces this message either way.\r\n\r\n");
+        body.Append("  That an alarm will arrive. A real alarm is sent only when this channel is ENABLED\r\n");
+        body.Append("  and the alarm meets its configured minimum priority.\r\n");
+        body.Append("\r\n--\r\n");
+        body.Append("Sent by the ST4I machine simulator on ").Append(sourceHost)
+            .Append(" (SMTP channel '").Append(instance).Append("') at ")
+            .Append(SmtpContract.FormatUtc(sentAtUtc)).Append(".\r\n");
+        body.Append("Do not reply - this mailbox is not monitored.\r\n");
+
+        var headers = new List<(string, string)>
+        {
+            ("Message-ID", $"<st4i.test.{Atom(instance)}.{Atom(deliveryId)}@{fromDomain}>"),
+            (SmtpContract.AutoSubmittedHeader, SmtpContract.AutoSubmittedValue),
+            (SmtpContract.AutoResponseSuppressHeader, SmtpContract.AutoResponseSuppressValue),
+            (SmtpContract.InstanceHeader, HeaderValue(instance)),
+            (SmtpContract.HostHeader, HeaderValue(sourceHost)),
+        };
+
+        return new SmtpMessagePlan(subject, body.ToString(), headers, Urgent: false);
+    }
+
+    /// <summary>
     /// 🔴 The one-line headline, per edge kind. It exists because <b>four of the five kinds are NOT "an
     /// alarm is happening"</b>, and a single generic sentence would make an operator read the detail block
     /// to find out whether they need to get out of bed.

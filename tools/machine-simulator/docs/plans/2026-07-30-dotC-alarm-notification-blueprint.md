@@ -130,6 +130,37 @@ Cái C-5 giao thay vào đó **vẫn tới được desktop shell** bất cứ k
 | **C-7** | Endpoint + RBAC + audit + "gửi thử" + **rate limiting** (trả nợ số 1 của Đợt B) | |
 | **C-8** | Web UI + census tài liệu (README:3654 và bản VI) | |
 
+### 7.1 🔴 Bổ sung sau khi C-7 xây xong (2026-07-31)
+
+Bốn quyết định của C-7 mà C-8 và người vận hành phải biết, vì không quyết định nào trong số này suy ra được từ code:
+
+1. **`PUT`/`DELETE /v1/notifications/relay` là ADMIN; mười route còn lại là Engineer.** Lưu một hàng relay với
+   `targetKind = Command` khiến sản phẩm tự động thực hiện — và thực hiện suốt thời gian hàng đó tồn tại — một
+   hành động mà con người cần quyền Admin (`MachineWriteGate.RoleFor`). Đó là **hành vi cấp quyền**, không phải
+   một thay đổi cấu hình thông thường. Cổng đặt ở **ROUTE**, không phải ở thân request: một `if` trong handler
+   nằm ngoài tầm nhìn của `RbacPolicyTests`' metadata sweep — thứ duy nhất trong bộ test thấy được một
+   `.RequireAuthorization` bị quên. Hạ vai trò ở `RoleFor` **không phải** giải pháp thay thế: nó sẽ khiến mọi
+   relay kiểu Command bị từ chối vĩnh viễn, tức là một cấu hình store nhận nhưng kênh không bao giờ thi hành
+   được — đúng lỗi mà C-2 đã từ chối `ImplicitTls` vì nó.
+
+2. **"Gửi thử" chỉ có cho Webhook và SMTP.** Local annunciation bị từ chối (400 có lý do): một bài thử sẽ đẩy
+   một **thẻ báo động giả** kèm tiếng chuông lên mọi trang đang mở, cho một điều kiện không hề xảy ra — điều mà
+   `ready` frame của SSE và `localAnnunciation.listeners` đã trả lời rồi. Relay cũng bị từ chối: nó là một lệnh
+   ghi máy ở tầng Admin, giành quyền điều khiển coil khỏi latch của chính kênh đó, và có thể **để đèn sáng** nếu
+   lệnh nhả sau đó bị HALT latch chặn. Đây là **món nợ có chủ ý** — xem `task-7-report.md` §7.
+
+3. 🔴 **Một bài gửi thử SMTP xanh KHÔNG chứng minh mật khẩu đúng, và API nói thẳng điều đó**
+   (`NotificationTestOutcome.DoesNotProve`, và lặp lại trong chính thân thư). C-4 đã đo: `SmtpClient` đi tiếp
+   **không xác thực** khi relay từ chối, không hỏi, hoặc không hề quảng cáo `AUTH` — và không phơi bày kết quả
+   xác thực nào. Với relay chấp nhận thư nặc danh, kết quả xanh và mật khẩu chưa từng được dùng.
+
+4. **Rate limiting: đúng MỘT route bị giới hạn** — `POST /v1/notifications/test`, 5 giây/lần, một bucket toàn
+   cục, từ chối bằng 429 chứ không trì hoãn. Đó là route duy nhất khiến sản phẩm phát ra thứ gì đó tới **bên thứ
+   ba**. Các route ghi cấu hình **cố ý không bị giới hạn**: chúng là ghi SQLite cục bộ, idempotent, và lúc người
+   vận hành cần sửa cấu hình gấp nhất chính là lúc đang có sự cố — một lệnh ghi cấu hình bị từ chối giữa bão báo
+   động tệ hơn cơn bão nó ngăn. `GET /v1/alarms/annunciations` được chặn bằng **giới hạn số kết nối đồng thời**
+   (32) chứ không phải rate limit, vì chi phí của nó nằm ở mỗi kết nối SỐNG chứ không ở mỗi lần kết nối.
+
 ## 8. Census cần sửa khi xong
 
 Đợt B dạy: **census của tôi sai hai lần**. Lần này liệt kê là điểm khởi đầu, không phải đáp án — C-8 phải tự quét.

@@ -200,6 +200,37 @@ public interface INotificationChannelConfig
     AlarmPriority MinPriority { get; }
 }
 
+/// <summary>
+/// 🔴 Task C-7 — what one SEND TEST established, and — the field this record exists for — what it did
+/// <b>not</b>.
+///
+/// <para><b>Why an outcome type with a stated limit rather than a bare boolean.</b> C-4 measured that a send
+/// test built on <see cref="System.Net.Mail.SmtpClient"/> reports SUCCESS in all three shapes where the
+/// stored SMTP password is never used — including the reachable one, a relay that advertises <c>AUTH</c>
+/// only after <c>STARTTLS</c> while the channel is configured for <see cref="SmtpTlsMode.None"/>:
+/// <c>SmtpClient</c> proceeds unauthenticated after any failed OR absent <c>AUTH</c> and exposes no
+/// authentication result at all. A green tick beside "Test" would therefore tell an operator their
+/// credential works when nothing in this product can know that. Since the limitation cannot be engineered
+/// away without speaking SMTP directly, <b>stating it is the deliverable</b> — and a field is the only place
+/// a statement survives contact with a UI, because a caller that renders <see cref="Ok"/> alone has visibly
+/// dropped something.</para>
+/// </summary>
+/// <param name="Ok">Whether the test message was accepted by the destination. Never more than that.</param>
+/// <param name="Detail">One sentence an operator can act on — what happened, and for a failure what to
+/// change. 🔴 Never contains a credential: it names destinations by the same non-secret identity the
+/// channels' own log lines use.</param>
+/// <param name="Proves">On success, exactly what a green result establishes. <see langword="null"/> on
+/// failure, where <paramref name="Detail"/> is the whole answer.</param>
+/// <param name="DoesNotProve">🔴 On success, the honest limit — including the SMTP authentication gap above,
+/// and whether the channel is currently DISABLED (a test sends regardless, because configuring and testing
+/// before switching on is the sane order; a green test on a disabled channel must not read as "alarms are
+/// being delivered"). <see langword="null"/> on failure.</param>
+public sealed record NotificationTestOutcome(
+    bool Ok,
+    string Detail,
+    string? Proves = null,
+    string? DoesNotProve = null);
+
 /// <summary>Task C-2 — the severity comparison every channel needs, in ONE place.</summary>
 public static class NotificationDelivery
 {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Mail;
 using System.Net.Sockets;
@@ -467,37 +468,38 @@ public sealed class SmtpNotificationChannel
         SmtpChannelConfig config, SmtpIdentity identity, bool hasPassword, NotificationJob job,
         CancellationToken ct)
     {
-        var hasUsername = !string.IsNullOrWhiteSpace(config.Username);
+        var plan = CredentialPlanFor(!string.IsNullOrWhiteSpace(config.Username), hasPassword);
 
-        // The legitimate anonymous case, and it had to be: an in-plant relay on an isolated network that
-        // accepts mail from the shop floor without credentials is the Đợt A target deployment, and
-        // demanding a password would make the most common configuration impossible. This is the SMTP
-        // analogue of the webhook's unsigned POST.
-        if (!hasUsername && !hasPassword) return (null, null);
-
-        if (hasUsername && !hasPassword)
+        switch (plan)
         {
-            // Sending anyway would present an unauthenticated conversation to a relay that requires one — a
-            // 5xx that looks to the operator like their password is WRONG when in fact none is stored.
-            ReportWarning($"Alarm e-mail {identity} is configured to authenticate as '{config.Username}', " +
-                          "but no password is stored for it. Sending unauthenticated would be rejected by " +
-                          $"the relay in a way that looks like a wrong password, so the notification " +
-                          $"{job.Edge} '{job.Alarm.Key}' was NOT sent. Store the password under the " +
-                          $"'{NotificationSecretNames.SmtpPassword}' secret.");
-            return (DeliveryOutcome.Lost, null);
-        }
+            // The legitimate anonymous case, and it had to be: an in-plant relay on an isolated network
+            // that accepts mail from the shop floor without credentials is the Đợt A target deployment, and
+            // demanding a password would make the most common configuration impossible. This is the SMTP
+            // analogue of the webhook's unsigned POST.
+            case CredentialPlan.Anonymous:
+                return (null, null);
 
-        if (!hasUsername)
-        {
-            // A stored password with no username cannot be used at all: there is nothing to authenticate
-            // AS. Ignoring it and sending anonymously is the silent-downgrade shape this whole method
-            // exists to refuse.
-            ReportWarning($"Alarm e-mail {identity} has a password stored but NO username configured, so " +
-                          "there is nothing to authenticate as. Sending anonymously would silently ignore " +
-                          $"a credential an operator deliberately stored, so the notification {job.Edge} " +
-                          $"'{job.Alarm.Key}' was NOT sent. Set a username, or remove the stored password " +
-                          "to send anonymously on purpose.");
-            return (DeliveryOutcome.Lost, null);
+            case CredentialPlan.PasswordMissing:
+                // Sending anyway would present an unauthenticated conversation to a relay that requires one
+                // — a 5xx that looks to the operator like their password is WRONG when in fact none is
+                // stored.
+                ReportWarning($"Alarm e-mail {identity} is configured to authenticate as '{config.Username}', " +
+                              "but no password is stored for it. Sending unauthenticated would be rejected by " +
+                              $"the relay in a way that looks like a wrong password, so the notification " +
+                              $"{job.Edge} '{job.Alarm.Key}' was NOT sent. Store the password under the " +
+                              $"'{NotificationSecretNames.SmtpPassword}' secret.");
+                return (DeliveryOutcome.Lost, null);
+
+            case CredentialPlan.UsernameMissing:
+                // A stored password with no username cannot be used at all: there is nothing to authenticate
+                // AS. Ignoring it and sending anonymously is the silent-downgrade shape this whole method
+                // exists to refuse.
+                ReportWarning($"Alarm e-mail {identity} has a password stored but NO username configured, so " +
+                              "there is nothing to authenticate as. Sending anonymously would silently ignore " +
+                              $"a credential an operator deliberately stored, so the notification {job.Edge} " +
+                              $"'{job.Alarm.Key}' was NOT sent. Set a username, or remove the stored password " +
+                              "to send anonymously on purpose.");
+                return (DeliveryOutcome.Lost, null);
         }
 
         var password = await ReadSecretAsync(NotificationSecretNames.SmtpPassword, identity.Instance, ct)
@@ -518,6 +520,224 @@ public sealed class SmtpNotificationChannel
         }
 
         return (null, new NetworkCredential(config.Username, password));
+    }
+
+    /// <summary>
+    /// 🔴 Task C-7 — the credential DECISION, in one place, because two callers now make it: the alarm
+    /// delivery above and the send test below.
+    ///
+    /// <para>The decision is the security-bearing half ("never silently downgrade a configured credential to
+    /// anonymous"); the WORDING is not, and stays at each call site, because what an operator needs to read
+    /// differs — one says an alarm was lost, the other says a test was not sent. Sharing the words instead of
+    /// the decision is how a shared helper ends up saying "the notification was NOT sent" about a button
+    /// press.</para>
+    /// </summary>
+    private enum CredentialPlan
+    {
+        /// <summary>No username and no stored password: send anonymously, deliberately.</summary>
+        Anonymous,
+
+        /// <summary>A username with no stored password — cannot authenticate, must not send.</summary>
+        PasswordMissing,
+
+        /// <summary>A stored password with no username — nothing to authenticate AS, must not send.</summary>
+        UsernameMissing,
+
+        /// <summary>Both present: read the password and authenticate.</summary>
+        Authenticate,
+    }
+
+    private static CredentialPlan CredentialPlanFor(bool hasUsername, bool hasPassword) =>
+        (hasUsername, hasPassword) switch
+        {
+            (false, false) => CredentialPlan.Anonymous,
+            (true, false) => CredentialPlan.PasswordMissing,
+            (false, true) => CredentialPlan.UsernameMissing,
+            (true, true) => CredentialPlan.Authenticate,
+        };
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task C-7 — the SEND TEST, and the one thing it must not claim.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 Task C-7 — sends ONE test e-mail to a configured instance's recipients and reports what that
+    /// established, <b>including what it cannot establish</b>.
+    ///
+    /// <para>🔴🔴 <b>The thing this method exists to be honest about.</b> A green result here does NOT prove
+    /// the stored password works, and no arrangement of this code could make it. C-4 measured
+    /// <see cref="SmtpClient"/> proceeding to <c>MAIL FROM</c> unauthenticated in all three shapes where the
+    /// credential is not successfully used — the relay rejects it (<c>535</c>), the relay refuses the
+    /// <c>AUTH</c> command, or <b>the relay advertises no <c>AUTH</c> capability at all</b>, which is the
+    /// reachable one: a relay that offers <c>AUTH</c> only after <c>STARTTLS</c>, configured here as
+    /// <see cref="SmtpTlsMode.None"/>. The API exposes no authentication result, so this channel cannot
+    /// observe the difference. Against a relay that then ACCEPTS the mail — an in-plant relay, the Đợt A
+    /// deployment — the test is green and the password was never used. That limit is returned in
+    /// <see cref="NotificationTestOutcome.DoesNotProve"/> and repeated in the message body itself; closing
+    /// it needs an SMTP conversation this product does not speak, or out-of-band verification, and inventing
+    /// either is not this task's.</para>
+    ///
+    /// <para><b>ONE attempt and no retries</b> — see <see cref="WebhookNotificationChannel.SendTestAsync"/>
+    /// for the argument. <b>It moves no counter</b>, for the same reason: every field of
+    /// <see cref="SmtpChannelStats"/> is documented per (notification, instance) pair and a test is not a
+    /// notification.</para>
+    /// </summary>
+    public async Task<NotificationTestOutcome> SendTestAsync(
+        string instance, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(instance);
+
+        var configured = await _store.ListAsync(ct).ConfigureAwait(false);
+        var summary = configured.FirstOrDefault(
+            c => c.Channel == NotificationChannel.Smtp &&
+                 string.Equals(c.Instance, instance, StringComparison.Ordinal));
+
+        if (summary is null)
+        {
+            return new NotificationTestOutcome(false,
+                $"No alarm e-mail channel named '{instance}' is configured on this engine, so there is " +
+                "nothing to test. Save the SMTP configuration first.");
+        }
+
+        var config = await _store.GetSmtpAsync(instance, ct).ConfigureAwait(false);
+        if (config is null)
+        {
+            return new NotificationTestOutcome(false,
+                $"The alarm e-mail channel '{instance}' is listed as configured but could not be read back " +
+                "— it was either deleted in the last instant, or its configuration store could not be read. " +
+                "See the configuration-store health beside the channel statistics.");
+        }
+
+        var identity = new SmtpIdentity(
+            instance, config.Host, config.Port, config.Tls, config.Recipients.Count);
+        var hasPassword = summary.Smtp?.HasPassword == true;
+
+        NetworkCredential? credential = null;
+        switch (CredentialPlanFor(!string.IsNullOrWhiteSpace(config.Username), hasPassword))
+        {
+            case CredentialPlan.Anonymous:
+                break;
+
+            case CredentialPlan.PasswordMissing:
+                return new NotificationTestOutcome(false,
+                    $"The alarm e-mail channel {identity} is configured to authenticate as " +
+                    $"'{config.Username}', but no password is stored for it. Nothing was sent: an " +
+                    "unauthenticated conversation would be rejected in a way that reads as a WRONG password " +
+                    "rather than a missing one. Store the password and test again.");
+
+            case CredentialPlan.UsernameMissing:
+                return new NotificationTestOutcome(false,
+                    $"The alarm e-mail channel {identity} has a password stored but NO username, so there " +
+                    "is nothing to authenticate as. Nothing was sent — sending anonymously would silently " +
+                    "ignore a credential somebody deliberately stored. Set a username, or remove the stored " +
+                    "password to send anonymously on purpose.");
+
+            default:
+                var password = await ReadSecretAsync(NotificationSecretNames.SmtpPassword, instance, ct)
+                    .ConfigureAwait(false);
+                if (string.IsNullOrEmpty(password))
+                {
+                    return new NotificationTestOutcome(false,
+                        $"The alarm e-mail channel {identity} has a password stored for " +
+                        $"'{config.Username}', but it could not be read (the encrypted value is unreadable " +
+                        "on this machine — typically a notifications.db copied from another host). Nothing " +
+                        "was sent. Re-save the password to repair it.");
+                }
+                credential = new NetworkCredential(config.Username, password);
+                break;
+        }
+
+        ct.ThrowIfCancellationRequested();
+
+        using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        attemptCts.CancelAfter(_attemptTimeout);
+
+        try
+        {
+            using var message = BuildTestMessage(config, instance, Guid.NewGuid().ToString("N"));
+            var rejected = await SendMessageAsync(config, message, credential, attemptCts.Token)
+                .ConfigureAwait(false);
+
+            if (rejected.Count > 0)
+            {
+                // 🔴 A partial rejection is a SUCCESS with a hole in it, and it is the single most useful
+                // thing a test can find: those addresses are the ones that would silently never receive an
+                // alarm. Reported as ok=false deliberately — unlike a real delivery, where somebody WAS
+                // told and the counter must say so, the whole point of a test is to be red until the
+                // configuration is right.
+                return new NotificationTestOutcome(false,
+                    $"The relay accepted the test for some recipients and REJECTED " +
+                    $"{rejected.Count.ToString(CultureInfo.InvariantCulture)} of them: " +
+                    $"{string.Join(", ", rejected)}. Those people would silently never receive an alarm. " +
+                    "Correct or remove those addresses.");
+            }
+
+            return new NotificationTestOutcome(true,
+                $"The relay {identity} accepted a test message for all " +
+                $"{config.Recipients.Count.ToString(CultureInfo.InvariantCulture)} recipient(s).",
+                Proves: DescribeTestProof(config, credential is not null),
+                DoesNotProve: DescribeTestLimits(config, credential is not null, summary.Enabled, summary.MinPriority));
+        }
+        catch (Exception) when (ct.IsCancellationRequested)
+        {
+            // The token checks come first and catch EVERY exception type, for C-4's reason: cancelling a
+            // pending connect is done by disposing the client, which surfaces as an SmtpException.
+            throw new OperationCanceledException(
+                "The alarm e-mail test was abandoned because the process is shutting down.", ct);
+        }
+        catch (Exception ex) when (attemptCts.IsCancellationRequested)
+        {
+            return new NotificationTestOutcome(false,
+                $"The relay {identity} did not answer within {_attemptTimeout.TotalSeconds:0.#}s " +
+                $"({ex.GetType().Name}). Check the host, the port, and whether this machine can reach it.");
+        }
+        catch (Exception ex)
+        {
+            var (_, description) = Classify(ex, credential is not null);
+            return new NotificationTestOutcome(false,
+                $"The relay {identity} refused the test message — {description}." + PermanentHint(ex));
+        }
+    }
+
+    /// <summary>🔴 What a green e-mail test actually establishes.</summary>
+    private static string DescribeTestProof(SmtpChannelConfig config, bool authenticated) =>
+        $"The relay at {config.Host}:{config.Port.ToString(CultureInfo.InvariantCulture)} is reachable from " +
+        $"this machine over {(config.Tls == SmtpTlsMode.StartTls ? "STARTTLS" : "an unencrypted connection")}, " +
+        $"accepted '{config.FromAddress}' as a sender, and accepted every configured recipient address. " +
+        (authenticated
+            ? "The stored credential was offered to it."
+            : "No credential was offered, because none is configured — the relay accepts anonymous mail from " +
+              "this machine.");
+
+    /// <summary>
+    /// 🔴 The honest limit on a green e-mail test — the single most important string in this task.
+    /// </summary>
+    private static string DescribeTestLimits(
+        SmtpChannelConfig config, bool authenticated, bool enabled, AlarmPriority minPriority)
+    {
+        var disabled = enabled
+            ? ""
+            : "🔴 This channel is currently DISABLED, so no alarm will be e-mailed however well it tests — " +
+              "enable it to make this configuration live. ";
+
+        // 🔴 C-4's measured finding, stated at exactly the point where somebody would otherwise conclude
+        // the opposite. Only meaningful when a credential was actually offered; with none configured there
+        // is no credential to be wrong about, and claiming otherwise would be its own small lie.
+        var auth = authenticated
+            ? "🔴 It does NOT prove the stored password was used, or that it is correct. The .NET mail " +
+              "client this channel is built on continues UNAUTHENTICATED whenever the relay rejects, " +
+              "refuses or never offers authentication, and it reports no authentication result at all — so " +
+              "a relay that accepts anonymous mail produces this same green result with a wrong password, " +
+              "or with none. The only ways to be sure are to check the relay's own logs for an " +
+              "authenticated session, or to point this at a relay that refuses anonymous mail (where a bad " +
+              "password would have produced a 5xx above). "
+            : "";
+
+        return disabled + auth +
+               "It does not prove a mailbox RECEIVED the message: the relay accepting it is the last thing " +
+               "this machine can observe, and delivery, spam filtering and forwarding all happen after " +
+               $"that. It also says nothing about which alarms qualify — this instance sends {minPriority} " +
+               "and above.";
     }
 
     /// <summary>The ONE way this class reads a secret. The store propagates cancellation itself since Task
@@ -718,6 +938,26 @@ public sealed class SmtpNotificationChannel
         Interlocked.Increment(ref _attempts);
         if (attempt > 1) Interlocked.Increment(ref _retries);
 
+        return await SendMessageAsync(config, message, credential, attemptToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 🔴 Task C-7 — the SMTP conversation itself, shared by <see cref="SendOnceAsync"/> and by
+    /// <see cref="SendTestAsync"/>.
+    ///
+    /// <para>Extracted rather than duplicated because of what is in it: the client-disposal cancellation
+    /// mechanism C-4 measured (21.0 s versus 3-17 ms on a pending connect), the reverse-order disposal that
+    /// keeps the registration from racing the client's, the <c>UseDefaultCredentials = false</c> that stops
+    /// this product authenticating to a third party as whatever Windows account it runs under, and the
+    /// backstop timeout that must never be the mechanism that fires. A second copy of all that, in a code
+    /// path an operator reaches by pressing a button, is how one of them quietly stops being true.</para>
+    /// </summary>
+    /// <returns>The recipients the relay rejected while accepting others; empty means everyone was
+    /// accepted.</returns>
+    private async Task<IReadOnlyList<string>> SendMessageAsync(
+        SmtpChannelConfig config, MailMessage message, NetworkCredential? credential,
+        CancellationToken attemptToken)
+    {
         using var client = new SmtpClient(config.Host, config.Port)
         {
             // 🔴 STARTTLS, and only STARTTLS — see the class doc comment. This flag is the entire TLS
@@ -771,15 +1011,31 @@ public sealed class SmtpNotificationChannel
     /// <summary>Builds the <see cref="MailMessage"/>. Everything that can throw lives here rather than in
     /// <see cref="SmtpMessageBuilder"/>, which is pure — see that class for why the split exists.</summary>
     private MailMessage BuildMessage(
-        SmtpChannelConfig config, NotificationJob job, string instance, string deliveryId)
+        SmtpChannelConfig config, NotificationJob job, string instance, string deliveryId) =>
+        Compose(config, (from) => SmtpMessageBuilder.Build(
+            job, _sourceHost, instance, from.Host, deliveryId, _clock()));
+
+    /// <summary>🔴 Task C-7 — the same construction for a send test, differing only in which pure builder
+    /// renders the plan. See <see cref="SmtpMessageBuilder.BuildTest"/> for what a test message deliberately
+    /// does NOT carry.</summary>
+    private MailMessage BuildTestMessage(SmtpChannelConfig config, string instance, string deliveryId) =>
+        Compose(config, (from) => SmtpMessageBuilder.BuildTest(
+            _sourceHost, instance, from.Host, deliveryId, _clock()));
+
+    /// <summary>The throwing half: <see cref="MailAddress"/> rejects a malformed address with a
+    /// <see cref="FormatException"/> and <c>Subject</c> rejects a CR/LF with an
+    /// <see cref="ArgumentException"/>, which is why this is separate from the pure builders. The plan is
+    /// rendered by a callback because it needs the parsed <c>From</c>'s domain, which only exists once the
+    /// address has been accepted.</summary>
+    private static MailMessage Compose(
+        SmtpChannelConfig config, Func<MailAddress, SmtpMessagePlan> renderPlan)
     {
         var from = new MailAddress(config.FromAddress);
         var message = new MailMessage { From = from };
 
         foreach (var recipient in config.Recipients) message.To.Add(new MailAddress(recipient));
 
-        var plan = SmtpMessageBuilder.Build(
-            job, _sourceHost, instance, from.Host, deliveryId, _clock());
+        var plan = renderPlan(from);
 
         message.Subject = plan.Subject;
         message.Body = plan.Body;

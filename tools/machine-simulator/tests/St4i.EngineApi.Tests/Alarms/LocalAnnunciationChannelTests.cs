@@ -432,6 +432,48 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
         Assert.Equal(77, Assert.Single(Drain(healthy)).Sequence);
     }
 
+    /// <summary>
+    /// 🔴 Task C-7 — the SUBSCRIBER cap, which this hub had none of until C-7 (an ordinary authenticated GET
+    /// could be opened without limit by one client). It bounds the number of LIVE listeners, which is the
+    /// thing that costs: each holds a bounded queue, and <see cref="AlarmAnnunciationHub.Publish"/> is
+    /// O(listeners) on C-1's drain thread.
+    ///
+    /// <para>The refusal is honest in both directions — a refused listener is counted, and the annunciations
+    /// the accepted ones DO get are unaffected, so a full hub degrades the newest connection rather than
+    /// breaking established ones.</para>
+    /// </summary>
+    [Fact]
+    public async Task AtTheSubscriberCap_ANewListenerIsRefusedAndCounted_AndTheAttachedOnesStillHear()
+    {
+        var store = NewStore();
+        Assert.True(await store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.Low));
+
+        var hub = new AlarmAnnunciationHub(maxListeners: 2);
+        using var first = hub.TrySubscribe();
+        using var second = hub.TrySubscribe();
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+
+        var refused = hub.TrySubscribe();
+        Assert.Null(refused);
+        Assert.Equal(1, hub.Rejected);
+        Assert.Equal(2, hub.ListenerCount);
+
+        // The two that got in are unaffected — a full hub must not degrade the sessions that are working.
+        var channel = NewChannel(store, hub);
+        await channel.DispatchAsync(MakeJob(sequence: 5));
+        Assert.Single(Drain(first!));
+        Assert.Single(Drain(second!));
+        Assert.Equal(1, channel.Stats.Announced);
+        Assert.Equal(2, channel.Stats.ListenersAtLastAnnunciation);
+
+        // 🔴 A CAP, not a wall: a slot freed by a disposed listener is immediately usable.
+        first!.Dispose();
+        using var replacement = hub.TrySubscribe();
+        Assert.NotNull(replacement);
+        Assert.Equal(1, hub.Rejected); // unchanged — this one was not refused
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Edge kinds — including the two an annunciator exists to STOP on.
     // ─────────────────────────────────────────────────────────────────────

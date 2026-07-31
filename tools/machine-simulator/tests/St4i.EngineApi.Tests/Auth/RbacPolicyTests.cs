@@ -75,6 +75,12 @@ public sealed class RbacPolicyTests
         // ON) has Program.cs construct a REAL BridgeSpool against %ProgramData%\ST4I\sim\bridge-spool\.
         var bridgeSpoolDir = Directory.CreateTempSubdirectory("st4i-rbac-bridgespool-").FullName;
         var connectorConfigDir = Directory.CreateTempSubdirectory("st4i-rbac-connectorconfig-").FullName;
+        // 🔴 Task C-7 — isolated for the same reason as every directory above, and this one had been
+        // leaking since C-2: without it every WebApplicationFactory<Program> boot in this class opens the
+        // REAL %ProgramData%\ST4I\sim\notifications\notifications.db, and C-7's tests below now WRITE
+        // configuration through it — so a test run would have persisted a relay configuration onto the
+        // developer's own machine.
+        var notificationsDir = Directory.CreateTempSubdirectory("st4i-rbac-notifications-").FullName;
 
         await EnvLock.WaitAsync().ConfigureAwait(false);
         var prevSecurityDir = Environment.GetEnvironmentVariable("ST4I_SECURITY_DIR");
@@ -87,6 +93,7 @@ public sealed class RbacPolicyTests
         var prevAlarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
         var prevBridgeSpoolDir = Environment.GetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR");
         var prevConnectorConfigDir = Environment.GetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR");
+        var prevNotificationsDir = Environment.GetEnvironmentVariable("ST4I_NOTIFICATIONS_DIR");
         var prevEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         try
         {
@@ -100,6 +107,7 @@ public sealed class RbacPolicyTests
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", alarmsDir);
             Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", bridgeSpoolDir);
             Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", connectorConfigDir);
+            Environment.SetEnvironmentVariable("ST4I_NOTIFICATIONS_DIR", notificationsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
@@ -118,6 +126,7 @@ public sealed class RbacPolicyTests
             Environment.SetEnvironmentVariable("ST4I_ALARMS_DIR", prevAlarmsDir);
             Environment.SetEnvironmentVariable("ST4I_BRIDGE_SPOOL_DIR", prevBridgeSpoolDir);
             Environment.SetEnvironmentVariable("ST4I_CONNECTOR_CONFIG_DIR", prevConnectorConfigDir);
+            Environment.SetEnvironmentVariable("ST4I_NOTIFICATIONS_DIR", prevNotificationsDir);
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", prevEnvironment);
             EnvLock.Release();
         }
@@ -259,6 +268,27 @@ public sealed class RbacPolicyTests
         new("/v1/connectors/test", new[] { "POST" }, Policies.Engineer),
         new("/v1/inspector/stream", Array.Empty<string>(), Policies.Engineer),
 
+        // 🔴 Task C-7 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-7-brief.md) — the
+        // alarm-notification configuration surface. Engineer for the three channels that reach a person
+        // through software; see the Admin block below for the fourth, which drives hardware.
+        //
+        // The two READS are Engineer rather than Operator: they carry the whole notification configuration
+        // — SMTP usernames, every alarm recipient's e-mail address, webhook endpoints, and the machine and
+        // point the relay may energise — which is the same tier of material as GET /v1/settings. The
+        // Operator-tier notification surface is deliberately narrower and already exists: the `ready` frame
+        // of GET /v1/alarms/annunciations above.
+        new("/v1/notifications/channels", new[] { "GET" }, Policies.Engineer),
+        new("/v1/notifications/status", new[] { "GET" }, Policies.Engineer),
+        new("/v1/notifications/webhook", new[] { "PUT" }, Policies.Engineer),
+        new("/v1/notifications/webhook", new[] { "DELETE" }, Policies.Engineer),
+        new("/v1/notifications/smtp", new[] { "PUT" }, Policies.Engineer),
+        new("/v1/notifications/smtp", new[] { "DELETE" }, Policies.Engineer),
+        new("/v1/notifications/local-annunciation", new[] { "PUT" }, Policies.Engineer),
+        new("/v1/notifications/local-annunciation", new[] { "DELETE" }, Policies.Engineer),
+        // Engineer: it reaches a third party but changes nothing here, same tier as POST /v1/connectors/test.
+        // It is the one rate-limited route in this product — see NotificationTestRateLimiter.
+        new("/v1/notifications/test", new[] { "POST" }, Policies.Engineer),
+
         // Admin
         new("/v1/historian/prune", new[] { "POST" }, Policies.Admin),
         new("/v1/audit", new[] { "GET" }, Policies.Admin),
@@ -273,6 +303,20 @@ public sealed class RbacPolicyTests
         // for the full argument, and MachineWriteEndpointsTests for the proof that an Engineer (setpoint-
         // authorised) caller cannot invoke a command.
         new("/v1/machines/{code}/command", new[] { "POST" }, Policies.Admin),
+
+        // 🔴🔴 Admin — Task C-7, and this is the whole point of the task's RBAC decision.
+        // MachineWriteGate.RoleFor returns Roles.Admin for a RelayTargetKind.Command target and
+        // RelayNotificationChannel presents it, so saving a relay row with targetKind = Command makes this
+        // engine perform, automatically and for as long as the row exists, an action a human needs Admin
+        // for. Every OTHER config-mutation endpoint in this repository is Engineer — including the three
+        // notification channels above — so following that precedent here would have handed an Engineer
+        // Admin-tier command authority through a config row (C-6 review I-2).
+        //
+        // The gate is the ROUTE rather than a body check, deliberately: a body check would put the
+        // privilege boundary inside a handler, after model binding, where THIS SWEEP CANNOT SEE IT. Here it
+        // is metadata, and the sweep asserts it in both directions.
+        new("/v1/notifications/relay", new[] { "PUT" }, Policies.Admin),
+        new("/v1/notifications/relay", new[] { "DELETE" }, Policies.Admin),
 
         // Admin — WS-D-D7 user management (UserEndpoints.cs)
         new("/v1/users", new[] { "GET" }, Policies.Admin),
@@ -415,6 +459,169 @@ public sealed class RbacPolicyTests
             using var verifyTlsOff = await adminClient.PutAsJsonAsync(
                 "/v1/settings", new { verifyTls = false }, JsonOptions);
             Assert.Equal(HttpStatusCode.OK, verifyTlsOff.StatusCode);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴🔴 2b) Task C-7's non-negotiable: an Engineer cannot configure the alarm relay.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴🔴 <b>The privilege escalation C-6's review found (I-2), closed and proved through the real
+    /// pipeline.</b>
+    ///
+    /// <para><c>MachineWriteGate.RoleFor</c> returns <c>Roles.Admin</c> for a <c>RelayTargetKind.Command</c>
+    /// target and <c>RelayNotificationChannel</c> presents it — so a relay row with
+    /// <c>targetKind = Command</c> makes this engine perform, automatically and for as long as the row
+    /// exists, an action a human needs Admin for. Every OTHER config-mutation endpoint in this repository is
+    /// Engineer-tier, so following that precedent would have handed an Engineer Admin-tier command authority
+    /// through a config row.</para>
+    ///
+    /// <para><b>What this test asserts that the metadata sweep cannot:</b> the sweep proves the policy is
+    /// ATTACHED; this proves it ENFORCES — and, more importantly, that the refusal has the consequence that
+    /// matters. A 403 that still left a row in the store would be a passing test and an open escalation, so
+    /// the store's own state is read back through the API after each refusal.</para>
+    ///
+    /// <para>The Engineer's successful WEBHOOK save is the control. Without it, this test would also pass on
+    /// a build where the Engineer role were broken outright, or where the whole notification surface were
+    /// Admin — neither of which is the property being claimed.</para>
+    /// </summary>
+    [Fact]
+    public async Task RelayNotificationConfig_IsAdminOnly_SoAnEngineerCannotGrantThisEngineCommandAuthority()
+    {
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+
+        using (var bootstrapClient = factory.CreateClient())
+        using (var bootstrap = await bootstrapClient.PostAsJsonAsync(
+                   "/v1/auth/bootstrap",
+                   new { username = "relay-admin", password = "AdminPass123!", displayName = (string?)null },
+                   JsonOptions))
+        {
+            Assert.Equal(HttpStatusCode.OK, bootstrap.StatusCode);
+        }
+
+        await CreateUserAsync(factory, "relay-engineer", "EngineerPass123!", Roles.Engineer);
+
+        var commandRelay = new
+        {
+            enabled = true,
+            minPriority = "Critical",
+            machineCode = "AOI-01",
+            targetKind = "Command",
+            targetName = "pulse_beacon",
+        };
+        var pointRelay = new
+        {
+            enabled = true,
+            minPriority = "Critical",
+            machineCode = "AOI-01",
+            targetKind = "Point",
+            targetName = "beacon",
+            onValueJson = "1",
+            offValueJson = "0",
+        };
+
+        using (var engineer = await LoginAsAsync(factory, "relay-engineer", "EngineerPass123!"))
+        {
+            // 🔴 The headline: the Command target — the one that grants Admin-tier authority — is refused.
+            using (var command = await engineer.PutAsJsonAsync("/v1/notifications/relay", commandRelay, JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, command.StatusCode);
+            }
+
+            // And so is the Point target: the WHOLE route is Admin, deliberately. Gating on the body would
+            // have put the boundary inside a handler where the metadata sweep cannot see it.
+            using (var point = await engineer.PutAsJsonAsync("/v1/notifications/relay", pointRelay, JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, point.StatusCode);
+            }
+
+            // 🔴 The consequence, not just the status: nothing was created. A 403 that still wrote a row
+            // would leave the escalation open while this test passed.
+            using (var channels = await engineer.GetAsync("/v1/notifications/channels"))
+            {
+                Assert.Equal(HttpStatusCode.OK, channels.StatusCode);
+                var body = await channels.Content.ReadAsStringAsync();
+                Assert.DoesNotContain("\"Relay\"", body, StringComparison.Ordinal);
+            }
+
+            // The CONTROL. An Engineer configures a webhook perfectly well, so the two 403s above are about
+            // the relay route specifically — not about a broken Engineer role or an all-Admin surface.
+            using (var webhook = await engineer.PutAsJsonAsync(
+                       "/v1/notifications/webhook",
+                       new { enabled = true, minPriority = "High", url = "https://hooks.example.test/svc/abc" },
+                       JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.OK, webhook.StatusCode);
+            }
+        }
+
+        using (var admin = await LoginAsAsync(factory, "relay-admin", "AdminPass123!"))
+        {
+            using (var command = await admin.PutAsJsonAsync("/v1/notifications/relay", commandRelay, JsonOptions))
+            {
+                Assert.Equal(HttpStatusCode.OK, command.StatusCode);
+            }
+
+            using var channels = await admin.GetAsync("/v1/notifications/channels");
+            Assert.Contains("pulse_beacon", await channels.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        // Deleting it is Admin too: an Engineer who could remove the relay row could silently un-configure
+        // the plant's beacon and could not put it back, since the save is Admin.
+        using (var engineer = await LoginAsAsync(factory, "relay-engineer", "EngineerPass123!"))
+        {
+            using var delete = await engineer.DeleteAsync("/v1/notifications/relay");
+            Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
+
+            using var channels = await engineer.GetAsync("/v1/notifications/channels");
+            Assert.Contains("pulse_beacon", await channels.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        using (var admin = await LoginAsAsync(factory, "relay-admin", "AdminPass123!"))
+        {
+            using var delete = await admin.DeleteAsync("/v1/notifications/relay");
+            Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+        }
+    }
+
+    /// <summary>
+    /// 🔴 Task C-7 — the notification READS are Engineer, so an Operator (who can see the alarms themselves)
+    /// cannot read the alarm recipients' e-mail addresses, the SMTP account or the relay's machine and point.
+    /// </summary>
+    [Fact]
+    public async Task NotificationConfiguration_IsNotReadableByAnOperator()
+    {
+        await using var factory = await CreateFactoryAsync(demoEnabled: false);
+
+        using (var bootstrapClient = factory.CreateClient())
+        using (var bootstrap = await bootstrapClient.PostAsJsonAsync(
+                   "/v1/auth/bootstrap",
+                   new { username = "notif-admin", password = "AdminPass123!", displayName = (string?)null },
+                   JsonOptions))
+        {
+            Assert.Equal(HttpStatusCode.OK, bootstrap.StatusCode);
+        }
+
+        await CreateUserAsync(factory, "notif-operator", "OperatorPass123!", Roles.Operator);
+
+        using var operatorClient = await LoginAsAsync(factory, "notif-operator", "OperatorPass123!");
+
+        using (var channels = await operatorClient.GetAsync("/v1/notifications/channels"))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, channels.StatusCode);
+        }
+
+        using (var status = await operatorClient.GetAsync("/v1/notifications/status"))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, status.StatusCode);
+        }
+
+        // The control: the Operator-tier notification surface an operator DOES need still works — the alarm
+        // list itself. So this is about the configuration, not about the operator being locked out.
+        using (var alarms = await operatorClient.GetAsync("/v1/alarms"))
+        {
+            Assert.Equal(HttpStatusCode.OK, alarms.StatusCode);
         }
     }
 
