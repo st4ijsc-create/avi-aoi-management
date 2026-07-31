@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { usePollingInterval } from "@/hooks/usePollingInterval";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PageHeader, PageContainer } from "@/components/patterns";
@@ -117,7 +118,7 @@ export default function AIBrainDashboard() {
       toast.success(t("aiBrain.agentOps.cancelSuccess", "Đã hủy phiên agent."));
       opsSessions.refetch();
     },
-    onError: (err: any) => toast.error(err?.message ?? t("aiBrain.agentOps.cancelError", "Không thể hủy phiên agent.")),
+    onError: (err: any) => toast.error(mapTrpcError(err)),
   });
   const tripMut = trpc.aiAgent.tripKillSwitch.useMutation({
     onSuccess: () => {
@@ -126,7 +127,7 @@ export default function AIBrainDashboard() {
       killSwitch.refetch();
       utils.aiAgent.getKillSwitchStatus.invalidate();
     },
-    onError: (err: any) => toast.error(err?.message ?? t("aiBrain.killSwitch.tripError", "Không thể trip công tắc.")),
+    onError: (err: any) => toast.error(mapTrpcError(err)),
   });
   const untripMut = trpc.aiAgent.untripKillSwitch.useMutation({
     onSuccess: () => {
@@ -134,7 +135,7 @@ export default function AIBrainDashboard() {
       killSwitch.refetch();
       utils.aiAgent.getKillSwitchStatus.invalidate();
     },
-    onError: (err: any) => toast.error(err?.message ?? t("aiBrain.killSwitch.untripError", "Không thể untrip công tắc.")),
+    onError: (err: any) => toast.error(mapTrpcError(err)),
   });
 
   const stats = router.data;

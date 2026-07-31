@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -130,7 +131,7 @@ export function ProductCategoryManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('products.categoryCreateError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -142,7 +143,7 @@ export function ProductCategoryManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('products.categoryUpdateError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -152,7 +153,7 @@ export function ProductCategoryManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('products.categoryDeleteError'));
+      toast.error(mapTrpcError(error));
     },
   });
 

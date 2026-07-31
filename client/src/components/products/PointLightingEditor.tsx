@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,15 +39,15 @@ export function PointLightingEditor({ pointDefId, canEdit }: Props) {
 
   const createMut = trpc.mpLightingProfile.create.useMutation({
     onSuccess: () => { invalidate(); toast.success(t("measurementPointP2.lightingAdded")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateMut = trpc.mpLightingProfile.update.useMutation({
     onSuccess: () => invalidate(),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteMut = trpc.mpLightingProfile.delete.useMutation({
     onSuccess: () => { invalidate(); toast.success(t("measurementPointP2.lightingRemoved")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const rows = profiles ?? [];

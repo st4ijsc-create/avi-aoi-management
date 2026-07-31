@@ -12,6 +12,7 @@
  */
 import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,21 +91,21 @@ export default function MsdPanel() {
       setNotes("");
       refetchAll();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const startBake = trpc.msd.startBake.useMutation({
     onSuccess: () => {
       toast.success("Đã bắt đầu sấy (bake)");
       refetchAll();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const closeExposure = trpc.msd.closeExposure.useMutation({
     onSuccess: () => {
       toast.success("Đã trả về kho khô (đóng exposure)");
       refetchAll();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const onOpen = () => {

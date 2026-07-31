@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   Plus,
   Trash2,
@@ -106,7 +107,7 @@ export default function WorkshopLayoutEditor({
       refetchLayout();
       onLayoutChange?.();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updatePositionMutation = trpc.layout.updateMachinePosition.useMutation({
@@ -114,7 +115,7 @@ export default function WorkshopLayoutEditor({
       refetchLayout();
       onLayoutChange?.();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const removePositionMutation = trpc.layout.removeMachinePosition.useMutation({
@@ -123,7 +124,7 @@ export default function WorkshopLayoutEditor({
       refetchLayout();
       onLayoutChange?.();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // Combine machines with positions and stats
