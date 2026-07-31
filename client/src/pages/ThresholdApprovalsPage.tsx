@@ -152,11 +152,11 @@ export default function ThresholdApprovalsPage() {
       );
       invalidate();
     },
-    onError: (e: any) => toast.error(mapTrpcError(e)),
+    onError: (e: any) => toast.error(t("thresholdApprovals.batchFailed"), { description: mapTrpcError(e) }),
   });
   const revertM = thresholdApi.revert.useMutation({
     onSuccess: () => { toast.success(t("thresholdApprovals.reverted")); setRevertTarget(null); invalidate(); },
-    onError: (e: any) => toast.error(mapTrpcError(e)),
+    onError: (e: any) => toast.error(t("thresholdApprovals.revertFailed"), { description: mapTrpcError(e) }),
   });
 
   // Rows a reviewer may batch-approve: pending + not their own (mirror server SoD).

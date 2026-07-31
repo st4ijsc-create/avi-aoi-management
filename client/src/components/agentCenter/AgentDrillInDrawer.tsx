@@ -132,14 +132,14 @@ function OrchestratorDetail({ entry, sessions, currentUserId, onMutated }: { ent
       detailQuery.refetch();
       onMutated();
     },
-    onError: (err: any) => toast.error(mapTrpcError(err)),
+    onError: (err: any) => toast.error(t("agentCenter.drawer.approveError", "Không thể duyệt kế hoạch."), { description: mapTrpcError(err) }),
   });
   const confirmMut = trpc.aiAgent.confirmStep.useMutation({
     onSuccess: () => {
       detailQuery.refetch();
       onMutated();
     },
-    onError: (err: any) => toast.error(mapTrpcError(err)),
+    onError: (err: any) => toast.error(t("agentCenter.drawer.pendingWrite.confirmError", "Không thể xác nhận thao tác."), { description: mapTrpcError(err) }),
   });
   const cancelMut = trpc.aiAgent.cancelSession.useMutation({
     onSuccess: () => {
@@ -147,7 +147,7 @@ function OrchestratorDetail({ entry, sessions, currentUserId, onMutated }: { ent
       detailQuery.refetch();
       onMutated();
     },
-    onError: (err: any) => toast.error(mapTrpcError(err)),
+    onError: (err: any) => toast.error(t("aiBrain.agentOps.cancelError", "Không thể hủy phiên agent."), { description: mapTrpcError(err) }),
   });
 
   const busy = approveMut.isPending || confirmMut.isPending || cancelMut.isPending;

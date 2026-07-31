@@ -129,7 +129,7 @@ export default function Users() {
       refetchUsers();
     },
     onError: (error) => {
-      toast.error(mapTrpcError(error));
+      toast.error(t('users.createError'), { description: mapTrpcError(error) });
     },
   });
 
@@ -141,7 +141,7 @@ export default function Users() {
       refetchUsers();
     },
     onError: (error) => {
-      toast.error(mapTrpcError(error));
+      toast.error(t('users.updateError'), { description: mapTrpcError(error) });
     },
   });
 
@@ -164,7 +164,7 @@ export default function Users() {
       refetchUsers();
     },
     onError: (error) => {
-      toast.error(mapTrpcError(error));
+      toast.error(t('users.deleteError'), { description: mapTrpcError(error) });
     },
   });
 

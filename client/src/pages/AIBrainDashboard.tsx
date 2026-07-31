@@ -118,7 +118,7 @@ export default function AIBrainDashboard() {
       toast.success(t("aiBrain.agentOps.cancelSuccess", "Đã hủy phiên agent."));
       opsSessions.refetch();
     },
-    onError: (err: any) => toast.error(mapTrpcError(err)),
+    onError: (err: any) => toast.error(t("aiBrain.agentOps.cancelError", "Không thể hủy phiên agent."), { description: mapTrpcError(err) }),
   });
   const tripMut = trpc.aiAgent.tripKillSwitch.useMutation({
     onSuccess: () => {
@@ -127,7 +127,7 @@ export default function AIBrainDashboard() {
       killSwitch.refetch();
       utils.aiAgent.getKillSwitchStatus.invalidate();
     },
-    onError: (err: any) => toast.error(mapTrpcError(err)),
+    onError: (err: any) => toast.error(t("aiBrain.killSwitch.tripError", "Không thể trip công tắc."), { description: mapTrpcError(err) }),
   });
   const untripMut = trpc.aiAgent.untripKillSwitch.useMutation({
     onSuccess: () => {
@@ -135,7 +135,7 @@ export default function AIBrainDashboard() {
       killSwitch.refetch();
       utils.aiAgent.getKillSwitchStatus.invalidate();
     },
-    onError: (err: any) => toast.error(mapTrpcError(err)),
+    onError: (err: any) => toast.error(t("aiBrain.killSwitch.untripError", "Không thể untrip công tắc."), { description: mapTrpcError(err) }),
   });
 
   const stats = router.data;
