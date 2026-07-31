@@ -725,7 +725,7 @@ Respond in JSON format with an array of findings.`
         
         const content = response.choices[0]?.message?.content;
         if (!content) {
-          throw new Error('No response from AI');
+          throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "analyzeAnnotationWithAI" }, "No response from AI");
         }
         
         const contentStr = typeof content === 'string' ? content : JSON.stringify(content);

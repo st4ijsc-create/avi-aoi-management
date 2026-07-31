@@ -907,6 +907,14 @@ export async function inspectionAlreadyPersisted(input: SubmitInspectionInput): 
     throw err; // DbUnavailableError etc. → transient
   }
   const dbi = await db.getDb();
+  // Task 9 (F2, doc71) — CỐ Ý KHÔNG di trú sang appError() ở đây. Hàm này chỉ
+  // được gọi qua walSetDedupFn (dòng ~890) → inspectionStoreForward.ts
+  // backfillInspections(): `try { exists = await dedupFn(...) } catch { break; }`
+  // — catch KHÔNG đọc err.message hay err.code, chỉ dùng exception như tín
+  // hiệu nhị phân "còn lỗi ⇒ dừng, DB vẫn down". Không caller nào — kể cả
+  // worker nền này — từng hiển thị chuỗi lỗi cho một con người. Migrate sang
+  // appError() ở một chỗ KHÔNG BAO GIỜ có người đọc là sai tinh thần của
+  // task (mục 6 trong brief) — để nguyên, báo cáo riêng.
   if (!dbi) throw new Error("Database not available");
   // Same "fake UTC" shift the insert path applies (see processInspectionSubmission).
   const raw = new Date(input.inspectionTime);
@@ -1919,7 +1927,15 @@ export async function processInspectionSubmission(
         .filter((k): k is string => typeof k === "string" && k.length > 0);
       if (measurementResults.length > 0 || promoteOverallToNg) {
         const dbInstance = await getDb();
-        if (!dbInstance) throw new Error("Database not available");
+        // Task 9 (F2, doc71) — trpcCode PHẢI giữ "INTERNAL_SERVER_ERROR": đây là
+        // đường LIVE của submitInspection, lỗi này bị bắt ở catch bên ngoài
+        // (~dòng 2937) và phân loại bằng isPermanentSubmitError() (đọc
+        // err.code trong PERMANENT_TRPC_CODES, inspectionStoreForward.ts) —
+        // đổi sang một code NẰM TRONG tập đó (BAD_REQUEST/CONFLICT/NOT_FOUND/
+        // FORBIDDEN/UNAUTHORIZED) sẽ biến một lỗi TRANSIENT (DB down, nên
+        // queue vào WAL rồi trả "queued: true") thành PERMANENT (trả lỗi
+        // thẳng cho máy, không backfill) — đổi hành vi store-forward âm thầm.
+        if (!dbInstance) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
         try {
           await dbInstance.transaction(async (tx) => {
             if (measurementResults.length > 0) {
@@ -2855,6 +2871,11 @@ export async function processResultAlreadyPersisted(input: SubmitProcessResultIn
     throw err; // DbUnavailableError etc. → transient
   }
   const dbi = await getDb();
+  // Task 9 (F2, doc71) — CỐ Ý KHÔNG di trú, cùng lý do với
+  // inspectionAlreadyPersisted() ở trên: chỉ gọi qua processWalSetDedupFn →
+  // processStoreForward.ts backfill loop, catch ở đó bỏ qua nội dung lỗi
+  // hoàn toàn, dùng như tín hiệu nhị phân. Không người dùng nào đọc chuỗi
+  // này. Để nguyên, báo cáo riêng.
   if (!dbi) throw new Error("Database not available");
   const rows = await dbi
     .select({ resultId: processIdempotencyKeys.resultId })

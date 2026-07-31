@@ -5,6 +5,7 @@
 
 import { router, publicProcedure, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { logger } from "../logger";
 // doc69 B3 (Wave 5, AI#2) — closes the KB feedback loop: persist every vote to
 // kb_answer_feedback ALONGSIDE (not instead of) the legacy JSONL append below.
@@ -111,7 +112,7 @@ async function fetchKbApi<T>(endpoint: string, method: string = "GET", body?: un
   try {
     const res = await fetch(url, options);
     if (!res.ok) {
-      throw new Error(`KB API error: ${res.status} ${res.statusText}`);
+      throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "queryLocalKb" }, `KB API error: ${res.status} ${res.statusText}`);
     }
     const data = await res.json();
     return data as T;
@@ -160,7 +161,7 @@ export const aiLocalKbRouter = router({
           data: result.data,
         };
       } else {
-        throw new Error(result.error || "Retrieval failed");
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "queryLocalKb" }, result.error || "Retrieval failed");
       }
     } catch (error: any) {
       return {
@@ -186,7 +187,7 @@ export const aiLocalKbRouter = router({
           data: result.data,
         };
       } else {
-        throw new Error(result.error || "Ask failed");
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "queryLocalKb" }, result.error || "Ask failed");
       }
     } catch (error: any) {
       return {

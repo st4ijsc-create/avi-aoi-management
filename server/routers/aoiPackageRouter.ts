@@ -540,7 +540,7 @@ export const aoiPackageRouter = router({
             if (fs.existsSync(filePath)) {
               zipBuffer = fs.readFileSync(filePath);
             } else {
-              throw new Error("ZIP file not found");
+              throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "aoiPackage" }, "ZIP file not found");
             }
           } else {
             const { url } = await storageGet(pkg.storageKey);

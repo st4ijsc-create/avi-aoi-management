@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { appError } from "../_core/appError";
 // doc 54 Wave B — createAlert/logConnectionEvent/updateConnectionStatus/logReconnectEvent
 // accept arbitrary input on a bare protectedProcedure → any authenticated user (incl.
 // viewer) could poison connection logs/alerts. writeProcedure blocks read-only roles;
@@ -32,7 +33,7 @@ import { eq, and, desc, asc, sql, like, inArray, gte, lte, count, sum, avg, isNu
 // Helper to get db with null check
 async function requireDb() {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not available");
   return db;
 }
 
@@ -174,7 +175,7 @@ export const mqttClientManagementRouter = router({
         .limit(1);
       
       if (!profile) {
-        throw new Error("Profile not found");
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mqttClientProfile" }, "Profile not found");
       }
 
       // Get assignments
@@ -265,7 +266,7 @@ export const mqttClientManagementRouter = router({
         .limit(1);
       
       if (assignment) {
-        throw new Error("Cannot delete profile with active assignments. Please remove all assignments first.");
+        throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "deleteMqttClientProfile" }, "Cannot delete profile with active assignments. Please remove all assignments first.");
       }
       
       await db.delete(mqttClientProfiles)
@@ -286,7 +287,7 @@ export const mqttClientManagementRouter = router({
         .limit(1);
       
       if (!original) {
-        throw new Error("Profile not found");
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mqttClientProfile" }, "Profile not found");
       }
       
       const { id, createdAt, updatedAt, ...profileData } = original;
@@ -949,7 +950,7 @@ export const mqttClientManagementRouter = router({
         .limit(1);
       
       if (!profile) {
-        throw new Error("Profile not found");
+        throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "mqttClientProfile" }, "Profile not found");
       }
       
       const results = {
