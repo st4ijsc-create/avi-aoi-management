@@ -254,6 +254,7 @@
     "openFull": "打开完整视图",
     "noAccess": "您的角色无权访问。",
     "loadError": "无法加载此面板",
+    "ackError": "无法确认（可能是权限问题）。",
     "retry": "重试",
     "noData": "暂无数据。",
     "asOf": "截至",
@@ -2540,7 +2541,7 @@
     "exitSelect": "Exit选择",
     "exitFullscreen": "退出全屏",
     "errorWithMessage": "错误：{{message}}",
-    "errorMessage": "错误消息",
+    "errorMessage": "错误：{{message}}",
     "errorLoadingData": "错误加载中数据",
     "error": "错误",
     "enterSerialNumber": "输入序列号",
@@ -2859,7 +2860,8 @@
     "templateName": "模板名称",
     "templateMarketplace": "模板市场",
     "templateDownloadSuccess": "模板下载成功",
-    "templateDownloadError": "模板下载错误",
+    "templateDownloadError": "无法下载模板：{{message}}",
+    "analyticsUnavailable": "该账户无法使用分析功能。",
     "templateDownloaded": "模板已下载",
     "templateDetails": "模板详情",
     "templateDescPlaceholder": "输入模板描述...",
@@ -4725,7 +4727,7 @@
     "last30days": "最近30天",
     "importSuccess": "数据导入成功",
     "importPartial": "导入partial",
-    "importFailed": "导入失败",
+    "importFailed": "导入失败：{{message}}",
     "importData": "导入数据",
     "failedCount": "失败计数",
     "factories": "工厂",
@@ -4735,7 +4737,7 @@
     "exportMasterData": "导出master数据",
     "exportInspectionDataDesc": "将检查数据导出到文件",
     "exportInspectionData": "导出检查数据",
-    "exportFailed": "导出失败",
+    "exportFailed": "导出失败：{{message}}",
     "exportData": "导出数据",
     "emptyFile": "Empty文件",
     "downloadTemplate": "下载模板",
@@ -5090,7 +5092,7 @@
     "byType": "按类型",
     "awaitingApproval": "等待审批",
     "approveRegistration": "批准注册",
-    "approveError": "Approve错误",
+    "approveError": "批准失败：{{message}}",
     "approvedMapping": "已批准mapping",
     "approve": "批准",
     "allTypes": "全部类型",
@@ -5176,6 +5178,7 @@
       "selectMessage": "选择a消息到查看详情",
       "registerMachine": "注册机器",
       "registered": "已注册",
+      "registerError": "注册设备失败。",
       "pageDesc": "Monitor和重放MQTTmessages为debugging",
       "noMachinesDetected": "无机器detected从MQTT",
       "noHistory": "无消息历史",
@@ -6788,6 +6791,8 @@
     "csvExported": "CSV已导出",
     "csvDowntime": "停机CSV",
     "criticalThresholdPercent": "严重threshold百分比",
+    "thresholdBoundsError": "所有数值必须在0到100之间。",
+    "thresholdOrderError": "严重阈值必须≤警报阈值，且警报阈值必须≤目标OEE。",
     "critical": "严重",
     "createTarget": "创建目标",
     "createEditTarget": "创建编辑目标",
@@ -7430,7 +7435,7 @@
       "selectFile": "选择文件",
       "selectExcelFile": "选择excel文件",
       "readErrors": "读取错误",
-      "readError": "Read错误",
+      "readError": "无法读取文件：{{message}}",
       "preview": "预览",
       "points": "检查点",
       "noValidPoints": "无有效测量点",
@@ -7446,7 +7451,7 @@
       "importResult": "导入结果",
       "importing": "导入中...",
       "importFailed": "导入失败",
-      "importError": "导入错误",
+      "importError": "导入失败：{{message}}",
       "importCount": "导入计数",
       "failedCount": "失败计数",
       "downloadTemplate": "下载模板",
@@ -7718,12 +7723,12 @@
     "gateTypeLabel": "Gate类型标签",
     "gatesManagement": "闸口管理",
     "gateName": "Gate名称",
-    "failedToUpdate": "失败到更新",
-    "failedToResolve": "失败到解决",
-    "failedToEvaluate": "失败到evaluate",
-    "failedToDelete": "失败到删除",
-    "failedToCreate": "失败到创建",
-    "failedToAcknowledge": "失败到确认",
+    "failedToUpdate": "更新质量门失败：{{error}}",
+    "failedToResolve": "解决质量门失败：{{error}}",
+    "failedToEvaluate": "评估质量门失败：{{error}}",
+    "failedToDelete": "删除质量门失败：{{error}}",
+    "failedToCreate": "创建质量门失败：{{error}}",
+    "failedToAcknowledge": "确认质量门失败：{{error}}",
     "eventResolved": "事件已解决",
     "eventHistory": "事件历史",
     "eventAcknowledged": "事件已确认",
@@ -8235,8 +8240,8 @@
     "excelExportError": "Excel导出错误",
     "excelAttachment": "Excel附件",
     "evaluation": "评估",
-    "errorUpload": "错误上传",
-    "errorSendEmail": "错误发送邮件",
+    "errorUpload": "上传失败：{{message}}",
+    "errorSendEmail": "发送邮件失败：{{message}}",
     "errorLoadPreview": "错误load预览",
     "errorColumn": "错误column",
     "enterResolutionNotes": "Enterresolution备注",
@@ -9849,7 +9854,8 @@
       "releases": "程序发布",
       "imageDims": "图像尺寸",
       "finish": "完成配置",
-      "finishing": "完成中…"
+      "finishing": "完成中…",
+      "guardBlocked": "还有 {{count}} 个必填步骤未完成"
     }
   },
   "aoiOnboarding": {
@@ -10147,6 +10153,9 @@
     },
     "pageTitle": "设备注册管理",
     "pageSubtitle": "审批、拒绝和管理远程AOI/AVI设备注册",
+    "qr": {
+      "genError": "生成二维码失败"
+    },
     "lifecycle": {
       "columnTitle": "生命周期",
       "action": "变更生命周期状态",
@@ -13277,6 +13286,10 @@
     "assigneePlaceholder": "用户ID（可选）",
     "machineRequired": "请选择机器",
     "titleRequired": "标题至少需要3个字符",
+    "parts": {
+      "codeRequired": "请输入部件代码",
+      "qtyRequired": "数量必须≥1"
+    },
     "closeSection": "关闭并记录处理结果",
     "closeWorkOrder": "关闭工单",
     "resolutionNotes": "处理说明",
@@ -15506,6 +15519,7 @@
     "diffPick": "选择两个版本以查看差异",
     "rollback": "回滚",
     "rollbackDone": "已回滚到上一版本",
+    "fleetHalted": "灰度发布已停止——canary 未通过",
     "rollbackTitle": "回滚到上一版本？",
     "rollbackDesc": "这会在阶段“{{stage}}”中记录一次上一个成功构建的新部署。它与部署一样通过相同的安全闸口（签核 / 标志）。"
   },
@@ -17101,6 +17115,7 @@
     "ip": "IP 地址",
     "lastSeen": "上次在线",
     "exportSuccess": "模块导出成功",
+    "exportError": "导出模块失败：{{message}}",
     "systemModules": "系统模块",
     "systemModulesDesc": "系统中注册的模块及其许可要求",
     "exporting": "导出中…",
@@ -17709,5 +17724,55 @@
     "clear": "清除范围",
     "prefix": "范围",
     "notWired": "此页面尚未过滤"
+  },
+  "manualHelp": {
+    "error": "无法查询文档，请稍后重试。"
+  },
+  "controlReadiness": {
+    "loadError": "无法加载就绪矩阵。"
+  },
+  "ncr": {
+    "loadError": "无法加载NCR列表。"
+  },
+  "routing": {
+    "productRequired": "请选择产品",
+    "codeRequired": "请输入代码",
+    "loadError": "无法加载routing列表。",
+    "loadStepsError": "无法加载routing步骤。"
+  },
+  "changeoverWizard": {
+    "step3": {
+      "scanError": "无法记录本次扫描",
+      "mismatchToast": "不匹配——请重新核对reel/slot",
+      "needSlot": "请先输入或扫描槽位代码"
+    },
+    "step4": {
+      "requestError": "无法发送请求"
+    }
+  },
+  "opSession": {
+    "pickShiftLine": "请选择班次和产线",
+    "noUser": "无法识别用户",
+    "noWorkshop": "找不到该产线所属的车间"
+  },
+  "handover": {
+    "pickBoth": "请同时选择交接班次和接班班次",
+    "notSame": "交接班次和接班班次必须不同",
+    "notesRequired": "请输入交接备注"
+  },
+  "approvalsInbox": {
+    "ai": {
+      "failed": "无法完成该操作"
+    },
+    "deploy": {
+      "rejected": "部署被安全关卡拒绝"
+    },
+    "threshold": {
+      "commentRequired": "拒绝时必须填写理由"
+    }
+  },
+  "console": {
+    "rejected": "命令未执行：{{status}}",
+    "pickRobot": "请先选择机器人。"
   }
 }

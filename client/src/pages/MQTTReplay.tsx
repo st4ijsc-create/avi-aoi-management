@@ -89,10 +89,8 @@ export function MQTTReplayContent() {
       refetchDiscovered();
     },
     onError: (err) => {
-      // LƯU Ý: khoá `mqtt.replayPage.registerError` KHÔNG tồn tại trong vi/en/zh.json —
-      // i18next luôn rơi về defaultValue tiếng Anh cứng "Failed to register machine" bất
-      // kể ngôn ngữ. Khác lớp lỗi với F11 (thiếu placeholder) — đây là thiếu hẳn khoá.
-      // Ghi vào task-8d-report.md, KHÔNG tự thêm khoá ở đây (ngoài phạm vi task).
+      // Sprint 5 doc 71 F11 — khoá `mqtt.replayPage.registerError` đã thêm ở vi/zh (task-8d
+      // ghi nợ: trước đây chỉ có ở en.json, người dùng vi/zh luôn thấy tiêu đề tiếng Anh).
       toast.error(t('mqtt.replayPage.registerError', 'Failed to register machine'), { description: mapTrpcError(err) });
     },
   });

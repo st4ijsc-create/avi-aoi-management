@@ -254,6 +254,7 @@
     "openFull": "Open full view",
     "noAccess": "Not available for your role.",
     "loadError": "Couldn't load this panel",
+    "ackError": "Unable to acknowledge (may be a permission issue).",
     "retry": "Retry",
     "noData": "No data yet.",
     "asOf": "As of",
@@ -2554,7 +2555,7 @@
     "exitSelect": "Exit select",
     "exitFullscreen": "Exit fullscreen",
     "errorWithMessage": "Error: {{message}}",
-    "errorMessage": "Error message",
+    "errorMessage": "Error: {{message}}",
     "errorLoadingData": "Error loading data",
     "error": "Error",
     "enterSerialNumber": "Enter serial number",
@@ -2867,7 +2868,8 @@
     "templateName": "Template name",
     "templateMarketplace": "Template marketplace",
     "templateDownloadSuccess": "Template download success",
-    "templateDownloadError": "Template download error",
+    "templateDownloadError": "Failed to download the template: {{message}}",
+    "analyticsUnavailable": "Analytics is unavailable for this account.",
     "templateDownloaded": "Template downloaded",
     "templateDetails": "Template details",
     "templateDescPlaceholder": "Template desc placeholder",
@@ -4759,7 +4761,7 @@
     "last30days": "Last 30 days",
     "importSuccess": "Import success",
     "importPartial": "Import partial",
-    "importFailed": "Import failed",
+    "importFailed": "Import failed: {{message}}",
     "importData": "Import data",
     "failedCount": "Failed count",
     "factories": "Factories",
@@ -4769,7 +4771,7 @@
     "exportMasterData": "Export master data",
     "exportInspectionDataDesc": "Export inspection data desc",
     "exportInspectionData": "Export inspection data",
-    "exportFailed": "Export failed",
+    "exportFailed": "Export failed: {{message}}",
     "exportData": "Export data",
     "emptyFile": "Empty file",
     "downloadTemplate": "Download template",
@@ -5246,7 +5248,7 @@
     "byType": "By type",
     "awaitingApproval": "Awaiting approval",
     "approveRegistration": "Approve registration",
-    "approveError": "Approve error",
+    "approveError": "Failed to approve: {{message}}",
     "approvedMapping": "Approved mapping",
     "approve": "Approve",
     "allTypes": "All types",
@@ -7005,6 +7007,8 @@
     "csvExported": "Csv exported",
     "csvDowntime": "Csv downtime",
     "criticalThresholdPercent": "Critical threshold percent",
+    "thresholdBoundsError": "All values must be between 0 and 100.",
+    "thresholdOrderError": "Critical threshold must be ≤ alert threshold, and alert threshold must be ≤ target OEE.",
     "critical": "Critical",
     "createTarget": "Create target",
     "createEditTarget": "Create edit target",
@@ -7595,7 +7599,7 @@
       "selectFile": "Select file",
       "selectExcelFile": "Select excel file",
       "readErrors": "Read errors",
-      "readError": "Read error",
+      "readError": "Failed to read the file: {{message}}",
       "preview": "Preview",
       "points": "Points",
       "noValidPoints": "No valid points",
@@ -7611,7 +7615,7 @@
       "importResult": "Import result",
       "importing": "Importing",
       "importFailed": "Import failed",
-      "importError": "Import error",
+      "importError": "Import failed: {{message}}",
       "importCount": "Import count",
       "failedCount": "Failed count",
       "downloadTemplate": "Download template",
@@ -7935,12 +7939,12 @@
     "gateTypeLabel": "Gate type label",
     "gatesManagement": "Gates management",
     "gateName": "Gate name",
-    "failedToUpdate": "Failed to update",
-    "failedToResolve": "Failed to resolve",
-    "failedToEvaluate": "Failed to evaluate",
-    "failedToDelete": "Failed to delete",
-    "failedToCreate": "Failed to create",
-    "failedToAcknowledge": "Failed to acknowledge",
+    "failedToUpdate": "Failed to update the quality gate: {{error}}",
+    "failedToResolve": "Failed to resolve the quality gate: {{error}}",
+    "failedToEvaluate": "Failed to evaluate the quality gate: {{error}}",
+    "failedToDelete": "Failed to delete the quality gate: {{error}}",
+    "failedToCreate": "Failed to create the quality gate: {{error}}",
+    "failedToAcknowledge": "Failed to acknowledge the quality gate: {{error}}",
     "eventResolved": "Event resolved",
     "eventHistory": "Event history",
     "eventAcknowledged": "Event acknowledged",
@@ -8457,8 +8461,8 @@
     "excelExportError": "Excel export error",
     "excelAttachment": "Excel attachment",
     "evaluation": "Evaluation",
-    "errorUpload": "Error upload",
-    "errorSendEmail": "Error send email",
+    "errorUpload": "Upload failed: {{message}}",
+    "errorSendEmail": "Failed to send the email: {{message}}",
     "errorLoadPreview": "Error load preview",
     "errorColumn": "Error column",
     "enterResolutionNotes": "Enter resolution notes",
@@ -10066,7 +10070,8 @@
       "releases": "Program releases",
       "imageDims": "Image dimensions",
       "finish": "Finish setup",
-      "finishing": "Finishing…"
+      "finishing": "Finishing…",
+      "guardBlocked": "{{count}} required step(s) remaining"
     }
   },
   "aoiOnboarding": {
@@ -10364,6 +10369,9 @@
     },
     "pageTitle": "Machine Registration Management",
     "pageSubtitle": "Approve, reject and manage remote AOI/AVI machine registrations",
+    "qr": {
+      "genError": "Failed to generate the QR code"
+    },
     "lifecycle": {
       "columnTitle": "Lifecycle",
       "action": "Change lifecycle state",
@@ -13494,6 +13502,10 @@
     "assigneePlaceholder": "User ID (optional)",
     "machineRequired": "Please select a machine",
     "titleRequired": "Title must be at least 3 characters",
+    "parts": {
+      "codeRequired": "Enter the part code",
+      "qtyRequired": "Quantity must be ≥ 1"
+    },
     "closeSection": "Close & record resolution",
     "closeWorkOrder": "Close work order",
     "resolutionNotes": "Resolution notes",
@@ -14949,6 +14961,7 @@
     "diffPick": "Pick two versions to see the difference",
     "rollback": "Roll back",
     "rollbackDone": "Rolled back to the previous version",
+    "fleetHalted": "Rollout HALTED — canary did not pass",
     "rollbackTitle": "Roll back to the previous version?",
     "rollbackDesc": "This records a NEW deployment of the previous successful build in stage \"{{stage}}\". It goes through the same safety gate (sign-off / flag) as a deploy."
   },
@@ -16786,6 +16799,7 @@
     "ip": "IP address",
     "lastSeen": "Last seen",
     "exportSuccess": "Modules exported successfully",
+    "exportError": "Failed to export modules: {{message}}",
     "systemModules": "System modules",
     "systemModulesDesc": "Modules registered in the system and their license requirements",
     "exporting": "Exporting...",
@@ -17702,5 +17716,55 @@
     "clear": "Clear scope",
     "prefix": "Scope",
     "notWired": "this page is not filtered yet"
+  },
+  "manualHelp": {
+    "error": "Couldn't search the documentation. Try again later."
+  },
+  "controlReadiness": {
+    "loadError": "Failed to load the readiness matrix."
+  },
+  "ncr": {
+    "loadError": "Failed to load NCRs."
+  },
+  "routing": {
+    "productRequired": "Select a product",
+    "codeRequired": "Code is required",
+    "loadError": "Failed to load routings.",
+    "loadStepsError": "Failed to load steps."
+  },
+  "changeoverWizard": {
+    "step3": {
+      "scanError": "Failed to record the scan",
+      "mismatchToast": "MISMATCH — check the reel/slot again",
+      "needSlot": "Enter or scan the slot code first"
+    },
+    "step4": {
+      "requestError": "Failed to send the request"
+    }
+  },
+  "opSession": {
+    "pickShiftLine": "Select a shift and a line",
+    "noUser": "Could not identify the user",
+    "noWorkshop": "Could not find the workshop for this line"
+  },
+  "handover": {
+    "pickBoth": "Select both the outgoing and incoming session",
+    "notSame": "The outgoing and incoming session must be different",
+    "notesRequired": "Enter handover notes"
+  },
+  "approvalsInbox": {
+    "ai": {
+      "failed": "Could not complete the action"
+    },
+    "deploy": {
+      "rejected": "Deploy rejected by the safety gate"
+    },
+    "threshold": {
+      "commentRequired": "A reason is required to reject"
+    }
+  },
+  "console": {
+    "rejected": "Command not executed: {{status}}",
+    "pickRobot": "Select a robot first."
   }
 }

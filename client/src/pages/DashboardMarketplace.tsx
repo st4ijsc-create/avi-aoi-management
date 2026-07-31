@@ -117,12 +117,8 @@ export function DashboardMarketplaceContent() {
       setSelectedTemplate(null);
     },
     onError: (err) => {
-      // LƯU Ý: khoá `dashboard.templateDownloadError` = "Mẫu Tải xuống Lỗi" (vi.json)
-      // THIẾU placeholder {{message}} — tham số message bị i18next lặng lẽ bỏ qua.
-      // Sửa lại lần 2 (round tự-soát task-8d): bản đầu gỡ hẳn nhãn sang toastTrpcError,
-      // KHÔNG nhất quán với cách xử lý common.errorMessage/importError cùng lớp lỗi —
-      // khôi phục giữ nhãn (mã chết ở phần placeholder, nhưng tiêu đề tĩnh vẫn hiện đúng
-      // như trước khi di trú), chỉ đổi phần lấy chuỗi lỗi. KHÔNG tự sửa khoá (chờ F11).
+      // Sprint 5 doc 71 F11 — khoá `dashboard.templateDownloadError` đã thêm placeholder
+      // {{message}} (task-8d ghi nợ, F11 dọn), tham số message giờ hiện đúng.
       toast.error(t('dashboard.templateDownloadError', { message: mapTrpcError(err) }));
     },
   });

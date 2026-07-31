@@ -470,7 +470,7 @@ function StepsDialog({
           {detailQ.isLoading ? (
             <div className="py-8 text-center text-muted-foreground">{t("routing.loading", "Loading…")}</div>
           ) : detailQ.isError ? (
-            <div className="py-8 text-center text-destructive">{t("routing.loadError", "Failed to load steps.")}</div>
+            <div className="py-8 text-center text-destructive">{t("routing.loadStepsError", "Failed to load steps.")}</div>
           ) : (
             <StepsEditor steps={rows} onAdd={addRow} onRemove={removeRow} onPatch={patchRow} />
           )}

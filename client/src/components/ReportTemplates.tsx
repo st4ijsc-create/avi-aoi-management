@@ -49,9 +49,8 @@ export function ReportTemplates() {
       resetForm();
     },
     onError: (error) => {
-      // LƯU Ý: khoá `common.errorMessage` = "Lỗi Tin nhắn" (vi.json) THIẾU placeholder
-      // {{message}} — tham số message bị i18next lặng lẽ bỏ qua, người dùng chỉ thấy
-      // câu tĩnh. Đã biết từ task-8b/8c, chờ task F11 dọn — KHÔNG tự sửa khoá ở đây.
+      // Sprint 5 doc 71 F11 — khoá `common.errorMessage` đã thêm placeholder {{message}}
+      // (task-8b/8c ghi nợ, F11 dọn), tham số message giờ hiện đúng cho người dùng.
       toast.error(t('common.errorMessage', { message: mapTrpcError(error) }));
     },
   });

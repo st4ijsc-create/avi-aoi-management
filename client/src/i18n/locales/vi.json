@@ -254,6 +254,7 @@
     "openFull": "Mở xem đầy đủ",
     "noAccess": "Không khả dụng với vai trò của bạn.",
     "loadError": "Không tải được panel này",
+    "ackError": "Không thể xác nhận (có thể do quyền).",
     "retry": "Thử lại",
     "noData": "Chưa có dữ liệu.",
     "asOf": "Cập nhật",
@@ -2453,7 +2454,7 @@
     "confirmDelete": "Bạn có chắc muốn xóa không?",
     "swapPosition": "Hoán đổi Vị trí",
     "productModel": "Sản phẩm Model",
-    "errorMessage": "Lỗi Tin nhắn",
+    "errorMessage": "Lỗi: {{message}}",
     "cameraDenied": "Camera Bị từ chối",
     "allFactories": "Tất cả factories",
     "scanSuccess": "Scan Thành công",
@@ -2851,7 +2852,8 @@
     "descriptionPlaceholder": "Mô tả Chỗ nhập...",
     "defectTrendDescription": "Xu hướng lỗi theo thời gian",
     "createFirstToCustomize": "Tạo bảng điều khiển đầu tiên để tùy chỉnh",
-    "templateDownloadError": "Mẫu Tải xuống Lỗi",
+    "templateDownloadError": "Không tải được mẫu: {{message}}",
+    "analyticsUnavailable": "Phân tích không khả dụng cho tài khoản này.",
     "layoutNamePlaceholder": "Bố trí Tên Chỗ nhập...",
     "errorLoadingTemplates": "Lỗi Đang tải Mẫu",
     "enterNewDashboardInfo": "Nhập thông tin dashboard mới",
@@ -4749,8 +4751,8 @@
     "exportSuccess": "Xuất thành công",
     "andMoreErrors": "Và more Lỗi",
     "successCount": "Số lượng thành công",
-    "importFailed": "Nhập thất bại",
-    "exportFailed": "Xuất thất bại",
+    "importFailed": "Nhập thất bại: {{message}}",
+    "exportFailed": "Xuất thất bại: {{message}}",
     "productData": "Sản phẩm Dữ liệu",
     "orgDataDesc": "Dữ liệu tổ chức: tập đoàn, nhà máy, dây chuyền",
     "failedCount": "Số lượng thất bại",
@@ -5188,7 +5190,7 @@
     "exportReport": "Xuất Báo cáo",
     "downloadJSON": "Tải xuống j s o n",
     "clearFilters": "Xóa Lọc",
-    "approveError": "Phê duyệt Lỗi",
+    "approveError": "Phê duyệt thất bại: {{message}}",
     "allFactories": "Tất cả nhà máy",
     "alertEnabled": "Cảnh báo Đã bật",
     "activeStatus": "Đang hoạt động",
@@ -5829,6 +5831,7 @@
       "streamPaused": "Stream đã tạm dừng",
       "disconnected": "Mất kết nối",
       "registered": "Đã đăng ký",
+      "registerError": "Không đăng ký được máy.",
       "noHistory": "Không có lịch sử message",
       "connected": "Đã kết nối",
       "pageDesc": "Theo dõi và phát lại tin nhắn MQTT để debug",
@@ -6890,6 +6893,8 @@
     "targetAvailabilityPercent": "Mục tiêu Khả dụng Phần trăm",
     "targetPerformancePercent": "Mục tiêu Hiệu suất Phần trăm",
     "criticalThresholdPercent": "Nghiêm trọng Ngưỡng Phần trăm",
+    "thresholdBoundsError": "Tất cả giá trị phải nằm trong khoảng 0–100.",
+    "thresholdOrderError": "Ngưỡng nghiêm trọng phải ≤ ngưỡng cảnh báo, và ngưỡng cảnh báo phải ≤ mục tiêu OEE.",
     "selectMachineForDetails": "Chọn Máy cho Chi tiết",
     "selectMachineForHealth": "Chọn Máy cho health",
     "alertThresholdPercent": "Cảnh báo Ngưỡng Phần trăm",
@@ -7531,13 +7536,13 @@
       "successCount": "Số lượng thành công",
       "importResult": "Kết quả nhập",
       "importFailed": "Nhập thất bại",
-      "importError": "Lỗi khi nhập",
+      "importError": "Nhập thất bại: {{message}}",
       "importCount": "Nhập Số lượng",
       "failedCount": "Thất bại Số lượng",
       "description": "Mô tả",
       "selectFile": "Chọn Tệp",
       "readErrors": "Read Lỗi",
-      "readError": "Read Lỗi",
+      "readError": "Không đọc được tệp: {{message}}",
       "importing": "Đang nhập",
       "preview": "Xem trước",
       "colType": "Col Loại",
@@ -7861,7 +7866,7 @@
   },
   "qualityGates": {
     "optionalPlaceholder": "Tùy chọn Chỗ nhập...",
-    "failedToAcknowledge": "Thất bại đến acknowledge",
+    "failedToAcknowledge": "Xác nhận cổng chất lượng thất bại: {{error}}",
     "consecutiveNgDetail": "Consecutive NG detail",
     "statusAutoResolved": "Trạng thái Tự động Đã xử lý",
     "statusAcknowledged": "Trạng thái Đã xác nhận",
@@ -7873,7 +7878,7 @@
     "deleteGateConfirm": "Xóa gate Xác nhận",
     "workstationLabel": "Nhãn trạm làm việc",
     "notesPlaceholder": "Ghi chú Chỗ nhập...",
-    "failedToEvaluate": "Thất bại đến Đánh giá",
+    "failedToEvaluate": "Đánh giá cổng chất lượng thất bại: {{error}}",
     "descriptionLabel": "Mô tả Nhãn",
     "consecutiveCount": "Consecutive Số lượng",
     "acknowledgeEvent": "Acknowledge Sự kiện",
@@ -7881,7 +7886,7 @@
     "namePlaceholder": "Tên Chỗ nhập...",
     "monitoringAlert": "Cảnh báo giám sát",
     "gatesManagement": "Quản lý cổng",
-    "failedToResolve": "Thất bại đến resolve",
+    "failedToResolve": "Xử lý cổng chất lượng thất bại: {{error}}",
     "descPlaceholder": "Desc Chỗ nhập...",
     "createGateTitle": "Tạo gate Tiêu đề",
     "comparisonLabel": "So sánh Nhãn",
@@ -7891,9 +7896,9 @@
     "thresholdLabel": "Ngưỡng Nhãn",
     "statusResolved": "Trạng thái Đã xử lý",
     "liveMonitoring": "Giám sát trực tiếp",
-    "failedToUpdate": "Thất bại đến Cập nhật",
-    "failedToDelete": "Thất bại đến Xóa",
-    "failedToCreate": "Thất bại đến Tạo",
+    "failedToUpdate": "Cập nhật cổng chất lượng thất bại: {{error}}",
+    "failedToDelete": "Xóa cổng chất lượng thất bại: {{error}}",
+    "failedToCreate": "Tạo cổng chất lượng thất bại: {{error}}",
     "createGateDesc": "Tạo cổng chất lượng mới",
     "anyWorkstation": "Any Trạm làm việc",
     "updateSuccess": "Cập nhật thành công",
@@ -8288,7 +8293,7 @@
     "loadingHistory": "Đang tải Lịch sử",
     "includeContent": "Include Nội dung",
     "filterOptional": "Lọc Tùy chọn",
-    "errorSendEmail": "Lỗi khi gửi email",
+    "errorSendEmail": "Gửi email thất bại: {{message}}",
     "emailSendError": "Gửi email thất bại",
     "defectAnalysis": "Lỗi analysis",
     "dataComparison": "So sánh dữ liệu",
@@ -8411,7 +8416,7 @@
     "f1ScoreDesc": "F1 — trung bình điều hòa của Precision và Recall",
     "exportExcel": "Xuất excel",
     "exportError": "Lỗi khi xuất",
-    "errorUpload": "Lỗi Tải lên",
+    "errorUpload": "Tải lên thất bại: {{message}}",
     "errorColumn": "Lỗi Cột",
     "dailyDetail": "Chi tiết hàng ngày",
     "createFirst": "Tạo mục đầu tiên",
@@ -10049,7 +10054,8 @@
       "releases": "Phát hành chương trình",
       "imageDims": "Kích thước ảnh",
       "finish": "Hoàn tất cấu hình",
-      "finishing": "Đang hoàn tất…"
+      "finishing": "Đang hoàn tất…",
+      "guardBlocked": "Còn {{count}} bước bắt buộc chưa hoàn thành"
     }
   },
   "aoiOnboarding": {
@@ -10347,6 +10353,9 @@
     },
     "pageTitle": "Quản lý đăng ký máy",
     "pageSubtitle": "Duyệt, từ chối và quản lý đăng ký máy AOI/AVI từ xa",
+    "qr": {
+      "genError": "Không tạo được mã QR"
+    },
     "lifecycle": {
       "columnTitle": "Vòng đời",
       "action": "Đổi trạng thái vòng đời",
@@ -13477,6 +13486,10 @@
     "assigneePlaceholder": "ID người dùng (tùy chọn)",
     "machineRequired": "Vui lòng chọn máy",
     "titleRequired": "Tiêu đề cần ít nhất 3 ký tự",
+    "parts": {
+      "codeRequired": "Nhập mã phụ tùng",
+      "qtyRequired": "Số lượng ≥ 1"
+    },
     "closeSection": "Đóng lệnh & ghi nhận kết quả",
     "closeWorkOrder": "Đóng lệnh",
     "resolutionNotes": "Ghi chú xử lý",
@@ -14932,6 +14945,7 @@
     "diffPick": "Chọn 2 phiên bản để xem khác biệt",
     "rollback": "Khôi phục",
     "rollbackDone": "Đã khôi phục về phiên bản trước",
+    "fleetHalted": "Rollout đã DỪNG do canary không đạt",
     "rollbackTitle": "Khôi phục phiên bản trước?",
     "rollbackDesc": "Sẽ ghi một deployment MỚI về build của lần deploy thành công trước ở giai đoạn \"{{stage}}\". Chịu cùng cổng an toàn (sign-off / flag) như deploy."
   },
@@ -16769,6 +16783,7 @@
     "ip": "Địa chỉ IP",
     "lastSeen": "Lần cuối hoạt động",
     "exportSuccess": "Xuất mô-đun thành công",
+    "exportError": "Xuất mô-đun thất bại: {{message}}",
     "systemModules": "Mô-đun hệ thống",
     "systemModulesDesc": "Các mô-đun đăng ký trong hệ thống và yêu cầu giấy phép",
     "exporting": "Đang xuất...",
@@ -17685,5 +17700,55 @@
     "clear": "Xoá phạm vi",
     "prefix": "Phạm vi",
     "notWired": "trang này chưa lọc"
+  },
+  "manualHelp": {
+    "error": "Không tra được tài liệu. Thử lại sau."
+  },
+  "controlReadiness": {
+    "loadError": "Không tải được ma trận readiness."
+  },
+  "ncr": {
+    "loadError": "Không tải được danh sách NCR."
+  },
+  "routing": {
+    "loadError": "Không tải được danh sách routing.",
+    "loadStepsError": "Không tải được các bước routing.",
+    "productRequired": "Chọn sản phẩm",
+    "codeRequired": "Cần nhập mã"
+  },
+  "changeoverWizard": {
+    "step3": {
+      "scanError": "Không ghi được lần quét",
+      "mismatchToast": "LỆCH — kiểm tra lại reel/slot",
+      "needSlot": "Nhập/quét mã slot trước"
+    },
+    "step4": {
+      "requestError": "Không gửi được yêu cầu"
+    }
+  },
+  "opSession": {
+    "pickShiftLine": "Chọn ca và dây chuyền",
+    "noUser": "Không xác định được người dùng",
+    "noWorkshop": "Không tìm thấy nhà xưởng của dây chuyền"
+  },
+  "handover": {
+    "pickBoth": "Chọn cả phiên bàn giao và phiên nhận",
+    "notSame": "Phiên bàn giao và phiên nhận phải khác nhau",
+    "notesRequired": "Nhập ghi chú bàn giao"
+  },
+  "approvalsInbox": {
+    "ai": {
+      "failed": "Không thể hoàn tất hành động"
+    },
+    "deploy": {
+      "rejected": "Deploy bị từ chối bởi cổng an toàn"
+    },
+    "threshold": {
+      "commentRequired": "Cần nhập lý do để từ chối"
+    }
+  },
+  "console": {
+    "rejected": "Lệnh không thực thi: {{status}}",
+    "pickRobot": "Chọn robot trước."
   }
 }

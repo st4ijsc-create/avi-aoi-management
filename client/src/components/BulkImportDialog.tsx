@@ -95,9 +95,8 @@ export function BulkImportDialog({
       setIsImporting(false);
     },
     onError: (error) => {
-      // LƯU Ý: khoá `products.bulkImport.importError` = "Lỗi khi nhập" (vi.json) THIẾU
-      // placeholder {{message}} — tham số message bị i18next lặng lẽ bỏ qua, người dùng
-      // chỉ thấy câu tĩnh. Ghi vào task-8d-report.md, KHÔNG tự sửa khoá (task F11).
+      // Sprint 5 doc 71 F11 — khoá `products.bulkImport.importError` đã thêm placeholder
+      // {{message}} (task-8d ghi nợ, F11 dọn), tham số message giờ hiện đúng.
       toast.error(t('products.bulkImport.importError', { message: mapTrpcError(error) }));
       setIsImporting(false);
     },
