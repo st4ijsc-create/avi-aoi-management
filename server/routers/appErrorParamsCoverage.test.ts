@@ -175,12 +175,18 @@ describe("cổng chặn — mọi appError(..., 'PERMISSION_DENIED', ...) phải
 // Review round 1 (M-3, nêu bởi reviewer Task 5) — CỔNG THỨ BA, đóng đúng lỗ hổng
 // mà chính docstring dòng 148-153 ở trên đã tự thú nhận CHO CA RIÊNG action: hai
 // cổng phía trên chỉ chứng minh khoá TỒN TẠI ở từ điển (`errors.reason.*`,
-// `errors.action`), KHÔNG chứng minh tham số ĐƯỢC TRUYỀN ở call-site. Hôm nay
-// (Task 5) 17/17 call-site dùng `reason` đều truyền đủ tham số placeholder riêng
-// của khoá đó (vd `reason: 'insufficientCpkSamples'` cần cả `sampleCount` lẫn
-// `minSamples`) — nhưng call-site thứ 18 lỡ quên 1 tham số sẽ đẩy "{{minSamples}}"
+// `errors.action`), KHÔNG chứng minh tham số ĐƯỢC TRUYỀN ở call-site. Số liệu
+// "17/17" ghi lúc Task 5 (rồi từng đính chính lên 22) đã LẠC HẬU — đếm lại
+// 2026-08-01 bằng script tái dùng đúng logic quét của cổng này
+// (extractAppErrorCallBodies() + regex `reason\s*:\s*["'\`]...` ở trên, quét
+// server/routers loại *.test.ts) ra **23/23 call-site** dùng `reason` literal,
+// trải trên 15 file, đều truyền đủ tham số placeholder riêng của khoá đó (vd
+// `reason: 'insufficientCpkSamples'` cần cả `sampleCount` lẫn `minSamples`) —
+// nhưng call-site thứ 24 lỡ quên 1 tham số sẽ đẩy "{{minSamples}}"
 // thô ra màn hình mà KHÔNG cổng nào ở trên bắt được (khoá vẫn tồn tại, chỉ thiếu
-// tham số truyền vào nó).
+// tham số truyền vào nó). Con số này SẼ TĂNG khi thêm call-site mới — đừng tin
+// số cũ, đếm lại bằng đúng cách trên (hoặc chạy cổng này, xem log
+// `[cổng reason→placeholder]` nếu có vi phạm) trước khi trích dẫn.
 //
 // Cách làm: đọc `errors.reason.*` ở vi.json làm THAM CHIẾU (i18n-check đã đảm bảo
 // placeholder giống hệt nhau ở cả 3 locale cho cùng 1 khoá, nên chỉ cần đọc 1 bản),

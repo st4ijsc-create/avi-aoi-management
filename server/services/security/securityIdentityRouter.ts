@@ -6,11 +6,12 @@
  * adminProcedure (admin + 2FA). Issuance works regardless of the enforcement flags so an
  * operator can pre-provision before flipping DEVICE_PKI_ENABLED / SERVICE_MTLS_ENABLED on.
  *
- * WIRING (wave-lead): this router is NOT registered in server/routers.ts by this change.
- * To expose it, add to the appRouter map, e.g.:
- *     import { securityIdentityRouter } from "./services/security/securityIdentityRouter";
- *     // inside router({ ... }):
- *     securityIdentity: securityIdentityRouter,
+ * WIRING: router NÀY ĐÃ ĐƯỢC ĐĂNG KÝ ở server/routers.ts:603 dưới tên
+ * `securityIdentity` (import ở dòng 80) — KHÔNG phải "chưa đăng ký" như ghi chú
+ * cũ ở đây từng nói. Tuy nhiên, tính đến hôm nay KHÔNG có UI/client nào gọi
+ * `trpc.securityIdentity.*` (đã grep `client/src`, 0 kết quả) — đây là bề mặt
+ * API có thật, ĐÃ ĐĂNG KÝ, nhưng CHẾT về mặt sử dụng: chỉ gọi được thủ công
+ * (Postman/tRPC panel) cho tới khi có màn admin issue/verify/rotate/revoke cert.
  */
 import { z } from "zod";
 import { appError } from "../../_core/appError";

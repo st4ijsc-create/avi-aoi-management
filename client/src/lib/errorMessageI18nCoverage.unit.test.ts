@@ -63,7 +63,8 @@
  *     method-chain) — có thật ở `BarcodeScanner.tsx` `initializeScanner()`.
  *
  * Giới hạn ĐÃ BIẾT (cùng lớp với clientErrorCoverage.unit.test.ts — parse-only,
- * không phải TypeChecker) — KHÔNG BẮT ĐƯỢC, đọc kỹ trước khi tin cổng này là đủ:
+ * không phải TypeChecker) — KHÔNG BẮT ĐƯỢC (ÂM-TÍNH-GIẢ — cổng bỏ sót call thật sự
+ * cần kiểm), đọc kỹ trước khi tin cổng này là đủ:
  *  - Biến trung gian đặt tên khác rồi mới gán vào param (vd
  *    `const reason = mapTrpcError(err); t(key, { reason })`) — KHÔNG lần theo được
  *    initializer của biến; `reason` không nằm trong danh sách tên nhận diện Lớp 1
@@ -74,6 +75,29 @@
  *  - JSX render lỗi TRỰC TIẾP không qua setter/điều kiện `.error`/`.isError` (mục 2
  *    ở trên) — cổng MÙ với pattern này, không phải "coi là an toàn".
  *  - Helper-function indirection (mục 3 ở trên) — cổng MÙ, không phải "coi là an toàn".
+ *
+ * DƯƠNG-TÍNH-GIẢ (cổng đánh dấu NHẦM một call KHÔNG phải đường thông điệp lỗi là
+ * đường lỗi) — chưa từng gây sự cố thật, nhưng CHƯA được công bố ở bản trước của
+ * mục này, ghi lại đây cho đúng:
+ *  - Regex nhận diện setter ở `isErrorPathCall()` — `/^set[A-Za-z]*error/i` (dòng
+ *    ~219) — chỉ neo đầu chuỗi (`^set`), KHÔNG neo cuối. Vì vậy nó khớp CẢ những
+ *    setter có "error" nằm giữa/cuối tên nhưng không liên quan thông điệp lỗi, vd
+ *    `setErrorThreshold(...)` (ngưỡng cấu hình) hay `setErrorBarVisible(...)` (bật/tắt
+ *    thanh sai số trên biểu đồ) — cả hai đều khớp `/^set[A-Za-z]*error/i` dù chẳng
+ *    setter nào set STATE LỖI. Hậu quả nếu xảy ra: cổng đòi hỏi khoá `t()` bên trong
+ *    các setter này phải có mặt ở đủ vi/en/zh dù bản chất không phải câu lỗi — cổng
+ *    SIẾT NHẦM (over-inclusive), không phải bỏ sót; không làm hỏng gì khác vì hướng
+ *    lỗi ở đây chỉ có thể "báo dư", không thể "bỏ lọt".
+ *  - Hôm nay (2026-08-01) CHƯA setter thật nào trong repo rơi vào diện này — đã grep
+ *    `\bset[A-Za-z]*[Ee]rror[A-Za-z]*\b` trên toàn `client/src`, toàn bộ ~45 setter
+ *    tìm được đều là setter LỖI THẬT (`setError`, `setScanError`, `setFormError`,
+ *    `setExportError`, `setParseErrors`, `setJsonError`, `setErrorKey`, `setRunError`,
+ *    v.v.) — không có `setErrorThreshold`/`setErrorBarVisible`/tương tự. Rủi ro này
+ *    còn tiềm ẩn (latent), không phải đang xảy ra.
+ *  - CỐ Ý CHƯA siết regex (vd thêm `\b` cuối hoặc yêu cầu tên kết thúc đúng
+ *    "Error"/"Errors") ở đợt sửa văn bản này — siết là đổi HÀNH VI cổng, cần xét
+ *    riêng liệu có làm mất pattern hợp lệ nào đang được bắt đúng hay không trước khi
+ *    làm, ngoài phạm vi đợt sửa chỉ-văn-bản này.
  */
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
