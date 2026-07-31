@@ -10,6 +10,7 @@ import { Key, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useLocation } from "wouter";
 
 export default function ChangePassword() {
@@ -32,7 +33,7 @@ export default function ChangePassword() {
       setLocation("/profile");
     },
     onError: (error: any) => {
-      toast.error(error.message || t('errors.generic'));
+      toastTrpcError(error);
     },
   });
 

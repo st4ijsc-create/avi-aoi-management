@@ -56,6 +56,7 @@ import {
   Zap, Gauge, TrendingUp, BarChart3, Info, AlertTriangle, Plus, RefreshCw, Leaf,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 // ── helpers ───────────────────────────────────────────────────────────────
 function num(v: unknown): number {
@@ -172,7 +173,7 @@ export default function EnergyAnalyticsPage() {
       void utils.energy.peakDemand.invalidate();
       void utils.energy.powerFactor.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const submitReading = () => {
     const value = Number(readingForm.value);

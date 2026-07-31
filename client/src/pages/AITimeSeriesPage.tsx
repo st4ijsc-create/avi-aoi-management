@@ -30,7 +30,7 @@ import {
   GitBranch,
   RefreshCw,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 type AnalysisType = "analyze" | "forecast" | "anomaly" | "decompose" | "changepoints";
 
@@ -57,7 +57,7 @@ export default function AITimeSeriesPage() {
 
   // Single mutation: fetch + analyse DB metric data
   const analyzeMetric = trpc.aiTimeSeries.analyzeMetric.useMutation({
-    onError: (err: { message: string }) => toast.error(err.message),
+    onError: (err: { message: string }) => toastTrpcError(err),
   });
 
   const isRunning = analyzeMetric.isPending;

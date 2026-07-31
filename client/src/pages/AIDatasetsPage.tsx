@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Boxes, Play, Loader2, PieChart } from 'lucide-react';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 import { DatasetSelect } from '@/components/ai/ModelSelect';
 
 // doc 69 Wave E1 (T7) — extracted from AIDataProcessingPage.tsx ("dataset" tab).
@@ -54,7 +55,7 @@ function DatasetSplitSection() {
         }),
       );
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const splitTotal = result ? result.split.train + result.split.val + result.split.test : 0;

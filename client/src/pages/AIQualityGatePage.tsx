@@ -44,6 +44,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 const decisionColors: Record<string, string> = {
   AUTO_OK: "bg-success",
@@ -97,7 +98,7 @@ export default function AIQualityGatePage() {
       setCreateOpen(false);
       refetchConfigs();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteConfig = trpc.aiQualityGate.deleteConfig.useMutation({

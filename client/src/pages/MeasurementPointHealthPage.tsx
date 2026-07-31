@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { MapPin, RefreshCw, AlertTriangle, ArrowRightLeft, Lightbulb } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 const UNMAPPED_CODE = "__UNMAPPED__";
 const pct = (r: number) => `${(r * 100).toFixed(1)}%`;
@@ -96,7 +97,7 @@ export default function MeasurementPointHealthPage() {
       setTargetModelId("");
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const openRemap = (prefillTarget?: number) => {

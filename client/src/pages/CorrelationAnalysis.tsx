@@ -42,6 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   Grid3X3,
   TrendingUp,
@@ -151,7 +152,7 @@ export function CorrelationAnalysisContent() {
       savedListQuery.refetch();
     },
     onError: (err) => {
-      toast.error(`Failed to save: ${err.message}`);
+      toastTrpcError(err);
     },
   });
 

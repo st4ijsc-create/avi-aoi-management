@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -73,7 +74,7 @@ export default function YieldThresholdSettings() {
       refetchHistory();
     },
     onError: (error) => {
-      toast.error(`${t('common.error')}: ${error.message}`);
+      toastTrpcError(error);
     }
   });
 

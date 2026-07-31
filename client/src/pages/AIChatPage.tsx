@@ -56,6 +56,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { cn } from "@/lib/utils";
 import MachineQuickScan from "@/components/MachineQuickScan";
 // doc69 B2 — unify the renderer with AILocalChatBubble/AILocalKnowledgeBase:
@@ -207,7 +208,7 @@ export default function AIChatPage() {
     },
     onError: (err) => {
       setOptimisticUserMsg(null);
-      toast.error(err.message);
+      toastTrpcError(err);
     },
   });
 

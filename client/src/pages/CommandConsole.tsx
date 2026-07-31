@@ -38,6 +38,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   Terminal, Bot, ShieldAlert, ShieldCheck, Lock, Send, RefreshCw, AlertTriangle,
   Play, Square, Home, RotateCcw, Pause, OctagonAlert, Info,
@@ -159,7 +160,7 @@ export default function CommandConsole() {
       }
       void utils.robot.jobs.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const chosenRisk = command ? (gatedByName.get(command)?.riskLevel ?? COMMAND_META[command].defaultRisk) : "high";

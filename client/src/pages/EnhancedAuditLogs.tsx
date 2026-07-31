@@ -23,6 +23,7 @@ import {
   ChevronLeft, ChevronRight, Eye, ArrowUpDown, History, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -123,7 +124,7 @@ export function EnhancedAuditLogsContent() {
       URL.revokeObjectURL(url);
       toast.success(t('audit.exportSuccess'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const totalPages = Math.ceil((logsData?.total || 0) / pageSize);

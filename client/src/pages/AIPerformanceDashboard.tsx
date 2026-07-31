@@ -40,6 +40,7 @@ import { vi } from 'date-fns/locale';
 import { BatchCommentsSection } from '@/components/BatchCommentsSection';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 import { Loader2 } from 'lucide-react';
 import { ModelSelect } from '@/components/ai/ModelSelect';
 import { ReliabilityDiagram } from '@/components/ReliabilityDiagram';
@@ -566,7 +567,7 @@ function CalibrationSection() {
       }
       latestQuery.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const pct = (n: number | string | null | undefined) =>
