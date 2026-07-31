@@ -3,6 +3,8 @@ import { BellOff, BellRing, Siren, Volume2, VolumeX, X } from "lucide-react"
 import { useT } from "@/i18n"
 import { useAnnunciator, type AlarmAnnunciation } from "@/lib/annunciator"
 import type { AlarmPriority } from "@/lib/api"
+import { useAnnunciatorStatus } from "@/lib/notificationsApi"
+import { BeaconState } from "@/components/BeaconState"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
 
@@ -206,6 +208,90 @@ export function AnnunciatorStatusStrip() {
       )}
 
       <span className="text-text-muted">{t("annunciator.status.reach")}</span>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 🔴 Task C-8 — the OPERATOR's view of everything else that gets told
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * 🔴 Task C-8 — what an operator is allowed to know about the outbound alarm channels.
+ *
+ * `AnnunciatorStatusStrip` above answers "will THIS PAGE make a noise?". This answers the two
+ * questions beside it that an operator standing at a machine actually has: **is the beacon over my
+ * head telling the truth**, and **is anybody else's screen attached**.
+ *
+ * It reads `GET /v1/notifications/annunciator` — the narrow **Operator** route C-8 added rather than
+ * widening `GET /v1/notifications/status`, which C-7 gated at Engineer deliberately because it carries
+ * every alarm recipient's e-mail address. Nothing here names a channel's configuration: no webhook
+ * endpoint, no recipient, no machine code, no relay target. The route's handler cannot supply them.
+ *
+ * 🔴 The beacon badge has THREE states and only one of them is "off" — see `beaconBadge` in
+ * `routes/Notifications.tsx`, which this shares so the two screens cannot drift apart. `null` is
+ * **UNKNOWN**, which is not "off": collapsing them is how a lit beacon becomes invisible.
+ */
+export function OutboundReachPanel() {
+  const t = useT()
+  const { data, isError } = useAnnunciatorStatus()
+
+  // A failed read of this route is itself worth saying — quietly, because the alarm table beside it is
+  // the screen's job and this is context. Silence here would read as "no beacon is configured".
+  if (isError) {
+    return (
+      <p className="border border-border bg-surface-subtle px-3 py-2 text-xs text-text-muted" role="status">
+        {t("annunciator.reach.unavailable")}
+      </p>
+    )
+  }
+
+  if (!data) return null
+
+  return (
+    <div
+      data-testid="outbound-reach"
+      className="flex flex-col gap-2 border border-border bg-surface-subtle px-3 py-2 text-xs"
+    >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="font-semibold tracking-wide text-text-strong uppercase">
+          {t("annunciator.reach.label")}
+        </span>
+        <span className="font-numeric text-text-muted">
+          {t("annunciator.reach.listeners", { count: data.listeners, max: data.maxListeners })}
+        </span>
+        {data.rejectedListeners > 0 ? (
+          <StatusBadge status="warn">
+            {t("annunciator.reach.rejected", { count: data.rejectedListeners })}
+          </StatusBadge>
+        ) : null}
+      </div>
+
+      {/* 🔴 A configuration this engine could not READ looks exactly like "nothing is configured", so
+          the two are never allowed to render the same. This says which one it is. */}
+      {!data.configurationReadable ? (
+        <p className="border-l-2 border-danger pl-2 text-danger-text" role="alert" data-testid="reach-config-unreadable">
+          {data.configurationDetail}
+        </p>
+      ) : null}
+
+      {data.relays.length === 0 ? (
+        <p className="text-text-muted">
+          {data.configurationReadable ? t("annunciator.reach.noBeacon") : t("annunciator.reach.beaconUnknown")}
+        </p>
+      ) : (
+        data.relays.map((relay) => <BeaconState key={relay.instance} state={relay} />)
+      )}
+
+      {data.attention.length > 0 ? (
+        <ul className="flex flex-col gap-1">
+          {data.attention.map((item) => (
+            <li key={item} className="border-l-2 border-warn pl-2 text-text-body" role="alert">
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   )
 }

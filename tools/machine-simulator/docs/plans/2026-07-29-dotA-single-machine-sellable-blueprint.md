@@ -16,7 +16,7 @@ Tin tốt: **backend đã thật sự chạy độc lập được** — histori
 
 | # | Quyết định | Lý do |
 |---|---|---|
-| 1 | Thứ tự: **Đợt A trước** (B = tầng điều khiển SCADA, C = cảnh báo ra ngoài) | A rẻ nhất và đổi trạng thái sản phẩm từ "không bán được" thành "bán được" |
+| 1 | Thứ tự: **Đợt A trước** (B = tầng điều khiển SCADA, C = cảnh báo ra ngoài) — 🔴 cả ba đợt nay ĐÃ GIAO (B: 2026-07-30, C: 2026-07-31) | A rẻ nhất và đổi trạng thái sản phẩm từ "không bán được" thành "bán được" |
 | 2 | **Fleet mô phỏng tách hẳn thành chế độ demo** | Bản product mặc định **không có máy giả nào**; roster rỗng cho tới khi khách khai báo máy thật |
 | 3 | `fleet.json` **vẫn ship 11 máy** nhưng chỉ nạp trong demo | Giữ nguyên trải nghiệm triển lãm/bán hàng, không phải xoá đi làm lại |
 | 4 | E-STOP: **giữ đường API**, chỉ đổi nhãn UI + tài liệu + XML comment | Đổi endpoint là breaking change mà không được lợi gì; vấn đề là **sự trung thực của cách gọi tên**, không phải đường dẫn |
@@ -62,6 +62,6 @@ Cô lập `ST4I_SECURITY_DIR` trong harness Playwright (đang tạo tài khoản
 ## Hoãn có ghi nhận (không giấu nợ)
 
 - **Tầng điều khiển máy (SCADA) — Đợt B.** Toàn repo **không có một đường ghi nào** xuống thiết bị; `IDeviceDriver` chỉ có `ReadAsync`. Sparkplug **NCMD** cũng chưa nhận. Hạ tầng phân quyền (`PolicyEngine` default-deny + RBAC + audit) **đã sẵn sàng** cho lệnh ghi — chỉ thiếu đường xuống thiết bị.
-- **Cảnh báo ra ngoài — Đợt C.** Không có email/SMS/webhook/Slack/relay/còi/đèn. Alarm chỉ tồn tại nếu có người đang nhìn trang web.
+- ~~**Cảnh báo ra ngoài — Đợt C.** Không có email/SMS/webhook/Slack/relay/còi/đèn. Alarm chỉ tồn tại nếu có người đang nhìn trang web.~~ 🔴 **ĐÃ GIAO — Đợt C (C-1..C-8), 2026-07-31.** Đã có webhook ký HMAC, email qua SMTP, báo tại chỗ (chuông + thẻ) đẩy qua SSE, và relay/đèn báo vật lý. **SMS và Slack-qua-API riêng vẫn KHÔNG có** (Slack/Teams dùng được qua incoming webhook), **syslog vẫn KHÔNG có**. Xem `README.md` §22 và `docs/plans/2026-07-30-dotC-alarm-notification-blueprint.md`. Giữ lại dòng cũ gạch ngang thay vì xoá, để ai đọc lại kế hoạch Đợt A thấy chỗ sửa chứ không thấy một khẳng định biến mất.
 - Giao thức còn thiếu: Serial/RS-485, S7, EtherNet/IP, SECS/GEM. `MqttDriver` tồn tại nhưng **chưa được nối vào host nào**.
 - `ResilienceProbe` coi **bất kỳ** phản hồi HTTP nào (kể cả 404) là "với tới được" — nới lỏng có chủ ý, ghi nhận chứ không sửa ở đợt này.

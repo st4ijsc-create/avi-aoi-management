@@ -61,8 +61,15 @@ public sealed class AlarmStore : IAlarmStore
     private readonly Action<Exception, string>? _logError;
 
     /// <summary>Task C-1 — where alarm-state EDGES are reported, after (never before) the write that
-    /// caused them has committed. Defaults to <see cref="NullAlarmNotifier"/>, which is why every
-    /// pre-existing construction site behaves bit-for-bit as it did before Đợt C.</summary>
+    /// caused them has committed. Defaults to <see cref="NullAlarmNotifier"/>.
+    ///
+    /// <para>🔴 Task C-8 corrected the sentence that used to follow. It said the default is "why every
+    /// pre-existing construction site behaves bit-for-bit as it did before Đợt C" — which is still true of
+    /// a bare <c>new AlarmStore(path)</c> in a test, and is NOT true of the PRODUCTION host: after C-2's
+    /// review (I5) <c>Program.cs</c> registers the notifier unconditionally and passes it here on every
+    /// boot, so the shipped construction site always has a real notifier. The default is a convenience for
+    /// callers that have no notifier, not a statement about what this product does when you run
+    /// it.</para></summary>
     private readonly IAlarmNotifier _notifier;
 
     /// <summary>

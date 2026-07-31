@@ -382,6 +382,17 @@ of synchronously inside `EdgePipeline` — assessed and **deliberately deferred 
 (high blast-radius: ~34 files touch the synchronous ack today; see
 `docs/plans/2026-07-27-ws-b-b2-bridge-inversion-assessment.md`).
 
+🔴 **Update (Đợt C — outbound alarm notification):** **alarms now reach someone who is not looking at
+the screen**, which this document listed as an honest limitation for two batches (§20.5). C-1 built the
+edge detector and the notification seam; C-2 the configuration store and its DPAPI-protected secrets;
+C-3 an HMAC-signed **webhook** (`docs/ALARM_WEBHOOK_CONTRACT.md` is its public wire contract); C-4
+**e-mail over SMTP**; C-5 a **local annunciation** pushed to every open page over SSE; C-6 a **physical
+relay/beacon**; C-7 the eleven endpoints, their RBAC and this product's first rate limiter; C-8 the
+screens and this correction. See **§22** for the full detail and for the limitations that are real —
+**no SMS and no syslog**, no Windows desktop toast, no implicit TLS on port 465, no proof that a stored
+SMTP password works, a relay that is **not a safety device** and does not light while HALT is latched,
+and no delivery guarantee behind any channel.
+
 **Update (GĐ3 closeout WI-1 Part B / WI-4):** the two items this line used to list as future — **the
 machine announcing itself over mDNS** and **certificate rotation** — have both since landed.
 `SiteAdvertiser` now multicasts this device's own presence (`_st4i-machine._tcp`, on by default whenever
@@ -435,6 +446,16 @@ RA, Site quan sát được máy này nhưng không điều khiển được qua
 CỤC BỘ ở §21 — một SYNAPSE Site vẫn không chạm tới được); và **WS-B B2 (đảo chiều bridge)** — đã đánh
 giá và CHỦ ĐỘNG hoãn sang một đợt GĐ3 riêng (phạm vi ảnh hưởng lớn — khoảng 34 file đang dùng ack đồng
 bộ).
+
+🔴 **Cập nhật (Đợt C — cảnh báo ra ngoài):** **cảnh báo nay ĐÃ tới được người không nhìn màn hình** —
+điều mà tài liệu này liệt kê là giới hạn trung thực suốt hai đợt (§20.5). C-1 dựng bộ dò cạnh và seam
+thông báo; C-2 kho cấu hình và bí mật bảo vệ bằng DPAPI; C-3 **webhook** ký HMAC
+(`docs/ALARM_WEBHOOK_CONTRACT.md` là hợp đồng dây công khai của nó); C-4 **email qua SMTP**; C-5 **báo
+tại chỗ** đẩy qua SSE tới mọi trang đang mở; C-6 **relay/đèn báo vật lý**; C-7 mười một endpoint, RBAC
+của chúng và bộ giới hạn tốc độ đầu tiên của sản phẩm; C-8 màn hình và bản đính chính này. Xem **§22**
+để biết chi tiết và các giới hạn THẬT — **KHÔNG có SMS, KHÔNG có syslog**, không có toast desktop
+Windows, không dùng được TLS ngầm cổng 465, không chứng minh được mật khẩu SMTP đã lưu là đúng, relay
+**không phải thiết bị an toàn** và không sáng khi HALT đang gài, và không kênh nào có bảo đảm gửi tới nơi.
 
 **Cập nhật (GĐ3 closeout WI-1 Part B / WI-4):** hai mục mà dòng này từng liệt kê là tương lai — **máy tự
 quảng bá qua mDNS** và **xoay vòng chứng chỉ** — nay ĐÃ GIAO. `SiteAdvertiser` nay multicast sự hiện diện
@@ -1097,7 +1118,9 @@ started one) — and see §17.3 for the full Ecosystem Connect table:
 discovery), plus GĐ3 closeout WI-1/WI-2/WI-3's new `ST4I_MDNS_ADVERTISE`/`ST4I_MDNS_SERVICE_TYPE`
 (§17.8, mDNS advertise — **new outbound network behavior, on by default whenever UNS is enabled**) and
 `ST4I_BRIDGE_SPOOL_ENABLED`/`_DIR`/`_MAX_BYTES`/`_MAX_AGE_HOURS` (§17.9, the durable bridge spool), and
-§18.2 for `ST4I_IDENTITY_EXPIRY_WARN_DAYS` (§17.10, the `Identity` alarm).)*
+§18.2 for `ST4I_IDENTITY_EXPIRY_WARN_DAYS` (§17.10, the `Identity` alarm) and 🔴 `ST4I_NOTIFICATIONS_DIR`
+(Đợt C, §22 — the alarm **notification** configuration store, which holds channel credentials protected
+with DPAPI, so **that directory's ACL is a confidentiality boundary**).)*
 
 *(WS-F1 final-review fix F1 — `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/`ST4I_VERIFY_TLS` are read ONCE at
 process start and applied via `FleetHost.UpdateSettings` — the exact same code path a runtime
@@ -1114,7 +1137,9 @@ startup — see §15.8(a) for what still does *not* persist across a restart.)*
 `REG_MULTI_SZ` tên `Environment` dưới khóa registry của service,
 `HKLM\SYSTEM\CurrentControlSet\Services\St4iEngineApi\Environment`; SCM chỉ đọc lúc khởi động tiến
 trình, đổi giá trị xong phải `sc stop`/`sc start` lại. 8 biến quan trọng: `ASPNETCORE_URLS` (địa chỉ
-bind), `ST4I_HISTORIAN_DIR`, `ST4I_WAL_DIR`, `ST4I_SECURITY_DIR` (thư mục dữ liệu), `ST4I_DEMO_ENABLED`
+bind), `ST4I_HISTORIAN_DIR`, `ST4I_WAL_DIR`, `ST4I_SECURITY_DIR` (thư mục dữ liệu — 🔴 Đợt C thêm
+`ST4I_NOTIFICATIONS_DIR` cho `notifications.db`, xem §22.5: thư mục đó chứa thông tin đăng nhập mã hóa
+DPAPI nên ACL của nó là ranh giới bảo mật), `ST4I_DEMO_ENABLED`
 (bật Demo ngoại tuyến), và (từ bản vá WS-F1 final-review F1) `ST4I_SERVER_URL`/`ST4I_MACHINE_CODE`/
 `ST4I_VERIFY_TLS` — 3 biến này được đọc MỘT LẦN lúc khởi động và áp dụng làm cấu hình Live BAN ĐẦU của
 `FleetHost` qua đúng cơ chế `PUT /v1/settings` runtime dùng, nên service khởi động lại vẫn giữ đúng cấu
@@ -1174,7 +1199,8 @@ pass) removes only what the MSI itself installed — everything under `%ProgramF
 Simulator\`, the Start Menu/Startup shortcuts, and — if `ServiceFeature` was enabled — stops and
 deletes the `St4iEngineApi` service.
 
-**Customer data under `%ProgramData%\ST4I\sim\{historian,wal,security,creds}\` is kept by default** —
+**Customer data under `%ProgramData%\ST4I\sim\{historian,wal,security,creds,notifications}\` is kept by
+default** —
 the MSI has no `<Component>` referencing anything there (it's all runtime-created by the engine, not
 installed), so Windows Installer's uninstall/remove sequence never touches it. This is deliberate: an
 uninstall or upgrade must never silently destroy production history, the audit trail, or a machine's
@@ -1188,19 +1214,26 @@ destructive script — **never** invoked by the MSI itself:
 .\packaging\remove-data.ps1           # interactive — prompts before each stop/delete
 .\packaging\remove-data.ps1 -Force    # non-interactive, for scripted wipes
 
-# Relocated a data dir via ST4I_HISTORIAN_DIR/ST4I_WAL_DIR/ST4I_SECURITY_DIR (§15.2)? Say so explicitly:
-.\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security
+# Relocated a data dir via ST4I_HISTORIAN_DIR/ST4I_WAL_DIR/ST4I_SECURITY_DIR/ST4I_NOTIFICATIONS_DIR (§15.2)? Say so explicitly:
+.\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security -NotificationsDir D:\St4iData\notifications
 ```
 
-It stops+deletes the `St4iEngineApi` service if present, then deletes the historian/wal/security/creds
-data directories — printing an explicit "this destroys the audit chain + historian + credentials"
-warning up front, gated through PowerShell's `ShouldProcess`/`-WhatIf`/`-Confirm`.
+It stops+deletes the `St4iEngineApi` service if present, then deletes the
+historian/wal/security/creds/**notifications** data directories — printing an explicit "this destroys
+the audit chain + historian + credentials" warning up front, gated through PowerShell's
+`ShouldProcess`/`-WhatIf`/`-Confirm`.
+
+🔴 **`notifications` was added to that list by Đợt C (C-8), and its absence was a real gap rather than a
+documentation one:** `notifications.db` holds the webhook URLs, webhook signing secrets, webhook auth
+tokens and SMTP passwords an operator configured (§22.5), so a decommissioning wipe that skipped it left
+live third-party credentials on a machine that was being handed on or scrapped. Everything else about
+the script is unchanged.
 
 **Relocated directories (WS-F1 final-review fix F3):** §15.2's `ST4I_HISTORIAN_DIR`/`ST4I_WAL_DIR`/
-`ST4I_SECURITY_DIR` mean a deployment's real data doesn't have to live under
+`ST4I_SECURITY_DIR`/`ST4I_NOTIFICATIONS_DIR` mean a deployment's real data doesn't have to live under
 `%ProgramData%\ST4I\sim\*` at all — the script used to assume it always did, silently deleting an
 empty default directory while the real data sat untouched elsewhere. It now resolves each of those
-three per `-HistorianDir`/`-WalDir`/`-SecurityDir`, else the matching `ST4I_*_DIR` environment variable
+four per `-HistorianDir`/`-WalDir`/`-SecurityDir`/`-NotificationsDir`, else the matching `ST4I_*_DIR` environment variable
 in **this same PowerShell process**, else the `%ProgramData%` default — printing the resolved path for
 each before doing anything. **It does NOT read the service's own registry `Environment` value** (only
 this shell's own env) — if a relocated directory was only ever configured there, pass the matching
@@ -1212,9 +1245,13 @@ is not relocatable) — always `%ProgramData%\ST4I\sim\creds`.
 *(VI: Gỡ cài đặt chỉ xoá những gì MSI đã cài (Program Files, shortcut, service nếu có bật) — dữ liệu
 `%ProgramData%\ST4I\sim\*` được GIỮ LẠI mặc định vì MSI không hề biết tới các thư mục này (do engine tự
 tạo lúc chạy). Muốn xoá thật, chạy `packaging\remove-data.ps1` (có `-WhatIf`/`-Force`) — script riêng,
-thủ công, có cảnh báo phá hủy rõ ràng, KHÔNG bao giờ được MSI tự gọi. Nếu historian/wal/security đã
-được chuyển chỗ qua `ST4I_HISTORIAN_DIR`/`ST4I_WAL_DIR`/`ST4I_SECURITY_DIR`, truyền tham số
-`-HistorianDir`/`-WalDir`/`-SecurityDir` tương ứng — script KHÔNG tự đọc giá trị registry `Environment`
+thủ công, có cảnh báo phá hủy rõ ràng, KHÔNG bao giờ được MSI tự gọi. 🔴 Đợt C (C-8) thêm thư mục
+`notifications` vào danh sách bị xoá — đó là một thiếu sót THẬT chứ không phải thiếu sót tài liệu:
+`notifications.db` chứa URL webhook, khóa ký, token và mật khẩu SMTP (§22.5), nên một lần xoá để thanh
+lý máy mà bỏ qua nó sẽ để lại thông tin đăng nhập bên thứ ba còn sống trên máy sắp chuyển đi. Nếu
+historian/wal/security/notifications đã được chuyển chỗ qua
+`ST4I_HISTORIAN_DIR`/`ST4I_WAL_DIR`/`ST4I_SECURITY_DIR`/`ST4I_NOTIFICATIONS_DIR`, truyền tham số
+`-HistorianDir`/`-WalDir`/`-SecurityDir`/`-NotificationsDir` tương ứng — script KHÔNG tự đọc giá trị registry `Environment`
 của service, chỉ đọc biến môi trường của CHÍNH shell đang chạy nó; nếu không khớp, phải xoá thư mục
 thật bằng tay.)*
 
@@ -2732,21 +2769,33 @@ loop simply continues, never taking the host down.
 | `ST4I_ALARM_NGRATE_MINSAMPLE` | The minimum judged-unit delta a window must accumulate before the NG-rate source evaluates at all | `5` |
 | `ST4I_ALARM_EVAL_INTERVAL_MS` | `AlarmEvaluatorService`'s `PeriodicTimer` period, in milliseconds | `5000` (5s) |
 | `ST4I_IDENTITY_EXPIRY_WARN_DAYS` | GĐ3 closeout WI-4 (§17.10) — how many days before this device's identity certificate's `NotAfter` the `Identity` source starts warning | `30` |
+| `ST4I_NOTIFICATIONS_DIR` | 🔴 Đợt C — relocates the alarm **notification** configuration store (`notifications.db`, §22), which holds every channel's settings **and its DPAPI-protected credentials** | `%ProgramData%\ST4I\sim\notifications` |
 
 An unset or unparseable value keeps its built-in default rather than crashing startup — same posture
 `WalOptions.FromEnvironment` already uses.
 
+🔴 **`ST4I_NOTIFICATIONS_DIR` is not like the other five.** The directory it names holds webhook URLs,
+webhook signing secrets, webhook auth tokens and SMTP passwords, encrypted with **DPAPI at the current
+user scope** — so **that directory's ACL is the confidentiality boundary** against another local account
+on the same machine. Relocating it onto a share, or onto a volume with looser permissions, moves that
+boundary with it. See §22.5.
+
 *(VI: `AlarmEvaluator` là lõi đánh giá thuần, test được trực tiếp, cho ba nguồn tự động (không có timer
 riêng — không bao giờ throw). `AlarmEvaluatorService` là `IHostedService` ĐẦU TIÊN của
 `St4i.EngineApi` — vòng lặp `PeriodicTimer` mỗi tick đọc health/KPI mới + hạn dùng chứng chỉ thiết bị
-(§17.10) rồi đưa cho evaluator, tự bọc try/catch riêng để một tick lỗi không bao giờ làm sập host. Năm
+(§17.10) rồi đưa cho evaluator, tự bọc try/catch riêng để một tick lỗi không bao giờ làm sập host. Sáu
 biến môi trường: **`ST4I_ALARMS_DIR`**
 (thư mục `alarms.db`, mặc định `%ProgramData%\ST4I\sim\alarms`); **`ST4I_ALARM_NGRATE_THRESHOLD`**
 (ngưỡng tỷ lệ NG kích hoạt cảnh báo, mặc định `0.20` = 20%); **`ST4I_ALARM_NGRATE_MINSAMPLE`** (số mẫu
 tối thiểu để đánh giá, mặc định `5`); **`ST4I_ALARM_EVAL_INTERVAL_MS`** (chu kỳ đánh giá, mặc định
 `5000` ms = 5s); **`ST4I_IDENTITY_EXPIRY_WARN_DAYS`** (WI-4 GĐ3 closeout, §17.10 — số ngày trước khi
-chứng chỉ danh tính thiết bị hết hạn thì nguồn `Identity` bắt đầu cảnh báo, mặc định `30`). Giá trị
-trống/không đọc được thì giữ mặc định, không crash lúc khởi động.)*
+chứng chỉ danh tính thiết bị hết hạn thì nguồn `Identity` bắt đầu cảnh báo, mặc định `30`); và 🔴 Đợt C
+thêm **`ST4I_NOTIFICATIONS_DIR`** (thư mục cấu hình kênh báo ra ngoài `notifications.db`, §22, mặc định
+`%ProgramData%\ST4I\sim\notifications`). Giá trị trống/không đọc được thì giữ mặc định, không crash lúc
+khởi động. 🔴 **`ST4I_NOTIFICATIONS_DIR` khác năm biến kia:** thư mục nó trỏ tới chứa URL webhook, khóa
+ký HMAC, token xác thực và mật khẩu SMTP — mã hóa bằng **DPAPI phạm vi người dùng hiện tại** — nên
+**ACL của chính thư mục đó LÀ ranh giới bảo mật** với một tài khoản cục bộ khác trên cùng máy. Chuyển nó
+sang ổ/thư mục có quyền lỏng hơn là chuyển luôn ranh giới đó. Xem §22.5.)*
 
 ### 18.3 Alarm endpoints / Endpoint cảnh báo
 
@@ -3651,11 +3700,24 @@ KHÔNG PHẢI cảnh báo** — và luôn thu gọn; widget chỉ tự mở khi 
   and Sparkplug NCMD — inbound commands from the ecosystem — is still never received, so this write path
   is local-caller-only). Left here, corrected rather than deleted, so anyone who bookmarked this
   paragraph across a batch boundary sees the correction in place, not a silently vanished claim.
-- **Alarms cannot reach anyone who is not looking at the screen.** `St4i.EngineApi/Alarms/` is exactly
-  seven files — a store, an evaluator, endpoints, thresholds, a raise/record model — and nothing else.
-  There is no email, SMS, webhook, Slack, syslog, relay, or audible-signal integration anywhere in this
-  repository. An alarm is visible on `/alarms` and in the `alarms.db` history the moment someone opens
-  that screen, and not one moment before, to anyone who wasn't already looking.
+- **Alarms CAN now reach someone who is not looking at the screen — see §22, not this bullet.** This
+  line used to say "alarms cannot reach anyone who is not looking at the screen", that
+  `St4i.EngineApi/Alarms/` was "exactly seven files", and that "there is no email, SMS, webhook, Slack,
+  syslog, relay, or audible-signal integration anywhere in this repository". Every clause of that was
+  true when it was written (Đợt A) and **every clause is false since Đợt C** (C-1 through C-8): that
+  folder is now **23 files**, and the product ships **four** notification channels — an HMAC-signed
+  **webhook** (Slack/Teams/MES), **e-mail over SMTP**, an **audible + visual annunciation** pushed to
+  every open page over SSE, and a **physical relay/beacon** driven through a declared writable point.
+  §22 states the honest limitations of THAT capability plainly (no SMS and no syslog; no Windows desktop
+  toast; implicit TLS on port 465 is unreachable; a green e-mail test does not prove the stored password
+  works; the relay is **not a safety device** and does **not** light while HALT is latched; there is no
+  relay send test; and there is no delivery guarantee behind any channel). Left here, corrected rather
+  than deleted, so anyone who bookmarked this paragraph across a batch boundary sees the correction in
+  place, not a silently vanished claim — the same treatment the machine-control bullet above got.
+- **What is still true, narrowed to what it actually covers:** on an install where **nothing has been
+  configured**, an alarm is visible on `/alarms` and in the `alarms.db` history and reaches nobody else.
+  A fresh install therefore starts silent, and the engine prints a startup **warning** saying so
+  (`NotificationStartupNotices`) rather than leaving that state to be discovered.
 - **Only Modbus TCP and OPC-UA actually work.** `MqttDriver` exists and is proven by
   `MqttDriverTests`, but it is registered into **no** host's dependency injection — neither
   `St4i.EngineApi`'s nor `St4i.EdgeService`'s `Program.cs`/startup wiring references it. Serial/RS-485,
@@ -3685,9 +3747,20 @@ là toàn fleet chứ không theo từng máy, `Indeterminate` là trạng thái
 lệnh vào từ hệ sinh thái — vẫn không bao giờ được nhận, nên đường ghi này chỉ local). Giữ lại ở đây,
 sửa lại thay vì xóa, để ai từng đọc đoạn này ở đợt trước vẫn thấy chỗ sửa, không phải một khẳng định biến
 mất âm thầm.
-**Cảnh báo KHÔNG thể tới ai không đang nhìn màn hình.** Thư mục `Alarms/` chỉ có đúng 7 file — store,
-evaluator, endpoint, ngưỡng, model raise/record — không gì khác. KHÔNG có email/SMS/webhook/Slack/
-syslog/relay/tín hiệu âm thanh nào trong repo này. **Chỉ Modbus TCP và OPC-UA THẬT SỰ chạy được.**
+**Cảnh báo ĐÃ có thể tới người không nhìn màn hình — xem §22, không phải dòng này.** Dòng này từng
+viết "Cảnh báo KHÔNG thể tới ai không đang nhìn màn hình", rằng thư mục `Alarms/` "chỉ có đúng 7 file",
+và rằng "KHÔNG có email/SMS/webhook/Slack/syslog/relay/tín hiệu âm thanh nào trong repo này" — đúng lúc
+viết (Đợt A), **SAI từ Đợt C** (C-1 đến C-8): thư mục đó nay có **23 file**, và sản phẩm có **bốn** kênh
+báo ra ngoài — **webhook** ký HMAC (Slack/Teams/MES), **email qua SMTP**, **báo tại chỗ** (chuông + thẻ
+cảnh báo) đẩy qua SSE tới mọi trang đang mở, và **relay/đèn báo vật lý** ghi qua một điểm ghi được đã
+khai báo. §22 ghi rõ giới hạn thật của năng lực đó (KHÔNG có SMS, KHÔNG có syslog; KHÔNG có toast
+desktop Windows; TLS ngầm cổng 465 không thể dùng; một bài gửi thử email xanh KHÔNG chứng minh mật khẩu
+đúng; relay **không phải thiết bị an toàn** và **không sáng khi HALT đang gài**; không có bài gửi thử
+relay; và không kênh nào có bảo đảm gửi tới nơi). Giữ lại ở đây, sửa lại thay vì xóa, để ai từng đọc
+đoạn này ở đợt trước vẫn thấy chỗ sửa. **Điều vẫn đúng, đã thu hẹp lại đúng phạm vi của nó:** trên một
+bản cài **chưa cấu hình gì**, cảnh báo chỉ thấy ở `/alarms` và trong lịch sử `alarms.db`, không tới ai
+khác — và engine in một **cảnh báo lúc khởi động** nói đúng điều đó thay vì để người dùng tự phát hiện.
+**Chỉ Modbus TCP và OPC-UA THẬT SỰ chạy được.**
 `MqttDriver` tồn tại, được `MqttDriverTests` chứng minh, nhưng KHÔNG được đăng ký DI ở host nào cả.
 Serial/RS-485, S7, EtherNet/IP, SECS/GEM chưa có driver. **Lưu lại cấu hình một connector ĐÃ CÓ trong
 khi đội hình đang chạy KHÔNG áp dụng sống; thêm máy MỚI thì có** — xem §20.2. **Sửa một connector đòi
@@ -3890,3 +3963,456 @@ từ một SYNAPSE Site hay hệ thống hướng lên nào khác.)*
 - **`OpcUaDriver.DisposeAsync` not taking `_sessionLock`** — a documented, accepted tradeoff (B-5): taking
   the lock would make HALT/disposal wait on whatever currently holds it, recreating the exact
   latency-coupling this project already fixed once. Confirmed, not changed.
+
+---
+
+## 22. Đợt C (C-1–C-8) — outbound alarm notification / Cảnh báo ra ngoài
+
+**EN** — Until this batch, an alarm existed only on `/alarms` and in `alarms.db`, and reached nobody who
+was not already looking at a screen. §20.5 recorded that as an honest limitation for two batches. It is
+now false: this product ships **four notification channels**, an edge detector in front of them, a
+configuration store with DPAPI-protected credentials, twelve HTTP routes with their own RBAC, and a
+screen to drive all of it.
+
+**Read this section for what the capability IS. Read §22.7 for what it is NOT** — that list is not
+boilerplate; every entry on it was measured against source, and two of them (a green SMTP test proving
+nothing about the password, and a relay that goes dark under HALT) are the kind of thing that gets a
+person hurt if it is assumed rather than read.
+
+*(VI: Trước đợt này, một cảnh báo chỉ tồn tại ở `/alarms` và trong `alarms.db`, không tới được ai không
+đang nhìn màn hình — §20.5 ghi đó là giới hạn trung thực suốt hai đợt. Nay điều đó SAI: sản phẩm có
+**bốn kênh báo ra ngoài**, một bộ dò cạnh đứng trước chúng, một kho cấu hình với thông tin đăng nhập
+bảo vệ bằng DPAPI, mười hai route HTTP với RBAC riêng, và một màn hình để điều khiển tất cả. **Đọc mục
+này để biết năng lực đó LÀ GÌ; đọc §22.7 để biết nó KHÔNG PHẢI là gì** — danh sách đó không phải văn mẫu:
+mỗi mục đều đã đối chiếu với mã nguồn, và hai trong số đó (một bài gửi thử SMTP xanh không chứng minh gì
+về mật khẩu, và một relay tắt ngóm khi HALT gài) là loại điều có thể làm ai đó bị thương nếu chỉ suy
+đoán thay vì đọc.)*
+
+### 22.1 The four channels / Bốn kênh
+
+| Channel | What it does | Reaches | Needs network |
+|---|---|---|---|
+| **Webhook** (C-3) | HTTP `POST` of a JSON alarm envelope, **HMAC-signed** (`X-ST4I-Signature: v1=…`) plus an optional operator-configured auth header. Aimed at Slack, Teams, or an MES. | Anyone watching that chat channel or system | Yes |
+| **E-mail / SMTP** (C-4) | One message per qualifying edge to a configured recipient list, over plain SMTP or **STARTTLS**. | Anyone on the recipient list | Yes |
+| **Local annunciation** (C-5) | An alarm card **and a tone** pushed to every open page of this product's web UI over SSE (`GET /v1/alarms/annunciations`). The only channel that works with **no network at all** — which is what makes it the one that honours the standalone single-machine deployment. | Whoever has the UI open | No |
+| **Relay / beacon** (C-6) | Energises a real annunciator through a **declared writable point or command** on a machine's register map, using the exact Đợt B write path (§21). | Anyone who can see the light or hear the horn | No (LAN to the device only) |
+
+Each channel has its own **minimum priority** threshold and its own **enabled** flag, and each keeps its
+own queue and its own counters — so "something is falling behind" can always be resolved to *which*.
+
+**The wire contract for the webhook is a public interface** and is documented separately, for receiver
+authors, in **`docs/ALARM_WEBHOOK_CONTRACT.md`** — including the one thing a receiver must get right:
+**only `X-ST4I-Timestamp` and the raw body are covered by the signature**, so any decision that must be
+trustworthy (dedup, routing, filtering) **must read the body**, never the convenience headers.
+
+*(VI: Bốn kênh — **Webhook** (C-3): `POST` JSON ký HMAC + header xác thực tuỳ chọn, nhắm Slack/Teams/MES,
+cần mạng. **Email/SMTP** (C-4): mỗi cạnh đủ điều kiện gửi một thư tới danh sách người nhận, qua SMTP
+thường hoặc **STARTTLS**, cần mạng. **Báo tại chỗ** (C-5): thẻ cảnh báo **kèm tiếng chuông** đẩy qua SSE
+tới mọi trang đang mở — kênh DUY NHẤT chạy được khi **hoàn toàn không có mạng**, nên nó là kênh tôn
+trọng đúng kiểu triển khai một-máy-độc-lập. **Relay/đèn báo** (C-6): kích một đèn/còi thật qua một
+**điểm hoặc lệnh ghi được đã khai báo** trong register map, dùng đúng đường ghi của Đợt B (§21). Mỗi kênh
+có ngưỡng **mức ưu tiên tối thiểu** riêng, cờ **bật/tắt** riêng, hàng đợi riêng và bộ đếm riêng — nên
+"có thứ gì đó đang tụt lại" luôn quy được về *kênh nào*. Hợp đồng dây của webhook là **giao diện công
+khai**, tài liệu riêng ở `docs/ALARM_WEBHOOK_CONTRACT.md` — gồm điều một receiver bắt buộc phải làm
+đúng: **chỉ `X-ST4I-Timestamp` và thân request thô được ký**, nên mọi quyết định cần tin cậy được (chống
+trùng, định tuyến, lọc) **phải đọc thân request**, không bao giờ đọc các header tiện lợi.)*
+
+### 22.2 What a fresh install actually does / Một bản cài mới thực sự làm gì
+
+🔴 **This batch is NOT "additive and default-off", and that claim is retired.** It was made in C-1's
+plan and it was true then. C-2's review deliberately overturned it: the notification seam is now
+registered **unconditionally**, so a fresh install starts **one bounded channel, one drain loop and one
+hosted service** it did not start before Đợt C. The reason is worth stating, because the alternative
+looked cheaper: gating registration on "is at least one channel configured" left exactly one transition
+— the first channel ever configured on a host that booted with none — needing an engine restart, bound
+only by a doc comment. A rule that lives in prose is a rule the next person misses.
+
+**What is still true, and it is the part that matters: with nothing configured, nothing is delivered to
+anybody.** Whether anything is sent is decided by `NotificationConfigStore` at the point of delivery,
+never by whether an object exists. And a fresh install says so out loud — `NotificationStartupNotices`
+prints a **Warning** at boot ("No alarm notification channel is configured … NOTHING is sent to anyone
+who is not looking at the screen"), rather than leaving silence to be discovered during an incident. It
+warns just as loudly about the next state along: channels that are **configured but every one disabled**.
+
+**Storm defence** is a condition of the whole batch, not a feature of one channel: C-1's edge detector
+sits in front of everything, so the sources restating an unchanged alarm every 5 s produce **no**
+notifications at all — only genuine `Raised`/`Restored`/`Escalated` **edges** do.
+
+*(VI: 🔴 **Đợt này KHÔNG phải "cộng thêm và mặc định tắt" — khẳng định đó đã bị RÚT.** Nó đúng ở kế
+hoạch C-1; review của C-2 chủ động lật lại: seam thông báo nay được đăng ký **vô điều kiện**, nên một
+bản cài mới khởi động thêm **một channel có chặn, một vòng drain và một hosted service** mà trước Đợt C
+không có. Lý do đáng nói vì phương án kia trông rẻ hơn: gán điều kiện "đã cấu hình ít nhất một kênh" để
+lại đúng một chuyển tiếp — kênh đầu tiên được cấu hình trên một host khởi động khi chưa có kênh nào —
+cần khởi động lại engine, mà chỉ được ràng buộc bằng một dòng chú thích. Một quy tắc sống trong văn xuôi
+là quy tắc người sau bỏ sót. **Điều vẫn đúng, và là phần quan trọng: chưa cấu hình gì thì không gửi gì
+cho ai.** Có gửi hay không do `NotificationConfigStore` quyết định tại thời điểm gửi, không phải do một
+đối tượng có tồn tại hay không — và bản cài mới NÓI THẲNG điều đó: `NotificationStartupNotices` in một
+**Cảnh báo** lúc khởi động thay vì để sự im lặng bị phát hiện giữa lúc có sự cố, và cảnh báo lớn tiếng
+y như vậy cho trạng thái kế tiếp: đã cấu hình kênh nhưng **tất cả đều đang TẮT**. **Chống bão** là điều
+kiện của cả đợt chứ không phải tính năng của một kênh: bộ dò cạnh của C-1 đứng trước tất cả, nên việc
+các nguồn lặp lại một cảnh báo không đổi mỗi 5 giây tạo ra **KHÔNG** thông báo nào — chỉ cạnh thật
+(`Raised`/`Restored`/`Escalated`) mới tạo.)*
+
+### 22.3 Endpoints and roles / Endpoint và phân quyền
+
+| Path | Verb | Role | Audited |
+|---|---|---|---|
+| `/v1/notifications/channels` | GET | Engineer | no |
+| `/v1/notifications/status` | GET | Engineer | no |
+| `/v1/notifications/annunciator` | GET | **Operator** | no |
+| `/v1/notifications/webhook` | PUT / DELETE | Engineer | `notification.webhook.save` / `.delete` |
+| `/v1/notifications/smtp` | PUT / DELETE | Engineer | `notification.smtp.save` / `.delete` |
+| `/v1/notifications/local-annunciation` | PUT / DELETE | Engineer | `notification.localannunciation.save` / `.delete` |
+| 🔴 `/v1/notifications/relay` | PUT / DELETE | **Admin** | `notification.relay.save` / `.delete` |
+| `/v1/notifications/test` | POST | Engineer (**rate limited**, 1 per 5 s) | `notification.test` |
+
+🔴 **The relay routes are Admin and the other ten are Engineer, and that is not an inconsistency.**
+Saving a relay row whose `targetKind` is `Command` makes this engine perform — automatically, and for as
+long as that row exists — an action a human needs Admin for (`MachineWriteGate.RoleFor`). That is
+**granting authority**, not changing a setting. The gate is on the **route**, not inside the handler,
+because an `if` in a handler body is invisible to `RbacPolicyTests`' endpoint-metadata sweep — the only
+thing in the whole suite that can see a missing `.RequireAuthorization`. DELETE is Admin too: an
+Engineer who could delete the row could silently un-configure the plant's beacon and could not put it
+back, since the save is Admin.
+
+**The two full reads are Engineer because they carry the whole configuration** — SMTP usernames, **every
+alarm recipient's e-mail address**, webhook endpoints, and the machine and point a relay may energise.
+The Operator-tier route (`/v1/notifications/annunciator`, added by C-8) is deliberately narrower: it
+carries the beacon's believed state and the annunciation listener counts and **nothing else**, and its
+handler never calls the store's configuration read at all — so no recipient address can reach it even if
+the payload is widened later. That is a structural guarantee rather than a careful selection of fields.
+
+**One rate limiter, on one route.** `POST /v1/notifications/test` is the only route that makes this
+product emit something to a **third party**, so it is limited to one call per 5 s, refused with a `429`
+rather than delayed. The **configuration writes are deliberately not limited**: they are local SQLite
+writes, they are idempotent, and the moment an operator most needs to fix a configuration is during an
+incident — a config write refused mid-alarm-storm is worse than the storm. The annunciation stream is
+bounded a different way, by a **concurrent-listener cap** (32) rather than a rate limit, because its
+cost is per *live connection*, not per connect.
+
+*(VI: 🔴 **Route relay là Admin, mười route còn lại là Engineer — đó không phải sự thiếu nhất quán.**
+Lưu một hàng relay có `targetKind = Command` khiến engine tự động thực hiện — và thực hiện suốt thời
+gian hàng đó tồn tại — một hành động con người cần quyền Admin. Đó là **cấp quyền**, không phải đổi cấu
+hình. Cổng đặt ở **ROUTE** chứ không trong thân handler, vì một `if` trong handler nằm ngoài tầm nhìn
+của `RbacPolicyTests` — thứ duy nhất trong bộ test thấy được một `.RequireAuthorization` bị quên. DELETE
+cũng là Admin: một Engineer xoá được hàng đó sẽ vô hiệu hoá đèn báo của nhà máy mà không đặt lại được,
+vì lệnh lưu là Admin. **Hai route đọc đầy đủ là Engineer vì chúng mang toàn bộ cấu hình** — tài khoản
+SMTP, **địa chỉ email của mọi người nhận cảnh báo**, endpoint webhook, và máy/điểm mà relay được phép
+kích. Route mức Operator (`/v1/notifications/annunciator`, do C-8 thêm) hẹp hơn có chủ ý: nó chỉ mang
+trạng thái đèn báo và số phiên trình duyệt đang nghe, **không gì khác**, và handler của nó không hề gọi
+hàm đọc cấu hình của kho — nên không địa chỉ người nhận nào tới được đó kể cả khi payload bị mở rộng về
+sau. Đó là bảo đảm mang tính CẤU TRÚC chứ không phải việc chọn trường cẩn thận. **Một bộ giới hạn tốc
+độ, trên một route:** `POST /v1/notifications/test` là route duy nhất khiến sản phẩm phát ra thứ gì đó
+tới **bên thứ ba**, nên bị giới hạn 5 giây/lần, từ chối bằng `429` chứ không trì hoãn. **Các route ghi
+cấu hình cố ý KHÔNG bị giới hạn:** chúng là ghi SQLite cục bộ, idempotent, và lúc người vận hành cần sửa
+cấu hình gấp nhất chính là lúc đang có sự cố — một lệnh ghi cấu hình bị từ chối giữa bão cảnh báo còn tệ
+hơn cơn bão nó ngăn. Luồng báo tại chỗ được chặn theo cách khác: **giới hạn số kết nối đồng thời** (32)
+chứ không phải rate limit, vì chi phí của nó nằm ở mỗi kết nối SỐNG chứ không ở mỗi lần kết nối.)*
+
+### 22.4 🔴 The relay is not a safety device / Relay KHÔNG phải thiết bị an toàn
+
+**EN** — Read this before wiring anything to it.
+
+- **It is an ordinary machine write on an ordinary software path.** It is subject to the HALT latch, to
+  the register map's declared limits, to a network that may be down, and to this process being alive.
+- 🔴 **It does not light while HALT is latched.** The relay goes through `EstopGuardRule` unchanged, so
+  the gate refuses the write — correct behaviour for a write path, and exactly wrong for a beacon.
+  **HALT latched ⇒ the beacon does not light.**
+- 🔴 **The same refusal applies to switching it OFF.** If HALT engages while the beacon is on, the
+  release write is refused too, and the product ends up believing the annunciator is ON with no alarm
+  latched. That state is reported explicitly rather than hidden — see §22.8.
+- **Anyone who needs a light or a horn that works while HALT is engaged, or while this software is not
+  running, must hardwire it.** A safety annunciator that must function when the software has failed is a
+  hardwired circuit (**ISO 13849 Cat 3/4**). Routing it through this product is not that, and this
+  product does not pretend otherwise.
+- **A `Command` target can assert the annunciator and structurally cannot release it** — a command is an
+  argument-less pulse. **A latching beacon needs a `Point` target**, with both an energise and a
+  de-energise value. Those two values are configured explicitly and have **no default**, because a
+  default would be this product choosing what to write to a coil it cannot prove is a lamp rather than a
+  conveyor — and `true` is simply wrong for a Modbus holding register that wants `1`. The de-energise
+  value is a separate value rather than a derived inverse, because the register map's declared range is
+  the authority on what "off" is and this product must not infer it.
+- **The register map remains the entire safety boundary.** The configuration stores a machine code and a
+  **declared point/command NAME**, never an address — a configuration that stored a coil address would
+  be a second, unvalidated boundary sitting beside the real one.
+
+*(VI: Đọc mục này trước khi đấu bất cứ thứ gì vào relay. **Đó là một lệnh ghi máy bình thường trên đường
+phần mềm bình thường** — chịu HALT latch, chịu giới hạn khai báo trong register map, chịu mạng có thể
+đứt, và chịu việc tiến trình này còn sống hay không. 🔴 **Nó KHÔNG sáng khi HALT đang gài** — relay đi
+qua `EstopGuardRule` không sửa đổi, nên cổng từ chối lệnh ghi: đúng với một đường ghi, và sai hoàn toàn
+với một đèn báo. 🔴 **Từ chối đó áp dụng cả khi TẮT:** nếu HALT gài lúc đèn đang sáng, lệnh nhả cũng bị
+từ chối, và sản phẩm rơi vào trạng thái tin rằng đèn ĐANG SÁNG trong khi không còn cảnh báo nào chốt —
+trạng thái đó được báo cáo rõ ràng chứ không giấu, xem §22.8. **Ai cần một đèn hoặc còi hoạt động khi
+HALT đang gài, hoặc khi phần mềm này không chạy, PHẢI đấu cứng.** Một đèn báo an toàn phải hoạt động khi
+phần mềm đã hỏng là một mạch đấu cứng (**ISO 13849 Cat 3/4**); đi qua sản phẩm này thì không phải vậy,
+và sản phẩm này không giả vờ ngược lại. **Mục tiêu kiểu `Command` kích được đèn nhưng về mặt cấu trúc
+KHÔNG nhả được** — lệnh là một xung không tham số; **đèn chốt cần mục tiêu kiểu `Point`** với cả giá trị
+kích và giá trị nhả. Hai giá trị đó phải khai báo tường minh và **KHÔNG có mặc định**, vì một mặc định
+đồng nghĩa sản phẩm này tự chọn thứ để ghi vào một coil mà nó không chứng minh được là đèn chứ không
+phải băng tải — và `true` đơn giản là sai với một thanh ghi Holding Modbus cần `1`. Giá trị nhả là một
+giá trị RIÊNG chứ không phải nghịch đảo suy ra, vì dải khai báo trong register map mới là thẩm quyền
+quyết định "tắt" nghĩa là gì, và sản phẩm này không được tự suy. **Register map vẫn là TOÀN BỘ ranh giới
+an toàn:** cấu hình lưu mã máy và **TÊN điểm/lệnh đã khai báo**, không bao giờ lưu địa chỉ — một cấu
+hình lưu địa chỉ coil sẽ là một ranh giới thứ hai, không được kiểm chứng, nằm cạnh ranh giới thật.)*
+
+### 22.5 Configuration, credentials, and the ACL boundary / Cấu hình, thông tin đăng nhập, và ranh giới ACL
+
+**EN** — Every channel's configuration lives in `notifications.db` under
+`%ProgramData%\ST4I\sim\notifications\`, relocatable via **`ST4I_NOTIFICATIONS_DIR`** (§18.2).
+
+- **Secrets are encrypted with DPAPI at the current-user scope** — webhook URLs (a Slack or Teams
+  incoming webhook URL **is** a bearer capability: whoever holds it can post), webhook HMAC signing
+  secrets, webhook auth tokens, and SMTP passwords.
+- 🔴 **That directory's ACL is the confidentiality boundary** against another local account on the same
+  machine. Relocating the store onto a share or a looser volume moves the boundary with it.
+- 🔴 **No secret leaves through an endpoint, structurally: no HTTP handler reads one.** Reads use a
+  single credential-free projection whose SQL cannot name an encrypted column, so a secret travels
+  **inward only**. A read reports whether a credential *exists* (`hasSigningSecret`, `hasPassword`),
+  never its value. This has a visible cost, and it is deliberate: **`PUT /v1/notifications/webhook`
+  requires the URL on every save, including one that only changes a label** — the alternative would be
+  decrypting a bearer capability inside a request handler. What makes it survivable is the stored
+  `urlFingerprint`, which lets an operator confirm they are re-entering the same destination without
+  ever being handed it.
+- 🔴 **Secret fields are tri-state on save: absent = keep, `""` = clear, a value = replace.** A client
+  that always sends an empty string for an untouched password field wipes the credential on every save.
+  The one place that rule bends: **clearing `authHeaderName` also deletes the stored auth token**,
+  because a token that names no header can never be sent — so a client editing an existing webhook must
+  re-send every non-secret field it is not deliberately clearing.
+- **Audit rows carry booleans, never values** (`signingSecretChanged`, `authTokenChanged`,
+  `passwordChanged`); the relay's row additionally carries `grantsCommandAuthority`, because that one
+  field decides whether the row makes the engine perform an Admin-tier command for as long as it exists.
+- **A save that commits the row but fails to store the credential answers 500, not 200** — a committed
+  webhook row whose signing secret did not commit would post **unsigned** from then on.
+- **Deleting a channel takes its secrets with it** (`ON DELETE CASCADE`), so "remove this channel" can
+  never strand a credential.
+- 🔴 **Decommissioning:** `packaging/remove-data.ps1` purges this directory along with
+  historian/wal/security/creds (§15.4). It did not before Đợt C's closeout, which meant a wiped machine
+  kept live third-party credentials.
+
+*(VI: Cấu hình mọi kênh nằm trong `notifications.db` dưới `%ProgramData%\ST4I\sim\notifications\`, đổi
+chỗ được bằng **`ST4I_NOTIFICATIONS_DIR`** (§18.2). **Bí mật được mã hoá bằng DPAPI phạm vi người dùng
+hiện tại** — URL webhook (một incoming webhook URL của Slack/Teams **LÀ** một capability: ai giữ nó thì
+đăng được), khoá ký HMAC, token xác thực, mật khẩu SMTP. 🔴 **ACL của thư mục đó LÀ ranh giới bảo mật**
+với một tài khoản cục bộ khác trên cùng máy; dời kho sang share hoặc ổ có quyền lỏng hơn là dời luôn
+ranh giới. 🔴 **Không bí mật nào ra ngoài qua endpoint, và đó là điều mang tính CẤU TRÚC: không handler
+HTTP nào đọc bí mật.** Các route đọc dùng đúng một phép chiếu không-chứa-bí-mật mà SQL của nó không thể
+gọi tên một cột đã mã hoá, nên bí mật chỉ đi VÀO. Một lần đọc chỉ cho biết bí mật CÓ TỒN TẠI hay không
+(`hasSigningSecret`, `hasPassword`), không bao giờ cho biết giá trị. Việc này có cái giá nhìn thấy được
+và là cố ý: **`PUT /v1/notifications/webhook` bắt buộc phải có URL ở MỌI lần lưu, kể cả lần chỉ đổi
+nhãn** — phương án ngược lại là giải mã một capability ngay trong request handler. Thứ khiến điều đó
+sống được là `urlFingerprint` đã lưu: người vận hành xác nhận được mình đang nhập lại ĐÚNG đích đến mà
+không bao giờ được đưa lại đích đó. 🔴 **Các trường bí mật có BA trạng thái khi lưu: vắng mặt = giữ,
+`""` = xoá, có giá trị = thay.** Một client luôn gửi chuỗi rỗng cho ô mật khẩu không đụng tới sẽ xoá
+mất thông tin đăng nhập ở mọi lần lưu. Chỗ duy nhất quy tắc đó bị bẻ: **xoá `authHeaderName` cũng xoá
+luôn token đã lưu**, vì một token không có tên header thì không bao giờ gửi được — nên một client sửa
+webhook đã có PHẢI gửi lại mọi trường không-bí-mật mà nó không cố ý xoá. **Hàng audit chỉ mang boolean,
+không bao giờ mang giá trị**; riêng hàng relay mang thêm `grantsCommandAuthority`, vì đúng trường đó
+quyết định hàng này có khiến engine thực hiện một lệnh mức Admin suốt thời gian nó tồn tại hay không.
+**Một lần lưu ghi được hàng nhưng KHÔNG lưu được thông tin đăng nhập trả về 500 chứ không phải 200** —
+một hàng webhook đã ghi mà khoá ký chưa ghi được sẽ đăng **KHÔNG KÝ** từ đó trở đi. **Xoá một kênh là
+xoá luôn bí mật của nó** (`ON DELETE CASCADE`). 🔴 **Thanh lý máy:** `packaging/remove-data.ps1` nay xoá
+cả thư mục này cùng historian/wal/security/creds (§15.4) — trước bản đóng Đợt C thì không, nghĩa là một
+máy đã "xoá sạch" vẫn giữ thông tin đăng nhập bên thứ ba còn sống.)*
+
+### 22.6 Web UI — `/notifications`, and the operator's beacon panel / Web UI
+
+**EN** — Two surfaces, split along the role boundary §22.3 describes.
+
+- **`/notifications` (Engineer+)** configures all four channels, shows every counter, and runs the send
+  test. Its design is shaped almost entirely by the credential traps in §22.5:
+  - The webhook URL field is **always empty and always required**, with the stored `endpoint`,
+    `urlFingerprint`, `label` and signing state printed beside it. That is not an oversight.
+  - **Every secret field is an explicit three-way KEEP / REPLACE / CLEAR chooser**, not a password box
+    that renders empty. A box that looks empty and posts its contents is precisely how a save that only
+    changed a label wipes a signing secret, because the API reads an empty string as "delete".
+  - **`authHeaderName` is re-sent on every save**, and the field says out loud that emptying it also
+    deletes the stored auth token — behaviour that follows from `PUT` meaning full replacement, and that
+    is not guessable from the label.
+  - 🔴 **The relay card renders for every Engineer, but its Save control is replaced by a sentence**
+    naming Admin and saying why — the same shape Đợt B's command flow uses (§21.4). Hiding the card
+    would tell an Engineer the beacon does not exist; disabling the button would tell them it is broken.
+  - A webhook with an **auth header name but no token** — a webhook that cannot post at all — is called
+    out on the card, because it is the one combination that looks configured and is not.
+- **`/alarms` (Operator)** additionally shows the beacon's believed state and whether this page will be
+  annunciated, over the narrow Operator route. An operator does not need the recipient list; they need
+  to know whether the light above their head is telling the truth.
+
+🔴 **The send-test result always shows what it does NOT prove**, with the same weight as what it does.
+That is a field in the API response, not a UI nicety, because a statement only survives contact with a
+UI if it is a field — and a caller that renders "OK" alone has visibly dropped something.
+
+*(VI: Hai bề mặt, chia theo đúng ranh giới vai trò ở §22.3. **`/notifications` (Engineer trở lên)** cấu
+hình cả bốn kênh, hiện mọi bộ đếm, và chạy bài gửi thử. Thiết kế của nó gần như hoàn toàn do các bẫy
+thông tin đăng nhập ở §22.5 định hình: ô URL webhook **luôn rỗng và luôn bắt buộc**, kèm `endpoint`,
+`urlFingerprint`, nhãn và trạng thái ký đã lưu in ngay bên cạnh — đó không phải sơ suất. **Mọi ô bí mật
+là một bộ chọn ba trạng thái GIỮ / THAY / XOÁ tường minh**, không phải ô mật khẩu hiện rỗng: một ô trông
+rỗng rồi gửi đi nội dung của nó chính là cách một lần lưu chỉ đổi nhãn xoá mất khoá ký, vì API đọc chuỗi
+rỗng là "xoá". **`authHeaderName` được gửi lại ở mọi lần lưu**, và ô đó nói thẳng rằng bỏ trống nó cũng
+xoá luôn token đã lưu — hành vi suy ra từ việc `PUT` nghĩa là thay thế toàn bộ, và không đoán được từ
+cái nhãn. 🔴 **Thẻ relay hiển thị với mọi Engineer, nhưng nút Lưu bị thay bằng một câu** nêu tên quyền
+Admin và nói lý do — đúng hình dạng luồng lệnh của Đợt B (§21.4): ẩn thẻ đi sẽ nói với Engineer rằng đèn
+báo không tồn tại, còn làm mờ nút sẽ nói với họ rằng nó hỏng. Một webhook **có tên header xác thực nhưng
+không có token** — tức một webhook không đăng được gì cả — được nêu rõ ngay trên thẻ, vì đó là tổ hợp
+duy nhất trông như đã cấu hình mà thật ra thì không. **`/alarms` (Operator)** hiện thêm trạng thái đèn
+báo và việc trang này có được báo động hay không, qua route Operator hẹp: người vận hành không cần danh
+sách người nhận, họ cần biết cái đèn trên đầu mình có nói thật hay không. 🔴 **Kết quả gửi thử LUÔN hiện
+cả điều nó KHÔNG chứng minh được**, cùng trọng lượng với điều nó chứng minh được — đó là một trường
+trong phản hồi API chứ không phải một chi tiết UI, vì một tuyên bố chỉ sống sót qua tay UI khi nó là một
+trường; và một caller chỉ hiện "OK" là đã đánh rơi một thứ nhìn thấy được.)*
+
+### 22.7 🔴 Honest limitations / Giới hạn trung thực
+
+**EN** — Each verified against the source file named after it, not asserted from memory:
+
+- **There is no SMS channel and no syslog channel.** Slack and Teams are reachable, but only through
+  their incoming-webhook URLs — there is no Slack API integration.
+- 🔴 **There is no Windows desktop toast**, and an earlier doc comment predicted one. Three independent
+  reasons, each sufficient (`NotificationConfig.cs`): the alarm engine runs only in the engine process
+  and `St4i.DesktopShell` has no IPC to it; `Windows.UI.Notifications` does not resolve at the shell's
+  target framework, and the toolkit package is a new NuGet this batch forbids; and **the decisive one** —
+  measured on this platform, an unpackaged exe with an AppUserModelID registered nowhere had
+  `ToastNotifier.Show()` return normally and report `Enabled` while Windows' own notification store held
+  **zero** notifications for it. A channel built on that would report success while nothing emitted.
+  What local annunciation delivers reaches the desktop shell anyway whenever its window is up, since the
+  WebView2 **is** the web UI; the honest gap is a shell that is minimised or behind another window.
+- 🔴 **Implicit TLS (SMTPS, port 465) is unreachable and no configuration can make it work.**
+  `System.Net.Mail.SmtpClient` implements only RFC 3207 STARTTLS (`SmtpNotificationChannel.cs`). There
+  is deliberately **no** implicit-TLS option in the configuration, because a store that accepted a value
+  the channel must silently ignore is worse than one that never accepted it. An operator who needs SMTPS
+  must point this at a relay speaking STARTTLS on 587 or plain SMTP on 25. A channel configured on port
+  465 is warned about once per boot — bounded and counted, never left to hang.
+- 🔴 **A green e-mail send test does NOT prove the stored password works**, and no arrangement of this
+  code could make it (`SmtpNotificationChannel.cs`). `SmtpClient` proceeds to `MAIL FROM`
+  **unauthenticated** in all three shapes where the credential is not successfully used — the relay
+  rejects it, the relay refuses `AUTH`, or **the relay advertises no `AUTH` capability at all** (the
+  reachable one) — and exposes no authentication result. Against an in-plant relay that then accepts the
+  mail, the test is green and the password was never used. To actually be sure: read the relay's own
+  logs, or point this at a relay that refuses anonymous mail. The API says this in the result, and the
+  test message repeats it in its own body — because the person reading the mailbox is often not the
+  person who pressed the button.
+- 🔴 **The relay annunciator is not a safety device and does not light while HALT is latched.** §22.4.
+- 🔴 **There is no relay send test, deliberately** (`NotificationEndpoints.cs`). It would be a real
+  Admin-tier machine write that takes the coil away from the channel's own latch and **could leave a
+  beacon lit by a test** if the release were then refused by the HALT latch — the exact failure the
+  channel exists to prevent, caused by the affordance meant to diagnose it. Watch
+  `relay.instances[].annunciatorState` instead. **A relay dry run** — resolving the machine code and
+  target name and evaluating the write gate *without performing the write* — is the recommended shape
+  for whoever picks this up, and **is not built**. It would catch the two failures an operator actually
+  hits: a machine code that no longer resolves, and a target name whose case drifted.
+- **There is no local-annunciation send test either**, for a different reason: it would publish a
+  fabricated alarm card and tone to every open page, for a condition that is not happening. The stream's
+  own `ready` frame and the listener count answer what that test would have.
+- 🔴 **A stale beacon after a restart is a real, open case.** The relay channel's belief about the coil
+  is per-process, so after a restart `annunciatorState` reports **UNKNOWN** until the next edge — honest,
+  but it means a screen shows UNKNOWN for a beacon that may well be lit. Nothing in the product can
+  re-assert a coil whose alarm episode completed while the process was dead.
+- **There is no delivery guarantee behind any channel.** There is no delivery queue: if a channel fails,
+  the notification is lost, and every channel counts its own losses so the loss is visible rather than
+  silent (§22.8).
+- 🔴 **A failed configuration read is indistinguishable from "nothing is configured"** in the data
+  itself — the store's read is never-throws and returns the same empty result either way. That is why
+  the store's own health (`readFailures` and a full sentence) is returned **beside** every read and
+  every save, and why both the API and the screen show them together.
+- **Webhook and e-mail need a network.** In a genuinely offline deployment only local annunciation and
+  the relay work.
+- 🔴 **`/hmi/:code` and `/tokens` render outside the app shell and are NOT annunciated** — the
+  annunciator overlay is mounted in `Shell`, and those two routes deliberately bypass it (kiosk/
+  standalone). **The shipped desktop deployment is covered**, because `St4i.DesktopShell` navigates to
+  `/`, which is inside the shell; a browser parked directly on `/hmi/:code` is not. The HMI screen says
+  so on itself rather than leaving it to this document.
+- **Sparkplug NCMD — inbound commands from the ecosystem — is still never received** (unchanged from
+  §20.5/§21.6). Nothing in Đợt C changes that.
+
+*(VI: Mỗi mục đều đã đối chiếu với đúng file nguồn ghi kèm, không nói theo trí nhớ. **KHÔNG có kênh SMS
+và KHÔNG có syslog**; Slack/Teams tới được nhưng chỉ qua incoming webhook URL, không có tích hợp Slack
+API. 🔴 **KHÔNG có toast desktop Windows** — ba lý do độc lập, mỗi lý do đã đủ, và lý do quyết định là:
+đo trên chính nền tảng này, một exe không đóng gói với AppUserModelID không đăng ký ở đâu cả có
+`ToastNotifier.Show()` trả về bình thường và báo `Enabled`, trong khi kho thông báo của Windows giữ
+**KHÔNG** thông báo nào — một kênh dựng trên đó sẽ báo thành công trong khi chẳng phát ra gì. Thứ mà báo
+tại chỗ gửi ra vẫn tới được desktop shell bất cứ khi nào cửa sổ của nó đang mở, vì WebView2 CHÍNH LÀ web
+UI; khoảng trống thật là khi shell bị thu nhỏ hoặc nằm sau cửa sổ khác. 🔴 **TLS ngầm (SMTPS, cổng 465)
+không dùng được và không cấu hình nào cứu được** — `SmtpClient` chỉ có STARTTLS; cấu hình cố ý KHÔNG có
+lựa chọn TLS ngầm, vì một kho nhận một giá trị mà kênh buộc phải âm thầm bỏ qua còn tệ hơn kho không bao
+giờ nhận nó. Kênh cấu hình ở cổng 465 bị cảnh báo một lần mỗi lần khởi động — có chặn và có đếm, không
+bao giờ để treo. 🔴 **Một bài gửi thử email xanh KHÔNG chứng minh mật khẩu đã lưu là đúng**, và không
+cách sắp xếp nào của mã này làm được điều đó: `SmtpClient` đi tiếp tới `MAIL FROM` **không xác thực**
+trong cả ba tình huống mà thông tin đăng nhập không được dùng thành công — relay từ chối nó, relay không
+hỏi `AUTH`, hoặc **relay không hề quảng cáo `AUTH`** (tình huống dễ gặp nhất) — và không phơi bày kết
+quả xác thực nào. Muốn chắc thật: đọc log của chính relay, hoặc trỏ vào một relay từ chối thư nặc danh.
+API nói điều này ngay trong kết quả, và chính thân thư thử lặp lại nó — vì người đọc hộp thư thường
+không phải người bấm nút. 🔴 **Relay không phải thiết bị an toàn và không sáng khi HALT gài** — §22.4.
+🔴 **KHÔNG có bài gửi thử relay, có chủ ý**: nó sẽ là một lệnh ghi máy mức Admin thật, giành coil khỏi
+latch của chính kênh đó, và **có thể để đèn sáng vì một BÀI THỬ** nếu lệnh nhả sau đó bị HALT chặn —
+đúng thất bại mà kênh này sinh ra để ngăn, gây bởi chính công cụ dùng để chẩn đoán nó. Hãy xem
+`relay.instances[].annunciatorState` thay thế. **Một bài CHẠY KHÔ cho relay** — phân giải mã máy và tên
+mục tiêu rồi đánh giá cổng ghi *mà không thực hiện lệnh ghi* — là hình dạng được khuyến nghị cho người
+tiếp nhận, và **CHƯA được xây**; nó sẽ bắt được đúng hai lỗi người vận hành thật sự gặp: mã máy không
+còn phân giải được, và tên mục tiêu bị lệch hoa/thường. **Báo tại chỗ cũng không có bài gửi thử**, vì lý
+do khác: nó sẽ đẩy một thẻ cảnh báo giả kèm chuông lên mọi trang đang mở cho một điều kiện không hề xảy
+ra. 🔴 **Đèn báo cũ sau khi khởi động lại là một ca THẬT còn bỏ ngỏ:** niềm tin của kênh relay về coil
+chỉ tồn tại trong tiến trình, nên sau khi khởi động lại `annunciatorState` báo **KHÔNG RÕ** cho tới cạnh
+kế tiếp — trung thực, nhưng nghĩa là màn hình hiện KHÔNG RÕ cho một cái đèn có thể đang sáng thật.
+**Không kênh nào có bảo đảm gửi tới nơi** — không có hàng đợi gửi lại: kênh hỏng thì thông báo mất, và
+mỗi kênh tự đếm phần mất của mình để cái mất đó nhìn thấy được chứ không im lặng (§22.8). 🔴 **Một lần
+đọc cấu hình THẤT BẠI không phân biệt được với "chưa cấu hình gì"** trong chính dữ liệu — nên sức khoẻ
+của kho (`readFailures` kèm một câu đầy đủ) được trả về **BÊN CẠNH** mọi lần đọc và mọi lần lưu, và cả
+API lẫn màn hình đều hiện hai thứ đó cùng nhau. **Webhook và email cần mạng** — ở một triển khai thật sự
+ngoại tuyến chỉ còn báo tại chỗ và relay. 🔴 **`/hmi/:code` và `/tokens` render NGOÀI app shell nên
+KHÔNG được báo động** — lớp phủ báo động gắn trong `Shell`, hai route đó cố ý đi vòng (kiosk/độc lập).
+**Bản desktop xuất xưởng thì KHÔNG bị ảnh hưởng**, vì `St4i.DesktopShell` điều hướng tới `/` nằm trong
+shell; một trình duyệt đỗ thẳng ở `/hmi/:code` thì có. Màn hình HMI tự nói điều đó chứ không để tài liệu
+này nói hộ. **Sparkplug NCMD — lệnh vào từ hệ sinh thái — vẫn không bao giờ được nhận** (không đổi so
+với §20.5/§21.6).)*
+
+### 22.8 Counters whose short form lies / Những bộ đếm mà cách gọi tắt là sai
+
+**EN** — Three of these were each corrected once by a review, and a three-word UI label is exactly what
+would undo that. The API therefore ships the **full sentence** in the payload rather than leaving a
+screen to invent a shorter one.
+
+- 🔴 **`Unheard` does NOT mean "alarms nobody was told about".** It counts edges for which **no browser
+  session was attached at the instant the edge happened**. Every alarm still standing when the engine
+  started is counted here — nothing can be attached that early — **and is then replayed to the next page
+  that connects**, because the annunciation stream serves the currently-active set at connect time. What
+  remains permanently untold is only an edge whose alarm had already cleared before anyone connected: a
+  transient nobody saw.
+- 🔴 **`Energised` must never render as "off".** It has **three** states. `true` beside an empty latch
+  set means **this product asked for the beacon to go OUT and was refused — it is still lit**. `null`
+  means **this product does not know what the annunciator is doing** — a fresh process that has
+  commanded nothing, or a write that returned `Indeterminate`, after which nobody knows whether the coil
+  moved. Only `false` means off. Collapsing "unknown" into "off" is how a lit beacon becomes invisible
+  on a screen. The API ships a rendered sentence (`annunciatorState`) for exactly this reason, and
+  deliberately **omits** the related `Commanded` field from the wire shape so a screen cannot render the
+  wrong one — a mistake made unavailable rather than merely discouraged.
+- 🔴 **`PartiallyDelivered` is the only signal anywhere in this product that one recipient has silently
+  stopped receiving alarms.** The mail relay accepted the message for some addresses and rejected it for
+  others; the people on the rejected addresses were not told, nothing else will tell them, and the
+  addresses are named only in the host log. It gets its own sentence and its own alert line rather than
+  being one number among eight.
+- **A non-zero `Lost` on any channel is a loss, phrased as one.** There is no delivery queue behind any
+  channel, so those edges will not be re-emitted.
+- **An `Attention` list that is empty means exactly that** — nothing currently needs attention. It is
+  rendered as a sentence, never as a blank space that could equally mean "not loaded".
+
+*(VI: Ba trong số này từng được một review sửa một lần rồi, và một cái nhãn UI ba chữ chính là thứ sẽ
+phá lại điều đó — nên API mang **nguyên câu đầy đủ** trong payload thay vì để màn hình tự nghĩ ra bản
+ngắn hơn. 🔴 **`Unheard` KHÔNG nghĩa là "cảnh báo không ai được báo".** Nó đếm những cạnh mà **không
+phiên trình duyệt nào đang gắn vào đúng thời điểm cạnh đó xảy ra**. Mọi cảnh báo còn đang đứng lúc
+engine khởi động đều bị đếm ở đây — không gì gắn được sớm thế — **rồi được phát lại cho trang kế tiếp
+kết nối vào**, vì luồng báo động phục vụ tập đang hoạt động ngay lúc kết nối. Thứ mãi mãi không ai biết
+chỉ là một cạnh mà cảnh báo của nó đã tự hết trước khi có ai kết nối: một thoáng qua không ai thấy. 🔴
+**`Energised` KHÔNG BAO GIỜ được hiện thành "tắt".** Nó có **ba** trạng thái: `true` cạnh một tập chốt
+rỗng nghĩa là **sản phẩm này đã yêu cầu đèn TẮT và bị từ chối — đèn vẫn đang sáng**; `null` nghĩa là
+**sản phẩm này KHÔNG BIẾT đèn đang thế nào** — một tiến trình mới chưa ra lệnh gì, hoặc một lệnh ghi trả
+về `Indeterminate`, sau đó không ai biết coil có chuyển hay không; chỉ `false` mới là tắt. Gộp "không
+rõ" thành "tắt" chính là cách một cái đèn đang sáng trở nên vô hình trên màn hình. API mang sẵn một câu
+đã dựng (`annunciatorState`) đúng vì lý do đó, và cố ý **BỎ** trường `Commanded` khỏi hình dạng dây để
+màn hình không thể hiện nhầm trường kia — một lỗi bị làm cho KHÔNG THỂ mắc, chứ không chỉ bị khuyên
+tránh. 🔴 **`PartiallyDelivered` là tín hiệu DUY NHẤT trong cả sản phẩm cho biết một người nhận đã âm
+thầm ngừng nhận được cảnh báo** — relay thư nhận thư cho vài địa chỉ và từ chối các địa chỉ còn lại;
+những người ở địa chỉ bị từ chối không được báo, không gì khác sẽ báo họ, và các địa chỉ đó chỉ được nêu
+tên trong log của host. Nó có câu riêng và dòng cảnh báo riêng chứ không phải một con số trong tám con
+số. **`Lost` khác 0 ở bất kỳ kênh nào là một sự MẤT, và được diễn đạt đúng như vậy** — không kênh nào có
+hàng đợi gửi lại, nên những cạnh đó sẽ không được phát lại. **Danh sách `Attention` RỖNG nghĩa đúng là
+như vậy** — hiện tại không có gì cần chú ý; nó được hiện thành một câu, không bao giờ là một khoảng
+trắng có thể bị hiểu là "chưa tải xong".)*

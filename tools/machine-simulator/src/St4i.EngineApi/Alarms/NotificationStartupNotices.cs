@@ -98,9 +98,17 @@ public static class NotificationStartupNotices
 
         if (channels.Count == 0)
         {
-            // The fresh-install case. Still a Warning, not Information: the product's own README calls
-            // "alarms cannot reach anyone who is not looking at the screen" a defect, and an install that
-            // has never been configured is living with that defect whether or not anyone noticed.
+            // The fresh-install case. Still a Warning, not Information: an install that has never been
+            // configured cannot reach anyone who is not looking at the screen, whether or not anyone
+            // noticed.
+            //
+            // 🔴 Task C-8 rewrote the sentence above, which cited the README as calling that state "a
+            // defect". It did — as an honest limitation of the WHOLE PRODUCT, in §20.5 — and C-8 corrected
+            // that entry, because the product now has four channels. The reason this notice stays a
+            // Warning is unchanged and does not depend on the citation: the warning is about THIS
+            // INSTALL, where nothing is configured, and the message below says exactly that. The
+            // README pointer is gone rather than left to rot into a reference to text that no longer
+            // exists.
             notices.Add(new NotificationStartupNotice(
                 NotificationNoticeSeverity.Warning,
                 "No alarm notification channel is configured. Alarms are still recorded and visible at /alarms, " +

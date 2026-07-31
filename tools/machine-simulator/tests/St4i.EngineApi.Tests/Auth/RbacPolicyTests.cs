@@ -276,9 +276,16 @@ public sealed class RbacPolicyTests
         // — SMTP usernames, every alarm recipient's e-mail address, webhook endpoints, and the machine and
         // point the relay may energise — which is the same tier of material as GET /v1/settings. The
         // Operator-tier notification surface is deliberately narrower and already exists: the `ready` frame
-        // of GET /v1/alarms/annunciations above.
+        // of GET /v1/alarms/annunciations above, and — 🔴 task C-8 — /v1/notifications/annunciator below.
         new("/v1/notifications/channels", new[] { "GET" }, Policies.Engineer),
         new("/v1/notifications/status", new[] { "GET" }, Policies.Engineer),
+
+        // 🔴 Task C-8 (task-8-brief.md) — the Operator-tier annunciator read. It is a NEW, NARROWER ROUTE
+        // rather than a role change on /v1/notifications/status, which stays Engineer above because it
+        // carries every alarm recipient's e-mail address. This one carries the beacon's believed state and
+        // the annunciation hub's listener gauges, and its handler never calls
+        // NotificationConfigStore.ListAsync at all — so no channel configuration can reach it.
+        new("/v1/notifications/annunciator", new[] { "GET" }, Policies.Operator),
         new("/v1/notifications/webhook", new[] { "PUT" }, Policies.Engineer),
         new("/v1/notifications/webhook", new[] { "DELETE" }, Policies.Engineer),
         new("/v1/notifications/smtp", new[] { "PUT" }, Policies.Engineer),

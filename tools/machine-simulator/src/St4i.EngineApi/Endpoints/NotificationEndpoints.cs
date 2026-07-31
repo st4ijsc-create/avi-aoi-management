@@ -118,6 +118,14 @@ public static class NotificationEndpoints
         app.MapGet("/v1/notifications/status", GetStatusAsync)
             .RequireAuthorization(Policies.Engineer);
 
+        // 🔴 Task C-8 — the ONE notification read an Operator gets, and it is a NEW ROUTE rather than a role
+        // change on the line above. C-7 gated `status` at Engineer because it carries every alarm
+        // recipient's e-mail address; widening it to reach an operator screen would have handed out that
+        // list to get at two gauges. This route carries the beacon's believed state and the annunciation
+        // hub's listener counts, and its handler never calls ListAsync at all — see AnnunciatorStatusDto.
+        app.MapGet("/v1/notifications/annunciator", GetAnnunciatorAsync)
+            .RequireAuthorization(Policies.Operator);
+
         // ── Writes. One route per channel rather than one parameterised route, so each carries its own
         // policy in its own endpoint metadata. See the class doc comment: this is what makes the relay's
         // Admin gate a routing fact the RBAC sweep can assert, rather than an `if` inside a handler.
@@ -246,6 +254,88 @@ public static class NotificationEndpoints
             Smtp: smtpDto,
             LocalAnnunciation: localDto,
             Relay: relayDto,
+            Attention: attention));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GET /v1/notifications/annunciator  (Operator)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 Task C-8 — the Operator-tier annunciator read. See <see cref="AnnunciatorStatusDto"/> for the
+    /// shape and for why every field on it is one an operator acts on.
+    ///
+    /// <para>🔴 <b>This handler deliberately does not call <see cref="NotificationConfigStore.ListAsync"/>,
+    /// and that omission is the whole security argument for the route.</b> <c>ListAsync</c> is the only
+    /// method in this product that returns notification CONFIGURATION — SMTP recipients, webhook endpoints,
+    /// the machine and point a relay may energise — so a handler that never calls it cannot leak any of them
+    /// even if somebody later widens the DTO. It is the same structural discipline as C-7's "no handler
+    /// calls <c>GetSecretAsync</c>": a rule enforced by what the code does not reference survives an editor
+    /// who has not read this comment, and a rule enforced by careful field selection does not.</para>
+    /// </summary>
+    internal static IResult GetAnnunciatorAsync(HttpContext context)
+    {
+        var services = context.RequestServices;
+        var store = services.GetService<NotificationConfigStore>();
+        var local = services.GetService<LocalAnnunciationChannel>();
+        var relay = services.GetService<RelayNotificationChannel>();
+        var hub = services.GetService<AlarmAnnunciationHub>();
+
+        // Three states, not two. The store is absent (never opened), open-but-failing, or healthy — and the
+        // first two must not render as the third, because both of them make an empty relay list mean "this
+        // product cannot tell" instead of "no beacon is configured".
+        var readable = store is not null && store.Health.ReadFailures == 0;
+        var detail = store is null
+            ? "🔴 This engine could not open its alarm-notification configuration when it started, so NO " +
+              "notification channel is running: no beacon is being driven, no e-mail or webhook is being " +
+              "sent, and this screen cannot show what is configured because nothing is. Alarms are still " +
+              "recorded and still shown on the alarm screen. Tell an engineer — it is fixed by repairing " +
+              "the engine host and restarting it, and it will not fix itself."
+            : store.Health.ReadFailures > 0
+                ? "🔴 This engine has failed to READ its alarm-notification configuration since it " +
+                  "started. A failed read looks exactly like \"nothing is configured\" to every channel, so " +
+                  "an empty beacon list below may mean this product could not tell rather than that nobody " +
+                  "set one up — and an alarm may have reached nobody. Tell an engineer."
+                : "This engine can read its alarm-notification configuration. An empty beacon list below " +
+                  "therefore really does mean no annunciator is configured.";
+
+        var relays = relay is null
+            ? (IReadOnlyList<RelayInstanceStateDto>)Array.Empty<RelayInstanceStateDto>()
+            : relay.InstanceStates
+                .Select(i => new RelayInstanceStateDto(
+                    i.Instance, i.LatchedAlarms, i.Energised, i.LastAttemptUtc, DescribeAnnunciator(i)))
+                .ToList();
+
+        var attention = new List<string>();
+        if (!readable) attention.Add(detail);
+
+        foreach (var instance in relays)
+        {
+            if (instance.Energised == true && instance.LatchedAlarms == 0)
+            {
+                attention.Add(
+                    $"Relay '{instance.Instance}': the annunciator is believed to be ON while no alarm " +
+                    "is latched — this product asked for it to go out and the write did not succeed " +
+                    "(most often the HALT latch refusing it). It is still lit.");
+            }
+        }
+
+        if (hub is not null && hub.Rejected > 0)
+        {
+            attention.Add(
+                $"{hub.Rejected.ToString(CultureInfo.InvariantCulture)} browser session(s) were REFUSED an " +
+                $"alarm-annunciation stream because all {hub.MaxListeners.ToString(CultureInfo.InvariantCulture)} " +
+                "listener slots were in use. Those pages were not annunciated. They retry automatically.");
+        }
+
+        return Results.Ok(new AnnunciatorStatusDto(
+            ConfigurationReadable: readable,
+            ConfigurationDetail: detail,
+            LocalAnnunciationRunning: local is not null,
+            Listeners: hub?.ListenerCount ?? 0,
+            MaxListeners: hub?.MaxListeners ?? 0,
+            RejectedListeners: hub?.Rejected ?? 0,
+            Relays: relays,
             Attention: attention));
     }
 

@@ -1361,6 +1361,174 @@ public sealed class NotificationEndpointsTests : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // 🔴 9) Task C-8 — GET /v1/notifications/annunciator, the Operator-tier read.
+    //
+    // The route exists because C-7 gated GET /v1/notifications/status at Engineer DELIBERATELY: it
+    // carries every alarm recipient's e-mail address. An operator screen needs the beacon's state and
+    // the listener gauges, so this is a NEW NARROWER ROUTE rather than a role change on that one.
+    // RbacPolicyTests' exact-count sweep proves the POLICY is attached; these prove the PAYLOAD is
+    // actually narrow, which a policy cannot.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 The whole security argument for the Operator route, asserted rather than asserted-in-a-comment:
+    /// <b>no channel configuration reaches it.</b>
+    ///
+    /// <para>The handler never calls <see cref="NotificationConfigStore.ListAsync"/>, which is the only
+    /// method that returns configuration — so this cannot leak a recipient even if somebody widens the
+    /// DTO later. This test configures a webhook and an SMTP channel with distinctive sentinels, then
+    /// serialises the ENTIRE annunciator response and asserts none of them appears anywhere in it.</para>
+    ///
+    /// <para><b>Non-vacuity, and it is the important half:</b> the same sentinels are then asserted to be
+    /// PRESENT on the Engineer-tier <c>/channels</c> response built from the same store. Without that
+    /// control this test would also pass on a build where the annunciator route returned an error, an
+    /// empty object, or nothing at all — none of which is the property being claimed.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheOperatorAnnunciatorRoute_CarriesNoChannelConfiguration_WhileTheEngineerRouteDoes()
+    {
+        var store = NewStore();
+        var hub = new AlarmAnnunciationHub();
+        var h = NewHarness(store, hub: hub);
+
+        const string recipient = "oncall-RECIPIENT-must-not-leak-c8a1@plant.test";
+        const string smtpHost = "MAILHOST-must-not-leak-c8b2.plant.test";
+        const string smtpUser = "MAILUSER-must-not-leak-c8c3";
+        const string webhookAuthority = "hooks-AUTHORITY-must-not-leak-c8d4.example.test";
+
+        Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
+            WebhookRequest($"https://{webhookAuthority}/services/{UrlPathSentinel}",
+                signingSecret: SigningSentinel, authHeaderName: "X-Api-Key", authToken: TokenSentinel),
+            h.Context, h.Recorder, default))).Status);
+
+        Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveSmtpAsync(
+            new SmtpConfigRequest(true, nameof(AlarmPriority.High), smtpHost, 25,
+                nameof(SmtpTlsMode.None), "engine@plant.test", new[] { recipient },
+                Username: smtpUser, Password: PasswordSentinel),
+            h.Context, h.Recorder, default))).Status);
+
+        // The Operator route, serialised whole.
+        var (annunciatorStatus, annunciatorBody) =
+            await ReadAsync(NotificationEndpoints.GetAnnunciatorAsync(h.Context));
+        Assert.Equal(200, annunciatorStatus);
+
+        foreach (var secretish in new[]
+                 {
+                     recipient, smtpHost, smtpUser, webhookAuthority,
+                     UrlPathSentinel, SigningSentinel, TokenSentinel, PasswordSentinel,
+                 })
+        {
+            Assert.DoesNotContain(secretish, annunciatorBody, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // 🔴 It must not even name the CHANNELS that exist — "an SMTP channel is configured here" is a
+        // fact about who gets told, and this route's job is the beacon and the listener count.
+        Assert.DoesNotContain("\"smtp\"", annunciatorBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"webhook\"", annunciatorBody, StringComparison.OrdinalIgnoreCase);
+
+        // 🔴 The control. Without this, an annunciator route that returned {} would pass every assertion
+        // above, and so would one that 500'd.
+        var annunciator = JsonSerializer.Deserialize<AnnunciatorStatusDto>(annunciatorBody, Json)!;
+        Assert.True(annunciator.ConfigurationReadable);
+        Assert.Equal(hub.MaxListeners, annunciator.MaxListeners);
+        Assert.NotEmpty(annunciator.ConfigurationDetail);
+
+        // 🔴 And the other half of the control: the Engineer route, over the SAME store, DOES carry the
+        // material this one withholds — so the difference is the route, not the fixture.
+        var (_, channelsBody) = await ReadAsync(
+            await NotificationEndpoints.ListChannelsAsync(h.Context, default));
+        Assert.Contains(recipient, channelsBody, StringComparison.Ordinal);
+        Assert.Contains(smtpHost, channelsBody, StringComparison.Ordinal);
+        Assert.Contains(smtpUser, channelsBody, StringComparison.Ordinal);
+        // Case-insensitive for this one only: `WebhookChannelSummary.Endpoint` is derived through
+        // Uri.Host, which lower-cases the authority. The leak check above is case-insensitive too, so it
+        // is the stricter of the two — a leak in either casing still fails it.
+        Assert.Contains(webhookAuthority, channelsBody, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 🔴 Part 4's rule, on the route an OPERATOR reads: a configuration the engine could not READ must
+    /// not render the same as "nothing is configured".
+    ///
+    /// <para>This is the loss family no channel can count — <see cref="NotificationConfigStore.ListAsync"/>
+    /// is never-throws, so a failed read returns exactly what an empty store returns. On this route the
+    /// consequence is concrete and physical: an empty <c>Relays</c> list means either "no beacon is
+    /// configured" or "this product cannot tell", and an operator deciding whether to trust the lamp over
+    /// their head must be able to tell which.</para>
+    /// </summary>
+    [Fact]
+    public async Task OnTheOperatorRoute_AFailedConfigRead_IsDistinguishableFromNothingBeingConfigured()
+    {
+        var store = NewStore();
+        var hub = new AlarmAnnunciationHub();
+        var h = NewHarness(store, hub: hub);
+
+        var (_, healthyBody) = await ReadAsync(NotificationEndpoints.GetAnnunciatorAsync(h.Context));
+        var healthy = JsonSerializer.Deserialize<AnnunciatorStatusDto>(healthyBody, Json)!;
+
+        Assert.True(healthy.ConfigurationReadable);
+        Assert.Empty(healthy.Relays);
+        Assert.Empty(healthy.Attention);
+        Assert.Contains("really does mean", healthy.ConfigurationDetail, StringComparison.OrdinalIgnoreCase);
+
+        CorruptDatabase(store);
+        // The store only notices on a read, so make one happen.
+        _ = await store.ListAsync();
+
+        var (_, brokenBody) = await ReadAsync(NotificationEndpoints.GetAnnunciatorAsync(h.Context));
+        var broken = JsonSerializer.Deserialize<AnnunciatorStatusDto>(brokenBody, Json)!;
+
+        // 🔴 The relay list is empty in BOTH cases — that is the whole problem, and it is asserted rather
+        // than assumed, because a fix that made the broken case throw would defeat the point of the route.
+        Assert.Empty(broken.Relays);
+
+        // And this is what separates them.
+        Assert.False(broken.ConfigurationReadable);
+        Assert.NotEqual(healthy.ConfigurationDetail, broken.ConfigurationDetail);
+        Assert.Contains("could not tell", broken.ConfigurationDetail, StringComparison.OrdinalIgnoreCase);
+        // Not left for an operator to find: it is hoisted into the list they are told to read.
+        Assert.Contains(broken.Attention, a => ReferenceEquals(a, broken.ConfigurationDetail) || a == broken.ConfigurationDetail);
+
+        // 🔴 Guarded in BOTH directions: the degraded sentence must not be reassuring, and the healthy one
+        // must not be alarming. A future edit that made both say the same thing fails here.
+        Assert.DoesNotContain("really does mean", broken.ConfigurationDetail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("could not tell", healthy.ConfigurationDetail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 🔴 The degraded host, on the Operator route. <c>Program.cs</c> registers the annunciation hub
+    /// unconditionally but the configuration store only when it could be OPENED — so this route must
+    /// still answer, and must say that nothing is running, rather than failing to bind or reporting a
+    /// calm empty page. A degraded host is exactly when somebody looks at this.
+    /// </summary>
+    [Fact]
+    public async Task WithNoConfigurationStore_TheOperatorRouteStillAnswers_AndSaysNothingIsRunning()
+    {
+        var hub = new AlarmAnnunciationHub();
+        var h = NewHarness(store: null, hub: hub);
+
+        var (status, body) = await ReadAsync(NotificationEndpoints.GetAnnunciatorAsync(h.Context));
+        Assert.Equal(200, status);
+
+        var dto = JsonSerializer.Deserialize<AnnunciatorStatusDto>(body, Json)!;
+        Assert.False(dto.ConfigurationReadable);
+        Assert.False(dto.LocalAnnunciationRunning);
+        Assert.Empty(dto.Relays);
+        Assert.Contains("no notification channel is running", dto.ConfigurationDetail, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(dto.Attention, a => a == dto.ConfigurationDetail);
+
+        // 🔴 The hub gauges are still real on a degraded host — the same M-3 finding C-7 fixed on the
+        // Engineer page. They come from the hub, which exists regardless of the store.
+        Assert.Equal(hub.MaxListeners, dto.MaxListeners);
+
+        // 🔴 It must NOT contain a filesystem path. The Engineer health block names the store directory
+        // (an operator diagnosing permissions needs it); this route is read by somebody standing at a
+        // machine, and a ProgramData path is neither actionable for them nor theirs to see.
+        Assert.DoesNotContain(":\\", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("ProgramData", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────
 

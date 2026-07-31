@@ -1,6 +1,7 @@
 import * as React from "react"
 import {
   BarChart3,
+  BellRing,
   Boxes,
   Cable,
   Database,
@@ -87,6 +88,16 @@ export const NAV_ITEMS: NavItem[] = [
   // so no `minRole` — only the Ack action inside the screen carries its own (effectively-everyone)
   // `RequireRole` gate.
   { labelKey: "shell.nav.alarms", path: "/alarms", icon: Siren },
+  // 🔴 Task C-8 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-8-brief.md) —
+  // `/notifications` (`routes/Notifications.tsx`): configure the four outbound alarm channels Đợt C
+  // built (webhook, SMTP, local annunciation, relay/beacon), see their counters, and run the send test.
+  // `BellRing` reads as "something is being announced OUTWARD", distinct from `Siren`'s own "an alarm is
+  // active right now" reading directly above (`alarms`) — this entry is about WHO GETS TOLD, not about
+  // what is currently wrong. `minRole: "Engineer"` because BOTH reads behind this screen
+  // (`GET /v1/notifications/channels` and `/status`) are `Policies.Engineer`: they carry SMTP usernames
+  // and every alarm recipient's e-mail address, so an Operator's every request here would 403. The
+  // Operator-tier slice lives on `/alarms` instead, over the narrower `GET /v1/notifications/annunciator`.
+  { labelKey: "shell.nav.notifications", path: "/notifications", icon: BellRing, minRole: "Engineer" },
   // GĐ3 sub-4 LC-4 (`routes/LineControl.tsx`) — the PackML state machine control panel over LC-3's
   // `LineController`. `Workflow` reads as "a staged process/state machine", distinct from `Factory`'s
   // "the live fleet roster" reading (`machines`, above) — this screen is about the LINE's own

@@ -70,7 +70,24 @@ EXPECT_EDGESERVICE=28
 #     + 1  M-3  hub gauges survive a degraded host
 #     + 1  M-5  the SMTP send test's bound is measured, not inherited
 # No other suite is touched: C-7 adds no code outside St4i.EngineApi.
-EXPECT_ENGINEAPI=1122
+#
+# Task C-8 raised this from 1122 to 1131 (+9), all in St4i.EngineApi.Tests:
+#   + 3  NotificationEndpointsTests   — GET /v1/notifications/annunciator, the new Operator-tier route:
+#          the payload carries NO channel configuration (with the Engineer route as the control);
+#          a failed config read is distinguishable from "nothing configured" ON THIS ROUTE;
+#          a host with no configuration store still answers and says nothing is running.
+#   + 6  NotificationDocumentationTests (new file) — the census, as a test rather than as a claim in a
+#          report: the retired "alarms cannot reach anyone" claim is not asserted in EN or VI; the
+#          Alarms/ file-count claim is not present-tense (and the folder is measured); the retired
+#          "additive and default-off" claim is not restated; the honest limitations are stated in both
+#          languages; ST4I_NOTIFICATIONS_DIR is documented AND purged by remove-data.ps1; and
+#          docs/ALARM_WEBHOOK_CONTRACT.md's load-bearing UNSIGNED/read-the-body text is intact.
+#          (This is the doc-drift guard C-7's §11.2 note 14 recommended and declined to build; the
+#          working-directory objection is answered by walking up from AppContext.BaseDirectory, the
+#          idiom PackagingFleetJsonTests already uses.)
+# RbacPolicyTests' ExpectedRoutes goes 105 -> 106 for the new route but adds no test.
+# No other suite is touched: C-8 adds no code outside St4i.EngineApi, web/ and docs.
+EXPECT_ENGINEAPI=1131
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

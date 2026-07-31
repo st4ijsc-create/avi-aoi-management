@@ -1049,12 +1049,19 @@ public sealed class AlarmNotifierTests : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // 9. The no-op default — additive and default-off.
+    // 9. The no-op default — a store constructed with no notifier at all.
+    //
+    // 🔴 Task C-8 renamed this banner. It said "additive and default-off", which was this batch's claim
+    // about the PRODUCT and is retired: C-2's review round 1 (I5) made Program.cs register the seam
+    // unconditionally, so a fresh install starts one bounded channel, one drain loop and one hosted
+    // service it did not start before. The claim below is narrower and still true — it is about a store
+    // built with no notifier, which is a shape callers (and tests) can still construct.
     // ─────────────────────────────────────────────────────────────────────
 
-    /// <summary>A store built the way every pre-existing site builds it (no notifier at all) behaves
-    /// exactly as it did before Đợt C. The real proof of this is that all 1,720 pre-existing tests pass
-    /// untouched; this just pins the intent locally.</summary>
+    /// <summary>A store built with no notifier at all raises, clears and acks normally. 🔴 That is a claim
+    /// about this CONSTRUCTOR, not about the shipped host: the production site in <c>Program.cs</c> always
+    /// passes a real notifier now. The corresponding claim about the product — "behaves bit-for-bit as it
+    /// did before Đợt C" — is retired; see the banner above.</summary>
     [Fact]
     public async Task NoOpDefault_AStoreWithNoNotifierRaisesClearsAndAcksNormally()
     {

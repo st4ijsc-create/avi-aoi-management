@@ -262,3 +262,13 @@ export async function gotoTokens(page: Page, theme: "light" | "dark" = "light"):
     await expect(page.getByRole("button", { name: "Light mode" })).toBeVisible()
   }
 }
+
+/** 🔴 Task C-8 — `/notifications` (Engineer+ whole-page gate; the Playwright harness runs as the
+ * demo Admin, so the screen renders in full). Waits past `useNotificationChannels()`'s own skeleton —
+ * the channel cards only render once the configuration read has resolved at least once. */
+export async function gotoNotifications(page: Page): Promise<void> {
+  await page.goto("/notifications")
+  await expect(page.getByRole("heading", { name: viDict.notifications.title, level: 1 })).toBeVisible()
+  await waitForEngineConnected(page)
+  await expect(page.getByTestId("notification-card-webhook")).toBeVisible({ timeout: 15_000 })
+}

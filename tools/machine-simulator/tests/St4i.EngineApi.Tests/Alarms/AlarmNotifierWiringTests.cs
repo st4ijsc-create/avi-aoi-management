@@ -10,18 +10,26 @@ using Xunit;
 namespace St4i.EngineApi.Tests.Alarms;
 
 /// <summary>
-/// Task C-1 — real-host proof of the notification seam's DI wiring in <c>Program.cs</c>: that it is
-/// genuinely DEFAULT-OFF (nothing registered, <see cref="AlarmStore"/> falling back to
+/// Task C-1 — real-host proof of the notification seam's DI wiring in <c>Program.cs</c>: originally that
+/// it was genuinely DEFAULT-OFF (nothing registered, <see cref="AlarmStore"/> falling back to
 /// <see cref="NullAlarmNotifier"/>), and that turning it on resolves the whole graph — notifier, its
 /// interface forward, and <see cref="AlarmNotifierSeedService"/> — without a cycle, and actually seeds from
 /// <c>alarms.db</c> at startup.
 ///
 /// <para>🔴 Task C-2 — the SWITCH these tests operate has changed, and that is the point of the change.
-/// C-1 gated the seam on the <c>ST4I_ALARM_NOTIFY_ENABLED</c> env var; that gate is deleted, and the seam
-/// now runs iff <see cref="NotificationConfigStore"/> holds at least one configured channel. So "off" is
+/// C-1 gated the seam on the <c>ST4I_ALARM_NOTIFY_ENABLED</c> env var; that gate is deleted. So "off" is
 /// no longer "an environment variable is unset" — it is "nobody has configured a channel", which is the
 /// only state in which silence is not a misconfiguration. These two tests therefore seed (or do not seed)
 /// a real config store rather than setting an env var; everything they ASSERT is unchanged.</para>
+///
+/// <para>🔴 <b>Task C-8 corrected the sentence above, which said the seam "now runs iff
+/// <see cref="NotificationConfigStore"/> holds at least one configured channel".</b> C-2's review round 1
+/// (I5) overturned exactly that: the seam is registered UNCONDITIONALLY, to delete the whole class of
+/// "configured but never registered" rather than leave one transition — the first channel ever configured
+/// on a host that booted with none — needing a restart. This class's own
+/// <c>NothingConfigured_StillRegistersTheSeam_AndTheAlarmStoreStillWorks</c> is the test that proves it,
+/// and it had been contradicting this doc comment ever since. What an unconfigured host does NOT do is
+/// deliver anything to anybody — which is the claim worth making, and the one that is still true.</para>
 ///
 /// Same env-var-swap-then-eager-build protocol and shared
 /// <see cref="SecurityEnvVarTests.CollectionName"/> collection tag as

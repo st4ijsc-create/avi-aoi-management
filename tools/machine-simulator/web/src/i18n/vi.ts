@@ -82,6 +82,7 @@ export const vi = {
       site: "Liên kết Site",
       alarms: "Trung tâm cảnh báo",
       line: "Điều khiển dây chuyền",
+      notifications: "Kênh báo ra ngoài",
     },
     sidebar: {
       brandSubtitle: "Máy mô phỏng",
@@ -1413,6 +1414,12 @@ export const vi = {
     entryButtonAria: (vars: Vars) => `Mở bảng điều khiển máy ${vars.code}`,
     back: "Về chi tiết máy",
     shift: (vars: Vars) => `CA ${vars.n}`,
+    // 🔴 Task C-8 — giới hạn trung thực, nói ngay trên màn hình áp dụng nó. Trang này render NGOÀI
+    // <Shell> nên lớp phủ báo động không gắn ở đây.
+    notAnnunciated:
+      "Màn hình này KHÔNG hiện thẻ cảnh báo và KHÔNG phát chuông — nó nằm ngoài vỏ ứng dụng. Cảnh báo " +
+      "vẫn được ghi nhận và vẫn hiện ở Trung tâm cảnh báo. Bản desktop mở thẳng vào trang chính nên " +
+      "KHÔNG bị ảnh hưởng; chỉ trình duyệt mở thẳng URL này mới bị.",
 
     // Task 4 — the tab rail HMI_DESIGN_SPEC.md §8.1 has always reserved a row for, directly under the
     // nameplate, but never built until now (`components/hmi/TabRail.tsx`).
@@ -2214,8 +2221,23 @@ export const vi = {
       notConfigured: "Chưa cấu hình — sẽ không có cảnh báo nào phát tại máy này",
       disabled: "Đã cấu hình nhưng đang TẮT",
       armed: (vars: Vars) => `Đang bật — từ mức ${vars.priority} trở lên`,
+      // 🔴 Task C-8 sửa câu này. Bản cũ viết "Chỉ tới người đang mở trang này. Không có thông báo
+      // desktop Windows." — đúng về KÊNH NÀY, nhưng người vận hành đọc nó rất dễ kết luận rằng sản
+      // phẩm không báo được ra ngoài chút nào. Từ Đợt C điều đó SAI: còn có webhook, email và relay.
+      // Phần "không có toast desktop Windows" vẫn đúng (C-5 chứng minh) nên được GIỮ.
       reach:
-        "Chỉ tới người đang mở trang này. Không có thông báo desktop Windows.",
+        "Kênh NÀY chỉ tới người đang mở trang này, và không có thông báo desktop Windows. Các kênh " +
+        "khác (webhook, email, đèn báo) cấu hình riêng ở trang Kênh báo ra ngoài.",
+    },
+    // 🔴 Task C-8 — phần Operator của GET /v1/notifications/annunciator.
+    reach: {
+      label: "Ra ngoài",
+      listeners: (vars: Vars) => `${vars.count}/${vars.max} trang đang nghe`,
+      rejected: (vars: Vars) => `${vars.count} trang bị TỪ CHỐI luồng — những trang đó KHÔNG được báo`,
+      noBeacon: "Chưa cấu hình đèn báo/relay nào.",
+      // 🔴 Không được phép hiện giống câu trên: một lần đọc cấu hình hỏng trông y hệt "chưa cấu hình".
+      beaconUnknown: "Không rõ có đèn báo nào được cấu hình hay không — engine không đọc được cấu hình.",
+      unavailable: "Không lấy được trạng thái các kênh báo ra ngoài từ engine.",
     },
   },
 
@@ -2280,6 +2302,275 @@ export const vi = {
     },
   },
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 🔴 Task C-8 — `/notifications`. Xem `routes/Notifications.tsx` để biết vì sao form có hình dạng
+  // như vậy: gần như mọi lựa chọn ở đây là để một lần lưu KHÔNG âm thầm xoá mất thông tin đăng nhập.
+  // ─────────────────────────────────────────────────────────────────────────
+  notifications: {
+    title: "Kênh báo ra ngoài",
+    description:
+      "Bốn kênh đưa cảnh báo tới người không đang nhìn màn hình: webhook (Slack/Teams/MES), email qua " +
+      "SMTP, báo tại chỗ trên mọi trang đang mở, và relay/đèn báo vật lý. Chưa cấu hình kênh nào thì " +
+      "cảnh báo vẫn được ghi nhận nhưng KHÔNG tới ai cả.",
+    denied: {
+      title: "Cần quyền Kỹ sư",
+      description:
+        "Trang này mang toàn bộ cấu hình thông báo — tài khoản SMTP và địa chỉ email của mọi người " +
+        "nhận cảnh báo — nên cần quyền Kỹ sư trở lên. Trạng thái đèn báo và việc trang của bạn có được " +
+        "báo động hay không nằm ở Trung tâm cảnh báo.",
+    },
+    action: {
+      save: "Lưu",
+      remove: "Gỡ kênh",
+    },
+    state: {
+      notConfigured: "Chưa cấu hình",
+      enabled: "Đang bật",
+      disabled: "Đã cấu hình — ĐANG TẮT",
+    },
+    field: {
+      enabled: "Bật kênh này",
+      enabledHint: "Tắt thì cấu hình vẫn giữ nguyên nhưng không gửi gì cả.",
+      minPriority: "Mức ưu tiên tối thiểu",
+      minPriorityHint:
+        "Chỉ cảnh báo từ mức này trở lên mới được gửi. Ở bản dựng này thực tế chỉ có Critical và High " +
+        "xảy ra, nên High nghĩa là “mọi thứ”, còn Critical nghĩa là “chỉ những cái chặn dây chuyền”.",
+    },
+    // 🔴 Ba trạng thái của một ô bí mật. Xem `SecretInput` trong `routes/Notifications.tsx`.
+    secret: {
+      stored: "Đã lưu",
+      notStored: "Chưa có",
+      mode: {
+        keep: "Giữ nguyên",
+        replace: "Thay mới",
+        clear: "Xoá",
+      },
+      effectKeep: "Khi lưu: giữ nguyên giá trị đã lưu, không đụng tới.",
+      effectKeepNone: "Khi lưu: vẫn không đặt gì cả.",
+      effectReplace: "Khi lưu: thay bằng giá trị bạn gõ ở trên.",
+      effectClear: "🔴 Khi lưu: XOÁ HẲN giá trị đã lưu. Không khôi phục được.",
+    },
+    webhook: {
+      title: "Webhook",
+      description:
+        "Gửi một bản tin JSON đã ký HMAC tới một URL — incoming webhook của Slack hoặc Teams, hoặc một " +
+        "MES. Hợp đồng dây đầy đủ cho người viết receiver ở docs/ALARM_WEBHOOK_CONTRACT.md.",
+      url: "URL webhook",
+      // 🔴 Câu này là lý do cả form tồn tại ở dạng hiện tại.
+      urlHint:
+        "Bắt buộc nhập lại ở MỌI lần lưu, kể cả lần chỉ đổi nhãn. Engine cố ý KHÔNG đọc lại URL đã lưu: " +
+        "URL webhook là một capability (ai giữ nó thì đăng được), và giải mã nó trong một request " +
+        "handler chính là con đường duy nhất để một bí mật lọt ra response. Đối chiếu “Vân tay URL” bên " +
+        "dưới để chắc bạn đang nhập lại ĐÚNG đích đến.",
+      urlRequiredToSave: "Phải nhập URL webhook thì mới lưu được.",
+      label: "Nhãn",
+      labelHint: "Ghi chú cho người vận hành, ví dụ “Slack Ops #canh-bao-line”. Không phải bí mật.",
+      authHeaderName: "Tên header xác thực",
+      // 🔴 Hành vi này không đoán được từ cái nhãn, nên phải nói thẳng.
+      authHeaderNameHint:
+        "Header mà receiver dùng để xác thực (X-Api-Key, Authorization). Bỏ trống là XOÁ nó — và xoá nó " +
+        "sẽ XOÁ LUÔN token đã lưu, vì một token không có tên header thì không bao giờ gửi được. " +
+        "Slack và Teams không cần cái này.",
+      signingSecret: "Khoá ký HMAC",
+      signingSecretHint:
+        "Khoá dùng để ký POST. Không có khoá thì POST gửi đi KHÔNG KÝ — bình thường với Slack/Teams " +
+        "(chúng coi URL là thông tin xác thực), nhưng là một lỗ hổng thật nếu trỏ vào một MES.",
+      authToken: "Token xác thực",
+      authTokenHint: "Giá trị ĐẦY ĐỦ của header ở trên, gồm cả từ khoá scheme (ví dụ “Bearer eyJhb…”).",
+      currentEndpoint: "Đích đến hiện tại",
+      currentFingerprint: "Vân tay URL",
+      currentLabel: "Nhãn hiện tại",
+      signingState: "Trạng thái ký",
+      signed: "Có ký HMAC",
+      unsigned: "KHÔNG ký — receiver không xác minh được là bản tin từ engine này",
+      headerWithoutToken:
+        "🔴 Có tên header xác thực nhưng KHÔNG có token: webhook này không đăng được gì cả. Hãy nhập " +
+        "token, hoặc xoá tên header đi.",
+      noUrl:
+        "🔴 Có một URL đã lưu nhưng engine KHÔNG giải mã được nó, nên kênh này không gửi đi đâu được. " +
+        "Hãy nhập lại URL.",
+    },
+    smtp: {
+      title: "Email (SMTP)",
+      description: "Mỗi cạnh cảnh báo đủ điều kiện gửi một thư tới danh sách người nhận đã cấu hình.",
+      host: "Máy chủ SMTP",
+      port: "Cổng",
+      portHint: "Thường là 25 (thường) hoặc 587 (STARTTLS).",
+      tls: "Chế độ TLS",
+      // 🔴 Sự VẮNG MẶT của cổng 465 là một quyết định, nên phải nói ra chứ không im lặng bỏ đi.
+      tlsHint:
+        "Cố ý KHÔNG có lựa chọn TLS ngầm (SMTPS, cổng 465): thư viện mail .NET mà sản phẩm này dựng " +
+        "trên đó chỉ làm được STARTTLS và chứng minh được là không thể làm TLS ngầm. Ai cần SMTPS phải " +
+        "trỏ vào một relay nói STARTTLS ở cổng 587 hoặc SMTP thường ở cổng 25.",
+      tlsMode: {
+        None: "Không mã hoá",
+        StartTls: "STARTTLS",
+      },
+      fromAddress: "Địa chỉ người gửi",
+      recipients: "Người nhận",
+      recipientsHint: "Nhiều địa chỉ cách nhau bằng dấu phẩy.",
+      username: "Tên đăng nhập",
+      usernameHint:
+        "Cố ý KHÔNG phải bí mật và hiện ở mọi lần đọc — người vận hành gỡ lỗi xác thực cần thấy tài " +
+        "khoản nào đang được cấu hình, và riêng tên đăng nhập không cấp quyền cho ai.",
+      password: "Mật khẩu",
+      passwordHint:
+        "Lưu dạng mã hoá và không lần đọc nào trả về; hệ thống chỉ cho biết mật khẩu CÓ TỒN TẠI hay " +
+        "không. Xem phần kết quả gửi thử: một kết quả xanh KHÔNG chứng minh mật khẩu này đúng.",
+    },
+    local: {
+      title: "Báo tại chỗ",
+      description:
+        "Đẩy một thẻ cảnh báo kèm tiếng chuông tới mọi trang đang mở của giao diện này. Kênh DUY NHẤT " +
+        "chạy được khi hoàn toàn không có mạng.",
+      screenOwned:
+        "Bật/tắt và một ngưỡng là TOÀN BỘ cấu hình của kênh này. Mọi thứ về CÁCH báo động hiện ra — " +
+        "tiếng nào, to bao nhiêu, trình duyệt có đang chặn âm thanh hay không — là thuộc tính của MÀN " +
+        "HÌNH chứ không phải của engine, nên không có ở đây.",
+      noSendTest:
+        "KHÔNG có bài gửi thử, có chủ ý: nó sẽ đẩy một thẻ cảnh báo GIẢ kèm chuông lên mọi trang đang " +
+        "mở cho một điều kiện không hề xảy ra. Dải trạng thái ở Trung tâm cảnh báo đã trả lời đúng " +
+        "những gì một bài thử sẽ nói: kênh có được cấu hình và bật không, và ngay lúc này có ai đang " +
+        "nghe không.",
+    },
+    relay: {
+      title: "Relay / đèn báo",
+      adminTier: "Cần quyền Quản trị",
+      description:
+        "Kích một đèn báo hoặc còi thật qua một điểm hoặc lệnh ghi được đã khai báo trong register map " +
+        "của một máy, dùng đúng đường ghi của Đợt B.",
+      // 🔴 Câu quan trọng nhất trên cả trang này.
+      notSafetyDevice:
+        "🔴 ĐÂY KHÔNG PHẢI THIẾT BỊ AN TOÀN, và nó KHÔNG SÁNG khi HALT đang gài — lệnh ghi đi qua đúng " +
+        "cổng an toàn của Đợt B và bị cổng đó từ chối. Điều đó cũng đúng khi TẮT: nếu HALT gài lúc đèn " +
+        "đang sáng thì lệnh nhả cũng bị từ chối và đèn ở nguyên trạng thái sáng. Ai cần một đèn hoặc " +
+        "còi hoạt động khi HALT đang gài, hoặc khi phần mềm này không chạy, PHẢI ĐẤU CỨNG nó (ISO 13849 " +
+        "Cat 3/4) chứ không đi qua sản phẩm này.",
+      adminRequired:
+        "Lưu và gỡ cấu hình relay cần quyền QUẢN TRỊ, không phải Kỹ sư — khác với ba kênh còn lại. Lý " +
+        "do: một relay kiểu “Lệnh” khiến engine tự động thực hiện một hành động mà con người cần quyền " +
+        "Quản trị, và thực hiện suốt thời gian cấu hình đó tồn tại. Đó là CẤP QUYỀN chứ không phải đổi " +
+        "một cài đặt. Cấu hình ở trên vẫn hiện đầy đủ để bạn kiểm tra; chỉ nút Lưu là cần Quản trị.",
+      machineCode: "Mã máy",
+      machineCodeHint:
+        "Phân giải không phân biệt hoa/thường theo đội hình đang chạy tại thời điểm cảnh báo nổ — cố ý " +
+        "KHÔNG kiểm tra lúc lưu, để bạn cấu hình được một máy trước khi nó được thêm vào.",
+      targetKind: "Loại mục tiêu",
+      targetKindHint:
+        "“Điểm” là một điểm ghi được đã khai báo; “Lệnh” là một lệnh không tham số đã khai báo.",
+      kind: {
+        Point: "Điểm (ghi giá trị)",
+        Command: "Lệnh (xung, không tham số)",
+      },
+      commandCannotRelease:
+        "🔴 Một mục tiêu kiểu “Lệnh” KÍCH được đèn nhưng về mặt cấu trúc KHÔNG NHẢ được nó — lệnh là " +
+        "một xung không tham số. Đèn chốt cần mục tiêu kiểu “Điểm”. Đây cũng là trường khiến cả route " +
+        "này ở mức Quản trị.",
+      targetName: "Tên điểm / lệnh",
+      targetNameHint:
+        "So khớp PHÂN BIỆT hoa/thường, vì tra cứu của chính driver là ordinal — “Beacon” và “beacon” là " +
+        "hai điểm khác nhau.",
+      onValue: "Giá trị KÍCH",
+      offValue: "Giá trị NHẢ",
+      valueHint:
+        "Một giá trị JSON vô hướng đúng như driver sẽ ghi: true, 1, hoặc \"ON\". Cố ý KHÔNG có mặc " +
+        "định — một mặc định đồng nghĩa sản phẩm này tự chọn thứ để ghi vào một coil mà nó không chứng " +
+        "minh được là đèn chứ không phải băng tải.",
+      offValueHint:
+        "Một giá trị RIÊNG chứ không phải nghịch đảo suy ra: dải khai báo trong register map mới là " +
+        "thẩm quyền quyết định “tắt” nghĩa là gì.",
+      noSendTest:
+        "KHÔNG có bài gửi thử, có chủ ý: nó sẽ là một lệnh ghi máy THẬT ở mức Quản trị, giành quyền " +
+        "điều khiển coil khỏi chốt của chính kênh này, và có thể ĐỂ ĐÈN SÁNG vì một bài thử nếu lệnh " +
+        "nhả sau đó bị HALT chặn — đúng thất bại mà kênh này sinh ra để ngăn. Hãy xem trạng thái đèn " +
+        "báo ở bảng phía trên thay vì bấm thử.",
+    },
+    test: {
+      send: "Gửi thử",
+      rateLimited: "Giới hạn 5 giây một lần — bài thử này gửi ra bên thứ ba thật.",
+      accepted: "Đích đến ĐÃ NHẬN",
+      failed: "THẤT BẠI",
+      proves: "Kết quả này chứng minh",
+      // 🔴 Không bao giờ được thu nhỏ, giấu sau tooltip, hay bỏ đi.
+      doesNotProve: "Kết quả này KHÔNG chứng minh",
+      errorGeneric: "Không chạy được bài gửi thử.",
+    },
+    status: {
+      title: "Tình trạng & bộ đếm",
+      error: "Không đọc được tình trạng thông báo từ engine.",
+      attention: "Cần chú ý",
+      attentionNone: "Hiện không có gì cần chú ý.",
+      configStore: "Kho cấu hình",
+      storeOk: "Đọc được",
+      storeDegraded: "ĐỌC LỖI",
+      storeUnavailable: "KHÔNG MỞ ĐƯỢC",
+      webhook: "Webhook",
+      smtp: "Email",
+      local: "Báo tại chỗ",
+      relay: "Relay / đèn báo",
+      noRelayInstances:
+        "Chưa có đèn báo nào được cấu hình trong tiến trình này, hoặc chưa có lệnh nào được phát.",
+    },
+    counter: {
+      delivered: "Đã gửi",
+      partiallyDelivered: "Gửi một phần",
+      failed: "Thất bại",
+      lost: "Mất",
+      retried: "Thử lại",
+      listeners: "Đang nghe",
+      maxListeners: "Tối đa",
+      rejectedListeners: "Bị từ chối",
+      unheard: "Không ai nghe",
+      asserted: "Đã kích",
+      released: "Đã nhả",
+      refused: "Bị từ chối",
+    },
+    // 🔴 BA trạng thái, và chỉ MỘT trong số đó là "tắt".
+    beacon: {
+      stillLit: "VẪN ĐANG SÁNG — yêu cầu tắt đã bị từ chối",
+      on: "ĐANG SÁNG — có cảnh báo đang chốt",
+      off: "ĐÃ TẮT",
+      // 🔴 Không bao giờ được hiện thành "tắt".
+      unknown: "KHÔNG RÕ — không biết đèn đang thế nào",
+      latched: (vars: Vars) => `${vars.count} cảnh báo đang chốt`,
+    },
+    limits: {
+      title: "Giới hạn trung thực",
+      description:
+        "Mỗi mục dưới đây đã được đối chiếu với mã nguồn. Đọc hết trước khi dựa vào bất kỳ kênh nào.",
+      noSms: "KHÔNG có kênh SMS và KHÔNG có syslog. Slack/Teams tới được nhưng chỉ qua incoming webhook URL.",
+      noDesktopToast:
+        "KHÔNG có thông báo (toast) desktop Windows. Đo trên chính nền tảng này: một exe không đóng gói " +
+        "có Show() trả về bình thường và báo “Enabled” trong khi kho thông báo của Windows giữ KHÔNG " +
+        "thông báo nào — một kênh dựng trên đó sẽ báo thành công trong khi chẳng phát ra gì.",
+      noImplicitTls:
+        "TLS ngầm (SMTPS, cổng 465) KHÔNG dùng được và không cấu hình nào cứu được — thư viện mail .NET " +
+        "chỉ làm STARTTLS. Kênh cấu hình ở cổng 465 bị chặn và đếm, không bao giờ để treo.",
+      smtpAuthUnprovable:
+        "Một bài gửi thử email XANH KHÔNG chứng minh mật khẩu đã lưu là đúng: thư viện mail đi tiếp " +
+        "không xác thực khi relay từ chối, không hỏi, hoặc không hề quảng cáo AUTH — và không phơi bày " +
+        "kết quả xác thực nào. Muốn chắc: đọc log của chính relay, hoặc trỏ vào relay từ chối thư nặc danh.",
+      relayNotSafety:
+        "Relay KHÔNG phải thiết bị an toàn và KHÔNG sáng khi HALT đang gài. Đèn/còi phải hoạt động khi " +
+        "HALT gài hoặc khi phần mềm này không chạy thì PHẢI đấu cứng (ISO 13849 Cat 3/4).",
+      relayNoTest:
+        "KHÔNG có bài gửi thử relay, có chủ ý — nó có thể để đèn sáng vì chính bài thử. Một bài CHẠY KHÔ " +
+        "(phân giải máy và mục tiêu rồi đánh giá cổng ghi mà KHÔNG ghi) là hình dạng được khuyến nghị và " +
+        "CHƯA được xây.",
+      noDeliveryGuarantee:
+        "KHÔNG kênh nào có bảo đảm gửi tới nơi và không có hàng đợi gửi lại: kênh hỏng thì thông báo " +
+        "MẤT. Bộ đếm “Mất” của từng kênh là chỗ duy nhất việc đó nhìn thấy được.",
+      networkNeeded:
+        "Webhook và email cần mạng. Ở một triển khai thật sự ngoại tuyến chỉ còn báo tại chỗ và relay.",
+      hmiNotAnnunciated:
+        "Trang /hmi/:code và /tokens render ngoài vỏ ứng dụng nên KHÔNG được báo động. Bản desktop mở " +
+        "thẳng vào trang chính nên KHÔNG bị ảnh hưởng; chỉ trình duyệt mở thẳng URL đó mới bị.",
+    },
+    error: {
+      loadFailed: "Không đọc được cấu hình thông báo.",
+      saveFailed: "Không lưu được cấu hình.",
+    },
+  },
   toast: {
     fleetStarted: "Đã chạy fleet.",
     fleetStartFailed: "Không thể chạy fleet.",
@@ -2345,6 +2636,9 @@ export const vi = {
     alarmAckFailed: "Không thể xác nhận cảnh báo.",
     lineCommandApplied: (vars: Vars) => `Đã thực hiện lệnh — trạng thái hiện tại: ${vars.state}.`,
     lineCommandFailed: "Không thể thực hiện lệnh điều khiển dây chuyền.",
+    notificationSaved: "Đã lưu cấu hình kênh báo.",
+    notificationChannelRemoved: "Đã gỡ kênh báo.",
+    notificationChannelRemoveFailed: "Không thể gỡ kênh báo.",
   },
 }
 

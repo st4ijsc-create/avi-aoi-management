@@ -255,3 +255,58 @@ public sealed record NotificationStatusDto(
     LocalAnnunciationStatusDto? LocalAnnunciation,
     RelayStatusDto? Relay,
     IReadOnlyList<string> Attention);
+
+/// <summary>
+/// 🔴 Task C-8 — <c>GET /v1/notifications/annunciator</c>. <b>Operator.</b> The one notification read an
+/// operator is allowed, and it is a NEW NARROWER ROUTE rather than a role change on
+/// <c>GET /v1/notifications/status</c>, which C-7 gated at Engineer deliberately because it carries every
+/// alarm recipient's e-mail address.
+///
+/// <para>🔴 <b>What keeps this route narrow is structural, not editorial: its handler never calls
+/// <see cref="NotificationConfigStore.ListAsync"/>.</b> That is the only method that returns channel
+/// configuration, so no webhook endpoint, no SMTP recipient, no relay machine code and no relay target name
+/// can reach this response by being added to a DTO later — the handler has nothing to add them from. Every
+/// field below comes from a live channel's own in-memory state or from the annunciation hub's gauges.</para>
+///
+/// <para><b>What an operator gets, and why each field is here rather than on the Engineer page.</b> An
+/// operator's question is not "how is e-mail configured" — it is <i>"is the beacon over my head telling the
+/// truth, and will this screen make a noise if something happens?"</i> Those two, and the one thing that
+/// makes both unanswerable, are the whole payload.</para>
+/// </summary>
+/// <param name="ConfigurationReadable">🔴 <see langword="false"/> when the configuration store could not be
+/// opened at startup, or has failed a read since. It is here because of Part 4's rule: a failed read is
+/// reported to every channel as "nothing is configured", so an empty <paramref name="Relays"/> list means
+/// either "no beacon is configured" or "this product cannot tell", and those must never render the same.
+/// Deliberately a BOOLEAN plus <paramref name="ConfigurationDetail"/> and nothing else — the Engineer page's
+/// health block additionally names the store DIRECTORY, the failing operation and the exception type, which
+/// are diagnostics for whoever fixes it rather than facts an operator acts on.</param>
+/// <param name="ConfigurationDetail">The sentence that says what a zero elsewhere on this page might
+/// actually mean. Never contains a filesystem path.</param>
+/// <param name="LocalAnnunciationRunning">Whether the local-annunciation CHANNEL exists in this process at
+/// all. Whether it is CONFIGURED and ENABLED — and at what threshold — is already Operator-readable on the
+/// <c>ready</c> frame of <c>GET /v1/alarms/annunciations</c>, which is where a screen should read it: that
+/// frame is the authority on whether THIS page will be annunciated, because it is answered on the very
+/// connection that would carry the annunciation.</param>
+/// <param name="Listeners">Browser sessions attached to the annunciation stream RIGHT NOW, across the whole
+/// engine. A gauge.</param>
+/// <param name="RejectedListeners">Sessions REFUSED because <paramref name="MaxListeners"/> was reached.
+/// Each one is a page that was not annunciated.</param>
+/// <param name="Relays">🔴 <see cref="RelayInstanceStateDto"/> exactly as the Engineer page renders it,
+/// including <c>annunciatorState</c> — the sentence that distinguishes "ON with nothing latched" (this
+/// product asked for the beacon to go out and was refused; it is still lit) from "UNKNOWN" (this product does
+/// not know what the beacon is doing), neither of which may ever render as "off". The record carries no
+/// machine code and no target name, so it was already operator-safe; that is why this route reuses it rather
+/// than projecting a second shape that could drift from the first.</param>
+/// <param name="Attention">The subset of <see cref="NotificationStatusDto.Attention"/> an operator can act
+/// on: a beacon believed lit with nothing latched, a page refused a stream, a configuration this product
+/// could not read. E-mail and webhook conditions are deliberately NOT here — they are Engineer's to act on
+/// and naming them would leak which channels exist.</param>
+public sealed record AnnunciatorStatusDto(
+    bool ConfigurationReadable,
+    string ConfigurationDetail,
+    bool LocalAnnunciationRunning,
+    int Listeners,
+    int MaxListeners,
+    long RejectedListeners,
+    IReadOnlyList<RelayInstanceStateDto> Relays,
+    IReadOnlyList<string> Attention);

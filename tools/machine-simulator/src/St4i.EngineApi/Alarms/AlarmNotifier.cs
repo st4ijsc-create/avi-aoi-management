@@ -345,8 +345,10 @@ public sealed class AlarmNotifier : IAlarmNotifier, IAsyncDisposable
     private bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
     /// <param name="dispatch">Where a drained job goes. <see langword="null"/> (the default) means the
-    /// loop drains and discards — which is precisely the C-1 state of the world: the seam is real and
-    /// provably working, and NO channel exists yet. C-3..C-6 supply this (C-7 fans out to several). A
+    /// loop drains and discards — which was precisely the C-1 state of the world: the seam is real and
+    /// provably working, and no channel existed yet. 🔴 Task C-8: that is now HISTORY rather than a
+    /// description of this product. C-3..C-6 built all four channels and the production host supplies this
+    /// delegate; <see langword="null"/> survives as the shape a test uses to exercise the loop alone. A
     /// plain delegate rather than an interface deliberately: inventing the channel abstraction is C-3's
     /// decision to make, not this task's, and <see cref="St4i.EdgeCore.Historian.HistorianWriter"/>
     /// already establishes plain delegates as this codebase's shape for an optional hook. It may throw —

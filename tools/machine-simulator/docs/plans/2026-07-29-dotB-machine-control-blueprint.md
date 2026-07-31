@@ -98,7 +98,7 @@ UI ghi setpoint/lệnh với xác nhận. **Sửa cả sáu chỗ** khẳng đ�
 
 ## Hoãn có ghi nhận
 
-- **Cảnh báo ra ngoài (Đợt C)** vẫn chưa có — email/SMS/webhook/relay/còi đều không tồn tại.
+- ~~**Cảnh báo ra ngoài (Đợt C)** vẫn chưa có — email/SMS/webhook/relay/còi đều không tồn tại.~~ 🔴 **ĐÃ GIAO — Đợt C (C-1..C-8), 2026-07-31:** webhook ký HMAC, email qua SMTP, báo tại chỗ qua SSE, relay/đèn báo vật lý. **SMS vẫn KHÔNG có.** Relay đi qua đúng cổng ghi máy mà Đợt B dựng (`MachineWriteGate`/`EstopGuardRule`), nên nó **không sáng khi HALT đang gài** — xem `README.md` §22.4. Giữ dòng cũ gạch ngang thay vì xoá.
 - Giao thức: Serial/RS-485, S7, EtherNet/IP, SECS/GEM vẫn chưa có. `MqttDriver` vẫn chưa nối vào host nào.
 - Sparkplug **NCMD** (lệnh vào từ Site) **không** thuộc đợt này — đường ghi này là cục bộ, không phải từ hệ sinh thái.
 - Không có rate-limit ở mức hạ tầng; nếu B-6 cần thì phải tự dựng.

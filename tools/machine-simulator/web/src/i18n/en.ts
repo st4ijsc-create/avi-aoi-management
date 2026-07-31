@@ -75,6 +75,7 @@ export const en: Dictionary = {
       site: "Site Link",
       alarms: "Alarm Center",
       line: "Line Control",
+      notifications: "Outbound Notifications",
     },
     sidebar: {
       brandSubtitle: "Machine Simulator",
@@ -1416,6 +1417,12 @@ export const en: Dictionary = {
     entryButtonAria: (vars: Vars) => `Open machine HMI for ${vars.code}`,
     back: "Back to machine detail",
     shift: (vars: Vars) => `SHIFT ${vars.n}`,
+    // 🔴 Task C-8 — the honest limitation, stated on the screen it applies to. This route renders
+    // OUTSIDE <Shell>, so the annunciator overlay is not mounted here.
+    notAnnunciated:
+      "This screen does NOT show alarm cards and does NOT play a tone — it renders outside the app " +
+      "shell. Alarms are still recorded and still shown in the Alarm Center. The desktop package opens " +
+      "on the main screen and is NOT affected; only a browser parked directly on this URL is.",
 
     tabs: {
       railAria: "Switch operator panel tab",
@@ -2164,7 +2171,25 @@ export const en: Dictionary = {
       notConfigured: "Not configured — nothing will annunciate at this machine",
       disabled: "Configured but switched OFF",
       armed: (vars: Vars) => `Armed — ${vars.priority} and above`,
-      reach: "Reaches whoever has this page open. There is no Windows desktop notification.",
+      // 🔴 Task C-8 corrected this sentence. It read "Reaches whoever has this page open. There is no
+      // Windows desktop notification." — true of THIS CHANNEL, but an operator reading it could
+      // reasonably conclude the product cannot reach anyone off-screen at all. Since Đợt C that is
+      // false: there are also webhook, e-mail and relay channels. The "no Windows desktop toast" half
+      // is still true (C-5 proved it three ways) and is KEPT.
+      reach:
+        "THIS channel reaches whoever has this page open, and there is no Windows desktop notification. " +
+        "The other channels (webhook, e-mail, beacon) are configured separately on Outbound Notifications.",
+    },
+    // 🔴 Task C-8 — the Operator slice of GET /v1/notifications/annunciator.
+    reach: {
+      label: "Outbound",
+      listeners: (vars: Vars) => `${vars.count}/${vars.max} pages listening`,
+      rejected: (vars: Vars) => `${vars.count} page(s) REFUSED the stream — those pages were NOT annunciated`,
+      noBeacon: "No beacon/relay is configured.",
+      // 🔴 Must never read the same as the line above: a failed configuration read looks exactly like
+      // "nothing is configured", and an operator must be able to tell which one this is.
+      beaconUnknown: "Whether any beacon is configured is UNKNOWN — the engine could not read its configuration.",
+      unavailable: "Could not read the outbound notification status from the engine.",
     },
   },
 
@@ -2227,6 +2252,282 @@ export const en: Dictionary = {
     },
   },
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 🔴 Task C-8 — `/notifications`. See `routes/Notifications.tsx` for why the form has this shape:
+  // almost every choice here exists so that one save cannot silently destroy a stored credential.
+  // ─────────────────────────────────────────────────────────────────────────
+  notifications: {
+    title: "Outbound Notifications",
+    description:
+      "The four channels that get an alarm to someone who is not looking at this screen: a webhook " +
+      "(Slack/Teams/MES), e-mail over SMTP, local annunciation on every open page, and a physical " +
+      "relay/beacon. With no channel configured, alarms are still recorded but reach NOBODY.",
+    denied: {
+      title: "Engineer role required",
+      description:
+        "This screen carries the whole notification configuration — SMTP usernames and every alarm " +
+        "recipient's e-mail address — so it needs the Engineer role or above. The beacon's state, and " +
+        "whether your page will be annunciated, are on the Alarm Center.",
+    },
+    action: {
+      save: "Save",
+      remove: "Remove channel",
+    },
+    state: {
+      notConfigured: "Not configured",
+      enabled: "Enabled",
+      disabled: "Configured — SWITCHED OFF",
+    },
+    field: {
+      enabled: "Enable this channel",
+      enabledHint: "Switched off, the configuration is kept but nothing is sent.",
+      minPriority: "Minimum priority",
+      minPriorityHint:
+        "Only alarms at least this severe are sent. In this build only Critical and High actually " +
+        "occur, so High means “everything” and Critical means “only the ones that gate the line”.",
+    },
+    // 🔴 A secret field's three states. See `SecretInput` in `routes/Notifications.tsx`.
+    secret: {
+      stored: "Stored",
+      notStored: "Not set",
+      mode: {
+        keep: "Keep",
+        replace: "Replace",
+        clear: "Clear",
+      },
+      effectKeep: "On save: the stored value is left exactly as it is.",
+      effectKeepNone: "On save: still not set.",
+      effectReplace: "On save: replaced with the value typed above.",
+      effectClear: "🔴 On save: the stored value is DELETED. This cannot be undone.",
+    },
+    webhook: {
+      title: "Webhook",
+      description:
+        "POSTs an HMAC-signed JSON envelope to a URL — a Slack or Teams incoming webhook, or an MES. " +
+        "The full wire contract for receiver authors is in docs/ALARM_WEBHOOK_CONTRACT.md.",
+      url: "Webhook URL",
+      // 🔴 This sentence is why the whole form has the shape it does.
+      urlHint:
+        "Required on EVERY save, including one that only changes the label. The engine deliberately " +
+        "does NOT re-read the stored URL: a webhook URL is a bearer capability (whoever holds it can " +
+        "post), and decrypting one inside a request handler is the single path by which a secret " +
+        "reaches a response body. Check the URL fingerprint below to confirm you are re-entering the " +
+        "SAME destination.",
+      urlRequiredToSave: "A webhook URL must be entered before this can be saved.",
+      label: "Label",
+      labelHint: "An operator's note, e.g. “Ops Slack #line-alerts”. Never a credential.",
+      authHeaderName: "Auth header name",
+      // 🔴 This behaviour is not guessable from the label, so it is stated.
+      authHeaderNameHint:
+        "The header a static-token receiver authenticates with (X-Api-Key, Authorization). Emptying it " +
+        "CLEARS it — and clearing it also DELETES the stored auth token, because a token that names no " +
+        "header can never be sent. Slack and Teams do not need this.",
+      signingSecret: "HMAC signing secret",
+      signingSecretHint:
+        "The key the POST is signed with. Without one the POST is sent UNSIGNED — normal for " +
+        "Slack/Teams (they treat the URL as the credential), and a real gap when pointing this at an MES.",
+      authToken: "Auth token",
+      authTokenHint: "The COMPLETE value of the header above, scheme word included (e.g. “Bearer eyJhb…”).",
+      currentEndpoint: "Current destination",
+      currentFingerprint: "URL fingerprint",
+      currentLabel: "Current label",
+      signingState: "Signing",
+      signed: "HMAC-signed",
+      unsigned: "UNSIGNED — a receiver cannot verify this came from this engine",
+      headerWithoutToken:
+        "🔴 An auth header name is set but there is NO token: this webhook cannot post at all. Enter a " +
+        "token, or clear the header name.",
+      noUrl:
+        "🔴 A URL is stored but the engine could NOT decrypt it, so this channel cannot post anywhere. " +
+        "Re-enter the URL.",
+    },
+    smtp: {
+      title: "E-mail (SMTP)",
+      description: "One message per qualifying alarm edge to the configured recipient list.",
+      host: "SMTP host",
+      port: "Port",
+      portHint: "Usually 25 (plain) or 587 (STARTTLS).",
+      tls: "TLS mode",
+      // 🔴 The ABSENCE of port 465 is a decision, so it is stated rather than silently omitted.
+      tlsHint:
+        "There is deliberately NO implicit-TLS option (SMTPS, port 465): the .NET mail client this " +
+        "product is built on implements only STARTTLS and provably cannot honour one. Anyone who needs " +
+        "SMTPS must point this at a relay speaking STARTTLS on 587 or plain SMTP on 25.",
+      tlsMode: {
+        None: "No encryption",
+        StartTls: "STARTTLS",
+      },
+      fromAddress: "From address",
+      recipients: "Recipients",
+      recipientsHint: "Several addresses, comma-separated.",
+      username: "Username",
+      usernameHint:
+        "Deliberately NOT a secret and visible in every read — an operator diagnosing an authentication " +
+        "failure needs to see which account is configured, and a username alone authorises nobody.",
+      password: "Password",
+      passwordHint:
+        "Stored encrypted and never returned by any read; the API reports only whether one EXISTS. See " +
+        "the send-test result: a green test does NOT prove this password works.",
+    },
+    local: {
+      title: "Local annunciation",
+      description:
+        "Pushes an alarm card and a tone to every open page of this UI. The ONLY channel that works " +
+        "with no network at all.",
+      screenOwned:
+        "On/off and a threshold is the WHOLE configuration of this channel. Everything about HOW an " +
+        "annunciation presents — which tone, how loud, whether the browser is holding it muted — is a " +
+        "property of the SCREEN, not of this engine, which is why none of it is here.",
+      noSendTest:
+        "There is NO send test, deliberately: it would publish a FABRICATED alarm card and tone to " +
+        "every open page for a condition that is not happening. The status strip on the Alarm Center " +
+        "already answers what a test would: whether the channel is configured and enabled, and whether " +
+        "anybody is attached right now.",
+    },
+    relay: {
+      title: "Relay / beacon",
+      adminTier: "Admin required",
+      description:
+        "Energises a real beacon or horn through a declared writable point or command on a machine's " +
+        "register map, using the same write path as machine control.",
+      // 🔴 The most important sentence on this page.
+      notSafetyDevice:
+        "🔴 THIS IS NOT A SAFETY DEVICE, and it does NOT light while HALT is latched — the write goes " +
+        "through the same safety gate as any machine write and that gate refuses it. The same applies " +
+        "to switching it OFF: if HALT engages while the beacon is lit, the release is refused too and " +
+        "the beacon stays lit. Anyone who needs a light or a horn that works while HALT is engaged, or " +
+        "while this software is not running, must HARDWIRE it (ISO 13849 Cat 3/4) rather than route it " +
+        "through this product.",
+      adminRequired:
+        "Saving and removing the relay configuration requires the ADMIN role, not Engineer — unlike the " +
+        "other three channels. The reason: a “Command” relay makes this engine perform, automatically " +
+        "and for as long as the configuration exists, an action a human needs Admin for. That is " +
+        "GRANTING AUTHORITY, not changing a setting. The configuration above is shown in full so you " +
+        "can check it; only the Save control needs Admin.",
+      machineCode: "Machine code",
+      machineCodeHint:
+        "Resolved case-insensitively against the live roster at the moment an alarm fires — deliberately " +
+        "NOT checked at save time, so you can configure a machine before it is onboarded.",
+      targetKind: "Target kind",
+      targetKindHint:
+        "“Point” is a declared writable point; “Command” is a declared, argument-less command.",
+      kind: {
+        Point: "Point (writes a value)",
+        Command: "Command (argument-less pulse)",
+      },
+      commandCannotRelease:
+        "🔴 A “Command” target can ASSERT the beacon and structurally CANNOT RELEASE it — a command is " +
+        "an argument-less pulse. A latching beacon needs a “Point” target. This is also the field that " +
+        "puts this whole route at Admin tier.",
+      targetName: "Point / command name",
+      targetNameHint:
+        "Matched case-SENSITIVELY, because the driver's own lookups are ordinal — “Beacon” and “beacon” " +
+        "are different points.",
+      onValue: "ENERGISE value",
+      offValue: "RELEASE value",
+      valueHint:
+        "A raw JSON scalar exactly as the driver will write it: true, 1, or \"ON\". There is " +
+        "deliberately NO default — a default would be this product choosing what to write to a coil it " +
+        "cannot prove is a lamp rather than a conveyor.",
+      offValueHint:
+        "A SEPARATE value rather than a derived inverse: the register map's declared range is the " +
+        "authority on what “off” is.",
+      noSendTest:
+        "There is NO send test, deliberately: it would be a REAL Admin-tier machine write that takes " +
+        "the coil away from this channel's own latch, and could LEAVE THE BEACON LIT because of a test " +
+        "if the release were then refused by the HALT latch — the exact failure this channel exists to " +
+        "prevent. Watch the beacon state in the panel above instead.",
+    },
+    test: {
+      send: "Send test",
+      rateLimited: "Limited to one per 5 s — this test reaches a real third party.",
+      accepted: "ACCEPTED by the destination",
+      failed: "FAILED",
+      proves: "This result proves",
+      // 🔴 Never shrunk, never hidden behind a tooltip, never dropped.
+      doesNotProve: "This result does NOT prove",
+      errorGeneric: "Couldn't run the send test.",
+    },
+    status: {
+      title: "Health & counters",
+      error: "Couldn't read the notification status from the engine.",
+      attention: "Needs attention",
+      attentionNone: "Nothing currently needs attention.",
+      configStore: "Configuration store",
+      storeOk: "Readable",
+      storeDegraded: "READ FAILURES",
+      storeUnavailable: "COULD NOT BE OPENED",
+      webhook: "Webhook",
+      smtp: "E-mail",
+      local: "Local annunciation",
+      relay: "Relay / beacon",
+      noRelayInstances: "No beacon is configured in this process, or nothing has been commanded yet.",
+    },
+    counter: {
+      delivered: "Delivered",
+      partiallyDelivered: "Partially delivered",
+      failed: "Failed",
+      lost: "Lost",
+      retried: "Retried",
+      listeners: "Listening",
+      maxListeners: "Max",
+      rejectedListeners: "Refused",
+      unheard: "Unheard",
+      asserted: "Asserted",
+      released: "Released",
+      refused: "Refused",
+    },
+    // 🔴 THREE states, and only ONE of them is "off".
+    beacon: {
+      stillLit: "STILL LIT — the request to switch it off was refused",
+      on: "ON — alarm(s) latched",
+      off: "OFF",
+      // 🔴 Must never render as "off".
+      unknown: "UNKNOWN — this product does not know what the beacon is doing",
+      latched: (vars: Vars) => `${vars.count} alarm(s) latched`,
+    },
+    limits: {
+      title: "Honest limitations",
+      description:
+        "Every entry below was verified against source. Read all of it before relying on any channel.",
+      noSms: "There is NO SMS channel and NO syslog channel. Slack/Teams are reachable, but only through incoming-webhook URLs.",
+      noDesktopToast:
+        "There is NO Windows desktop toast. Measured on this platform: an unpackaged exe had Show() " +
+        "return normally and report “Enabled” while Windows' own notification store held ZERO " +
+        "notifications for it — a channel built on that would report success while nothing emitted.",
+      noImplicitTls:
+        "Implicit TLS (SMTPS, port 465) is UNREACHABLE and no configuration can make it work — the .NET " +
+        "mail client implements only STARTTLS. A channel configured on 465 is bounded and counted, " +
+        "never left to hang.",
+      smtpAuthUnprovable:
+        "A GREEN e-mail send test does NOT prove the stored password works: the mail client proceeds " +
+        "unauthenticated when the relay rejects AUTH, refuses AUTH, or advertises no AUTH at all — and " +
+        "exposes no authentication result. To be sure: read the relay's own logs, or point this at a " +
+        "relay that refuses anonymous mail.",
+      relayNotSafety:
+        "The relay is NOT a safety device and does NOT light while HALT is latched. A light or horn " +
+        "that must work while HALT is engaged, or while this software is not running, has to be " +
+        "hardwired (ISO 13849 Cat 3/4).",
+      relayNoTest:
+        "There is NO relay send test, deliberately — it could leave a beacon lit because of the test " +
+        "itself. A DRY RUN (resolve the machine and target and evaluate the write gate WITHOUT writing) " +
+        "is the recommended shape and is NOT built.",
+      noDeliveryGuarantee:
+        "NO channel has a delivery guarantee and there is no retry queue: if a channel fails the " +
+        "notification is LOST. Each channel's “Lost” counter is the only place that becomes visible.",
+      networkNeeded:
+        "Webhook and e-mail need a network. In a genuinely offline deployment only local annunciation " +
+        "and the relay work.",
+      hmiNotAnnunciated:
+        "The /hmi/:code and /tokens screens render outside the app shell and are NOT annunciated. The " +
+        "desktop package opens on the main screen and is NOT affected; only a browser parked directly " +
+        "on those URLs is.",
+    },
+    error: {
+      loadFailed: "Couldn't read the notification configuration.",
+      saveFailed: "Couldn't save the configuration.",
+    },
+  },
   toast: {
     fleetStarted: "Fleet started.",
     fleetStartFailed: "Couldn't start the fleet.",
@@ -2292,5 +2593,8 @@ export const en: Dictionary = {
     alarmAckFailed: "Couldn't acknowledge the alarm.",
     lineCommandApplied: (vars: Vars) => `Command applied — current state: ${vars.state}.`,
     lineCommandFailed: "Couldn't run the line control command.",
+    notificationSaved: "Notification channel saved.",
+    notificationChannelRemoved: "Notification channel removed.",
+    notificationChannelRemoveFailed: "Couldn't remove the notification channel.",
   },
 }

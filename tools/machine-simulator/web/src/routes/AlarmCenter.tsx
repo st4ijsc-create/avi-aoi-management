@@ -17,7 +17,7 @@ import {
   type AlarmSource,
 } from "@/lib/api"
 import { fadeSlideUp } from "@/theme/motion"
-import { AnnunciatorStatusStrip } from "@/components/AlarmAnnunciator"
+import { AnnunciatorStatusStrip, OutboundReachPanel } from "@/components/AlarmAnnunciator"
 import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -458,6 +458,12 @@ function AlarmCenterScreen() {
           independent parts (stream up? channel configured? channel enabled? this browser audible?)
           and none of them fits in a chrome indicator without being collapsed into a lie. */}
       <AnnunciatorStatusStrip />
+
+      {/* 🔴 Task C-8 — everything else that gets told, at Operator tier. The strip above answers "will
+          THIS page make a noise?"; this answers "is the beacon over my head telling the truth, and is
+          anybody else attached?". It reads the narrow Operator route rather than the Engineer status
+          page, which carries every alarm recipient's e-mail address. */}
+      <OutboundReachPanel />
 
       <div
         role="radiogroup"

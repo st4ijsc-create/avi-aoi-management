@@ -105,6 +105,23 @@ export function SystemLog({ machineCode, localEvents, events, connectionState, c
         aria-label={t("hmi.log.title")}
         className="hmi-scroll flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus)]"
       >
+        {/* 🔴 Task C-8 — the honest limitation, stated ON the screen it applies to: `/hmi/:code` renders
+            OUTSIDE `<Shell>` (see `App.tsx`) and the alarm-annunciation overlay is mounted INSIDE it, so
+            this kiosk face shows no alarm cards and plays no tone.
+
+            It lives HERE, pinned inside the log band's own scroll region, rather than as a line in the
+            page's flex column — and that placement is a fix, not a preference. Adding a row to the column
+            took ~20px of page height and broke `12-hmi-safety-rail.spec.ts` in all five of its cases: the
+            control rail became scrollable at the 1280×800 floor, which is the exact invariant that spec
+            exists to defend ("the control rail never scrolls" was claimed once before and was wrong).
+            Inside an `overflow-y-auto` region it costs the outer layout nothing; `sticky` keeps it
+            visible rather than letting it scroll away behind the log rows. */}
+        <p
+          data-testid="hmi-not-annunciated"
+          className="hmi-micro sticky top-0 z-10 border-b border-border bg-surface-card px-3 py-1 normal-case"
+        >
+          {t("hmi.notAnnunciated")}
+        </p>
         {rows.length === 0 ? (
           <p className="p-4 text-center text-xs text-text-muted">{t("hmi.log.empty")}</p>
         ) : (

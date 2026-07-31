@@ -20,6 +20,7 @@ import AssetRegistry from "@/routes/AssetRegistry"
 import Connectors from "@/routes/Connectors"
 import Site from "@/routes/Site"
 import AlarmCenter from "@/routes/AlarmCenter"
+import Notifications from "@/routes/Notifications"
 import LineControl from "@/routes/LineControl"
 import NotFound from "@/routes/NotFound"
 import { Sidebar } from "@/shell/Sidebar"
@@ -76,6 +77,9 @@ export function Shell() {
             <Route path="/connectors" component={Connectors} />
             <Route path="/site" component={Site} />
             <Route path="/alarms" component={AlarmCenter} />
+            {/* 🔴 Task C-8 — inside <Shell>, so it is annunciated like every other screen. Engineer+ is
+                enforced by the route component itself (and by the server), not by omitting it here. */}
+            <Route path="/notifications" component={Notifications} />
             <Route path="/line" component={LineControl} />
             <Route component={NotFound} />
           </Switch>

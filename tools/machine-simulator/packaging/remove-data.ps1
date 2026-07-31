@@ -7,8 +7,9 @@
 .DESCRIPTION
   The MSI installer (packaging/installer/) only ever removes what IT installed, under Program Files -
   it has no idea this exe/service, once running, goes on to create %ProgramData%\ST4I\sim\{historian,
-  wal,security,creds}\ (the historian database, the store-and-forward WAL buffer, the local user/
-  session/audit-log database, and the DPAPI-protected machine credential). That is entirely
+  wal,security,creds,notifications}\ (the historian database, the store-and-forward WAL buffer, the
+  local user/session/audit-log database, the DPAPI-protected machine credential, and - task C-8 - the
+  alarm-notification channel configuration together with ITS DPAPI-protected credentials). That is entirely
   intentional: uninstalling (or upgrading via MajorUpgrade) must never silently destroy a customer's
   production history, audit trail, or credentials. This script is the separate, explicit, opt-in tool
   for an operator who genuinely wants a clean-slate wipe (e.g. decommissioning a machine, resetting a
@@ -34,6 +35,12 @@
 .PARAMETER SecurityDir
   Same idea as -HistorianDir, for the security directory (ST4I_SECURITY_DIR).
 
+.PARAMETER NotificationsDir
+  Task C-8 - same idea as -HistorianDir, for the alarm-notification configuration directory
+  (ST4I_NOTIFICATIONS_DIR, README section 22.5). This one holds notifications.db, which stores every
+  configured channel AND its DPAPI-protected credentials - webhook URLs, webhook signing secrets,
+  webhook auth tokens and SMTP passwords.
+
 .EXAMPLE
   .\packaging\remove-data.ps1 -WhatIf
   Preview exactly what would be stopped/deleted, without touching anything.
@@ -41,8 +48,9 @@
 .EXAMPLE
   .\packaging\remove-data.ps1
   Interactive - prompts (Y/N) before stopping/deleting the service and before deleting each of the
-  4 data directories (historian/wal/security resolved per -HistorianDir/-WalDir/-SecurityDir or the
-  matching ST4I_*_DIR environment variable or the default %ProgramData%\ST4I\sim\<name> - see the
+  5 data directories (historian/wal/security/notifications resolved per -HistorianDir/-WalDir/
+  -SecurityDir/-NotificationsDir or the matching ST4I_*_DIR environment variable or the default
+  %ProgramData%\ST4I\sim\<name> - see the
   WARNING below about relocated directories this script cannot discover on its own).
 
 .EXAMPLE
@@ -73,13 +81,24 @@
 
   `creds` (the DPAPI-protected machine credential) has no relocation env var - CredentialStore is not
   relocatable - so it is always purged at %ProgramData%\ST4I\sim\creds.
+
+  TASK C-8 - `notifications` was ADDED to the purge list, and its absence was a real defect rather than
+  a documentation gap. Dot C (C-2..C-7) introduced %ProgramData%\ST4I\sim\notifications\notifications.db,
+  which stores every configured alarm-notification channel together with its DPAPI-protected secrets:
+  webhook URLs (a Slack/Teams incoming webhook URL IS a bearer capability - whoever holds it can post),
+  webhook HMAC signing secrets, webhook auth tokens, and SMTP passwords. Before this change a
+  decommissioning wipe deleted the machine's own credential and its audit log but left all of THOSE
+  behind on a box being handed on, scrapped or returned - the exact outcome this script exists to
+  prevent. It is relocatable via ST4I_NOTIFICATIONS_DIR and resolves through the same
+  -NotificationsDir > env var > %ProgramData% default order as the other three.
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 param(
     [switch]$Force,
     [string]$HistorianDir,
     [string]$WalDir,
-    [string]$SecurityDir
+    [string]$SecurityDir,
+    [string]$NotificationsDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -113,6 +132,9 @@ $subdirs = @(
     @{ Name = 'security';  Path = (Resolve-DataDir $SecurityDir  'ST4I_SECURITY_DIR'  (Join-Path $root 'security'));  Warning = 'the user database, sessions, and the hash-chained AUDIT LOG (security.db)' }
     # `creds` has no relocation env var (CredentialStore is not relocatable) - always under $root.
     @{ Name = 'creds';     Path = (Join-Path $root 'creds');                                                          Warning = 'the DPAPI-protected machine credential(s) (mk_...) - re-onboarding required after this' }
+    # Task C-8 - see this script's .NOTES. Added because its ABSENCE left live third-party credentials
+    # on a decommissioned machine, which is the one outcome this script exists to prevent.
+    @{ Name = 'notifications'; Path = (Resolve-DataDir $NotificationsDir 'ST4I_NOTIFICATIONS_DIR' (Join-Path $root 'notifications')); Warning = 'alarm notification channels AND their DPAPI-protected credentials - webhook URLs, webhook signing secrets, webhook auth tokens, SMTP passwords (notifications.db)' }
 )
 
 Write-Host ""
@@ -120,7 +142,7 @@ Write-Host "====================================================================
 Write-Host " DESTRUCTIVE - this permanently deletes ST4I Machine Simulator runtime data" -ForegroundColor Red
 Write-Host "=================================================================================" -ForegroundColor Red
 Write-Host ""
-Write-Host "Default root: $root (historian/wal/security may be relocated - resolved path shown per entry)" -ForegroundColor Yellow
+Write-Host "Default root: $root (historian/wal/security/notifications may be relocated - resolved path shown per entry)" -ForegroundColor Yellow
 foreach ($d in $subdirs) {
     Write-Host ("  {0,-10} - {1}" -f $d.Name, $d.Warning) -ForegroundColor Yellow
     Write-Host ("               -> $($d.Path)") -ForegroundColor DarkYellow
@@ -129,7 +151,7 @@ Write-Host ""
 Write-Host "None of this is recoverable. Nothing here is touched by the MSI uninstaller by design -" -ForegroundColor Yellow
 Write-Host "this is a separate, explicit, manual step. Ctrl-C now if you are not certain." -ForegroundColor Yellow
 Write-Host ""
-Write-Host "NOTE: relocated dirs are only found via -HistorianDir/-WalDir/-SecurityDir or this SHELL's" -ForegroundColor Yellow
+Write-Host "NOTE: relocated dirs are only found via -HistorianDir/-WalDir/-SecurityDir/-NotificationsDir or this SHELL's" -ForegroundColor Yellow
 Write-Host "own ST4I_*_DIR env vars - NOT the service's registry Environment value. If none of those" -ForegroundColor Yellow
 Write-Host "match how the service was actually configured, remove the real directory by hand." -ForegroundColor Yellow
 Write-Host ""
@@ -151,7 +173,7 @@ elseif ($PSCmdlet.ShouldProcess("Windows service '$serviceName'", "Stop and dele
     }
 }
 
-# ---- Step 2: delete the 4 data subdirectories (each already resolved above per -XxxDir / ST4I_*_DIR
+# ---- Step 2: delete the 5 data subdirectories (each already resolved above per -XxxDir / ST4I_*_DIR
 # / the %ProgramData% default - see $subdirs) --------------------------------------------------
 Write-Host ""
 foreach ($d in $subdirs) {

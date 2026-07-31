@@ -411,14 +411,26 @@ var alarmsDir = Environment.GetEnvironmentVariable("ST4I_ALARMS_DIR");
 
 // Task C-1 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-1-brief.md) — the alarm
 // NOTIFICATION seam: an edge detector in front of a bounded, drop-oldest channel drained in the
-// background (see AlarmNotifier). Every Đợt C channel (webhook C-3, SMTP C-4, local annunciation C-5,
-// physical relay C-6) sits behind this; NONE of them exists yet, so the notifier is registered with no
-// dispatch delegate — the seam is real and observable, and it delivers to nobody.
+// background (see AlarmNotifier). Every Đợt C channel sits behind this, and 🔴 Task C-8 corrected this
+// paragraph because all four of them now EXIST and are constructed a few hundred lines below: webhook
+// (C-3), SMTP (C-4), local annunciation (C-5) and the physical relay (C-6). This comment used to say
+// "NONE of them exists yet, so the notifier is registered with no dispatch delegate" — true when C-1
+// wrote it, false from C-3 onward. Which channels are actually built on any given boot is decided by
+// what is configured in NotificationConfigStore; `implementedNotificationChannels` below is the list
+// this build can construct at all.
 //
 // 🔴 Task C-2 (task-2-brief.md) — C-1's placeholder ST4I_ALARM_NOTIFY_ENABLED env gate IS GONE, and this
-// is what replaced it. NotificationConfigStore is now the ONLY enable mechanism in the product: the seam
-// runs iff at least one channel has been configured, and each channel's own `enabled` flag decides whether
-// it delivers. Two enable mechanisms cannot disagree if there is only one.
+// is what replaced it. NotificationConfigStore is the ONLY thing that decides whether anything is
+// DELIVERED, and each channel's own `enabled` flag decides whether that channel delivers. Two enable
+// mechanisms cannot disagree if there is only one.
+//
+// 🔴 Task C-8 corrected the second half of that paragraph too. It used to read "the seam runs iff at
+// least one channel has been configured" — which review round 1 (I5) deliberately overturned. The
+// notifier is now registered UNCONDITIONALLY (see the registration below), so a fresh install with
+// nothing configured DOES start one bounded channel, one drain loop and one hosted service it did not
+// start before Đợt C. That is a real, accepted behaviour change, and the batch's earlier claim to be
+// "additive and default-off, bit-for-bit identical when nothing is configured" is RETIRED. What is still
+// true is the part that matters: with nothing configured, nothing is delivered to anybody.
 //
 // The failure mode that removal exists to prevent (found by C-1's own review) ran in the direction C-1 did
 // not expect: an operator could configure a webhook perfectly, never learn an environment variable also
