@@ -1099,6 +1099,276 @@ public sealed class AlarmNotifierTests : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // 🔴 Task C-6 — PER-CHANNEL QUEUES. The prerequisite the relay sits on.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 🔴 <b>The headline property, and it is asserted in WALL-CLOCK, not in counters.</b> Two channels are
+    /// wired; the first one's dispatch blocks forever on its very first job. Three edges are then emitted.
+    ///
+    /// <para>With C-1's single shared queue this is impossible in BOTH of the compositions that ever
+    /// existed: sequential <c>await</c> never reaches the second channel at all, and <c>Task.WhenAll</c>
+    /// delivers edge 1 to both and then never reads edge 2, because the loop does not advance until job 1's
+    /// <c>WhenAll</c> completes — and it never does. With one queue per channel the live channel sees all
+    /// three regardless of what the dead one is doing.</para>
+    ///
+    /// <para>Two independent non-vacuity guards, because "the live channel got 3 jobs" alone would pass in a
+    /// world where the dead channel was never wired: the dead channel's dispatch is asserted to have been
+    /// ENTERED (so it really is a wired channel holding a real thread), and asserted to have been entered
+    /// exactly ONCE (so it really is still wedged rather than having quietly returned). The 5s bound is
+    /// three orders of magnitude above the observed cost; what it discriminates is "immediately" from
+    /// "never".</para>
+    /// </summary>
+    [Fact]
+    public async Task PerChannelQueues_AWedgedChannelCannotDelayAnother_MeasuredInElapsedTime()
+    {
+        var deadEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseDead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deadCalls = 0;
+        var live = new ConcurrentQueue<(string Key, TimeSpan At)>();
+        var clock = Stopwatch.StartNew();
+
+        var notifier = new AlarmNotifier(new[]
+        {
+            new AlarmNotificationChannel("dead", async (_, _) =>
+            {
+                Interlocked.Increment(ref deadCalls);
+                deadEntered.TrySetResult();
+                await releaseDead.Task;
+            }),
+            new AlarmNotificationChannel("live", (job, _) =>
+            {
+                live.Enqueue((job.Alarm.Key, clock.Elapsed));
+                return Task.CompletedTask;
+            }),
+        });
+
+        try
+        {
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("first")));
+
+            // Non-vacuity: the dead channel is genuinely wired and genuinely wedged before we go on.
+            await deadEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("second")));
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("third")));
+
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while (live.Count < 3 && DateTimeOffset.UtcNow < deadline) await Task.Delay(5);
+
+            Assert.Equal(3, live.Count);
+            Assert.Equal(new[] { "first", "second", "third" }, live.Select(e => e.Key).ToArray());
+
+            // 🔴 ELAPSED, not a counter: all three reached the live channel while the other channel had
+            // been wedged since before the second edge was even emitted.
+            Assert.True(live.Max(e => e.At) < TimeSpan.FromSeconds(5),
+                $"the live channel took {live.Max(e => e.At)} to see three edges while another channel was " +
+                "wedged — the queues are shared again.");
+
+            // Non-vacuity in the other direction: the dead channel really is still stuck on job 1.
+            Assert.Equal(1, Volatile.Read(ref deadCalls));
+
+            var perChannel = notifier.ChannelStats;
+            Assert.Equal(3, perChannel.Single(c => c.Channel == "live").Dispatched);
+            Assert.Equal(0, perChannel.Single(c => c.Channel == "dead").Dispatched);
+            Assert.Equal(2, perChannel.Single(c => c.Channel == "dead").Queued);
+        }
+        finally
+        {
+            releaseDead.TrySetResult();
+            await notifier.DisposeAsync();
+        }
+    }
+
+    /// <summary>🔴 Task C-6 — a channel that SATURATES fills only its OWN queue. The dead channel's capacity
+    /// is exhausted and it starts evicting; the live channel, on the same notifier and the same edges, loses
+    /// nothing. Under C-1's shared queue an eviction was a loss for every channel at once, which is exactly
+    /// why <c>Dropped</c> had to be split per channel to stay a usable signal.</summary>
+    [Fact]
+    public async Task PerChannelQueues_SaturationIsChannelLocal_AndIsAttributedToTheChannelThatCausedIt()
+    {
+        const int Capacity = 4;
+        const int Edges = 12;
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var live = new ConcurrentQueue<NotificationJob>();
+        var warnings = new List<string>();
+
+        var notifier = new AlarmNotifier(
+            new[]
+            {
+                new AlarmNotificationChannel("wedged", async (_, _) =>
+                {
+                    entered.TrySetResult();
+                    await release.Task;
+                }),
+                new AlarmNotificationChannel("healthy", (job, _) => { live.Enqueue(job); return Task.CompletedTask; }),
+            },
+            logWarning: msg => { lock (warnings) warnings.Add(msg); },
+            capacity: Capacity);
+
+        try
+        {
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("prime")));
+
+            // Deterministic, not timing-based: `entered` proves the wedged channel's loop has already TAKEN
+            // the primed job out of its queue and is now blocked inside dispatch, so the arithmetic below
+            // ("Capacity retained, the rest evicted") is exact rather than probable.
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            for (var i = 0; i < Edges; i++)
+            {
+                notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm($"key-{i}")));
+
+                // 🔴 The healthy channel is drained BETWEEN edges on purpose. Both queues are the same
+                // (deliberately small) size, so a tight producer loop would overrun the healthy channel too
+                // — and this test would then be measuring the test's own producer rate rather than the
+                // property it exists to pin. Waiting here means the ONLY channel that can lose anything is
+                // the one whose consumer is genuinely wedged.
+                var perEdge = DateTimeOffset.UtcNow.AddSeconds(10);
+                while (live.Count < i + 2 && DateTimeOffset.UtcNow < perEdge) await Task.Delay(1);
+            }
+
+            // The healthy channel lost NOTHING, even though its neighbour was evicting throughout.
+            Assert.Equal(Edges + 1, live.Count);
+
+            var perChannel = notifier.ChannelStats;
+            var healthy = perChannel.Single(c => c.Channel == "healthy");
+            var wedged = perChannel.Single(c => c.Channel == "wedged");
+
+            Assert.Equal(0, healthy.Dropped);
+            Assert.Equal(Edges + 1, healthy.Enqueued);
+
+            // 🔴 And the aggregate does NOT restate the edge count as a per-channel one: two channels, one
+            // edge each, still exactly Edges + 1 EDGES. See AlarmNotifierStats.Enqueued.
+            Assert.Equal(Edges + 1, notifier.Stats.Enqueued);
+
+            // The primed job is already OUT of the wedged queue (it is what the dispatch is blocked on), so
+            // of the Edges written afterwards exactly Capacity survive and the rest are evicted.
+            Assert.Equal(Edges - Capacity, wedged.Dropped);
+            Assert.Equal(Capacity, wedged.Queued);
+            Assert.Equal(Edges + 1, wedged.Enqueued);             // every write was ACCEPTED
+
+            // And the operator is told WHICH channel, which the single-queue message structurally could not.
+            Assert.NotEmpty(warnings);
+            Assert.All(warnings, msg =>
+            {
+                Assert.Contains("saturated", msg, StringComparison.Ordinal);
+                Assert.Contains("'wedged'", msg, StringComparison.Ordinal);
+                Assert.DoesNotContain("'healthy'", msg, StringComparison.Ordinal);
+            });
+        }
+        finally
+        {
+            release.TrySetResult();
+            await notifier.DisposeAsync();
+        }
+    }
+
+    /// <summary>🔴 Task C-6 — per-key ordering survives the split. Each channel sees a key's
+    /// <see cref="AlarmEdgeKind.Raised"/> before its <see cref="AlarmEdgeKind.Cleared"/>, and every channel
+    /// sees the SAME sequence numbers for the same edges, which is what C-5's browser de-duplication and any
+    /// future cross-channel correlation rest on. Ordering BETWEEN channels is deliberately not asserted —
+    /// its absence is the whole benefit.</summary>
+    [Fact]
+    public async Task PerChannelQueues_EveryChannelSeesTheSameSequenceNumbers_InTheSamePerKeyOrder()
+    {
+        var a = new ConcurrentQueue<NotificationJob>();
+        var b = new ConcurrentQueue<NotificationJob>();
+        var notifier = new AlarmNotifier(new[]
+        {
+            new AlarmNotificationChannel("a", (job, _) => { a.Enqueue(job); return Task.CompletedTask; }),
+            new AlarmNotificationChannel("b", (job, _) => { b.Enqueue(job); return Task.CompletedTask; }),
+        });
+
+        for (var i = 0; i < 20; i++)
+        {
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm($"key-{i}")));
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Cleared, MakeAlarm($"key-{i}")));
+        }
+
+        await notifier.DisposeAsync();
+
+        var seqA = a.Select(j => (j.Sequence, j.Edge, j.Alarm.Key)).ToArray();
+        var seqB = b.Select(j => (j.Sequence, j.Edge, j.Alarm.Key)).ToArray();
+
+        Assert.Equal(40, seqA.Length);
+        Assert.Equal(seqA, seqB);
+        Assert.Equal(Enumerable.Range(1, 40).Select(i => (long)i).ToArray(), seqA.Select(e => e.Sequence).ToArray());
+        Assert.Equal(
+            Enumerable.Range(0, 20).SelectMany(i => new[] { AlarmEdgeKind.Raised, AlarmEdgeKind.Cleared }).ToArray(),
+            seqA.Select(e => e.Edge).ToArray());
+    }
+
+    /// <summary>🔴 Task C-6 — one channel's dispatch throwing is attributed to THAT channel and does not
+    /// touch its neighbour's counters, and the failure message names it. Under the shared-queue accounting
+    /// an operator could see <c>DispatchFailures = 40</c> and had no way to learn which channel produced
+    /// them.</summary>
+    [Fact]
+    public async Task PerChannelQueues_ADispatchFailureIsAttributedToItsOwnChannel()
+    {
+        var errors = new List<string>();
+        var good = new ConcurrentQueue<NotificationJob>();
+        var notifier = new AlarmNotifier(
+            new[]
+            {
+                new AlarmNotificationChannel("breaks", (_, _) => throw new InvalidOperationException("boom")),
+                new AlarmNotificationChannel("works", (job, _) => { good.Enqueue(job); return Task.CompletedTask; }),
+            },
+            logError: (_, msg) => { lock (errors) errors.Add(msg); });
+
+        for (var i = 0; i < 5; i++)
+        {
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm($"key-{i}")));
+        }
+
+        await notifier.DisposeAsync();
+
+        Assert.Equal(5, good.Count);
+
+        var perChannel = notifier.ChannelStats;
+        Assert.Equal(5, perChannel.Single(c => c.Channel == "breaks").DispatchFailures);
+        Assert.Equal(0, perChannel.Single(c => c.Channel == "breaks").Dispatched);
+        Assert.Equal(0, perChannel.Single(c => c.Channel == "works").DispatchFailures);
+        Assert.Equal(5, perChannel.Single(c => c.Channel == "works").Dispatched);
+
+        // The two aggregate DELIVERY counters are the SUM of the per-channel numbers, not a separate tally
+        // — while Enqueued stays on the EDGE, so adding a channel does not silently restate how many alarm
+        // edges this process produced. See AlarmNotifierStats.Enqueued.
+        var stats = notifier.Stats;
+        Assert.Equal(5, stats.DispatchFailures);
+        Assert.Equal(5, stats.Dispatched);
+        Assert.Equal(5, stats.Enqueued);
+
+        Assert.Equal(5, errors.Count);
+        Assert.All(errors, msg => Assert.Contains("'breaks'", msg, StringComparison.Ordinal));
+    }
+
+    /// <summary>🔴 Task C-6 — the empty channel list is C-1's <c>dispatch: null</c>, unchanged: one queue
+    /// whose loop drains and discards, so the seam is real, observable, and delivers to nobody. Pinned
+    /// because <c>Program.cs</c> reaches it on a host whose notification config store could not be
+    /// opened.</summary>
+    [Fact]
+    public async Task PerChannelQueues_NoChannelsAtAll_StillDrainsAndCounts_LikeC1sNullDispatch()
+    {
+        var notifier = new AlarmNotifier(Array.Empty<AlarmNotificationChannel>());
+
+        for (var i = 0; i < 7; i++)
+        {
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm($"key-{i}")));
+        }
+
+        await notifier.DisposeAsync();
+
+        var stats = notifier.Stats;
+        Assert.Equal(7, stats.Enqueued);
+        Assert.Equal(7, stats.Dispatched);
+        Assert.Equal(0, stats.Dropped);
+        Assert.Equal(AlarmNotifier.DefaultChannelName, Assert.Single(notifier.ChannelStats).Channel);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Test doubles
     // ─────────────────────────────────────────────────────────────────────
 
