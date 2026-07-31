@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { toast } from "sonner";
 import {
   AlertTriangle, Bell, Plus, Trash2, Edit, CheckCircle, XCircle,
@@ -72,7 +73,7 @@ export function MqttAlertRulesContent() {
       resetForm();
       refetchRules();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const updateMutation = trpc.mqttAlert.update.useMutation({
@@ -82,7 +83,7 @@ export function MqttAlertRulesContent() {
       resetForm();
       refetchRules();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteMutation = trpc.mqttAlert.delete.useMutation({
@@ -90,14 +91,14 @@ export function MqttAlertRulesContent() {
       toast.success(t('mqtt.alertRulesPage.ruleDeleted'));
       refetchRules();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const toggleMutation = trpc.mqttAlert.toggle.useMutation({
     onSuccess: () => {
       refetchRules();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const resolveMutation = trpc.mqttAlert.resolve.useMutation({
@@ -106,7 +107,7 @@ export function MqttAlertRulesContent() {
       refetchHistory();
       refetchUnresolved();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const resetForm = () => {

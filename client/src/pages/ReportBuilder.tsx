@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   LayoutTemplate, Plus, Save, Trash2, Copy, Eye, Edit,
   BarChart3, LineChart, PieChart, Table2, Type, Image,
@@ -104,7 +105,7 @@ export function ReportBuilderContent() {
       setEditingReport(null);
       setActiveTab("list");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateMutation = trpc.reportBuilder.update.useMutation({
@@ -114,7 +115,7 @@ export function ReportBuilderContent() {
       setEditingReport(null);
       setActiveTab("list");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.reportBuilder.delete.useMutation({
@@ -122,7 +123,7 @@ export function ReportBuilderContent() {
       toast.success(t('reports.reportDeleted'));
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const duplicateMutation = trpc.reportBuilder.duplicate.useMutation({
@@ -130,7 +131,7 @@ export function ReportBuilderContent() {
       toast.success(t('reports.reportDuplicated'));
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // ── On-demand production export (doc 32 R4 items 15/16) ─────────────────────
@@ -174,7 +175,7 @@ export function ReportBuilderContent() {
         window.open(res.downloadUrl, '_blank');
       }
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const handleExport = () =>

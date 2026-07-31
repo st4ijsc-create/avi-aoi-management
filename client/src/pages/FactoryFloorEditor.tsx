@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { statusColor } from "@/components/FactoryFloor3D";
 import { toast } from "sonner";
 import { Boxes, Info, Magnet, Save, Move, Upload, Ruler, Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Shapes, Trash2, Plus, Check, X } from "lucide-react";
@@ -107,15 +108,15 @@ export function FactoryFloorEditorContent() {
   // Mutations: nền + kích thước + zones
   const uploadFP = trpc.factory.uploadFloorPlan.useMutation({
     onSuccess: () => { toast.success(t("ffe.bgUploaded", "Đã tải ảnh nền")); void utils.factory.list.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const dimsM = trpc.factory.updateFloorDims.useMutation({
     onSuccess: () => { toast.success(t("ffe.dimsSaved", "Đã lưu kích thước sàn")); void utils.factory.list.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
-  const createZone = trpc.factoryZone.create.useMutation({ onSuccess: () => void zonesQ.refetch(), onError: (e) => toast.error(e.message) });
-  const updateZone = trpc.factoryZone.update.useMutation({ onSuccess: () => void zonesQ.refetch(), onError: (e) => toast.error(e.message) });
-  const deleteZone = trpc.factoryZone.delete.useMutation({ onSuccess: () => void zonesQ.refetch(), onError: (e) => toast.error(e.message) });
+  const createZone = trpc.factoryZone.create.useMutation({ onSuccess: () => void zonesQ.refetch(), onError: (e) => toastTrpcError(e) });
+  const updateZone = trpc.factoryZone.update.useMutation({ onSuccess: () => void zonesQ.refetch(), onError: (e) => toastTrpcError(e) });
+  const deleteZone = trpc.factoryZone.delete.useMutation({ onSuccess: () => void zonesQ.refetch(), onError: (e) => toastTrpcError(e) });
 
   // Kích thước mét — input cục bộ đồng bộ theo factory đang chọn
   const [dimW, setDimW] = useState("");

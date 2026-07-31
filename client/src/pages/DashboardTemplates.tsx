@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   templateToCustomDashboardWidgets,
   type TemplateLayoutItem,
@@ -161,7 +162,7 @@ export default function DashboardTemplates() {
       setApplyingId(null);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
       setApplyingId(null);
     },
   });
@@ -195,7 +196,7 @@ export default function DashboardTemplates() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -205,7 +206,7 @@ export default function DashboardTemplates() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -462,14 +463,14 @@ function RoleDefaultsSection() {
       utils.dashboardWidget.listRoleDefaults.invalidate();
       toast.success(t('dashboard.roleDefaultSaved', 'Đã lưu mặc định vai trò'));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const clearMutation = trpc.dashboardWidget.clearRoleDefault.useMutation({
     onSuccess: () => {
       utils.dashboardWidget.listRoleDefaults.invalidate();
       toast.success(t('dashboard.roleDefaultCleared', 'Đã xóa mặc định vai trò'));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const bindings = defaultsQuery.data || [];

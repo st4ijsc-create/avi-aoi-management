@@ -22,6 +22,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
@@ -143,19 +144,19 @@ export default function RoutingMaster() {
 
   const createM = trpc.routing.create.useMutation({
     onSuccess: () => { toast.success(t("routing.created", "Routing created")); setCreateOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const activateM = trpc.routing.activate.useMutation({
     onSuccess: () => { toast.success(t("routing.activated", "Routing activated")); setActivateTarget(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const archiveM = trpc.routing.archive.useMutation({
     onSuccess: () => { toast.success(t("routing.archived", "Routing archived")); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteM = trpc.routing.delete.useMutation({
     onSuccess: () => { toast.success(t("routing.deleted", "Routing deleted")); setConfirmDelete(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const rows = (listQ.data ?? []) as Routing[];
@@ -449,7 +450,7 @@ function StepsDialog({
       void utils.routing.getById.invalidate({ id: routing.id });
       onClose();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const save = () => {

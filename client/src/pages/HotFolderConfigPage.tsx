@@ -13,6 +13,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
@@ -138,16 +139,16 @@ export default function HotFolderConfigPage() {
 
   const createM = trpc.hotFolder.createConfig.useMutation({
     onSuccess: () => { toast.success(t("hotFolders.toastCreated", "Đã tạo cấu hình hot-folder")); setOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateM = trpc.hotFolder.updateConfig.useMutation({
     onSuccess: () => { toast.success(t("hotFolders.toastUpdated", "Đã cập nhật cấu hình")); setOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const deleteM = trpc.hotFolder.deleteConfig.useMutation({
     onSuccess: () => { toast.success(t("hotFolders.toastDeleted", "Đã xoá cấu hình")); setDeleteId(null); invalidate(); },
-    onError: (e) => { toast.error(e.message); setDeleteId(null); },
+    onError: (e) => { toastTrpcError(e); setDeleteId(null); },
   });
   const processM = trpc.hotFolder.processNow.useMutation({
     onSuccess: (r) => {
@@ -163,7 +164,7 @@ export default function HotFolderConfigPage() {
       );
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const submitForm = () => {
@@ -190,7 +191,7 @@ export default function HotFolderConfigPage() {
   const [dryFileName, setDryFileName] = useState("sample.csv");
   const [dryContent, setDryContent] = useState("");
   const [dryMachineCode, setDryMachineCode] = useState("");
-  const dryM = trpc.hotFolder.dryRun.useMutation({ onError: (e) => toast.error(e.message) });
+  const dryM = trpc.hotFolder.dryRun.useMutation({ onError: (e) => toastTrpcError(e) });
   const openDryRun = (r?: StatusRow) => {
     dryM.reset();
     if (r) {

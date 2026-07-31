@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Download, Monitor } from "lucide-react";
 import SessionManagement from "@/components/SessionManagement";
 import { useState, useEffect } from "react";
@@ -52,7 +53,7 @@ export default function Profile() {
       toast.success(t('profile.backupCodesGenerated'));
     },
     onError: (error: any) => {
-      toast.error(error.message || t('errors.generic'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -64,7 +65,7 @@ export default function Profile() {
       window.location.reload();
     },
     onError: (error: any) => {
-      toast.error(error.message || t('errors.generic'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -73,7 +74,7 @@ export default function Profile() {
       setSetupData(data);
     },
     onError: (error: any) => {
-      toast.error(error.message || t('auth.twoFASetupError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -86,7 +87,7 @@ export default function Profile() {
       refetch2FAStatus();
     },
     onError: (error: any) => {
-      toast.error(error.message || t('auth.invalidOTP'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -99,7 +100,7 @@ export default function Profile() {
       refetch2FAStatus();
     },
     onError: (error: any) => {
-      toast.error(error.message || t('errors.generic'));
+      toast.error(mapTrpcError(error));
     },
   });
 

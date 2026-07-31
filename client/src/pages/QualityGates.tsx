@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Shield,
   ShieldCheck,
@@ -169,7 +170,7 @@ export function QualityGatesContent() {
       resetForm();
       utils.qualityGate.list.invalidate();
     },
-    onError: (err) => toast.error(t('qualityGates.failedToCreate', { error: err.message })),
+    onError: (err) => toast.error(t('qualityGates.failedToCreate', { error: mapTrpcError(err) })),
   });
 
   const updateMutation = trpc.qualityGate.update.useMutation({
@@ -179,7 +180,7 @@ export function QualityGatesContent() {
       resetForm();
       utils.qualityGate.list.invalidate();
     },
-    onError: (err) => toast.error(t('qualityGates.failedToUpdate', { error: err.message })),
+    onError: (err) => toast.error(t('qualityGates.failedToUpdate', { error: mapTrpcError(err) })),
   });
 
   const deleteMutation = trpc.qualityGate.delete.useMutation({
@@ -188,7 +189,7 @@ export function QualityGatesContent() {
       setDeleteConfirmId(null);
       utils.qualityGate.list.invalidate();
     },
-    onError: (err) => toast.error(t('qualityGates.failedToDelete', { error: err.message })),
+    onError: (err) => toast.error(t('qualityGates.failedToDelete', { error: mapTrpcError(err) })),
   });
 
   const acknowledgeMutation = trpc.qualityGate.acknowledgeEvent.useMutation({
@@ -198,7 +199,7 @@ export function QualityGatesContent() {
       utils.qualityGate.events.invalidate();
       utils.qualityGate.activeEvents.invalidate();
     },
-    onError: (err) => toast.error(t('qualityGates.failedToAcknowledge', { error: err.message })),
+    onError: (err) => toast.error(t('qualityGates.failedToAcknowledge', { error: mapTrpcError(err) })),
   });
 
   const resolveMutation = trpc.qualityGate.resolveEvent.useMutation({
@@ -208,7 +209,7 @@ export function QualityGatesContent() {
       utils.qualityGate.events.invalidate();
       utils.qualityGate.activeEvents.invalidate();
     },
-    onError: (err) => toast.error(t('qualityGates.failedToResolve', { error: err.message })),
+    onError: (err) => toast.error(t('qualityGates.failedToResolve', { error: mapTrpcError(err) })),
   });
 
   // ── Helpers ──
