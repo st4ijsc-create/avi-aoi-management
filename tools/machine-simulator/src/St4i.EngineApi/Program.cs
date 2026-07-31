@@ -525,6 +525,33 @@ if (notificationConfigStore is not null)
     implementedNotificationChannels.Add(St4i.EngineApi.Alarms.NotificationChannel.Smtp);
 }
 
+// 🔴 Task C-5 (.superpowers/sdd/2026-07-30-dotC-alarm-notification-blueprint/task-5-brief.md) — the THIRD
+// channel, and the only one that still works when the network is gone: local annunciation to whoever has
+// this product's web UI open.
+//
+// The hub is registered UNCONDITIONALLY, unlike the channel below, and the two are not the same decision.
+// The hub is the in-process fan-out that GET /v1/alarms/annunciations reads from; that endpoint must be
+// mappable and must answer honestly ("nothing is configured") even on a host whose notification
+// configuration store could not be opened at all. The CHANNEL is what publishes into it, and it is
+// registered on exactly the same terms as the webhook and SMTP channels above — only when the store opened,
+// with the implementedNotificationChannels member added in the same `if`, so "this build can deliver
+// LocalAnnunciation" and "a local-annunciation channel exists to deliver it" cannot disagree.
+builder.Services.AddSingleton<St4i.EngineApi.Alarms.AlarmAnnunciationHub>();
+if (notificationConfigStore is not null)
+{
+    var storeForAnnunciation = notificationConfigStore;
+    builder.Services.AddSingleton(sp =>
+    {
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AlarmAnnunciation");
+        return new St4i.EngineApi.Alarms.LocalAnnunciationChannel(
+            storeForAnnunciation,
+            sp.GetRequiredService<St4i.EngineApi.Alarms.AlarmAnnunciationHub>(),
+            logError: (ex, msg) => logger.LogError(ex, "{AlarmAnnunciationMsg}", msg),
+            logWarning: msg => logger.LogWarning("{AlarmAnnunciationMsg}", msg));
+    });
+    implementedNotificationChannels.Add(St4i.EngineApi.Alarms.NotificationChannel.LocalAnnunciation);
+}
+
 // Registered ONLY here. The alarm engine runs only in this process — St4i.EdgeService and both WPF apps
 // never host IAlarmStore — so nothing about this reaches them.
 //
@@ -555,6 +582,15 @@ builder.Services.AddSingleton(sp =>
     if (sp.GetService<St4i.EngineApi.Alarms.SmtpNotificationChannel>() is { } email)
     {
         channels.Add(email.DispatchAsync);
+    }
+    // 🔴 Task C-5 — APPENDED, never inserted. AlarmNotifierWiringTests' concurrency test discriminates
+    // sequential from concurrent composition only while the FIRST-dispatched channel's budget exceeds that
+    // test's 5s deadline; the webhook's 10s budget is what provides that, so the webhook must stay at index
+    // 0. This channel has no budget at all (see LocalAnnunciationChannel) and would destroy the
+    // discriminator if it were dispatched first.
+    if (sp.GetService<St4i.EngineApi.Alarms.LocalAnnunciationChannel>() is { } annunciation)
+    {
+        channels.Add(annunciation.DispatchAsync);
     }
 
     // 🔴 Task C-4 — composed with Task.WhenAll, NEVER sequentially, which C-3's review made a hard
@@ -1354,6 +1390,11 @@ app.MapConnectorEndpoints();
 app.MapMachineWriteEndpoints();
 // GĐ3 sub-4 LC-1 — the alarm HTTP surface (GET /v1/alarms(+/history), POST /v1/alarms/{id}/ack).
 app.MapAlarmEndpoints();
+// 🔴 Task C-5 — GET /v1/alarms/annunciations: the SSE stream C-5's local-annunciation channel publishes
+// onto, and the only way an alarm reaches an open page in less time than the 4s alarm-table poll (and at
+// all, rather than a minute late, in a background tab a browser has throttled). Mapped unconditionally —
+// with nothing configured it opens, says so in its `ready` frame and stays quiet.
+app.MapAlarmAnnunciationStream();
 // GĐ3 sub-4 LC-3 — the LineController HTTP surface (GET /v1/line, POST /v1/line/{command}).
 app.MapLineEndpoints();
 // GĐ3 EC-3 — the Site-link status/config + device-identity HTTP surface over EC-2's SiteBridgeManager.

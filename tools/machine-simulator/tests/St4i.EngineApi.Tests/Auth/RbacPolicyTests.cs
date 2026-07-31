@@ -201,6 +201,11 @@ public sealed class RbacPolicyTests
         new("/v1/alarms", new[] { "GET" }, Policies.Operator),
         new("/v1/alarms/history", new[] { "GET" }, Policies.Operator),
         new("/v1/alarms/{id}/ack", new[] { "POST" }, Policies.Operator),
+        // 🔴 Task C-5 — the local-annunciation SSE stream. Operator, NOT Engineer like the inspector
+        // stream next door: it carries alarm content, and GET /v1/alarms — the same content in table form
+        // — is already Operator. A push channel that skipped the gate the pull channel enforces would be a
+        // way to read alarms without the session that reading them requires.
+        new("/v1/alarms/annunciations", new[] { "GET" }, Policies.Operator),
         new("/v1/line", new[] { "GET" }, Policies.Operator),
         new("/v1/line/{command}", new[] { "POST" }, Policies.Operator),
         // GP-5 (task-5-brief.md item 3) — configured-but-not-started connector visibility.

@@ -2133,6 +2133,38 @@ export const en: Dictionary = {
     },
   },
 
+  // Task C-5 — local annunciation, the one Đợt C channel that still works with no network. Every
+  // state below is stated SEPARATELY rather than collapsed into one green light: "stream down",
+  // "never configured", "switched off" and "this browser is muted" fail independently, and collapsing
+  // them is exactly how an annunciator ends up looking armed while annunciating nothing.
+  annunciator: {
+    regionLabel: "Local alarm annunciation",
+    dismissOne: (vars: Vars) => `Dismiss the local annunciation for ${vars.code}`,
+    dismissAll: (vars: Vars) => `Dismiss all (${vars.count})`,
+    edge: {
+      restored:
+        "This alarm was ALREADY standing before the engine restarted — it is not a new condition.",
+      escalated: (vars: Vars) => `Escalated from ${vars.from} to ${vars.to}.`,
+    },
+    sound: {
+      blocked:
+        "The browser is blocking audio until you interact with this page — this alarm made NO sound.",
+      blockedShort: "Sound blocked",
+      untested: "Sound not yet proven",
+      unsupported: "This browser has no audio support",
+      on: "Sound on",
+      enable: "Enable sound",
+    },
+    status: {
+      label: "Local annunciation",
+      disconnected: "Cannot reach the local annunciation stream",
+      notConfigured: "Not configured — nothing will annunciate at this machine",
+      disabled: "Configured but switched OFF",
+      armed: (vars: Vars) => `Armed — ${vars.priority} and above`,
+      reach: "Reaches whoever has this page open. There is no Windows desktop notification.",
+    },
+  },
+
   // GĐ3 sub-4 LC-4 (`routes/LineControl.tsx`) — the operator UI over LC-3's supervisory PackML state
   // machine: a live state badge (`GET /v1/line`, polled) + transition-gated command buttons
   // (`POST /v1/line/{command}`) mirroring `LineController.Execute`'s own transition table, so the UI

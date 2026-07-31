@@ -17,6 +17,7 @@ import {
   type AlarmSource,
 } from "@/lib/api"
 import { fadeSlideUp } from "@/theme/motion"
+import { AnnunciatorStatusStrip } from "@/components/AlarmAnnunciator"
 import { Sheet } from "@/components/industrial"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -451,6 +452,12 @@ function AlarmCenterScreen() {
         <p className="hmi-micro mt-1">{gloss("alarms.title")}</p>
         <p className="mt-1 max-w-3xl text-sm text-text-muted">{t("alarms.description")}</p>
       </div>
+
+      {/* Task C-5 — the ONE place in the product that says whether local annunciation is actually
+          armed. It is here rather than in the shell chrome because the honest answer has four
+          independent parts (stream up? channel configured? channel enabled? this browser audible?)
+          and none of them fits in a chrome indicator without being collapsed into a lie. */}
+      <AnnunciatorStatusStrip />
 
       <div
         role="radiogroup"

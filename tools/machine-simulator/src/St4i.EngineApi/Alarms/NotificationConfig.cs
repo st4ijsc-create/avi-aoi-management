@@ -20,9 +20,46 @@ public enum NotificationChannel
     /// operator may configure.</summary>
     Smtp,
 
-    /// <summary>C-5 — noise and light at the machine itself (web audio + a Windows toast across the
-    /// DesktopShell process boundary). Reaches only somebody already near the machine, and needs no
-    /// configuration beyond on/off and a threshold — C-5 owns everything else.</summary>
+    /// <summary>
+    /// C-5 — noise and light at the machine itself: an SSE stream (<c>GET /v1/alarms/annunciations</c>)
+    /// into every open page of this product's own web UI, which sounds and shows the alarm. The only
+    /// channel in this batch that still works with no network at all, which is what makes it the one that
+    /// honours Đợt A's standalone single-machine deployment. Reaches only somebody with the UI open, and
+    /// needs no configuration beyond on/off and a threshold. See
+    /// <see cref="LocalAnnunciationChannel"/>.
+    ///
+    /// <para>🔴 <b>There is NO Windows desktop toast, and this doc comment used to say there was.</b> C-2
+    /// wrote "web audio + a Windows toast across the DesktopShell process boundary" as a prediction about a
+    /// channel that did not exist; C-5 built the channel and established that the toast half is not
+    /// reachable under this batch's constraints. Three independent reasons, each sufficient on its own:
+    /// <list type="number">
+    /// <item><description><b>There is no IPC to carry it.</b> The alarm engine runs ONLY in this process.
+    /// <c>St4i.DesktopShell</c> does not reference this assembly at all — it spawns
+    /// <c>St4i.EngineApi.exe</c> as an opaque child and points a WebView2 at it — and its only two channels
+    /// to this process are anonymous HTTP probes of <c>/v1/health</c> and <c>/</c>, and the child's
+    /// stdout/stderr drained to a log file. <c>/v1/alarms*</c> is <c>Policies.Operator</c> and the shell
+    /// never logs in, so it would 401 on a real deployment while succeeding on a Demo one (where
+    /// <c>DemoAutoLoginMiddleware</c> signs every request in); and the stdout pipe does not exist at all
+    /// when the shell ATTACHES to an already-running engine instead of spawning it. Both routes therefore
+    /// work in one supported launch mode and are silently dark in the other.</description></item>
+    /// <item><description><b>The API is not on the shell's target framework.</b>
+    /// <c>Windows.UI.Notifications</c> does not resolve at <c>net10.0-windows</c> (measured: CS0103); it
+    /// needs <c>net10.0-windows10.0.19041.0</c>, which changes the shipped desktop package's build and its
+    /// minimum OS floor. <c>CommunityToolkit</c>/<c>Microsoft.Toolkit.Uwp.Notifications</c> is a new NuGet,
+    /// which this batch forbids.</description></item>
+    /// <item><description>🔴 <b>And the API cannot tell you whether it annunciated.</b> Measured on this
+    /// platform at the raised framework: an UNPACKAGED exe with an AppUserModelID registered nowhere (which
+    /// is what the desktop shell is — a single self-contained exe with no installer and no Start-Menu
+    /// shortcut) had <c>ToastNotifier.Show()</c> return normally and <c>NotificationSetting</c> report
+    /// <c>Enabled</c>, while Windows' own notification store held ZERO handler rows and ZERO notifications
+    /// for it. A channel built on that would report success while nothing annunciated, with no way from
+    /// inside the API to know — which is the one thing this task was told not to
+    /// ship.</description></item>
+    /// </list>
+    /// What this channel delivers instead reaches the desktop shell anyway whenever its window is up, since
+    /// the WebView2 IS the web UI and plays its sound; the honest gap is a shell that is minimised or behind
+    /// another window. Closing it needs an IPC seam this product does not have, and inventing one is not
+    /// C-5's to do.</para></summary>
     LocalAnnunciation,
 
     /// <summary>🔴 C-6 — energising a real annunciator/beacon through a declared writable point or
@@ -312,8 +349,19 @@ public sealed record SmtpChannelSummary(
     bool HasPassword);
 
 /// <summary>Task C-2 — local annunciation carries nothing beyond the two universal facts. C-5 owns
-/// everything else (which sound, how loud, how long, which browsers/toasts) and will add columns through
-/// the migration ladder if it needs them.</summary>
+/// everything else (which sound, how loud, how long) and would add columns through the migration ladder if
+/// it needed them.
+///
+/// <para>🔴 <b>Task C-5 added no column, and that is a decision rather than an omission.</b> Everything
+/// about HOW the annunciation presents — the tone, its length, whether the browser's autoplay policy is
+/// currently holding it muted, whether the operator has silenced it on this screen — is a property of the
+/// SCREEN, not of the engine: two browsers pointed at one engine can legitimately differ on all of it, and
+/// only the browser can observe the autoplay state at all. Storing it here would make one machine-wide
+/// setting out of something that is genuinely per-session, and the store would then hold values the channel
+/// provably could not honour — the exact fault C-2 refused an <c>ImplicitTls</c> member over. The channel
+/// therefore consumes exactly <see cref="Enabled"/> and <see cref="MinPriority"/>, and the schema stays at
+/// v2. (The stale "which browsers/toasts" in the original wording is also gone — see
+/// <see cref="NotificationChannel.LocalAnnunciation"/> for why there is no toast.)</para></summary>
 public sealed record LocalAnnunciationChannelConfig(
     bool Enabled,
     AlarmPriority MinPriority,

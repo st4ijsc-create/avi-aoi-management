@@ -2183,6 +2183,39 @@ export const vi = {
     },
   },
 
+  // Task C-5 (`components/AlarmAnnunciator.tsx`, `lib/annunciator.tsx`) — báo tại chỗ: kênh duy nhất
+  // trong Đợt C vẫn chạy khi mất mạng. Mọi trạng thái ở đây được nói RIÊNG chứ không gộp thành một
+  // đèn xanh: "luồng đứt", "chưa cấu hình", "đã tắt" và "trình duyệt đang tắt tiếng" hỏng độc lập với
+  // nhau, và gộp lại chính là cách một bộ báo động trông như đang bật trong khi không báo gì cả.
+  annunciator: {
+    regionLabel: "Cảnh báo tại chỗ",
+    dismissOne: (vars: Vars) => `Bỏ qua thông báo tại chỗ cho ${vars.code}`,
+    dismissAll: (vars: Vars) => `Bỏ qua tất cả (${vars.count})`,
+    edge: {
+      restored:
+        "Cảnh báo này ĐÃ tồn tại từ trước khi engine khởi động lại — không phải sự cố mới.",
+      escalated: (vars: Vars) => `Mức độ tăng từ ${vars.from} lên ${vars.to}.`,
+    },
+    sound: {
+      blocked:
+        "Trình duyệt đang chặn âm thanh cho tới khi bạn bấm vào trang — cảnh báo này KHÔNG phát ra tiếng.",
+      blockedShort: "Âm thanh bị chặn",
+      untested: "Âm thanh chưa được kiểm chứng",
+      unsupported: "Trình duyệt không hỗ trợ âm thanh",
+      on: "Âm thanh đang bật",
+      enable: "Bật âm thanh",
+    },
+    status: {
+      label: "Báo tại chỗ",
+      disconnected: "Không kết nối được luồng báo tại chỗ",
+      notConfigured: "Chưa cấu hình — sẽ không có cảnh báo nào phát tại máy này",
+      disabled: "Đã cấu hình nhưng đang TẮT",
+      armed: (vars: Vars) => `Đang bật — từ mức ${vars.priority} trở lên`,
+      reach:
+        "Chỉ tới người đang mở trang này. Không có thông báo desktop Windows.",
+    },
+  },
+
   // GĐ3 sub-4 LC-4 (`routes/LineControl.tsx`) — the operator UI over LC-3's supervisory PackML state
   // machine: a live state badge (`GET /v1/line`, polled) + transition-gated command buttons
   // (`POST /v1/line/{command}`) mirroring `LineController.Execute`'s own transition table, so the UI

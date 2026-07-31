@@ -25,6 +25,8 @@ import NotFound from "@/routes/NotFound"
 import { Sidebar } from "@/shell/Sidebar"
 import { TopBar } from "@/shell/TopBar"
 import { CommandPalette } from "@/shell/CommandPalette"
+import { AlarmAnnunciatorOverlay } from "@/components/AlarmAnnunciator"
+import { AnnunciatorProvider } from "@/lib/annunciator"
 
 export function Shell() {
   const [paletteOpen, setPaletteOpen] = React.useState(false)
@@ -40,9 +42,17 @@ export function Shell() {
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
 
+  // Task C-5 — the local-annunciation surface wraps the WHOLE shell, not just /alarms: an
+  // annunciator that only reaches somebody already looking at the Alarm Center annunciates nothing.
+  // One SSE connection for the session, opened here and shared by the overlay below and by
+  // /alarms' own status strip. It renders nothing at all until an alarm edge actually arrives, so a
+  // quiet engine costs one idle HTTP connection and no pixels. `/hmi/:code` and `/tokens` render
+  // OUTSIDE this tree (see App.tsx) and are therefore NOT annunciated — see the C-5 report.
   return (
+    <AnnunciatorProvider>
     <div className="flex h-svh overflow-hidden bg-surface-subtle text-text-body">
       <Sidebar />
+      <AlarmAnnunciatorOverlay />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar onOpenPalette={() => setPaletteOpen(true)} />
         <main className="flex flex-1 flex-col overflow-y-auto">
@@ -73,5 +83,6 @@ export function Shell() {
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
+    </AnnunciatorProvider>
   )
 }

@@ -315,6 +315,57 @@ public sealed class NotificationStartupNoticesTests
         Assert.Contains("2 alarm notification channel(s)", afterWarning.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 🔴 Task C-5 — the third arm, and the third proof that making this a SET rather than a bool was the
+    /// right change. One <c>HashSet</c> member in <c>Program.cs</c> is the entire difference between "an
+    /// operator enabled local annunciation and this build silently discards it" and "it delivers".
+    ///
+    /// <para>Asserted as a TRANSITION, for C-4's reason: the same configuration described once against the
+    /// set this build had before C-5 and once against the set it has now. Asserting only the post-C-5 state
+    /// would pass equally well for a build that had hard-coded the answer.</para>
+    ///
+    /// <para><see cref="NotificationChannel.Relay"/> is still enabled and still unimplemented in both, so
+    /// this also pins that the warning did not simply stop working — and that the ACTIVE line does not
+    /// start claiming C-6's channel.</para>
+    /// </summary>
+    [Fact]
+    public void AddingLocalAnnunciationToTheImplementedSet_IsTheWholeOfWhatStopsTheSilentChannelWarning()
+    {
+        var channels = new[]
+        {
+            Summary(NotificationChannel.Webhook, enabled: true),
+            Summary(NotificationChannel.Smtp, enabled: true),
+            Summary(NotificationChannel.LocalAnnunciation, enabled: true),
+            Summary(NotificationChannel.Relay, enabled: true),
+        };
+
+        // Before C-5: the webhook and SMTP deliver, local annunciation is named as silent.
+        var beforeC5 = NotificationStartupNotices.Describe(
+            channels, Implemented(NotificationChannel.Webhook, NotificationChannel.Smtp));
+        var beforeWarning = Assert.Single(
+            beforeC5, n => n.Message.Contains("no delivery implementation", StringComparison.Ordinal));
+        Assert.Contains("LocalAnnunciation", beforeWarning.Message, StringComparison.Ordinal);
+
+        // After C-5: the same configuration, one more set member.
+        var afterC5 = NotificationStartupNotices.Describe(
+            channels,
+            Implemented(NotificationChannel.Webhook, NotificationChannel.Smtp,
+                        NotificationChannel.LocalAnnunciation));
+
+        var active = Assert.Single(afterC5, n => n.Severity == NotificationNoticeSeverity.Information);
+        Assert.Contains("ACTIVE on 3 channel(s)", active.Message, StringComparison.Ordinal);
+        Assert.Contains("LocalAnnunciation", active.Message, StringComparison.Ordinal);
+        // 🔴 The ACTIVE line must still not claim the one channel this build genuinely cannot deliver.
+        Assert.DoesNotContain("Relay", active.Message, StringComparison.Ordinal);
+
+        var afterWarning = Assert.Single(
+            afterC5, n => n.Message.Contains("no delivery implementation", StringComparison.Ordinal));
+        // The transition: local annunciation has left the silent list, and nothing else has.
+        Assert.DoesNotContain("LocalAnnunciation", afterWarning.Message, StringComparison.Ordinal);
+        Assert.Contains("Relay", afterWarning.Message, StringComparison.Ordinal);
+        Assert.Contains("1 alarm notification channel(s)", afterWarning.Message, StringComparison.Ordinal);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // The credential-handling warnings.
     // ─────────────────────────────────────────────────────────────────────

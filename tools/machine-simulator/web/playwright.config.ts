@@ -176,6 +176,13 @@ export default defineConfig({
         ST4I_SECURITY_DIR: join(e2eDataDir, "security"),
         ST4I_ASSETS_DIR: join(e2eDataDir, "assets"),
         ST4I_ALARMS_DIR: join(e2eDataDir, "alarms"),
+        // Task C-5 — the 13th store, and the one SM-6's audit could not have caught: C-2 added
+        // `notifications` (`NotificationConfigStore`, SQLite + DPAPI-sealed secrets) AFTER that audit ran,
+        // so every `npm run test:e2e`/`npm run dev` since has been reading and writing a REAL install's
+        // `%ProgramData%\ST4I\sim\notifications`. That store holds webhook URLs and SMTP passwords, which
+        // makes it the one store in the list where the un-isolated case is a credential concern rather than
+        // only a tidiness one. Isolated here on exactly the same terms as its twelve neighbours.
+        ST4I_NOTIFICATIONS_DIR: join(e2eDataDir, "notifications"),
         ST4I_CONNECTOR_CONFIG_DIR: join(e2eDataDir, "connector-config"),
         ST4I_SETTINGS_DIR: join(e2eDataDir, "settings"),
         ST4I_IDENTITY_DIR: join(e2eDataDir, "identity"),

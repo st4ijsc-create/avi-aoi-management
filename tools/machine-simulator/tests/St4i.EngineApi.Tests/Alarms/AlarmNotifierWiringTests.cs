@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using St4i.EngineApi.Alarms;
 using St4i.EngineApi.Tests.Auth;
 using Xunit;
@@ -43,9 +45,15 @@ public sealed class AlarmNotifierWiringTests
     /// prove it is inert.</param>
     /// <param name="configure">Task C-3 — extra configuration to persist before the host boots, so a test
     /// can point a real webhook channel at a real receiver.</param>
+    /// <param name="configureHost">🔴 Task C-5 — applied INSIDE the env-var window, deliberately.
+    /// <c>WithWebHostBuilder</c> builds a second host, and calling it after this method returned would build
+    /// that host with the real <c>%ProgramData%</c> directories restored. Its one use today is capturing the
+    /// startup notices <c>Program.cs</c> logs; see
+    /// <see cref="TheHostsOwnStartupNotice_NamesEveryChannelItCanActuallyDeliver_AndNoOther"/>.</param>
     private static async Task<WebApplicationFactory<Program>> CreateFactoryAsync(
         bool configureAChannel, string alarmsDir, string? legacyEnvGate = null,
-        Func<NotificationConfigStore, Task>? configure = null)
+        Func<NotificationConfigStore, Task>? configure = null,
+        Action<IWebHostBuilder>? configureHost = null)
     {
         var notificationsDir = Directory.CreateTempSubdirectory("st4i-notifywire-notifications-").FullName;
         if (configure is not null)
@@ -106,8 +114,9 @@ public sealed class AlarmNotifierWiringTests
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
 
             var factory = new WebApplicationFactory<Program>();
-            _ = factory.Server; // build AND start the host now, while the env vars above are still set.
-            return factory;
+            var configured = configureHost is null ? factory : factory.WithWebHostBuilder(configureHost);
+            _ = configured.Server; // build AND start the host now, while the env vars above are still set.
+            return configured;
         }
         finally
         {
@@ -372,6 +381,175 @@ public sealed class AlarmNotifierWiringTests
         {
             factory.Dispose();
             try { Directory.Delete(alarmsDir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
+    /// 🔴 Task C-5 — the THIRD channel through the real host, and the proof that C-5 APPENDED to the
+    /// dispatch composition rather than replacing anything.
+    ///
+    /// <para>All three channels are configured and one alarm is raised. The webhook and the relay both
+    /// receive it AND the local-annunciation channel counts an <c>Announced</c> — so a C-5 wiring that had
+    /// overwritten <c>Program.cs</c>'s <c>dispatch</c> instead of adding to its channel list, or that had
+    /// been registered but never added to the list at all, fails here. That is the wiring failure a unit
+    /// test structurally cannot see, and it is the one that would reach a customer.</para>
+    ///
+    /// <para>The <see cref="AlarmAnnunciationHub"/> listener is subscribed directly rather than over HTTP:
+    /// the SSE transport has its own end-to-end test
+    /// (<c>AlarmAnnunciationStreamTests.AnAlarmRaisedThroughTheRealHost_ArrivesOnAnOpenStream_…</c>), and
+    /// what THIS test is about is the composition, so it holds the transport constant.</para>
+    /// </summary>
+    [Fact]
+    public async Task AConfiguredLocalAnnunciation_ReallyAnnunciates_AlongsideTheWebhookAndTheEmail()
+    {
+        await using var webhookReceiver = WebhookLoopbackServer.Start(new ScriptedResponse(200, "OK"));
+        await using var relay = SmtpLoopbackServer.Start();
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-notifywire-alarms-").FullName;
+
+        var factory = await CreateFactoryAsync(
+            configureAChannel: false, alarmsDir,
+            configure: async store =>
+            {
+                Assert.True(await store.SaveWebhookAsync(
+                    enabled: true, AlarmPriority.High, webhookReceiver.Url("/hooks/three")));
+                Assert.True(await store.SaveSmtpAsync(
+                    enabled: true, AlarmPriority.High, SmtpLoopbackServer.Host, relay.Port,
+                    SmtpTlsMode.None, "alarms@plant.local", new[] { "ops@plant.local" }, username: null));
+                Assert.True(await store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High));
+            });
+
+        try
+        {
+            var channel = factory.Services.GetService<LocalAnnunciationChannel>();
+            Assert.NotNull(channel);
+
+            var hub = factory.Services.GetRequiredService<AlarmAnnunciationHub>();
+            using var listener = hub.Subscribe();
+
+            var store = factory.Services.GetRequiredService<IAlarmStore>();
+            await store.RaiseAsync(new AlarmRaise(
+                AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "wiring", TargetId: "slot-4"));
+
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+            while ((relay.Messages.Count == 0 || webhookReceiver.Requests.Count == 0 ||
+                    channel!.Stats.Announced == 0) && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(25);
+            }
+
+            // 🔴 All THREE fired for the one alarm.
+            Assert.Single(webhookReceiver.Requests);
+            Assert.Single(relay.Messages);
+            Assert.Equal(1, channel!.Stats.Announced);
+            Assert.Equal(0, channel.Stats.Unheard);
+
+            Assert.True(listener.Reader.TryRead(out var annunciation));
+            Assert.Equal(AlarmEdgeKind.Raised, annunciation!.Edge);
+            Assert.Equal("slot-4", annunciation.TargetId);
+            Assert.Equal(AlarmPriority.Critical, annunciation.Priority);
+        }
+        finally
+        {
+            factory.Dispose();
+            try { Directory.Delete(alarmsDir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
+    /// 🔴 <b>Task C-5 — the hole every earlier task's version of this test left open, found by mutation.</b>
+    ///
+    /// <para><c>NotificationStartupNoticesTests</c> exercises <c>Describe</c> as a PURE FUNCTION, against a
+    /// hand-built set. It therefore cannot see whether <c>Program.cs</c> actually PUTS a channel in that
+    /// set — and it does not: deleting
+    /// <c>implementedNotificationChannels.Add(NotificationChannel.LocalAnnunciation)</c> from
+    /// <c>Program.cs</c> left all 297 alarm tests green. The build would then have gone on delivering local
+    /// annunciations perfectly while telling the operator, at every boot, that this build "has no delivery
+    /// implementation for them — alarm edges are detected and then DISCARDED". That is C-3's §9 regression
+    /// wearing its coat inside out: the same one line, disagreeing with reality in the other direction, and
+    /// the same class of defect the set was introduced to make impossible. The identical hole exists for
+    /// the Webhook and SMTP members, which is why this test asserts all three rather than only C-5's.</para>
+    ///
+    /// <para>Asserted against what the host ACTUALLY SAYS — the notices it logs at startup — because that is
+    /// the artefact an operator reads and the only thing that can disagree with the delivery the other
+    /// wiring tests prove.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheHostsOwnStartupNotice_NamesEveryChannelItCanActuallyDeliver_AndNoOther()
+    {
+        await using var webhookReceiver = WebhookLoopbackServer.Start(new ScriptedResponse(200, "OK"));
+        await using var relay = SmtpLoopbackServer.Start();
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-notifywire-alarms-").FullName;
+        var notices = new CapturingLoggerProvider();
+
+        var factory = await CreateFactoryAsync(
+            configureAChannel: false, alarmsDir,
+            configure: async store =>
+            {
+                Assert.True(await store.SaveWebhookAsync(
+                    enabled: true, AlarmPriority.High, webhookReceiver.Url("/hooks/notice")));
+                Assert.True(await store.SaveSmtpAsync(
+                    enabled: true, AlarmPriority.High, SmtpLoopbackServer.Host, relay.Port,
+                    SmtpTlsMode.None, "alarms@plant.local", new[] { "ops@plant.local" }, username: null));
+                Assert.True(await store.SaveLocalAnnunciationAsync(enabled: true, AlarmPriority.High));
+                // C-6's channel, enabled and genuinely unimplemented — the control that proves this test
+                // can still SEE an undeliverable channel rather than having stopped looking.
+                Assert.True(await store.SaveRelayAsync(
+                    enabled: true, AlarmPriority.High, "MODBUS-01", RelayTargetKind.Command, "beacon"));
+            },
+            configureHost: builder => builder.ConfigureLogging(logging => logging.AddProvider(notices)));
+
+        try
+        {
+            var active = Assert.Single(notices.Messages, m => m.Contains("ACTIVE on", StringComparison.Ordinal));
+            Assert.Contains("ACTIVE on 3 channel(s)", active, StringComparison.Ordinal);
+            Assert.Contains("Webhook", active, StringComparison.Ordinal);
+            Assert.Contains("Smtp", active, StringComparison.Ordinal);
+            Assert.Contains("LocalAnnunciation", active, StringComparison.Ordinal);
+            Assert.DoesNotContain("Relay", active, StringComparison.Ordinal);
+
+            var silent = Assert.Single(
+                notices.Messages, m => m.Contains("no delivery implementation", StringComparison.Ordinal));
+            Assert.Contains("Relay", silent, StringComparison.Ordinal);
+            Assert.DoesNotContain("LocalAnnunciation", silent, StringComparison.Ordinal);
+            Assert.DoesNotContain("Webhook", silent, StringComparison.Ordinal);
+            Assert.DoesNotContain("Smtp", silent, StringComparison.Ordinal);
+        }
+        finally
+        {
+            factory.Dispose();
+            try { Directory.Delete(alarmsDir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>Collects what the host logs during startup, so a test can assert on the notices
+    /// <c>Program.cs</c> emits before <c>app.Run()</c> — the only place the implemented-channel set is
+    /// observable from outside.</summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly List<string> _messages = new();
+
+        public IReadOnlyList<string> Messages
+        {
+            get { lock (_messages) return _messages.ToList(); }
+        }
+
+        public ILogger CreateLogger(string categoryName) => new Collector(this);
+
+        public void Dispose() { }
+
+        private sealed class Collector(CapturingLoggerProvider owner) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                var message = formatter(state, exception);
+                lock (owner._messages) owner._messages.Add(message);
+            }
         }
     }
 

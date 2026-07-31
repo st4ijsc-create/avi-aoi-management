@@ -22,7 +22,7 @@ README §20.5 dòng 3654 tự khai:
 |---|---|---|
 | Webhook POST | ⚠️ LAN | Đòn bẩy lớn nhất — Slack/Teams/MES/Zabbix đều nuốt được |
 | SMTP | ⚠️ LAN/Internet | `System.Net.Mail` trong BCL, không thêm NuGet |
-| Chuông + toast tại chỗ | ✅ | Chỉ tới người đã ở gần máy |
+| Báo tại chỗ (chuông + banner trong trang) | ✅ | Chỉ tới người đang mở UI. **Không có toast Windows** — C-5 chứng minh không khả thi, xem §5.1 |
 | Relay còi/đèn | ✅ | **Rủi ro cao nhất đợt này** — xem §4 |
 
 ## 3. Ràng buộc kế thừa, không thương lượng
@@ -73,11 +73,21 @@ AlarmStore.RaiseAsync/ClearAsync/AckAsync   (4 điểm chuyển trạng thái, �
    vòng drain nền  ──► rate limiter  ──► fan-out kênh
                                             ├─ Webhook   (HttpClient trần, backoff)
                                             ├─ SMTP      (System.Net.Mail)
-                                            ├─ Tại chỗ   (SSE/poll → web + toast WPF)
+                                            ├─ Tại chỗ   (SSE → web; KHÔNG có toast WPF — §5.1)
                                             └─ Relay     (⟶ B-2 resolution ⟶ EstopGuardRule ⟶ ghi)
 ```
 
 **Chỉ chạy trong tiến trình `St4i.EngineApi`.** `EdgeService` và cả hai app WPF không host alarm engine (đã xác minh: mọi tham chiếu `IAlarmStore` đều nằm trong EngineApi). `DesktopShell` spawn EngineApi làm tiến trình con và trỏ WebView2 vào đó — nên toast Windows phải đi qua ranh giới tiến trình.
+
+### 5.1 🔴 Đính chính của C-5 — KHÔNG có toast Windows (2026-07-31)
+
+Bản kế hoạch này được viết trước khi kênh tồn tại và giả định toast Windows là làm được. **C-5 đã điều tra và kết luận là không**, với ba lý do độc lập, mỗi lý do tự nó đã đủ:
+
+1. **Không có IPC nào để mang nó.** `DesktopShell` không tham chiếu `St4i.EngineApi` như một thư viện; hai kênh duy nhất nó có tới tiến trình engine là probe HTTP ẩn danh (`/v1/health`, `/`) và stdout/stderr của tiến trình con đổ ra file log. `/v1/alarms*` yêu cầu `Policies.Operator` còn shell không bao giờ đăng nhập — nên nó 401 ở bản triển khai thật nhưng lại chạy được ở bản Demo (`DemoAutoLoginMiddleware`); và đường stdout **không tồn tại** khi shell *attach* vào engine đang chạy sẵn thay vì tự spawn. Cả hai đường đều chạy ở một chế độ khởi động được hỗ trợ và im lặng ở chế độ kia.
+2. **API không có ở TFM của shell.** `Windows.UI.Notifications` không phân giải được ở `net10.0-windows` (đo được: CS0103); phải nâng lên `net10.0-windows10.0.19041.0`, tức đổi build và sàn OS tối thiểu của gói desktop đang phát hành. `CommunityToolkit`/`Microsoft.Toolkit.Uwp.Notifications` là NuGet mới — đợt này cấm.
+3. **Và API đó không cho biết nó có báo được hay không.** Đo trên chính máy này ở TFM đã nâng: một exe **unpackaged** với AppUserModelID không đăng ký ở đâu (đúng hình dạng của DesktopShell — một exe self-contained, không installer, không shortcut Start Menu) — `ToastNotifier.Show()` trả về bình thường và `NotificationSetting` báo `Enabled`, trong khi kho thông báo của chính Windows giữ **0** handler và **0** notification cho AUMID đó. Một kênh dựng trên đó sẽ **báo thành công trong khi không có gì phát ra**, và không có cách nào từ bên trong API để biết.
+
+Cái C-5 giao thay vào đó **vẫn tới được desktop shell** bất cứ khi nào cửa sổ shell đang mở, vì WebView2 chính là web UI và nó phát âm thanh. Khoảng trống thật — nói thẳng thay vì giấu — là khi shell bị thu nhỏ hoặc bị cửa sổ khác che. Lấp nó cần một seam IPC mà sản phẩm này chưa có, và dựng seam đó không thuộc phạm vi C-5.
 
 ## 7. Phân rã công việc
 
@@ -87,7 +97,7 @@ AlarmStore.RaiseAsync/ClearAsync/AckAsync   (4 điểm chuyển trạng thái, �
 | **C-2** | `NotificationConfigStore` (SQLite + user_version) + kho bí mật DPAPI+ACL + kỷ luật projection | 🔴 Bí mật |
 | **C-3** | Kênh webhook — timeout có biên, backoff, ký HMAC, never-throws | |
 | **C-4** | Kênh SMTP — BCL, TLS, credential từ C-2 | |
-| **C-5** | Báo tại chỗ — âm thanh web + toast Windows qua ranh giới tiến trình | |
+| **C-5** | Báo tại chỗ — âm thanh web + banner trong trang qua SSE. **Toast Windows: không khả thi — §5.1** | |
 | **C-6** | 🔴 **Relay báo động** — qua trọn cổng Đợt B, mặc định tắt, theo cạnh, rate-limited | 🔴🔴 Cao nhất đợt |
 | **C-7** | Endpoint + RBAC + audit + "gửi thử" + **rate limiting** (trả nợ số 1 của Đợt B) | |
 | **C-8** | Web UI + census tài liệu (README:3654 và bản VI) | |
