@@ -2142,8 +2142,11 @@ export const en: Dictionary = {
     dismissOne: (vars: Vars) => `Dismiss the local annunciation for ${vars.code}`,
     dismissAll: (vars: Vars) => `Dismiss all (${vars.count})`,
     edge: {
+      // Review round 2 (M-8) — no longer says "restarted". Since the connect-time replay landed this label
+      // also renders on an ordinary page reload or stream reconnect, where nothing restarted at all. What
+      // is true in every case is that the alarm was already on before THIS PAGE connected.
       restored:
-        "This alarm was ALREADY standing before the engine restarted — it is not a new condition.",
+        "This alarm was ALREADY standing before this page connected — it is not a new condition.",
       escalated: (vars: Vars) => `Escalated from ${vars.from} to ${vars.to}.`,
     },
     sound: {

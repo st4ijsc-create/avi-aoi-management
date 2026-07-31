@@ -821,6 +821,47 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
         Assert.Equal(239, notifier.Stats.Suppressed);
     }
 
+    /// <summary>
+    /// 🔴 Review round 2 (M-7) — the connect-time replay token is <c>-FirstRaisedUtc.UtcTicks</c>, and two
+    /// alarms sharing a tick would share a token. The client returns early on an already-seen sequence
+    /// BEFORE its key-based merge, so a collision would drop the second alarm from the banner <b>entirely</b>
+    /// — not merely leave it silent.
+    ///
+    /// <para><b>What makes that unreachable is a property of <see cref="AlarmStore"/>, not of the clock</b>,
+    /// and that distinction is the whole reason this test exists. The system clock does NOT tick at 100 ns:
+    /// bare back-to-back <see cref="DateTimeOffset.UtcNow"/> reads collide freely. What separates two raises
+    /// is that each stamps its timestamp inside the store's write gate immediately before a SQLite upsert,
+    /// and the upsert always crosses a tick boundary.</para>
+    ///
+    /// <para>So the guarantee lives in a file this one does not own, and <b>would evaporate silently if a
+    /// bulk or batched raise path ever stamped one timestamp across several rows.</b> Pinned here in both
+    /// orderings — sequential and concurrent — so that change goes red instead of quiet.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EveryRaiseThroughTheRealStore_GetsADistinctReplayToken(bool concurrent)
+    {
+        const int Raises = 60;
+        var alarms = new AlarmStore(NewTempDir());
+        var raises = Enumerable.Range(0, Raises).Select(i => new AlarmRaise(
+            AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "down", TargetId: $"slot-{i}"));
+
+        if (concurrent) await Task.WhenAll(raises.Select(r => alarms.RaiseAsync(r)));
+        else foreach (var raise in raises) await alarms.RaiseAsync(raise);
+
+        var active = await alarms.ListActiveAsync();
+        Assert.Equal(Raises, active.Count);
+
+        var tokens = active
+            .Select(alarm => AlarmAnnunciation.FromStanding(alarm, "default", FixedNow).Sequence)
+            .ToList();
+
+        Assert.Equal(Raises, tokens.Distinct().Count());
+        // Every token is negative, so none can collide with AlarmNotifier's per-process ordinals either.
+        Assert.All(tokens, token => Assert.True(token < 0));
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // The hub, on its own.
     // ─────────────────────────────────────────────────────────────────────

@@ -35,13 +35,25 @@ namespace St4i.EngineApi.Alarms;
 /// be holding the sound muted until somebody clicks. The browser surface makes that muted state visible at
 /// the screen; this counter deliberately does not pretend to know about it.</para></param>
 /// <param name="Unheard">
-/// 🔴 (notification, instance) pairs that annunciated NOWHERE — nobody had the UI open, or every attached
-/// session was too far behind to accept it (see <see cref="AlarmAnnunciationHub.Overflowed"/>, which
-/// separates those two). This is this channel's honest loss, and it is expected to be large on a machine
-/// nobody is watching, which is exactly the reason the batch also has three channels that do not need a
-/// screen. The alarm itself is unaffected — it is still recorded and still visible at <c>/alarms</c> — but
-/// nobody was told about it as it happened, and there is no queue behind this channel that will tell them
-/// later.</param>
+/// 🔴 (notification, instance) pairs that annunciated NOWHERE AT THE INSTANT OF THE EDGE — nobody had the UI
+/// open, or every attached session was too far behind to accept it (see
+/// <see cref="AlarmAnnunciationHub.Overflowed"/>, which separates those two). Expected to be large on a
+/// machine nobody is watching, which is exactly why the batch also has three channels that do not need a
+/// screen. The alarm itself is unaffected: still recorded, still visible at <c>/alarms</c>.
+///
+/// <para>🔴 <b>Review round 2 (M-9) — this counter's meaning NARROWED when the connect-time replay landed,
+/// and its old wording is now false.</b> It used to end "…and there is no queue behind this channel that
+/// will tell them later". There now is something that tells them later, for any alarm that is still
+/// standing: <see cref="St4i.EngineApi.Hubs.AlarmAnnunciationStreamEndpoint"/> serves the active set to
+/// every client as it attaches. So <c>Unheard</c> means <b>"no listener was attached when this edge
+/// happened"</b> — NOT "nobody was ever told".</para>
+///
+/// <para>The two genuinely differ, and the difference is the normal case rather than a corner: every
+/// <see cref="AlarmEdgeKind.Restored"/> emitted at host start is counted here (nothing can be attached that
+/// early), and every one of those alarms IS then annunciated to the next page that connects. What remains
+/// permanently untold is only an edge whose alarm had already cleared before anyone connected — a
+/// transient nobody saw. <b>C-7 must therefore not render this counter as "alarms nobody was told
+/// about".</b></para></param>
 /// <param name="Lost">
 /// (notification, instance) pairs the channel FAILED to annunciate through an internal fault. Distinct from
 /// <paramref name="Unheard"/> on purpose — <c>Unheard</c> means this channel worked and nobody was there,

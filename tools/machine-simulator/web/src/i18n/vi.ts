@@ -2192,8 +2192,11 @@ export const vi = {
     dismissOne: (vars: Vars) => `Bỏ qua thông báo tại chỗ cho ${vars.code}`,
     dismissAll: (vars: Vars) => `Bỏ qua tất cả (${vars.count})`,
     edge: {
+      // Review round 2 (M-8) — không nói "khởi động lại" nữa. Từ khi có phần phát lại lúc kết nối, nhãn
+      // này còn hiện khi chỉ tải lại trang hoặc nối lại luồng, lúc đó chẳng có gì khởi động lại cả. Điều
+      // luôn đúng là: cảnh báo đã tồn tại từ TRƯỚC khi trang này kết nối.
       restored:
-        "Cảnh báo này ĐÃ tồn tại từ trước khi engine khởi động lại — không phải sự cố mới.",
+        "Cảnh báo này ĐÃ tồn tại từ trước khi trang này kết nối — không phải sự cố mới.",
       escalated: (vars: Vars) => `Mức độ tăng từ ${vars.from} lên ${vars.to}.`,
     },
     sound: {

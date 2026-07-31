@@ -97,12 +97,32 @@ public sealed record AlarmAnnunciation(
     /// <see cref="Alarm.LastRaisedUtc"/> unusable here.</description></item>
     /// <item><description><b>Free of stored state</b>, so the engine keeps no per-key table that has to be
     /// grown, bounded and expired.</description></item>
-    /// </list>
-    /// The one imperfection, stated rather than waved at: two alarms first raised within the SAME 100 ns
-    /// tick would share a token, so the second contributes no additional tone. It still appears — the
-    /// client's standing set is keyed by <see cref="Key"/>, not by sequence — and the client's 1.5 s sound
-    /// gate would have coalesced two simultaneous alarms into one tone anyway, so there is no observable
-    /// difference at all.</para>
+    /// </list></para>
+    ///
+    /// <para>🔴 <b>Two alarms sharing a <see cref="Alarm.FirstRaisedUtc"/> tick would share a token — and
+    /// review round 2 (M-7) corrected both halves of what this comment used to say about that.</b></para>
+    ///
+    /// <para><b>What actually prevents it is NOT clock resolution.</b> The first version of this paragraph
+    /// said "two alarms first raised within the same 100 ns tick", which implies the system clock ticks that
+    /// finely. It does not: 200 back-to-back reads of <see cref="DateTimeOffset.UtcNow"/> produced only
+    /// <b>57 distinct values</b> on this platform, so bare consecutive reads collide freely. The real
+    /// protection comes from <see cref="AlarmStore.RaiseAsync"/>: every raise stamps its timestamp INSIDE
+    /// <c>_writeGate</c>, immediately before a SQLite upsert, and that upsert always crosses a tick
+    /// boundary. Measured through the real store, <b>60 sequential raises produced 60 distinct tokens, and
+    /// 60 CONCURRENT raises also produced 60 distinct tokens</b> — a stronger guarantee than the one first
+    /// claimed, but one that belongs to the store's write path rather than to this method.</para>
+    ///
+    /// <para>🔴 <b>Which means it would evaporate silently if a bulk or batched raise path ever stamped one
+    /// timestamp across several rows.</b> That is exactly the kind of dependency this batch has learned not
+    /// to leave as folklore, so it is pinned:
+    /// <c>LocalAnnunciationChannelTests.EveryRaiseThroughTheRealStore_GetsADistinctReplayToken</c> asserts it
+    /// for both orderings, and goes red in the same commit as any such change.</para>
+    ///
+    /// <para><b>And a collision would be worse than first claimed, not merely quiet.</b> The old wording
+    /// said "it still appears — the client's standing set is keyed by <see cref="Key"/>, not by sequence".
+    /// That is false for this client: <c>web/src/lib/annunciator.tsx</c> returns early on an
+    /// already-seen sequence BEFORE its key-based merge, so a colliding alarm would be dropped from the
+    /// banner <b>entirely</b> rather than shown silently. Hence the pinning test rather than a shrug.</para>
     ///
     /// <para><see cref="Alarm.Id"/> is still absent, for the reason on this record: SQLite reuses deleted
     /// rowids, so it is not an identity. It is also why the rowid is NOT used as the replay token.</para>
