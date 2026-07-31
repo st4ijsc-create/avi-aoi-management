@@ -1199,8 +1199,9 @@ pass) removes only what the MSI itself installed — everything under `%ProgramF
 Simulator\`, the Start Menu/Startup shortcuts, and — if `ServiceFeature` was enabled — stops and
 deletes the `St4iEngineApi` service.
 
-**Customer data under `%ProgramData%\ST4I\sim\{historian,wal,security,creds,notifications}\` is kept by
-default** —
+**Customer data under `%ProgramData%\ST4I\sim\` is kept by default** — the engine creates **thirteen**
+directories there (`historian`, `wal`, `security`, `creds`, `notifications`, `identity`,
+`connector-config`, `opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) and
 the MSI has no `<Component>` referencing anything there (it's all runtime-created by the engine, not
 installed), so Windows Installer's uninstall/remove sequence never touches it. This is deliberate: an
 uninstall or upgrade must never silently destroy production history, the audit trail, or a machine's
@@ -1214,26 +1215,41 @@ destructive script — **never** invoked by the MSI itself:
 .\packaging\remove-data.ps1           # interactive — prompts before each stop/delete
 .\packaging\remove-data.ps1 -Force    # non-interactive, for scripted wipes
 
-# Relocated a data dir via ST4I_HISTORIAN_DIR/ST4I_WAL_DIR/ST4I_SECURITY_DIR/ST4I_NOTIFICATIONS_DIR (§15.2)? Say so explicitly:
-.\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -WalDir D:\St4iData\wal -SecurityDir D:\St4iData\security -NotificationsDir D:\St4iData\notifications
+# Relocated a data dir via any ST4I_*_DIR (§15.2)? Say so explicitly — one -XxxDir per directory:
+.\packaging\remove-data.ps1 -HistorianDir D:\St4iData\historian -SecurityDir D:\St4iData\security -IdentityDir D:\St4iData\identity
 ```
 
-It stops+deletes the `St4iEngineApi` service if present, then deletes the
-historian/wal/security/creds/**notifications** data directories — printing an explicit "this destroys
-the audit chain + historian + credentials" warning up front, gated through PowerShell's
+It stops+deletes the `St4iEngineApi` service if present, then deletes **all thirteen** data directories
+— printing an explicit "this destroys the audit chain + historian + credentials" warning up front, and a
+per-directory line naming exactly what each one loses, gated through PowerShell's
 `ShouldProcess`/`-WhatIf`/`-Confirm`.
 
-🔴 **`notifications` was added to that list by Đợt C (C-8), and its absence was a real gap rather than a
-documentation one:** `notifications.db` holds the webhook URLs, webhook signing secrets, webhook auth
-tokens and SMTP passwords an operator configured (§22.5), so a decommissioning wipe that skipped it left
-live third-party credentials on a machine that was being handed on or scrapped. Everything else about
-the script is unchanged.
+🔴 **The purge list went from four directories to thirteen in Đợt C (C-8 and its review), and the gap was
+real rather than documentary.** C-8 first added `notifications` — `notifications.db` holds the webhook
+URLs, webhook signing secrets, webhook auth tokens and SMTP passwords an operator configured (§22.5), so
+a wipe that skipped it left live third-party credentials on a machine being handed on or scrapped. The
+review then found that **fixing one directory did not close the class**: the script purged five of the
+thirteen the engine creates while claiming to wipe what the engine creates, and **two of the eight it
+missed hold credentials**:
 
-**Relocated directories (WS-F1 final-review fix F3):** §15.2's `ST4I_HISTORIAN_DIR`/`ST4I_WAL_DIR`/
-`ST4I_SECURITY_DIR`/`ST4I_NOTIFICATIONS_DIR` mean a deployment's real data doesn't have to live under
+- 🔴 **`identity`** — `device-identity.bin` is the device's **PFX private key**, and it is sealed with
+  DPAPI at **`LocalMachine`** scope rather than `CurrentUser`, so **any local administrator on the box
+  can unseal it**. It is created unconditionally on every boot, so it is present even on a machine that
+  never configured a Site link.
+- 🔴 **`connector-config`** — persists the register/node-map JSON **verbatim**, and an OPC-UA node map
+  carries its `password` as a **plaintext** field.
+
+The remaining six (`opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) are customer
+data or trust material rather than bearer credentials, but this script's stated purpose is a clean-slate
+wipe — leaving them meant it did not do that, and an operator reading the old output would reasonably
+have believed the machine was clean. Every directory except `creds` is relocatable and has its own
+`-XxxDir` parameter.
+
+**Relocated directories (WS-F1 final-review fix F3):** the `ST4I_*_DIR` variables mean a deployment's
+real data doesn't have to live under
 `%ProgramData%\ST4I\sim\*` at all — the script used to assume it always did, silently deleting an
-empty default directory while the real data sat untouched elsewhere. It now resolves each of those
-four per `-HistorianDir`/`-WalDir`/`-SecurityDir`/`-NotificationsDir`, else the matching `ST4I_*_DIR` environment variable
+empty default directory while the real data sat untouched elsewhere. It now resolves **each of the
+twelve relocatable directories** per its own `-XxxDir` parameter, else the matching `ST4I_*_DIR` environment variable
 in **this same PowerShell process**, else the `%ProgramData%` default — printing the resolved path for
 each before doing anything. **It does NOT read the service's own registry `Environment` value** (only
 this shell's own env) — if a relocated directory was only ever configured there, pass the matching
@@ -1245,15 +1261,24 @@ is not relocatable) — always `%ProgramData%\ST4I\sim\creds`.
 *(VI: Gỡ cài đặt chỉ xoá những gì MSI đã cài (Program Files, shortcut, service nếu có bật) — dữ liệu
 `%ProgramData%\ST4I\sim\*` được GIỮ LẠI mặc định vì MSI không hề biết tới các thư mục này (do engine tự
 tạo lúc chạy). Muốn xoá thật, chạy `packaging\remove-data.ps1` (có `-WhatIf`/`-Force`) — script riêng,
-thủ công, có cảnh báo phá hủy rõ ràng, KHÔNG bao giờ được MSI tự gọi. 🔴 Đợt C (C-8) thêm thư mục
-`notifications` vào danh sách bị xoá — đó là một thiếu sót THẬT chứ không phải thiếu sót tài liệu:
-`notifications.db` chứa URL webhook, khóa ký, token và mật khẩu SMTP (§22.5), nên một lần xoá để thanh
-lý máy mà bỏ qua nó sẽ để lại thông tin đăng nhập bên thứ ba còn sống trên máy sắp chuyển đi. Nếu
-historian/wal/security/notifications đã được chuyển chỗ qua
-`ST4I_HISTORIAN_DIR`/`ST4I_WAL_DIR`/`ST4I_SECURITY_DIR`/`ST4I_NOTIFICATIONS_DIR`, truyền tham số
-`-HistorianDir`/`-WalDir`/`-SecurityDir`/`-NotificationsDir` tương ứng — script KHÔNG tự đọc giá trị registry `Environment`
-của service, chỉ đọc biến môi trường của CHÍNH shell đang chạy nó; nếu không khớp, phải xoá thư mục
-thật bằng tay.)*
+thủ công, có cảnh báo phá hủy rõ ràng, KHÔNG bao giờ được MSI tự gọi. 🔴 **Danh sách xoá đã tăng từ 4 lên
+ĐỦ 13 thư mục trong Đợt C (C-8 và vòng review), và đó là thiếu sót THẬT chứ không phải thiếu sót tài
+liệu.** C-8 thêm `notifications` trước — `notifications.db` chứa URL webhook, khóa ký, token và mật khẩu
+SMTP (§22.5), nên một lần xoá để thanh lý máy mà bỏ qua nó sẽ để lại thông tin đăng nhập bên thứ ba còn
+sống trên máy sắp chuyển đi. Vòng review sau đó phát hiện **sửa một thư mục KHÔNG đóng được cả lớp vấn
+đề**: script mới xoá 5 trong 13 thư mục engine tạo ra, trong khi tự nhận là xoá những gì engine tạo — và
+**2 trong 8 thư mục bị bỏ sót chứa thông tin đăng nhập**: 🔴 **`identity`** (`device-identity.bin` là
+**khóa riêng PFX** của thiết bị, niêm bằng DPAPI phạm vi **`LocalMachine`** chứ không phải `CurrentUser`,
+nên **bất kỳ quản trị viên cục bộ nào trên máy cũng mở được**; nó được tạo vô điều kiện ở mọi lần khởi
+động, kể cả trên máy chưa từng liên kết Site), và 🔴 **`connector-config`** (lưu **nguyên văn** JSON
+register/node-map, mà node map OPC-UA chứa `password` ở dạng **văn bản thuần**). Sáu thư mục còn lại
+(`opcua-pki`, `sitelink`, `alarms`, `assets`, `settings`, `bridge-spool`) là dữ liệu khách hàng hoặc vật
+liệu tin cậy chứ không phải thông tin đăng nhập, nhưng mục đích script tự nhận là **xoá sạch để thanh
+lý** — bỏ sót chúng nghĩa là nó không làm đúng điều đó, và người vận hành đọc kết quả cũ sẽ tin rằng máy
+đã sạch. Mọi thư mục trừ `creds` đều chuyển chỗ được và đều có tham số `-XxxDir` riêng; nếu đã chuyển chỗ
+qua một biến `ST4I_*_DIR` nào đó, truyền tham số `-XxxDir` tương ứng — script KHÔNG tự đọc giá trị
+registry `Environment` của service, chỉ đọc biến môi trường của CHÍNH shell đang chạy nó; nếu không khớp,
+phải xoá thư mục thật bằng tay.)*
 
 ### 15.5 `St4i.DesktopShell` coexistence / Cùng tồn tại với DesktopShell
 

@@ -229,7 +229,7 @@ export function AnnunciatorStatusStrip() {
  * endpoint, no recipient, no machine code, no relay target. The route's handler cannot supply them.
  *
  * 🔴 The beacon badge has THREE states and only one of them is "off" — see `beaconBadge` in
- * `routes/Notifications.tsx`, which this shares so the two screens cannot drift apart. `null` is
+ * `components/BeaconState.tsx`, which both screens share so they cannot drift apart. `null` is
  * **UNKNOWN**, which is not "off": collapsing them is how a lit beacon becomes invisible.
  */
 export function OutboundReachPanel() {

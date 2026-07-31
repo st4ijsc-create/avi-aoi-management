@@ -86,8 +86,23 @@ EXPECT_EDGESERVICE=28
 #          working-directory objection is answered by walking up from AppContext.BaseDirectory, the
 #          idiom PackagingFleetJsonTests already uses.)
 # RbacPolicyTests' ExpectedRoutes goes 105 -> 106 for the new route but adds no test.
+#
+# C-8's review round 1 raised it again, 1131 -> 1133 (+2), both NotificationDocumentationTests:
+#   + 1  I-1  EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript.
+#            The engine creates THIRTEEN directories under %ProgramData%\ST4I\sim; remove-data.ps1
+#            purged five, and two of the eight it missed hold credentials (`identity` is the device's
+#            PFX private key sealed at LocalMachine scope; `connector-config` stores an OPC-UA password
+#            in plaintext). The old test pinned the five-name list, freezing the gap as if closed — so
+#            this one DERIVES the expected set by scanning src/ for each store's own default-path
+#            constant, and a fourteenth store fails it until the script purges that too.
+#   + 1  I-2  TheWebhookContract_DedupRecipe_NamesTheSignedBodyField_NeverTheUnsignedHeader.
+#            The reviewer changed §3's numbered recipe to dedup on the UNSIGNED X-ST4I-Delivery header
+#            and all six existing doc tests passed — C-3's defect reproduced, in the half of the
+#            contract that was RIGHT last time and therefore unguarded.
+# EXPECT_EDGECORE stays 735: I-4 fixes leaked TcpListener accepts in three ModbusTcpDriverWriteTests
+# (and bounds two conformance accepts) but adds no test.
 # No other suite is touched: C-8 adds no code outside St4i.EngineApi, web/ and docs.
-EXPECT_ENGINEAPI=1131
+EXPECT_ENGINEAPI=1133
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

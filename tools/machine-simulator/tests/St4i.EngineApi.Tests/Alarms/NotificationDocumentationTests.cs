@@ -68,6 +68,37 @@ public sealed class NotificationDocumentationTests
     private static string FlattenProse(string text) =>
         Flatten(Regex.Replace(text, @"^\s*>", " ", RegexOptions.Multiline).Replace("`", ""));
 
+    /// <summary>
+    /// 🔴 The document with every RETIRED claim removed, leaving only what it still asserts in its own
+    /// voice. Every "this must no longer be claimed" check below runs over this rather than over the raw
+    /// text.
+    ///
+    /// <para>This repository retires a claim in place rather than deleting it — somebody who bookmarked a
+    /// paragraph must see the correction, not a gap — and it does so in <b>two different notations</b>:
+    /// the README quotes the old wording (<c>used to say "…"</c>), while the batch blueprints strike it
+    /// through (<c>~~…~~</c>). Review round 1 (M-1) found the consequence of modelling only one of them:
+    /// my first guard used a negative lookbehind for an opening quote, which the README satisfies and the
+    /// blueprints do not — so un-striking the dotA blueprint's own retired line would have passed. The
+    /// test named three files and effectively guarded one.</para>
+    ///
+    /// <para>Removing both notations is also simpler than either lookbehind, and it is why the bans below
+    /// can now be plain "does this text still say X" checks.</para>
+    /// </summary>
+    private static string LiveProse(string text)
+    {
+        // Flattened FIRST: markdown re-wraps, and the README's own retirement quotes span a line break
+        // mid-sentence, so a line-bounded match would miss them and this helper would under-remove.
+        var flat = Flatten(text);
+
+        // 🔴 Both removals are LENGTH-BOUNDED. An unbalanced marker — a stray `~~`, an unclosed quote —
+        // would otherwise let one match run to the next marker anywhere in the document, silently
+        // deleting real assertions along the way. That direction is the dangerous one: over-removal here
+        // is a FALSE PASS on a claim the document still makes. 600 characters is several times the
+        // longest genuine retirement in this repository (~130) and far short of a section.
+        var withoutStruck = Regex.Replace(flat, @"~~[^~]{1,600}?~~", " ");
+        return Regex.Replace(withoutStruck, "[\"“][^\"”]{0,600}[\"”]", " ");
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // 🔴 1. The claim this whole batch exists to retire.
     // ─────────────────────────────────────────────────────────────────────
@@ -91,32 +122,31 @@ public sealed class NotificationDocumentationTests
                 ReadRepoFile("docs", "plans", "2026-07-29-dotB-machine-control-blueprint.md")),
         };
 
-        // The claim in ASSERTED form: a bolded lead, which is how every honest-limitation entry in these
-        // documents is written. A past-tense quotation inside a correction ("used to say \"…\"") is not
-        // bolded and is deliberately still allowed — see this class's doc comment.
+        // The claim, in whatever form. Run over LiveProse, so a quotation or a struck-through line — the
+        // two notations this repository uses to RETIRE a claim in place — does not count as asserting it.
         var assertedEn = new Regex(
-            @"\*\*\s*Alarms\s+cannot\s+reach\s+anyone[^*]*\*\*", RegexOptions.IgnoreCase);
+            @"Alarms\s+cannot\s+reach\s+anyone", RegexOptions.IgnoreCase);
         var assertedVi = new Regex(
-            @"\*\*\s*Cảnh\s+báo\s+KHÔNG\s+thể\s+tới\s+ai[^*]*\*\*", RegexOptions.IgnoreCase);
+            @"Cảnh\s+báo\s+KHÔNG\s+thể\s+tới\s+ai", RegexOptions.IgnoreCase);
 
-        // 🔴 The "no integration exists" family. Banned when ASSERTED — i.e. as a bare sentence — and
-        // still permitted inside the quotation marks the corrections use to retire it in place. The
-        // negative lookbehind is what draws that line: the original entries stated this as running prose
-        // (preceded by whitespace), and every surviving occurrence is a quotation (preceded by an opening
-        // quote character). Anyone re-asserting it as prose fails here.
+        // 🔴 The "no integration exists" family.
+        //
+        // Review round 1 (M-1): the VI pattern was tuned to the README's exact wording
+        // ("…/syslog/relay/tín hiệu âm thanh…") and therefore did not match the dotA blueprint's own VI
+        // wording of the same claim ("…/Slack/relay/còi/đèn"). Both are now matched on the prefix they
+        // genuinely share, which is wider than either phrasing and still narrower than the claim.
         var noIntegrationEn = new Regex(
-            @"(?<![""“])There\s+is\s+no\s+email,\s*SMS,\s*webhook", RegexOptions.IgnoreCase);
+            @"There\s+is\s+no\s+email,\s*SMS,\s*webhook", RegexOptions.IgnoreCase);
         var noIntegrationVi = new Regex(
-            @"(?<![""“])KHÔNG\s+có\s+email/SMS/webhook/Slack/\s*syslog/relay/tín\s+hiệu\s+âm\s+thanh",
-            RegexOptions.IgnoreCase);
+            @"KHÔNG\s+có\s+email/SMS/webhook", RegexOptions.IgnoreCase);
 
         foreach (var (name, text) in files)
         {
-            var flat = Flatten(text);
-            Assert.False(assertedEn.IsMatch(flat), $"{name} still ASSERTS the retired EN claim.");
-            Assert.False(assertedVi.IsMatch(flat), $"{name} still ASSERTS the retired VI claim.");
-            Assert.False(noIntegrationEn.IsMatch(flat), $"{name} still asserts no EN integration exists.");
-            Assert.False(noIntegrationVi.IsMatch(flat), $"{name} still asserts no VI integration exists.");
+            var live = LiveProse(text);
+            Assert.False(assertedEn.IsMatch(live), $"{name} still ASSERTS the retired EN claim.");
+            Assert.False(assertedVi.IsMatch(live), $"{name} still ASSERTS the retired VI claim.");
+            Assert.False(noIntegrationEn.IsMatch(live), $"{name} still asserts no EN integration exists.");
+            Assert.False(noIntegrationVi.IsMatch(live), $"{name} still asserts no VI integration exists.");
         }
 
         // 🔴 The other direction, and it is what stops this test from passing on a README somebody simply
@@ -144,16 +174,30 @@ public sealed class NotificationDocumentationTests
             $"St4i.EngineApi/Alarms/ has {count} file(s). The README's retired claim said seven; if this " +
             "is genuinely seven again, the census entry needs rewriting rather than this test relaxing.");
 
-        var readme = Flatten(ReadRepoFile("README.md"));
+        var readmeText = ReadRepoFile("README.md");
+        var readme = Flatten(readmeText);
+        var live = LiveProse(readmeText);
 
-        // Present-tense assertions of the count are banned; "used to say … was \"exactly seven files\"" is
-        // not, because that sentence is the correction.
-        Assert.DoesNotMatch(new Regex(@"is\s+exactly\s+seven\s+files", RegexOptions.IgnoreCase), readme);
-        Assert.DoesNotMatch(new Regex(@"chỉ\s+có\s+đúng\s+7\s+file\s+—", RegexOptions.IgnoreCase), readme);
+        // The count claim is banned outright in the document's own voice. The corrections quote it, and
+        // LiveProse removes quoted spans, so this needs no present-tense hedging: if the phrase survives
+        // OUTSIDE a quotation, somebody has re-asserted it.
+        Assert.DoesNotMatch(new Regex(@"exactly\s+seven\s+files", RegexOptions.IgnoreCase), live);
+        Assert.DoesNotMatch(new Regex(@"chỉ\s+có\s+đúng\s+7\s+file", RegexOptions.IgnoreCase), live);
 
         // And the correction states the real number, in both languages.
-        Assert.Matches(new Regex($@"\*\*{count}\s+files\*\*", RegexOptions.IgnoreCase), readme);
-        Assert.Matches(new Regex($@"\*\*{count}\s+file\*\*", RegexOptions.IgnoreCase), readme);
+        //
+        // Review round 1 (M-4): these two are the assertions that will actually fire when somebody adds a
+        // file to Alarms/, so they carry the explanation. Previously it sat on the `count > 7` assert
+        // above — which is the one that essentially never fires — and a developer who added a file got a
+        // bare "pattern not found" with no hint that the README carries a number needing an update.
+        Assert.True(Regex.IsMatch(readme, $@"\*\*{count}\s+files\*\*", RegexOptions.IgnoreCase),
+            $"St4i.EngineApi/Alarms/ now has {count} .cs files, but README §20.5's ENGLISH correction does " +
+            $"not state \"**{count} files**\". That paragraph replaced the retired \"exactly seven files\" " +
+            "claim with a real count — update the number rather than removing the sentence.");
+        Assert.True(Regex.IsMatch(readme, $@"\*\*{count}\s+file\*\*", RegexOptions.IgnoreCase),
+            $"St4i.EngineApi/Alarms/ now has {count} .cs files, but README §20.5's VIETNAMESE mirror does " +
+            $"not state \"**{count} file**\". The VI mirror is corrected separately and with equal weight — " +
+            "Đợt B shipped a Critical because a VI mirror was left behind while the EN copy was fixed.");
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -174,16 +218,19 @@ public sealed class NotificationDocumentationTests
     [Fact]
     public void TheRetiredDefaultOffClaim_IsNotRestated_AndWhatActuallyHappensIsStated()
     {
-        var readme = Flatten(ReadRepoFile("README.md"));
+        var readmeText = ReadRepoFile("README.md");
+        var readme = Flatten(readmeText);
+        var live = LiveProse(readmeText);
 
-        // The claim asserted about the BATCH or the PRODUCT. The §22.2 sentence that retires it reads
-        // `This batch is NOT "additive and default-off"`, so the ban is on the affirmative form.
+        // The claim, banned in the document's own voice. §22.2 retires it by QUOTING it, and LiveProse
+        // removes quoted spans — so these fire only if somebody states it as fact again. Note the other
+        // legitimate uses of "default-off" in this README (the Site link, the Modbus/OPC-UA seeders, mDNS
+        // advertise) are about features that genuinely ARE, and none of them says it of this batch.
         Assert.DoesNotMatch(
-            new Regex(@"(batch|Đợt\s*C)\s+is\s+additive\s+and\s+default-off", RegexOptions.IgnoreCase),
-            readme);
+            new Regex(@"additive\s+and\s+default-off", RegexOptions.IgnoreCase), live);
         Assert.DoesNotMatch(
             new Regex(@"bit-for-bit\s+identical\s+when\s+nothing\s+is\s+configured", RegexOptions.IgnoreCase),
-            readme);
+            live);
 
         // 🔴 The other direction. The behaviour change must be stated as a change, in both languages.
         Assert.Matches(new Regex(@"NOT\s+""additive\s+and\s+default-off""", RegexOptions.IgnoreCase), readme);
@@ -260,13 +307,79 @@ public sealed class NotificationDocumentationTests
         Assert.Contains("$NotificationsDir", script, StringComparison.Ordinal);
         Assert.Matches(
             new Regex(@"Name\s*=\s*'notifications'", RegexOptions.IgnoreCase), Flatten(script));
+    }
 
-        // Non-vacuity: the four directories that were always purged are still purged, so this test cannot
-        // pass on a script somebody rewrote into something that deletes only the new one.
-        foreach (var existing in new[] { "historian", "wal", "security", "creds" })
+    /// <summary>
+    /// 🔴🔴 Review round 1 (I-1) — <b>the decommissioning wipe must purge EVERY directory the engine
+    /// creates, and this test derives that list from the source rather than restating it.</b>
+    ///
+    /// <para><b>Why this replaced a hard-coded list.</b> The first version of the test above asserted the
+    /// five names the script happened to purge. That is the failure mode the whole census exists to
+    /// prevent, committed in a test: the engine creates <b>thirteen</b> directories under
+    /// <c>%ProgramData%\ST4I\sim</c>, the script purged five, and pinning those five <i>froze the
+    /// incompleteness as if it were complete</i> — a future reader would have taken a green test as proof
+    /// the credential story was closed. Two of the eight missing ones hold credentials: <c>identity</c>
+    /// (the device's PFX private key, sealed at <b>LocalMachine</b> scope, so any local administrator can
+    /// unseal it) and <c>connector-config</c> (the node-map JSON verbatim, and an OPC-UA map carries its
+    /// password in plaintext).</para>
+    ///
+    /// <para><b>How it cannot rot:</b> the expected list is discovered by scanning <c>src/</c> for the
+    /// <c>"ST4I", "sim", "&lt;name&gt;"</c> default-path constant every store declares. Adding a
+    /// fourteenth store therefore fails this test until the script purges it too, which is the only
+    /// arrangement that survives somebody who has not read this comment.</para>
+    /// </summary>
+    [Fact]
+    public void EveryDirectoryTheEngineCreatesUnderProgramData_IsPurgedByTheDecommissioningScript()
+    {
+        var root = MachineSimulatorRoot();
+        var script = Flatten(ReadRepoFile("packaging", "remove-data.ps1"));
+
+        // Every `"ST4I", "sim", "<name>"` default-path constant in src/ — the one place a store declares
+        // where it lives. Ordinal, because these are C# string literals, not prose.
+        var declared = new SortedSet<string>(StringComparer.Ordinal);
+        var constant = new Regex(
+            "\"ST4I\"\\s*,\\s*\"sim\"\\s*,\\s*\"(?<name>[A-Za-z0-9._-]+)\"", RegexOptions.None);
+
+        foreach (var file in Directory.EnumerateFiles(
+                     Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories))
         {
-            Assert.Matches(new Regex($@"Name\s*=\s*'{existing}'", RegexOptions.IgnoreCase), Flatten(script));
+            // bin/obj carry generated copies of the same literals; they are not sources of truth.
+            if (file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+                file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            foreach (Match m in constant.Matches(File.ReadAllText(file)))
+            {
+                declared.Add(m.Groups["name"].Value);
+            }
         }
+
+        // Non-vacuity: if the scan finds nothing (a refactor moved the constants), this test must fail
+        // loudly rather than pass by asserting over an empty set — the exact shape of a vacuous test.
+        Assert.True(declared.Count >= 13,
+            $"Only {declared.Count} data directory constant(s) were found in src/ ({string.Join(", ", declared)}). " +
+            "The scan, not the script, is what broke — fix the scan rather than deleting this assertion.");
+
+        // The controls, named explicitly so a scan that silently stopped matching the security-bearing
+        // stores cannot leave this test green.
+        foreach (var mustFind in new[] { "identity", "connector-config", "notifications", "creds", "security" })
+        {
+            Assert.Contains(mustFind, declared);
+        }
+
+        var missing = declared
+            .Where(name => !Regex.IsMatch(script, $@"Name\s*=\s*'{Regex.Escape(name)}'", RegexOptions.IgnoreCase))
+            .ToList();
+
+        Assert.True(missing.Count == 0,
+            "packaging/remove-data.ps1 does not purge every directory the engine creates under " +
+            $"%ProgramData%\\ST4I\\sim. Missing: {string.Join(", ", missing)}. A decommissioning wipe that " +
+            "skips one of these leaves it on a machine being handed on, scrapped or returned — and " +
+            "`identity` and `connector-config` hold a private key and a plaintext password respectively. " +
+            "Add it to $subdirs (with its ST4I_*_DIR relocation), or state in the script's .NOTES AND " +
+            "README §15.4 (EN and VI) that it is deliberately kept and why.");
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -313,8 +426,73 @@ public sealed class NotificationDocumentationTests
 
         // 🔴 The concrete attack, which is what makes the paragraph persuasive rather than a caveat. A
         // future editor who trims this to "headers are not signed" loses the reason anybody acts on it.
-        Assert.Matches(new Regex(@"replay", RegexOptions.IgnoreCase), flat);
+        //
+        // Review round 1 (M-5): asserting the bare word "replay" was near-vacuous — it appears throughout
+        // the document. What must survive is the MECHANISM: that a captured request can be replayed with
+        // the convenience headers rewritten and the signature still verifies.
+        Assert.Matches(
+            new Regex(@"replay[^.]{0,200}?(X-ST4I-Delivery|X-ST4I-Event|header)", RegexOptions.IgnoreCase),
+            flat);
+        Assert.Matches(
+            new Regex(@"signature\s+still\s+verifies", RegexOptions.IgnoreCase), flat);
         Assert.Matches(
             new Regex(@"body\.deliveryId\s+and\s+body\.edge\.kind", RegexOptions.IgnoreCase), flat);
+    }
+
+    /// <summary>
+    /// 🔴🔴 Review round 1 (I-2) — <b>the half of the contract my first guard left open, and it is the
+    /// half C-3's defect actually lived in.</b>
+    ///
+    /// <para>The reviewer attacked the guard by changing §3's numbered recipe, step 6, from
+    /// <c>"Drop the message if body.deliveryId has been seen before"</c> to
+    /// <c>"…if the X-ST4I-Delivery header has been seen before"</c> — and <b>all six tests passed.</b>
+    /// That is C-3's defect reproduced exactly: the code correct, the boundary blockquote correct, the
+    /// inline annotations correct, and <b>the instruction a reader actually implements</b> pointing at an
+    /// unsigned, attacker-rewritable header — making every receiver that followed the document
+    /// replayable.</para>
+    ///
+    /// <para>My guard covered the annotations and the blockquote: the half that was <i>wrong</i> last
+    /// time. It left unprotected the half that was <i>right</i> last time, which is precisely where the
+    /// next well-meaning simplification lands. §3 is the section somebody copies into a receiver.</para>
+    ///
+    /// <para><b>The assertion:</b> the verification recipe must name <c>body.deliveryId</c> and must not
+    /// mention <c>X-ST4I-Delivery</c> <i>at all</i> — that header plays no part in verifying a signature,
+    /// so its appearance anywhere inside the recipe is either the defect or a step towards it.</para>
+    /// </summary>
+    [Fact]
+    public void TheWebhookContract_DedupRecipe_NamesTheSignedBodyField_NeverTheUnsignedHeader()
+    {
+        var contract = ReadRepoFile("docs", "ALARM_WEBHOOK_CONTRACT.md");
+
+        // §3's first fenced block — the numbered recipe a receiver author implements.
+        var section = Regex.Match(
+            contract,
+            @"^##\s*3\..*?^```(?<recipe>.*?)^```",
+            RegexOptions.Singleline | RegexOptions.Multiline);
+        Assert.True(section.Success,
+            "Could not find the numbered verification recipe under section 3 of " +
+            "docs/ALARM_WEBHOOK_CONTRACT.md. If that section was restructured, re-point this test — do " +
+            "NOT delete it: it guards the instruction receiver authors actually implement.");
+
+        var recipe = section.Groups["recipe"].Value;
+
+        // 🔴 The dedup step must key on the SIGNED body field.
+        Assert.Matches(new Regex(@"body\.deliveryId", RegexOptions.None), recipe);
+        Assert.Matches(new Regex(@"seen\s+before", RegexOptions.IgnoreCase), recipe);
+
+        // 🔴 And the unsigned convenience header must not appear in the recipe at all. It is not part of
+        // verification, so there is no legitimate reason for it to be here — while a replay with a
+        // rewritten header is the exact attack the whole boundary paragraph exists to prevent.
+        Assert.DoesNotMatch(new Regex(@"X-ST4I-Delivery", RegexOptions.IgnoreCase), recipe);
+        Assert.DoesNotMatch(new Regex(@"X-ST4I-Event", RegexOptions.IgnoreCase), recipe);
+
+        // The reinforcing note beneath the recipe, which is what tells a reader the choice was deliberate
+        // rather than incidental. Guarded in both directions: it must still say the header is the wrong
+        // key, and must still name the right one.
+        var flat = FlattenProse(contract);
+        Assert.Matches(
+            new Regex(@"dedup\s+on\s+the\s+header[^.]*sails\s+through", RegexOptions.IgnoreCase), flat);
+        Assert.Matches(
+            new Regex(@"Step\s*6\s*(is\s*not\s*optional|says)", RegexOptions.IgnoreCase), flat);
     }
 }

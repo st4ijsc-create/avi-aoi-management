@@ -67,10 +67,14 @@ public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
         TcpClient? accepted = null;
+        // 🔴 Task C-8 review round 1 (I-4) — bounded accept; see the identical note in
+        // ModbusTcpDriverConformanceTests. This site already awaited the task and disposed the accepted
+        // client, so it was not stranding a connection; the deadline closes the "teardown never ran" case.
+        var acceptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var acceptTask = Task.Run(async () =>
         {
-            try { accepted = await listener.AcceptTcpClientAsync().ConfigureAwait(false); }
-            catch { /* listener stopped during teardown — fine */ }
+            try { accepted = await listener.AcceptTcpClientAsync(acceptDeadline.Token).ConfigureAwait(false); }
+            catch { /* deadline firing, or listener stopped during teardown — both fine */ }
         });
 
         var driver = new OpcUaDriver(
@@ -79,10 +83,12 @@ public sealed class OpcUaDriverConformanceTests : DeviceDriverConformanceSuite
 
         async Task ForceUnstickAsync()
         {
+            acceptDeadline.Cancel();
             try { await acceptTask.ConfigureAwait(false); } catch { }
             try { accepted?.Close(); } catch { }
             try { accepted?.Dispose(); } catch { }
             try { listener.Stop(); } catch { }
+            acceptDeadline.Dispose();
         }
 
         return new UnresponsiveDeviceSession(driver, ForceUnstickAsync);

@@ -125,14 +125,27 @@ public sealed class ModbusTcpDriverWriteTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
+        // 🔴 Task C-8 review round 1 (I-4) — bounded by its OWN deadline token, and AWAITED in teardown.
+        //
+        // This used to be a token-less `AcceptTcpClientAsync()` plus `Task.Delay(Timeout.Infinite)` with
+        // no token, on a task nobody ever awaited. `listener.Stop()` cannot close an ALREADY-ACCEPTED
+        // connection, so every run of this test unconditionally stranded a thread-pool task holding a
+        // `TcpClient` whose `using` never ran. That is exactly the shape C-7's own mTLS fix described as
+        // "the direct generator of the orphaned-`testhost` trap": a host process that is stopped but not
+        // idle — which `scripts/verify-suites.sh`'s CPU heuristic structurally cannot see, because the
+        // drip of leftover work is not flat, just stopped. Five sibling tests in this file already did it
+        // correctly (deadline token on every await + an unconditional `await serverTask`); this now
+        // matches them.
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var acceptTask = Task.Run(async () =>
         {
             try
             {
-                using var accepted = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
-                await Task.Delay(Timeout.Infinite).ConfigureAwait(false); // accept, then go silent forever.
+                using var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
+                // Accept, then go silent — but bounded, so teardown can actually end this task.
+                await Task.Delay(Timeout.Infinite, deadline.Token).ConfigureAwait(false);
             }
-            catch { /* teardown */ }
+            catch { /* deadline firing, or listener.Stop() below — both expected teardown */ }
         });
 
         const int boundMs = 300;
@@ -159,6 +172,8 @@ public sealed class ModbusTcpDriverWriteTests
             $"write took {stopwatch.Elapsed} — unexpectedly slow for a single {boundMs}ms-bounded attempt with no retry.");
 
         listener.Stop();
+        deadline.Cancel();
+        try { await acceptTask; } catch { /* teardown */ }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -172,14 +187,18 @@ public sealed class ModbusTcpDriverWriteTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
+        // 🔴 Task C-8 review round 1 (I-4) — see the first test in this file for the full reasoning:
+        // token-less accept + un-tokened infinite delay + a task nobody awaits strands a live TcpClient
+        // on every run, which is the orphaned-`testhost` shape C-7 fixed elsewhere.
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var acceptTask = Task.Run(async () =>
         {
             try
             {
-                using var accepted = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
-                await Task.Delay(Timeout.Infinite).ConfigureAwait(false);
+                using var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
+                await Task.Delay(Timeout.Infinite, deadline.Token).ConfigureAwait(false);
             }
-            catch { /* teardown */ }
+            catch { /* deadline firing, or listener.Stop() below — both expected teardown */ }
         });
 
         // Deliberately a LONG bound (30s): if cancellation did NOT promptly unblock the in-flight write,
@@ -204,6 +223,8 @@ public sealed class ModbusTcpDriverWriteTests
             "path), not wait out anywhere close to the full bound.");
 
         listener.Stop();
+        deadline.Cancel();
+        try { await acceptTask; } catch { /* teardown */ }
     }
 
     /// <summary>The class doc comment's own claim ("DisposeAsync deliberately does NOT acquire _ioLock —
@@ -218,14 +239,18 @@ public sealed class ModbusTcpDriverWriteTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
+        // 🔴 Task C-8 review round 1 (I-4) — see the first test in this file for the full reasoning:
+        // token-less accept + un-tokened infinite delay + a task nobody awaits strands a live TcpClient
+        // on every run, which is the orphaned-`testhost` shape C-7 fixed elsewhere.
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var acceptTask = Task.Run(async () =>
         {
             try
             {
-                using var accepted = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
-                await Task.Delay(Timeout.Infinite).ConfigureAwait(false);
+                using var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
+                await Task.Delay(Timeout.Infinite, deadline.Token).ConfigureAwait(false);
             }
-            catch { /* teardown */ }
+            catch { /* deadline firing, or listener.Stop() below — both expected teardown */ }
         });
 
         // Deliberately a LONG bound (30s) — same reasoning as the cancellation test above: if DisposeAsync
@@ -256,6 +281,8 @@ public sealed class ModbusTcpDriverWriteTests
         Assert.Contains("write did not complete", result.Detail, StringComparison.Ordinal);
 
         listener.Stop();
+        deadline.Cancel();
+        try { await acceptTask; } catch { /* teardown */ }
     }
 
     // ─────────────────────────────────────────────────────────────────────

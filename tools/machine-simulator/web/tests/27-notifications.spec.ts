@@ -225,6 +225,22 @@ test("🔴 choosing CLEAR sends an empty string, and says out loud that it delet
   expect(sent.signingSecret).toBe("")
   // The token was left on KEEP, so it must still be absent — clearing one secret must not clear another.
   expect(Object.hasOwn(sent, "authToken")).toBe(false)
+
+  // 🔴🔴 Review round 1 (I-3) — THE assertion that guards credential trap #3, and it was missing.
+  //
+  // This is the only test in the suite that loads an EXISTING webhook (stubbed above with a stored
+  // `authHeaderName` and `hasAuthToken: true`), which makes it the only place the re-send can be
+  // observed at all: the KEEP test above types the header name by hand, so it passes whether or not the
+  // form seeds it. Without this line the reviewer could delete `Notifications.tsx`'s single defending
+  // line — `setAuthHeaderName(summary?.authHeaderName ?? "")` — and all 18 tests still passed.
+  //
+  // What that deletion causes is not cosmetic. An operator opening a configured webhook and saving after
+  // changing only the LABEL would send `authHeaderName: ""`; the endpoint reads blank as "clear it", and
+  // clearing the header name DELETES THE STORED AUTH TOKEN WITH IT — because a token that names no
+  // header can never be sent. That is C-7's own documented behaviour
+  // (`AnEmptyAuthHeaderName_ClearsIt_RatherThanFailingTheWholeSave`), and it is the one field whose
+  // omission destroys a credential the request said nothing about.
+  expect(sent.authHeaderName).toBe("X-Api-Key")
 })
 
 test("the server's own error sentence reaches the operator verbatim", async ({ page }) => {

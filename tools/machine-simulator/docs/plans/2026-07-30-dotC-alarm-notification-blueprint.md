@@ -1,8 +1,27 @@
 # Đợt C — Cảnh báo ra ngoài (Outbound Alarm Notification)
 
-**Trạng thái:** đã duyệt · chủ sở hữu chốt 4 kênh · backlog kế tiếp = thêm giao thức máy
+**Trạng thái:** 🔴 **ĐÃ GIAO ĐỦ — C-1 đến C-8, 2026-07-31/08-01.** (Trước đó: đã duyệt · chủ sở hữu chốt
+4 kênh · backlog kế tiếp = thêm giao thức máy)
 **Ngày:** 2026-07-30
 **Base:** `16ab36cd` (Đợt B merge-ready)
+
+> 🔴 **Đính chính của C-8 (review round 1, M-2) — đọc trước phần §1 bên dưới.**
+>
+> **Toàn bộ phần "Vấn đề" của tài liệu này viết ở thì HIỆN TẠI và nay đã SAI.** Bốn kênh đã được xây và
+> xuất xưởng: webhook ký HMAC (C-3), email qua SMTP (C-4), báo tại chỗ qua SSE (C-5), relay/đèn báo vật lý
+> (C-6), cộng với seam + bộ dò cạnh (C-1), kho cấu hình và bí mật DPAPI (C-2), 12 endpoint + RBAC + bộ giới
+> hạn tốc độ đầu tiên của sản phẩm (C-7), và màn hình + census (C-8). Câu trích dẫn README ở §1 được **giữ
+> nguyên có chủ ý** — nó là *phát biểu vấn đề* mà đợt này sinh ra để giải, không phải một khẳng định còn
+> hiệu lực; README §20.5 nay đã tự đính chính, và bản thân §12/§22 của README ghi rõ điều gì đã giao.
+>
+> Hai blueprint anh em (`2026-07-29-dotA-…`, `2026-07-29-dotB-…`) đã được C-8 đánh dấu tương tự; ghi chú
+> này tồn tại để `docs/plans/` không mâu thuẫn nội bộ — một người đọc mở đúng tài liệu này trước sẽ không
+> tin rằng sản phẩm vẫn chưa có kênh báo ra ngoài.
+>
+> Giới hạn thật của năng lực đã giao (KHÔNG có SMS/syslog, không có toast Windows, không dùng được TLS
+> ngầm cổng 465, một bài gửi thử email xanh không chứng minh mật khẩu đúng, relay **không phải thiết bị an
+> toàn** và **không sáng khi HALT gài**, không có bài gửi thử relay, không có bảo đảm gửi tới nơi): xem
+> **README §22.7**.
 
 ---
 

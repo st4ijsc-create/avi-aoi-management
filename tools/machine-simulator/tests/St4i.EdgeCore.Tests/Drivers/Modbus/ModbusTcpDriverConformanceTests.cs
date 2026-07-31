@@ -60,20 +60,32 @@ public sealed class ModbusTcpDriverConformanceTests : DeviceDriverConformanceSui
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
         TcpClient? accepted = null;
+        // 🔴 Task C-8 review round 1 (I-4) — the accept is BOUNDED by a deadline token.
+        //
+        // Stated precisely, because overstating it would be its own defect: this site was NOT leaking the
+        // way the three ModbusTcpDriverWriteTests cases were. It already awaited `acceptTask` and already
+        // closed and disposed `accepted` in ForceUnstickAsync, and it has no un-tokened
+        // `Task.Delay(Timeout.Infinite)` — so it never stranded a live connection on a normal run. What it
+        // lacked was a bound for the case where ForceUnstickAsync never runs at all (a conformance case
+        // that throws before teardown): a token-less accept would then wait forever on a listener nobody
+        // ever stops. Cheap to close, so closed.
+        var acceptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var acceptTask = Task.Run(async () =>
         {
-            try { accepted = await listener.AcceptTcpClientAsync().ConfigureAwait(false); }
-            catch { /* listener stopped during teardown — fine */ }
+            try { accepted = await listener.AcceptTcpClientAsync(acceptDeadline.Token).ConfigureAwait(false); }
+            catch { /* deadline firing, or listener stopped during teardown — both fine */ }
         });
 
         var driver = new ModbusTcpDriver("127.0.0.1", port, ModbusLoopbackHarness.BuildMap("PLC-CONFORMANCE-SILENT"));
 
         async Task ForceUnstickAsync()
         {
+            acceptDeadline.Cancel();
             try { await acceptTask.ConfigureAwait(false); } catch { }
             try { accepted?.Close(); } catch { }
             try { accepted?.Dispose(); } catch { }
             try { listener.Stop(); } catch { }
+            acceptDeadline.Dispose();
         }
 
         return new UnresponsiveDeviceSession(driver, ForceUnstickAsync);

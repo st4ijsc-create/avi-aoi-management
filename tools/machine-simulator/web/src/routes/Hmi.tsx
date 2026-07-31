@@ -409,7 +409,6 @@ export default function Hmi() {
         events={traceEvents}
         connectionState={connectionState}
       />
-
     </div>
   )
 }
