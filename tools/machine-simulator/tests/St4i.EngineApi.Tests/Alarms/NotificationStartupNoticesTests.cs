@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using St4i.EngineApi.Alarms;
 using Xunit;
 
@@ -415,7 +416,12 @@ public sealed class NotificationStartupNoticesTests
         // What actually happens, per C-4's measurement: nothing is delivered, and each attempt ends at the
         // budget and is counted as a loss.
         Assert.Contains("lost notification", warning.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("hang", warning.Message, StringComparison.OrdinalIgnoreCase);
+
+        // Word-boundary matched rather than a bare substring (review round 2, m-1): "change", "exchange"
+        // and "unchanged" all CONTAIN "hang", and C-8 is explicitly going to rewrite this prose.
+        Assert.False(
+            Regex.IsMatch(warning.Message, @"\bhang(s|ing|ed)?\b", RegexOptions.IgnoreCase),
+            $"the 465 notice claims the attempt hangs, which C-4 measured it does not: {warning.Message}");
     }
 
     [Fact]

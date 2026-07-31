@@ -14,24 +14,36 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// then say NOTHING — the black-holing relay the timeout, budget and cancellation tests need.</param>
 /// <param name="EhloReply">The reply to <c>EHLO</c>. Multi-line replies use <c>\r\n</c>.</param>
 /// <param name="AuthReply">The final reply to an <c>AUTH</c> exchange (after the base64 rounds).</param>
+/// <param name="MailFromReply">The reply to <c>MAIL FROM</c>.</param>
+/// <param name="RcptToReply">Given the recipient as the server saw it (e.g. <c>&lt;ops@plant.local&gt;</c>),
+/// the reply. <see langword="null"/> means <c>250 OK</c>.</param>
+/// <param name="DataReply">The final reply after the message body's terminating dot.</param>
 /// <param name="AuthCommandReply">🔴 A reply to the <c>AUTH</c> COMMAND ITSELF, refusing it outright with
 /// no <c>334</c> prompt at all — which is what a relay does when it will not accept the offered mechanism.
 /// Distinct from <paramref name="AuthReply"/> (which rejects the credential AFTER collecting it), because
 /// the two are different failure shapes and C-4's review found the channel behaves identically in both:
 /// <see cref="System.Net.Mail.SmtpClient"/> carries on unauthenticated either way. <see langword="null"/>
-/// means "prompt normally".</param>
-/// <param name="MailFromReply">The reply to <c>MAIL FROM</c>.</param>
-/// <param name="RcptToReply">Given the recipient as the server saw it (e.g. <c>&lt;ops@plant.local&gt;</c>),
-/// the reply. <see langword="null"/> means <c>250 OK</c>.</param>
-/// <param name="DataReply">The final reply after the message body's terminating dot.</param>
+/// means "prompt normally".
+///
+/// <para>🔴 <b>Declared LAST on purpose (review round 2, m-2).</b> It was originally inserted between
+/// <paramref name="AuthReply"/> and <paramref name="MailFromReply"/>, which are both <see cref="string"/> —
+/// so any positional construction would have silently shifted every later reply by one and mis-scripted the
+/// relay <b>with no compile error</b>. Appending instead of inserting means an existing positional call
+/// cannot change meaning. See the record's own note about named arguments.</para></param>
+///
+/// 🔴 <b>Add new members at the END of this record, never in the middle.</b> Its parameters are mostly
+/// interchangeable <see cref="string"/>s, so an inserted one re-binds every positional argument after it
+/// without any type error to catch the mistake. Call sites are expected to use named arguments — which they
+/// all do today — but that is a convention, and appending is what makes the record safe when somebody
+/// eventually does not.
 internal sealed record SmtpScript(
     string? Greeting = "220 st4i-test ESMTP",
     string EhloReply = "250-st4i-test\r\n250 8BITMIME",
     string AuthReply = "235 2.7.0 Authentication succeeded",
-    string? AuthCommandReply = null,
     string MailFromReply = "250 OK",
     Func<string, string>? RcptToReply = null,
-    string DataReply = "250 2.0.0 OK queued");
+    string DataReply = "250 2.0.0 OK queued",
+    string? AuthCommandReply = null);
 
 /// <summary>
 /// 🔴 Task C-4 — a REAL in-process SMTP relay for the e-mail tests, on a raw <see cref="TcpListener"/>.

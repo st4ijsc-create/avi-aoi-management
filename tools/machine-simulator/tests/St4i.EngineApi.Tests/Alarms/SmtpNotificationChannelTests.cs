@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using St4i.EngineApi.Alarms;
 using Xunit;
 
@@ -1124,7 +1125,14 @@ public sealed class SmtpNotificationChannelTests : IDisposable
 
         // 🔴 And it must NOT predict a symptom this channel cannot produce. C-8 publishes this text; an
         // operator told to expect a hang would go looking for a stuck process that does not exist.
-        Assert.DoesNotContain("hang", notice.Message, StringComparison.OrdinalIgnoreCase);
+        //
+        // Word-boundary matched rather than a bare substring (review round 2, m-1): "change", "exchange"
+        // and "unchanged" all CONTAIN "hang", and this guards prose that C-8 is explicitly going to
+        // rewrite. A spurious failure on the word "change" during an editorial pass would be baffling to
+        // diagnose, and a trip-wire nobody can explain is a trip-wire that gets deleted.
+        Assert.False(
+            Regex.IsMatch(notice.Message, @"\bhang(s|ing|ed)?\b", RegexOptions.IgnoreCase),
+            $"the 465 notice claims the attempt hangs, which C-4 measured it does not: {notice.Message}");
     }
 
     // ─────────────────────────────────────────────────────────────────────
