@@ -1045,6 +1045,21 @@ public sealed class RelayNotificationChannelTests : IDisposable
             w.Contains("NOT de-energised", StringComparison.Ordinal) &&
             w.Contains("POINT target", StringComparison.Ordinal));
 
+        // 🔴 Review round 2 (n-2) — the release IS audited (it changes what the product believes about a
+        // physical output) but NOT under the bare action id. This channel files its writes under Đợt B's own
+        // id so an investigator's "what wrote to this machine?" query finds automatic writes; a row for
+        // something never attempted must not inflate the actuation count in that very query. So: exactly ONE
+        // row still carries the bare id — the pulse that really happened — and the release carries the
+        // suffixed one.
+        Assert.Equal(2, auditStore.Rows.Count);
+        Assert.Equal(
+            MachineWriteGate.CommandAction,
+            Assert.Single(auditStore.Rows, r => r.Action == MachineWriteGate.CommandAction).Action);
+        Assert.Equal(
+            MachineWriteGate.CommandAction + RelayNotificationChannel.ReleaseUnsupportedActionSuffix,
+            auditStore.Rows[1].Action);
+        Assert.Contains("releaseUnsupported", auditStore.Rows[1].NewValueJson, StringComparison.Ordinal);
+
         // ...and the next episode pulses again rather than being suppressed as redundant.
         await channel.DispatchAsync(Job(AlarmEdgeKind.Raised, "b", sequence: 3));
         Assert.Equal(2, driver.CommandCallCount);

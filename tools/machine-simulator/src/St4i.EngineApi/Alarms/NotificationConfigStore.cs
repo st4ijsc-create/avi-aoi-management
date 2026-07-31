@@ -649,6 +649,16 @@ public sealed class NotificationConfigStore
     /// 🔴 Saves the relay channel — see <see cref="RelayChannelConfig"/> for what is stored, what is
     /// deliberately NOT (an address), and why.
     ///
+    /// <para>🔴🔴 <b>Task C-6 review round 2 (n-3) — WHOEVER BUILDS THE ENDPOINT THAT CALLS THIS MUST GATE IT
+    /// AT ADMIN, at minimum for <see cref="RelayTargetKind.Command"/> targets.</b> Saving a relay row with
+    /// <c>TargetKind = Command</c> makes this product perform, automatically and for as long as the row
+    /// exists, an action a human needs <c>Roles.Admin</c> for — see
+    /// <see cref="St4i.EngineApi.Policy.MachineWriteGate.RoleFor"/>, which carries the full argument
+    /// including why lowering the role returned there is NOT the alternative fix. This call is therefore a
+    /// privilege-granting act, not an ordinary settings change, and every other config-mutation endpoint in
+    /// this product is Engineer-tier — so following that precedent without thinking would hand an Engineer
+    /// Admin-tier command authority through a config row.</para>
+    ///
     /// <para>🔴 <b>Task C-6 — the point/command asymmetry is enforced HERE, and returning
     /// <see langword="false"/> rather than storing something unhonourable is the whole point.</b> A
     /// <see cref="RelayTargetKind.Point"/> target without both latch values is a beacon that can never

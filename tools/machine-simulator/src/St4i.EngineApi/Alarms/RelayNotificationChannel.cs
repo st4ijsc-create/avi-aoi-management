@@ -365,6 +365,19 @@ public sealed class RelayNotificationChannel
     /// drops.</summary>
     public static readonly TimeSpan DefaultMinWriteInterval = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// 🔴 Review round 2 (n-2) — appended to <see cref="MachineWriteGate.CommandAction"/> for the audit row
+    /// recording that a latch RELEASE was structurally impossible on a
+    /// <see cref="RelayTargetKind.Command"/> target.
+    ///
+    /// <para>Suffixed rather than bare for the same reason <see cref="PolicyResults.DenyAsync"/> suffixes a
+    /// refusal with <c>.denied</c>: this channel files its writes under Đợt B's own action id so that
+    /// "what wrote to this machine?" finds automatic writes by the query an investigator already runs, and a
+    /// row for something that was never ATTEMPTED must not inflate the actuation count in that very query.
+    /// The row is still filed and still findable by prefix; it just cannot be mistaken for a pulse.</para>
+    /// </summary>
+    public const string ReleaseUnsupportedActionSuffix = ".release_unsupported";
+
     private readonly NotificationConfigStore _store;
     private readonly FleetHost _fleet;
     private readonly PolicyEngine _policy;
@@ -427,10 +440,20 @@ public sealed class RelayNotificationChannel
         Lost,
     }
 
-    /// <summary>One configured relay instance's live state. <c>Latched</c> is the set of qualifying alarm
-    /// keys currently active; <c>Energised</c> is what this channel last SUCCESSFULLY commanded, with
-    /// <see langword="null"/> meaning UNKNOWN (nothing commanded yet, or the last write was
-    /// <see cref="WriteOutcome.Indeterminate"/>).</summary>
+    /// <summary>
+    /// One configured relay instance's live state: the latch, and TWO pieces of state that answer different
+    /// questions and must never be conflated.
+    ///
+    /// <para>🔴 Review round 1 (C-1) was exactly that conflation, so this summary states the model rather
+    /// than one half of it. <c>Latched</c> is the set of qualifying alarm keys currently active.
+    /// <c>Commanded</c> is the level a write was last ISSUED for — <b>the only thing the write gate
+    /// consults</b>. <c>Energised</c> is what this channel BELIEVES the device is doing — reporting only,
+    /// never the gate. They diverge after an <see cref="WriteOutcome.Indeterminate"/> write, which is
+    /// precisely the case that matters: <c>Commanded</c> holds the issued level (so the same level is never
+    /// issued again — that is what no-retry means, and it is what keeps the latch absorbing a storm behind
+    /// an indeterminate write) while <c>Energised</c> is <see langword="null"/> for UNKNOWN, because nobody
+    /// knows what the device did and saying so is the honest report.</para>
+    /// </summary>
     private sealed class InstanceState
     {
         public readonly HashSet<string> Latched = new(StringComparer.Ordinal);
@@ -759,9 +782,16 @@ public sealed class RelayNotificationChannel
             // is recorded; this is not an attempt, but it IS the product changing what it believes about a
             // physical output, and an investigator reconstructing "why did the beacon stay on" needs the row
             // that says the release was structurally impossible rather than merely refused.
+            //
+            // 🔴 Review round 2 (n-2) — under a SUFFIXED action, never the bare `machine.command.invoke`.
+            // This channel deliberately uses Đợt B's own action id so that "what wrote to this machine?"
+            // finds automatic writes by the query an investigator already runs — and a not-attempted row
+            // filed under that same id would inflate the actuation count in exactly the query that choice
+            // exists to serve. The refusal path already set this precedent with `.denied`
+            // (PolicyResults.DenyAsync's convention); this is the same idea for the same reason.
             await AuditAsync(
-                MachineWriteGate.CommandAction, config, job, desired, value: null,
-                MachineWriteGate.RoleFor(config.TargetKind),
+                $"{MachineWriteGate.CommandAction}{ReleaseUnsupportedActionSuffix}", config, job, desired,
+                value: null, MachineWriteGate.RoleFor(config.TargetKind),
                 new { attempted = false, releaseUnsupported = true }).ConfigureAwait(false);
 
             return RelayOutcome.ReleaseUnsupported;
