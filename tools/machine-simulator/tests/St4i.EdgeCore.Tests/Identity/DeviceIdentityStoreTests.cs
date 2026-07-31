@@ -186,6 +186,31 @@ public sealed class DeviceIdentityStoreTests : IDisposable
     // is NOT proof the key is usable for a TLS handshake. Uses the store's own generated cert as BOTH the
     // server and client certificate (self-signed; a permissive RemoteCertificateValidationCallback accepts
     // it on both sides) — this test is about key USABILITY for schannel, not chain-of-trust validation.
+    /// <summary>
+    /// 🔴 <b>The timeout here CANCELS both sides; it does not abandon them, and that distinction is the whole
+    /// fix.</b> (C-7 review round 2. This test was the direct generator of the orphaned-<c>testhost</c> trap
+    /// <c>scripts/verify-suites.sh</c> exists to catch.)
+    ///
+    /// <para><b>What it used to do.</b> The server ended with <c>await ssl.ReadAsync(buffer)</c> — no token,
+    /// no timeout — and the body waited with <c>Task.WhenAny(both, Task.Delay(15s))</c>, which on the timeout
+    /// branch <b>never awaited <c>both</c> and never cancelled anything</b>. <c>listener.Stop()</c> stops
+    /// ACCEPTING; it does not close a connection that was already accepted. So a timeout failed the test AND
+    /// left a thread-pool task parked forever on an I/O completion that would never arrive, holding a
+    /// <see cref="TcpClient"/>, an <see cref="SslStream"/> and a certificate.</para>
+    ///
+    /// <para>🔴 <b>The failure variant and the HANG variant were the same event.</b> The leak happens only on
+    /// the timeout path, so whether the runner showed a red test or a wedged host depended purely on whether
+    /// it happened to exit around the orphan. A wedged host is worse than a red test in a way that is easy to
+    /// miss: it is "stopped but not idle" — the parked process still emits a background heartbeat of a few
+    /// milliseconds of CPU per minute, which is enough to defeat a "flat CPU means hung" detector, so the
+    /// run does not fail, it simply never ends.</para>
+    ///
+    /// <para><b>Widening the deadline would have made the flake rarer and left the mechanism completely
+    /// intact</b> — which is why the deadline is now GENEROUS (60 s) rather than tight. It is not measuring
+    /// anything: the assertion is "a real handshake completes", not "it completes quickly". Every await on
+    /// both sides takes the token, so a timeout unwinds both tasks through their own <c>using</c> blocks
+    /// instead of stranding them, and <c>await both</c> is unconditional.</para>
+    /// </summary>
     [Fact]
     public async Task Certificate_LoadedFromStore_CanCompleteARealMutualTlsHandshake()
     {
@@ -196,6 +221,11 @@ public sealed class DeviceIdentityStoreTests : IDisposable
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
+        // 🔴 ONE deadline for the whole exchange, threaded into every await on both sides. Generous, because
+        // it bounds a hang rather than measuring a handshake.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var ct = cts.Token;
+
         Exception? serverError = null;
         Exception? clientError = null;
         var serverSawClientCert = false;
@@ -204,7 +234,7 @@ public sealed class DeviceIdentityStoreTests : IDisposable
         {
             try
             {
-                using var connection = await listener.AcceptTcpClientAsync();
+                using var connection = await listener.AcceptTcpClientAsync(ct);
                 using var ssl = new SslStream(connection.GetStream(), leaveInnerStreamOpen: false);
                 var options = new SslServerAuthenticationOptions
                 {
@@ -213,11 +243,13 @@ public sealed class DeviceIdentityStoreTests : IDisposable
                     EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                     RemoteCertificateValidationCallback = (_, _, _, _) => true,
                 };
-                await ssl.AuthenticateAsServerAsync(options, CancellationToken.None);
+                await ssl.AuthenticateAsServerAsync(options, ct);
                 serverSawClientCert = ssl.RemoteCertificate is not null;
 
+                // 🔴 The read that used to park forever. With the token it unwinds, and the `using` blocks
+                // above then actually close the socket and the stream.
                 var buffer = new byte[1];
-                _ = await ssl.ReadAsync(buffer);
+                _ = await ssl.ReadAsync(buffer, ct);
             }
             catch (Exception ex)
             {
@@ -230,7 +262,7 @@ public sealed class DeviceIdentityStoreTests : IDisposable
             try
             {
                 using var tcp = new TcpClient();
-                await tcp.ConnectAsync(IPAddress.Loopback, port);
+                await tcp.ConnectAsync(IPAddress.Loopback, port, ct);
                 using var ssl = new SslStream(tcp.GetStream(), leaveInnerStreamOpen: false);
                 var options = new SslClientAuthenticationOptions
                 {
@@ -239,8 +271,8 @@ public sealed class DeviceIdentityStoreTests : IDisposable
                     EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                     RemoteCertificateValidationCallback = (_, _, _, _) => true,
                 };
-                await ssl.AuthenticateAsClientAsync(options, CancellationToken.None);
-                await ssl.WriteAsync(new byte[] { 42 });
+                await ssl.AuthenticateAsClientAsync(options, ct);
+                await ssl.WriteAsync(new byte[] { 42 }, ct);
             }
             catch (Exception ex)
             {
@@ -248,11 +280,20 @@ public sealed class DeviceIdentityStoreTests : IDisposable
             }
         });
 
-        var both = Task.WhenAll(serverTask, clientTask);
-        var finished = await Task.WhenAny(both, Task.Delay(TimeSpan.FromSeconds(15)));
-        listener.Stop();
+        try
+        {
+            // 🔴 UNCONDITIONAL, and it cannot hang: the token completes both tasks, and both swallow their
+            // own exceptions into the fields asserted below. This is what replaces WhenAny-and-walk-away.
+            await Task.WhenAll(serverTask, clientTask);
+        }
+        finally
+        {
+            listener.Dispose();
+        }
 
-        Assert.True(ReferenceEquals(finished, both), "mTLS handshake timed out");
+        // Reported before the exception assertions, because "it timed out" is a different diagnosis from
+        // "schannel rejected the key" and this is the one that used to strand a process.
+        Assert.False(ct.IsCancellationRequested, "mTLS handshake did not complete within 60s");
         Assert.True(clientError is null, $"client-side handshake threw: {clientError}");
         Assert.True(serverError is null, $"server-side handshake threw: {serverError}");
         Assert.True(serverSawClientCert, "server did not receive a client certificate during the handshake");
