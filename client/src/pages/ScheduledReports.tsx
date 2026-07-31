@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/table';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
+import { mapTrpcError } from '@/lib/trpcErrors';
 import {
   Calendar,
   Clock,
@@ -248,7 +249,7 @@ export function ScheduledReportsContent() {
       deliveriesQuery.refetch();
     },
     onError: (error) => {
-      toast.error(t('scheduledReports.retryError', 'Retry failed'), { description: error.message });
+      toast.error(t('scheduledReports.retryError', 'Retry failed'), { description: mapTrpcError(error) });
     },
   });
 
@@ -268,7 +269,7 @@ export function ScheduledReportsContent() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('scheduledReports.createError'), { description: error.message });
+      toast.error(t('scheduledReports.createError'), { description: mapTrpcError(error) });
     },
   });
 
@@ -278,7 +279,7 @@ export function ScheduledReportsContent() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('scheduledReports.deleteError'), { description: error.message });
+      toast.error(t('scheduledReports.deleteError'), { description: mapTrpcError(error) });
     },
   });
 
@@ -288,7 +289,7 @@ export function ScheduledReportsContent() {
       refetch();
     },
     onError: (error: any) => {
-      toast.error(t('scheduledReports.updateError'), { description: error.message });
+      toast.error(t('scheduledReports.updateError'), { description: mapTrpcError(error) });
     },
   });
 
@@ -312,7 +313,7 @@ export function ScheduledReportsContent() {
       toast.success(t('scheduledReports.sendSuccess'));
     },
     onError: (error) => {
-      toast.error(t('scheduledReports.sendError'), { description: error.message });
+      toast.error(t('scheduledReports.sendError'), { description: mapTrpcError(error) });
     },
   });
 

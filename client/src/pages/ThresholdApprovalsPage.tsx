@@ -52,6 +52,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SlidersHorizontal, AlertTriangle, CheckCircle2, XCircle, Undo2 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { normalizeBatchResponse, type BatchSummary } from "./thresholdApprovalsBatch";
 
 type Approval = {
@@ -131,15 +132,15 @@ export default function ThresholdApprovalsPage() {
 
   const approveM = trpc.thresholdApproval.approve.useMutation({
     onSuccess: () => { toast.success(t("thresholdApprovals.approved")); setDetail(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(mapTrpcError(e)),
   });
   const rejectM = trpc.thresholdApproval.reject.useMutation({
     onSuccess: () => { toast.success(t("thresholdApprovals.rejected")); setDetail(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(mapTrpcError(e)),
   });
   const withdrawM = trpc.thresholdApproval.withdraw.useMutation({
     onSuccess: () => { toast.success(t("thresholdApprovals.withdrawn")); setDetail(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(mapTrpcError(e)),
   });
   const batchApproveM = thresholdApi.batchApprove.useMutation({
     onSuccess: (resp: unknown) => {
@@ -151,11 +152,11 @@ export default function ThresholdApprovalsPage() {
       );
       invalidate();
     },
-    onError: (e: any) => toast.error(e?.message ?? t("thresholdApprovals.batchFailed")),
+    onError: (e: any) => toast.error(mapTrpcError(e)),
   });
   const revertM = thresholdApi.revert.useMutation({
     onSuccess: () => { toast.success(t("thresholdApprovals.reverted")); setRevertTarget(null); invalidate(); },
-    onError: (e: any) => toast.error(e?.message ?? t("thresholdApprovals.revertFailed")),
+    onError: (e: any) => toast.error(mapTrpcError(e)),
   });
 
   // Rows a reviewer may batch-approve: pending + not their own (mirror server SoD).

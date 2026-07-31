@@ -5,6 +5,7 @@ import ReportExportButton from "@/components/ReportExportButton";
 import AIGuidedActionCards from "@/components/AIGuidedActionCards";
 import { buildAiExportConfig } from "@/lib/aiReportExport";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { PageHeader, PageContainer } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,6 @@ import {
   FileBarChart,
   CheckCircle2,
 } from "lucide-react";
-import { toast } from "sonner";
 
 type ReportType = "daily" | "rca" | "model" | "executive";
 
@@ -84,16 +84,16 @@ export default function AIReportsPage() {
 
   // Mutations for generating reports
   const dailySummary = trpc.aiReport.dailySummary.useMutation({
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
   const rcaReport = trpc.aiReport.rcaReport.useMutation({
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
   const modelPerformance = trpc.aiReport.modelPerformance.useMutation({
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
   const executiveSummary = trpc.aiReport.executiveSummary.useMutation({
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const isGenerating =

@@ -92,7 +92,7 @@ const SCAN_ROOTS: Array<{ dir: string; displayPrefix: string }> = [
 ];
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_RAW_MESSAGE_HANDLERS = 264; // ← Task 8 lượt B, lô 2 (8 file 5-site): 304 → 264 (40 site, xem task-8b-report.md).
+const ALLOWED_RAW_MESSAGE_HANDLERS = 199; // ← Task 8 lượt C, lô 1 (15 file top nợ 264): 264 → 199 (65 site, xem task-8c-report.md).
 
 function walkTsxFiles(dir: string): string[] {
   const out: string[] = [];

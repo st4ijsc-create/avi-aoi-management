@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   Plus,
   Pencil,
@@ -87,7 +88,7 @@ export default function ManualMachineMapping() {
       refetchConnections();
     },
     onError: (error) => {
-      toast.error(error.message || t('machines.connectionCreateError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -99,7 +100,7 @@ export default function ManualMachineMapping() {
       refetchConnections();
     },
     onError: (error) => {
-      toast.error(error.message || t('machines.connectionUpdateError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -109,7 +110,7 @@ export default function ManualMachineMapping() {
       refetchConnections();
     },
     onError: (error) => {
-      toast.error(error.message || t('machines.connectionDeleteError'));
+      toast.error(mapTrpcError(error));
     },
   });
 
@@ -123,7 +124,7 @@ export default function ManualMachineMapping() {
       refetchConnections();
     },
     onError: (error) => {
-      toast.error(error.message || t('machines.testConnectionError'));
+      toast.error(mapTrpcError(error));
     },
     onSettled: () => {
       setTestingConnectionId(null);

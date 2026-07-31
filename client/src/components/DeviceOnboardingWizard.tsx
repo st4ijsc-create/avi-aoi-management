@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import { getSharedSocket } from "@/lib/socketManager";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -120,7 +121,7 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
       onChanged?.();
       setStep(2);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const createTag = trpc.deviceAdapter.tags.create.useMutation({
@@ -129,12 +130,12 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
       toast.success(t("wizard.tagCreated", "Đã tạo tag"));
       setStep(3);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const testConnection = trpc.deviceAdapter.testConnection.useMutation({
     onSuccess: (res) => setTestResult(res),
-    onError: (e) => setTestResult({ ok: false, latencyMs: 0, error: e.message }),
+    onError: (e) => setTestResult({ ok: false, latencyMs: 0, error: mapTrpcError(e) }),
   });
 
   const enableAdapter = trpc.deviceAdapter.update.useMutation({
@@ -144,7 +145,7 @@ export default function DeviceOnboardingWizard({ open, onOpenChange, onChanged }
       onChanged?.();
       setStep(5);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Step 6: live-sample listener (only while on confirm step) ──

@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,7 +107,7 @@ export function EscalationRulesSection() {
     void utils.alertEscalation.list.invalidate();
     void utils.alertEscalation.recentEscalations.invalidate();
   };
-  const onError = (e: { message: string }) => toast.error(e.message);
+  const onError = (e: { message: string }) => toastTrpcError(e);
 
   const createM = trpc.alertEscalation.create.useMutation({
     onSuccess: () => { toast.success(t("escalation.ruleCreated", "Escalation rule created")); setDialogOpen(false); refresh(); },

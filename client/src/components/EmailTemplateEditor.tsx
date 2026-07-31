@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,7 +111,7 @@ export function EmailTemplateEditor() {
       setNewTemplateName('');
     },
     onError: (error) => {
-      toast.error(t('common.errorWithMessage', { message: error.message }));
+      toast.error(t('common.errorWithMessage', { message: mapTrpcError(error) }));
     },
   });
   const updateMutation = trpc.smtp.updateEmailTemplate.useMutation({
@@ -119,7 +120,7 @@ export function EmailTemplateEditor() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('common.errorWithMessage', { message: error.message }));
+      toast.error(t('common.errorWithMessage', { message: mapTrpcError(error) }));
     },
   });
   const deleteMutation = trpc.smtp.deleteEmailTemplate.useMutation({
@@ -130,7 +131,7 @@ export function EmailTemplateEditor() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('common.errorWithMessage', { message: error.message }));
+      toast.error(t('common.errorWithMessage', { message: mapTrpcError(error) }));
     },
   });
   const setDefaultMutation = trpc.smtp.setDefaultEmailTemplate.useMutation({
@@ -139,7 +140,7 @@ export function EmailTemplateEditor() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('common.errorWithMessage', { message: error.message }));
+      toast.error(t('common.errorWithMessage', { message: mapTrpcError(error) }));
     },
   });
 

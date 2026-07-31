@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useCanWrite } from "@/components/PermissionGate";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -87,7 +88,7 @@ export function PanelDefinitionPanel({ productModelId }: { productModelId: numbe
   });
 
   const invalidate = () => utils.productPanel.listByProduct.invalidate({ productModelId });
-  const onError = (err: { message: string }) => toast.error(err.message);
+  const onError = (err: { message: string }) => toastTrpcError(err);
 
   const createMutation = trpc.productPanel.create.useMutation({
     onSuccess: (r) => {

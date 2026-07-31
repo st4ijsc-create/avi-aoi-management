@@ -25,6 +25,7 @@ import {
   EyeOff
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { cn } from "@/lib/utils";
 
 export function TwoFactorSetup() {
@@ -48,7 +49,7 @@ export function TwoFactorSetup() {
       toast.success(t('auth.qrCodeGenerated'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -62,7 +63,7 @@ export function TwoFactorSetup() {
       toast.success(t('auth.twoFactorEnabled'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -74,7 +75,7 @@ export function TwoFactorSetup() {
       toast.success(t('auth.twoFactorDisabled'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -88,7 +89,7 @@ export function TwoFactorSetup() {
       toast.success(t('auth.backupCodesRegenerated'));
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
