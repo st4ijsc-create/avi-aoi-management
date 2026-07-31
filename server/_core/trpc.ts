@@ -1,12 +1,12 @@
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
-import { initTRPC, TRPCError } from "@trpc/server";
+import { initTRPC } from "@trpc/server";
 import type { TRPCDefaultErrorShape, TRPCErrorFormatter } from "@trpc/server";
 import superjson from "superjson";
 import speakeasy from "speakeasy";
 import type { TrpcContext } from "./context";
 // Doc 37 P0-3 — server-side per-module license gate (flag-gated pass-through).
 import { moduleGate } from "./moduleGate";
-import { readAppErrorMeta } from "./appError";
+import { appError, readAppErrorMeta } from "./appError";
 
 /**
  * Đợt sửa cuối (Phần 4, khuyến nghị mạnh của review cuối) — CÔNG TẮC QUAY LUI.
@@ -72,7 +72,10 @@ const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
 
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+    // Task 10 (F3, doc71) — AUTH_REQUIRED: chưa đăng nhập (ctx.user null), đúng
+    // ngữ cảnh mã này được định nghĩa cho (khác PERMISSION_DENIED — có quyền
+    // hay không CHỈ xét được sau khi biết là ai).
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
   }
 
   return next({
@@ -197,14 +200,26 @@ export const adminProcedure = t.procedure.use(
     const { ctx, next } = opts;
 
     if (!ctx.user || ctx.user.role !== 'admin') {
-      throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
+      // Task 10 (F3, doc71) — điều kiện gộp CẢ "chưa đăng nhập" LẪN "đã đăng
+      // nhập nhưng không phải admin" thành MỘT thông báo (tiền lệ ĐÃ CÓ, y hệt
+      // hierarchyRouters.ts machineRegistrationGate: `ctx.user?.role !== "admin"`
+      // → PERMISSION_DENIED{action:"adminAccess"}) — giữ NGUYÊN hành vi gộp
+      // này (không tách thành AUTH_REQUIRED riêng cho nhánh !ctx.user), đúng
+      // quy tắc "giữ nguyên trừ khi có lý do rõ": tách sẽ đổi hành vi ngoài
+      // phạm vi di trú cơ chế ném lỗi của task này.
+      throw appError("FORBIDDEN", "PERMISSION_DENIED", { action: "adminAccess" }, NOT_ADMIN_ERR_MSG);
     }
 
     if (!ctx.user.twoFactorEnabled) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Tài khoản admin phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
-      });
+      throw appError(
+        "FORBIDDEN",
+        "TWO_FACTOR_NOT_SET_UP",
+        // reason "setUpInSecuritySettings" — TÀI KHOẢN NÀY (đã đăng nhập, đã
+        // biết là admin) cần ĐI THIẾT LẬP 2FA, đúng lớp 4/6 call site Task 4
+        // (F6) đã chốt dùng reason này (không phải nhánh "đang tắt 2FA").
+        { reason: "setUpInSecuritySettings" },
+        "Tài khoản admin phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
+      );
     }
 
     return next({
@@ -230,13 +245,15 @@ const PRIVILEGED_ROLES: UserRole[] = ['admin', 'supervisor', 'quality_inspector'
 export const require2FA = t.middleware(async opts => {
   const { ctx, next } = opts;
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
   }
   if (PRIVILEGED_ROLES.includes(ctx.user.role as UserRole) && !ctx.user.twoFactorEnabled) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
-    });
+    throw appError(
+      "FORBIDDEN",
+      "TWO_FACTOR_NOT_SET_UP",
+      { reason: "setUpInSecuritySettings" },
+      "Tài khoản đặc quyền phải bật xác thực 2 bước (2FA). Vào Cài đặt > Bảo mật để thiết lập.",
+    );
   }
   return next({ ctx: { ...ctx, user: ctx.user } });
 });
@@ -292,7 +309,7 @@ async function verifyFreshTotp(userId: number, code: string): Promise<boolean> {
 export const requireFreshTotp = t.middleware(async (opts) => {
   const { ctx, next, type } = opts;
   if (!actuationStepUp2faEnabled() || type !== "mutation") return next();
-  if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+  if (!ctx.user) throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
 
   const sessionKey = ctx.sessionToken || `user:${ctx.user.id}`;
   const now = Date.now();
@@ -310,14 +327,24 @@ export const requireFreshTotp = t.middleware(async (opts) => {
   }
 
   if (!totpCode || !/^\d{6}$/.test(totpCode)) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Yêu cầu mã xác thực 2 bước (OTP 6 số) cho lệnh điều khiển/triển khai.",
-    });
+    // Task 10 (F3, doc71) — điều kiện gộp "thiếu totpCode" LẪN "sai định dạng
+    // (không đúng 6 số)". INVALID_VALUE{field:"twoFactorCode"} theo đúng tiền
+    // lệ aoiOnboardingRouter.ts (review cuối, ca I-A #14): trường ".trim() ??
+    // ''" gộp rỗng+quá-ngắn dùng INVALID_VALUE thay vì FIELD_REQUIRED, vì
+    // FIELD_REQUIRED nói "thiếu" còn ở đây có thể ĐÃ CÓ giá trị (chỉ sai định
+    // dạng) — cùng field key "twoFactorCode" đã dùng ở twoFactorRouter.ts:255.
+    throw appError(
+      "FORBIDDEN",
+      "INVALID_VALUE",
+      { field: "twoFactorCode" },
+      "Yêu cầu mã xác thực 2 bước (OTP 6 số) cho lệnh điều khiển/triển khai.",
+    );
   }
 
   const ok = await verifyFreshTotp(ctx.user.id, totpCode);
-  if (!ok) throw new TRPCError({ code: "FORBIDDEN", message: "Mã xác thực 2 bước không hợp lệ." });
+  if (!ok) {
+    throw appError("FORBIDDEN", "INVALID_VALUE", { field: "twoFactorCode" }, "Mã xác thực 2 bước không hợp lệ.");
+  }
 
   stepUpVerifiedUntil.set(sessionKey, now + STEPUP_TTL_MS);
   // Dọn bộ nhớ (bounded): xoá các mục đã hết hạn khi map phình to.
@@ -333,14 +360,24 @@ export function roleProcedure(...allowedRoles: UserRole[]) {
       const { ctx, next } = opts;
 
       if (!ctx.user) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+        throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
       }
 
       if (!allowedRoles.includes(ctx.user.role as UserRole)) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: `Required role: ${allowedRoles.join(' or ')}`,
-        });
+        // Task 10 (F3, doc71) — `roleProcedure` là factory DÙNG CHUNG (bomRouter,
+        // componentLibraryRouter, ...), mỗi call site truyền một tập role khác
+        // nhau — không có TÊN hành động cụ thể để gán action. action:
+        // "insufficientRole" là khoá CHUNG (giống mọi PERMISSION_DENIED khác đã
+        // migrate trong sprint này, danh sách role cụ thể CHỈ còn ở
+        // fallbackMessage — mất khi đã dịch, đúng tiền lệ đã chấp nhận cho toàn
+        // bộ 687 call site requirePermission() ở accessControl.ts, xem
+        // task-10-report.md).
+        throw appError(
+          "FORBIDDEN",
+          "PERMISSION_DENIED",
+          { action: "insufficientRole" },
+          `Required role: ${allowedRoles.join(' or ')}`,
+        );
       }
 
       return next({ ctx: { ...ctx, user: ctx.user } });
@@ -370,13 +407,15 @@ const WRITE_DENIED_ROLES: UserRole[] = ['viewer', 'user'];
 const requireWrite = t.middleware(async opts => {
   const { ctx, next } = opts;
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, UNAUTHED_ERR_MSG);
   }
   if (WRITE_DENIED_ROLES.includes(ctx.user.role as UserRole)) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Tài khoản chỉ-đọc (viewer/user) không có quyền thay đổi dữ liệu.",
-    });
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "modifyData" },
+      "Tài khoản chỉ-đọc (viewer/user) không có quyền thay đổi dữ liệu.",
+    );
   }
   return next({ ctx: { ...ctx, user: ctx.user } });
 });
