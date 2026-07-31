@@ -92,6 +92,11 @@ note() { printf '  %s\n' "$*"; }
 # empty string when there is none (or when PowerShell is unavailable). See the hang
 # check below for why this cannot be `ps`: Windows' `ps` has no CPU column at all.
 # Empty must read as "cannot tell", never as "flat".
+# 🔴 This hard-codes a process named `testhost`, which is vstest's host. Under
+# Microsoft.Testing.Platform the host is the test assembly's OWN executable, so this would
+# return empty forever, the CPU check would go permanently inert (correctly reading "cannot
+# tell", never "flat"), and only the wall-clock ceiling would remain. That degrades safely --
+# but SILENTLY. If an SDK bump ever removes half this detector, this comment is why.
 testhost_cpu_seconds() {
   powershell -NoProfile -NonInteractive -Command \
     "(Get-Process testhost -ErrorAction SilentlyContinue | Measure-Object -Property CPU -Sum).Sum" \
@@ -113,6 +118,20 @@ if ! grep -qE '^ *0 Error\(s\)' "$BUILD_LOG"; then
   echo "FAIL: build did not report 0 errors. Refusing to read any test count."
   grep -E 'error |Error\(s\)' "$BUILD_LOG" | head -20
   echo "  full log: $BUILD_LOG"
+  exit 1
+fi
+# 🔴 TRAP 7(e), demonstrated live: a rebuild reported "117 Warning(s) / 0 Error(s)" of which
+# TWELVE were MSB3061 "Unable to delete file ... Access to the path" -- a live process holding
+# output files, so Rebuild could not delete them. THE GATE ABOVE PASSED. Its own header says
+# "a locked file can leave a project unrelinked while the overall invocation still reports
+# success" -- that is trap 1 verbatim, and the gate reads the log precisely to catch it, but it
+# was reading the wrong line. There the un-deleted files were runner assemblies so the build
+# stayed valid; MSB3061 on a PRODUCT assembly is trap 4 and the gate cannot tell them apart.
+# Every suite then runs --no-build against whatever did not relink.
+if grep -q 'MSB3061' "$BUILD_LOG"; then
+  echo "FAIL: the rebuild could not delete build outputs (MSB3061) -- a project may not have relinked."
+  grep -E 'MSB3061' "$BUILD_LOG" | head -10
+  echo "  Kill stray test hosts and re-run. Full log: $BUILD_LOG"
   exit 1
 fi
 WARNINGS=$(grep -oE '^ *[0-9]+ Warning\(s\)' "$BUILD_LOG" | grep -oE '[0-9]+' | head -1)
@@ -154,6 +173,15 @@ for entry in "${SUITES[@]}"; do
   # 7.7s across 30s. It was not hung: a suite that legitimately AWAITS a timer (this repository
   # has spool, WAL-maintenance and retry-backoff tests that do) burns no CPU while it waits, and
   # is indistinguishable from a hang over any single window. So the fast path now needs
+  # HUNG_SAMPLES consecutive flat periods before it will kill anything.
+  #
+  # 🔴 AND THE CPU CHECK IS THE COMPANION, NOT THE PRIMARY -- I had that backwards. C-7 observed
+  # EdgeCore idle at a GENUINELY FLAT 9.55s of CPU for several minutes mid-suite and then finish
+  # 735/735 normally, in the same session where another suite sat "flat but stopped". So
+  # flat-and-healthy and flat-and-hung both occur here, minutes apart, in the same project: the
+  # CPU heuristic cannot separate them IN EITHER DIRECTION. The wall-clock ceiling below is what
+  # actually bounds the failure; the CPU check only makes the common case fail faster.
+  #
   # 🔴 TRAP 7(c), found by C-7's review AFTER 7(a) and 7(b) were fixed. The comparison used to
   # be WITHIN one window only -- cpu1 at t+60, cpu2 at t+90 -- so the 60s BETWEEN windows was
   # never compared to anything. A suite busy in the unsampled gaps and idle across each sampled
@@ -180,9 +208,14 @@ for entry in "${SUITES[@]}"; do
   # So the CPU heuristic gets a companion it cannot argue with: a hard wall-clock ceiling.
   # The two answer different questions -- "is it doing anything?" and "has it taken longer than
   # any healthy run ever does?" -- and a hang only has to trip one. The ceiling is generous
-  # (the slowest suite here runs ~3-4 min; 25 min is ~6x) because killing a healthy suite costs
+  # (the slowest suite here runs ~3-4 min; 15 min is ~4x) because killing a healthy suite costs
   # the whole run, orphans a test host and breaks the NEXT build.
-  SUITE_CEILING_SECONDS=1500
+  #
+  # Was 1500s, lowered to 900s once the mTLS leak that motivated it was fixed at the mechanism.
+  # Worth stating plainly: at 1500s the ceiling would NOT have caught the incident that prompted
+  # it -- the observed wedge was ~20 min and resolved on its own. A ceiling's value is bounding
+  # the UNBOUNDED case, not the one you happened to measure.
+  SUITE_CEILING_SECONDS=900
   started=$SECONDS
   HUNG_SAMPLES=5
   hung=0
