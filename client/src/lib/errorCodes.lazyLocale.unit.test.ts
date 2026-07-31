@@ -145,3 +145,81 @@ describe("translateAppError — F8: bundle en/zh CHƯA nạp xong (hồi quy do 
     expect(out).not.toContain("sản phẩm");
   });
 });
+
+/**
+ * Task 6 round 2 (F8, Important — reviewer) — ĐÍNH CHÍNH round 1: `hasResourceBundle`
+ * chỉ trả lời "ngôn ngữ này có bundle nạp CHƯA" (đúng-hay-sai TOÀN CỤC), KHÔNG trả lời
+ * "khoá `errors.<appCode>` NÀY có tồn tại trong bundle đó không" (đúng-hay-sai TỪNG
+ * KHOÁ). Bundle `en` có thể nạp ĐẦY ĐỦ (hàng nghìn khoá khác) mà vẫn THIẾU đúng một
+ * khoá `errors.<appCode>` cụ thể (khoá đó chỉ tồn tại ở `vi.json`, chưa dịch sang
+ * en/zh — hoàn toàn có thể xảy ra khi 6 task còn lại của sprint này thêm mã lỗi mới).
+ * `i18n.hasResourceBundle('en','translation')` trả `true` (bundle CÓ nạp), nên cổng
+ * round 1 (đọc `i18n.language` + `hasResourceBundle`) cho đi qua — nhưng
+ * `i18n.t('errors.<appCode>', ...)` vẫn KHÔNG kích SENTINEL: `Translator.resolve()`
+ * (`node_modules/i18next/dist/cjs/i18next.js`) duyệt CẢ chuỗi `toResolveHierarchy(lng,
+ * fallbackLng)` CHO TỪNG KHOÁ RIÊNG LẺ — không quan tâm bundle "tổng thể" đã nạp hay
+ * chưa — nên vẫn lặng lẽ rơi về bản dịch `vi` qua `fallbackLng`. Đây là lớp lỗi F8
+ * NGUYÊN VẸN, chỉ khác cơ chế kích hoạt (thiếu-khoá-đơn-lẻ thay vì cả-bundle-chưa-nạp).
+ *
+ * Test dựng bundle `en` "thật" (nạp từ `en.json` thật, có đủ mọi khoá khác) rồi CHỈ
+ * xoá đúng MỘT khoá đang tra — mô phỏng đúng tình huống: bản dịch cho appCode/reason
+ * mới chưa kịp thêm vào en/zh khi router đã dùng appCode đó.
+ */
+describe("translateAppError — F8 round 2: bundle NẠP ĐỦ nhưng THIẾU đúng 1 khoá errors.<appCode> (Important — reviewer)", () => {
+  it("bundle en nạp đủ (mọi khoá khác) nhưng THIẾU đúng errors.ENTITY_NOT_FOUND ⇒ vẫn phải rơi về fallback, không được lấy câu vi qua fallbackLng", async () => {
+    await i18n.changeLanguage("en");
+    // XOÁ SẠCH bundle en trước — các test TRƯỚC trong CÙNG file này (vd "SAU KHI bundle
+    // en đã nạp xong") đã `addResourceBundle` en ĐẦY ĐỦ; `addResourceBundle(..., deep:
+    // true, overwrite: true)` chỉ GHI ĐÈ/GỘP các khoá có trong object mới, KHÔNG xoá khoá
+    // cũ vắng mặt trong object mới — nếu không xoá sạch trước, `delete` bên dưới vô
+    // nghĩa (khoá vẫn còn nguyên từ lần nạp đầy đủ trước đó, test xanh giả).
+    i18n.removeResourceBundle("en", "translation");
+    const enFull = localeJson("../i18n/locales/en.json") as { errors?: Record<string, unknown> };
+    // Xoá ĐÚNG khoá đang tra, giữ nguyên mọi khoá khác (kể cả errors.entity.product) —
+    // mô phỏng "bản dịch câu appCode chưa kịp thêm" chứ không phải "cả bundle rỗng".
+    delete enFull.errors?.ENTITY_NOT_FOUND;
+    i18n.addResourceBundle("en", "translation", enFull, true, true);
+    expect(i18n.hasResourceBundle("en", "translation")).toBe(true); // bundle CÓ nạp — khác round 1
+
+    const out = translateAppError(
+      "ENTITY_NOT_FOUND",
+      { entity: "product" },
+      "Could not find product.",
+    );
+
+    // Bug F8 round 2 (TRƯỚC fix): cổng round 1 chỉ soi hasResourceBundle (true) nên
+    // cho qua; i18n.t() rơi về bản vi qua fallbackLng ⇒ "Không tìm thấy sản phẩm."
+    expect(out).not.toContain("Không tìm thấy");
+    expect(out).not.toContain("sản phẩm");
+    expect(out).toBe("Could not find product.");
+  });
+
+  it("có `reason` (lời gọi t() LỒNG của Task 5) + bundle en nạp đủ nhưng THIẾU đúng errors.reason.dryRunNotPassed ⇒ nhánh lồng cũng KHÔNG được lấy câu vi qua fallbackLng", async () => {
+    await i18n.changeLanguage("en");
+    // Xoá sạch bundle en trước — cùng lý do đã ghi ở test trên (addResourceBundle deep-
+    // merge không xoá khoá cũ vắng mặt trong object mới).
+    i18n.removeResourceBundle("en", "translation");
+    const enFull = localeJson("../i18n/locales/en.json") as {
+      errors?: { reason?: Record<string, unknown> };
+    };
+    // OPERATION_FAILED_WITH_REASON GIỮ NGUYÊN ở en (mới chỉ thiếu bản dịch reason con) —
+    // đúng kịch bản thật: thêm khoá reason mới mà quên dịch, câu khung vẫn còn nguyên.
+    delete enFull.errors?.reason?.dryRunNotPassed;
+    i18n.addResourceBundle("en", "translation", enFull, true, true);
+    expect(i18n.hasResourceBundle("en", "translation")).toBe(true);
+
+    const out = translateAppError(
+      "OPERATION_FAILED",
+      { operation: "rescheduleProductionOrder", reason: "dryRunNotPassed" },
+      "Could not reschedule order.",
+    );
+
+    // Bug F8 round 2 ở nhánh LỒNG (TRƯỚC fix): errors.reason.dryRunNotPassed rơi về
+    // bản vi "Chạy bước 3 (Dry-run) trước, hoặc nhờ admin ký với lý do override." qua
+    // fallbackLng — câu chính (khung _WITH_REASON, vẫn còn ở en) trộn với phần lý do
+    // tiếng Việt, đúng ca "câu chính đúng tiếng Anh, phần lý do lại tiếng Việt".
+    expect(out).not.toContain("Chạy bước 3");
+    expect(out).not.toContain("Dry-run) trước");
+    expect(out).not.toContain("admin ký với lý do");
+  });
+});

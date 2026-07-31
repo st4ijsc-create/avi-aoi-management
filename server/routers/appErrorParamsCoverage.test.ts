@@ -237,3 +237,68 @@ describe("cổng chặn — mọi placeholder của errors.reason.* phải đư�
     expect(missing).toEqual([]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Task 6 round 2 (F8, Important — reviewer) — CỔNG THỨ TƯ, đóng lỗ hổng reviewer chỉ
+// ra: `npm run i18n:check` (scripts/i18n-check.mjs) chỉ so PLACEHOLDER giữa các
+// locale CÙNG CÓ một khoá — nó CỐ Ý bỏ qua khoá chỉ tồn tại ở <2 locale (dòng
+// `if (present.length < 2) continue;`), nên một khoá dưới `errors.*` (khoá cấp
+// appCode như `errors.ENTITY_NOT_FOUND`, biến thể `_WITH_REASON`, hay bất kỳ từ điển
+// con nào như `errors.reason.*`/`errors.entity.*`) chỉ thêm ở MỘT locale (vd viết bản
+// vi trước, quên dịch en/zh) sẽ KHÔNG bị bắt bởi bất kỳ cổng nào đang có hôm nay — kể
+// cả 2 cổng phía trên trong chính file này (chỉ kiểm giá trị THAM SỐ `entity:`/
+// `reason:` được TRUYỀN Ở CALL-SITE đã có khoá dịch, không kiểm TOÀN BỘ từ điển
+// `errors.*` có khớp nhau hay không).
+//
+// Vì sao đây đúng là điều kiện kích hoạt lớp lỗi F8
+// (client/src/lib/errorCodes.ts, translateAppError): khi bundle của activeLng THIẾU
+// đúng một khoá mà bundle vi CÓ, cơ chế fallbackLng (trước round 2) hoặc chính khoá
+// đó không tồn tại (sau round 2, đã chặn fallbackLng — nhưng khi đó câu RƠI VỀ
+// fallbackMessage máy chủ, không còn hiện chỉ dẫn/câu chuẩn nữa) — cả hai đều là hậu
+// quả xấu mà lẽ ra không cần xảy ra nếu 3 locale luôn đủ bộ khoá. Cổng này canh giữ
+// TRỰC TIẾP cái điều kiện kích hoạt đó: hôm nay (Task 6 round 2) 3 locale khớp
+// 460/460/460 khoá cấp `errors.*` — KHÔNG có gì ép buộc điều đó tiếp diễn khi 6 task
+// còn lại của sprint này thêm mã lỗi mới; cổng này biến "khớp hôm nay" thành "khớp
+// mãi mãi, đỏ ngay nếu lệch" thay vì im lặng thoái hoá.
+//
+// Đệ quy TOÀN BỘ khối `errors` (mọi cấp lồng — không chỉ appCode cấp 1) và khẳng định
+// TẬP HỢP khoá (không chỉ placeholder của khoá đã có ở ≥2 locale, khác i18n-check.mjs)
+// khớp nhau TUYỆT ĐỐI ở cả ba locale.
+describe("cổng chặn — tập khoá errors.* phải khớp tuyệt đối giữa vi/en/zh (bổ khuyết i18n-check.mjs, Task 6 round 2)", () => {
+  function flattenKeys(obj: Record<string, unknown>, prefix = ""): string[] {
+    const out: string[] = [];
+    for (const [k, v] of Object.entries(obj)) {
+      const key = prefix ? `${prefix}.${k}` : k;
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        out.push(...flattenKeys(v as Record<string, unknown>, key));
+      } else {
+        out.push(key);
+      }
+    }
+    return out;
+  }
+
+  it("không khoá errors.* nào chỉ tồn tại ở 1 hoặc 2/3 locale", () => {
+    const dicts = Object.fromEntries(LOCALES.map((l) => [l, loadErrorsBlock(l)])) as Record<
+      (typeof LOCALES)[number],
+      Record<string, unknown>
+    >;
+    const keySets = Object.fromEntries(
+      LOCALES.map((l) => [l, new Set(flattenKeys(dicts[l]))]),
+    ) as Record<(typeof LOCALES)[number], Set<string>>;
+    const allKeys = new Set(LOCALES.flatMap((l) => [...keySets[l]]));
+
+    const missing: string[] = [];
+    for (const key of allKeys) {
+      const presentIn = LOCALES.filter((l) => keySets[l].has(key));
+      if (presentIn.length !== LOCALES.length) {
+        const absentFrom = LOCALES.filter((l) => !presentIn.includes(l));
+        missing.push(`errors.${key} — có ở [${presentIn.join(",")}], THIẾU ở [${absentFrom.join(",")}]`);
+      }
+    }
+    if (missing.length > 0) {
+      console.error(`[cổng errors.* key-parity] ${missing.length} khoá lệch:\n` + missing.join("\n"));
+    }
+    expect(missing).toEqual([]);
+  });
+});

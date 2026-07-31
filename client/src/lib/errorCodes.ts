@@ -60,7 +60,29 @@ function sanitizeFreeParams(
   return out;
 }
 
-function localizeParams(params: Record<string, string | number> | undefined) {
+// Task 6 round 2 (F8, Important — reviewer) — MỌI lời gọi `i18n.t()`/`i18n.exists()`
+// trong file này (kể cả lời gọi LỒNG cho `errors.<space>.*`/`errors.reason.*` bên
+// dưới) phải truyền CẢ HAI option này, không được thiếu option nào:
+//   - `lng: activeLng` — ép tra cứu vào ĐÚNG ngôn ngữ người dùng đang chọn, không
+//     để i18next tự suy ra từ `this.language`/`resolvedLanguage` nội bộ (round 1 đã
+//     lộ bug đúng ở chỗ dựa vào `resolvedLanguage` — một giá trị i18next TỰ "làm
+//     tròn" theo trạng thái nạp bundle, xem lịch sử ở cuối file).
+//   - `fallbackLng: false` — CHẶN chuỗi fallback (`fallbackLng: 'vi'` ở
+//     `client/src/i18n/index.ts`) CHO RIÊNG lời gọi này. Xác minh bằng đọc thẳng
+//     `node_modules/i18next/dist/cjs/i18next.js`, `LanguageUtil.toResolveHierarchy`:
+//     `const fallbackCodes = this.getFallbackCodes((fallbackCode === false ? [] :
+//     fallbackCode) || this.options.fallbackLng || [], code);` — truyền
+//     `fallbackLng: false` khiến `fallbackCodes = []`, nên hierarchy tra cứu (dùng
+//     bởi CẢ `t()` lẫn `exists()`, cùng đi qua `Translator.resolve()`) chỉ còn ĐÚNG
+//     `activeLng`, không còn đường nào rơi được về `vi`.
+// Gộp cả hai, `defaultValue`/SENTINEL kích hoạt ĐÚNG NHƯ THIẾT KẾ GỐC của file này
+// (dòng đầu file) mỗi khi khoá không tồn tại Ở ĐÚNG ngôn ngữ đang tra — bất kể lý do
+// là "cả bundle chưa nạp" hay "bundle nạp đủ nhưng thiếu đúng khoá đó" (hai lớp con
+// của CÙNG một bất biến "thiếu khoá ⇒ fallback", xem lịch sử round 1/2 ở cuối file).
+function localizeParams(
+  params: Record<string, string | number> | undefined,
+  activeLng: string,
+) {
   if (!params) return undefined;
   const sanitized = sanitizeFreeParams(params);
   const out: Record<string, string | number> = { ...sanitized };
@@ -78,16 +100,26 @@ function localizeParams(params: Record<string, string | number> | undefined) {
       // Object.entries ở trên) làm ngữ cảnh nội suy cho lời gọi lồng — an toàn cho
       // entity/operation/field/feature/action vì các mục đó là chuỗi thô không có
       // placeholder nào để bị ảnh hưởng.
-      out[key] = i18n.t(`errors.${space}.${raw}`, { ...sanitized, defaultValue: raw });
+      //
+      // Task 6 round 2 (F8, Important) — `lng`/`fallbackLng: false` BẮT BUỘC ở
+      // ĐÚNG lời gọi lồng này: khi khoá `errors.reason.<raw>` chỉ dịch ở `vi`
+      // (chưa kịp thêm en/zh), thiếu 2 option này sẽ khiến lời gọi lồng lặng lẽ
+      // trả câu CHỈ DẪN TIẾNG VIỆT trong khi câu chính (khung `_WITH_REASON` bên
+      // dưới) vẫn đúng tiếng Anh — ca "câu chính đúng, phần lý do lồng sai ngôn
+      // ngữ" mà reviewer round 2 chỉ đích danh. `defaultValue: raw` GIỮ NGUYÊN
+      // (không đổi) — không liên quan SENTINEL, đây là quy tắc "hiện thô khoá
+      // camelCase khi chưa dịch" đã có từ trước Task 5/6, không phải cùng bất
+      // biến "thiếu khoá appCode ⇒ fallback máy chủ".
+      out[key] = i18n.t(`errors.${space}.${raw}`, {
+        ...sanitized,
+        lng: activeLng,
+        fallbackLng: false,
+        defaultValue: raw,
+      });
     }
   }
   return out;
 }
-
-// Sprint 5 doc71 Task 6 (F8) — namespace DUY NHẤT dự án dùng (xem `defaultNS:
-// 'translation'` ở client/src/i18n/index.ts; mọi addResourceBundle trong repo
-// đều truyền 'translation'). Đọc từ i18n/index.ts, không đoán.
-const NS = "translation";
 
 export function translateAppError(
   appCode: string,
@@ -97,42 +129,44 @@ export function translateAppError(
   // Sentinel: i18next trả về chính defaultValue khi khoá không tồn tại.
   const SENTINEL = " __missing__";
 
-  // Task 6 (F8) — hồi quy do di trú: en/zh nạp bundle bằng `import()` ĐỘNG
-  // (client/src/i18n/index.ts, `ensureLocale`/`lazyLocales`), và dự án cấu
-  // hình `fallbackLng: 'vi'`. Trong cửa sổ chờ nạp (hoặc khi chunk lỗi vĩnh
-  // viễn — mạng chập/offline), bundle 'translation' của NGÔN NGỮ ĐANG HOẠT
-  // ĐỘNG chưa tồn tại. Nếu cứ gọi i18n.t() như bình thường, i18next rơi về
-  // fallbackLng 'vi' (đã nạp từ trước qua loadVi(), main.tsx gate render trên
-  // i18nReady) TRƯỚC KHI chạm SENTINEL/defaultValue của ta — trả nguyên CÂU
-  // TIẾNG VIỆT cho người dùng đã chọn en/zh (vd "Không tìm thấy sản phẩm."
-  // thay vì "Could not find product."). Mở rộng bất biến đã có của file này
-  // ("thiếu KHOÁ ⇒ fallback") thành "thiếu BUNDLE ⇒ fallback": kiểm
-  // hasResourceBundle TRƯỚC khi gọi t() lần nào.
+  // ── Lịch sử 2 vòng sửa F8 (doc71 Task 6) — đọc để hiểu VÌ SAO cơ chế dưới đây
+  // được chọn, không phải chỉ để biết NÓ LÀM GÌ ──
   //
-  // ⚠ ĐÍNH CHÍNH bản vá dở của phiên trước (bug khiến 3 test đỏ) — SAI CHỖ
-  // NÀO: bản cũ đọc `i18n.resolvedLanguage` để suy ra "ngôn ngữ đang hoạt
-  // động". Đọc thẳng mã nguồn i18next (node_modules/i18next/dist/cjs/i18next.js,
-  // hàm `changeLanguage` → `setResolvedLanguage`): MỖI LẦN `changeLanguage()`
-  // chạy, `resolvedLanguage` tự đi qua `this.languages` (chuỗi hierarchy, vd
-  // ['en','vi']) và CHỐT vào ngôn ngữ ĐẦU TIÊN đã có `hasLanguageSomeTranslations`
-  // — nếu bundle 'en' CHƯA nạp nhưng 'vi' đã nạp (đúng tình huống ta đang mô
-  // phỏng), `resolvedLanguage` tự rơi về 'vi' NGAY TẠI THỜI ĐIỂM changeLanguage,
-  // TRƯỚC KHI hàm này kịp kiểm tra gì cả — gate cũ đọc phải giá trị đã-rơi-về-vi
-  // đó nên `hasResourceBundle('vi', NS)` luôn true, gate không bao giờ kích
-  // hoạt, y hệt bug ban đầu (chỉ vòng qua một lớp gián tiếp). Ngược lại, việc
-  // TRA CỨU thật của i18next (`Translator.resolve`, cùng file, dùng
-  // `this.language` — KHÔNG phải `resolvedLanguage` — làm gốc cho
-  // `toResolveHierarchy`) luôn theo `i18n.language`, tức ngôn ngữ NGƯỜI DÙNG
-  // THẬT SỰ chọn, không bị "làm tròn" theo trạng thái nạp bundle. Vậy gate ở
-  // đây phải soi đúng cùng nguồn `i18n.language` mà tra cứu thật sẽ dùng, không
-  // phải bản đã-fallback-sẵn `resolvedLanguage`. Khi active lng chính là 'vi'
-  // hoặc bundle của lng đó đã nạp xong, nhánh này không đổi hành vi hiện có.
+  // Round 1: bug hồi quy do di trú — en/zh nạp bundle bằng `import()` ĐỘNG
+  // (client/src/i18n/index.ts), dự án cấu hình `fallbackLng: 'vi'`. Trong cửa sổ
+  // chờ nạp (hoặc chunk lỗi vĩnh viễn — offline), gọi `i18n.t()` như bình thường
+  // sẽ rơi về `vi` (đã nạp trước qua `loadVi()`) TRƯỚC KHI chạm SENTINEL — trả
+  // nguyên CÂU TIẾNG VIỆT cho người dùng en/zh. Bản vá round-1 ĐẦU TIÊN (một
+  // phiên trước) thêm cổng `if (!i18n.hasResourceBundle(activeLng, NS))
+  // return fallback` — nhưng đọc `i18n.resolvedLanguage` để suy ra `activeLng`,
+  // và `resolvedLanguage` tự "làm tròn" về `vi` ngay tại thời điểm
+  // `changeLanguage()` khi bundle đích chưa nạp (đọc thẳng
+  // `node_modules/i18next/dist/cjs/i18next.js`, `setResolvedLanguage()`) — gate
+  // luôn thấy `hasResourceBundle('vi', NS) === true`, không bao giờ kích hoạt.
+  // Sửa: đổi sang đọc `i18n.language` (ngôn ngữ NGƯỜI DÙNG thật sự chọn, không bị
+  // ảnh hưởng bởi trạng thái nạp bundle — khớp với `this.language` mà
+  // `Translator.resolve()` dùng để tra cứu thật).
+  //
+  // Round 2 (Important — reviewer): cổng `hasResourceBundle` ở round 1 chỉ trả
+  // lời "ngôn ngữ này có bundle nạp CHƯA" (đúng/sai TOÀN CỤC), không trả lời
+  // "khoá `errors.<appCode>` NÀY có tồn tại trong bundle đó không" (đúng/sai TỪNG
+  // KHOÁ). Bundle `en` nạp ĐẦY ĐỦ (hàng nghìn khoá khác) mà vẫn thiếu ĐÚNG một
+  // khoá `errors.<appCode>` (mã lỗi mới, chỉ kịp dịch ở `vi`) ⇒
+  // `hasResourceBundle('en', NS)` vẫn `true`, gate cho đi qua, rồi `i18n.t()`
+  // lại rơi về `vi` qua `fallbackLng` — CÙNG lớp lỗi F8, khác cơ chế kích hoạt.
+  // Sửa TẬN GỐC (không vá thêm lớp thứ 3): bỏ hẳn cổng `hasResourceBundle` — nó
+  // chỉ là một trường hợp CON của vấn đề tổng quát hơn ("khoá này tồn tại Ở ĐÚNG
+  // activeLng, không qua fallback, hay không" — khi bundle rỗng hoàn toàn thì
+  // MỌI khoá trong đó dĩ nhiên cũng "không tồn tại", nên cùng cơ chế chặn-
+  // fallback-tại-lời-gọi-t() bắt được CẢ hai lớp bằng ĐÚNG MỘT cơ chế, không cần
+  // 2 tầng kiểm tra riêng biệt dễ lệch nhau — bài học trực tiếp từ chính bug
+  // `resolvedLanguage` ở round 1). Chặn tại nguồn: mọi lời gọi `i18n.t()` dưới
+  // đây (VÀ lời gọi lồng trong `localizeParams` ở trên) đều truyền
+  // `{ lng: activeLng, fallbackLng: false }` — SENTINEL kích hoạt ĐÚNG NHƯ THIẾT
+  // KẾ BAN ĐẦU của file này (dòng đầu file) bất kể lý do thiếu khoá là gì.
   const activeLng = (i18n.language || "vi").split("-")[0];
-  if (!i18n.hasResourceBundle(activeLng, NS)) {
-    return fallback;
-  }
 
-  const localizedParams = localizeParams(params);
+  const localizedParams = localizeParams(params, activeLng);
 
   // Task 5 (doc 71) — CÁCH CHỌN KHOÁ: i18next KHÔNG có "chỉ nội suy nếu tham số tồn
   // tại". Nếu ta thêm thẳng {{reason}} vào khoá OPERATION_FAILED/INVALID_VALUE/
@@ -142,25 +176,30 @@ export function translateAppError(
   // NGUYÊN VĂN, không đổi; thêm khoá SONG SONG `errors.${appCode}_WITH_REASON` có
   // {{reason}}. `params.reason` là chuỗi không rỗng ⇒ thử khoá `_WITH_REASON` TRƯỚC.
   //
-  // Review round 1 (M-1) — ĐÍNH CHÍNH cơ chế rơi-về-SENTINEL: dự án cấu hình
-  // `fallbackLng: 'vi'` (client/src/i18n/index.ts). Do đó nếu khoá `_WITH_REASON`
-  // CÓ tồn tại ở vi nhưng THIẾU ở en/zh, i18next tự rơi về BẢN VI (qua fallbackLng)
-  // TRƯỚC khi chạm tới `defaultValue`/SENTINEL của ta — tức người dùng en/zh vẫn
-  // đọc được câu (bằng tiếng Việt, không phải khoá gốc, không phải chuỗi rỗng).
-  // SENTINEL/rơi-về-khoá-gốc bên dưới CHỈ thật sự kích hoạt khi khoá
-  // `_WITH_REASON` vắng mặt Ở CẢ vi (tức appCode đó CHƯA TỪNG có bản `_WITH_REASON`
-  // nào — đúng trường hợp ta cố ý chừa cho các appCode chưa migrate). Hành vi thật
-  // AN TOÀN HƠN mô tả cũ (an toàn ở 2 lớp: fallbackLng rồi mới tới khoá gốc), nhưng
-  // vẫn giữ nhánh SENTINEL dưới đây làm lưới an toàn cuối cho đúng ca đó.
+  // ⚠ ĐÃ LỖI THỜI (giữ lại có chủ đích để không lặp lại sai lầm) — comment gốc của
+  // Task 5/round-1 review từng nói: "khoá `_WITH_REASON` thiếu ở en/zh nhưng có ở vi
+  // ⇒ i18next tự rơi về BẢN VI qua fallbackLng, người dùng vẫn đọc được câu (bằng
+  // tiếng Việt) — hành vi đó được xem là AN TOÀN HƠN, một lưới an toàn phụ." Round 2
+  // xác định đó CHÍNH LÀ một thực thể khác của bug F8 (câu tiếng Việt lọt ra cho
+  // người dùng en/zh), không phải "an toàn hơn". `fallbackLng: false` bên dưới cố ý
+  // TẮT hẳn lưới an toàn phụ đó — khi `_WITH_REASON` thiếu ở activeLng, SENTINEL
+  // kích hoạt ngay, rơi tiếp về khoá gốc `errors.${appCode}` CÙNG activeLng (không
+  // còn cửa nào rơi sang vi) — khoá gốc hôm nay đã parity 3 locale (xem cổng key-
+  // parity mới ở `appErrorParamsCoverage.test.ts`) nên vẫn ra câu ĐÚNG NGÔN NGỮ,
+  // chỉ mất phần reason — đúng bất biến "thiếu khoá ⇒ fallback nhẹ hơn, không đổi
+  // ngôn ngữ" của cả file.
   //
-  // Không có `_WITH_REASON` cho appCode này ở BẤT KỲ locale nào ⇒ lặng lẽ rơi tiếp
-  // về khoá gốc — cùng bất biến "thiếu khoá ⇒ fallback, không sập" của cả file, chỉ
-  // khác ở chỗ "fallback" đầu tiên là khoá gốc (mất phần reason, câu vẫn đúng ngữ
-  // pháp) trước khi mất luôn cả câu về `fallbackMessage`.
+  // Không có `_WITH_REASON` cho appCode này ở activeLng ⇒ lặng lẽ rơi tiếp về khoá
+  // gốc — cùng bất biến "thiếu khoá ⇒ fallback, không sập" của cả file, chỉ khác ở
+  // chỗ nấc "fallback" đầu tiên là khoá gốc CÙNG NGÔN NGỮ (mất phần reason, câu vẫn
+  // đúng ngữ pháp, đúng ngôn ngữ) trước khi mất luôn cả câu về `fallbackMessage`
+  // (tiếng Anh máy chủ, nấc cuối).
   const hasReason = typeof params?.reason === "string" && params.reason.trim().length > 0;
   if (hasReason) {
     const withReasonTranslated = i18n.t(`errors.${appCode}_WITH_REASON`, {
       ...localizedParams,
+      lng: activeLng,
+      fallbackLng: false,
       defaultValue: SENTINEL,
     });
     if (typeof withReasonTranslated === "string" && withReasonTranslated !== SENTINEL) {
@@ -168,7 +207,12 @@ export function translateAppError(
     }
   }
 
-  const translated = i18n.t(`errors.${appCode}`, { ...localizedParams, defaultValue: SENTINEL });
+  const translated = i18n.t(`errors.${appCode}`, {
+    ...localizedParams,
+    lng: activeLng,
+    fallbackLng: false,
+    defaultValue: SENTINEL,
+  });
   if (typeof translated !== "string" || translated === SENTINEL) return fallback;
   return translated;
 }
