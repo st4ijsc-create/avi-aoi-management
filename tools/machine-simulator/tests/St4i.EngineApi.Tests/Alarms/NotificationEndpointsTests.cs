@@ -316,9 +316,21 @@ public sealed class NotificationEndpointsTests : IDisposable
     /// secret is configured" branch and <b>posted UNSIGNED</b>. A machine that had silently stopped proving
     /// its identity, after a green save.</para>
     ///
-    /// <para>The failure is induced the way this suite already induces store failures: replace the database
-    /// with a file that is not one, AFTER the channel row exists, so the secret write is the thing that
-    /// fails.</para>
+    /// <para>🔴 <b>Review round 2 (I-A) — the first version of this test did not hold the webhook branches
+    /// down, and the webhook is the channel the finding was ABOUT.</b> Deleting both
+    /// <c>if (… == SecretOutcome.Failed) return SecretFailed("webhook", …)</c> lines left all 30 tests
+    /// passing: the broken-database case below asserts only <c>NotEqual(200)</c>, and it takes the ORDINARY
+    /// rollback path (see the narrow test's own note on why a broken store cannot reach the webhook branch),
+    /// while the narrow test exercised the shared plumbing through SMTP. So the branches were real, reachable
+    /// code — <c>SetSecretAsync</c> opens its OWN connection, so a <c>SQLITE_BUSY</c> from a concurrent
+    /// writer or a disk-full arriving between the two commits fails only the second write — and nothing
+    /// would have noticed their removal.</para>
+    ///
+    /// <para><b>The lever that reaches them</b> is a trigger that aborts writes of ONE secret name. The
+    /// webhook's channel save writes <c>webhook.url</c> inside its transaction and that still succeeds, so
+    /// the channel row commits exactly as it does in production; the separate <c>SetSecretAsync</c> call for
+    /// the signing secret is the only thing that fails. That is the defect's own shape, reproduced without
+    /// simulating a disk.</para>
     /// </summary>
     [Fact]
     public async Task ACredentialThatFailedToStore_FailsTheRequest_RatherThanReturning200AndPostingUnsigned()
@@ -327,20 +339,53 @@ public sealed class NotificationEndpointsTests : IDisposable
         var h = NewHarness(store);
         var url = "https://hooks.example.test/services/abc";
 
-        // A healthy save first, so the control below is a real comparison.
+        // A healthy save first, so the controls below are real comparisons.
         Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
             WebhookRequest(url, SigningSentinel), h.Context, h.Recorder, default))).Status);
 
-        CorruptDatabase(store);
+        // ── 🔴 The SIGNING SECRET branch — the one whose absence makes the channel post UNSIGNED.
+        BlockSecretWrites(store, NotificationSecretNames.WebhookSigningSecret);
 
-        var (status, body) = await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
-            WebhookRequest(url, signingSecret: "a-new-key-that-cannot-be-stored"),
-            h.Context, h.Recorder, default));
+        var h2 = NewHarness(store);
+        var (signingStatus, signingBody) = await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
+            WebhookRequest(url, signingSecret: "a-new-key-that-cannot-be-stored", instance: "blocked-sign"),
+            h2.Context, h2.Recorder, default));
 
-        // With the store broken the CHANNEL row cannot commit either, so this is the ordinary save failure —
-        // what matters is that it is NOT a 200.
-        Assert.NotEqual(200, status);
-        Assert.DoesNotContain("a-new-key-that-cannot-be-stored", body, StringComparison.Ordinal);
+        Assert.Equal(500, signingStatus);
+        Assert.Contains("signing secret", signingBody, StringComparison.Ordinal);
+        Assert.Contains("UNSIGNED", signingBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("a-new-key-that-cannot-be-stored", signingBody, StringComparison.Ordinal);
+
+        // The channel row committed — that is what made the old 200 dangerous rather than merely wrong.
+        var blockedSign = Assert.Single(
+            await store.ListAsync(), c => c.Instance == "blocked-sign");
+        Assert.False(blockedSign.Webhook!.HasSigningSecret);
+        Assert.Contains(
+            "\"signingSecret\":\"Failed\"",
+            Assert.Single(h2.Audit.Rows, r => r.TargetId == "Webhook/blocked-sign").NewValueJson,
+            StringComparison.Ordinal);
+
+        // ── 🔴 The AUTH TOKEN branch, which is a separate `if` and would otherwise survive on its own.
+        BlockSecretWrites(store, NotificationSecretNames.WebhookAuthToken);
+
+        var h3 = NewHarness(store);
+        var (tokenStatus, tokenBody) = await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
+            WebhookRequest(url, authHeaderName: "X-Api-Key", authToken: "a-token-that-cannot-be-stored",
+                instance: "blocked-token"),
+            h3.Context, h3.Recorder, default));
+
+        Assert.Equal(500, tokenStatus);
+        Assert.Contains("authentication token", tokenBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("a-token-that-cannot-be-stored", tokenBody, StringComparison.Ordinal);
+        Assert.False(
+            Assert.Single(await store.ListAsync(), c => c.Instance == "blocked-token")
+                .Webhook!.HasAuthToken);
+
+        // ── The control: a save carrying NO blocked credential still succeeds, so the 500s above are about
+        // the credential that failed rather than about the store being generally broken.
+        var h4 = NewHarness(store);
+        Assert.Equal(200, (await ReadAsync(await NotificationEndpoints.SaveWebhookAsync(
+            WebhookRequest(url, instance: "unblocked"), h4.Context, h4.Recorder, default))).Status);
     }
 
     /// <summary>
@@ -1339,6 +1384,37 @@ public sealed class NotificationEndpointsTests : IDisposable
     /// <summary>Replaces <c>notifications.db</c> with something that is not a database, so a read genuinely
     /// FAILS rather than merely returning nothing. The WAL sidecars go too — SQLite would otherwise recover
     /// the real file from them.</summary>
+    /// <summary>
+    /// 🔴 Review round 2 (I-A) — fails the write of ONE named secret and nothing else.
+    ///
+    /// <para>This is what reaches the webhook's credential branches, which <see cref="DropSecretsTable"/>
+    /// structurally cannot: the webhook's channel save writes <c>webhook.url</c> in the SAME transaction, so
+    /// breaking the whole table rolls the channel row back and the request takes the ordinary save-failure
+    /// path instead. A trigger scoped to one <c>name</c> lets the in-transaction URL write commit exactly as
+    /// it does in production and fails only the separate <c>SetSecretAsync</c> call — which is the real
+    /// defect's shape (that call opens its own connection, so a concurrent-writer lock or a full disk hits
+    /// precisely one of the two commits).</para>
+    /// </summary>
+    private static void BlockSecretWrites(NotificationConfigStore store, string secretName)
+    {
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={store.DbPath}");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        // Both INSERT and UPDATE: UpsertSecretAsync is an ON CONFLICT DO UPDATE, so which one fires depends
+        // on whether that secret already exists, and the test must not depend on that.
+        cmd.CommandText = $"""
+            CREATE TRIGGER block_insert_{secretName.Replace('.', '_')}
+            AFTER INSERT ON notification_secrets WHEN NEW.name = '{secretName}'
+            BEGIN SELECT RAISE(ABORT, 'blocked by test'); END;
+
+            CREATE TRIGGER block_update_{secretName.Replace('.', '_')}
+            AFTER UPDATE ON notification_secrets WHEN NEW.name = '{secretName}'
+            BEGIN SELECT RAISE(ABORT, 'blocked by test'); END;
+            """;
+        cmd.ExecuteNonQuery();
+    }
+
     /// <summary>🔴 Review round 1 (I-1) — breaks ONLY the credential store, leaving the channel tables
     /// writable, so a save can commit its row and fail its secret. See the test for why that asymmetry
     /// cannot be produced through the webhook.</summary>

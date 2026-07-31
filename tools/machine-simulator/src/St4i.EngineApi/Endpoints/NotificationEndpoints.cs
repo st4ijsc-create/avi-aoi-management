@@ -910,6 +910,16 @@ public static class NotificationEndpoints
     /// <para>The cap applies only to a genuinely new key: re-saving an instance that already exists is the
     /// idempotent case and must never be refused because the channel happens to be full — that would make a
     /// full channel unfixable.</para>
+    ///
+    /// <para>🔴 <b>Review round 2 (M-a) — the cap is derived from a NEVER-THROWS read, so a failing store
+    /// silently disables it.</b> <see cref="NotificationConfigStore.ListAsync"/> reports a failed read as an
+    /// empty list, which here means <c>configured == 0</c> (the cap does not apply) and
+    /// <c>existing == null</c> (an instance that exists looks new). That is the same "a failed read looks
+    /// like nothing configured" family this task exists to surface, and the honest reading is that it is
+    /// bounded rather than dangerous: a store that cannot be read cannot commit the save either, so the
+    /// request fails on the write instead — and <c>configStore.readFailures</c> in the health block, returned
+    /// beside every save and on <c>GET /v1/notifications/status</c>, is where the operator sees why. Stated
+    /// here because the two facts are three files apart and nothing else links them.</para>
     /// </summary>
     /// <returns><c>AtCap</c> non-null means stop and return it.</returns>
     private static async Task<(NotificationChannelSummary? Existing, IResult? AtCap)> LoadForSaveAsync(
