@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { computeIsDirty } from "@/lib/engineeringBuffer";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -334,7 +335,7 @@ export default function EngineeringWorkspace() {
       utils.programming.listProjects.invalidate();
       setProjectId(row.id);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // U2 (doc 26) — gắn / đổi thiết bị nguồn cho project đang mở (set project.deviceId).
   const updateProject = trpc.programming.updateProject.useMutation({
@@ -343,7 +344,7 @@ export default function EngineeringWorkspace() {
       utils.programming.listProjects.invalidate();
       setAttachOpen(false);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const createArtifact = trpc.programming.createArtifact.useMutation({
     onSuccess: (row) => {
@@ -351,7 +352,7 @@ export default function EngineeringWorkspace() {
       utils.programming.listArtifacts.invalidate();
       setArtifactId(row.id);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const validateM = trpc.programming.validateArtifact.useMutation({
     onSuccess: (r) => {
@@ -359,7 +360,7 @@ export default function EngineeringWorkspace() {
       utils.programming.listArtifacts.invalidate();
       r.ok ? toast.success(t("engineering.validOk", "Hợp lệ")) : toast.warning(t("engineering.validErr", "Có lỗi"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const buildM = trpc.programming.buildArtifact.useMutation({
     onSuccess: (b) => {
@@ -367,14 +368,14 @@ export default function EngineeringWorkspace() {
       setBuildId(b.id);
       b.ok ? toast.success(t("engineering.buildOk", "Build OK")) : toast.error(t("engineering.buildFail", "Build lỗi"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const simulateM = trpc.programming.simulateBuild.useMutation({
     onSuccess: (r) => {
       setSimResult({ ok: r.ok, warnings: r.warnings as string[], timeline: r.timeline as any[] });
       toast.success(t("engineering.simDone", "Đã mô phỏng"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // doc 54 P3.2 — step-up 2FA (fresh OTP) for deploy actuation when ACTUATION_STEPUP_2FA is on.
   const stepUp = useStepUpOtp();
@@ -400,7 +401,7 @@ export default function EngineeringWorkspace() {
           break;
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // doc 40 ENG-F2 — gửi YÊU CẦU deploy production (request→approve). Không tự deploy: tạo
   // hàng chờ duyệt để người thứ hai ký ở Approval Inbox (đóng lỗ four-eyes hình thức).
@@ -409,7 +410,7 @@ export default function EngineeringWorkspace() {
       utils.programming.listDeployments.invalidate();
       toast.success(t("engineering.deployRequested", "Đã gửi yêu cầu deploy — chờ người thứ hai duyệt ở Hộp duyệt"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // W3-11 — rollback: ghi một deployment MỚI về build của lần deploy thành công trước.
   const rollbackM = trpc.programming.rollbackDeployment.useMutation({
@@ -418,7 +419,7 @@ export default function EngineeringWorkspace() {
       setRollbackTarget(null);
       toast.success(t("engineering.rollbackDone", "Đã khôi phục về phiên bản trước"));
     },
-    onError: (e) => { setRollbackTarget(null); toast.error(e.message); },
+    onError: (e) => { setRollbackTarget(null); toastTrpcError(e); },
   });
   // doc 40 W5 §11 — triển khai đội máy (canary): tuần tự qua đúng deployBuild từng máy.
   const deployToFleetM = trpc.programming.deployToFleet.useMutation({
@@ -433,7 +434,7 @@ export default function EngineeringWorkspace() {
         toast.success(t("engineering.fleetCanaryOk", "Canary đã chạy xong"));
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const fleetResult = deployToFleetM.data ?? null;
 
@@ -444,14 +445,14 @@ export default function EngineeringWorkspace() {
       utils.programming.listSymbols.invalidate();
       setSymOpen(false);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteSymbol = trpc.programming.deleteSymbol.useMutation({
     onSuccess: () => {
       toast.success(t("engineering.symbolDeleted", "Đã xóa biến"));
       utils.programming.listSymbols.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   // ── Online Monitor (watch) — start/stop server watch session + subscribe live room ──
@@ -474,11 +475,11 @@ export default function EngineeringWorkspace() {
         toast.warning(msg);
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const stopWatchM = trpc.programming.stopWatch.useMutation({
     onSuccess: () => setWatching(false),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   // Subscribe socket room `engineering:{deviceId}` khi đang watch (chỉ đọc giá trị live).
   const { values: liveValues, lastUpdate, connected: streamConnected } = useEngineeringStream(

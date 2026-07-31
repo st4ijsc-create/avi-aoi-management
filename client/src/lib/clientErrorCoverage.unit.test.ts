@@ -92,7 +92,7 @@ const SCAN_ROOTS: Array<{ dir: string; displayPrefix: string }> = [
 ];
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_RAW_MESSAGE_HANDLERS = 531; // ← review round 3 (đổi cơ chế đếm sang AST) — số đo lại KHỚP 531 (xem task-7-report.md mục 9). Task 8 tiếp tục hạ từ đây.
+const ALLOWED_RAW_MESSAGE_HANDLERS = 430; // ← Task 8 lượt A, lô 1 (8 file nợ nặng nhất): 531 → 430 (101 site, xem task-8a-report.md).
 
 function walkTsxFiles(dir: string): string[] {
   const out: string[] = [];

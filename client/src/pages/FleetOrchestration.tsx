@@ -61,6 +61,7 @@ import {
   Wrench, Workflow, BatteryCharging, Plus, Search, Link2, Zap, Package, Map as MapIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 // ── Typesafe shapes inferred from the fleetRouter output ──────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -357,7 +358,7 @@ export default function FleetOrchestration() {
         void utils.fleet.status.invalidate();
       }
     } else {
-      toast.error(e.message);
+      toast.error(mapTrpcError(e));
     }
   };
 

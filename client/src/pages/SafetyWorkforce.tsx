@@ -68,6 +68,7 @@ import {
   Ban, ScanLine, ClipboardCheck, HandMetal, Handshake, ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 // ── Typesafe shapes inferred from the safetyRouter output ─────────────────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -272,9 +273,9 @@ export default function SafetyWorkforce() {
       }
     } else if (e.data?.code === "CONFLICT") {
       // Non-flag CONFLICT (e.g. double-booking) — still calm, but informative.
-      toast.info(e.message);
+      toast.info(mapTrpcError(e));
     } else {
-      toast.error(e.message);
+      toast.error(mapTrpcError(e));
     }
   };
 

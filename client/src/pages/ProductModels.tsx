@@ -61,7 +61,7 @@ import { useFormShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { ValidationMessage } from "@/components/ValidationMessage";
 import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
 // Doc 42 Đợt 0.5 — bộ dịch lỗi tRPC dùng chung (FORBIDDEN/CONFLICT/zod → tiếng Việt).
-import { toastTrpcError } from "@/lib/trpcErrors";
+import { toastTrpcError, mapTrpcError } from "@/lib/trpcErrors";
 import { CreateProductDialog } from "@/components/productModels/CreateProductDialog";
 import { PointDetailsForm } from "@/components/productModels/PointDetailsForm";
 import { ProductInfoTab } from "@/components/productModels/ProductInfoTab";
@@ -607,7 +607,7 @@ export default function ProductModels() {
       refetchMsaCsvPresets();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -618,7 +618,7 @@ export default function ProductModels() {
       refetchMsaCsvPresets();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -696,7 +696,7 @@ export default function ProductModels() {
       resetProductForm();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -717,7 +717,7 @@ export default function ProductModels() {
       }
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -729,7 +729,7 @@ export default function ProductModels() {
       setSelectedProduct(null);
     },
     onError: (error: { message: string }) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -747,7 +747,7 @@ export default function ProductModels() {
       }
     },
     onError: (error: { message: string }) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -809,7 +809,7 @@ export default function ProductModels() {
       setIsSavingTemplate(false);
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
       setIsSavingTemplate(false);
     },
   });
@@ -820,7 +820,7 @@ export default function ProductModels() {
       refetchTemplates();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -830,7 +830,7 @@ export default function ProductModels() {
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -855,7 +855,7 @@ export default function ProductModels() {
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -868,7 +868,7 @@ export default function ProductModels() {
       setNewInstrumentType("caliper");
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -878,7 +878,7 @@ export default function ProductModels() {
       refetchMeasurementInstruments();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -891,7 +891,7 @@ export default function ProductModels() {
       setNewSamplingStrategy("fixed_n");
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -901,7 +901,7 @@ export default function ProductModels() {
       refetchSamplingPlans();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -914,7 +914,7 @@ export default function ProductModels() {
       setNewViewType("top");
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -924,7 +924,7 @@ export default function ProductModels() {
       refetchProductViews();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -937,7 +937,7 @@ export default function ProductModels() {
       refetchMsaStudyData();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -967,7 +967,7 @@ export default function ProductModels() {
         toast.error("Cell đã có dữ liệu. Hãy đổi operator/part/trial hoặc bật overwrite để tạo lại matrix.");
         return;
       }
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -980,7 +980,7 @@ export default function ProductModels() {
       refetchMsaStudyData();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -990,7 +990,7 @@ export default function ProductModels() {
       refetchMsaStudyData();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -1003,7 +1003,7 @@ export default function ProductModels() {
       refetchMsaStudyData();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -1060,7 +1060,7 @@ export default function ProductModels() {
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(t("products.uploadImageError", { message: error.message }));
+      toast.error(t("products.uploadImageError", { message: mapTrpcError(error) }));
     },
   });
 
@@ -1077,7 +1077,7 @@ export default function ProductModels() {
       refetchDocuments();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 
@@ -1087,7 +1087,7 @@ export default function ProductModels() {
       refetchDocuments();
     },
     onError: (error) => {
-      toast.error(t("common.errorWithMessage", { message: error.message }));
+      toast.error(t("common.errorWithMessage", { message: mapTrpcError(error) }));
     },
   });
 

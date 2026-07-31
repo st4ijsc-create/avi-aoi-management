@@ -26,6 +26,7 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { 
   Smartphone, Plus, Trash2, CheckCircle, XCircle, 
   Clock, Wifi, WifiOff, RefreshCw, History, Settings,
@@ -109,7 +110,7 @@ export function MqttClientManagementContent() {
       resetForm();
       refetchClients();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const updateMutation = trpc.mqttClient.updateSettings.useMutation({
@@ -119,7 +120,7 @@ export function MqttClientManagementContent() {
       resetForm();
       refetchClients();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteMutation = trpc.mqttClient.delete.useMutation({
@@ -127,7 +128,7 @@ export function MqttClientManagementContent() {
       toast.success(t('mqtt.clientMgmt.clientDeleted'));
       refetchClients();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const approveMutation = trpc.mqttClient.approve.useMutation({
@@ -136,7 +137,7 @@ export function MqttClientManagementContent() {
       refetchClients();
       setApproveDialog({ open: false, client: null });
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const rejectMutation = trpc.mqttClient.reject.useMutation({
@@ -144,7 +145,7 @@ export function MqttClientManagementContent() {
       toast.success(t('mqtt.clientMgmt.deviceRejected'));
       refetchClients();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const updateMappingMutation = trpc.mqttClient.updateMapping.useMutation({
@@ -153,7 +154,7 @@ export function MqttClientManagementContent() {
       refetchClients();
       setEditingClient(null);
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const disconnectMutation = trpc.mqttClient.disconnectAndReset.useMutation({
@@ -161,7 +162,7 @@ export function MqttClientManagementContent() {
       toast.success(t('mqtt.clientMgmt.disconnectResetDone'));
       refetchClients();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   // Single-device configure — reuses bulk config dialog
@@ -255,14 +256,14 @@ export function MqttClientManagementContent() {
       setSingleConfigClient(null);
       setSelectedDeviceIds(new Set());
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const sendCommandMutation = trpc.mqttClient.sendCommand.useMutation({
     onSuccess: () => {
       toast.success(t('mqtt.clientMgmt.commandSent'));
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   // Manual Connection Mutations
@@ -273,7 +274,7 @@ export function MqttClientManagementContent() {
       setCreateManualDialog(false);
       setManualForm({ machineId: '', ipAddress: '', port: '8080', protocol: 'websocket' });
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const deleteManualMutation = trpc.manualMapping.delete.useMutation({
@@ -281,7 +282,7 @@ export function MqttClientManagementContent() {
       toast.success(t('mqtt.clientMgmt.connectionDeleted'));
       refetchManual();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const testManualMutation = trpc.manualMapping.testConnection.useMutation({
@@ -293,7 +294,7 @@ export function MqttClientManagementContent() {
       }
       refetchManual();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toastTrpcError(error),
   });
 
   const resetForm = () => {

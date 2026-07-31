@@ -73,6 +73,7 @@ import {
   Boxes, Cpu, Tags, Wrench, CheckCircle2, XCircle, Send, Eye, Rocket, Layers, Activity,
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 
 // ── Typesafe shapes inferred from the equipmentStandardsRouter output ─────────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -214,7 +215,7 @@ export default function EquipmentStandards() {
       toast.info(t("eqStandards.flagOffToast", "Equipment governance is disabled (preview). Set EQ_GOVERN_ENABLED=true to act."));
       void utils.equipmentStandards.status.invalidate();
     } else {
-      toast.error(e.message);
+      toast.error(mapTrpcError(e));
     }
   };
 

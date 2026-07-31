@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { 
   Plus, 
   Server, 
@@ -117,7 +118,7 @@ export function MqttProfileManagementContent() {
       setShowCreateDialog(false);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -128,7 +129,7 @@ export function MqttProfileManagementContent() {
       setEditingProfile(null);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -139,7 +140,7 @@ export function MqttProfileManagementContent() {
       refetchStats();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -149,7 +150,7 @@ export function MqttProfileManagementContent() {
       refetchProfiles();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -161,7 +162,7 @@ export function MqttProfileManagementContent() {
       setShowAssignDialog(false);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -177,7 +178,7 @@ export function MqttProfileManagementContent() {
       setImportFile(null);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -188,7 +189,7 @@ export function MqttProfileManagementContent() {
       refetchStats();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -199,7 +200,7 @@ export function MqttProfileManagementContent() {
       refetchAlertConfig();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -210,7 +211,7 @@ export function MqttProfileManagementContent() {
       refetchAlertSummary();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -221,7 +222,7 @@ export function MqttProfileManagementContent() {
       refetchAlertSummary();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -248,7 +249,7 @@ export function MqttProfileManagementContent() {
       setSelectedTargets([]);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
