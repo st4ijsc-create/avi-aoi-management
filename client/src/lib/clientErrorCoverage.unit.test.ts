@@ -30,12 +30,13 @@
  * CÙNG FILE khi gặp một tham chiếu, rồi phân tích thân hàm đã-giải-quyết đó.
  *
  * ── SỐ ĐO ──────────────────────────────────────────────────────────────────────
- * Task 7 Step 1 (trước khi di trú BẤT KỲ file nào — cổng vừa dựng, chưa di trú
- * lô nào): 575 site trong 170 file (client/src/pages + client/src/components;
- * không có site nào ngoài hai thư mục này tại thời điểm đo — hooks/lib/_core
- * sạch). Step 3/4 sẽ di trú theo lô "màn operator chạm hàng ngày" (sản xuất ·
- * kiểm tra · cảnh báo · thiết bị · andon), mỗi lô hạ hằng số này — xem lịch sử
- * commit để theo dõi tiến độ, không hardcode lại số cũ ở đây.
+ * Task 7 Step 1 (trước khi di trú bất kỳ file nào): 575 site trong 170 file
+ * (client/src/pages + client/src/components; không có site nào ngoài hai thư mục
+ * này tại thời điểm đo — hooks/lib/_core sạch). Lô 1 (sản xuất + kiểm tra — 9
+ * file: ProductionOrders/ProductionScheduling/ProductionSessionSignOff/
+ * ProductChangeoverWizard/FeederVerify/InspectionDetail/RepairStation/
+ * NonconformanceReports/QualityHome) di trú 25 site → hạ còn 550. Các lô tiếp
+ * theo (cảnh báo · thiết bị · andon, rồi phần còn lại — Task 8) sẽ hạ tiếp.
  *
  * Tự đo lại: chạy hàm countRawMessageSites() ở dưới trên "client/src" (không có
  * lệnh shell một-dòng tương đương vì cần cân bằng ngoặc + tra cứu — xem trên).
@@ -49,7 +50,7 @@ const LIB_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_SRC_DIR = join(LIB_DIR, ".."); // client/src
 
 /** Hạ số này mỗi khi di trú xong một đợt. Không bao giờ nâng lên. */
-const ALLOWED_RAW_MESSAGE_HANDLERS = 575; // ← Task 7 Step 2 — số đo baseline, CHƯA di trú lô nào.
+const ALLOWED_RAW_MESSAGE_HANDLERS = 550; // ← Task 7 Step 3 lô 1/2 (F1 phần A) — sản xuất + kiểm tra, 25 site / 9 file.
 
 function walkTsxFiles(dir: string): string[] {
   const out: string[] = [];

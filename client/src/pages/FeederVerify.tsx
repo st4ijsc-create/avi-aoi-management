@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { ScanLine, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Thermometer, Layers } from "lucide-react";
 import MsdPanel from "@/components/materials/MsdPanel";
 import StencilPanel from "@/components/materials/StencilPanel";
@@ -60,7 +61,7 @@ function FeederVerifyTab() {
       setupStatus.refetch();
       recent.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const onVerify = () => {

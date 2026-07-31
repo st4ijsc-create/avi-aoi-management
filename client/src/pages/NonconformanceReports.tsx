@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dialog";
 import { ClipboardX, Plus, AlertTriangle, ArrowRightCircle, CheckCircle2, Gavel } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 const SOURCES = ["inspection", "lot", "audit"] as const;
 const STATUSES = ["open", "in_review", "dispositioned", "closed"] as const;
@@ -158,11 +159,11 @@ export default function NonconformanceReports() {
 
   const createM = trpc.ncr.create.useMutation({
     onSuccess: () => { toast.success(t("ncr.created", "NCR raised")); setCreateOpen(false); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const transitionM = trpc.ncr.transition.useMutation({
     onSuccess: () => { toast.success(t("ncr.transitioned", "NCR updated")); setDetail(null); invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const rows = (listQ.data ?? []) as Ncr[];

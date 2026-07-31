@@ -45,6 +45,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import {
   ScanLine,
   ArrowRight,
@@ -193,7 +194,7 @@ export default function ProductChangeoverWizard() {
     },
     onError: (err) => {
       toast.error(t("changeoverWizard.step3.scanError", "Không ghi được lần quét"), {
-        description: err.message,
+        description: mapTrpcError(err),
       });
     },
   });
@@ -208,7 +209,7 @@ export default function ProductChangeoverWizard() {
     },
     onError: (err) => {
       toast.error(t("changeoverWizard.step4.requestError", "Không gửi được yêu cầu"), {
-        description: err.message,
+        description: mapTrpcError(err),
       });
     },
   });

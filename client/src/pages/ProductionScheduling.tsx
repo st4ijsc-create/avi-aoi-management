@@ -70,6 +70,7 @@ import {
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 type RouterInputs = inferRouterInputs<AppRouter>;
@@ -156,7 +157,7 @@ export default function ProductionScheduling() {
         })
       );
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // WIP status query
@@ -177,7 +178,7 @@ export default function ProductionScheduling() {
         })
       );
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const applyRunMutation = trpc.productionOrder.applyScheduleRun.useMutation({
@@ -185,11 +186,11 @@ export default function ProductionScheduling() {
       toast.success(t("scheduling.runApplied", "Đã áp dụng {{count}} đơn", { count: data?.applied || 0 }));
       refetchOrders();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const whatIfMutation = trpc.productionOrder.whatIf.useMutation({
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const handleGenerateRun = () => {
@@ -209,7 +210,7 @@ export default function ProductionScheduling() {
       toast.success(t("scheduling.applySuccess", "Đã áp dụng gợi ý lịch"));
       refetchOrders();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const rescheduleMutation = trpc.productionOrder.reschedule.useMutation({
@@ -217,7 +218,7 @@ export default function ProductionScheduling() {
       refetchOrders();
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
       throw error;
     },
   });

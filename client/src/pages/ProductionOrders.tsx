@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Plus, Edit, Trash2, Search, Package, Factory, Calendar, Target, CheckCircle2, BarChart3 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import GanttChart from "@/components/GanttChart";
 import { useTranslation } from 'react-i18next';
 
@@ -79,7 +80,7 @@ export default function ProductionOrders() {
       refetch();
     },
     onError: (error) => {
-      toast.error(`${t('errors.error')}: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 
@@ -91,7 +92,7 @@ export default function ProductionOrders() {
       refetch();
     },
     onError: (error) => {
-      toast.error(`${t('errors.error')}: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 
@@ -101,7 +102,7 @@ export default function ProductionOrders() {
       refetch();
     },
     onError: (error) => {
-      toast.error(`${t('errors.error')}: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 
@@ -110,7 +111,7 @@ export default function ProductionOrders() {
       refetch();
     },
     onError: (error) => {
-      toast.error(`${t('errors.error')}: ${error.message}`);
+      toastTrpcError(error);
       throw error; // Re-throw to handle in GanttChart
     },
   });

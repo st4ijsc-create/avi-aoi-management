@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -495,10 +496,10 @@ function SerialWorkPanel({
 
   const onError = (e: { data?: { code?: string } | null; message: string }) => {
     if (e.data?.code === "CONFLICT") {
-      toast.info(t("repairStation.conflictToast", "State changed elsewhere — refreshed. ") + e.message);
+      toast.info(t("repairStation.conflictToast", "State changed elsewhere — refreshed. ") + mapTrpcError(e));
       onChanged();
     } else {
-      toast.error(e.message);
+      toastTrpcError(e);
     }
   };
 

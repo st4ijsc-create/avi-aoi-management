@@ -28,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   ClipboardCheck,
   Brain,
@@ -128,7 +129,7 @@ export default function QualityHome() {
       toast.success(t("quality.ackDone", "Đã đánh dấu đã xem"));
       ngQuery.refetch();
     },
-    onError: (e: { message: string }) => toast.error(e.message),
+    onError: (e: { message: string }) => toastTrpcError(e),
   });
 
   const tools: ToolTileDef[] = [

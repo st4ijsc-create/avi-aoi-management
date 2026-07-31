@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { 
   ArrowLeft,
   CheckCircle2,
@@ -175,7 +176,7 @@ export default function InspectionDetail() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('common.error') + ': ' + error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -188,7 +189,7 @@ export default function InspectionDetail() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('common.error') + ': ' + error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -201,7 +202,7 @@ export default function InspectionDetail() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('common.error') + ': ' + error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -230,7 +231,7 @@ export default function InspectionDetail() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('inspection.analysisError') + ': ' + error.message);
+      toastTrpcError(error);
     },
     onSettled: () => {
       setAnalyzingId(null);
@@ -249,7 +250,7 @@ export default function InspectionDetail() {
       setGoldenDiffOpen(true);
     },
     onError: (error) => {
-      toast.error(t('common.error') + ': ' + error.message);
+      toastTrpcError(error);
     },
   });
   const goldenDiff = goldenDiffMutation.data?.found ? goldenDiffMutation.data : undefined;
@@ -265,7 +266,7 @@ export default function InspectionDetail() {
       goldenQuery.refetch();
     },
     onError: (error) => {
-      toast.error(t('common.error') + ': ' + error.message);
+      toastTrpcError(error);
     },
   });
 
