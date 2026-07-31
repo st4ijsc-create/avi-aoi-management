@@ -260,13 +260,12 @@ function getLanguageName(langCode: string): string {
  *       
  *       // Check if it's an error
  *       if ('error' in result) {
- *         throw new TRPCError({
- *           code: 'BAD_REQUEST',
- *           message: result.error,
- *           cause: result,
- *         });
+ *         // Task 10 (F3, doc71) — ví dụ minh hoạ cập nhật sang appError(),
+ *         // khớp cơ chế ném lỗi chuẩn hoá của sprint mã-lỗi (KHÔNG phải mã
+ *         // thực thi, chỉ hướng dẫn cho router chưa tồn tại này).
+ *         throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "transcribeAudio" }, result.error);
  *       }
- *       
+ *
  *       // Optionally save transcription to database
  *       await db.insert(transcriptions).values({
  *         userId: ctx.user.id,

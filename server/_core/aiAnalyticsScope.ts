@@ -34,7 +34,7 @@
  * pure, user-unaware query builders — callers here narrow/validate the filter object
  * before invoking them.
  */
-import { TRPCError } from "@trpc/server";
+import { appError } from "./appError";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { User } from "../../drizzle/schema";
 import { factories, machines, productionLines, stations, workshops } from "../../drizzle/schema";
@@ -203,47 +203,67 @@ export async function enforceAnalyticsFactoryScope<T extends AnalyticsScopeInput
   }
 
   if (scope.factoryCodes.length === 0 && scope.corporateCodes.length === 0) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Tài khoản chưa được gán nhà máy nào — không có dữ liệu phân tích để xem.",
-    });
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "viewAiAnalytics", reason: "noFactoryAssigned" },
+      "Tài khoản chưa được gán nhà máy nào — không có dữ liệu phân tích để xem.",
+    );
   }
 
   let factoryCode: string;
   if (params.factoryCode) {
     if (!(await isFactoryCodeInScope(scope, params.factoryCode))) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: `Nhà máy "${params.factoryCode}" nằm ngoài phạm vi được gán cho tài khoản này.`,
-      });
+      // factoryCode cụ thể là giá trị TỰ DO (mã nhà máy do khách hàng đặt,
+      // không phải enum cố định) — giữ nguyên trong fallbackMessage, mất khi
+      // đã dịch (cùng giới hạn với moduleName ở accessControl.ts).
+      throw appError(
+        "FORBIDDEN",
+        "PERMISSION_DENIED",
+        { action: "viewAiAnalytics", reason: "factoryOutsideScope" },
+        `Nhà máy "${params.factoryCode}" nằm ngoài phạm vi được gán cho tài khoản này.`,
+      );
     }
     factoryCode = params.factoryCode;
   } else if (scope.factoryCodes.length === 1) {
     factoryCode = scope.factoryCodes[0];
   } else {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Tài khoản được gán nhiều nhà máy — vui lòng chỉ định factoryCode cụ thể.",
-    });
+    // Không phải "không có quyền" mà là "cần thêm input để hết mơ hồ" — tài
+    // khoản CÓ quyền xem nhiều nhà máy, chỉ chưa nói xem nhà máy nào.
+    throw appError(
+      "FORBIDDEN",
+      "FIELD_REQUIRED",
+      { field: "factoryCode" },
+      "Tài khoản được gán nhiều nhà máy — vui lòng chỉ định factoryCode cụ thể.",
+    );
   }
 
   if (params.machineId != null) {
     const machineFactory = await getMachineFactoryCode(params.machineId);
     if (!machineFactory || !(await isFactoryCodeInScope(scope, machineFactory))) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Máy được yêu cầu nằm ngoài phạm vi nhà máy được gán cho tài khoản này.",
-      });
+      throw appError(
+        "FORBIDDEN",
+        "PERMISSION_DENIED",
+        { action: "viewAiAnalytics", reason: "machineOutsideScope" },
+        "Máy được yêu cầu nằm ngoài phạm vi nhà máy được gán cho tài khoản này.",
+      );
     }
   }
 
   if (params.lineCode) {
     const ok = await lineExistsInFactory(params.lineCode, factoryCode);
     if (!ok) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: `Dây chuyền "${params.lineCode}" không thuộc nhà máy "${factoryCode}".`,
-      });
+      // KHÁC 2 nhánh trên: đây không phải "ngoài phạm vi được GÁN cho tài
+      // khoản" mà là quan hệ SỞ HỮU giữa 2 entity (lineCode có thật, chỉ
+      // không thuộc factoryCode đang xét) — đúng ngữ nghĩa SCOPE_MISMATCH đã
+      // dùng ở aoiPackageRouter.ts/machineApiRouters.ts (entity không thuộc
+      // parent), không phải PERMISSION_DENIED.
+      throw appError(
+        "FORBIDDEN",
+        "SCOPE_MISMATCH",
+        { entity: "line", parent: "factory" },
+        `Dây chuyền "${params.lineCode}" không thuộc nhà máy "${factoryCode}".`,
+      );
     }
   }
 
@@ -272,34 +292,44 @@ export async function enforceReportFactoryScope(params: ReportScopeInput): Promi
   if (scope.isGlobal) return;
 
   if (scope.factoryCodes.length === 0 && scope.corporateCodes.length === 0) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Tài khoản chưa được gán nhà máy nào — không có báo cáo để tạo.",
-    });
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "generateAiReport", reason: "noFactoryAssigned" },
+      "Tài khoản chưa được gán nhà máy nào — không có báo cáo để tạo.",
+    );
   }
 
   if (params.machineId == null) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Vui lòng chỉ định machineId thuộc nhà máy được gán cho tài khoản này.",
-    });
+    // Cần thêm input để hết mơ hồ, không phải "không có quyền" — cùng lý do
+    // với nhánh factoryCode ở enforceAnalyticsFactoryScope().
+    throw appError(
+      "FORBIDDEN",
+      "FIELD_REQUIRED",
+      { field: "machineId" },
+      "Vui lòng chỉ định machineId thuộc nhà máy được gán cho tài khoản này.",
+    );
   }
 
   const machineFactory = await getMachineFactoryCode(params.machineId);
   if (!machineFactory || !(await isFactoryCodeInScope(scope, machineFactory))) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Máy được yêu cầu nằm ngoài phạm vi nhà máy được gán cho tài khoản này.",
-    });
+    throw appError(
+      "FORBIDDEN",
+      "PERMISSION_DENIED",
+      { action: "generateAiReport", reason: "machineOutsideScope" },
+      "Máy được yêu cầu nằm ngoài phạm vi nhà máy được gán cho tài khoản này.",
+    );
   }
 
   if (params.factoryId != null) {
     const factoryCode = await getFactoryCodeById(params.factoryId);
     if (!factoryCode || !(await isFactoryCodeInScope(scope, factoryCode))) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "factoryId được yêu cầu nằm ngoài phạm vi được gán cho tài khoản này.",
-      });
+      throw appError(
+        "FORBIDDEN",
+        "PERMISSION_DENIED",
+        { action: "generateAiReport", reason: "factoryOutsideScope" },
+        "factoryId được yêu cầu nằm ngoài phạm vi được gán cho tài khoản này.",
+      );
     }
   }
 }
@@ -318,11 +348,15 @@ export async function enforceReportFactoryScope(params: ReportScopeInput): Promi
 export async function enforceGlobalReportScope(user: Pick<User, "id" | "role">): Promise<void> {
   const scope = await resolveFactoryScope(user);
   if (scope.isGlobal) return;
-  throw new TRPCError({
-    code: "FORBIDDEN",
-    message:
-      "Báo cáo này tổng hợp dữ liệu TOÀN HỆ THỐNG (không lọc theo máy/nhà máy) — chỉ tài khoản quản trị toàn cục mới được xem.",
-  });
+  // Câu TĨNH (không tham số động) — full-fidelity: reason mang trọn ý nghĩa
+  // gốc, không mất chi tiết khi đã dịch (khác 2 hàm scope ở trên, nơi
+  // factoryCode/machineId cụ thể chỉ còn ở fallbackMessage).
+  throw appError(
+    "FORBIDDEN",
+    "PERMISSION_DENIED",
+    { action: "viewGlobalAiReport", reason: "systemWideReportAdminOnly" },
+    "Báo cáo này tổng hợp dữ liệu TOÀN HỆ THỐNG (không lọc theo máy/nhà máy) — chỉ tài khoản quản trị toàn cục mới được xem.",
+  );
 }
 
 // ─── Composed router-boundary guards ───────────────────────────────────────────────
@@ -341,7 +375,7 @@ export async function applyReportScope(
   input: { machineId?: number; factoryId?: number },
 ): Promise<void> {
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
   }
   enforceAiAnalyticsRateLimit(ctx.user.id);
   await enforceReportFactoryScope({ user: ctx.user, machineId: input.machineId, factoryId: input.factoryId });
@@ -350,7 +384,7 @@ export async function applyReportScope(
 /** Rate-limit + admin-only guard for inherently-global report endpoints (modelPerformance/executiveSummary). */
 export async function applyGlobalReportScope(ctx: ReportScopeCtx): Promise<void> {
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Login required" });
+    throw appError("UNAUTHORIZED", "AUTH_REQUIRED", undefined, "Login required");
   }
   enforceAiAnalyticsRateLimit(ctx.user.id);
   await enforceGlobalReportScope(ctx.user);
@@ -371,9 +405,13 @@ function analyticsRateLimitMax(): number {
 export function enforceAiAnalyticsRateLimit(userId: number): void {
   const retryMs = checkNamedRateLimit(userId, "ai_analytics_report", analyticsRateLimitMax());
   if (retryMs != null) {
-    throw new TRPCError({
-      code: "TOO_MANY_REQUESTS",
-      message: `Vượt giới hạn truy vấn phân tích AI — thử lại sau ~${Math.ceil(retryMs / 1000)}s.`,
-    });
+    // RATE_LIMITED params:{} — số giây chờ lại giữ ở fallbackMessage, đúng
+    // quyết định Task 8 (không có 1 đơn vị chung cho mọi nơi gọi RATE_LIMITED).
+    throw appError(
+      "TOO_MANY_REQUESTS",
+      "RATE_LIMITED",
+      undefined,
+      `Vượt giới hạn truy vấn phân tích AI — thử lại sau ~${Math.ceil(retryMs / 1000)}s.`,
+    );
   }
 }

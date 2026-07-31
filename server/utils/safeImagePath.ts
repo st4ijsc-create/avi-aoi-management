@@ -4,7 +4,7 @@
  * Used by aiVisionLanguageRouter and aiAnalysisHubRouter.
  */
 import path from "path";
-import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 
 export function getUploadsRoot(): string {
   return process.env.LOCAL_STORAGE_DIR
@@ -22,7 +22,11 @@ export function getUploadsRoot(): string {
  */
 export function resolveSafeImagePath(imageKey: string, uploadsRoot?: string): string {
   if (!imageKey || path.isAbsolute(imageKey)) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid image key" });
+    // Task 10 (F3, doc71) — gộp "rỗng" LẪN "đường dẫn tuyệt đối" (2 dạng
+    // imageKey không hợp lệ) dưới CÙNG field "image" (khoá đã có sẵn) —
+    // không thêm reason: cả 2 nhánh của hàm đều là "imageKey không hợp lệ",
+    // fallbackMessage khác nhau đã đủ phân biệt ở log server.
+    throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image" }, "Invalid image key");
   }
 
   const root = uploadsRoot ?? getUploadsRoot();
@@ -31,7 +35,7 @@ export function resolveSafeImagePath(imageKey: string, uploadsRoot?: string): st
   const uploadsPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
 
   if (!resolved.startsWith(uploadsPrefix) && resolved !== root) {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Image path is outside uploads directory" });
+    throw appError("FORBIDDEN", "INVALID_VALUE", { field: "image" }, "Image path is outside uploads directory");
   }
 
   return resolved;

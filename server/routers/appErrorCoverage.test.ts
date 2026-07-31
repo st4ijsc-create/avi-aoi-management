@@ -298,7 +298,10 @@ function countTrpcErrorsOutsideRouters(): { total: number; byFile: Array<[string
 /** Hạ số này mỗi khi một đợt quét riêng di trú xong `new TRPCError(...)` NGOÀI
  *  server/routers/** sang appError(). KHÔNG BAO GIỜ nâng lên — số dư thừa che
  *  mất nợ mới, y hệt 2 ngân sách phía trên. Độc lập, không cộng dồn. */
-const ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS = 19; // ← Task 10 (F3, doc71) lô 3/4 — machineAuthService.ts+securityIdentityRouter.ts+thresholdGovernanceService.ts (27 chỗ). 46 → 19.
+const ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS = 0; // ← Task 10 (F3, doc71) lô 4/4 (CUỐI) — aiAnalyticsScope.ts (13) +
+// safeImagePath.ts (2) + instrumentGate.ts (1) + faiGateService.ts (1) = 17 chỗ di trú thật, cộng 2 chỗ
+// masterDataIO.ts/voiceTranscription.ts (ví dụ minh hoạ trong docstring, không phải mã thực thi — cập
+// nhật pattern trong comment để cổng đếm ký tự không còn thấy "new TRPCError(" ở đó). 19 → 0.
 
 describe("phủ mã lỗi NGOÀI server/routers/** — ngân sách `new TRPCError(...)` (Task 10, F3)", () => {
   it(`còn tối đa ${ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS} chỗ new TRPCError(...) ngoài server/routers/** chưa qua appError`, () => {
