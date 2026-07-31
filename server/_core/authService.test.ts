@@ -57,6 +57,13 @@ beforeAll(async () => {
   REAL_HASH = await bcrypt.hash(REAL_PASSWORD, 10);
 });
 
+/** Trung vị — dùng cho mọi phép đo thời gian trong file này (không dùng một mẫu đơn lẻ). */
+function median(arr: number[]): number {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 function fakeReq(): Request {
   return {
     ip: "127.0.0.1",
@@ -239,12 +246,6 @@ describe("F9-D — thời gian phản hồi (bổ sung, không phải bằng ch�
       foundTimes.push(performance.now() - t1);
     }
 
-    const median = (arr: number[]): number => {
-      const sorted = [...arr].sort((a, b) => a - b);
-      const mid = Math.floor(sorted.length / 2);
-      return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-    };
-
     const medNotFound = median(notFoundTimes);
     const medFound = median(foundTimes);
     const diffMs = Math.abs(medNotFound - medFound);
@@ -265,4 +266,126 @@ describe("F9-D — thời gian phản hồi (bổ sung, không phải bằng ch�
     // đủ CHẶT để bắt lại khoảng lệch ~98% của lỗi cũ.
     expect(diffMs).toBeLessThan(Math.max(15, slower * 0.35));
   }, 30_000);
+});
+
+describe("F9-E (vòng sửa 2, review Important #1) — passwordHash DỊ DẠNG trong DB không được tái mở side-channel", () => {
+  // Bối cảnh: scripts/audit/audit-account.mjs (mode "off") ghi chuỗi
+  // "LOCKED-no-valid-hash" (KHÔNG PHẢI bcrypt hợp lệ) vào cột passwordHash để
+  // vô hiệu hoá tài khoản audit — cùng lúc set isActive=false. Vòng sửa 1 chỉ
+  // kiểm falsy (`user?.passwordHash ?? dummyHash`) nên chuỗi này (truthy)
+  // từng bị dùng THẲNG làm hash "thật" cho bcrypt.compare — bcryptjs kiểm
+  // định dạng TRƯỚC khi chạy vòng Blowfish, nên compare với chuỗi dị dạng trả
+  // về false gần như tức thì (đo thật: ~0.09-0.74ms) thay vì ~50ms của một
+  // hash hợp lệ cost=10 — tái mở đúng side-channel thời gian mà task này
+  // tuyên bố đã đóng, chỉ hẹp phạm vi hơn (còn áp dụng cho các tài khoản
+  // mang sentinel này). 2 dòng thật trong DB dev tại thời điểm review mang
+  // đúng pattern này.
+  const MALFORMED_HASH = "LOCKED-no-valid-hash";
+
+  it("E1. bcrypt.compare KHÔNG được gọi với chuỗi dị dạng — phải dùng hash giả cost=10 thay thế", async () => {
+    dbm.getUserByUsername.mockResolvedValueOnce(
+      makeUser({ isActive: false, passwordHash: MALFORMED_HASH }),
+    );
+    await expect(
+      verifyCredentials("p1_audit_admin", "bat-ky-mat-khau", fakeReq()),
+    ).rejects.toMatchObject({ code: "ACCOUNT_DISABLED" });
+
+    expect(bcryptCompareSpy).toHaveBeenCalledTimes(1);
+    const [, hashArg] = bcryptCompareSpy.mock.calls[0];
+    expect(hashArg).not.toBe(MALFORMED_HASH);
+    expect(hashArg).toMatch(/^\$2[aby]\$10\$/);
+  });
+
+  it("E2. mật khẩu bất kỳ (kể cả trùng REAL_PASSWORD) + passwordHash dị dạng + isActive=false ⇒ vẫn ACCOUNT_DISABLED (việc chặn còn nguyên vẹn)", async () => {
+    dbm.getUserByUsername.mockResolvedValueOnce(
+      makeUser({ isActive: false, passwordHash: MALFORMED_HASH }),
+    );
+    await expect(
+      verifyCredentials("p1_audit_admin", REAL_PASSWORD, fakeReq()),
+    ).rejects.toMatchObject({ code: "ACCOUNT_DISABLED" });
+  });
+
+  it("E3. thời gian phản hồi nhánh hash-dị-dạng không còn nhanh bất thường so với nhánh hash-hợp-lệ (median, đo qua verifyCredentials thật — bcrypt.compare thật, không mock kết quả)", async () => {
+    const N = 21;
+    const malformedTimes: number[] = [];
+    const validTimes: number[] = [];
+
+    for (let i = 0; i < N; i++) {
+      dbm.getUserByUsername.mockResolvedValueOnce(
+        makeUser({ isActive: false, passwordHash: MALFORMED_HASH }),
+      );
+      const t0 = performance.now();
+      await verifyCredentials("p1_audit_admin", "mat-khau-bat-ky", fakeReq()).catch(() => {});
+      malformedTimes.push(performance.now() - t0);
+
+      dbm.getUserByUsername.mockResolvedValueOnce(makeUser());
+      const t1 = performance.now();
+      await verifyCredentials("user1", "mat-khau-sai", fakeReq()).catch(() => {});
+      validTimes.push(performance.now() - t1);
+    }
+
+    const medMalformed = median(malformedTimes);
+    const medValid = median(validTimes);
+    const diffMs = Math.abs(medMalformed - medValid);
+    const slower = Math.max(medMalformed, medValid);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[F9 malformed-hash timing] median malformed=${medMalformed.toFixed(2)}ms valid=${medValid.toFixed(2)}ms diff=${diffMs.toFixed(2)}ms`,
+    );
+
+    // Cùng ngưỡng với F9-D (35% giá trị chậm hơn, sàn 15ms) — trước khi sửa
+    // Important #1, reviewer đo trực tiếp median nhánh dị dạng ~3.86ms so với
+    // ~50ms nhánh hợp lệ (diff/slower ≈ 92%), nằm NGOÀI ngưỡng này.
+    expect(diffMs).toBeLessThan(Math.max(15, slower * 0.35));
+  }, 30_000);
+});
+
+describe("F9-Minor (vòng sửa 2, review Minor) — hash giả sinh sẵn lúc nạp module, không đợi request đầu tiên", () => {
+  // Trước: getDummyPasswordHash() tính LƯỜI (chỉ sinh khi có request đầu tiên
+  // gọi tới ở nhánh not-found) ⇒ request ĐẦU TIÊN của mỗi lần khởi động lại
+  // process tốn ~2x thời gian (sinh hash giả cost=10 ~50ms + compare ~50ms
+  // ≈ 100ms) thay vì ~50ms bình thường — cửa sổ khai thác hẹp (đúng 1 request
+  // mỗi lần khởi động lại) nhưng có thật. Sau: sinh ngay khi nạp module (IIFE
+  // top-level), nên request đầu tiên KHÔNG còn phải đợi bcrypt.hash().
+  //
+  // Test bằng cách nạp lại module TƯƠI (vi.resetModules + import động), CHỜ
+  // một khoảng ngắn mô phỏng đúng khoảng thời gian THẬT giữa lúc server khởi
+  // động (module được nạp) và lúc request đăng nhập ĐẦU TIÊN thật sự chạm
+  // tới (đăng ký route, network round-trip...) — rồi mới gọi
+  // verifyCredentials lần đầu. Đây là ĐIỀU KIỆN THIẾT YẾU của test: gọi
+  // verifyCredentials NGAY LẬP TỨC sau import (độ trễ = 0) không phân biệt
+  // được sinh sẵn hay sinh lười — chờ 0ms thì promise TOP-LEVEL vẫn đang
+  // chạy dở dù có sinh sẵn hay không, cuộc gọi đầu vẫn phải đợi nó xong (đã
+  // xác nhận thực nghiệm: chờ 0ms cho ra first≈99ms — GẦN NHƯ THẤT BẠI ở
+  // ngưỡng ban đầu — sửa lại đúng bằng cách chờ trước khi đo).
+  it("cuộc gọi verifyCredentials ĐẦU TIÊN, SAU một khoảng chờ mô phỏng thời gian khởi động, nhanh gần bằng cuộc gọi thứ hai (không cộng dồn thời gian sinh hash giả)", async () => {
+    vi.resetModules();
+    const fresh = await import("./authService");
+
+    // Khoảng chờ 80ms > thời gian sinh 1 hash giả cost=10 thật (~50ms) — đủ
+    // để promise top-level (nếu ĐÃ sửa — sinh sẵn ngay lúc nạp module) kịp
+    // hoàn tất trong nền trước khi request đầu tiên gọi tới.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    dbm.getUserByUsername.mockResolvedValueOnce(undefined);
+    const t0 = performance.now();
+    await fresh.verifyCredentials("first-call-user", "x", fakeReq()).catch(() => {});
+    const firstCallMs = performance.now() - t0;
+
+    dbm.getUserByUsername.mockResolvedValueOnce(undefined);
+    const t1 = performance.now();
+    await fresh.verifyCredentials("second-call-user", "x", fakeReq()).catch(() => {});
+    const secondCallMs = performance.now() - t1;
+
+    // eslint-disable-next-line no-console
+    console.log(`[F9 minor] first=${firstCallMs.toFixed(2)}ms second=${secondCallMs.toFixed(2)}ms`);
+
+    // Nếu VẪN lười (bug cũ), cuộc gọi đầu vẫn tốn ~gấp đôi (sinh hash +
+    // compare) BẤT KỂ đợi bao lâu trước đó, vì lazy chỉ bắt đầu sinh khi
+    // verifyCredentials gọi tới. Ngưỡng 1.8x + sàn 15ms: đủ rộng để hấp thụ
+    // nhiễu import/JIT của lần resetModules, đủ chặt để bắt lại pattern "gần
+    // gấp đôi" của bug lười.
+    expect(firstCallMs).toBeLessThan(secondCallMs * 1.8 + 15);
+  }, 15_000);
 });

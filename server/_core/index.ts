@@ -1808,8 +1808,30 @@ async function startServer() {
       }
 
       const bcrypt = await import("bcryptjs");
-      const { getUserByUsername, upsertUser } = await import("../db");
+      const { getUserByUsername, upsertUser, updateUserLoginAttempts } = await import("../db");
+      const { comparePasswordConstantTime } = await import("./authService");
       const user = await getUserByUsername(username);
+
+      // F9 (doc71 task 11, vòng sửa 2) — route SỐNG hướng ra ngoài (khuyến
+      // nghị chính thức trong docs/API_REFERENCE.md, có trong OpenAPI spec,
+      // và FactoryAlertSystem/src/services/authService.ts — app React Native
+      // thật trong repo — gọi thật) từng có CÙNG lỗi đã vá ở
+      // authService.ts::verifyCredentials: kiểm !user/!isActive/!passwordHash
+      // chạy TRƯỚC bcrypt.compare, bỏ qua bcrypt hoàn toàn cho 3 nhánh đó ⇒
+      // side-channel thời gian dò được username có thật qua chính route
+      // này. Sửa bằng CÁCH SO KHỚP MẬT KHẨU dùng chung với
+      // verifyCredentials (comparePasswordConstantTime — cùng cost factor,
+      // cùng cách xử lý hash dị dạng trong DB) chạy LUÔN, TRƯỚC các nhánh
+      // early-return bên dưới. KHÔNG hợp nhất toàn bộ luồng với
+      // verifyCredentials: route này cấp Bearer token 30 ngày (không phải
+      // cookie + user_sessions row) và KHÔNG có cổng 2FA — đổi sang
+      // verifyCredentials nguyên khối sẽ đổi định dạng phản hồi (thông điệp
+      // tiếng Anh hiện tại → tiếng Việt của verifyCredentials) và hành vi
+      // 2FA cho route hướng-ra-ngoài này, ngoài phạm vi vá side-channel.
+      // Response shape / thông điệp / mã trạng thái HTTP GIỮ NGUYÊN 100%
+      // như trước — chỉ thứ tự nội bộ đổi.
+      const passwordMatches = await comparePasswordConstantTime(bcrypt, password, user?.passwordHash);
+
       if (!user || !user.isActive || !user.passwordHash) {
         return res.status(401).json({ success: false, message: "Invalid username or password" });
       }
@@ -1822,9 +1844,7 @@ async function startServer() {
         return res.status(429).json({ success: false, message: `Account locked. Try again in ${remaining} minutes.` });
       }
 
-      const isValid = await bcrypt.compare(password, user.passwordHash);
-      if (!isValid) {
-        const { updateUserLoginAttempts } = await import("../db");
+      if (!passwordMatches) {
         const newAttempts = (user.loginAttempts ?? 0) + 1;
         const lockedUntil = newAttempts >= MAX_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000) : null;
         await updateUserLoginAttempts(user.id, newAttempts, lockedUntil);
@@ -1833,7 +1853,6 @@ async function startServer() {
 
       // Reset lockout on successful login
       if ((user.loginAttempts ?? 0) > 0) {
-        const { updateUserLoginAttempts } = await import("../db");
         await updateUserLoginAttempts(user.id, 0, null);
       }
 
