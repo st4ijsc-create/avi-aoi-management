@@ -155,7 +155,9 @@ Không đụng mã sản xuất, không đụng `.env` trong vòng sửa này �
 
 **Câu hỏi:** roster hiện tại (2 model 30B riêng: `Qwen3-30B-A3B-Instruct` cho default + `Qwen3-Coder-30B-A3B` cho code) có đuổi nhau (LRU evict) nhiều hơn roster A (gộp default=code=cùng 1 file 30B) không? Phải đo được **cả hai chiều** — brief giả thuyết hiện tại evict>0, A evict=0.
 
-**⚠ Kết quả bất ngờ — báo trung thực, không ép khớp giả thuyết:** cả hai roster đều đo ra **0 lần evict**. KHÔNG phải vì roster A "đủ chỗ" như giả thuyết — mà vì trong môi trường đo hôm nay, **không có model 30B nào (Instruct hay Coder, ở roster nào) từng nạp thành công dù chỉ 1 lần**: 45/45 lượt thử đều lỗi `cudaMalloc failed: out of memory`, kể cả khi VRAM đang dùng chỉ 58-71% (không phải do thiếu VRAM tổng như bài toán "34GB>32,6GB" giả định — hỏng sớm hơn thế). Cơ chế LRU-evict không có gì để đuổi vì không có gì nạp được để mà đuổi.
+**⚠ Kết quả bất ngờ — báo trung thực, không ép khớp giả thuyết:** cả hai roster đều đo ra **0 lần evict**. KHÔNG phải vì roster A "đủ chỗ" như giả thuyết — mà vì qua **đường boot của app**, 45/45 lượt thử nạp 30B (Instruct hay Coder, ở roster nào) đều lỗi `cudaMalloc failed: out of memory`, kể cả khi VRAM đang dùng chỉ 58-71%. Cơ chế LRU-evict không có gì để đuổi vì không có gì nạp được để mà đuổi.
+
+**⚠ Sửa sau review round 1 (Critical):** bản đầu kết luận rộng hơn bằng chứng — viết "không model 30B nào nạp thành công trong **môi trường đo hôm nay**". Reviewer bác bằng cách tự chạy `node scripts/ai-bench/bench.mjs --models deep --iters 1 --warmup 0` — nạp **thành công ngay lần đầu**. Tôi tự chạy lại độc lập (không chỉ tin lời reviewer, xem "Bằng chứng đường race-free" bên dưới) và xác nhận đúng: **CẢ HAI** model 30B nạp sạch qua `bench.mjs` (không boot app). Kết luận đúng, đã thu hẹp: **"không nạp nổi qua ĐƯỜNG BOOT HIỆN TẠI CỦA APP (do race điều kiện double-warm — xem bên dưới), KHÔNG PHẢI môi trường/driver hỏng."** 45/45 lỗi qua đường boot app vẫn là số liệu ĐÚNG và vẫn có giá trị — chỉ phạm vi kết luận rút gọn lại.
 
 ### Phương pháp
 
@@ -181,14 +183,34 @@ cat do0-vram-*.csv | sort -n | tail -3               # peak per roster
 
 Model **duy nhất** nạp thành công ở CẢ HAI roster: `Qwen3-Embedding-0.6B-f16`, `Qwen3-4B-Instruct-2507` (fast tier), `Qwen2.5-Coder-1.5B-Instruct` (FIM). Không có lượt 30B nào (Instruct hay Coder, roster nào) thành công.
 
-### Điều tra thêm — vì sao ngay cả 1 model 30B đơn lẻ cũng không nạp nổi
+### Điều tra thêm — vì sao đường boot app không nạp nổi 30B, dù đường race-free nạp sạch
 
-Vượt khỏi yêu cầu tối thiểu của brief, nhưng cần thiết để báo cáo không bị hiểu lầm thành "cả hai roster đều ổn" (SAI — cả hai đều hỏng, chỉ khác cách hỏng):
+Vượt khỏi yêu cầu tối thiểu của brief, nhưng cần thiết để báo cáo không bị hiểu lầm.
 
-1. **Race điều kiện thật trong mã, tái hiện 100% mọi lần boot:** `aiGgufEngine.ts:1078` (`initDeepModelWarmup`) VÀ `aiLocalKnowledgeService.ts:2395` (setTimeout riêng, tự nhận "doc 48 R1 — WARM ORDER FIX") **độc lập với nhau cùng gọi `warmModel(GGUF_DEFAULT_MODEL)`** ngay sau boot. `loadGgufModel()` không khoá model đang nạp dở dang → 2 lời gọi cùng modelId race nhau, cả hai cùng xin cấp phát ~17GB đồng thời (34GB > 32,6GB) → OOM chắc chắn. Xác nhận: mọi tiến trình `npm run dev` trong khảo sát này đều có đúng 2 dòng `Loading model:` liên tiếp cho cùng 1 model ngay sau boot.
-2. **Không giải thích hết** — mọi lượt thử SAU race (phút thứ 2, thứ 5...) cũng lỗi giống hệt dù VRAM free 18-23GB theo `nvidia-smi`. `nvidia-smi -q -d MEMORY` cho thấy **BAR1 chỉ 256 MiB tổng, gần đầy (227/256 MiB)** — nghi vấn Resizable BAR/Smart Access Memory chưa bật đủ, có thể là nút thắt cho cấp phát buffer đơn khối ~17GB độc lập với %VRAM tổng còn trống. **Giả thuyết có bằng chứng gián tiếp, chưa chứng minh dứt điểm** (cần quyền BIOS/driver để xác nhận, ngoài phạm vi phần mềm).
-3. Đường mã nạp+context **tự nó không hỏng**: quét KV cache bằng model 4B (xem bên dưới) nạp+tạo context tới tận `GGUF_MAX_CTX`=32768 thành công 4/4 lần liên tiếp.
-4. **3 lần crash tiến trình hoàn toàn** (không chỉ leak VRAM như Task1 mô tả) — log dừng im lặng, không JS stack trace, VRAM về baseline ngay lập tức trong 1 khoảng poll (1s). Khác nhánh OOM-có-catch (case đó IN RA stack trace và server vẫn sống). Dấu hiệu crash gốc native trong add-on CUDA — độc lập xác nhận, MẠNH HƠN mối lo mức-tin-cậy-trung-bình của Task1 (không có `dispose()` ở nhánh catch `loadGgufModel()` dòng 622-645).
+**Bằng chứng đường race-free (tự chạy, sau review round 1):**
+```bash
+node scripts/ai-bench/bench.mjs --models deep --iters 1 --warmup 0
+# [bench] loaded in 8307.2ms
+# [bench]   prefill@128 (153tok): prefill 559.7 tok/s, decode 292.7 tok/s
+# vram: baselineUsedMib=1164, peakUsedMib=18896, modelDeltaMib=17732 (baseline JSON: scripts/ai-bench/baselines/2026-07-31T21-52-29-887Z.json)
+
+node scripts/ai-bench/bench.mjs --models code --iters 1 --warmup 0
+# [bench] loaded in 39902.3ms
+# [bench]   prefill@128 (153tok): prefill 464.5 tok/s, decode 285.9 tok/s
+# (baseline JSON: scripts/ai-bench/baselines/2026-07-31T21-53-00-652Z.json)
+```
+**CẢ HAI** model 30B (`Qwen3-30B-A3B-Instruct` VÀ `Qwen3-Coder-30B-A3B`) nạp **thành công ngay lần đầu** qua `bench.mjs` — script tự nạp `node-llama-cpp` trực tiếp, **không boot app**, nên không đi qua đường có race điều kiện. Cả hai lần, tiến trình thoát sạch, VRAM về baseline (1163/1157 MiB) — không leak. Đây là bằng chứng trực tiếp, đối lập 2/2 thành công (race-free) với 45/45 thất bại (qua app) trên **cùng model, cùng máy, cùng driver, cùng cấu hình BAR1**.
+
+**Hai giả thuyết cho "vì sao đường app hỏng" — đặt cạnh nhau, không để giả thuyết yếu hơn đứng đầu:**
+
+1. **Race điều kiện double-warm lúc boot (bằng chứng MẠNH, xác nhận độc lập bởi reviewer đọc mã VÀ tự tôi đọc lại sau review):** `aiGgufEngine.ts:1066-1098` (`initDeepModelWarmup()`, gọi từ `server/_core/backgroundJobs.ts:126-127`, delay mặc định 3000ms — tự xác nhận: `sed -n '120,130p' server/_core/backgroundJobs.ts`) VÀ `aiLocalKnowledgeService.ts:2392-2418` (`warmUpOllamaModels()`, gọi từ `server/routes/aiLocalKnowledgeApi.ts:268` lúc `registerAiLocalKnowledgeRoutes()` đăng ký route, delay 2000ms — tự xác nhận: `sed -n '260,272p' server/routes/aiLocalKnowledgeApi.ts`) **độc lập với nhau cùng gọi `warmModel(GGUF_DEFAULT_MODEL)`**. `loadGgufModel()` **không có mutex/in-flight lock** cho model đang nạp dở dang — early-return "đã nạp chưa" chỉ kiểm tra `loadedModels.has(modelId)` (đã nạp XONG), không khoá "đang nạp DỞ". Hai lời gọi cùng modelId race nhau (delay lệch 1s: 2000ms vs 3000ms — đủ để CẢ HAI đều đi qua check trước khi lời gọi đầu hoàn tất, vì `llama.loadModel()` mất 8-40s), cả hai cùng xin cấp phát ~17GB đồng thời (34GB > 32,6GB) → OOM gần như chắc chắn cho ít nhất 1, thường cả 2. **Tái hiện 100% mọi lần boot** trong khảo sát này (luôn thấy đúng 2 dòng `Loading model:` liên tiếp cho cùng 1 model ngay sau boot, luôn theo sau bởi ≥1 dòng `cudaMalloc failed`). Giải thích trực tiếp, đầy đủ cho lỗi ĐẦU TIÊN của mỗi tiến trình.
+2. **Thiếu `dispose()` ở nhánh catch OOM, gây phân mảnh/rò trong PHẠM VI 1 tiến trình sống (bằng chứng vừa, khớp ngang hoặc hơn giả thuyết BAR1 bên dưới):** `aiGgufEngine.ts:622-645` — khi `llama.loadModel()` lỗi OOM, biến `model` chưa bao giờ được gán (assignment bên trái thất bại) nên không có handle JS nào để gọi `dispose()`; nếu native layer (ggml/llama.cpp) đã cấp phát MỘT PHẦN buffer trước khi lỗi toàn phần và không tự dọn trước khi ném exception lên JS, phần đó rò ở tầng CUDA context của native add-on. Khớp với: (a) trong CÙNG 1 tiến trình sống (`do0-roster-hientai-part3.log`), VRAM tăng dần qua ~17 lượt lỗi liên tiếp (1113→19035 MiB) rồi NGƯNG — dạng "rò tới một ngưỡng rồi bão hoà" khớp với rò từng phần lặp lại tại CÙNG điểm cấp phát; (b) `bench.mjs` chạy trong tiến trình HOÀN TOÀN MỚI (không có context CUDA cũ, không có rò tích luỹ) nạp sạch ngay lần đầu — nhất quán với "vấn đề gắn với TRẠNG THÁI TÍCH LUỸ của 1 tiến trình sống, không phải môi trường/driver bên ngoài tiến trình". **Chưa chứng minh dứt điểm** (chưa đọc được mã native của `node-llama-cpp`/ggml để xác nhận đường rò cụ thể) nhưng khớp bằng chứng ít nhất ngang giả thuyết #3.
+3. **BAR1 gần đầy (227/256 MiB) — DEMOTE, giả thuyết yếu, có khả năng KHÔNG liên quan:** `nvidia-smi -q -d MEMORY` cho thấy BAR1 chỉ 256 MiB tổng, gần đầy. Bản đầu đặt giả thuyết này lên đầu — **sai vị trí, đã sửa theo review**: BAR1 là cửa sổ CPU↔GPU (dùng cho pinned/mapped/P2P), về nguyên tắc **không chi phối `cudaMalloc` device-side thuần** mà `llama.cpp` dùng để cấp phát buffer trọng số. Kiểm tra lại (tự chạy sau review): BAR1 **VẪN 227/256 MiB, không đổi**, đo cả lúc app đang lỗi (Bước 2-3, trong task) LẪN ngay sau 2 lần `bench.mjs` thành công (bây giờ) LẪN lúc GPU hoàn toàn rảnh — tức BAR1 gần-đầy là trạng thái NỀN CỐ ĐỊNH của máy (nhiều khả năng do desktop/driver Windows tự chiếm), **không tương quan** với việc load 30B qua app thành công hay thất bại. Hạ xuống hàng "quan sát phụ, không phải cơ chế dẫn đầu".
+4. **3 lần crash tiến trình hoàn toàn** (không chỉ leak VRAM như Task1 mô tả) — log dừng im lặng, không JS stack trace, VRAM về baseline ngay lập tức trong 1 khoảng poll (1s). Khác nhánh OOM-có-catch (case đó IN RA stack trace và server vẫn sống). Dấu hiệu crash gốc native trong add-on CUDA — độc lập xác nhận, MẠNH HƠN mối lo mức-tin-cậy-trung-bình của Task1. **Đã kiểm `%LOCALAPPDATA%\CrashDumps` (tự chạy, không chỉ tin reviewer):**
+   ```powershell
+   Get-ChildItem "$env:LOCALAPPDATA\CrashDumps" | Select-Object Name, LastWriteTime
+   ```
+   → có dump cho `git.exe`, `Inno3D.exe`, `pemworker.exe`, `smtpprobe.exe`, `UVUninstall.exe` (nghĩa là Windows Error Reporting CÓ hoạt động trên máy này cho một số tiến trình) nhưng **KHÔNG có dump nào cho `node.exe`** dù quan sát 3 lần biến mất hoàn toàn — ghi nhận để người điều tra sau không mất công tìm dump; crash không để lại minidump theo cấu hình WER hiện tại (native crash có thể bị chặn ở tầng driver/CUDA trước khi WER kịp bắt).
 
 ### KV cache dưới ngữ cảnh tối đa (`GGUF_MAX_CTX`=32768)
 
@@ -213,8 +235,23 @@ grep -n "^GGUF_DEFAULT_MODEL=" .env
 # → GGUF_DEFAULT_MODEL=Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf   (đúng giá trị gốc)
 ```
 
-### Kết luận cho Task 7
+### Kết luận cho Task 7 (sửa sau review round 1 — khuyến nghị cũ "chờ môi trường ổn định" SAI hướng, đã thay)
 
-**Không thể trả lời câu hỏi gốc của Đợt 0 ("roster nào evict nhiều hơn") bằng dữ liệu hôm nay** — cả hai roster đều evict=0 vì tier deep hỏng hoàn toàn ở MỌI roster (nguyên nhân: race điều kiện double-warm lúc boot + nghi vấn BAR1, không phải do thiết kế roster), không phải vì 1 trong 2 thiết kế tốt hơn trên trục evict. Câu hỏi cần đo lại SAU KHI môi trường/driver ổn định (không còn OOM 100% như hôm nay). Dữ liệu hôm nay CÓ giá trị khác: nó cho thấy hệ hiện đang hỏng nặng hơn cả hai giả thuyết roster — bất kể chọn roster nào, cần vá race điều kiện double-warm + điều tra BAR1/crash trước khi roster nào có cơ hội hoạt động đúng thiết kế.
+**Không thể trả lời câu hỏi gốc của Đợt 0 ("roster nào evict nhiều hơn") bằng dữ liệu hôm nay qua đường app** — cả hai roster đều evict=0 vì tier deep hỏng hoàn toàn qua ĐƯỜNG BOOT CỦA APP ở MỌI roster (nguyên nhân chính: race điều kiện double-warm, mục #1 ở trên — KHÔNG PHẢI môi trường/driver hỏng, đã chứng minh bằng `bench.mjs` nạp sạch 2/2 lần), không phải vì 1 trong 2 thiết kế tốt hơn trên trục evict.
+
+**Khuyến nghị ĐÚNG cho Task 7 (thay cho "chờ môi trường ổn định" ở bản trước — SAI, môi trường không hỏng):**
+1. **Vá race điều kiện double-warm** (`aiGgufEngine.ts:1066-1098` × `aiLocalKnowledgeService.ts:2392-2418`, cùng gọi `warmModel(GGUF_DEFAULT_MODEL)` không khoá) rồi đo lại evict qua đường app — đây là việc CẦN làm trước khi đường app cho số evict có nghĩa.
+2. **Trong lúc chờ vá:** đường **race-free** (`scripts/ai-bench/bench.mjs`, không boot app) **DÙNG ĐƯỢC NGAY** để đo tải/VRAM/tok-s của từng model 30B riêng lẻ (không đo được evict qua đường này vì nó không tái hiện tình huống 2 model tranh chấp cùng lúc — nhưng đo được "1 model 30B đơn lẻ có nạp/chạy được không, tốn bao nhiêu VRAM/thời gian" một cách đáng tin cậy, đúng loại số Task 7 cần cho quyết định "model nào nên thường trú").
+3. Không suy diễn "cả hai roster đều tệ như nhau" từ dữ liệu evict hôm nay — dữ liệu evict hôm nay đo lỗi HẠ TẦNG (race), không đo được tín hiệu roster thật.
+
+### Vòng sửa 1 (review)
+
+Reviewer: spec ✅ đạt, diff sạch, `.env` hoàn nguyên đúng, đo cả hai chiều + báo trung thực kết quả bất ngờ — giữ nguyên tinh thần đó. Race điều kiện double-warm được xác nhận ĐÚNG bằng đọc mã độc lập (vị trí chính xác hơn bản đầu: `server/_core/backgroundJobs.ts:126-127` gọi `initDeepModelWarmup`, `server/routes/aiLocalKnowledgeApi.ts:268` gọi `warmUpOllamaModels()` của `aiLocalKnowledgeService.ts`). 1 Critical + 1 Important + 1 Minor:
+
+- **Critical — kết luận rộng hơn bằng chứng, trỏ sai hướng cho Task 7.** Bản đầu: "không model 30B nào nạp thành công trong môi trường đo hôm nay" + khuyến nghị Task 7 "chờ môi trường/driver ổn định". Reviewer tự chạy `bench.mjs --models deep --iters 1 --warmup 0` → nạp thành công 40,3s. Tôi tự chạy lại độc lập (không chép số reviewer) — xác nhận đúng, CẢ HAI model 30B nạp sạch qua đường race-free (xem "Bằng chứng đường race-free"). Đã thu hẹp kết luận thành "không nạp nổi qua ĐƯỜNG BOOT CỦA APP", sửa khuyến nghị Task 7 thành "vá race rồi đo lại + dùng `bench.mjs` ngay trong lúc chờ vá" (không phải "chờ môi trường ổn định").
+- **Important — 2 giả thuyết chưa đối chiếu ngang hàng, giả thuyết yếu hơn (BAR1) đứng đầu.** Đã sắp lại thứ tự: race điều kiện (bằng chứng mạnh) lên #1, thiếu `dispose()`-gây-phân-mảnh-trong-1-tiến-trình lên #2 (khớp bằng chứng ngang/hơn), BAR1 xuống #3 kèm giải thích tại sao yếu hơn (BAR1 đo lại vẫn 227/256 MiB **không đổi** dù app đang lỗi hay `bench.mjs` vừa thành công — không tương quan với kết quả nạp, nhiều khả năng là trạng thái nền cố định của máy, không phải cơ chế gây OOM).
+- **Minor — crash dump.** Đã tự kiểm `%LOCALAPPDATA%\CrashDumps` (không chỉ tin reviewer) — xác nhận: có dump cho tiến trình khác (`git.exe`, `Inno3D.exe`...) nhưng không có dump `node.exe` nào. Ghi thêm vào mục #4.
+
+Không vá race điều kiện (đúng ràng buộc — đó là phát hiện của khảo sát, để đợt vá sau). Không đụng mã sản xuất, không đụng `.env` trong vòng sửa này — chỉ chạy thêm 2 lệnh `bench.mjs` (đọc, không ghi) + sửa văn bản báo cáo.
 
 Bản đầy đủ (điều tra chi tiết, log excerpt, script KV-cache-scan): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-2-report.md` (không commit — `.superpowers/sdd/*` bị `.gitignore` chặn).
