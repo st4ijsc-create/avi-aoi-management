@@ -14,6 +14,12 @@ namespace St4i.EngineApi.Tests.Alarms;
 /// then say NOTHING — the black-holing relay the timeout, budget and cancellation tests need.</param>
 /// <param name="EhloReply">The reply to <c>EHLO</c>. Multi-line replies use <c>\r\n</c>.</param>
 /// <param name="AuthReply">The final reply to an <c>AUTH</c> exchange (after the base64 rounds).</param>
+/// <param name="AuthCommandReply">🔴 A reply to the <c>AUTH</c> COMMAND ITSELF, refusing it outright with
+/// no <c>334</c> prompt at all — which is what a relay does when it will not accept the offered mechanism.
+/// Distinct from <paramref name="AuthReply"/> (which rejects the credential AFTER collecting it), because
+/// the two are different failure shapes and C-4's review found the channel behaves identically in both:
+/// <see cref="System.Net.Mail.SmtpClient"/> carries on unauthenticated either way. <see langword="null"/>
+/// means "prompt normally".</param>
 /// <param name="MailFromReply">The reply to <c>MAIL FROM</c>.</param>
 /// <param name="RcptToReply">Given the recipient as the server saw it (e.g. <c>&lt;ops@plant.local&gt;</c>),
 /// the reply. <see langword="null"/> means <c>250 OK</c>.</param>
@@ -22,6 +28,7 @@ internal sealed record SmtpScript(
     string? Greeting = "220 st4i-test ESMTP",
     string EhloReply = "250-st4i-test\r\n250 8BITMIME",
     string AuthReply = "235 2.7.0 Authentication succeeded",
+    string? AuthCommandReply = null,
     string MailFromReply = "250 OK",
     Func<string, string>? RcptToReply = null,
     string DataReply = "250 2.0.0 OK queued");
@@ -206,6 +213,15 @@ internal sealed class SmtpLoopbackServer : IAsyncDisposable
             else if (line.StartsWith("AUTH", StringComparison.OrdinalIgnoreCase))
             {
                 auth.Add(line);
+
+                if (script.AuthCommandReply is { } refusal)
+                {
+                    // The relay refuses the mechanism outright, with no 334 prompt. The client never gets
+                    // to offer the password at all — and carries on unauthenticated regardless.
+                    authRounds = 0;
+                    await writer.WriteLineAsync(refusal).ConfigureAwait(false);
+                    continue;
+                }
 
                 // 🔴 .NET sends the username INLINE on the AUTH line — "AUTH login <base64username>" —
                 // rather than sending a bare "AUTH LOGIN" and waiting to be prompted for it (verified

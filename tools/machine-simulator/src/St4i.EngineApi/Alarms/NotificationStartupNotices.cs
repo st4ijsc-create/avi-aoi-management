@@ -174,19 +174,29 @@ public static class NotificationStartupNotices
             // 🔴 Review round 1 — port 465 is IMPLICIT TLS (SMTPS): the server expects a TLS handshake the
             // instant the socket opens. System.Net.Mail.SmtpClient, which C-4 must use, implements only
             // RFC 3207 STARTTLS and cannot do that in either mode — with StartTls it sends EHLO in the
-            // clear to a server waiting for a ClientHello and the connection hangs until it times out;
-            // with None it gets TLS bytes back and fails to parse them. SmtpTlsMode deliberately has no
-            // ImplicitTls member (offering one would be a promise C-4 could not keep without a forbidden
-            // NuGet), but the enum's silence does not help an operator who simply types the port they were
-            // given. Saying it once per boot does.
+            // clear to a server waiting for a ClientHello; with None it gets TLS bytes back and fails to
+            // parse them. SmtpTlsMode deliberately has no ImplicitTls member (offering one would be a
+            // promise C-4 could not keep without a forbidden NuGet), but the enum's silence does not help
+            // an operator who simply types the port they were given. Saying it once per boot does.
+            //
+            // 🔴 Task C-4 review (I-2) — this notice used to end "the attempt will hang rather than fail
+            // quickly", which C-2 wrote as a PREDICTION about a channel that did not exist yet. C-4 built
+            // that channel and measured the opposite: the delivery is bounded by the per-attempt timeout
+            // and the total budget exactly like any other unresponsive relay, and is counted as a lost
+            // notification (SmtpNotificationChannel, and the test
+            // Port465WithStartTls_DoesNotHang_ItIsBoundedAndCounted). Leaving the old wording would have
+            // told an operator to expect a symptom the product cannot produce — and C-8 publishes these
+            // words. What is actually wrong with port 465 is that mail is never delivered, which is bad
+            // enough to say plainly without inventing a hang.
             if (channel.Smtp is { Port: 465 } implicitTls)
             {
                 notices.Add(new NotificationStartupNotice(
                     NotificationNoticeSeverity.Warning,
                     $"The SMTP notification channel is configured on port 465 ({implicitTls.Host}:465), which is " +
                     "implicit TLS (SMTPS). This product sends mail through System.Net.Mail, which supports only " +
-                    "STARTTLS — it cannot complete a handshake on 465 and the attempt will hang rather than fail " +
-                    "quickly. Use port 587 with STARTTLS, or port 25 on an in-plant relay."));
+                    "STARTTLS and cannot complete a handshake on 465 — so NO alarm e-mail will ever be delivered " +
+                    "to this channel. Each attempt runs until the delivery budget elapses and is then counted as " +
+                    "a lost notification. Use port 587 with STARTTLS, or port 25 on an in-plant relay."));
             }
         }
 

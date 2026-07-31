@@ -40,6 +40,11 @@ public sealed class SmtpNotificationChannelTests : IDisposable
     /// <summary>Distinctive enough that finding it anywhere is proof of a leak.</summary>
     private const string PasswordSentinel = "SMTPPASS-do-not-leak-3e91cc";
 
+    /// <summary>The instance name the leak test configures under. Distinctive on purpose (review, m-2): its
+    /// non-vacuity guard asserts the identity DID reach the reported message, and a common word like
+    /// "default" could match unrelated prose and prove nothing.</summary>
+    private const string LeakProbeInstance = "leakprobe-8c4f12";
+
     private const string From = "alarms@plant.local";
     private const string Recipient = "ops@plant.local";
 
@@ -663,23 +668,43 @@ public sealed class SmtpNotificationChannelTests : IDisposable
     }
 
     /// <summary>
-    /// 🔴 The residual, pinned as a CHARACTERISATION test rather than left in prose: against a relay that
-    /// rejects the credentials but still accepts mail from this host (an IP allowlist), the BCL carries on
-    /// past the rejected <c>AUTH</c> and the message is delivered ANONYMOUSLY — and nothing anywhere
-    /// reports that the stored password is wrong.
+    /// 🔴 The residual, pinned as a CHARACTERISATION test rather than left in prose: whenever the configured
+    /// credential is <b>not successfully used</b>, and the relay accepts the mail anyway, the message is
+    /// delivered ANONYMOUSLY and nothing anywhere reports that the stored credential is not working.
+    ///
+    /// <para><b>C-4 review (I-3) widened this from one shape to three</b>, because my first version pinned
+    /// only "rejected after prompting" and the residual is not that narrow:</para>
+    /// <list type="number">
+    /// <item><description>the relay prompts, collects the password, and rejects it (<c>535</c>);</description></item>
+    /// <item><description>the relay refuses the <c>AUTH</c> COMMAND outright, so the password is never even
+    /// offered;</description></item>
+    /// <item><description>🔴 <b>the relay advertises no <c>AUTH</c> capability at all</b> — so no
+    /// authentication is attempted. <b>This is the reachable one:</b> relays commonly offer AUTH only after
+    /// STARTTLS, so <see cref="SmtpTlsMode.None"/> with a stored username and password is an everyday
+    /// configuration that lands here. C-2's clear-text notice does fire for it, but it warns about a
+    /// different thing (the password crossing the wire), not about the password being ignored.</description></item>
+    /// </list>
     ///
     /// <para>This documents a limitation of <see cref="System.Net.Mail.SmtpClient"/>, which exposes no
-    /// <c>AUTH</c> result at all, not a decision this channel made. It is asserted so that if a future .NET
-    /// changes the behaviour — or a future maintainer switches SMTP libraries — this turns red and the
-    /// residual gets revisited deliberately instead of surviving as a paragraph nobody rechecks. No
-    /// notification is lost in this case, which is why the counters still read as a clean delivery.</para>
+    /// <c>AUTH</c> result at all, not a decision this channel made. Asserted so that a future .NET change or
+    /// a library swap turns it red and the residual is revisited deliberately rather than surviving as a
+    /// paragraph nobody rechecks. No notification is lost in any of these cases, which is why the counters
+    /// still read as a clean delivery — what is lost is the operator's knowledge.</para>
     /// </summary>
-    [Fact]
-    public async Task ARelayThatRejectsAuthButAcceptsAnyway_DeliversAnonymously_TheOneCaseThisChannelCannotSee()
+    [Theory]
+    // (1) prompted, collected, rejected — the password does reach the wire.
+    [InlineData("250-st4i-test\r\n250-AUTH LOGIN\r\n250 8BITMIME", "535 5.7.8 Bad credentials", null, true)]
+    // (2) the AUTH command refused outright — the password is never offered.
+    [InlineData("250-st4i-test\r\n250-AUTH LOGIN\r\n250 8BITMIME", null, "504 5.5.4 Unrecognized mechanism", false)]
+    // (3) no AUTH advertised at all — no authentication attempted. The reachable case.
+    [InlineData("250-st4i-test\r\n250 8BITMIME", null, null, false)]
+    public async Task AConfiguredCredentialThatIsNeverSuccessfullyUsed_StillDeliversAnonymously_AndNothingSaysSo(
+        string ehloReply, string? authReply, string? authCommandReply, bool passwordReachesTheWire)
     {
         await using var relay = SmtpLoopbackServer.Start(new SmtpScript(
-            EhloReply: "250-st4i-test\r\n250-AUTH LOGIN\r\n250 8BITMIME",
-            AuthReply: "535 5.7.8 Authentication credentials invalid"));
+            EhloReply: ehloReply,
+            AuthReply: authReply ?? "235 2.7.0 Authentication succeeded",
+            AuthCommandReply: authCommandReply));
         var store = NewStore();
         Assert.True(await SaveSmtpAsync(store, relay.Port, username: "alerts@plant.local"));
         Assert.True(await store.SetSecretAsync(
@@ -690,18 +715,19 @@ public sealed class SmtpNotificationChannelTests : IDisposable
         var channel = NewChannel(store, warnings, errors);
         await channel.DispatchAsync(MakeJob());
 
-        // The alarm DID reach its recipients, so this is an honest delivery...
+        // The alarm DID reach its recipients, so the counters read as an honest delivery...
         var received = Assert.Single(relay.Messages);
         Assert.Equal(Recipient, Assert.Single(received.RcptTo));
         Assert.Equal(1, channel.Stats.Delivered);
         Assert.Equal(0, channel.Stats.Lost);
 
-        // ...the credential really was offered and really was refused...
-        Assert.NotEmpty(received.AuthExchange);
-        Assert.Contains(received.AuthExchange, line =>
+        // ...the credential was configured, and in case (1) it genuinely reached the wire and was refused,
+        // while in (2) and (3) it was never used at all — three different routes to the same silence.
+        var offeredPassword = received.AuthExchange.Any(line =>
             line.Contains(Convert.ToBase64String(Encoding.UTF8.GetBytes(PasswordSentinel)), StringComparison.Ordinal));
+        Assert.Equal(passwordReachesTheWire, offeredPassword);
 
-        // ...and NOTHING told the operator their stored password is wrong. That is the residual.
+        // ...and NOTHING told the operator their stored credential is not being used. That is the residual.
         Assert.Empty(warnings);
         Assert.Empty(errors);
     }
@@ -858,6 +884,16 @@ public sealed class SmtpNotificationChannelTests : IDisposable
     /// and <c>1400 &gt; 1300</c> unconditionally. Attempt 3 is impossible by arithmetic rather than by being
     /// too slow to happen.</description></item>
     /// </list>
+    ///
+    /// <para>🔴 <b>ELAPSED TIME IS THE ASSERTION THAT CARRIES THIS TEST, and without it the test was
+    /// vacuous for the branch it is named after.</b> Review found that mutating <see cref="NextDelay"/> to
+    /// <c>return delay;</c> — deleting the "cannot afford it" guard entirely — left every SMTP test passing:
+    /// <c>Task.Delay(1400, budget.Token)</c> is cancelled by the same budget and lands in the
+    /// <c>OperationCanceledException</c> handler, producing IDENTICAL counters and an identical connection
+    /// count. The only observable difference is when the drain thread is released: <b>~0.7 s with the guard,
+    /// ~2.0 s without</b>. Since head-of-line delay is the entire reason the guard exists, time is the only
+    /// thing that can pin it. The 1.5 s bound sits clear of both — roughly 2× the expected 0.7 s and
+    /// comfortably below the 2.0 s the mutation produces.</para>
     /// </summary>
     [Fact]
     public async Task TheTotalBudget_AlsoRefusesToStartAnAttemptItCannotAfford()
@@ -873,12 +909,25 @@ public sealed class SmtpNotificationChannelTests : IDisposable
             baseBackoff: TimeSpan.FromMilliseconds(700),
             maxAttempts: 3);
 
+        var elapsed = Stopwatch.StartNew();
         await channel.DispatchAsync(MakeJob());
+        elapsed.Stop();
 
         Assert.Equal(2, relay.Connections);
         Assert.Equal(2, channel.Stats.Attempts);
         Assert.Equal(1, channel.Stats.Retries);
         Assert.Equal(1, channel.Stats.Lost);
+
+        // 🔴 The head-of-line property: the drain thread is released as soon as the budget cannot afford
+        // another attempt, NOT when the budget finally expires. Deleting the guard makes this ~2.0s.
+        Assert.True(elapsed.Elapsed < TimeSpan.FromMilliseconds(1500),
+            $"the drain thread was held for {elapsed.Elapsed} — the budget guard did not refuse the " +
+            "unaffordable attempt, it merely waited out the whole budget.");
+
+        // And the lower bound proves backoff 1 really was slept, so the fast path is not passing for the
+        // wrong reason (e.g. the whole delivery giving up before any backoff at all).
+        Assert.True(elapsed.Elapsed >= TimeSpan.FromMilliseconds(600),
+            $"finished in {elapsed.Elapsed}, which is too fast for backoff 1 (700ms) to have been slept.");
     }
 
     /// <summary>
@@ -1040,12 +1089,21 @@ public sealed class SmtpNotificationChannelTests : IDisposable
         Assert.NotEmpty(warnings);
     }
 
-    /// <summary>🔴 C-2's port-465 startup notice still fires, and still says what this channel can actually
-    /// do. The channel and the notice are separate code, so nothing but a test keeps them agreeing.</summary>
+    /// <summary>
+    /// 🔴 C-2's port-465 startup notice still fires, and — since C-4 review (I-2) — says what this channel
+    /// MEASURABLY does rather than what C-2 predicted it would do.
+    ///
+    /// <para>C-2 wrote "the attempt will hang rather than fail quickly" before any SMTP channel existed.
+    /// C-4 built it and measured the opposite: bounded by the budget and counted as a loss, which
+    /// <see cref="Port465WithStartTls_DoesNotHang_ItIsBoundedAndCounted"/> asserts directly. The previous
+    /// version of THIS test checked only for "465", "STARTTLS" and "587", so the false sentence survived the
+    /// very assertion meant to cover it — and C-8 publishes these words. The negative assertion below is
+    /// therefore the point of the test, not decoration.</para>
+    /// </summary>
     [Theory]
     [InlineData(SmtpTlsMode.StartTls)]
     [InlineData(SmtpTlsMode.None)]
-    public async Task TheImplicitTlsStartupNotice_StillFires_ForAChannelConfiguredOn465(SmtpTlsMode tls)
+    public async Task TheImplicitTlsStartupNotice_StillFires_AndDoesNotClaimAHangItCannotProduce(SmtpTlsMode tls)
     {
         var store = NewStore();
         Assert.True(await SaveSmtpAsync(store, 465, tls: tls, host: "smtp.example.com"));
@@ -1059,6 +1117,14 @@ public sealed class SmtpNotificationChannelTests : IDisposable
         Assert.Equal(NotificationNoticeSeverity.Warning, notice.Severity);
         Assert.Contains("STARTTLS", notice.Message, StringComparison.Ordinal);
         Assert.Contains("587", notice.Message, StringComparison.Ordinal);
+
+        // 🔴 It must say what actually happens: nothing is delivered, and each attempt is counted lost.
+        Assert.Contains("lost notification", notice.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("budget", notice.Message, StringComparison.OrdinalIgnoreCase);
+
+        // 🔴 And it must NOT predict a symptom this channel cannot produce. C-8 publishes this text; an
+        // operator told to expect a hang would go looking for a stuck process that does not exist.
+        Assert.DoesNotContain("hang", notice.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1183,27 +1249,34 @@ public sealed class SmtpNotificationChannelTests : IDisposable
         // (a) a password that will not decrypt
         {
             var store = NewStore();
-            Assert.True(await SaveSmtpAsync(store, SmtpLoopbackServer.ClosedPort(), username: "u"));
+            Assert.True(await SaveSmtpAsync(
+                store, SmtpLoopbackServer.ClosedPort(), username: "u", instance: LeakProbeInstance));
             Assert.True(await store.SetSecretAsync(
-                NotificationChannel.Smtp, NotificationSecretNames.SmtpPassword, PasswordSentinel));
+                NotificationChannel.Smtp, NotificationSecretNames.SmtpPassword, PasswordSentinel,
+                instance: LeakProbeInstance));
             CorruptStoredPassword(store);
             await NewChannel(store, warnings, errors).DispatchAsync(MakeJob());
         }
 
-        // (b) a permanent rejection, and (c) a rejected authentication
+        // (b) a permanent rejection, and (c) a rejected authentication — the latter scripted the way a real
+        // authenticating relay behaves (535, then refusing the transaction), because SmtpClient carries on
+        // past a rejected AUTH and a relay that then accepted the mail would exercise no reporting path.
         foreach (var script in new[]
         {
             new SmtpScript(MailFromReply: "550 5.1.1 No such user"),
             new SmtpScript(
                 EhloReply: "250-st4i-test\r\n250-AUTH LOGIN\r\n250 8BITMIME",
-                AuthReply: "535 5.7.8 Bad credentials"),
+                AuthReply: "535 5.7.8 Bad credentials",
+                MailFromReply: "530 5.7.0 Authentication required"),
         })
         {
             await using var relay = SmtpLoopbackServer.Start(script);
             var store = NewStore();
-            Assert.True(await SaveSmtpAsync(store, relay.Port, username: "alerts@plant.local"));
+            Assert.True(await SaveSmtpAsync(
+                store, relay.Port, username: "alerts@plant.local", instance: LeakProbeInstance));
             Assert.True(await store.SetSecretAsync(
-                NotificationChannel.Smtp, NotificationSecretNames.SmtpPassword, PasswordSentinel));
+                NotificationChannel.Smtp, NotificationSecretNames.SmtpPassword, PasswordSentinel,
+                instance: LeakProbeInstance));
             await NewChannel(store, warnings, errors).DispatchAsync(MakeJob());
         }
 
@@ -1211,9 +1284,11 @@ public sealed class SmtpNotificationChannelTests : IDisposable
         {
             var store = NewStore();
             var port = SmtpLoopbackServer.ClosedPort();
-            Assert.True(await SaveSmtpAsync(store, port, username: "alerts@plant.local"));
+            Assert.True(await SaveSmtpAsync(
+                store, port, username: "alerts@plant.local", instance: LeakProbeInstance));
             Assert.True(await store.SetSecretAsync(
-                NotificationChannel.Smtp, NotificationSecretNames.SmtpPassword, PasswordSentinel));
+                NotificationChannel.Smtp, NotificationSecretNames.SmtpPassword, PasswordSentinel,
+                instance: LeakProbeInstance));
             await NewChannel(store, warnings, errors,
                 attemptTimeout: TimeSpan.FromSeconds(5), totalBudget: TimeSpan.FromSeconds(30))
                 .DispatchAsync(MakeJob());
@@ -1229,9 +1304,11 @@ public sealed class SmtpNotificationChannelTests : IDisposable
         var reported = everything.ToString();
 
         // 🔴 Non-vacuity FIRST: something really was reported, and it really does name the destination.
+        // The instance name is a distinctive token rather than "default" (review, m-2): a common word can
+        // appear in unrelated prose, so it would not have proved the identity reached the message.
         Assert.NotEmpty(warnings.Concat(errors.Select(e => e.Message)));
         Assert.Contains(SmtpLoopbackServer.Host, reported, StringComparison.Ordinal);
-        Assert.Contains("default", reported, StringComparison.Ordinal);
+        Assert.Contains(LeakProbeInstance, reported, StringComparison.Ordinal);
 
         Assert.DoesNotContain(PasswordSentinel, reported, StringComparison.Ordinal);
     }
@@ -1326,8 +1403,13 @@ public sealed class SmtpNotificationChannelTests : IDisposable
             Assert.Empty(relay.Messages);
             Assert.Equal(1, channel.Stats.Lost);
             Assert.Equal(0, channel.Stats.Delivered);
-            // Permanent: the same configuration would fail identically, so it is not retried.
-            Assert.Equal(1, channel.Stats.Attempts);
+
+            // 🔴 Review (m-1) — NO attempt is counted, and this assertion used to say the opposite and so
+            // pinned the inaccuracy in place. `Attempts` is documented as "SMTP conversations actually
+            // started"; a message that could not be built never opened a socket, and the relay confirms it
+            // saw no connection at all.
+            Assert.Equal(0, channel.Stats.Attempts);
+            Assert.Equal(0, relay.Connections);
             Assert.NotEmpty(warnings.Concat(errors.Select(e => e.Message)));
         }
     }
@@ -1379,11 +1461,50 @@ public sealed class SmtpNotificationChannelTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(10), SmtpNotificationChannel.DefaultTotalBudget);
         Assert.Equal(3, SmtpNotificationChannel.DefaultMaxAttempts);
         Assert.Equal(TimeSpan.FromMilliseconds(250), SmtpNotificationChannel.DefaultBaseBackoff);
+    }
 
-        // 🔴 The two channels' budgets must stay equal: C-7 composes them with Task.WhenAll, so one
-        // notification's cost is the MAX of the two, and a channel that quietly doubled its budget would
-        // double the drain loop's head-of-line delay for every alarm.
-        Assert.Equal(WebhookNotificationChannel.DefaultTotalBudget, SmtpNotificationChannel.DefaultTotalBudget);
+    /// <summary>
+    /// 🔴 <b>The head-of-line invariant, measured — this is what "the cost is one budget, not N" means.</b>
+    ///
+    /// <para>C-4 review (I-4) found this property had NO test. What stood in its place was an assertion that
+    /// the webhook's and this channel's default budgets are equal, which is neither necessary nor sufficient
+    /// for it — and which would have read to C-5/C-6 as a rule that a local-annunciation channel must also
+    /// carry a 10 s budget. The reviewer proved the gap: replacing the <c>Task.WhenAll</c> fan-out in
+    /// <see cref="SmtpNotificationChannel.DispatchAsync"/> with a sequential <c>foreach</c> left all 62
+    /// tests passing.</para>
+    ///
+    /// <para>Two black-holing relays against a 2 s budget: fanned out, the whole dispatch costs ~2 s;
+    /// sequentially it costs ~4 s. The 3 s bound sits between them and does not depend on the two budgets
+    /// being equal to each other, so it survives C-5/C-6 choosing different ones.</para>
+    /// </summary>
+    [Fact]
+    public async Task TwoDeadDestinations_CostTheDrainLoopOneBudget_NotTwo()
+    {
+        await using var first = SmtpLoopbackServer.Start(_ => null);  // accept, never speak
+        await using var second = SmtpLoopbackServer.Start(_ => null);
+        var store = NewStore();
+        Assert.True(await SaveSmtpAsync(store, first.Port, instance: "plant"));
+        Assert.True(await SaveSmtpAsync(store, second.Port, instance: "oncall"));
+
+        var channel = NewChannel(
+            store, new List<string>(),
+            attemptTimeout: TimeSpan.FromSeconds(30),
+            totalBudget: TimeSpan.FromSeconds(2));
+
+        var elapsed = Stopwatch.StartNew();
+        await channel.DispatchAsync(MakeJob());
+        elapsed.Stop();
+
+        // Both really were attempted — otherwise "one budget" would be trivially true.
+        Assert.Equal(1, first.Connections);
+        Assert.Equal(1, second.Connections);
+        Assert.Equal(2, channel.Stats.Lost);
+
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(3),
+            $"two dead SMTP destinations held the drain loop for {elapsed.Elapsed} — that is the SUM of " +
+            "their budgets, not the max, so the fan-out has been sequentialised.");
+        Assert.True(elapsed.Elapsed >= TimeSpan.FromMilliseconds(1500),
+            $"finished in {elapsed.Elapsed}, too fast for either budget to have elapsed at all.");
     }
 
     /// <summary>

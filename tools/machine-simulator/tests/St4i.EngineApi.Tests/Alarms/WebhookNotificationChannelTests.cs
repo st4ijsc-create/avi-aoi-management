@@ -636,12 +636,24 @@ public sealed class WebhookNotificationChannelTests : IDisposable
         //     budget can remain — 1400 > 1300 ALWAYS, whatever the attempts cost. Attempt 3 can never
         //     start.
         // Ten attempts were permitted; the budget, not the attempt count, is what stopped it at two.
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5),
-            $"a 2s budget took {stopwatch.Elapsed} against a fast-failing receiver that permitted 10 attempts.");
         Assert.Equal(2, server.Requests.Count);
         Assert.Equal(2, channel.Stats.Attempts);
         Assert.Equal(1, channel.Stats.Lost);
         Assert.Contains("delivery budget elapsed", Assert.Single(warnings), StringComparison.Ordinal);
+
+        // 🔴 Task C-4 review — THIS assertion is what makes the test non-vacuous, and the 5s bound it
+        // replaces did not. Mutating NextDelay to `return delay;` — deleting the "no room for another
+        // attempt" guard this test is named after — leaves the request count, every counter and the warning
+        // text IDENTICAL: Task.Delay(1400, budget.Token) is cancelled by the same budget and lands in the
+        // OperationCanceledException handler below. The ONLY observable difference is when the drain thread
+        // is released — ~0.7s with the guard, ~2.0s without — and head-of-line delay is the whole reason
+        // the guard exists. A 5s bound separates neither. Found by mutation, not by reading: three
+        // reviewers, C-3 and C-4 all read this test as sound.
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromMilliseconds(1500),
+            $"the drain thread was held for {stopwatch.Elapsed} against a 2s budget — the guard did not " +
+            "refuse the unaffordable attempt, it merely waited the whole budget out.");
+        Assert.True(stopwatch.Elapsed >= TimeSpan.FromMilliseconds(600),
+            $"finished in {stopwatch.Elapsed}, too fast for backoff 1 (700ms) to have been slept.");
     }
 
     /// <summary>

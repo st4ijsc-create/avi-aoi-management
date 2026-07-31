@@ -310,6 +310,72 @@ public sealed class AlarmNotifierWiringTests
     }
 
     /// <summary>
+    /// 🔴 Task C-4 review (I-4) — <b>the host composes its channels CONCURRENTLY, and this is the only test
+    /// that can tell.</b>
+    ///
+    /// <para>The reviewer proved the gap: replacing <c>Program.cs</c>'s <c>Task.WhenAll</c> composition with
+    /// a sequential <c>foreach</c> left all five wiring tests passing. That composition is C-7's hard
+    /// constraint precisely because sequential fan-out makes one notification cost the SUM of every
+    /// channel's budget — and the case that matters is a dead network receiver keeping C-6's physical beacon
+    /// dark for minutes behind a Critical alarm, worst-case at restart.</para>
+    ///
+    /// <para><b>Measured by arrival, not by elapsed time, deliberately.</b> Both destinations black-hole
+    /// their connections, so the host's real 10 s budget applies and a wall-clock test would have to run for
+    /// 10 s (concurrent) or 20 s (sequential). Instead this asserts that BOTH destinations are contacted
+    /// promptly: fanned out they are reached within milliseconds of each other, while under sequential
+    /// composition the second is not contacted until the first channel's entire 10 s budget has expired. A
+    /// 5 s deadline separates those two cases cleanly and the test finishes in well under a second.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheHostDispatchesToItsChannelsConcurrently_SoOneDeadReceiverCannotDelayAnother()
+    {
+        // Neither destination ever answers, so whichever is dispatched first would occupy the drain loop
+        // for its whole budget if the composition were sequential.
+        await using var webhookReceiver = WebhookLoopbackServer.Start(_ => null);
+        await using var relay = SmtpLoopbackServer.Start(_ => null);
+        var alarmsDir = Directory.CreateTempSubdirectory("st4i-notifywire-alarms-").FullName;
+
+        var factory = await CreateFactoryAsync(
+            configureAChannel: false, alarmsDir,
+            configure: async store =>
+            {
+                Assert.True(await store.SaveSmtpAsync(
+                    enabled: true, AlarmPriority.High, SmtpLoopbackServer.Host, relay.Port,
+                    SmtpTlsMode.None, "alarms@plant.local", new[] { "ops@plant.local" }, username: null));
+                Assert.True(await store.SaveWebhookAsync(
+                    enabled: true, AlarmPriority.High, webhookReceiver.Url("/hooks/concurrent")));
+            });
+
+        try
+        {
+            var store = factory.Services.GetRequiredService<IAlarmStore>();
+            await store.RaiseAsync(new AlarmRaise(
+                AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "concurrency", TargetId: "slot-7"));
+
+            // 🔴 5s is the discriminator: concurrently both are contacted almost immediately; sequentially
+            // the second waits out the first channel's full 10s budget and cannot arrive in time.
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+            while ((relay.Connections == 0 || webhookReceiver.Requests.Count == 0) &&
+                   DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(10);
+            }
+
+            Assert.True(webhookReceiver.Requests.Count > 0,
+                "the webhook receiver was never contacted at all.");
+            Assert.True(relay.Connections > 0,
+                "the SMTP relay was not contacted within 5s of the alarm, while a dead webhook was holding " +
+                "the drain loop — the host's dispatch composition has been sequentialised, which makes one " +
+                "notification cost the SUM of every channel's budget.");
+        }
+        finally
+        {
+            factory.Dispose();
+            try { Directory.Delete(alarmsDir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// <summary>
     /// 🔴 Task C-2 — the gate really was COLLAPSED, not merely supplemented.
     ///
     /// <para>C-1's <c>ST4I_ALARM_NOTIFY_ENABLED</c> is set to <c>"0"</c> here — the value that would

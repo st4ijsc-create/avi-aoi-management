@@ -388,9 +388,16 @@ public sealed class NotificationStartupNoticesTests
     /// <summary>
     /// 🔴 Review round 1 — port 465 is implicit TLS (SMTPS), and
     /// <see cref="System.Net.Mail.SmtpClient"/> — which C-4 must use — implements only RFC 3207 STARTTLS.
-    /// It cannot complete a handshake there in EITHER mode, and the failure is a HANG rather than a clean
-    /// error. <see cref="SmtpTlsMode"/> correctly offers no implicit-TLS member, but an enum's silence
-    /// does not help an operator who simply types the port their mail provider gave them.
+    /// It cannot complete a handshake there in EITHER mode. <see cref="SmtpTlsMode"/> correctly offers no
+    /// implicit-TLS member, but an enum's silence does not help an operator who simply types the port their
+    /// mail provider gave them.
+    ///
+    /// <para>🔴 <b>Task C-4 review (I-2) — this test used to assert the warning says "hang", and that was
+    /// C-2 PREDICTING what a channel that did not yet exist would do.</b> C-4 built it and measured the
+    /// opposite: the delivery is bounded by the attempt timeout and the total budget like any other
+    /// unresponsive relay, and is counted as a lost notification. An operator told to expect a hang would
+    /// go looking for a stuck process that this product cannot produce — and C-8 publishes this text. The
+    /// assertion is inverted rather than deleted, so the false claim cannot come back.</para>
     /// </summary>
     [Theory]
     [InlineData(SmtpTlsMode.StartTls)]
@@ -404,7 +411,11 @@ public sealed class NotificationStartupNoticesTests
         Assert.Contains("465", warning.Message);
         Assert.Contains("implicit TLS", warning.Message);
         Assert.Contains("STARTTLS", warning.Message);
-        Assert.Contains("hang", warning.Message);
+
+        // What actually happens, per C-4's measurement: nothing is delivered, and each attempt ends at the
+        // budget and is counted as a loss.
+        Assert.Contains("lost notification", warning.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("hang", warning.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

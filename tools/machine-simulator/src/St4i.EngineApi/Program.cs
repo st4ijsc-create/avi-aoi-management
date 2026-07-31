@@ -440,9 +440,15 @@ try
         logError: (ex, msg) => Console.Error.WriteLine($"[notifications] {msg} ({ex.GetType().Name}: {ex.Message})"));
     builder.Services.AddSingleton(notificationConfigStore);
     // Blocking read, same "read a startup-only store synchronously before Build()" idiom as
-    // connectorConfigStore.LoadAllAsync()/deviceIdentityStore.LoadOrCreate below. ListAsync is itself
-    // never-throws (it reports an empty list and logs), so this try/catch only covers the constructor —
-    // i.e. a directory that cannot be created or a schema that cannot be migrated.
+    // connectorConfigStore.LoadAllAsync()/deviceIdentityStore.LoadOrCreate below.
+    //
+    // 🔴 Task C-4 review (m-3) — this comment used to say "ListAsync is itself never-throws", which stopped
+    // being true in general when C-4 made the store propagate CANCELLATION. It remains true for THIS call
+    // for a reason worth stating rather than relying on: no token is passed, so there is nothing that can
+    // cancel it, and the only exception it can still raise is the one the store never throws — a failure.
+    // So this try/catch covers the constructor (a directory that cannot be created, a schema that cannot be
+    // migrated) exactly as before. A future edit that threads a token through here would need this
+    // paragraph answered first.
     notificationChannels = notificationConfigStore.ListAsync().GetAwaiter().GetResult();
 }
 catch (Exception ex)

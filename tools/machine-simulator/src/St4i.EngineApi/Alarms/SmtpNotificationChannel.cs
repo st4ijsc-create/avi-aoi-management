@@ -39,7 +39,9 @@ namespace St4i.EngineApi.Alarms;
 /// non-zero value here means somebody was not told something that happened.</para></param>
 /// <param name="Cancelled">Deliveries abandoned because the process is shutting down. Also a loss, counted
 /// separately because it is expected during shutdown and alarming at any other time.</param>
-/// <param name="Attempts">SMTP conversations actually started, INCLUDING retries.</param>
+/// <param name="Attempts">SMTP conversations actually started, INCLUDING retries. A delivery that failed
+/// before any socket was opened — an unusable <c>From</c> or recipient address, say — moves
+/// <paramref name="Lost"/> without moving this.</param>
 /// <param name="Retries">The subset of <paramref name="Attempts"/> that were not the first try.</param>
 /// <param name="PartiallyDelivered">
 /// 🔴 The subset of <paramref name="Delivered"/> in which the relay accepted SOME recipients and rejected
@@ -103,16 +105,31 @@ public sealed record SmtpChannelStats(
 /// password nor the username.</para>
 ///
 /// <para>🔴 <b>One residual this channel cannot close, stated rather than papered over.</b>
-/// <see cref="SmtpClient"/> does not abort when the relay REJECTS <c>AUTH</c> — measured: it swallows the
-/// <c>535</c> and continues to <c>MAIL FROM</c> unauthenticated. Against any real authenticating relay the
-/// next reply is a 5xx and this channel reports a permanent, counted loss (see <see cref="Classify"/>). But
-/// against a relay that rejects the credentials AND STILL ACCEPTS mail from this host — one where the host
-/// is on an IP allowlist — the message is delivered anonymously and <b>nothing anywhere reports that the
-/// stored password is wrong</b>. No notification is lost, so the counters remain honest; what is lost is
-/// the operator's knowledge that their credential has stopped working. It is not detectable from this API,
-/// which exposes no <c>AUTH</c> result at all, and closing it would need an SMTP library this batch may not
-/// add. C-7's "send test" is the natural place to surface it, because a test send can be checked against
-/// what the relay reports.</para>
+/// <see cref="SmtpClient"/> <b>proceeds unauthenticated whenever the configured credential is not
+/// successfully used</b> — measured across all three shapes this takes: the relay prompts, collects the
+/// password and rejects it (<c>535</c>); the relay refuses the <c>AUTH</c> command outright so the password
+/// is never offered; or <b>the relay advertises no <c>AUTH</c> capability at all</b>, so none is attempted.
+/// In every case it carries on to <c>MAIL FROM</c>.</para>
+///
+/// <para>Against a relay that then refuses the transaction — any real authenticating relay — the next reply
+/// is a 5xx and this channel reports a permanent, counted loss (see <see cref="Classify"/>). But against a
+/// relay that ACCEPTS the mail anyway, the message is delivered anonymously and <b>nothing anywhere reports
+/// that the stored credential is not being used</b>. No notification is lost, so the counters remain
+/// honest; what is lost is the operator's knowledge.</para>
+///
+/// <para>🔴 <b>The third shape is the reachable one, not a curiosity.</b> Relays very commonly advertise
+/// <c>AUTH</c> only after STARTTLS, so <see cref="SmtpTlsMode.None"/> with a stored username and password
+/// is an everyday configuration in which the password is silently never used. C-2's clear-text startup
+/// notice does fire for that combination, but it warns about a DIFFERENT thing — the password crossing the
+/// wire — not about it being ignored.</para>
+///
+/// <para>🔴 <b>What would actually be needed to close it, stated precisely because the obvious answer does
+/// not work.</b> A "send test" built on this channel — or on <see cref="SmtpClient"/> at all — reports
+/// SUCCESS in every one of these cases, so it cannot detect any of them: the API exposes no <c>AUTH</c>
+/// result, and there is nothing in a successful <c>SendMailAsync</c> to inspect. Closing this needs either
+/// speaking SMTP directly (reading the <c>EHLO</c> capability list and the <c>AUTH</c> reply, which means an
+/// SMTP library this batch may not add) or out-of-band verification that the mail arrived authenticated.
+/// C-7 owns the decision; it must not be told a send test suffices.</para>
 ///
 /// <para>🔴 <b>Recipients and the From address are not secrets, but they ARE personal data</b>, so they are
 /// treated as such: no ordinary log line names them — the identity carries a recipient COUNT. The single
@@ -411,8 +428,11 @@ public sealed class SmtpNotificationChannel
         // closes the window in which an operator disabled the channel between the summary read and now.
         if (!config.Delivers(job.Alarm.Priority)) return DeliveryOutcome.Suppressed;
 
+        // Recipients is non-null and non-empty by construction: SaveSmtpAsync refuses both (review, m-4 —
+        // a defensive `?.` here disagreed with the unguarded iteration in BuildMessage about whether it
+        // could be null, and two answers to one question is how the wrong one gets copied).
         var identity = new SmtpIdentity(
-            instance, config.Host, config.Port, config.Tls, config.Recipients?.Count ?? 0);
+            instance, config.Host, config.Port, config.Tls, config.Recipients.Count);
 
         var credential = await ResolveCredentialAsync(config, identity, hasPassword, job, ct)
             .ConfigureAwait(false);
@@ -552,11 +572,12 @@ public sealed class SmtpNotificationChannel
                 attemptCts.CancelAfter(_attemptTimeout);
                 try
                 {
-                    Interlocked.Increment(ref _attempts);
-                    if (attempt > 1) Interlocked.Increment(ref _retries);
-
+                    // Review (m-1) — the counters move inside SendOnceAsync, AFTER the message has been
+                    // built, so "Attempts" means what it says: an SMTP conversation actually started. They
+                    // used to be incremented here, which counted an attempt for a malformed From or
+                    // recipient address that never opened a socket.
                     var rejected = await SendOnceAsync(
-                        config, identity, credential, job, instance, deliveryId, attemptCts.Token)
+                        config, identity, credential, job, instance, deliveryId, attempt, attemptCts.Token)
                         .ConfigureAwait(false);
 
                     if (rejected.Count == 0) return DeliveryOutcome.Delivered;
@@ -687,9 +708,15 @@ public sealed class SmtpNotificationChannel
     /// accepted.</returns>
     private async Task<IReadOnlyList<string>> SendOnceAsync(
         SmtpChannelConfig config, SmtpIdentity identity, NetworkCredential? credential,
-        NotificationJob job, string instance, string deliveryId, CancellationToken attemptToken)
+        NotificationJob job, string instance, string deliveryId, int attempt,
+        CancellationToken attemptToken)
     {
+        // Built FIRST, and deliberately before the counters move: a malformed From or recipient address
+        // throws here, and that is a configuration fault rather than an SMTP conversation (review, m-1).
         using var message = BuildMessage(config, job, instance, deliveryId);
+
+        Interlocked.Increment(ref _attempts);
+        if (attempt > 1) Interlocked.Increment(ref _retries);
 
         using var client = new SmtpClient(config.Host, config.Port)
         {
