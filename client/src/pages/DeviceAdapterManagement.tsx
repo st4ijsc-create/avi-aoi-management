@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/select";
 import { Plug, Plus, Pencil, Trash2, Tags as TagsIcon, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import ManualHelp from "@/components/ManualHelp";
 import JsonSchemaForm, { jsonSchemaDefaults } from "@/components/JsonSchemaForm";
 
@@ -147,35 +148,35 @@ export default function DeviceAdapterManagement() {
 
   const createAdapter = trpc.deviceAdapter.create.useMutation({
     onSuccess: () => { toast.success(t("deviceAdapter.toast.created", "Đã tạo adapter")); setAdapterOpen(false); invalidateAdapters(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateAdapter = trpc.deviceAdapter.update.useMutation({
     onSuccess: () => { toast.success(t("deviceAdapter.toast.updated", "Đã cập nhật adapter")); setAdapterOpen(false); invalidateAdapters(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteAdapter = trpc.deviceAdapter.delete.useMutation({
     onSuccess: () => { toast.success(t("deviceAdapter.toast.deleted", "Đã xoá adapter")); invalidateAdapters(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const testConnection = trpc.deviceAdapter.testConnection.useMutation({
     onSuccess: (res) => {
       if (res.ok) toast.success(t("deviceAdapter.toast.connOk", "Kết nối OK ({{ms}}ms)", { ms: res.latencyMs }));
       else toast.error(t("deviceAdapter.toast.connFail", "Kết nối thất bại: {{err}}", { err: res.error ?? "unknown" }));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const createTag = trpc.deviceAdapter.tags.create.useMutation({
     onSuccess: () => { toast.success(t("deviceAdapter.toast.tagCreated", "Đã tạo tag")); setTagForm(emptyTag); invalidateTags(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const updateTag = trpc.deviceAdapter.tags.update.useMutation({
     onSuccess: () => { toast.success(t("deviceAdapter.toast.tagUpdated", "Đã cập nhật tag")); setTagForm(emptyTag); invalidateTags(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const deleteTag = trpc.deviceAdapter.tags.delete.useMutation({
     onSuccess: () => { toast.success(t("deviceAdapter.toast.tagDeleted", "Đã xoá tag")); invalidateTags(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   /** Seed the manifest auto-form (defaults + declared/fallback default port) for a protocol. */

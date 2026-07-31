@@ -67,6 +67,7 @@ import {
   CircleSlash, Activity, Camera, Play, Square, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { mapTrpcError, toastTrpcError } from "@/lib/trpcErrors";
 
 // ── Typesafe shapes inferred from the equipmentIntegrationRouter output ───────
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -170,7 +171,7 @@ export default function EquipmentIntegration() {
       toast.info(t("eqIntegration.flagOffToast", "Equipment integration is disabled (preview). Set EQ_INTEG_ENABLED=true to act."));
       void utils.equipmentIntegration.status.invalidate();
     } else {
-      toast.error(e.message);
+      toast.error(mapTrpcError(e));
     }
   };
 
@@ -865,14 +866,14 @@ function AcquisitionWorkersPanel() {
     },
     // PRECONDITION_FAILED carries the server's honest refusal reason (flag off,
     // duplicate id, disabled config, source open failure) — show it verbatim.
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const stopM = trpc.visionAdapter.stopAcquisitionWorker.useMutation({
     onSuccess: () => {
       toast.success(t("eqIntegration.acq.stopped", "Acquisition worker stopped"));
       refresh();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   if (!canViewAcq) {

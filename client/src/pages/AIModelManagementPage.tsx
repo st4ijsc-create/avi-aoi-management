@@ -50,6 +50,7 @@ import { DatasetSelect } from "@/components/ai/ModelSelect";
 import { ClassifierHealthBanner } from "@/components/ai/ClassifierHealthBanner";
 import { ModelCardManageButton } from "@/components/ai/ModelCardManageButton";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   Plus,
   Edit2,
@@ -516,7 +517,7 @@ function UploadDialog({
       onSuccess();
     },
     onError: (err) => {
-      toast.error(err.message);
+      toastTrpcError(err);
       setUploading(false);
     },
   });
@@ -632,7 +633,7 @@ function CreateVersionDialog({
       onSuccess();
     },
     onError: (err) => {
-      toast.error(err.message);
+      toastTrpcError(err);
       setUploading(false);
     },
   });
@@ -764,7 +765,7 @@ function TrainingPipelineDialog({
       onOpenChange(false);
       onSuccess();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const classLabels = labelsCsv.split(",").map((s) => s.trim()).filter(Boolean);
@@ -928,7 +929,7 @@ function ModelDetailPanel({
       refetchVersions();
       onRefresh();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const [showUpload, setShowUpload] = useState(false);
@@ -1244,7 +1245,7 @@ export default function AIModelManagementPage() {
       setShowCreateDialog(false);
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const updateMutation = trpc.aiModel.update.useMutation({
@@ -1253,7 +1254,7 @@ export default function AIModelManagementPage() {
       setEditingModel(null);
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const deleteMutation = trpc.aiModel.delete.useMutation({
@@ -1263,7 +1264,7 @@ export default function AIModelManagementPage() {
       if (selectedModelId === deletingModel?.id) setSelectedModelId(null);
       refetch();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   // ─ Form handlers
