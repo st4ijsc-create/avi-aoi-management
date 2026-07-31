@@ -29,7 +29,7 @@ Output nguyên văn (18/07→31/07/2026, **18 dòng tổng**):
 (4 rows)
 ```
 
-**18 dòng < 100 → KHÔNG đủ để kết luận gì về tier nào "được gọi nhiều".** 13/18 dòng `report` gần chắc chắn là từ `aiBatchRcaScheduler` (cron `0 2 * * *`, thấy trong log khởi động server), tức **traffic nền tự động, không phải người dùng chủ động gọi**. Không có dòng `code`/`fim` nào dù quét file đếm được 20+5 file — đây chính là lỗ hổng phương pháp mà task này tồn tại để lộ ra (xem phần "Phát hiện quan trọng" bên dưới, hoá ra lý do sâu hơn cả "chưa ai gọi").
+**18 dòng < 100 → KHÔNG đủ để kết luận gì về tier nào "được gọi nhiều".** 13/18 dòng `report` là traffic nền tự động từ **`ExecReportScheduler`** (`server/services/reportScheduler.ts`, cron `EXEC_REPORT_SHIFT_CRON` mặc định `"0 0 6,14,22 * * *"` — giờ Asia/Ho_Chi_Minh 06:00/14:00/22:00 mỗi ca, `EXEC_REPORT_ENABLED=true` trong `.env`), không phải người dùng chủ động gọi. **(Vòng sửa 1: bản đầu ghi nhầm nguồn là `aiBatchRcaScheduler` / cron `0 2 * * *` — xem mục "Vòng sửa 1" cuối §1 để biết bằng chứng đúng.)** Không có dòng `code`/`fim` nào dù quét file đếm được 20+5 file — đây chính là lỗ hổng phương pháp mà task này tồn tại để lộ ra (xem phần "Phát hiện quan trọng" bên dưới, hoá ra lý do sâu hơn cả "chưa ai gọi").
 
 ### Bước 2 — làm dày bằng phiên đại diện
 
@@ -39,10 +39,19 @@ Thao tác qua tRPC (`/api/trpc/<router>.<procedure>`, body `{"json":{...}}`), **
 
 | # | Nhóm (theo brief) | Procedure | Số lượt thực hiện | Kết quả |
 |---|---|---|---|---|
-| 1 | Hỏi trợ lý tri thức (tier chat) | `aiChat.createConversation` rồi `aiChat.chat` | **5** câu hỏi tiếng Việt khác nhau (OEE, workflow bảo trì, SPC out-of-control, cấu hình ngưỡng cảnh báo, RBAC) trên `conversationId=12` | 5/5 thành công, mỗi lượt kèm 1 lượt `intent` tự động (phân loại ý định — sản phẩm phụ của luồng chat, không phải tôi gọi trực tiếp) |
+| 1 | Hỏi trợ lý tri thức (tier chat) | `aiChat.createConversation` rồi `aiChat.chat` | Chủ động gửi **5** câu hỏi tiếng Việt khác nhau (OEE, workflow bảo trì, SPC out-of-control, cấu hình ngưỡng cảnh báo, RBAC) trên `conversationId=12` | 5 câu hỏi thành công, nhưng bảng ghi **6** dòng `chat` + **4** dòng `intent` — KHÔNG phải 5/5 như số lượt gửi, xem giải thích lệch ngay dưới bảng |
 | 2 | RCA / báo cáo (tier chat, prompt dài) | `aiRcaCopilot.diagnose` + `aiReport.rcaReport` | RCA **2** lượt (machineId=2,3) + report **3** lượt (machineId=2,3,4, khoảng 07/2026) = **5** | 5/5 thành công |
 | 3 | Sinh/sửa mã PLC (tier code) | `programming.copilotGenerate` (+ `programming.copilotComplete` cho fim) | **5** lượt `copilotGenerate` (kind=iec61131-st, "Viết block chớp đèn báo NG 1Hz") + **1** lượt `copilotComplete` | **0/6 ghi được vào `ai_gateway_metrics`** — xem "Phát hiện quan trọng" |
 | 4 | Xử lý ảnh kiểm tra (tier vision) | `aiAdvancedVision.visualQA` | **5** lượt, ảnh THẬT từ `uploads/inspections/4643/*.jpg` (4 ảnh) + `test-pcb-image.jpg` (repo root), câu hỏi khác nhau mỗi lượt | 5/5 thành công |
+
+**Vì sao +6 chat / +4 intent, không phải +5/+5 (Minor, vòng sửa 1):** tôi gửi đúng 5 câu hỏi phân biệt, nhưng lần gửi đầu chạy dưới dạng vòng lặp 5 lệnh `curl` bị chính công cụ (bash tool) SIGTERM sau 400s khi câu hỏi thứ 5 (RBAC) đang xử lý — client bị huỷ nhưng **server vẫn xử lý xong request gốc** (tRPC không kiểm tra client-disconnect giữa chừng ở đường `aiChat.chat`) và vẫn ghi 1 dòng metrics. Không biết điều đó, tôi gửi lại câu hỏi RBAC bằng 1 lệnh `curl` riêng — request này cũng chạy xong → 2 dòng `chat` cho cùng 1 câu hỏi. Bằng chứng (lệnh: `MSYS_NO_PATHCONV=1 docker exec avi-aoi-management-postgres-1 psql -U aoi -d aoi_management -c "SELECT id, task, \"tokensIn\", \"tokensOut\", \"latencyMs\", \"createdAt\" FROM ai_gateway_metrics WHERE task IN ('chat','intent') ORDER BY \"createdAt\";"`), 2 dòng trùng `tokensIn`/`tokensOut`, cách nhau 85s:
+```
+id=27 chat tokensIn=2717 tokensOut=220 latencyMs=1584 createdAt=2026-07-31 19:54:56.766
+id=28 chat tokensIn=2717 tokensOut=220 latencyMs=1395 createdAt=2026-07-31 19:56:21.423
+```
+→ 5 câu hỏi thật + 1 dòng trùng = **6** dòng `chat` mới (3→9, khớp bảng Bước 3).
+
+`intent`: chỉ **4** dòng mới (1→5), không phải 5 hay 6 — nghĩa là KHÔNG PHẢI mọi lượt `chat` đều kèm 1 lượt `intent` tự động như bản đầu viết ("mỗi lượt kèm 1 lượt intent tự động" — câu đó sai, đã sửa). Ví dụ dòng `chat` trùng (id=28) không có `intent` đi kèm. Cơ chế chính xác vì sao không phải 1:1 tôi chưa truy đến tận mã nguồn trong task này — ghi nhận hiện tượng bằng số liệu, không suy diễn nguyên nhân.
 
 Thay đổi dữ liệu phụ trợ cần thiết (không phải mã, không phải `.env`):
 - Chèn 1 dòng `user_factory_assignments` (`userId=51` seed `engineer1` → `factoryCode='SIM-FAC'`) — thiếu dòng này thì `aiReport.rcaReport` chặn cứng ở `aiAnalyticsScope.ts:295` ("Tài khoản chưa được gán nhà máy nào"). Lệnh:
@@ -92,21 +101,50 @@ Tổng số dòng (lệnh `SELECT count(*) FROM ai_gateway_metrics;`): **38** (1
   # (0 rows)
   ```
 
-**Kết luận cho Task 7:** bảng `ai_gateway_metrics` **cấu trúc không thể** dùng để đo lưu lượng tier code/fim — dù roster cuối cùng có ưu tiên model code hay không, task này không có cách nào chứng minh bằng bảng này. Nếu cần đo lưu lượng code/fim thật, phải hoặc (a) đo qua nguồn khác (ví dụ đếm request ở `programmingRouter.ts` qua access log / APM riêng), hoặc (b) nối `aiProgrammingCopilot.ts` vào `aiGateway.ts` trước — **nhưng đó là đổi hành vi/mã, ngoài phạm vi "chỉ đo" của Đợt 0 này**, chỉ ghi nhận để chủ dự án quyết.
+**Kết luận cho Task 7:** bảng `ai_gateway_metrics` **cấu trúc không thể** dùng để đo lưu lượng tier code/fim — dù roster cuối cùng có ưu tiên model code hay không, task này không có cách nào chứng minh bằng bảng này. Nếu cần đo lưu lượng code/fim thật, phải hoặc (a) đo qua nguồn khác (ví dụ đếm request ở `programmingRouter.ts` qua access log / APM riêng), hoặc (b) nối `aiProgrammingCopilot.ts` vào `aiGateway.ts` trước — **nhưng đó là đổi hành vi/mã, ngoài phạm vi "chỉ đo" của Đợt 0 này**, chỉ ghi nhận để chủ dự án quyết. **KHÔNG vá lỗ hổng này trong Đợt 0** — đây là phát hiện của khảo sát, sửa là việc của đợt khác.
+
+### ⚠ Giới hạn quan trọng cho Task 7 — không có bảng nào thay thế được cho code/fim
+
+Đã kiểm thêm bảng thứ hai có thể chứa dữ liệu tương tự:
+```bash
+MSYS_NO_PATHCONV=1 docker exec avi-aoi-management-postgres-1 psql -U aoi -d aoi_management -c "SELECT count(*) FROM ai_model_metrics;"
+# → 0
+```
+`ai_model_metrics` tồn tại (có schema) nhưng **0 dòng** — không có nguồn thay thế nào trong DB hiện tại để bù đắp cho lỗ hổng nối dây của `aiProgrammingCopilot.ts`. Kết luận cho Task 7: **khi cân trọng số roster, KHÔNG được coi "code/fim = 0 lượt trong bảng" là bằng chứng "code/fim ít được dùng"** — đó là khoảng trống đo lường (measurement gap), không phải khoảng trống nhu cầu (demand gap). Nếu quyết định roster phụ thuộc vào tần suất dùng code/fim thật, phải đo bằng nguồn khác ngoài phạm vi Đợt 0 này, hoặc chấp nhận quyết định dựa trên các trục khác (VRAM, chất lượng — §2-§6) mà không có dữ liệu lưu lượng code/fim.
 
 ### Nhóm nào thiếu / không đủ ≥5 lượt thật
 
 - **Code/fim**: 0/5 lượt `copilotGenerate` thành công thực sự sinh mã (đều lỗi VRAM — xem "Mối lo"); `copilotComplete` (fim) thành công 1 lượt nhưng vẫn không ghi được metrics vì lý do nối dây ở trên. **Không có cách nào trong phạm vi task này tạo ra dòng `task='code'`/`task='fim'` trong bảng**, kể cả khi gọi thành công — nên "làm dày" nhóm này là bất khả thi bằng đường tRPC, không phải do tôi thiếu cố gắng. Không bù bằng cách gọi lặp nhóm khác.
-- 4 nhóm còn lại (chat, intent-phụ, rca, report, vision) đều đạt ≥5 lượt thật như yêu cầu brief (chat=5 mới/9 tổng, rca+report=5 mới/18 tổng, vision=5 mới/6 tổng).
+- 3 nhóm còn lại đều đạt ≥5 lượt thật như yêu cầu brief: chat=**6** mới/9 tổng (5 câu hỏi + 1 dòng trùng, xem giải thích ở Bước 2), intent-phụ=**4** mới/5 tổng (byproduct, không phải nhóm brief yêu cầu), rca+report=**5** mới/18 tổng (rca +2, report +3), vision=**5** mới/6 tổng.
 
 ### Mối lo (infra, không phải kết luận roster)
 
 1. **VRAM rò rỉ khi `cudaMalloc` thất bại nhiều lần liên tiếp.** Máy đo: RTX 5090 32.607 MiB (`nvidia-smi`). Baseline lúc app mới khởi động: **~8,7 GB đã dùng** trước khi app tải bất kỳ model nào (desktop Windows + trình nền, không phải app). 5 lần thử tải `Qwen3-Coder-30B` (16,5 GB) đều lỗi `cudaMalloc failed: out of memory`, và **mỗi lần lỗi làm VRAM đã dùng tăng thêm** (8,7 GB → 13,7 GB sau 4 lần thất bại, đo bằng `nvidia-smi --query-gpu=memory.used --format=csv`) dù không có model nào tải thành công — tức bộ nhớ không được giải phóng đúng sau một lần `cudaMalloc` lỗi. Phải `Stop-Process` tiến trình `node` (tsx watch) và khởi động lại `npm run dev` để VRAM về mốc sạch (965 MiB). Đây là quan sát thật trong phiên đo, không phải kết luận — Task 2/3 (đo tráo model) nên lưu ý hiện tượng này khi đo VRAM đỉnh.
 2. **Ngay cả khi KHÔNG có model 30B nào khác đang tải, một mình `Qwen3-Coder-30B` (16,5 GB trọng số) cũng không tải được** trong 4/5 lần thử ở phiên này (VRAM free báo 18-24 GB theo `aiGguf.health`/`nvidia-smi` tại thời điểm thử, về lý thuyết đủ chỗ) — nghi vấn context size (`code` task dùng ctx 16384 theo test `aiModelRouter.code.test.ts:108`) cộng buffer runtime của kiến trúc MoE 30B cần nhiều hơn phần trăm free hiển thị bởi `nvidia-smi`/health endpoint tại thời điểm đo. Task 2/3 cần đo trực tiếp VRAM đỉnh lúc tải, không suy từ "free" báo trước khi tải.
 3. **`vision` ghi `model='default'`** trong `ai_gateway_metrics` thay vì tên file GGUF thật (`Qwen3-VL-8B-Instruct-UD-Q4_K_XL`) — route quyết định tier vision không set `modelId` tường minh nên cột `model` rơi về default schema (`drizzle/schema/ai.ts`). Không sai chức năng (ảnh vẫn được phân tích đúng, xem câu trả lời "Cổng kết nối... lệch vị trí 0.26 mm" cho ảnh thật), nhưng làm bảng task 7 khó phân biệt "vision dùng model nào" nếu sau này có nhiều hơn 1 model vision. Ghi nhận, không sửa (ngoài phạm vi "chỉ đo").
-4. 13/16 dòng `report` (cả trước và sau) khả năng cao là traffic **nền tự động** (`aiBatchRcaScheduler`, cron `0 2 * * *`), không phải người dùng — nên con số "lượt gọi" của `report` không so sánh ngang hàng được với `chat`/`vision` (loại người dùng chủ động).
+4. 13/16 dòng `report` (cả trước và sau) là traffic **nền tự động** — nên con số "lượt gọi" của `report` không so sánh ngang hàng được với `chat`/`vision` (loại người dùng chủ động). **Nguồn đúng (vòng sửa 1) là `ExecReportScheduler`**, không phải `aiBatchRcaScheduler` như bản đầu ghi nhầm:
+   - `aiBatchRcaScheduler` chỉ dùng `task:"rca"` — xác nhận `server/services/aiInsightsService.ts:82` (`route({ task: "rca", requiredQuality: "high" })`) và `grep -n "task" server/services/aiBatchRcaScheduler.ts` không ra kết quả nào (file này không tự set task nào, uỷ quyền cho `aiInsightsService`).
+   - Nguồn thật: `server/services/reportScheduler.ts:576-668` (`runExecutiveReport` → `aiExecutiveReport.ts:489` `route({task:"report", requiredQuality:"high"})`), cron `EXEC_REPORT_SHIFT_CRON` mặc định `"0 0 6,14,22 * * *"` (không bị override trong `.env`) + cron `day` mặc định `EXEC_REPORT_DAY_CRON="0 5 6 * * *"`, giờ `EXEC_REPORT_TZ=Asia/Ho_Chi_Minh`, `EXEC_REPORT_ENABLED=true`.
+   - Bằng chứng đối chiếu timestamp (lệnh: `MSYS_NO_PATHCONV=1 docker exec avi-aoi-management-postgres-1 psql -U aoi -d aoi_management -c "SELECT id, \"createdAt\", \"createdAt\" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh' AS vn_time FROM ai_gateway_metrics WHERE task='report' ORDER BY \"createdAt\" LIMIT 8;"`) — giờ VN suy ra khớp đúng 06:00 / 06:05 / 14:00 / 22:00 lặp lại mỗi ngày:
+     ```
+     id=1 createdAt=2026-07-27 07:00:02 UTC → 14:00:02 VN   (khớp ca 14:00 shift-cron)
+     id=6 createdAt=2026-07-27 23:00:22 UTC → 06:00:22 VN (28/07)  (khớp ca 06:00 shift-cron)
+     id=7 createdAt=2026-07-27 23:05:13 UTC → 06:05:13 VN (28/07)  (khớp day-cron 06:05)
+     id=8 createdAt=2026-07-28 15:00:02 UTC → 22:00:02 VN   (khớp ca 22:00 shift-cron)
+     ```
+   - Kết luận **định hướng** (traffic nền, không so ngang hàng với chat/vision) không đổi — chỉ tên scheduler + biểu thức cron ở bản đầu sai (`0 2 * * *` không khớp bất kỳ dòng nào thật sự).
 
 **Xác nhận `.env` không đổi** (bắt buộc theo global constraint của Đợt 0):
 ```bash
 git diff --stat .env   # → rỗng
 ```
+
+### Vòng sửa 1 (review)
+
+Reviewer tự chạy lại SQL — bảng §1 khớp 100%; xác nhận độc lập đúng cả 3 điểm: lỗ hổng `aiProgrammingCopilot`↛`aiGateway`, `vision` ghi `model='default'`, dòng test `user_factory_assignments`. Hai điểm phải sửa, cả hai đã sửa trong bản này:
+
+- **Important — quy sai nguồn traffic `report`.** Bản đầu ghi "`aiBatchRcaScheduler`, cron `0 2 * * *`". Reviewer bác, tôi tự kiểm chứng độc lập (đọc mã + đối chiếu timestamp thật, không chỉ tin lời reviewer) và xác nhận reviewer đúng: nguồn thật là `ExecReportScheduler` (`server/services/reportScheduler.ts`), cron mặc định `EXEC_REPORT_SHIFT_CRON="0 0 6,14,22 * * *"` + `EXEC_REPORT_DAY_CRON="0 5 6 * * *"`, cả hai đang bật. Đã sửa ở Bước 1 và Mối lo #4 (bằng chứng cron + timestamp đính kèm).
+- **Minor — số "mới" tự mâu thuẫn với bảng.** Bản đầu ghi "chat +5" / ngụ ý "intent +5" nhưng bảng cho thấy chat 3→9 (+6), intent 1→5 (+4). Đã sửa: giải thích +6 do 1 request chat bị timeout ở client nhưng server xử lý xong (không huỷ được) + tôi gửi lại → trùng 1 lượt (bằng chứng: 2 dòng `tokensIn`/`tokensOut` giống hệt, id=27/28); +4 (không phải 1:1 mỗi chat) ghi nhận là hiện tượng chưa truy rõ cơ chế, không suy diễn.
+- **Ghi thêm cho Task 7** (không phải lỗi, theo yêu cầu reviewer): thêm mục "⚠ Giới hạn quan trọng cho Task 7" — `ai_model_metrics` cũng 0 dòng, không có nguồn thay thế cho code/fim trong DB hiện tại.
+
+Không đụng mã sản xuất, không đụng `.env` trong vòng sửa này — chỉ sửa văn bản báo cáo.
