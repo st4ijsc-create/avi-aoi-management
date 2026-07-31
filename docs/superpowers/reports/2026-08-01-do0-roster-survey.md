@@ -446,3 +446,19 @@ Reviewer: spec ✅ đạt, diff sạch (0 mã sản xuất), `bench.mjs`/`aiGguf
 - **M-2 — câu "VRAM delta ổn định 17801→17750→17729" ghép 2 file GGUF khác nhau (Instruct-30B và Coder-30B) như 1 phép đo lặp lại.** Đã tách rõ theo từng file ở cả mục "Xác nhận bằng đo lường" và mục "Lệch so với baseline" — kết luận không đổi (delta vẫn ổn định, <0,6% dù gộp 2 file), chỉ cách trình bày rõ ràng hơn.
 
 Không đụng mã sản xuất, không đụng `bench.mjs`, không đụng `.env` trong vòng sửa này (roster C + phép kiểm trực tiếp đều dùng script tạm import module, không boot app) — 2 script tạm đã xoá ngay sau khi chạy, không commit.
+
+---
+
+## §4 A/B tiếng Việt (Task 4)
+
+**⚠ Mục này KHÔNG kết luận model nào hay hơn — theo đúng ràng buộc tuyệt đối của task này. Chỉ ghi lại đã sinh gì, ở đâu, bằng tham số nào. Chờ chủ dự án chấm.**
+
+Đã sinh **4 cặp** câu trả lời (4 prompt thật × 2 model = 8 lượt sinh), 1 lượt/prompt/model (không lặp). Script: `scripts/ai-survey/vi-quality-ab.mjs`. Bản ẩn danh cho chủ dự án đọc (nhãn "Model 1"/"Model 2", KHÔNG có kết luận): `docs/superpowers/reports/2026-08-01-do0-vi-ab.md`. Bảng ánh xạ nhãn↔model thật ở file riêng, không commit: `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-4-model-map.md`.
+
+4 prompt lấy từ đường chạy thật (nguồn + dòng ghi trong chính file `2026-08-01-do0-vi-ab.md`, mỗi prompt kèm "Ghi chú" nói rõ phần nào verbatim / phần nào phải tái dựng vì hàm gốc không export): RCA (`aiRcaCopilot.ts:500-513`), báo cáo điều hành (`aiExecutiveReport.ts:318-342`, KPI thật từ `gatherKpis()` sống), tóm tắt chất lượng hàng ngày thay cho "cố vấn ngưỡng" (`aiReportGenerator.ts:556-560` — **phát hiện: `aiThresholdAdvisor.ts`/`aiSetupAdvisor.ts`/`aiCalibration.ts` và 4 file liên quan không dùng LLM, 100% thống kê + chuỗi tĩnh, không có prompt nào để A/B**), trợ lý tri thức (`aiLocalKnowledgeService.ts:1136-1166`, citation thật từ `knowledge/chunks.jsonl` qua `retrieveKnowledge()` sống).
+
+Tham số sinh (giống hệt cho cả 2 model, cả 4 prompt — ghi đầy đủ lý do chọn trong `2026-08-01-do0-vi-ab.md`): temperature=0 (greedy), topP=0.9, maxTokens=700, contextSize=8192, gpuLayers="max", seed không áp dụng (không hỗ trợ ở `generateText()`, và không cần vì greedy). Sinh **tuần tự** (General → dispose → Coder → dispose), không giữ 2 model cùng lúc. VRAM: bắt đầu 1006 MiB → sau dispose General 1493 MiB → sau dispose Coder (cuối) 1496 MiB → xác nhận lại độc lập sau khi script thoát: 1009 MiB, không `node.exe` treo — về baseline sạch ở mọi mốc.
+
+Bản đầy đủ (thảo luận phương pháp, các lựa chọn tái dựng prompt, rủi ro): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-4-report.md` (không commit).
+
+**Chờ chủ dự án chấm.**
