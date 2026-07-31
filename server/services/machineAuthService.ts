@@ -71,7 +71,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, isNotNull, isNull, lte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
+import { appError } from "../_core/appError";
 import * as db from "../db";
 import { apiKeys, aiInsights } from "../../drizzle/schema";
 import { logger } from "../logger";
@@ -515,20 +515,22 @@ export async function authenticateMachine(opts: {
     if (row) {
       if (row.machineId == null) {
         // A general /api/v1 key is not a machine credential on this router.
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
+        throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", { reason: "notMachineKey" }, "Invalid API key");
       }
       if (!row.isActive || row.revokedAt) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "API key revoked" });
+        throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", { reason: "machineKeyRevoked" }, "API key revoked");
       }
       if (row.expiresAt && new Date(row.expiresAt).getTime() < Date.now()) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "API key expired" });
+        throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", { reason: "machineKeyExpired" }, "API key expired");
       }
       const scopes = Array.isArray(row.scopes) ? (row.scopes as string[]) : [];
       if (opts.scope && !scopeSatisfied(scopes, opts.scope)) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: `This machine key lacks the required scope "${opts.scope}"`,
-        });
+        throw appError(
+          "FORBIDDEN",
+          "PERMISSION_DENIED",
+          { action: "machineScope" },
+          `This machine key lacks the required scope "${opts.scope}"`,
+        );
       }
       let machine: MachineRow | undefined;
       try {
@@ -537,7 +539,12 @@ export async function authenticateMachine(opts: {
         throw new DbUnavailableError();
       }
       if (!machine || machine.isActive === false) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
+        throw appError(
+          "UNAUTHORIZED",
+          "MACHINE_CREDENTIAL_INVALID",
+          { reason: "machineInactiveOrMissing" },
+          "Invalid API key",
+        );
       }
       touchLastUsed(row.id);
       return { machine, method: "machine-key", keyId: row.id, scopes };
@@ -579,19 +586,21 @@ export async function authenticateMachine(opts: {
       // key" to whoever already holds that key — accepted: they cannot use it for
       // anything, and a vendor tech reading "Invalid API key" would otherwise hunt
       // a key that is not the problem. Doc 52 §5 documents the trade-off.
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message: mkOnlyRefuse
+      throw appError(
+        "UNAUTHORIZED",
+        "MACHINE_CREDENTIAL_INVALID",
+        { reason: mkOnlyRefuse ? "mkOnlyRequired" : "weakAuthDisabled" },
+        mkOnlyRefuse
           ? `This ${deviceClassOf(sharedMachine.machineType)} machine (${sharedMachine.code}) must authenticate with its ` +
             `per-device key (mk_...) — shared apiKey is not accepted for automation/iot devices on this server.`
           : `Shared machine apiKey authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
             `Configure machine ${sharedMachine.code} with its per-machine key (mk_...) sent as ` +
             `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
-      });
+      );
     }
 
     if (await dbPositivelyDown()) throw new DbUnavailableError();
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
+    throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", undefined, "Invalid API key");
   }
 
   // 3) machineCode-only identification — WEAK path, NO secret whatsoever (doc 51 R1).
@@ -618,24 +627,28 @@ export async function authenticateMachine(opts: {
         outcome: decision,
       });
       if (decision === "allowed") return { machine, method: "machine-code" };
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message: mkOnlyRefuse
+      throw appError(
+        "UNAUTHORIZED",
+        "MACHINE_CREDENTIAL_INVALID",
+        { reason: mkOnlyRefuse ? "mkOnlyRequired" : "weakAuthDisabled" },
+        mkOnlyRefuse
           ? `This ${deviceClassOf(machine.machineType)} machine (${machine.code}) must authenticate with its ` +
             `per-device key (mk_...) — machineCode-only is not accepted for automation/iot devices on this server.`
           : `machineCode-only authentication is disabled for "${opts.scope ?? "this operation"}" on this server. ` +
             `Configure machine ${machine.code} with its per-machine key (mk_...) sent as ` +
             `"Authorization: Bearer <key>" or "X-API-Key: <key>".`,
-      });
+      );
     }
     if (await dbPositivelyDown()) throw new DbUnavailableError();
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid machine code" });
+    throw appError("UNAUTHORIZED", "MACHINE_CREDENTIAL_INVALID", undefined, "Invalid machine code");
   }
 
-  throw new TRPCError({
-    code: "UNAUTHORIZED",
-    message: "Either apiKey or machineCode must be provided",
-  });
+  throw appError(
+    "UNAUTHORIZED",
+    "FIELD_REQUIRED",
+    { field: "apiKeyOrMachineCode" },
+    "Either apiKey or machineCode must be provided",
+  );
 }
 
 // ── ingest rate limit (in-memory fixed window; Redis move = Đợt 4 / B6) ──────
@@ -669,10 +682,15 @@ export function enforceMachineIngestRateLimit(auth: {
   }
   win.count += 1;
   if (win.count > limit) {
-    throw new TRPCError({
-      code: "TOO_MANY_REQUESTS",
-      message: `Ingest rate limit exceeded for machine ${auth.machine.code} (${limit}/min)`,
-    });
+    // RATE_LIMITED params:{} theo đúng quyết định Task 8 — chi tiết hạn mức
+    // (đơn vị/giờ hay /phút khác nhau tuỳ nơi gọi) giữ NGUYÊN ở fallbackMessage,
+    // không đưa vào template vì không có 1 đơn vị chung cho mọi nơi gọi RATE_LIMITED.
+    throw appError(
+      "TOO_MANY_REQUESTS",
+      "RATE_LIMITED",
+      undefined,
+      `Ingest rate limit exceeded for machine ${auth.machine.code} (${limit}/min)`,
+    );
   }
 }
 
@@ -689,7 +707,7 @@ export function isValidScopeGrant(s: string): boolean {
 
 async function requireDb() {
   const d = await db.getDb();
-  if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  if (!d) throw appError("INTERNAL_SERVER_ERROR", "DB_UNAVAILABLE", undefined, "Database not connected");
   return d;
 }
 
@@ -727,11 +745,16 @@ export async function issueMachineKey(opts: {
   const d = await requireDb();
   const machine = await db.getMachineById(opts.machineId);
   if (!machine) {
-    throw new TRPCError({ code: "NOT_FOUND", message: `Machine ${opts.machineId} not found` });
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "machine" }, `Machine ${opts.machineId} not found`);
   }
   const scopes = opts.scopes && opts.scopes.length > 0 ? opts.scopes : [...MACHINE_KEY_DEFAULT_SCOPES];
   if (!scopes.every(isValidScopeGrant)) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "One or more scopes are not in the published scope vocabulary" });
+    throw appError(
+      "BAD_REQUEST",
+      "INVALID_VALUE",
+      { field: "scopes" },
+      "One or more scopes are not in the published scope vocabulary",
+    );
   }
   // Doc 51 P3 / CASE #10 — apply the DEFAULT TTL only when the caller did not
   // decide expiry itself. `undefined` = "no opinion" → default TTL (0/unset ⇒
@@ -810,7 +833,7 @@ export async function revokeMachineKey(keyId: number): Promise<PublicMachineKeyR
     .set({ isActive: false, revokedAt: new Date(), updatedAt: new Date() })
     .where(eq(apiKeys.id, keyId))
     .returning();
-  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: `API key ${keyId} not found` });
+  if (!row) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${keyId} not found`);
   return publicMachineKeyRow(row);
 }
 
@@ -824,9 +847,14 @@ export async function rotateMachineKey(
 ): Promise<PublicMachineKeyRow & { plaintextKey: string }> {
   const d = await requireDb();
   const [existing] = await d.select().from(apiKeys).where(eq(apiKeys.id, keyId)).limit(1);
-  if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: `API key ${keyId} not found` });
+  if (!existing) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "apiKey" }, `API key ${keyId} not found`);
   if (existing.machineId == null) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `API key ${keyId} is not a machine key` });
+    throw appError(
+      "BAD_REQUEST",
+      "MACHINE_CREDENTIAL_INVALID",
+      { reason: "notMachineKey" },
+      `API key ${keyId} is not a machine key`,
+    );
   }
   await revokeMachineKey(keyId);
   return issueMachineKey({

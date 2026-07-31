@@ -13,7 +13,7 @@
  *     securityIdentity: securityIdentityRouter,
  */
 import { z } from "zod";
-import { TRPCError } from "@trpc/server";
+import { appError } from "../../_core/appError";
 import { router, adminProcedure } from "../../_core/trpc";
 import {
   issueDeviceCert,
@@ -77,7 +77,10 @@ export const securityIdentityRouter = router({
         // privateKeyPem is returned ONCE — the caller must persist it on the device.
         return { record, privateKeyPem };
       } catch (err) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: (err as Error).message });
+        // Task 10 (F3, doc71) — lỗi thật DYNAMIC (crypto/CA lỗi đa dạng), không
+        // liệt kê hết được thành reason cố định. operation:"issueDeviceCert" +
+        // fallbackMessage giữ nguyên err.message gốc (mất khi client đã dịch).
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "issueDeviceCert" }, (err as Error).message);
       }
     }),
 
@@ -96,7 +99,7 @@ export const securityIdentityRouter = router({
       try {
         return await rotateDeviceCert(input.deviceId, { days: input.days });
       } catch (err) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: (err as Error).message });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "rotateDeviceCert" }, (err as Error).message);
       }
     }),
 
@@ -104,7 +107,7 @@ export const securityIdentityRouter = router({
     .input(z.object({ certId: z.number().int().positive(), reason: z.string().min(1).max(500) }))
     .mutation(async ({ input }) => {
       const rec = await revokeDeviceCert(input.certId, input.reason);
-      if (!rec) throw new TRPCError({ code: "NOT_FOUND", message: "certificate not found" });
+      if (!rec) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "deviceCertificate" }, "certificate not found");
       return rec;
     }),
 
@@ -125,7 +128,7 @@ export const securityIdentityRouter = router({
       try {
         return await issueServiceIdentity(input.serviceName, { withCert: input.withCert, days: input.days });
       } catch (err) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: (err as Error).message });
+        throw appError("INTERNAL_SERVER_ERROR", "OPERATION_FAILED", { operation: "issueServiceIdentity" }, (err as Error).message);
       }
     }),
 
@@ -135,7 +138,7 @@ export const securityIdentityRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       const rec = await revokeServiceIdentity(input.id);
-      if (!rec) throw new TRPCError({ code: "NOT_FOUND", message: "service identity not found" });
+      if (!rec) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "serviceIdentity" }, "service identity not found");
       return rec;
     }),
 
