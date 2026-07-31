@@ -16,6 +16,7 @@
  * authenticated operator) — parallel to processResult.
  */
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { router, moduleProcedure } from "../_core/trpc";
 // Doc 38 Đợt Q — license-gate this router behind MOD_PRODUCTION (moduleGate = pass-through
 // until the deployment's SKU is configured — no-brick). Shadows `protectedProcedure`.
@@ -361,7 +362,7 @@ export const bomRouter = router({
         let lineCache: any[];
         try {
           const product = await db.getProductModelByCode(g.productCode);
-          if (!product) throw new Error(`Không tìm thấy sản phẩm "${g.productCode}"`);
+          if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Không tìm thấy sản phẩm "${g.productCode}"`);
           const defs = await db.listBomDefinitionsByProduct(product.id, false);
           const existingDef = defs.find((d) => d.code === g.bomCode);
           if (existingDef) {

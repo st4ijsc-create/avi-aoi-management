@@ -35,6 +35,19 @@ const dateInput = z
     if (v === undefined) return undefined;
     if (v === null || v === "") return null;
     const d = v instanceof Date ? v : new Date(v);
+    // Task 9 (F2, doc71) — CỐ Ý KHÔNG di trú sang appError() ở đây. Zod
+    // `.transform()` chạy bên trong `createInputMiddleware` của tRPC
+    // (@trpc/server), nơi MỌI throw (kể cả TRPCError của appError()) đều bị
+    // BỌC LẦN NỮA thành một TRPCError code "BAD_REQUEST" mới với `cause` là lỗi gốc
+    // (xem node_modules/@trpc/server/dist/initTRPC-*.mjs). `readAppErrorMeta()`
+    // (server/_core/appError.ts) chỉ đọc `error.cause` MỘT cấp — với cấu trúc
+    // bọc-lồng này, `appCode` thật nằm ở `error.cause.cause.appCode`, hai cấp
+    // sâu hơn, nên bị bỏ sót (đọc ra `null`) và người dùng vẫn thấy
+    // fallbackMessage thô, không dịch được — migrate ở ĐÚNG vị trí này là vô
+    // ích (cổng gõ chữ xanh, bug không đổi). Sửa đúng cách cần tách validate
+    // ngày ra khỏi transform (chuyển vào thân handler), một thay đổi lớn hơn
+    // phạm vi "một mã, một chuỗi, cơ học" của task này — để nguyên, báo cáo
+    // riêng cho người giao việc quyết.
     if (Number.isNaN(d.getTime())) throw new Error("Invalid date");
     return d;
   });
@@ -216,7 +229,7 @@ export const operatorBadgeRouter = router({
           let userId: number | null = row.userId ?? null;
           if (userId == null && row.username && row.username.trim()) {
             const user = await getUserByUsername(row.username.trim());
-            if (!user) throw new Error(`Không tìm thấy người dùng "${row.username.trim()}"`);
+            if (!user) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "user" }, `Không tìm thấy người dùng "${row.username.trim()}"`);
             userId = user.id;
           }
           const [existing] = await db

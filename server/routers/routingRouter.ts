@@ -255,14 +255,14 @@ export const routingRouter = router({
       for (const g of groups.values()) {
         try {
           const product = await getProductModelByCode(g.productCode);
-          if (!product) throw new Error(`Không tìm thấy sản phẩm "${g.productCode}"`);
+          if (!product) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Không tìm thấy sản phẩm "${g.productCode}"`);
           const seen = new Set<number>();
           const steps = g.rows
             .slice()
             .sort((a, b) => a.stepSeq - b.stepSeq)
             .map((r) => {
               if (seen.has(r.stepSeq)) {
-                throw new Error(`Trùng bước ${r.stepSeq} trong routing ${g.routingCode}`);
+                throw appError("BAD_REQUEST", "OPERATION_FAILED", { operation: "manageRouting" }, `Trùng bước ${r.stepSeq} trong routing ${g.routingCode}`);
               }
               seen.add(r.stepSeq);
               return {

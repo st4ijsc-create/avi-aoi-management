@@ -494,7 +494,7 @@ export const yieldThresholdRouter = router({
       
       // Get current threshold for history
       const current = await db.getYieldAlertThresholdById(id);
-      if (!current) throw new Error('Threshold not found');
+      if (!current) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "yieldAlertThreshold" }, "Threshold not found");
 
       // Create history record if thresholds changed
       if (data.warningThreshold !== undefined || data.criticalThreshold !== undefined || data.targetValue !== undefined) {

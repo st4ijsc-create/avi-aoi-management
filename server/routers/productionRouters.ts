@@ -377,7 +377,7 @@ export const productionOrderRouter = router({
     }))
     .mutation(async ({ input }) => {
       const template = await db.getOrderTemplate(input.templateId);
-      if (!template) throw new Error('Template not found');
+      if (!template) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "orderTemplate" }, "Template not found");
 
       const orderData = {
         orderCode: input.orderCode,

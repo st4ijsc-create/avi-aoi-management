@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import path from "path";
 import fs from "fs";
@@ -42,7 +43,7 @@ function resolveImagePath(imageKey: string): string {
 async function loadImage(imageKey: string): Promise<Buffer> {
   const fullPath = resolveImagePath(imageKey);
   if (!fs.existsSync(fullPath)) {
-    throw new Error(`Image not found: ${imageKey}`);
+    throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "image" }, `Image not found: ${imageKey}`);
   }
   return fs.promises.readFile(fullPath);
 }
@@ -151,7 +152,10 @@ export const aiImageSearchRouter = router({
     .mutation(async ({ input }) => {
       // Chỉ chấp nhận không gian D=1024 (mxbai-embed-large) — tránh trộn vector khác chiều.
       if (input.dim !== DEFAULT_EMBEDDING_DIM || input.embedding.length !== DEFAULT_EMBEDDING_DIM) {
-        throw new Error(
+        throw appError(
+          "BAD_REQUEST",
+          "INVALID_VALUE",
+          { field: "embedding" },
           `searchByVector chỉ hỗ trợ vector ${DEFAULT_EMBEDDING_DIM}-chiều (nhận dim=${input.dim}, length=${input.embedding.length}).`,
         );
       }
@@ -237,7 +241,7 @@ export const aiImageSearchRouter = router({
       const base64 = input.imageData.replace(/^data:image\/[a-z]+;base64,/, "");
       const buffer = Buffer.from(base64, "base64");
       if (buffer.length === 0) {
-        throw new Error("Empty image data");
+        throw appError("BAD_REQUEST", "INVALID_VALUE", { field: "image", reason: "emptyImagePayload" }, "Empty image data");
       }
       fs.writeFileSync(filePath, buffer);
       return { imageKey: `temp/${safeName}` };

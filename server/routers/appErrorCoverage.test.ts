@@ -203,9 +203,16 @@ describe("phủ mã lỗi trong server/routers", () => {
  *  appError(). KHÔNG BAO GIỜ nâng lên — số dư thừa che mất nợ mới, y hệt
  *  ALLOWED_LEGACY_THROWS ở trên. Ngân sách này ĐỘC LẬP với ALLOWED_LEGACY_THROWS
  *  (hai họ throw khác nhau: `new TRPCError` vs `new Error`), không cộng dồn. */
-const ALLOWED_RAW_ERROR_THROWS = 46; // ← Task 9 (F2, doc71) lô 1/3 — di trú 29 chỗ (7 file:
-// componentLibraryRouter/masterDataRouter/robotRouter/mesControlTowerRouter/aiInsightRouter/
-// alarmKpiRouter/aiActiveLearningRouter, toàn bộ DB_UNAVAILABLE + 2 ENTITY_NOT_FOUND). 75 → 46.
+const ALLOWED_RAW_ERROR_THROWS = 21; // ← Task 9 (F2, doc71) lô 2/3 — di trú 25 chỗ (7 file:
+// dataRouters 16 · routingRouter 2 · bomRouter 1 · alertRouters 1 · productionRouters 1 ·
+// aiImageSearchRouter 3 · operatorBadgeRouter 1/2). 46 → 21.
+//
+// operatorBadgeRouter.ts GIỮ LẠI 1 chỗ có chủ đích (dòng ~38, `dateInput` Zod
+// `.transform()`): tRPC bọc MỌI throw trong `.transform()` thành thêm một lớp
+// `TRPCError({code:"BAD_REQUEST", cause})` (xem createInputMiddleware,
+// node_modules/@trpc/server/dist/initTRPC-*.mjs) — `readAppErrorMeta()` chỉ đọc
+// `cause` MỘT cấp nên appCode ở 2 cấp sâu bị bỏ sót. Migrate ở đây là cosmetic
+// (cổng xanh nhưng KHÔNG dịch được câu) — xem comment tại chỗ + báo cáo Task 9.
 
 function countRawErrorThrows(): { total: number; byFile: Array<[string, number]> } {
   const byFile: Array<[string, number]> = [];

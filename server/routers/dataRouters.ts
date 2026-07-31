@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { appError } from "../_core/appError";
 import { protectedProcedure, router } from "../_core/trpc";
 import { adminProcedure } from "./_shared";
 import { requirePermission } from "../_core/accessControl";
@@ -37,7 +38,7 @@ export const importRouter = router({
               await db.updateFactory(existing.id, item);
               results.success++;
             } else {
-              throw new Error('Factory code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "factory" }, "Factory code already exists");
             }
           } else {
             await db.createFactory(item);
@@ -70,7 +71,7 @@ export const importRouter = router({
         try {
           const factory = await db.getFactoryByCode(item.factoryCode);
           if (!factory) {
-            throw new Error(`Factory ${item.factoryCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${item.factoryCode} not found`);
           }
           
           const existing = await db.getWorkshopByCode(item.code);
@@ -84,7 +85,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Workshop code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workshop" }, "Workshop code already exists");
             }
           } else {
             await db.createWorkshop({
@@ -125,7 +126,7 @@ export const importRouter = router({
         try {
           const station = await db.getStationByCode(item.stationCode);
           if (!station) {
-            throw new Error(`Station ${item.stationCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "station" }, `Station ${item.stationCode} not found`);
           }
           
           const existing = await db.getMachineByCode(item.code);
@@ -141,7 +142,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Machine code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "machine" }, "Machine code already exists");
             }
           } else {
             const crypto = await import('crypto');
@@ -196,7 +197,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Product code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "productModel" }, "Product code already exists");
             }
           } else {
             await db.createProductModel({
@@ -252,7 +253,7 @@ export const importRouter = router({
         try {
           const productModel = await db.getProductModelByCode(item.productModelCode);
           if (!productModel) {
-            throw new Error(`Product model ${item.productModelCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "productModel" }, `Product model ${item.productModelCode} not found`);
           }
 
           const existing = await db.getMeasurementPointDefByCode(productModel.id, item.code);
@@ -328,7 +329,7 @@ export const importRouter = router({
               }
               results.success++;
             } else {
-              throw new Error('Measurement point code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "measurementPoint" }, "Measurement point code already exists");
             }
           } else {
             // Doc 54 §11 P0.1 — plant real coordinates when the import row supplies
@@ -395,7 +396,7 @@ export const importRouter = router({
         try {
           const workshop = await db.getWorkshopByCode(item.workshopCode);
           if (!workshop) {
-            throw new Error(`Workshop ${item.workshopCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workshop" }, `Workshop ${item.workshopCode} not found`);
           }
           
           const existing = await db.getProductionLineByCode(item.code);
@@ -411,7 +412,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Line code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "line" }, "Line code already exists");
             }
           } else {
             await db.createProductionLine({
@@ -453,7 +454,7 @@ export const importRouter = router({
         try {
           const line = await db.getProductionLineByCode(item.lineCode);
           if (!line) {
-            throw new Error(`Line ${item.lineCode} not found`);
+            throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, `Line ${item.lineCode} not found`);
           }
           
           const existing = await db.getStationByCode(item.code);
@@ -468,7 +469,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Station code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "station" }, "Station code already exists");
             }
           } else {
             await db.createStation({
@@ -516,17 +517,17 @@ export const importRouter = router({
           
           if (item.factoryCode) {
             const factory = await db.getFactoryByCode(item.factoryCode);
-            if (!factory) throw new Error(`Factory ${item.factoryCode} not found`);
+            if (!factory) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "factory" }, `Factory ${item.factoryCode} not found`);
             factoryId = factory.id;
           }
           if (item.workshopCode) {
             const workshop = await db.getWorkshopByCode(item.workshopCode);
-            if (!workshop) throw new Error(`Workshop ${item.workshopCode} not found`);
+            if (!workshop) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "workshop" }, `Workshop ${item.workshopCode} not found`);
             workshopId = workshop.id;
           }
           if (item.lineCode) {
             const line = await db.getProductionLineByCode(item.lineCode);
-            if (!line) throw new Error(`Line ${item.lineCode} not found`);
+            if (!line) throw appError("NOT_FOUND", "ENTITY_NOT_FOUND", { entity: "line" }, `Line ${item.lineCode} not found`);
             lineId = line.id;
           }
           
@@ -545,7 +546,7 @@ export const importRouter = router({
               });
               results.success++;
             } else {
-              throw new Error('Workstation code already exists');
+              throw appError("CONFLICT", "ENTITY_DUPLICATE", { entity: "workstation" }, "Workstation code already exists");
             }
           } else {
             await db.createWorkstation({
