@@ -84,6 +84,11 @@ function localizeParams(params: Record<string, string | number> | undefined) {
   return out;
 }
 
+// Sprint 5 doc71 Task 6 (F8) — namespace DUY NHẤT dự án dùng (xem `defaultNS:
+// 'translation'` ở client/src/i18n/index.ts; mọi addResourceBundle trong repo
+// đều truyền 'translation'). Đọc từ i18n/index.ts, không đoán.
+const NS = "translation";
+
 export function translateAppError(
   appCode: string,
   params: Record<string, string | number> | undefined,
@@ -91,6 +96,42 @@ export function translateAppError(
 ): string {
   // Sentinel: i18next trả về chính defaultValue khi khoá không tồn tại.
   const SENTINEL = " __missing__";
+
+  // Task 6 (F8) — hồi quy do di trú: en/zh nạp bundle bằng `import()` ĐỘNG
+  // (client/src/i18n/index.ts, `ensureLocale`/`lazyLocales`), và dự án cấu
+  // hình `fallbackLng: 'vi'`. Trong cửa sổ chờ nạp (hoặc khi chunk lỗi vĩnh
+  // viễn — mạng chập/offline), bundle 'translation' của NGÔN NGỮ ĐANG HOẠT
+  // ĐỘNG chưa tồn tại. Nếu cứ gọi i18n.t() như bình thường, i18next rơi về
+  // fallbackLng 'vi' (đã nạp từ trước qua loadVi(), main.tsx gate render trên
+  // i18nReady) TRƯỚC KHI chạm SENTINEL/defaultValue của ta — trả nguyên CÂU
+  // TIẾNG VIỆT cho người dùng đã chọn en/zh (vd "Không tìm thấy sản phẩm."
+  // thay vì "Could not find product."). Mở rộng bất biến đã có của file này
+  // ("thiếu KHOÁ ⇒ fallback") thành "thiếu BUNDLE ⇒ fallback": kiểm
+  // hasResourceBundle TRƯỚC khi gọi t() lần nào.
+  //
+  // ⚠ ĐÍNH CHÍNH bản vá dở của phiên trước (bug khiến 3 test đỏ) — SAI CHỖ
+  // NÀO: bản cũ đọc `i18n.resolvedLanguage` để suy ra "ngôn ngữ đang hoạt
+  // động". Đọc thẳng mã nguồn i18next (node_modules/i18next/dist/cjs/i18next.js,
+  // hàm `changeLanguage` → `setResolvedLanguage`): MỖI LẦN `changeLanguage()`
+  // chạy, `resolvedLanguage` tự đi qua `this.languages` (chuỗi hierarchy, vd
+  // ['en','vi']) và CHỐT vào ngôn ngữ ĐẦU TIÊN đã có `hasLanguageSomeTranslations`
+  // — nếu bundle 'en' CHƯA nạp nhưng 'vi' đã nạp (đúng tình huống ta đang mô
+  // phỏng), `resolvedLanguage` tự rơi về 'vi' NGAY TẠI THỜI ĐIỂM changeLanguage,
+  // TRƯỚC KHI hàm này kịp kiểm tra gì cả — gate cũ đọc phải giá trị đã-rơi-về-vi
+  // đó nên `hasResourceBundle('vi', NS)` luôn true, gate không bao giờ kích
+  // hoạt, y hệt bug ban đầu (chỉ vòng qua một lớp gián tiếp). Ngược lại, việc
+  // TRA CỨU thật của i18next (`Translator.resolve`, cùng file, dùng
+  // `this.language` — KHÔNG phải `resolvedLanguage` — làm gốc cho
+  // `toResolveHierarchy`) luôn theo `i18n.language`, tức ngôn ngữ NGƯỜI DÙNG
+  // THẬT SỰ chọn, không bị "làm tròn" theo trạng thái nạp bundle. Vậy gate ở
+  // đây phải soi đúng cùng nguồn `i18n.language` mà tra cứu thật sẽ dùng, không
+  // phải bản đã-fallback-sẵn `resolvedLanguage`. Khi active lng chính là 'vi'
+  // hoặc bundle của lng đó đã nạp xong, nhánh này không đổi hành vi hiện có.
+  const activeLng = (i18n.language || "vi").split("-")[0];
+  if (!i18n.hasResourceBundle(activeLng, NS)) {
+    return fallback;
+  }
+
   const localizedParams = localizeParams(params);
 
   // Task 5 (doc 71) — CÁCH CHỌN KHOÁ: i18next KHÔNG có "chỉ nội suy nếu tham số tồn
