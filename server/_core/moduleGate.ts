@@ -45,6 +45,7 @@
  */
 
 import { TRPCError } from "@trpc/server";
+import { appError } from "./appError";
 import {
   getModuleByCode,
   CORE_MODULE_CODES,
@@ -53,6 +54,29 @@ import { resolveEditionModules } from "@shared/editions";
 import { resolveDeploymentProfile } from "./deploymentProfile";
 import { ENV } from "./env";
 import type { TrpcContext } from "./context";
+
+/**
+ * Task 10 (F3, doc71) — chỉ 11 module KHÔNG-core (isCore:false trong
+ * shared/module-registry.ts) có thể rơi vào nhánh từ chối license bên dưới —
+ * module core (isCore:true) luôn pass-through ở nhánh phía trên, không bao
+ * giờ tới đây. Danh sách này CỐ Ý nhỏ/tường minh (không suy ra tự động từ
+ * moduleCode) để mọi thay đổi ở registry đều buộc người sửa cân nhắc thêm
+ * khoá dịch — "unknownModule" là lưới an toàn nếu registry thêm module mới mà
+ * quên cập nhật map này.
+ */
+const LICENSE_WALL_FEATURE_KEYS: Record<string, string> = {
+  MOD_CORPORATE: "moduleCorporate",
+  MOD_MONITORING: "moduleMonitoring",
+  MOD_ALERTS: "moduleAlerts",
+  MOD_PRODUCTION: "moduleProduction",
+  MOD_ANALYTICS: "moduleAnalytics",
+  MOD_DATA_MANAGEMENT: "moduleDataManagement",
+  MOD_AI: "moduleAi",
+  MOD_OT_CONTROL: "moduleOtControl",
+  MOD_FEDERATION: "moduleFederation",
+  MOD_QUALITY: "moduleQuality",
+  MOD_ENGINEERING: "moduleEngineering",
+};
 
 /**
  * Result of entitlement resolution.
@@ -185,14 +209,24 @@ export function moduleGate(moduleCode: string) {
       }
       if (!entitlement.allowed.includes(moduleCode)) {
         // Hard deny — resolution succeeded, SKU configured, module genuinely absent.
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          // "MODULE_NOT_LICENSED" marker lets the client distinguish a license
-          // wall (→ upsell to /modules) from an RBAC denial. Also carried on
-          // `cause` for programmatic handling.
-          message: `MODULE_NOT_LICENSED: Module "${mod.name}" chưa được cấp phép. Vui lòng nâng cấp license.`,
-          cause: { moduleNotLicensed: moduleCode },
-        });
+        //
+        // Task 10 (F3, doc71) — di trú sang appError(). Đã kiểm TRƯỚC khi đổi
+        // (grep toàn server/+client/src): `cause.moduleNotLicensed` KHÔNG có
+        // caller nào đọc (kể cả test) — errorFormatter (trpc.ts) chỉ forward
+        // `mpConflict`/`appCode`/`appParams` lên shape.data, KHÔNG forward
+        // field tự chế này, nên nó CHƯA BAO GIỜ tới được client qua dây tRPC —
+        // chỉ tồn tại trên `cause` phía server. Tiền tố "MODULE_NOT_LICENSED:"
+        // trong message cũng không bị bất kỳ nơi nào string-match. An toàn bỏ
+        // cả hai, thay bằng FEATURE_DISABLED{feature} (đúng ngữ nghĩa: module
+        // CÓ công tắc — license — chỉ là deployment này chưa mua) — appCode
+        // programmatic thay thế đúng vai trò "phân biệt license-wall" mà
+        // marker cũ định làm nhưng chưa từng hoạt động.
+        throw appError(
+          "FORBIDDEN",
+          "FEATURE_DISABLED",
+          { feature: LICENSE_WALL_FEATURE_KEYS[moduleCode] ?? "unknownModule" },
+          `MODULE_NOT_LICENSED: Module "${mod.name}" chưa được cấp phép. Vui lòng nâng cấp license.`,
+        );
       }
       return next({ ctx });
     } catch (err) {

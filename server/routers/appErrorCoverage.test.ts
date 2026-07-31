@@ -298,7 +298,7 @@ function countTrpcErrorsOutsideRouters(): { total: number; byFile: Array<[string
 /** Hạ số này mỗi khi một đợt quét riêng di trú xong `new TRPCError(...)` NGOÀI
  *  server/routers/** sang appError(). KHÔNG BAO GIỜ nâng lên — số dư thừa che
  *  mất nợ mới, y hệt 2 ngân sách phía trên. Độc lập, không cộng dồn. */
-const ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS = 52; // ← Task 10 (F3, doc71) lô 1/4 — di trú _core/trpc.ts (12 chỗ). 64 → 52.
+const ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS = 46; // ← Task 10 (F3, doc71) lô 2/4 — accessControl.ts+moduleGate.ts+notification.ts (6 chỗ). 52 → 46.
 
 describe("phủ mã lỗi NGOÀI server/routers/** — ngân sách `new TRPCError(...)` (Task 10, F3)", () => {
   it(`còn tối đa ${ALLOWED_TRPC_ERROR_OUTSIDE_ROUTERS} chỗ new TRPCError(...) ngoài server/routers/** chưa qua appError`, () => {

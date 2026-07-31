@@ -7,7 +7,7 @@
  * 3. checkPermission() - Inline permission checker for ad-hoc use
  */
 
-import { TRPCError } from "@trpc/server";
+import { appError } from "./appError";
 import { eq, and, inArray, or, SQL } from "drizzle-orm";
 import { productInspections } from "../../drizzle/schema";
 import { getUserCorporateAssignments, getUserFactoryAssignments } from "../db/auth";
@@ -178,10 +178,22 @@ export function requirePermission(moduleName: string, action: 'canView' | 'canCr
     );
 
     if (!hasAccess) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: `Bạn không có quyền ${action.replace('can', '').toLowerCase()} cho module "${moduleName}"`,
-      });
+      // Task 10 (F3, doc71) — `requirePermission` là middleware DÙNG CHUNG, gọi
+      // từ ~687 call site (`server/routers/**`) với (moduleName, action) khác
+      // nhau ở MỖI chỗ. `moduleName` là cột varchar tự do (permissions.moduleName,
+      // KHÔNG phải enum cố định — DB-driven, không thể liệt kê hết vào từ điển
+      // camelCase mà không tạo một từ điển khổng lồ phải bảo trì song song với
+      // DB) nên KHÔNG đưa vào `action`/`reason` — giữ nguyên trong
+      // fallbackMessage (mất khi client đã dịch, disclosure ở task-10-report.md).
+      // `action` ('canView'|'canCreate'|'canEdit'|'canDelete'|'canExport') NGƯỢC
+      // LẠI là một union 5 giá trị CỐ ĐỊNH trong chữ ký hàm — dịch được đầy đủ,
+      // nên dùng chính giá trị đó (đã camelCase sẵn) làm khoá `action`.
+      throw appError(
+        "FORBIDDEN",
+        "PERMISSION_DENIED",
+        { action },
+        `Bạn không có quyền ${action.replace('can', '').toLowerCase()} cho module "${moduleName}"`,
+      );
     }
 
     return next({ ctx });
