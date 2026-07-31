@@ -54,6 +54,7 @@ import {
   AlertTriangle, Info, ClipboardCheck, Plug, FileDown, Boxes, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 
 // ── typed router outputs (avoid ReturnType<useQuery> overload collapse to {}) ──
 type SysOut = inferRouterOutputs<AppRouter>["systemHealth"];
@@ -792,7 +793,7 @@ function CommissioningRecordsDialog({
       setFatReference(""); setExpiresAt(""); setNotes("");
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const revokeMut = trpc.commissioning.revoke.useMutation({
     onSuccess: () => {
@@ -800,7 +801,7 @@ function CommissioningRecordsDialog({
       setRevokeFor(null); setRevokeReason("");
       invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const submitCreate = () => {

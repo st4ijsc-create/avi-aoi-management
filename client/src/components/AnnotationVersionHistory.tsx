@@ -22,6 +22,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { useTranslation } from "react-i18next";
 
 interface AnnotationVersionHistoryProps {
@@ -57,7 +58,7 @@ export function AnnotationVersionHistory({
       onRollback?.();
     },
     onError: (error) => {
-      toast.error(`${t('common.error')}: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 

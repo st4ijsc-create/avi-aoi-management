@@ -30,6 +30,7 @@ import {
   Settings2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
@@ -99,7 +100,7 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
       onFeedbackSubmitted?.();
     },
     onError: (error) => {
-      toast.error(`${t('common.error')}: ${error.message}`);
+      toastTrpcError(error);
     },
   });
 

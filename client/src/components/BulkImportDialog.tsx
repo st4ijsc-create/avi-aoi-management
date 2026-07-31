@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, AlertTriangle, Download, Loader2 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -94,7 +95,10 @@ export function BulkImportDialog({
       setIsImporting(false);
     },
     onError: (error) => {
-      toast.error(t('products.bulkImport.importError', { message: error.message }));
+      // LƯU Ý: khoá `products.bulkImport.importError` = "Lỗi khi nhập" (vi.json) THIẾU
+      // placeholder {{message}} — tham số message bị i18next lặng lẽ bỏ qua, người dùng
+      // chỉ thấy câu tĩnh. Ghi vào task-8d-report.md, KHÔNG tự sửa khoá (task F11).
+      toast.error(t('products.bulkImport.importError', { message: mapTrpcError(error) }));
       setIsImporting(false);
     },
   });

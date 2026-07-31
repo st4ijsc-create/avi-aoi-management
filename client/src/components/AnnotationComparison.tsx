@@ -37,6 +37,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { mapTrpcError } from '@/lib/trpcErrors';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
@@ -149,7 +150,7 @@ export function AnnotationComparison() {
       toast.success(t('annotation.comparison.exportSuccess'));
     },
     onError: (error) => {
-      toast.error(t('common.errorWithMessage', { message: error.message }));
+      toast.error(t('common.errorWithMessage', { message: mapTrpcError(error) }));
     },
   });
 

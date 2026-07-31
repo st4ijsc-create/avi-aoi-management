@@ -64,6 +64,7 @@ import {
   Pie
 } from "recharts";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { chartColor, chartGridProps, chartAxisProps, chartTooltipStyle } from "@/components/patterns";
 
 interface OEEMetrics {
@@ -252,7 +253,7 @@ export function OEEDashboardContent() {
       setShowCalculator(false);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -262,7 +263,7 @@ export function OEEDashboardContent() {
       setShowDowntimeDialog(false);
     },
     onError: (error) => {
-      toast.error(error.message);
+      toastTrpcError(error);
     },
   });
 

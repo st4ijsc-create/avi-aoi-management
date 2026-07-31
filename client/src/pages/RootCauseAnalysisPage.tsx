@@ -27,6 +27,7 @@ import {
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { PageHeader, chartColor, chartTooltipStyle, chartTooltipLabelStyle, chartGridProps, chartAxisTick } from "@/components/patterns";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 import { format, subDays } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -126,7 +127,7 @@ export function RootCauseAnalysisPageContent() {
       invalidate();
       toast.success(t("reports.analysisUpdated", "Đã cập nhật phân tích"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const deleteMutation = trpc.rootCause.delete.useMutation({
@@ -136,7 +137,7 @@ export function RootCauseAnalysisPageContent() {
       invalidate();
       toast.success(t("reports.analysisDeleted", "Đã xoá phân tích"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
 
   const openEdit = () => {

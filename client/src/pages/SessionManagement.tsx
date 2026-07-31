@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { mapTrpcError } from "@/lib/trpcErrors";
 import { 
   Monitor, 
   Smartphone, 
@@ -67,7 +68,7 @@ export default function SessionManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('session.logoutError'));
+      toast.error(t('session.logoutError'), { description: mapTrpcError(error) });
     },
   });
 
@@ -77,7 +78,7 @@ export default function SessionManagement() {
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || t('session.logoutAllError'));
+      toast.error(t('session.logoutAllError'), { description: mapTrpcError(error) });
     },
   });
 

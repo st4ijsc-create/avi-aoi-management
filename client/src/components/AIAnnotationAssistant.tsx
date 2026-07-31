@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
+import { toastTrpcError } from '@/lib/trpcErrors';
 import {
   Wand2,
   Loader2,
@@ -94,7 +95,7 @@ export function AIAnnotationAssistant({
       setIsAnalyzing(false);
     },
     onError: (error) => {
-      toast.error(`${t('ai.analysisError')}: ${error.message}`);
+      toastTrpcError(error);
       setIsAnalyzing(false);
     },
   });

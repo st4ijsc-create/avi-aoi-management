@@ -53,6 +53,7 @@ import { Sparkline } from "@/components/patterns/Sparkline";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { withParams } from "@/lib/engineeringDeepLink";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import {
   Bot, Activity, Sliders, ListChecks, Boxes, ScrollText, ShieldAlert, AlertTriangle,
   Wrench, ArrowLeft, RefreshCw, Wifi, WifiOff, ExternalLink, Info, Radio, Battery,
@@ -363,14 +364,14 @@ export default function RobotCockpit() {
       toast.success(t("cockpit.teachSaved", "Đã lưu teach buffer vào project robot-tm (bản {{v}})", { v: (a as { version?: number })?.version ?? "?" }));
       void utils.assetCockpit.robotDetail.invalidate({ robotId });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const createProjectM = trpc.programming.createProject.useMutation({
     onSuccess: (proj) => {
       createArtifactM.mutate({ projectId: (proj as { id: number }).id, language: "tmscript", content: teachBuffer });
       void utils.assetCockpit.robotDetail.invalidate({ robotId });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toastTrpcError(e),
   });
   const savingTeach = createArtifactM.isPending || createProjectM.isPending;
   const saveTeachToProject = () => {

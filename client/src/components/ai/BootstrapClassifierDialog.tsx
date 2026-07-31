@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { trpc } from "@/lib/trpc";
 import {
   Dialog,
@@ -68,7 +69,7 @@ export function BootstrapClassifierDialog({
       onOpenChange(false);
       onBootstrapped?.();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toastTrpcError(err),
   });
 
   const handleSubmit = () => {

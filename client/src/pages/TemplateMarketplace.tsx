@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { toastTrpcError } from "@/lib/trpcErrors";
 import { 
   Search, 
   Download, 
@@ -78,7 +79,7 @@ export default function TemplateMarketplace() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('common.error') + ": " + error.message);
+      toastTrpcError(error);
     },
   });
 
@@ -88,7 +89,7 @@ export default function TemplateMarketplace() {
       refetch();
     },
     onError: (error) => {
-      toast.error(t('common.error') + ": " + error.message);
+      toastTrpcError(error);
     },
   });
 
