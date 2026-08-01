@@ -476,3 +476,62 @@ Reviewer xác nhận: phép so công bằng (tham số giống hệt, prompt d�
 - **Minor — "2026-07-13 nhiều dữ liệu thật nhất" sai.** Reviewer chạy lại đúng SQL: 2026-07-12 có 5370 bản ghi > 3540 của 07-13. Đã sửa chữ dùng trong comment script ("nhiều" thay vì "nhiều nhất") — KHÔNG đổi mốc `now` (lựa chọn vẫn hợp lý, dữ liệu thật và đủ phong phú), không cần chạy lại model.
 
 Cả 2 phát hiện phụ (RCA tiếng Anh, cố vấn ngưỡng không LLM) đã nâng lên mục riêng dễ thấy ở đầu `2026-08-01-do0-vi-ab.md` và trong §4 này (xem trên) thay vì chôn trong "Ghi chú" từng prompt. Không sửa mã sản xuất, không sửa `.env`, không chạy lại model 30B trong vòng sửa này — chỉ sửa văn bản `vi-quality-ab.mjs` (script khảo sát) + 2 file báo cáo đã sinh.
+
+---
+
+## §5 Độ trễ FIM (Task 5)
+
+**Câu hỏi:** ghost-text (gợi ý mã khi gõ) đang dùng `Qwen2.5-Coder-1.5B` (941MB, cũ 2 thế hệ). `Qwen3-Coder-30B-A3B` mới hơn, roster A/B/C đều giữ nó thường trú sẵn. Có nên đổi FIM sang dùng nó không? **Chỉ đổi nếu số liệu ủng hộ.**
+
+### TTFT đo trực tiếp, không suy từ tok/s
+
+`scripts/ai-bench/bench.mjs` (không sửa) tách sẵn TTFT: `onTextChunk()` của `LlamaChatSession.prompt()` bắn `tFirst = performance.now()` ngay khi có ký tự đầu tiên — `ttftMs = tFirst - t0` là mốc THẬT, không phải suy từ `tokens/tok-per-sec`. `totalMs = t1 - t0` là thời gian tới khi TOÀN BỘ gợi ý sinh xong. Đo với `--maxTokens 32` (giống độ dài gợi ý FIM thật, khác default 256 của harness) và 2 ngữ cảnh nhắc thật (`--prefill 128,512` → 153/533 token nhắc thật sau khi cộng system prompt), `--warmup 2 --iters 5`.
+
+Lệnh (model 1, giá trị `.env` gốc):
+```bash
+node scripts/ai-bench/bench.mjs --models fim --warmup 2 --iters 5 --maxTokens 32 --prefill 128,512 --label do0-task5-fim-1p5b
+```
+Lệnh (model 2, `.env` sửa tạm `GGUF_FIM_MODEL=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf`, backup/hoàn nguyên thủ công vì `.env` không git-track):
+```bash
+node scripts/ai-bench/bench.mjs --models fim --warmup 2 --iters 5 --maxTokens 32 --prefill 128,512 --label do0-task5-fim-30b-coder
+```
+
+### Kết quả (n=5, trung vị — KHÔNG đủ mẫu để tính p95 có ý nghĩa, xem "Mối lo")
+
+| Model (vai FIM) | Ngữ cảnh nhắc thật | TTFT trung vị | TTFT min–max | **Tổng thời gian tới gợi ý 32-token HOÀN CHỈNH** | tổng min–max | decode tok/s (thông tin thêm) |
+|---|---|---|---|---|---|---|
+| **Qwen2.5-Coder-1.5B** (hiện tại) | 153 tok | **13.2 ms** | 12.7–15.0 | **83.8 ms** | 81.5–93.1 | 453.8 tok/s |
+| **Qwen2.5-Coder-1.5B** (hiện tại) | 533 tok | **26.8 ms** | 26.2–28.2 | **89.3 ms** | 87.5–92.1 | 513.7 tok/s |
+| **Qwen3-Coder-30B-A3B** | 153 tok | **39.5 ms** | 38.9–40.8 | **148.6 ms** | 146.3–150.1 | 296.9 tok/s |
+| **Qwen3-Coder-30B-A3B** | 533 tok | **76.6 ms** | 75.7–78.6 | **187.8 ms** | 186.7–191.5 | 288.7 tok/s |
+
+Chênh lệch tuyệt đối (30B − 1.5B): TTFT +26.3ms (@153tok) / +49.8ms (@533tok); tổng thời gian tới gợi ý đầy đủ +64.8ms (@153tok) / +98.5ms (@533tok).
+
+**Bằng ngôn ngữ người dùng:** khoảng dừng gõ phím "cảm nhận được" thường ở 300-500ms (đúng mô tả "dừng nửa giây, chờ gợi ý" của câu hỏi). Model hiện tại (1.5B) trả gợi ý đầy đủ sau 84-89ms — nhanh hơn ngưỡng đó 4-6 lần. Đổi sang Coder-30B, gợi ý đầy đủ sau 149-188ms — chậm hơn 1.5B 2-3 lần về SỐ TƯƠNG ĐỐI, nhưng vẫn chỉ bằng 1/3-1/2 ngưỡng dừng-gõ-phím: người dùng sẽ không phân biệt được trong 2 ngữ cảnh đã đo.
+
+### Câu hỏi phụ — dùng lại model đã nạp sẵn có "miễn phí" không?
+
+VRAM đo được trực tiếp: model 1.5B resident chiếm delta **~1774 MiB**. Thời gian nạp "miễn phí nếu dùng chung" suy từ đọc mã (không đo trực tiếp): `loadGgufModel()` (`aiGgufEngine.ts:593-599`) trả về ngay nếu `modelId` đã có trong `loadedModels` — nếu FIM trỏ đúng basename Coder-30B đang thường trú cho "code", lượt gọi FIM đi thẳng cache-hit, 0ms nạp thêm. Nhưng `.env` hiện có `GGUF_MAX_LOADED_MODELS=4` (dòng 124) — thiết kế hiện tại đã cho phép FIM (1.5B) và code (30B) cùng thường trú, không tranh chỗ nhau, nên phần "tốn thêm VRAM" là đánh đổi thật nhưng KHÔNG cấp bách.
+
+### Khuyến nghị
+
+**Số liệu ỦNG HỘ đổi** — không phải vì "mới hơn thì tốt hơn": chênh lệch tuyệt đối lớn nhất đo được (98.5ms) vẫn nhỏ hơn nhiều so với ngưỡng dừng-gõ-phím nửa giây mà use-case mô tả, cả 2 lựa chọn đều nằm trong vùng "cảm nhận như tức thời". **Nhưng có 2 điều kiện chưa đo trong task này:** (1) chỉ an toàn nếu Coder-30B ĐƯỢC ĐẢM BẢO thường trú trước lượt gọi FIM đầu tiên — nếu cold-load, Task 3 đo được 40969ms cho đúng file này (đọc nguội); (2) nếu chọn phương án DÙNG CHUNG 1 model instance với "code" (không phải model riêng trỏ cùng file), chưa đo rủi ro ghost-text phải xếp hàng phía sau 1 lượt sinh code dài đang chạy (bench.mjs đo cô lập, không mô phỏng tải đồng thời).
+
+### Mối lo / giới hạn
+
+1. Chỉ đo 2 ngữ cảnh (153/533 token) — xu hướng cho thấy khoảng cách TTFT MỞ RỘNG khi ngữ cảnh dài hơn (+26.3ms→+49.8ms khi prompt tăng ~3.5×); ngữ cảnh rất lớn (1500-3000+ token) chưa đo, ngoại suy cẩn trọng.
+2. Không mô phỏng tải GPU đồng thời (mối lo #2 ở khuyến nghị).
+3. `loadTimeMs` quan sát được (2948ms/8713ms) gần như chắc chắn ĐỌC NÓNG (cache ấm từ Task 3/4 cùng ngày, cùng 2 file) — Task 3 đo NGUỘI cùng file Coder-30B ra 40969ms, gấp ~4.7 lần. Không suy "cold start server" từ 2 số này.
+4. n=5/ngữ cảnh — đủ thấy xu hướng (dao động <10% trung vị) nhưng KHÔNG đủ để tính p95 có ý nghĩa thống kê; báo cáo chỉ đưa median/min/max, không bịa p95.
+5. Chỉ đo compute thuần trên GPU rảnh, KHÔNG gồm chi phí mạng/HTTP client↔server.
+
+### Xác nhận `.env` hoàn nguyên + VRAM baseline
+
+```bash
+cp .env.do0-backup .env && diff .env .env.do0-backup && echo "DIFF RỖNG — HOÀN NGUYÊN ĐÚNG" && rm .env.do0-backup
+grep -n "^GGUF_FIM_MODEL=" .env
+# GGUF_FIM_MODEL=Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf   (đúng giá trị gốc)
+```
+`diff` rỗng → hoàn nguyên đúng. VRAM: 1208 MiB trước → 1210 MiB sau (khớp baseline, lệch trong dao động nền). Không `node.exe` treo sau cả 2 lượt bench.
+
+Bản đầy đủ (bảng tham số chọn khác default harness, JSON thô, mọi lý do): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-5-report.md` (không commit).
