@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using St4i.DeviceClient;
 using St4i.EdgeCore.Infrastructure;
 using St4i.EdgeCore.Models;
@@ -20,7 +21,15 @@ namespace St4i.EngineApi.Tests;
 /// default roster <c>BuildDefaultFleet</c> ships) driven by a <see cref="TransportCoordinator"/> in
 /// <see cref="TransportMode.Live"/> whose <see cref="LiveTransport"/> is wired to an OFFLINE (always-throws)
 /// <see cref="HttpMessageHandler"/> over a fresh temp WAL directory. A few real cycles buffer real
-/// <c>ProcessResult</c> envelopes to the on-disk queue file, and the WS-C-T4 ack-label fix is proven live
+/// envelopes to the on-disk queue file — <b>whatever kinds the real roster actually produced</b>, which is
+/// NOT a fixed set: <see cref="St4i.EdgeCore.Drivers.SimulatedDriver"/> seeds every machine's
+/// <c>_nextDueAt</c> to the SAME instant, so the fleet's very first pass emits all ten default machines
+/// back-to-back in roster order regardless of their <see cref="MachineDescriptor.CycleSeconds"/>, and the
+/// last three of those (IOT-01, AOI-01, AOI-02) are <see cref="ReadingKind.Telemetry"/>/
+/// <see cref="ReadingKind.Inspection"/>, not <see cref="ReadingKind.ProcessResult"/>. How far into that
+/// first pass compose #1 gets before it is torn down is pure scheduling — see the closeout-round comment
+/// at the replay assertions below for the flake this produced and how it is closed. The WS-C-T4 ack-label
+/// fix is proven live
 /// (not just <c>MachineStateAckLabelTests</c>' synthetic ack): a machine's real
 /// <see cref="FleetHost.Snapshot"/> tile (<see cref="FleetTileDto.LastCycleSummary"/> — the same field
 /// <c>GET /v1/fleet</c> serves) shows <c>ack:buffered</c>, not the old (pre-fix) "ERR".</item>
@@ -68,6 +77,19 @@ public sealed class StoreAndForwardRestartSurvivalTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
             throw new HttpRequestException("simulated offline server (WS-C-T5 capstone) — forces the SDK's real Enqueue-to-disk path, no real socket");
+    }
+
+    /// <summary>The ST4I ingest path ONE buffered WAL line will be replayed to, read out of the vendored
+    /// SDK's own queue-line shape — <c>{"kind":…,"path":…,"payload":…,"queuedAt":…}</c>, written by
+    /// <c>St4iDeviceClient.Enqueue</c> and read back by its <c>FlushQueueAsync</c>
+    /// (examples/device-client/csharp/St4iDeviceClient.cs). This is what lets the replay assertions below
+    /// derive their expectation from the backlog that actually exists rather than from an assumption about
+    /// which machines happened to cycle — see the closeout-round comment at those assertions.</summary>
+    private static string QueuedPath(string walLine)
+    {
+        using var doc = JsonDocument.Parse(walLine);
+        return doc.RootElement.GetProperty("path").GetString()
+            ?? throw new InvalidOperationException("a buffered WAL line carried no 'path'");
     }
 
     /// <summary>Always answers 201 with a success envelope — the "server is back up" side of the restart.</summary>
@@ -152,6 +174,12 @@ public sealed class StoreAndForwardRestartSurvivalTests
         var bufferedLines = File.ReadAllLines(walFile).Where(l => l.Trim().Length > 0).ToArray();
         Assert.True(bufferedLines.Length > 0, "compose #1 should have buffered at least one record to the on-disk WAL before the simulated restart");
 
+        // The backlog that ACTUALLY survived the restart, as the SDK itself will replay it: one ingest path
+        // per buffered line, in the file's own FIFO order (which is the order `FlushQueueAsync` resends in).
+        // Captured here, once, from the same settled file `bufferedLines` came from — every replay assertion
+        // at the end of this test compares against THIS, never against a guess about what the fleet emitted.
+        var bufferedPaths = bufferedLines.Select(QueuedPath).ToArray();
+
         // ── Compose #2 — "process restart": a BRAND NEW FleetHost/TransportCoordinator on the SAME temp
         // directory + machineCode, with a SUCCEEDING handler (server back up). Nothing from compose #1 is
         // referenced again — only the file on disk carries the backlog across. ────────────────────────
@@ -167,21 +195,119 @@ public sealed class StoreAndForwardRestartSurvivalTests
             // itself never calls FlushBacklogAsync directly, exactly like WalFlushPumpTests proves for the
             // pump alone. WS-C-T5's own MaxBytes trim rides along every tick too (walOptions: wal) — a
             // no-op here (the backlog is nowhere near 64 MiB) but exercises the real end-to-end wiring.
+            //
+            // 🔴🔴 Đợt C closeout round — SUBSCRIBE-AFTER-START, a real race that made this test flake red
+            // under full-suite load. NOT one of the eight reviewed items; found while chasing a red
+            // `scripts/verify-suites.sh` run and reported as a new finding.
+            //
+            // `WalFlushPump`'s CONSTRUCTOR starts the loop (`_loop = Task.Run(...)`, WalFlushPump.cs:61),
+            // and `BacklogDrained` was subscribed AFTER the constructor returned. The interval is 30 ms,
+            // so on a loaded machine a tick could fire, drain part or all of the backlog, and raise the
+            // event into NO SUBSCRIBER — after which `WaitUntilAsync` sees an empty WAL and passes, and
+            // `Assert.Equal(bufferedLines.Length, drainedTotal)` fails with a count that is short by
+            // exactly the uncounted drain. Observed live: this test failed ~3.4 s into the suite while
+            // passing in isolation every time.
+            //
+            // 🔴 Fixed by ARMING rather than by widening a timeout: the pump cannot see a live transport
+            // until `armed` is set, which happens only after the handler is attached. The pump's own timer
+            // is still the only thing that triggers the drain — the property this test exists to prove is
+            // untouched — but no drain can now precede the subscription. Widening a bound would have made
+            // this rarer and left the mechanism intact, which is the same mistake the mTLS test's own doc
+            // comment in `DeviceIdentityStoreTests` records having made once already.
+            var armed = false;
             await using var pump = new WalFlushPump(
-                getLive: () => coordinator2.Mode == TransportMode.Live ? coordinator2.Live : null,
+                getLive: () => Volatile.Read(ref armed) && coordinator2.Mode == TransportMode.Live
+                    ? coordinator2.Live
+                    : null,
                 interval: TimeSpan.FromMilliseconds(30),
                 walOptions: wal);
 
             var drainedTotal = 0;
             pump.BacklogDrained += n => Interlocked.Add(ref drainedTotal, n);
+            Volatile.Write(ref armed, true); // only NOW can a tick drain anything
 
+            // 🔴🔴 Đợt C closeout round, SECOND PASS — the arming fix above was real but it was not the whole
+            // story: this test still went red roughly 2 runs in 3 under load. Reproduced deliberately (48
+            // CPU burners, the test alone in a loop: 10/15 red, then 16/20 red with detailed output) rather
+            // than inferred, and the captured failures name TWO further mechanisms, neither of them a
+            // too-tight bound. Both are fixed below at the mechanism; NOTHING here widens PollTimeout, and
+            // the pump's own timer is still the only thing that triggers the drain.
+            //
+            // ── MECHANISM 1: THE WAIT WAS SATISFIED BY THE MIDDLE OF THE THING IT WAS WAITING FOR. ────────
+            // Captured live, three times: `Assert.Equal() Failure — Expected: 9, Actual: 0` at the
+            // drainedTotal assertion, i.e. the WAL file was already empty while the pump had reported
+            // draining NOTHING. The vendored SDK's `DrainQueue`
+            // (examples/device-client/csharp/St4iDeviceClient.cs) TRUNCATES FIRST:
+            //
+            //     var lines = File.ReadAllLines(_queuePath)…;  File.WriteAllText(_queuePath, "");  return lines;
+            //
+            // `FlushQueueAsync` calls that BEFORE its first HTTP send, and only re-`Enqueue`s whatever it
+            // could not deliver AFTER the last one. So "the WAL file is empty" is TRUE FOR THE WHOLE
+            // DURATION OF A DRAIN — it is the drain's opening move, not its completion — and the old
+            // predicate here polled exactly that. The alignment is unforgiving: the pump's first tick lands
+            // at ~30 ms and this loop's first poll after it at ~50 ms, so the entire N-record replay had to
+            // finish inside ~20 ms or the test raced past it and asserted counts that were still zero. In
+            // isolation N small sends through a synchronous handler beat that easily; on a loaded box a
+            // single deschedule of the pump's thread does not.
+            //
+            // 🔴 Fixed by waiting on the pump's OWN terminal signal — `BacklogDrained`, which the pump raises
+            // strictly AFTER `FlushQueueAsync` has returned, i.e. after every send completed and every
+            // undeliverable record was re-enqueued. There is no longer any intermediate state that can
+            // satisfy this wait. The "drains to zero" property the file check carried is not lost: it is
+            // asserted immediately below, where it is now a settled fact instead of a mid-flight one, and it
+            // is STRONGER there — a non-empty file after a full drain report means records were re-enqueued,
+            // which the old ordering could never distinguish from the drain simply not having happened yet.
+            // (This is the same shape `WalFlushPumpTests` already waits in, for the same reason.)
             await WaitUntilAsync(
-                () => File.ReadAllLines(walFile).All(l => l.Trim().Length == 0),
-                "the restart-surviving backlog to drain to zero via the pump's own idle timer");
+                () => Volatile.Read(ref drainedTotal) >= bufferedLines.Length,
+                $"the pump's own idle timer to drain AND REPORT all {bufferedLines.Length} restart-surviving " +
+                "record(s) — an empty WAL file alone cannot say this, it is also true mid-drain (see above)");
 
+            Assert.True(
+                File.ReadAllLines(walFile).All(l => l.Trim().Length == 0),
+                "the WAL file must be empty once the pump has reported the full drain — anything left here is " +
+                "a record FlushQueueAsync re-enqueued because it could not deliver it");
             Assert.Equal(bufferedLines.Length, Volatile.Read(ref drainedTotal));
-            Assert.Equal(bufferedLines.Length, recordingHandler.RequestUrls.Count);
-            Assert.All(recordingHandler.RequestUrls, url => Assert.Contains("/api/v1/ingest/process-result", url));
+
+            // ── MECHANISM 2: AN ASSERTION ABOUT BACKLOG COMPOSITION THAT PRODUCTION NEVER GUARANTEED. ─────
+            // The dominant failure, 13 of 16 captured reds: `Assert.All() Failure: 4 out of 11 items …
+            // Item: "http://unit-test.invalid/api/v1/ingest/telemetry" … Not found:
+            // "/api/v1/ingest/process-result"`, always at indices 7/8/9/10. This was never a timing bound —
+            // it was a WRONG ASSERTION that a fast machine happened to satisfy.
+            //
+            // `SimulatedDriver`'s ctor seeds EVERY machine's `_nextDueAt` to the same instant, so the fleet's
+            // first pass emits all ten default-roster machines back-to-back — CycleSeconds only starts
+            // pacing from the SECOND cycle on. Roster indices 0-6 are the ProcessResult machines; index 7 is
+            // IOT-01 (Telemetry -> /api/v1/ingest/telemetry) and 8/9 are AOI-01/AOI-02 (Inspection ->
+            // /api/v1/ingest/inspection). Compose #1 is torn down whenever the ack:buffered wait above
+            // happens to observe a tile, so HOW FAR into that first pass the backlog gets is pure
+            // scheduling: reach record 8 and the backlog is legitimately heterogeneous. Observed backlogs
+            // ranged 4 to 11 records. `Assert.All(…, "process-result")` was therefore asserting "compose #1
+            // was torn down within its first seven readings", which is not a property of this system.
+            //
+            // 🔴 Fixed by asserting against the backlog that ACTUALLY survived (`bufferedPaths`, read out of
+            // the WAL file itself) instead of against an assumed composition. This is strictly STRONGER than
+            // what it replaces, not a relaxation: the old version checked only that each replayed URL
+            // contained one path substring; this pins the replay to the exact ingest paths of the exact
+            // records that survived the restart, in the exact FIFO order the SDK resends them — it would now
+            // catch a replay that dropped a record, duplicated one, reordered them, or sent one to the wrong
+            // endpoint, none of which the old assertion could see. The "it really is the ST4I ingest API"
+            // guard the old assertion also provided is kept explicitly, and kind-agnostically, just below.
+            //
+            // 🔴 NOT VACUOUS — verified by mutation (trap 5 in scripts/verify-suites.sh: every vacuous test
+            // this project has caught was caught by mutation and none by reading), each mutant reverted:
+            //   • `BacklogDrained?.Invoke(sent)` removed from WalFlushPump  -> times out at the wait above.
+            //   • LiveTransport.FlushBacklogAsync returns `sent + 1`        -> Expected 2 / Actual 3 below.
+            //   • RecordingHandler records each URL twice                   -> the sequence Assert.Equal fails.
+            // The one property below that CANNOT be mutation-tested from this repo is the SDK's own replay
+            // fidelity: the ingest routes come from St4iDeviceClient's hardcoded constants, not from
+            // Normalizer's (LiveTransport dispatches by ReadingKind to a typed SDK call and never passes
+            // `env.Path` through), so mutating Normalizer.ProcessResultPath leaves this test green — it is
+            // the vendored SDK, which this repo does not modify, that these two assertions pin.
+            Assert.All(bufferedPaths, p => Assert.StartsWith("/api/v1/ingest/", p, StringComparison.Ordinal));
+            Assert.Equal(
+                bufferedPaths.Select(p => "http://unit-test.invalid" + p),
+                recordingHandler.RequestUrls);
         }
         finally
         {
