@@ -606,8 +606,8 @@ nhất là guard kích thước, hoặc hoàn toàn không guard):
 
 | Ô lệch | Trạng thái hôm nay (đo qua DB) | Mức nguy cơ |
 |---|---|---|
-| KB Studio ingest (`kb_studio_chunks`, không cột lưu model đã nhúng) × KB Studio search (tái dùng vector câu hỏi đã nhúng, không kiểm phía corpus) | **ĐANG BẬT** (`KB_STUDIO_ENABLED=true`), có dữ liệu thật: 3 dòng, 1 corpus `so-tay-bao-tri-w2`, ingest trong 1 cửa sổ 27 giây (`SELECT corpus, count(*), min/max("createdAt") FROM kb_studio_chunks GROUP BY corpus` → 1 hàng) | **Cao nhất** — sống, chỉ chưa bị kích hoạt vì chưa có lần `.env` đổi giữa 2 lần ingest |
-| ops-KB pgvector mirror (`kb_chunks`, `server/services/kb/kbVectorStore.ts`) — `cosine()` tự viết dùng `Math.min(len)` TRUNCATE-COMPARE, tệ hơn cả canh kích thước | Dormant — `KB_PGVECTOR_ENABLED` không set trong `.env` → mặc định `false`; `SELECT count(*) FROM kb_chunks` → **0** | Thấp hôm nay, nhưng nếu bật lại mà không sửa trước thì không canh gì cả |
+| **KB Studio ingest × search — LỖ HỔNG KÉP (sửa sau vòng review, xem "Vòng sửa 1")**: (a) `kb_studio_chunks` không cột lưu model đã nhúng, `searchCorpus()` không so định danh phía corpus; **VÀ (b) chính `searchCorpus()`'s nhánh Tier-2 dự phòng (`server/services/kbVectorStore.ts:236-245`) dùng `cosine()` TRUNCATE-COMPARE (`Math.min(len)`), không kiểm dim trước khi so** | **ĐANG BẬT** (`KB_STUDIO_ENABLED=true`), có dữ liệu thật: 3 dòng, 1 corpus `so-tay-bao-tri-w2`, ingest trong 1 cửa sổ 27 giây | **Cao nhất trong toàn báo cáo** — sống, KHÔNG có phòng thủ ở bất kỳ tầng nào (không định danh, không cả kích thước ở nhánh dự phòng) |
+| ops-KB pgvector mirror (`kb_chunks`, `server/services/kb/kbVectorStore.ts` — **LƯU Ý tên gần trùng file KB Studio ở trên, chỉ khác thư mục `kb/`**) — `cosine()` TRUNCATE-COMPARE Y HỆT bản KB Studio: **hai bản sinh đôi của cùng một bug, một dormant (đây) một đang sống (hàng trên)** | Dormant — `KB_PGVECTOR_ENABLED` không set trong `.env` → mặc định `false`; `SELECT count(*) FROM kb_chunks` → **0** | Thấp hôm nay, nhưng nếu bật lại mà không sửa trước thì không canh gì cả |
 | Image search text-of-image (`aiImageEmbedding.ts`, modelCode `TEXT_OF_IMAGE_MODEL_CODE` là hằng số cố định bất kể model GGUF thật; `searchByImage()` chỉ lọc `modelCode` cho nhánh `onnx`, KHÔNG cho nhánh này) | Dormant — `IMAGE_EMBEDDING_DEFAULT=onnx` + 1 model ONNX `ACTIVE` (`SELECT count(*) FROM ai_models WHERE "modelType"='embedding' AND status='ACTIVE' AND format='ONNX'` → 1) nên nhánh mặc định không tới đây; `ai_image_embeddings` hôm nay 990/990 dòng đều `modelCode='dinov2-small'`, `embeddingDim=384` | Thấp hôm nay, sống lại ngay nếu tắt/xoá model ONNX ACTIVE |
 
 **Q1×N1 (RAG KB ask ↔ RAG KB corpus) và Q2×N2 (Programming KB) CÓ guard định danh** —
@@ -650,12 +650,31 @@ không `node.exe` treo (`tasklist | grep -i node.exe` rỗng cả trước lẫn
 npm run kb:eval
 # recall@5 (cosine baseline): 151/151 = 1.000
 ```
-25/25 domain đều `= 1.000`. Bằng chứng gián tiếp CỦNG CỐ mục 1 (Q1×N1 đang khớp không gian
-đúng — nếu lệch, W0.3 guard đã tự rơi keyword-only và recall không thể sạch 1.000). Đây là
-**mốc chốt**: đợt sửa embedder/guard sau này phải chạy lại đúng `npm run kb:eval` và so với
-`151/151 = 1.000` — số nào thấp hơn là hỏng truy hồi, không phải cải thiện đo lường. Kết quả
-ghi vào `knowledge/rag-eval-results.json` (đã có từ trước, lần chạy này chỉ cập nhật
-timestamp). VRAM/tiến trình sau `kb:eval`: 1271 MiB, không `node.exe` treo.
+25/25 domain đều `= 1.000`.
+
+**[Sửa sau vòng review — lý do ban đầu SAI]** Bản đầu giải thích độ tin cậy của 1.000 bằng
+guard sản xuất W0.3 (`computeEmbedModelMatches()`) — **sai**: `scripts/ai-kb/eval-rag.mjs` là
+harness độc lập, tự cài lại phép truy hồi cosine riêng, KHÔNG BAO GIỜ gọi guard đó (đọc header
+file: "Self-contained: re-implements the same bruteforce cosine retrieval"). Bằng chứng ĐÚNG
+(tự chạy, không chép số reviewer) — ép `GGUF_EMBED_MODEL` sang mxbai qua biến môi trường CLI
+(KHÔNG sửa `.env` — dotenv không ghi đè biến đã set sẵn, nên khỏi cần backup/restore `.env`):
+```bash
+GGUF_EMBED_MODEL=mxbai-embed-large-v1-f16.gguf npm run kb:eval
+# recall@5 (cosine baseline): 56/151 = 0.371
+```
+Khớp chính xác số reviewer báo. **Mốc `1.000` đáng tin KHÔNG PHẢI vì có guard sản xuất canh
+nó, mà vì đã TỰ ĐO được nó sụp xuống 0,371 (giảm 63%) khi cố ý đổi sai embedder** — chứng
+minh `kb:eval` thực sự nhạy với lệch không gian nhúng, đó mới là lý do 1.000 xứng đáng làm
+mốc chốt.
+
+**Mốc chốt**: `npm run kb:eval` (không cờ, `.env` gốc) → `151/151 = 1.000`. Đợt sửa
+embedder/guard sau này phải chạy lại đúng lệnh và so với mốc này — số nào thấp hơn là hỏng
+truy hồi. Đã khôi phục `knowledge/rag-eval-results.json` về đúng trạng thái `151/151` sau phép
+thử ép-mxbai (`cp` backup trước → chạy → `cp` khôi phục → `diff` rỗng → `rm` backup — lệnh đầy
+đủ ở `task-6-report.md` mục 3). `.env` xác nhận không đổi cả trước lẫn sau
+(`grep -n "^GGUF_EMBED_MODEL=" .env` → `Qwen3-Embedding-0.6B-f16.gguf`, không đổi). VRAM/tiến
+trình sau cả 2 lượt `kb:eval`: dao động 1246-1271 MiB quanh baseline ~1250 MiB, không
+`node.exe` treo ở lượt nào.
 
 ### 4. Khuyến nghị (KHÔNG thực hiện)
 
@@ -663,8 +682,10 @@ timestamp). VRAM/tiến trình sau `kb:eval`: 1271 MiB, không `node.exe` treo.
    ingest), rồi so định danh với `GGUF_EMBED_MODEL` hiện tại lúc query — tái dùng logic
    `computeEmbedModelMatches()` đã có, lý tưởng là RÚT THÀNH HÀM DÙNG CHUNG thay vì thêm bản
    sao thứ 3 (đang có 2 bản gần giống nhau ở Q1/Q2).
-2. **`kb/kbVectorStore.ts`'s `cosine()`** (dormant): bỏ truncate-compare trước khi có ý định
-   bật lại `KB_PGVECTOR_ENABLED`.
+2. **Bỏ truncate-compare ở CẢ HAI bản `cosine()`** — `server/services/kbVectorStore.ts:236-245`
+   (KB Studio, ĐANG SỐNG) ưu tiên ngang mục 1 vì cùng đường sống; bản song sinh
+   `server/services/kb/kbVectorStore.ts:33-41` (dormant) vẫn cần sửa trước khi bật lại
+   `KB_PGVECTOR_ENABLED`.
 3. **`aiImageEmbedding.ts` text-of-image path** (dormant): đổi `TEXT_OF_IMAGE_MODEL_CODE` từ
    hằng số cố định sang phản ánh model GGUF thật đang chạy, và áp `modelCode` filter cho
    nhánh này giống nhánh `onnx`.
@@ -687,5 +708,35 @@ Không mục nào ở trên được thực hiện — đúng ràng buộc "ch�
 4. KHÔNG tái hiện được sự cố sống ở ô Q3×N3 (cần 2 lần ingest bằng 2 model khác nhau thật —
    dựng dữ liệu giả cho KB Studio thật sẽ vượt ràng buộc "chỉ đo"); đánh giá "guard vắng mặt"
    dựa trên đọc mã trực tiếp, không phải tái hiện — ranh giới này cần giữ rõ khi đọc báo cáo.
+5. **[Vòng sửa 1]** Hai file tên gần giống hệt (`server/services/kbVectorStore.ts` sống vs
+   `server/services/kb/kbVectorStore.ts` dormant) là bẫy đọc-nhầm — chính lượt đo đầu tiên của
+   task này chỉ điều tra một trong hai rồi dừng, bỏ sót bản song sinh của cùng một bug ở file
+   còn lại. Rủi ro lặp lại: một đợt vá sau này sửa 1 file mà quên file kia, không ai nhận ra vì
+   tên gần trùng.
 
-Bản đầy đủ (bảng 7×7 đầy đủ, mọi lệnh + output nguyên văn): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-6-report.md` (không commit).
+### Vòng sửa 1 (review)
+
+Reviewer: spec ✅ đạt (đúng 4 bước brief, diff sạch, premise-check đúng, cosine 0.024282 tái
+lập byte-for-byte, KB Studio thiếu guard xác nhận qua `\d kb_studio_chunks`). 2 Important, cả
+hai đã xử lý, KHÔNG sửa mã sản xuất:
+
+- **Important 1 — bỏ sót bản song sinh của chính bug tôi tìm ra.** Chỉ điều tra
+  `server/services/kb/kbVectorStore.ts`'s `cosine()` (dormant) rồi dừng, không đọc file tên
+  gần giống `server/services/kbVectorStore.ts` (KB Studio, không có `kb/` giữa đường dẫn).
+  Reviewer tìm bug Y HỆT (`Math.min(a.length, b.length)` truncate-compare) ở dòng 236-245 file
+  này — nằm trong Tier-2 fallback của chính `searchCorpus()`, đúng ô đã xếp "rủi ro cao nhất".
+  Tự đọc lại độc lập (Read trực tiếp, không chỉ tin lời reviewer) — xác nhận đúng. Đã gộp vào
+  bảng ô-lệch, nâng mức nghiêm trọng KB Studio thành "lỗ hổng kép", cập nhật khuyến nghị #2 và
+  thêm Mối lo #5.
+- **Important 2 — lý do giải thích `recall@5=1.000` sai, không liên quan số đo được.** Bản
+  đầu viện dẫn guard sản xuất W0.3 — nhưng `eval-rag.mjs` là harness độc lập, không gọi guard
+  đó. Tự chạy lại phép ép-đổi-model độc lập (không chép số reviewer):
+  `GGUF_EMBED_MODEL=mxbai-embed-large-v1-f16.gguf npm run kb:eval` → **56/151 = 0.371** (khớp
+  đúng số reviewer). Đã thay giải thích sai bằng bằng chứng thật này. Đã khôi phục
+  `knowledge/rag-eval-results.json` về `151/151` (diff rỗng) và xác nhận `.env` không hề bị
+  chạm (biến truyền qua CLI, không qua file).
+
+Không đụng mã sản xuất, không đụng `knowledge/embeddings.jsonl` — chỉ đọc thêm 1 file, chạy
+thêm 1 lệnh `kb:eval` có kiểm soát rồi khôi phục `rag-eval-results.json`, sửa văn bản báo cáo.
+
+Bản đầy đủ (bảng 7×7 đầy đủ, mọi lệnh + output nguyên văn, chi tiết vòng sửa 1): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-6-report.md` (không commit).
