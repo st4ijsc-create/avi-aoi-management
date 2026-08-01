@@ -79,3 +79,89 @@ Baseline JSON đầy đủ (không commit — nằm trong `.gitignore` của th�
 
 - Task này chỉ khoá **in-flight LOAD**. Chưa xử lý bản đồ ngân sách VRAM toàn cục cho 4 hộ tiêu thụ (nợ Đợt 0, ngoài phạm vi Đợt 1) — vẫn có thể OOM nếu nhiều model khác nhau được yêu cầu đồng thời (không cùng `modelId`, nên khoá này không áp dụng).
 - Chưa test riêng nhánh "nạp thất bại → `finally` xoá khỏi `inFlightLoads` → lượt sau thử lại thành công" bằng test hành vi (đã xác nhận đúng bằng đọc mã + bộ test OOM-fallback hiện có trong `aiGgufEngine.test.ts` vẫn xanh, chứng tỏ đường lỗi/retry cũ không bị khoá mới phá vỡ, nhưng không có test riêng cho "khoá được giải phóng sau lỗi rồi lượt sau tự thử lại và thành công").
+
+---
+
+## §2 Ngữ cảnh nhúng — embedding thôi cấp phát toàn bộ cửa sổ ngữ cảnh (Task 2)
+
+### Vấn đề
+
+`getEmbeddingContext()` (`server/services/aiGgufEngine.ts`, khi vá ở dòng ~2261-2264) gọi:
+```ts
+loaded.embeddingContext = await loaded.model.createEmbeddingContext({
+  contextSize: "auto",           // lấy TOÀN BỘ cửa sổ ngữ cảnh model được huấn luyện
+  batchSize: loaded.config.batchSize ?? 512,
+});
+```
+`"auto"` cấp phát toàn bộ cửa sổ ngữ cảnh mà model nhúng hỗ trợ — bất kể chunk RAG thực tế dài bao nhiêu. Chunk RAG dài nhất trong `knowledge/chunks-stats.json` (`maxChunkChars=1800`) chỉ ~600 token. Model nhúng còn được `loadGgufModel()` nạp kèm một `context` **thường** (`createContext({ contextSize: GGUF_DEFAULT_CTX=4096, sequences: GGUF_SEQUENCES=4, ... })`, dòng ~662-668) mà nó **không bao giờ dùng để sinh chữ** — nên `"auto"` là trả tiền lần thứ hai cho một cửa sổ ngữ cảnh không tương xứng nhu cầu.
+
+Tên hàm export thật đúng như mã mẫu trong brief: `generateEmbedding` (`aiGgufEngine.ts:2187`, gọi `getEmbeddingContext()` ở dòng 2204/2235).
+
+### Sửa
+
+Thêm hằng số `EMBED_CTX` (đọc `GGUF_EMBED_CTX`, mặc định **1024** — dư ~70% biên an toàn so với ~600 token của chunk dài nhất) cạnh các hằng cấu hình GGUF khác (`resolveContextSize`), rồi dùng nó thay `"auto"` trong `getEmbeddingContext()`. Khối `catch` và các câu thông điệp lỗi tiếng Việt hiện có **giữ nguyên không đổi**.
+
+### TDD — bằng chứng ĐỎ trước khi sửa
+
+File test mới: `server/services/aiGgufEngine.embedCtx.test.ts`. **Lệch so với mã mẫu trong brief**: mã mẫu thiếu `vi.mock("fs", ...)` — giống bẫy Task 1 đã gặp, `loadGgufModel()` → `resolveModelPath()` gọi `fs.existsSync()` THẬT, nên đã thêm mock `fs` theo đúng quy ước sẵn có ở `aiGgufEngine.test.ts`/`aiGgufEngine.inflight.test.ts`. Cũng gọi `generateEmbedding(text, "embed-model")` với `modelId` tường minh (thay vì để hàm tự `resolveEmbedModelBasename()` từ env) để test không phụ thuộc `GGUF_EMBED_MODEL`/`readdirSync` thật — cùng quy ước với test `generateEmbedding` hiện có trong `aiGgufEngine.test.ts`.
+
+Chạy trước khi vá (`npx vitest run server/services/aiGgufEngine.embedCtx.test.ts`), output đỏ:
+```
+ ❯ server/services/aiGgufEngine.embedCtx.test.ts (2 tests | 2 failed) 83ms
+   × getEmbeddingContext — ngân sách ngữ cảnh > KHÔNG dùng contextSize 'auto' — nó cấp toàn bộ cửa sổ model 74ms
+     → expected 'auto' not to be 'auto' // Object.is equality
+   × getEmbeddingContext — ngân sách ngữ cảnh > ngữ cảnh đủ chứa chunk dài nhất (~600 token) và có biên an toàn 8ms
+     → expected 'string' to be 'number' // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  server/services/aiGgufEngine.embedCtx.test.ts > getEmbeddingContext — ngân sách ngữ cảnh > KHÔNG dùng contextSize 'auto' — nó cấp toàn bộ cửa sổ model
+AssertionError: expected 'auto' not to be 'auto' // Object.is equality
+ ❯ server/services/aiGgufEngine.embedCtx.test.ts:71:34
+
+ FAIL  server/services/aiGgufEngine.embedCtx.test.ts > getEmbeddingContext — ngân sách ngữ cảnh > ngữ cảnh đủ chứa chunk dài nhất (~600 token) và có biên an toàn
+AssertionError: expected 'string' to be 'number' // Object.is equality
+Expected: "number"
+Received: "string"
+ ❯ server/services/aiGgufEngine.embedCtx.test.ts:79:37
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 0 passed (2)
+```
+
+### Sau khi vá — bằng chứng XANH
+
+- `npx vitest run server/services/aiGgufEngine.embedCtx.test.ts` → **2/2 xanh**.
+- Toàn bộ họ test `aiGgufEngine.*.test.ts` (6 file: `aiGgufEngine.test.ts`, `aiGgufEngine.inflight.test.ts`, `aiGgufEngine.fim.server.test.ts`, `aiGgufEngine.llamaServerFallback.test.ts`, `aiGgufEngine.modelResolver.equivalence.test.ts`, `aiGgufEngine.textModelGuard.test.ts`) → **64/64 xanh**, không hồi quy.
+- `NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit` → chỉ còn lỗi tiền tồn tại `client/src/pages/SessionManagement.tsx(195,64)`.
+
+### ⚠ Phát hiện quan trọng: `scripts/ai-bench/bench.mjs` KHÔNG đo được sửa này
+
+Lệnh đo TRƯỚC (`node scripts/ai-bench/bench.mjs --models embed --iters 1 --warmup 0`): `modelDeltaMib` = **5.624 MiB** (mốc Đợt 0: 5.664 MiB, lệch ~0,7% — trong nhiễu bình thường). Lệnh đo SAU (cùng lệnh, sau khi vá): `modelDeltaMib` = **5.618 MiB** — **gần như không đổi**.
+
+Nguyên nhân: `bench.mjs` được thiết kế **tự chứa** (comment ở đầu file: "does NOT import any server/ source", để chạy được mà không boot app) — nó có `benchEmbedModel()` **RIÊNG**, tự gọi `model.createEmbeddingContext({ contextSize: "auto" })` **HARD-CODE** ở dòng 321, hoàn toàn độc lập với `aiGgufEngine.ts`. Sửa `EMBED_CTX` trong mã sản xuất **không** chạm tới đường đo này. (Cùng một khuôn: `scripts/ai-kb/_gguf-embed.mjs`, dùng bởi `kb:eval`, cũng hard-code `contextSize: "auto"` ở dòng 71 — độc lập tương tự, xem mục an toàn bên dưới.)
+
+Để có số THẬT phản ánh đúng mã đã sửa, đã viết một script tạm (`scripts/ai-bench/_tmp-real-embed-check.mjs`, chạy bằng `npx tsx`, **không boot Express/route** — chỉ `import("../../server/services/aiGgufEngine.ts")` rồi gọi thẳng `generateEmbedding()` production, đúng cách `server/services/kb/kbVectorStore.ts:68` gọi thật; đã xoá sau khi đo xong, không commit):
+
+| Cấu hình | VRAM delta thật (model + context thường + embedding context) |
+|---|---|
+| TRƯỚC (`contextSize: "auto"`, đo lại bằng cách tạm sửa `EMBED_CTX` về `"auto"` rồi phục hồi ngay) | **7.694 MiB** |
+| SAU (`contextSize: EMBED_CTX = 1024`, mã đã vá) | **4.204 MiB** |
+| **Giảm** | **3.490 MiB (~45,4%)** |
+
+Số THẬT (7.694 MiB) cao hơn số `bench.mjs` báo (5.624 MiB) vì `bench.mjs` chỉ gọi `createEmbeddingContext`, **không** gọi `model.createContext()` — trong khi đường sản xuất thật (`loadGgufModel()`) luôn tạo CẢ HAI context cho model nhúng (context thường `GGUF_DEFAULT_CTX=4096` + embedding context), đúng khoản "trả tiền hai lần" đã nêu trong bối cảnh brief. Sau khi vá, số thật giảm ~45% — lớn hơn nhiều so với con số ước tính ban đầu từ `bench.mjs` (vốn không đo được khoản tiết kiệm này).
+
+**Khuyến nghị để lại cho việc sau (ngoài phạm vi Task 2, không tự ý sửa)**: `scripts/ai-bench/bench.mjs:321` và `scripts/ai-kb/_gguf-embed.mjs:71` nên gọi qua `EMBED_CTX`/production path (hoặc ít nhất đọc `GGUF_EMBED_CTX`) để công cụ đo và cổng an toàn phản ánh đúng mã sản xuất — hiện tại cả hai đường đo được chỉ định trong brief đều **không nhạy** với thay đổi này.
+
+### ⚠ Cổng an toàn — `npm run kb:eval`
+
+**`recall@5 = 151/151 = 1.000`** (không đổi, không hồi quy) — giữ đúng mốc Đợt 0. Ghi chú trung thực: `kb:eval` gọi `scripts/ai-kb/_gguf-embed.mjs` (`embedTextGguf`), **không** gọi `aiGgufEngine.generateEmbedding()`, nên cổng an toàn này **không thực sự tập luyện qua đường mã vừa sửa** — nó xác nhận không có hồi quy ở KHO TRI THỨC hiện có (đúng vai trò "cổng an toàn"), nhưng không phải bằng chứng recall cho `EMBED_CTX=1024` trên đường sản xuất thật. Đường sản xuất thật (`kbVectorStore.ts`, dùng bởi tính năng tìm kiếm RAG sống của app) đã được xác nhận đúng qua unit test + đo VRAM thật ở trên. `knowledge/rag-eval-results.json` đổi hợp lệ theo brief, đã đưa vào commit.
+
+### Đo VRAM không hồi quy sau khi thoát
+
+Sau mỗi lượt đo (bench.mjs và script tạm): `nvidia-smi` xác nhận VRAM về gần baseline (~1.0-1.5 GB, dao động bình thường), không còn `node.exe` treo (kiểm bằng `tasklist`/quan sát tiến trình thoát).
+
+### Mối lo / việc để lại cho task sau
+
+- **Công cụ đo trong brief (`bench.mjs`) và cổng an toàn (`kb:eval` → `_gguf-embed.mjs`) đều không đi qua `aiGgufEngine.ts`** — bất kỳ thay đổi tương lai nào ở `EMBED_CTX`/`getEmbeddingContext()` sẽ **không** được hai công cụ này phát hiện. Task 4 (roster VRAM) nên dùng số thật (4.204 MiB / giảm 45,4%) thay vì số `bench.mjs` báo (5.618 MiB / gần như không đổi).
+- `GGUF_EMBED_CTX` là biến môi trường mới, chưa có trong `.env` hiện tại của máy này (không sửa `.env` theo đúng ràng buộc của task) — mặc định `1024` trong mã đã đủ dùng, không bắt buộc set.

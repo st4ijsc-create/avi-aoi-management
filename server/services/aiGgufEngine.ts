@@ -230,6 +230,15 @@ function resolveContextSize(requested?: number): number {
   return Math.min(Math.max(Math.floor(requested), 256), GGUF_MAX_CTX);
 }
 
+/** Đợt 1 Task 2 — "auto" cấp TOÀN BỘ cửa sổ ngữ cảnh model được huấn luyện, trong
+ *  khi chunk RAG dài nhất chỉ ~600 token (knowledge/chunks-stats.json:
+ *  maxChunkChars=1800). Đo được: embedding 0.6B (file 1,2 GB) chiếm 5.664 MiB —
+ *  ~4,5 GB là buffer. 1024 cho biên an toàn ~70%. */
+const EMBED_CTX = (() => {
+  const raw = Number(process.env.GGUF_EMBED_CTX);
+  return Number.isFinite(raw) && raw >= 256 ? Math.floor(raw) : 1024;
+})();
+
 /** TASK A — Basename of the configured fast model (GGUF_FAST_MODEL), sans ".gguf". Empty if unset. */
 const GGUF_FAST_MODEL_BASENAME = (() => {
   const v = (process.env.GGUF_FAST_MODEL || "").trim();
@@ -2259,7 +2268,7 @@ async function getEmbeddingContext(loaded: LoadedModel): Promise<any> {
   if (loaded.embeddingContext) return loaded.embeddingContext;
   try {
     loaded.embeddingContext = await loaded.model.createEmbeddingContext({
-      contextSize: "auto",
+      contextSize: EMBED_CTX,
       batchSize: loaded.config.batchSize ?? 512,
     });
   } catch (err: any) {
