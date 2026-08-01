@@ -723,22 +723,36 @@ public sealed class OpcUaDriverWriteTests
             OpcUaLoopbackHarness.BuildWritableMap("PLC-OU-CALL-DISPOSE", server.EndpointUrl), pkiDir: pkiRoot,
             operationTimeoutMs: 30_000);
 
+        // 🔴 backlog-test-deadlines — the stuck command gets a token of its own, signalled by the `finally`.
+        // It was launched with `CancellationToken.None`, so on the timeout branch of the `Task.WhenAny` below
+        // `Assert.Same` failed and left a live OPC-UA call parked against a disposed driver with nothing able
+        // to end it. The token is never signalled before the command returns on the green path — DisposeAsync
+        // above is still what unblocks it, and the Indeterminate assertion still observes that path.
+        using var stuckCommand = new CancellationTokenSource();
         var commandTask = driver.InvokeCommandAsync(
-            new CommandRequest("start-cycle", new Dictionary<string, object> { ["speed"] = 1L }), CancellationToken.None);
-        await Task.Delay(TimeSpan.FromMilliseconds(500)); // let the call genuinely start and reach the server.
+            new CommandRequest("start-cycle", new Dictionary<string, object> { ["speed"] = 1L }), stuckCommand.Token);
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(500)); // let the call genuinely start and reach the server.
 
-        var stopwatch = Stopwatch.StartNew();
-        await driver.DisposeAsync();
-        stopwatch.Stop();
+            var stopwatch = Stopwatch.StartNew();
+            await driver.DisposeAsync();
+            stopwatch.Stop();
 
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2),
-            $"DisposeAsync took {stopwatch.Elapsed} while a command was still stuck mid-flight, bounded by a " +
-            "30s operation timeout — disposal must never wait on an in-flight command, not even boundedly.");
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2),
+                $"DisposeAsync took {stopwatch.Elapsed} while a command was still stuck mid-flight, bounded by a " +
+                "30s operation timeout — disposal must never wait on an in-flight command, not even boundedly.");
 
-        var completed = await Task.WhenAny(commandTask, Task.Delay(TimeSpan.FromSeconds(5)));
-        Assert.Same(commandTask, completed);
-        var result = await commandTask;
-        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+            var completed = await Task.WhenAny(commandTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.Same(commandTask, completed);
+            var result = await commandTask;
+            Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+        }
+        finally
+        {
+            stuckCommand.Cancel();
+            try { await commandTask; } catch { /* teardown */ }
+        }
 
         await Task.Delay(15_200);
     }
@@ -784,26 +798,39 @@ public sealed class OpcUaDriverWriteTests
             }
         });
 
-        // Deterministic (not a wall-clock guess): wait until the poll's OWN read is genuinely in flight
-        // before issuing the write, so this scenario really does exercise "a write mid-poll".
-        await pollReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.False(pollTask.IsCompleted, "the poll must still be mid-flight when the write below is issued.");
+        // 🔴 backlog-test-deadlines — `pollCts.Cancel(); await pollTask;` used to be the last two statements of
+        // the method, BELOW four assertions, and `Assert.True(pollCompleted, ...)` fires precisely when the
+        // `Task.WhenAny` above it lost. So the one case that assertion exists to report was also the one case
+        // that abandoned a live `driver.ReadAsync` enumeration — and OpcUaDriver.ReadAsync swallows
+        // non-cancellation faults and keeps looping, so the abandoned task went on spinning against a driver
+        // the `await using` was about to dispose. Cancel-and-join now happens in a `finally`; the WhenAny
+        // remains as the thing that MEASURES whether the poll finished, but no longer decides whether it is
+        // cleaned up.
+        try
+        {
+            // Deterministic (not a wall-clock guess): wait until the poll's OWN read is genuinely in flight
+            // before issuing the write, so this scenario really does exercise "a write mid-poll".
+            await pollReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.False(pollTask.IsCompleted, "the poll must still be mid-flight when the write below is issued.");
 
-        // OpcUaDriver never blocks THIS call behind the poll itself — _sessionLock (see the class doc
-        // comment) only guards the brief "ensure a live session" step, already satisfied by the time the
-        // poll started reading, so this proceeds straight to WriteAsync. Whatever happens next (genuine
-        // concurrent dispatch, or queuing behind the poll's own read at the SERVER) is safe either way.
-        var writeResult = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 77.0), CancellationToken.None);
+            // OpcUaDriver never blocks THIS call behind the poll itself — _sessionLock (see the class doc
+            // comment) only guards the brief "ensure a live session" step, already satisfied by the time the
+            // poll started reading, so this proceeds straight to WriteAsync. Whatever happens next (genuine
+            // concurrent dispatch, or queuing behind the poll's own read at the SERVER) is safe either way.
+            var writeResult = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 77.0), CancellationToken.None);
 
-        var pollCompleted = await Task.WhenAny(pollTask, Task.Delay(TimeSpan.FromSeconds(10))) == pollTask;
+            var pollCompleted = await Task.WhenAny(pollTask, Task.Delay(TimeSpan.FromSeconds(10))) == pollTask;
 
-        Assert.Equal(WriteOutcome.Applied, writeResult.Outcome);
-        Assert.Equal(77.0, (double)server.GetVariableValue("Speed"), precision: 10);
-        Assert.True(pollCompleted, "the poll should still complete correctly even with a write racing it mid-flight.");
-        Assert.NotNull(reading);
-
-        pollCts.Cancel();
-        try { await pollTask; } catch (OperationCanceledException) { }
+            Assert.Equal(WriteOutcome.Applied, writeResult.Outcome);
+            Assert.Equal(77.0, (double)server.GetVariableValue("Speed"), precision: 10);
+            Assert.True(pollCompleted, "the poll should still complete correctly even with a write racing it mid-flight.");
+            Assert.NotNull(reading);
+        }
+        finally
+        {
+            pollCts.Cancel();
+            try { await pollTask; } catch (OperationCanceledException) { }
+        }
     }
 
     [Fact]
@@ -820,25 +847,37 @@ public sealed class OpcUaDriverWriteTests
             OpcUaLoopbackHarness.BuildWritableMap("PLC-OU-POLL-MID-WRITE", server.EndpointUrl, pollIntervalMs: 30_000),
             pkiDir: pkiRoot, operationTimeoutMs: 30_000);
 
-        var writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 88.0), CancellationToken.None);
-
-        // Deterministic: wait until the write's own request is genuinely in flight before polling.
-        await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.False(writeTask.IsCompleted, "the write must still be mid-flight when the poll below runs.");
-
-        using var pollCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        DeviceReading? reading = null;
-        await foreach (var r in driver.ReadAsync(pollCts.Token))
+        // 🔴 backlog-test-deadlines — the mirror of the test above. `writeTask` is a live OPC-UA call that
+        // nothing joined unless every step below succeeded: `writeStarted.Task.WaitAsync(10s)` throwing, the
+        // `Assert.False`, the 10s `pollCts` firing out of the `await foreach`, or `Assert.NotNull(reading)`
+        // all returned from the method with the write still in flight against a driver about to be disposed.
+        using var stuckWrite = new CancellationTokenSource();
+        var writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 88.0), stuckWrite.Token);
+        try
         {
-            reading = r;
-            break;
+            // Deterministic: wait until the write's own request is genuinely in flight before polling.
+            await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.False(writeTask.IsCompleted, "the write must still be mid-flight when the poll below runs.");
+
+            using var pollCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            DeviceReading? reading = null;
+            await foreach (var r in driver.ReadAsync(pollCts.Token))
+            {
+                reading = r;
+                break;
+            }
+
+            Assert.NotNull(reading);
+
+            var writeResult = await writeTask;
+            Assert.Equal(WriteOutcome.Applied, writeResult.Outcome);
+            Assert.Equal(88.0, (double)server.GetVariableValue("Speed"), precision: 10);
         }
-
-        Assert.NotNull(reading);
-
-        var writeResult = await writeTask;
-        Assert.Equal(WriteOutcome.Applied, writeResult.Outcome);
-        Assert.Equal(88.0, (double)server.GetVariableValue("Speed"), precision: 10);
+        finally
+        {
+            stuckWrite.Cancel();
+            try { await writeTask; } catch { /* teardown */ }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -868,24 +907,33 @@ public sealed class OpcUaDriverWriteTests
             }
         });
 
-        // Issued essentially simultaneously — the driver has NO session yet, so both this write and the
-        // poll's own first iteration race to call EnsureSessionAsync at roughly the same time.
-        var writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 99.0), CancellationToken.None);
+        // 🔴 backlog-test-deadlines — same shape as the two tests above: `pollCts.Cancel(); await pollTask;`
+        // was the tail of the method, below five assertions including `Assert.True(pollCompleted, ...)`, which
+        // is exactly the assertion that fires when the `Task.WhenAny` lost and the poll is therefore STILL
+        // RUNNING. Teardown is now in a `finally`.
+        try
+        {
+            // Issued essentially simultaneously — the driver has NO session yet, so both this write and the
+            // poll's own first iteration race to call EnsureSessionAsync at roughly the same time.
+            var writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 99.0), CancellationToken.None);
 
-        var writeResult = await writeTask;
-        var pollCompleted = await Task.WhenAny(pollTask, Task.Delay(TimeSpan.FromSeconds(15))) == pollTask;
+            var writeResult = await writeTask;
+            var pollCompleted = await Task.WhenAny(pollTask, Task.Delay(TimeSpan.FromSeconds(15))) == pollTask;
 
-        Assert.True(pollCompleted, "the poll should yield its first reading within a reasonable bound.");
-        Assert.Equal(WriteOutcome.Applied, writeResult.Outcome);
-        Assert.NotNull(reading);
-        Assert.Equal(99.0, (double)server.GetVariableValue("Speed"), precision: 10);
+            Assert.True(pollCompleted, "the poll should yield its first reading within a reasonable bound.");
+            Assert.Equal(WriteOutcome.Applied, writeResult.Outcome);
+            Assert.NotNull(reading);
+            Assert.Equal(99.0, (double)server.GetVariableValue("Speed"), precision: 10);
 
-        // The load-bearing assertion: EXACTLY one session was ever created, even though a poll iteration and
-        // a write raced to reconnect at the same time on a driver with no session yet — _sessionLock's whole
-        // reason for existing (see OpcUaDriver's own "Concurrency" doc-comment remarks).
-        Assert.Equal(1, server.SessionCreatedCount);
-
-        pollCts.Cancel();
-        try { await pollTask; } catch (OperationCanceledException) { }
+            // The load-bearing assertion: EXACTLY one session was ever created, even though a poll iteration and
+            // a write raced to reconnect at the same time on a driver with no session yet — _sessionLock's whole
+            // reason for existing (see OpcUaDriver's own "Concurrency" doc-comment remarks).
+            Assert.Equal(1, server.SessionCreatedCount);
+        }
+        finally
+        {
+            pollCts.Cancel();
+            try { await pollTask; } catch (OperationCanceledException) { }
+        }
     }
 }

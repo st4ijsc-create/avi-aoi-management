@@ -275,6 +275,17 @@ public sealed class ModbusTcpDriverWriteTests
             catch { /* deadline firing, or listener.Stop() below — both expected teardown */ }
         });
 
+        // 🔴 backlog-test-deadlines — the STUCK WRITE gets a cancellation token of its own, signalled by the
+        // `finally` below. It used to be started with `CancellationToken.None`, so the only thing that could
+        // ever unblock it was `driver.DisposeAsync()` on the success path; an assertion failure between the
+        // launch and the `await writeTask` left a live `ModbusTcpDriver` connection parked on a socket read
+        // that nothing would ever complete. The token is NEVER signalled before the write returns on the green
+        // path (DisposeAsync above is still what unblocks it, and the assertions below still observe the
+        // GENERIC failure catch, not the cancellation-shaped one) — it exists purely so the teardown has a
+        // seam to pull when an assertion fails.
+        using var stuckWrite = new CancellationTokenSource();
+        Task<SetpointWriteResult>? writeTask = null;
+
         // 🔴 Closeout round (B-3) — teardown in a `finally`; see the first test in this file for why the
         // placement, not the mechanism, was the defect.
         try
@@ -283,7 +294,7 @@ public sealed class ModbusTcpDriverWriteTests
             // waited for this write, it would take ~30s, not merely be slow.
             var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-WRITE-DISPOSE", readTimeoutMs: 30_000));
 
-            var writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
+            writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), stuckWrite.Token);
             await Task.Delay(TimeSpan.FromMilliseconds(200)); // let the write genuinely start and reach the connect+I/O phase.
 
             var stopwatch = Stopwatch.StartNew();
@@ -298,9 +309,9 @@ public sealed class ModbusTcpDriverWriteTests
             Assert.Same(writeTask, completed);
             var result = await writeTask;
             Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
-            // Fix round 1 (review) — content, not just the outcome enum. NOTE this write's own `ct` is
-            // CancellationToken.None (DisposeAsync(), not the write's token, is what tears the connection down),
-            // so `ct.IsCancellationRequested` is false throughout — this lands in the GENERIC failure catch, not
+            // Fix round 1 (review) — content, not just the outcome enum. NOTE `stuckWrite` is still UNSIGNALLED
+            // at this point (DisposeAsync(), not the write's token, is what tears the connection down), so
+            // `ct.IsCancellationRequested` is false throughout — this lands in the GENERIC failure catch, not
             // the cancellation-shaped one, and must still produce the real message, not the outer backstop's
             // generic "unexpected failure" (which is exactly what Critical #2's NullReferenceException produced
             // instead, before this fix).
@@ -308,6 +319,12 @@ public sealed class ModbusTcpDriverWriteTests
         }
         finally
         {
+            stuckWrite.Cancel();
+            if (writeTask is not null)
+            {
+                try { await writeTask; } catch { /* teardown */ }
+            }
+
             listener.Stop();
             deadline.Cancel();
             try { await acceptTask; } catch { /* teardown */ }
@@ -329,7 +346,17 @@ public sealed class ModbusTcpDriverWriteTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
         var acceptCount = 0;
-        var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // 🔴 backlog-test-deadlines — the accepted connections are HELD in a collection and disposed by the
+        // teardown, instead of being parked on a fire-and-forget `Task.Run(Task.Delay(Infinite, deadline.Token))`
+        // each. The old arrangement leaked deterministically, on the GREEN path, on every run: `deadline` was
+        // Dispose()d (never Cancel()ed) at the very end of the method, and disposing a CancellationTokenSource
+        // does not cancel it — so both of those delays waited on a token that could no longer ever fire, their
+        // `finally { accepted.Dispose(); }` never ran, and two live TcpClients survived the test. Holding the
+        // connections in a list keeps the accept loop exactly as free as the background tasks did (it moves
+        // straight on to the next accept) while giving the teardown something it can actually close.
+        var held = new List<TcpClient>();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var serverTask = Task.Run(async () =>
         {
             try
@@ -337,40 +364,50 @@ public sealed class ModbusTcpDriverWriteTests
                 while (!deadline.IsCancellationRequested)
                 {
                     var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
+                    lock (held) held.Add(accepted);
                     Interlocked.Increment(ref acceptCount);
-                    // Never respond, never read further — hold EACH accepted connection open forever on its
-                    // OWN background task (never blocking this loop), so the driver's own write against it
-                    // times out client-side. If the driver (bug) reuses this SAME connection for its NEXT
-                    // write, no second accept ever happens here; if it (fix) reconnects from scratch, this
-                    // loop is free to accept a genuinely new one.
-                    _ = Task.Run(async () =>
-                    {
-                        try { await Task.Delay(Timeout.Infinite, deadline.Token).ConfigureAwait(false); }
-                        catch { /* deadline/teardown */ }
-                        finally { try { accepted.Dispose(); } catch { } }
-                    });
+                    // Never respond, never read further — each accepted connection is simply held open, so the
+                    // driver's own write against it times out client-side. If the driver (bug) reuses this SAME
+                    // connection for its NEXT write, no second accept ever happens here; if it (fix) reconnects
+                    // from scratch, this loop is free to accept a genuinely new one.
                 }
             }
             catch { /* deadline firing, or listener.Stop() below — both expected teardown */ }
         });
 
-        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-DESYNC", readTimeoutMs: 300));
+        try
+        {
+            await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-DESYNC", readTimeoutMs: 300));
 
-        var r1 = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 111.0), CancellationToken.None);
-        Assert.Equal(WriteOutcome.Indeterminate, r1.Outcome);
+            var r1 = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 111.0), CancellationToken.None);
+            Assert.Equal(WriteOutcome.Indeterminate, r1.Outcome);
 
-        var r2 = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 222.0), CancellationToken.None);
-        Assert.Equal(WriteOutcome.Indeterminate, r2.Outcome); // the server never responds to either — both time out.
-
-        listener.Stop();
-        try { await serverTask; } catch { /* teardown */ }
+            var r2 = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 222.0), CancellationToken.None);
+            Assert.Equal(WriteOutcome.Indeterminate, r2.Outcome); // the server never responds to either — both time out.
+        }
+        finally
+        {
+            listener.Stop();
+            deadline.Cancel();
+            try { await serverTask; } catch { /* teardown */ }
+            lock (held)
+            {
+                foreach (var client in held)
+                {
+                    try { client.Dispose(); } catch { /* teardown */ }
+                }
+            }
+        }
 
         // The load-bearing assertion (Fix round 1, Critical #1): TWO separate connections, one per write —
         // reusing a connection whose in-flight response may still arrive late is the exact desync hazard
         // this fix closes. Mutation-tested: removing the DisposeConnection() calls this fix added reproduces
         // acceptCount == 1 (see the task report's "Fix round 1" section).
+        //
+        // Deliberately BELOW the join above, not before it: the client's connect can complete out of the
+        // listen backlog before AcceptTcpClientAsync returns, so `acceptCount` is only final once the accept
+        // loop has actually ended. That ordering (join, then assert) is the reference shape.
         Assert.Equal(2, Volatile.Read(ref acceptCount));
-        deadline.Dispose();
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -398,21 +435,25 @@ public sealed class ModbusTcpDriverWriteTests
             // driver` at the end of this test method runs), so a wait with no deadline of its own would
             // block forever, hanging this whole test.
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            using var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
-            var stream = accepted.GetStream();
+            try
+            {
+                using var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
+                var stream = accepted.GetStream();
 
-            // The ASSERT (coil = true) half: ack it immediately — the coil IS confirmed asserted.
-            var assertRequest = new byte[12];
-            await ReadExactAsync(stream, assertRequest, deadline.Token).ConfigureAwait(false);
-            assertReceived.TrySetResult();
-            await stream.WriteAsync(assertRequest, deadline.Token).ConfigureAwait(false); // FC05 ack = verbatim echo.
+                // The ASSERT (coil = true) half: ack it immediately — the coil IS confirmed asserted.
+                var assertRequest = new byte[12];
+                await ReadExactAsync(stream, assertRequest, deadline.Token).ConfigureAwait(false);
+                assertReceived.TrySetResult();
+                await stream.WriteAsync(assertRequest, deadline.Token).ConfigureAwait(false); // FC05 ack = verbatim echo.
 
-            // The RESET (coil = false) half: signal it was RECEIVED (so the test knows the driver is now
-            // genuinely stuck waiting on ITS response), then go silent until the deadline — never ack it.
-            var resetRequest = new byte[12];
-            await ReadExactAsync(stream, resetRequest, deadline.Token).ConfigureAwait(false);
-            resetReceived.TrySetResult();
-            try { await Task.Delay(Timeout.Infinite, deadline.Token).ConfigureAwait(false); } catch { /* deadline */ }
+                // The RESET (coil = false) half: signal it was RECEIVED (so the test knows the driver is now
+                // genuinely stuck waiting on ITS response), then go silent until the deadline — never ack it.
+                var resetRequest = new byte[12];
+                await ReadExactAsync(stream, resetRequest, deadline.Token).ConfigureAwait(false);
+                resetReceived.TrySetResult();
+                await Task.Delay(Timeout.Infinite, deadline.Token).ConfigureAwait(false);
+            }
+            catch { /* the deadline firing, or listener.Stop() in the teardown — both expected */ }
         });
 
         // Deliberately a LONG bound (30s) — same reasoning as the setpoint cancellation test: if
@@ -422,28 +463,40 @@ public sealed class ModbusTcpDriverWriteTests
         using var cts = new CancellationTokenSource();
         var commandTask = driver.InvokeCommandAsync(new CommandRequest("start-cycle"), cts.Token);
 
-        // Wait until the RESET write's own request has already reached the wire — i.e. the pre-reset
-        // `ct.IsCancellationRequested` check already passed, and the driver is now genuinely blocked waiting
-        // for a response that will never come — before cancelling.
-        await resetReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        cts.Cancel();
+        // 🔴 backlog-test-deadlines — every one of the six assertions below used to sit ABOVE the teardown, so
+        // any of them failing (and `resetReceived.Task.WaitAsync` timing out likewise) left `commandTask`
+        // holding a live Modbus connection with nothing left to cancel it, and left the listener accepting.
+        // `cts` is the command's OWN token, so cancelling it in the `finally` unblocks the stuck reset write
+        // through the driver's `ct.Register(DisposeConnection)` — cancel, then join, never abandon.
+        try
+        {
+            // Wait until the RESET write's own request has already reached the wire — i.e. the pre-reset
+            // `ct.IsCancellationRequested` check already passed, and the driver is now genuinely blocked waiting
+            // for a response that will never come — before cancelling.
+            await resetReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            cts.Cancel();
 
-        var result = await commandTask;
+            var result = await commandTask;
 
-        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
-        Assert.Null(result.RejectionReason);
-        // The load-bearing assertion (Fix round 1, Critical #2 + Important #1): the coil address and its
-        // UNCONFIRMED rest state must be named — the exact information a NullReferenceException in the
-        // Transport.Retries restore used to destroy, replacing it with a generic, useless message. Mutation-
-        // tested: removing the try/catch this fix added around that restore reproduces "unexpected failure:
-        // Object reference not set to an instance of an object." here instead (see the task report).
-        Assert.Contains("coil 3", result.Detail, StringComparison.Ordinal);
-        Assert.Contains("unconfirmed", result.Detail, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("unexpected failure", result.Detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("Object reference", result.Detail, StringComparison.Ordinal);
-
-        listener.Stop();
-        try { await serverTask; } catch { /* teardown */ }
+            Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+            Assert.Null(result.RejectionReason);
+            // The load-bearing assertion (Fix round 1, Critical #2 + Important #1): the coil address and its
+            // UNCONFIRMED rest state must be named — the exact information a NullReferenceException in the
+            // Transport.Retries restore used to destroy, replacing it with a generic, useless message. Mutation-
+            // tested: removing the try/catch this fix added around that restore reproduces "unexpected failure:
+            // Object reference not set to an instance of an object." here instead (see the task report).
+            Assert.Contains("coil 3", result.Detail, StringComparison.Ordinal);
+            Assert.Contains("unconfirmed", result.Detail, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("unexpected failure", result.Detail, StringComparison.Ordinal);
+            Assert.DoesNotContain("Object reference", result.Detail, StringComparison.Ordinal);
+        }
+        finally
+        {
+            cts.Cancel();
+            try { await commandTask; } catch { /* teardown */ }
+            listener.Stop();
+            try { await serverTask; } catch { /* teardown */ }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -460,11 +513,19 @@ public sealed class ModbusTcpDriverWriteTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
         var requestCount = 0;
+
+        // 🔴 backlog-test-deadlines — the accept used to be TOKEN-LESS, and the ONE deadline that bounded the
+        // read loop was constructed AFTER it. So if the driver never connected (a construction failure, a port
+        // race), this task parked on an accept nothing would ever complete; and because `listener.Stop()` sat
+        // below the outcome assertion, an ordinary red test left it parked. The deadline is now created FIRST
+        // and threaded into the accept, and `CancelAfter` starts its clock at exactly the moment it used to
+        // start — after a connection arrives — so the 2s read window is unchanged to the millisecond.
+        using var deadline = new CancellationTokenSource();
         var serverTask = Task.Run(async () =>
         {
             try
             {
-                using var accepted = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+                using var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
                 var stream = accepted.GetStream();
 
                 // Bounded by its OWN internal deadline (not by the caller ever closing the connection) —
@@ -473,7 +534,7 @@ public sealed class ModbusTcpDriverWriteTests
                 // loop with no deadline of its own would block in ReadExactAsync forever waiting for bytes
                 // that will never arrive, hanging this whole test. A generous 2s window is ample time for a
                 // would-be RETRIED request to arrive if the fix under test were absent.
-                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                deadline.CancelAfter(TimeSpan.FromSeconds(2));
                 while (!deadline.IsCancellationRequested)
                 {
                     var request = new byte[12];
@@ -490,16 +551,23 @@ public sealed class ModbusTcpDriverWriteTests
             catch { /* teardown, including the deadline above firing */ }
         });
 
-        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-WRITE-NORETRY", readTimeoutMs: 300));
+        try
+        {
+            await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-WRITE-NORETRY", readTimeoutMs: 300));
 
-        var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
-        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+            var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
+            Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
 
-        // Generous extra wait so a would-be second (retried) request has every opportunity to arrive before
-        // this test asserts against it.
-        await Task.Delay(TimeSpan.FromMilliseconds(500));
-        listener.Stop();
-        try { await serverTask; } catch { /* teardown */ }
+            // Generous extra wait so a would-be second (retried) request has every opportunity to arrive before
+            // this test asserts against it.
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+        finally
+        {
+            listener.Stop();
+            deadline.Cancel();
+            try { await serverTask; } catch { /* teardown */ }
+        }
 
         Assert.Equal(1, Volatile.Read(ref requestCount));
     }
@@ -517,14 +585,19 @@ public sealed class ModbusTcpDriverWriteTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
         var requestCount = 0;
+
+        // 🔴 backlog-test-deadlines — same repair as the setpoint sibling above: the deadline is constructed
+        // BEFORE the accept and threaded into it, `CancelAfter` starts the same 2s read window at the same
+        // instant it always did, and the teardown moved into a `finally`.
+        using var deadline = new CancellationTokenSource();
         var serverTask = Task.Run(async () =>
         {
             try
             {
-                using var accepted = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+                using var accepted = await listener.AcceptTcpClientAsync(deadline.Token).ConfigureAwait(false);
                 var stream = accepted.GetStream();
 
-                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                deadline.CancelAfter(TimeSpan.FromSeconds(2));
                 while (!deadline.IsCancellationRequested)
                 {
                     var request = new byte[12];
@@ -540,14 +613,21 @@ public sealed class ModbusTcpDriverWriteTests
             catch { /* teardown, including the deadline above firing */ }
         });
 
-        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-CMD-NORETRY", readTimeoutMs: 300));
+        try
+        {
+            await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-CMD-NORETRY", readTimeoutMs: 300));
 
-        var result = await driver.InvokeCommandAsync(new CommandRequest("start-cycle"), CancellationToken.None);
-        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+            var result = await driver.InvokeCommandAsync(new CommandRequest("start-cycle"), CancellationToken.None);
+            Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
 
-        await Task.Delay(TimeSpan.FromMilliseconds(500));
-        listener.Stop();
-        try { await serverTask; } catch { /* teardown */ }
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+        finally
+        {
+            listener.Stop();
+            deadline.Cancel();
+            try { await serverTask; } catch { /* teardown */ }
+        }
 
         Assert.Equal(1, Volatile.Read(ref requestCount));
     }
@@ -564,17 +644,36 @@ public sealed class ModbusTcpDriverWriteTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
-        var recordedTask = Task.Run(() => RecordCoilWritesAsync(listener, requestsToHandle: 2));
+        // 🔴 backlog-test-deadlines — the recorder used a TOKEN-LESS accept and read with
+        // `CancellationToken.None`, and `listener.Stop()` was the last statement of the test, below six
+        // assertions. Two distinct abandons: any of those assertions failing stranded the recorder parked on a
+        // socket read forever holding an accepted TcpClient; and `await recordedTask` itself had NO bound at
+        // all, so a command that put fewer than two requests on the wire hung the test rather than failing it.
+        using var recorderCts = new CancellationTokenSource();
+        var recordedTask = Task.Run(() => RecordCoilWritesAsync(listener, requestsToHandle: 2, recorderCts.Token));
 
-        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-CMD-PULSE"));
+        List<(byte FunctionCode, ushort Address, ushort Value)> recorded;
+        try
+        {
+            await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-CMD-PULSE"));
 
-        var result = await driver.InvokeCommandAsync(new CommandRequest("start-cycle"), CancellationToken.None);
+            var result = await driver.InvokeCommandAsync(new CommandRequest("start-cycle"), CancellationToken.None);
 
-        Assert.Equal("start-cycle", result.Command);
-        Assert.Equal(WriteOutcome.Applied, result.Outcome);
-        Assert.Null(result.RejectionReason);
+            Assert.Equal("start-cycle", result.Command);
+            Assert.Equal(WriteOutcome.Applied, result.Outcome);
+            Assert.Null(result.RejectionReason);
 
-        var recorded = await recordedTask;
+            // Applied means the driver observed BOTH acks, so the recorder has already handled its two
+            // requests and returned — this await cannot block once the assertion above has passed.
+            recorded = await recordedTask;
+        }
+        finally
+        {
+            recorderCts.Cancel();
+            listener.Stop();
+            try { await recordedTask; } catch { /* teardown */ }
+        }
+
         Assert.Equal(2, recorded.Count);
 
         const byte writeSingleCoilFunctionCode = 5;
@@ -585,8 +684,6 @@ public sealed class ModbusTcpDriverWriteTests
 
         Assert.Equal((ushort)0xFF00, recorded[0].Value); // assert TRUE
         Assert.Equal((ushort)0x0000, recorded[1].Value); // then reset FALSE
-
-        listener.Stop();
     }
 
     [Fact]
@@ -621,27 +718,41 @@ public sealed class ModbusTcpDriverWriteTests
         var releasePollResponse = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var writeRequestReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // 🔴 backlog-test-deadlines — this was the worst abandon in the file, and it had THREE parked awaits,
+        // none of them cancellable: a token-less accept, two `ReadExactAsync(..., CancellationToken.None)`
+        // calls, and `await releasePollResponse.Task` on a TCS that only the success path ever completes. All
+        // four teardown statements lived at the very bottom of the method, below every assertion. So a red
+        // `Assert.NotSame`/`Assert.False`/`Assert.Equal` left this task parked FOREVER holding an accepted
+        // TcpClient, left `pollTask` enumerating a live driver, and left the listener up — the exact
+        // "stopped but not idle" host the verify script's CPU heuristic structurally cannot see. One token
+        // now bounds every server-side await, and the teardown is in a `finally`.
+        using var serverCts = new CancellationTokenSource();
         var serverTask = Task.Run(async () =>
         {
-            using var accepted = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
-            var stream = accepted.GetStream();
+            var ct = serverCts.Token;
+            try
+            {
+                using var accepted = await listener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
+                var stream = accepted.GetStream();
 
-            // First request: the poll loop's own read of register 5 ("speed"). Deliberately held — the
-            // response is withheld until the test explicitly releases it, simulating "the poll is slow".
-            var readRequest = new byte[12];
-            await ReadExactAsync(stream, readRequest, CancellationToken.None).ConfigureAwait(false);
-            pollRequestReceived.TrySetResult();
-            await releasePollResponse.Task.ConfigureAwait(false);
+                // First request: the poll loop's own read of register 5 ("speed"). Deliberately held — the
+                // response is withheld until the test explicitly releases it, simulating "the poll is slow".
+                var readRequest = new byte[12];
+                await ReadExactAsync(stream, readRequest, ct).ConfigureAwait(false);
+                pollRequestReceived.TrySetResult();
+                await releasePollResponse.Task.WaitAsync(ct).ConfigureAwait(false);
 
-            var readAck = new byte[] { readRequest[0], readRequest[1], 0x00, 0x00, 0x00, 0x05, readRequest[6], readRequest[7], 0x02, 0x00, 0x0A };
-            await stream.WriteAsync(readAck).ConfigureAwait(false);
+                var readAck = new byte[] { readRequest[0], readRequest[1], 0x00, 0x00, 0x00, 0x05, readRequest[6], readRequest[7], 0x02, 0x00, 0x0A };
+                await stream.WriteAsync(readAck, ct).ConfigureAwait(false);
 
-            // Second request: the write. Must not arrive until AFTER the poll's own response above went out
-            // — proven by the test itself, not assumed here.
-            var writeRequest = new byte[12];
-            await ReadExactAsync(stream, writeRequest, CancellationToken.None).ConfigureAwait(false);
-            writeRequestReceived.TrySetResult();
-            await stream.WriteAsync(writeRequest).ConfigureAwait(false); // FC06 ack = verbatim echo, per spec.
+                // Second request: the write. Must not arrive until AFTER the poll's own response above went out
+                // — proven by the test itself, not assumed here.
+                var writeRequest = new byte[12];
+                await ReadExactAsync(stream, writeRequest, ct).ConfigureAwait(false);
+                writeRequestReceived.TrySetResult();
+                await stream.WriteAsync(writeRequest, ct).ConfigureAwait(false); // FC06 ack = verbatim echo, per spec.
+            }
+            catch { /* teardown — the token firing, or listener.Stop() */ }
         });
 
         await using var driver = new ModbusTcpDriver(
@@ -656,29 +767,46 @@ public sealed class ModbusTcpDriverWriteTests
             }
         });
 
-        await pollRequestReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        // The write is launched inside the `try` but declared outside it, so the `finally` can join it too —
+        // it holds the same connection the poll does.
+        using var writeCts = new CancellationTokenSource();
+        Task<SetpointWriteResult>? writeTask = null;
+        try
+        {
+            await pollRequestReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Issue the write WHILE the poll is deliberately held mid-flight (its response still withheld).
-        var writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
+            // Issue the write WHILE the poll is deliberately held mid-flight (its response still withheld).
+            writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), writeCts.Token);
 
-        // The load-bearing assertion: the write's own request must NOT reach the wire while a poll
-        // iteration still holds the connection — it is queued behind _ioLock, not racing it.
-        var maybeWriteArrived = await Task.WhenAny(writeRequestReceived.Task, Task.Delay(TimeSpan.FromMilliseconds(500)));
-        Assert.NotSame(writeRequestReceived.Task, maybeWriteArrived);
-        Assert.False(writeTask.IsCompleted, "the write must not complete while a poll iteration is still holding the connection.");
+            // The load-bearing assertion: the write's own request must NOT reach the wire while a poll
+            // iteration still holds the connection — it is queued behind _ioLock, not racing it.
+            var maybeWriteArrived = await Task.WhenAny(writeRequestReceived.Task, Task.Delay(TimeSpan.FromMilliseconds(500)));
+            Assert.NotSame(writeRequestReceived.Task, maybeWriteArrived);
+            Assert.False(writeTask.IsCompleted, "the write must not complete while a poll iteration is still holding the connection.");
 
-        // Now let the poll's response go out, finishing that iteration and releasing _ioLock.
-        releasePollResponse.TrySetResult();
+            // Now let the poll's response go out, finishing that iteration and releasing _ioLock.
+            releasePollResponse.TrySetResult();
 
-        // NOW the write's own request reaches the wire, and the write completes correctly.
-        await writeRequestReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var writeResult = await writeTask;
-        Assert.Equal(WriteOutcome.Applied, writeResult.Outcome);
+            // NOW the write's own request reaches the wire, and the write completes correctly.
+            await writeRequestReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var writeResult = await writeTask;
+            Assert.Equal(WriteOutcome.Applied, writeResult.Outcome);
+        }
+        finally
+        {
+            writeCts.Cancel();
+            if (writeTask is not null)
+            {
+                try { await writeTask; } catch { /* teardown */ }
+            }
 
-        pollCts.Cancel();
-        try { await pollTask; } catch (OperationCanceledException) { }
-        listener.Stop();
-        try { await serverTask; } catch { /* teardown */ }
+            pollCts.Cancel();
+            try { await pollTask; } catch (OperationCanceledException) { }
+
+            serverCts.Cancel();
+            listener.Stop();
+            try { await serverTask; } catch { /* teardown */ }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -702,27 +830,39 @@ public sealed class ModbusTcpDriverWriteTests
         return true;
     }
 
-    private static async Task<List<(byte FunctionCode, ushort Address, ushort Value)>> RecordCoilWritesAsync(TcpListener listener, int requestsToHandle)
+    /// <summary>🔴 <paramref name="ct"/> is threaded into EVERY await here, so the caller's `finally` can end
+    /// this task rather than abandon it holding a live connection. Returns whatever it recorded before the
+    /// cancellation rather than throwing, so a cancelled teardown is not itself an error.</summary>
+    private static async Task<List<(byte FunctionCode, ushort Address, ushort Value)>> RecordCoilWritesAsync(
+        TcpListener listener, int requestsToHandle, CancellationToken ct)
     {
         var recorded = new List<(byte, ushort, ushort)>();
-        using var accepted = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
-        var stream = accepted.GetStream();
-
-        for (var i = 0; i < requestsToHandle; i++)
+        try
         {
-            var request = new byte[12];
-            if (!await ReadExactAsync(stream, request, CancellationToken.None).ConfigureAwait(false))
+            using var accepted = await listener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
+            var stream = accepted.GetStream();
+
+            for (var i = 0; i < requestsToHandle; i++)
             {
-                break;
+                var request = new byte[12];
+                if (!await ReadExactAsync(stream, request, ct).ConfigureAwait(false))
+                {
+                    break;
+                }
+
+                var functionCode = request[7];
+                var address = (ushort)((request[8] << 8) | request[9]);
+                var value = (ushort)((request[10] << 8) | request[11]);
+                recorded.Add((functionCode, address, value));
+
+                // FC05 (Write Single Coil) ack is a verbatim echo of the request, per the Modbus spec.
+                await stream.WriteAsync(request, ct).ConfigureAwait(false);
             }
-
-            var functionCode = request[7];
-            var address = (ushort)((request[8] << 8) | request[9]);
-            var value = (ushort)((request[10] << 8) | request[11]);
-            recorded.Add((functionCode, address, value));
-
-            // FC05 (Write Single Coil) ack is a verbatim echo of the request, per the Modbus spec.
-            await stream.WriteAsync(request).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Teardown cancelled us — report what actually arrived rather than replacing the caller's own
+            // assertion failure with a cancellation.
         }
 
         return recorded;
