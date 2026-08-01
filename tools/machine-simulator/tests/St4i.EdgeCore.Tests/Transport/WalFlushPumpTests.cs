@@ -98,10 +98,27 @@ public sealed class WalFlushPumpTests
         using var live = LiveTransport.ForMachine("http://unit-test.invalid", "mk_test", "M1", queuePath, true, recordingHandler);
 
         var drainedCounts = new List<int>();
+
+        // 🔴🔴 Đợt C closeout round — SUBSCRIBE-AFTER-START. Same defect, same fix, as the one applied to
+        // `StoreAndForwardRestartSurvivalTests` in this diff; this is the SECOND independent instance and
+        // it is the one that actually went red, aborting a whole-suite run.
+        //
+        // `WalFlushPump`'s CONSTRUCTOR starts the drain loop (`_loop = Task.Run(...)`, WalFlushPump.cs:61)
+        // and `getLive` already returns a live transport, so the pump can drain on its very first 30 ms
+        // tick — which may land BEFORE the next statement attaches `BacklogDrained`. That drain is then
+        // raised into no subscriber, `drainedCounts.Sum()` is short by exactly it, `WaitUntilAsync` times
+        // out and the Assert.Equal below fails. Nothing is wrong with the pump: the test simply was not
+        // listening yet.
+        //
+        // 🔴 Fixed by ARMING, not by widening a bound — the pump's own timer is still the only thing that
+        // triggers the drain, which is the property this test exists to prove ("with no explicit send by
+        // the test"). It just cannot now drain before anyone is counting.
+        var armed = false;
         await using var pump = new WalFlushPump(
-            getLive: () => live,
+            getLive: () => Volatile.Read(ref armed) ? live : null,
             interval: TimeSpan.FromMilliseconds(30));
         pump.BacklogDrained += n => { lock (drainedCounts) drainedCounts.Add(n); };
+        Volatile.Write(ref armed, true); // only NOW can a tick drain anything
 
         await WaitUntilAsync(
             () => { lock (drainedCounts) return drainedCounts.Sum() >= keys.Length; },

@@ -39,18 +39,27 @@ public sealed class RelayNotificationChannelTests : IDisposable
     private const string CommandName = "sound-horn";
 
     /// <summary>
-    /// Smaller than the 2 s this channel ships with (see
-    /// <see cref="RelayNotificationChannel.DefaultMinWriteInterval"/>) so the bound can be MEASURED rather
-    /// than waited out — but deliberately NOT as small as possible.
+    /// The FLOOR under the flap-storm test's interval, not the interval itself — that is measured at run
+    /// time; see <see cref="UnderAFlapStorm_TheCoilWriteRateIsBounded_MeasuredInElapsedTime"/>.
     ///
-    /// <para>🔴 It must stay comfortably LARGER than one dispatch's own work (a config read, a policy
-    /// evaluation, a real driver call and an audit append — observed at roughly 25 ms idle and 100 ms under
-    /// full-suite load). If it does not, the elapsed floor in
-    /// <see cref="UnderAFlapStorm_TheCoilWriteRateIsBounded_MeasuredInElapsedTime"/> can be satisfied by the
-    /// WORK alone, and that test would then pass with the rate limiter deleted — a vacuous test of exactly
-    /// the kind this batch keeps catching. 400 ms leaves a 4x margin over the loaded figure. Lower it and
-    /// you must re-run mutation M-h to check the test still discriminates.</para></summary>
-    private static readonly TimeSpan FastInterval = TimeSpan.FromMilliseconds(400);
+    /// <para>Smaller than the 2 s this channel ships with (see
+    /// <see cref="RelayNotificationChannel.DefaultMinWriteInterval"/>) so the bound can be MEASURED rather
+    /// than waited out — but deliberately NOT as small as possible.</para>
+    ///
+    /// <para>🔴 The interval must stay comfortably LARGER than one dispatch's own work (a config read, a
+    /// policy evaluation, a real driver call and an audit append — observed at roughly 25 ms idle and
+    /// 100 ms under full-suite load). If it does not, two things break at once: the elapsed floor in that
+    /// test can be satisfied by the WORK alone (so it would pass with the rate limiter deleted — the
+    /// vacuity class this batch keeps catching), and the limiter legitimately never waits, so the
+    /// <c>RateLimited &gt; 0</c> smoke check fails while nothing is wrong.</para>
+    ///
+    /// <para>🔴 Closeout round (B-2): 400 ms used to be the interval outright, which made both of those
+    /// properties depend on an assumption about machine speed baked in as a constant — the same
+    /// machine-coupling that already forced one over-specified assertion in that test to be weakened. It is
+    /// now only the LOWER BOUND; the test measures a warm dispatch and takes
+    /// <c>max(400 ms, 4 x measured)</c>, so the 4x margin is a fact about the machine the test is running
+    /// on rather than about the machine it was written on.</para></summary>
+    private static readonly TimeSpan FastIntervalFloor = TimeSpan.FromMilliseconds(400);
 
     /// <summary>Effectively off, for the many tests whose subject is not the limiter.</summary>
     private static readonly TimeSpan NoInterval = TimeSpan.Zero;
@@ -646,7 +655,7 @@ public sealed class RelayNotificationChannelTests : IDisposable
     [Fact]
     public async Task UnderAFlapStorm_TheCoilWriteRateIsBounded_MeasuredInElapsedTime()
     {
-        const int Flaps = 5; // 10 transitions; at a 400 ms interval the floor is 3.6 s
+        const int Flaps = 5; // 10 transitions; at the 400 ms floor that is a 3.6 s elapsed floor
 
         var dir = NewTempDir();
         var store = new NotificationConfigStore(dir);
@@ -655,7 +664,47 @@ public sealed class RelayNotificationChannelTests : IDisposable
         var host = CreateHost();
         var driver = await StartWritableFleetAsync(host);
         var (audit, _) = NewAudit();
-        var channel = NewChannel(store, host, audit, interval: FastInterval);
+
+        // ─────────────────────────────────────────────────────────────────
+        // 🔴 Closeout round (B-2) — the interval is MEASURED against this machine, not asserted about it.
+        //
+        // Both of this test's real properties depend on `interval >> one dispatch's own work`: the elapsed
+        // floor below is only proof of the LIMITER if the WORK alone cannot satisfy it, and the
+        // `RateLimited > 0` smoke check at the bottom is only meaningful if the work finishes inside the
+        // cooldown. A fixed 400 ms encoded a guess about machine speed into both — and this test has
+        // already been bitten once by exactly that (see the long note at the bottom: an assertion that
+        // "every write after the first had to wait" was RIGHT about the limiter and WRONG about the
+        // machine, and had to be weakened under load).
+        //
+        // So: run a few warm dispatches with the limiter OFF, take the mean, and use max(floor, 4x that).
+        // On a fast idle machine this is just the 400 ms floor; on a machine slow enough that 400 ms would
+        // have been the wrong number, the interval moves with it instead of the test going red.
+        //
+        // 🔴 MEASURED here on an idle machine across three runs: perDispatch = 0.53 / 0.23 / 0.22 ms, so
+        // the interval stays at the 400 ms floor and this test's arithmetic is BIT-FOR-BIT what it was.
+        // That is the intended outcome — the change buys headroom on a slow or loaded machine, and buys
+        // nothing (and costs nothing) on a fast one. The floor only stops binding above ~100 ms/dispatch,
+        // which is the figure the note at the bottom recorded under full-suite load.
+        // ─────────────────────────────────────────────────────────────────
+        var probeChannel = NewChannel(store, host, audit, interval: NoInterval);
+        await probeChannel.DispatchAsync(Job(AlarmEdgeKind.Raised, "probe", sequence: 1)); // JIT + first touch
+        const int Probes = 4;
+        var probeClock = Stopwatch.StartNew();
+        for (var p = 0; p < Probes; p++)
+        {
+            await probeChannel.DispatchAsync(Job(
+                p % 2 == 0 ? AlarmEdgeKind.Cleared : AlarmEdgeKind.Raised, "probe", sequence: p + 2));
+        }
+
+        var perDispatch = TimeSpan.FromTicks(Math.Max(1, probeClock.Elapsed.Ticks / Probes));
+        var interval = TimeSpan.FromTicks(Math.Max(FastIntervalFloor.Ticks, perDispatch.Ticks * 4));
+
+        // 🔴 The probe wrote to the same coil, so the write count below is taken RELATIVE to here. That is
+        // sound rather than merely convenient: the real channel constructed next is FRESH, so its belief
+        // about the coil starts UNKNOWN and its first edge writes unconditionally — whatever state the
+        // probe left the coil in cannot suppress or add a write.
+        var writesBefore = driver.WriteCallCount;
+        var channel = NewChannel(store, host, audit, interval: interval);
 
         var clock = Stopwatch.StartNew();
         for (var i = 0; i < Flaps; i++)
@@ -665,21 +714,24 @@ public sealed class RelayNotificationChannelTests : IDisposable
         }
 
         var elapsed = clock.Elapsed;
-        var writes = driver.WriteCallCount;
+        var writes = driver.WriteCallCount - writesBefore;
 
         // Nothing was dropped: every transition really was written, and the final state is correct.
         Assert.Equal(2 * Flaps, writes);
         Assert.Equal(0L, driver.LastSetpoint?.Value);
         Assert.False(Assert.Single(channel.InstanceStates).Energised);
 
-        // 🔴 THE BOUND, in elapsed time.
-        var floor = TimeSpan.FromTicks(FastInterval.Ticks * (writes - 1));
+        // 🔴 THE BOUND, in elapsed time. This is the load-bearing proof and it is unchanged in kind — only
+        // the interval it is expressed in is now a measurement rather than a constant.
+        var floor = TimeSpan.FromTicks(interval.Ticks * (writes - 1));
         Assert.True(elapsed >= floor,
             $"{writes} coil writes completed in {elapsed.TotalMilliseconds:0}ms, which is faster than the " +
-            $"{FastInterval.TotalMilliseconds:0}ms minimum interval allows ({floor.TotalMilliseconds:0}ms) — " +
-            "the rate limiter is not bounding anything.");
+            $"{interval.TotalMilliseconds:0}ms minimum interval allows ({floor.TotalMilliseconds:0}ms) — " +
+            "the rate limiter is not bounding anything. " +
+            $"(one dispatch measured {perDispatch.TotalMilliseconds:0.#}ms; interval = max(" +
+            $"{FastIntervalFloor.TotalMilliseconds:0}ms, 4x that).)");
 
-        var ceiling = elapsed.Ticks / FastInterval.Ticks + 1;
+        var ceiling = elapsed.Ticks / interval.Ticks + 1;
         Assert.True(writes <= ceiling,
             $"{writes} coil writes in {elapsed.TotalMilliseconds:0}ms exceeds the bound of {ceiling}.");
 
@@ -698,8 +750,16 @@ public sealed class RelayNotificationChannelTests : IDisposable
         // work precisely so that the floor cannot be satisfied by the work alone — which is what would make
         // this test pass with the limiter deleted. This line only confirms the limiter's wait path executed
         // at all rather than being dead code.
+        //
+        // 🔴 Closeout round (B-2): the reason that note ends "the interval is now large relative to the
+        // work" is that the interval is MEASURED against the work, above — so this line's premise is
+        // established on the machine running it rather than assumed. When it does fail, the message now
+        // carries the two numbers needed to tell "the limiter is dead" from "this machine is slower than
+        // 4x its own dispatch", which are opposite conclusions.
         Assert.True(channel.Stats.RateLimited > 0,
-            "the rate limiter never waited even once — its wait path is not being exercised at all.");
+            "the rate limiter never waited even once — its wait path is not being exercised at all. " +
+            $"(one dispatch measured {perDispatch.TotalMilliseconds:0.#}ms against a " +
+            $"{interval.TotalMilliseconds:0}ms interval.)");
     }
 
     /// <summary>The limiter must not delay the FIRST write of an instance's life — a beacon that took two

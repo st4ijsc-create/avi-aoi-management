@@ -102,7 +102,25 @@ EXPECT_EDGESERVICE=28
 # EXPECT_EDGECORE stays 735: I-4 fixes leaked TcpListener accepts in three ModbusTcpDriverWriteTests
 # (and bounds two conformance accepts) but adds no test.
 # No other suite is touched: C-8 adds no code outside St4i.EngineApi, web/ and docs.
-EXPECT_ENGINEAPI=1133
+#
+# Đợt C CLOSEOUT ROUND raised this from 1133 to 1135 (+2), both AlarmStoreTests, both for I-4:
+#   + 1  RaiseAsync_StillNeverThrows_WhenTheLogErrorDelegateItselfThrows
+#   + 1  ClearAsync_StillNeverThrows_WhenTheLogErrorDelegateItselfThrows
+#        AlarmStore's never-throws contract ended each of its two implementing catch blocks with an
+#        UNGUARDED `_logError?.Invoke(...)` — a hole in the last statement of the handler written to close
+#        it (NotifySafely wrapped the identical call in its own try/catch, so the two sites disagreed).
+#        Program.cs binds logError to `sp.GetRequiredService<ILoggerFactory>()`, a service resolution on
+#        the error path, which throws ObjectDisposedException once the root provider is disposed — i.e.
+#        during shutdown, which is also when alarms.db is most likely failing. The twelve pre-existing
+#        AlarmStore tests could NOT see it: their own logError delegate succeeds. Two tests rather than
+#        one because the two catch blocks are separate statements and a fix applied to only one would
+#        still pass a single test. Both die with ReportSafely's catch removed (verified by mutation).
+#
+# 🔴 EVERY OTHER SUITE IS UNCHANGED, and EXPECT_EDGECORE deliberately stays 735: the closeout round moves
+# three ModbusTcpDriverWriteTests' teardown into a `finally` and rewrites three EngineApi tests' timing,
+# but RESTRUCTURES them — it adds no test and deletes none. A moved total on any suite other than
+# EngineApi would mean something unintended happened.
+EXPECT_ENGINEAPI=1135
 
 SUITES=(
   "tests/St4i.Connector.Abstractions.Tests:$EXPECT_ABSTRACTIONS"

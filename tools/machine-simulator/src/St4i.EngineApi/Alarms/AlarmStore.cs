@@ -402,7 +402,7 @@ public sealed class AlarmStore : IAlarmStore
             // Deliberately swallowed — see IAlarmStore's doc comment: a Policy DENY handler (or LC-2's
             // periodic evaluator) must never fail just because alarms.db hiccuped. Also covers a cancelled
             // _writeGate.WaitAsync above (which never entered the inner try, so nothing to release).
-            _logError?.Invoke(ex, $"Alarm raise failed for key '{raise?.Key}' — this alarm was not recorded.");
+            ReportSafely(ex, $"Alarm raise failed for key '{raise?.Key}' — this alarm was not recorded.");
             return AlarmTransition.None;
         }
     }
@@ -460,7 +460,7 @@ public sealed class AlarmStore : IAlarmStore
         }
         catch (Exception ex)
         {
-            _logError?.Invoke(ex, $"Alarm clear failed for key '{key}'.");
+            ReportSafely(ex, $"Alarm clear failed for key '{key}'.");
             return AlarmTransition.None;
         }
     }
@@ -667,20 +667,51 @@ public sealed class AlarmStore : IAlarmStore
         }
         catch (Exception ex)
         {
-            try
-            {
-                _logError?.Invoke(
-                    ex,
-                    $"Alarm notification hook threw for key '{transition.Alarm?.Key}' — the alarm itself WAS recorded; " +
-                    "only its notification was lost.");
-            }
-            catch
-            {
-                // Even the REPORT failed. Swallow it: this method is called from inside RaiseAsync's and
-                // ClearAsync's own try blocks now (it has to be, to stay under _writeGate), so anything
-                // escaping here would be caught by their catch and mis-reported as "this alarm was not
-                // recorded" — the one thing that message must never say when the alarm is safely written.
-            }
+            ReportSafely(
+                ex,
+                $"Alarm notification hook threw for key '{transition.Alarm?.Key}' — the alarm itself WAS recorded; " +
+                "only its notification was lost.");
+        }
+    }
+
+    /// <summary>
+    /// 🔴 The never-throws contract's LAST statement, and it must not be the one that breaks it.
+    ///
+    /// <para><b>Why this exists as a method.</b> <see cref="NotifySafely"/> already wrapped its own
+    /// <c>_logError</c> call in a try/catch, with a comment explaining why. The two identical calls that
+    /// END the catch blocks of <see cref="RaiseAsync"/> and <see cref="ClearAsync"/> — the catches that
+    /// IMPLEMENT never-throws — were unguarded. A hole in the last line of the handler that exists to
+    /// close the hole.</para>
+    ///
+    /// <para><b>Production makes it reachable, and specifically during shutdown.</b> <c>Program.cs</c>
+    /// binds <c>logError</c> to <c>sp.GetRequiredService&lt;ILoggerFactory&gt;()…</c> — a SERVICE
+    /// RESOLUTION on the error path — which throws <see cref="ObjectDisposedException"/> once the root
+    /// provider is disposed. That is exactly when <c>alarms.db</c> is most likely to be failing, so the two
+    /// failures arrive together rather than independently.</para>
+    ///
+    /// <para><b>The consequence, scoped honestly: the safety gate is NOT bypassed.</b>
+    /// <c>PolicyResults.DenyAsync</c> has no try/catch around its <c>RaiseAsync</c> call, so an escaping
+    /// exception surfaces there — but <c>DenyAsync</c> never performs the denied write. The action stays
+    /// refused; what changes is that a <c>SAFETY_BLOCKED</c> 409 becomes a framework 500. Fail-closed, with
+    /// worse diagnostics for the operator and a misleading shape for anyone reading the logs afterwards.
+    /// Two lines to remove entirely.</para>
+    ///
+    /// <para>Everything is swallowed here, deliberately: if reporting the failure has itself failed there
+    /// is nowhere left to report it to, and re-throwing would defeat the whole point of the caller.</para>
+    /// </summary>
+    private void ReportSafely(Exception cause, string message)
+    {
+        try
+        {
+            _logError?.Invoke(cause, message);
+        }
+        catch
+        {
+            // Nowhere left to report to. Swallowing is the contract: RaiseAsync/ClearAsync and the
+            // notification hook all promise never to throw, and this is the last statement in each of
+            // those promises. In NotifySafely's case anything escaping would additionally be caught by
+            // RaiseAsync's/ClearAsync's own catch and mis-reported as "this alarm was not recorded" — the
+            // one thing that message must never say when the alarm is safely written.
         }
     }
 

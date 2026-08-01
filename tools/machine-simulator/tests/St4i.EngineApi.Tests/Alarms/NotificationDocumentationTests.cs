@@ -60,6 +60,73 @@ public sealed class NotificationDocumentationTests
     /// test about its MEANING, which is exactly the kind of brittleness that gets a guard deleted.</summary>
     private static string Flatten(string text) => Regex.Replace(text, @"\s+", " ");
 
+    // ─────────────────────────────────────────────────────────────────────
+    // 🔴🔴 Closeout round (I-2) — SECTION AND LANGUAGE SLICING, and it is the whole fix for the ninth
+    // vacuous test caught in this project.
+    //
+    // Every "this fact is still stated" assertion below used to run against the WHOLE README. That reads
+    // as harmless — the fact IS in the document — and it is not: this README states the same limitations
+    // twice, once in §20.5 (the earlier batch's honest-limitations section, which §22 extends) and once in
+    // §22.7. Every phrase §22.7 was being checked for is ALSO in §20.5's correction paragraph, so §22.7
+    // could be deleted outright and the guard stayed green.
+    //
+    // 🔴 Reproduced by mutation, which is how all nine of this project's vacuous tests were found and the
+    // only reason this one was: deleting the ENTIRE 40-line Vietnamese honest-limitations mirror from
+    // §22.7 left the suite at 8 passed, 0 failed — while the test's own doc comment said the VI form was
+    // "checked separately and with equal weight" because Đợt B shipped a Critical over exactly that. It
+    // was not: only 3 of 12 assertions were VI at all, and none of the 12 was unique to §22.7.
+    //
+    // So a fact is now asserted against the SECTION that is supposed to carry it, and the EN and VI halves
+    // are matched separately against their own half of that section. A missing VI mirror can no longer be
+    // covered for by the EN copy, and a deleted §22.7 can no longer be covered for by §20.5.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// One numbered README section, sliced between its own heading and the next one.
+    ///
+    /// <para>🔴 The failure mode to design against here is an OVER-WIDE slice, not a missing one: a slice
+    /// that silently ran to the end of the document would restore exactly the vacuity this exists to
+    /// remove, and every assertion would go on passing. So both ends must be found (a missing heading
+    /// fails loudly), and the result is checked not to contain the heading that is supposed to end it.
+    /// An EMPTY slice is the safe direction — every caller uses <c>Assert.Matches</c>, which fails.</para>
+    /// </summary>
+    private static string ReadmeSection(string readmeText, string heading, string nextHeading)
+    {
+        var start = readmeText.IndexOf(heading, StringComparison.Ordinal);
+        Assert.True(start >= 0,
+            $"README.md has no \"{heading}\" heading any more. If the section was renumbered, fix this " +
+            "slice — do NOT widen it back to the whole file, which is what made this guard vacuous.");
+
+        var end = readmeText.IndexOf(nextHeading, start + heading.Length, StringComparison.Ordinal);
+        Assert.True(end > start,
+            $"README.md has no \"{nextHeading}\" heading after \"{heading}\", so the section could not be " +
+            "bounded. Same instruction as above: fix the slice, never widen it.");
+
+        var section = readmeText[start..end];
+        Assert.DoesNotContain(nextHeading, section, StringComparison.Ordinal);
+        return section;
+    }
+
+    /// <summary>
+    /// Splits one README section into its English body and its Vietnamese parenthetical mirror — the
+    /// <c>*(VI: … )*</c> block this document uses throughout.
+    ///
+    /// <para>🔴 The split is what gives the VI half equal weight. Matched against the section as a whole,
+    /// an EN-only fact satisfies a test that claims to check both languages, which is precisely the Đợt B
+    /// Critical (a VI mirror left uncorrected while the EN copy was fixed) reproducing itself inside the
+    /// test written to prevent it.</para>
+    /// </summary>
+    private static (string English, string Vietnamese) SplitLanguages(string section, string sectionName)
+    {
+        var marker = section.IndexOf("*(VI:", StringComparison.Ordinal);
+        Assert.True(marker > 0,
+            $"README {sectionName} no longer has a \"*(VI:\" mirror at all. That is the Đợt B Critical " +
+            "itself — a section corrected in English with the Vietnamese half dropped — so this fails " +
+            "rather than degrading to an English-only check.");
+
+        return (Flatten(section[..marker]), Flatten(section[marker..]));
+    }
+
     /// <summary>As <see cref="Flatten"/>, but also strips the two pieces of markdown punctuation that
     /// break a sentence in the middle without changing what it says: a blockquote's leading <c>&gt;</c>
     /// on every wrapped line, and inline-code backticks. The webhook contract's load-bearing paragraph is
@@ -251,36 +318,68 @@ public sealed class NotificationDocumentationTests
     /// gets softened by a well-meaning editor into something reassuring and false. They are asserted by
     /// regex — wide enough that the paragraphs can be rewritten, narrow enough that removing the fact
     /// fails.
+    ///
+    /// <para>🔴🔴 <b>Closeout round (I-2) — this test was the ninth vacuous one caught in this project,
+    /// and it was vacuous in the exact way its own doc comment denied.</b> It said the Vietnamese form was
+    /// "checked separately and with equal weight" because Đợt B shipped a Critical over a VI mirror left
+    /// uncorrected while the English copy was fixed. It was not: 3 of its 12 assertions were VI, every
+    /// assertion ran against the WHOLE README, and §20.5's own correction paragraph repeats every phrase
+    /// §22.7 was being checked for — so <b>deleting the entire 40-line Vietnamese mirror from §22.7 left
+    /// the suite at 8 passed, 0 failed.</b></para>
+    ///
+    /// <para>Now: every fact is asserted against <b>§22.7's own EN half and its own VI half separately</b>
+    /// (see <see cref="ReadmeSection"/> and <see cref="SplitLanguages"/>), so there are 9 facts and 18
+    /// assertions rather than 12 assertions and one document. The one fact §22.7 legitimately does not
+    /// restate — the ISO 13849 hardwiring rule, which it cross-references to §22.4 — is asserted against
+    /// <b>§22.4's</b> two halves instead of being left to match anywhere in the file.</para>
     /// </summary>
     [Fact]
     public void TheHonestLimitations_AreStatedInBothLanguages()
     {
-        var readme = Flatten(ReadRepoFile("README.md"));
+        var readmeText = ReadRepoFile("README.md");
+        var (en, vi) = SplitLanguages(
+            ReadmeSection(readmeText, "### 22.7", "### 22.8"), "§22.7");
 
         // 🔴 The relay is not a safety device, and does not light while HALT is latched. This is the one
         // with a physical consequence, so both halves are required, in both languages.
-        Assert.Matches(new Regex(@"not\s+a\s+safety\s+device", RegexOptions.IgnoreCase), readme);
-        Assert.Matches(new Regex(@"không\s+phải\s+thiết\s+bị\s+an\s+toàn", RegexOptions.IgnoreCase), readme);
-        Assert.Matches(new Regex(@"does\s+not\s+light\s+while\s+HALT\s+is\s+latched", RegexOptions.IgnoreCase), readme);
-        Assert.Matches(new Regex(@"không\s+sáng\s+khi\s+HALT", RegexOptions.IgnoreCase), readme);
-        Assert.Matches(new Regex(@"ISO\s*13849", RegexOptions.IgnoreCase), readme);
+        Assert.Matches(new Regex(@"not\s+a\s+safety\s+device", RegexOptions.IgnoreCase), en);
+        Assert.Matches(new Regex(@"không\s+phải\s+thiết\s+bị\s+an\s+toàn", RegexOptions.IgnoreCase), vi);
+        Assert.Matches(new Regex(@"does\s+not\s+light\s+while\s+HALT\s+is\s+latched", RegexOptions.IgnoreCase), en);
+        Assert.Matches(new Regex(@"không\s+sáng\s+khi\s+HALT", RegexOptions.IgnoreCase), vi);
 
         // 🔴 A green SMTP test does not prove the password works.
         Assert.Matches(
-            new Regex(@"green\s+e-mail\s+send\s+test\s+does\s+NOT\s+prove", RegexOptions.IgnoreCase), readme);
+            new Regex(@"green\s+e-mail\s+send\s+test\s+does\s+NOT\s+prove", RegexOptions.IgnoreCase), en);
         Assert.Matches(
-            new Regex(@"KHÔNG\s+chứng\s+minh\s+mật\s+khẩu", RegexOptions.IgnoreCase), readme);
+            new Regex(@"KHÔNG\s+chứng\s+minh\s+mật\s+khẩu", RegexOptions.IgnoreCase), vi);
 
-        // Implicit TLS on 465 is unreachable; no desktop toast; no SMS; no relay send test.
-        Assert.Matches(new Regex(@"port\s*465", RegexOptions.IgnoreCase), readme);
-        Assert.Matches(new Regex(@"no\s+Windows\s+desktop\s+toast", RegexOptions.IgnoreCase), readme);
-        Assert.Matches(new Regex(@"NO\s+SMS", RegexOptions.IgnoreCase), readme);
-        Assert.Matches(new Regex(@"no\s+relay\s+send\s+test", RegexOptions.IgnoreCase), readme);
+        // Implicit TLS on 465 is unreachable; no desktop toast; no SMS; no relay send test. Each of these
+        // had NO Vietnamese counterpart asserted before — the VI mirror states all four, and nothing
+        // noticed whether it still did.
+        Assert.Matches(new Regex(@"port\s*465", RegexOptions.IgnoreCase), en);
+        Assert.Matches(new Regex(@"cổng\s*465", RegexOptions.IgnoreCase), vi);
+        Assert.Matches(new Regex(@"no\s+Windows\s+desktop\s+toast", RegexOptions.IgnoreCase), en);
+        Assert.Matches(new Regex(@"KHÔNG\s+có\s+toast\s+desktop\s+Windows", RegexOptions.IgnoreCase), vi);
+        Assert.Matches(new Regex(@"NO\s+SMS", RegexOptions.IgnoreCase), en);
+        Assert.Matches(new Regex(@"KHÔNG\s+có\s+kênh\s+SMS", RegexOptions.IgnoreCase), vi);
+        Assert.Matches(new Regex(@"no\s+relay\s+send\s+test", RegexOptions.IgnoreCase), en);
+        Assert.Matches(new Regex(@"KHÔNG\s+có\s+bài\s+gửi\s+thử\s+relay", RegexOptions.IgnoreCase), vi);
 
         // /hmi/:code is not annunciated, and the shipped deployment is said to be covered rather than the
         // limitation being left to imply that it is not.
-        Assert.Matches(new Regex(@"/hmi/:code[^.]*NOT\s+annunciated", RegexOptions.IgnoreCase), readme);
-        Assert.Matches(new Regex(@"shipped\s+desktop\s+deployment\s+is\s+covered", RegexOptions.IgnoreCase), readme);
+        Assert.Matches(new Regex(@"/hmi/:code[^.]*NOT\s+annunciated", RegexOptions.IgnoreCase), en);
+        Assert.Matches(new Regex(@"/hmi/:code[^.]*KHÔNG\s+được\s+báo\s+động", RegexOptions.IgnoreCase), vi);
+        Assert.Matches(new Regex(@"shipped\s+desktop\s+deployment\s+is\s+covered", RegexOptions.IgnoreCase), en);
+        Assert.Matches(
+            new Regex(@"Bản\s+desktop\s+xuất\s+xưởng\s+thì\s+KHÔNG\s+bị\s+ảnh\s+hưởng", RegexOptions.IgnoreCase), vi);
+
+        // 🔴 The hardwiring rule. §22.7 cross-references §22.4 for it rather than restating it, which is
+        // correct — so it is asserted against §22.4's own two halves. Matching it anywhere in the README
+        // (the old form) was satisfied by §20.5 and by §22.4 alike, i.e. by nothing in particular.
+        var (safetyEn, safetyVi) = SplitLanguages(
+            ReadmeSection(readmeText, "### 22.4", "### 22.5"), "§22.4");
+        Assert.Matches(new Regex(@"ISO\s*13849", RegexOptions.IgnoreCase), safetyEn);
+        Assert.Matches(new Regex(@"ISO\s*13849", RegexOptions.IgnoreCase), safetyVi);
     }
 
     /// <summary>

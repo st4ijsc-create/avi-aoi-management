@@ -2349,6 +2349,11 @@ export const vi = {
       effectKeepNone: "Khi lưu: vẫn không đặt gì cả.",
       effectReplace: "Khi lưu: thay bằng giá trị bạn gõ ở trên.",
       effectClear: "🔴 Khi lưu: XOÁ HẲN giá trị đã lưu. Không khôi phục được.",
+      // 🔴 Closeout round (I-6) — xem chú thích tương ứng trong en.ts.
+      effectReplaceEmpty:
+        "🔴 Chưa gõ gì cả. Lưu bây giờ sẽ XOÁ HẲN giá trị đã lưu chứ không phải thay nó — nên nút lưu bị " +
+        "khoá. Hãy gõ giá trị mới, hoặc chọn “Xoá” nếu đúng là bạn muốn xoá.",
+      replaceNeedsValue: "Hãy gõ thông tin đăng nhập mới, hoặc chọn “Giữ nguyên” / “Xoá”.",
     },
     webhook: {
       title: "Webhook",
@@ -2557,9 +2562,15 @@ export const vi = {
         "KHÔNG có bài gửi thử relay, có chủ ý — nó có thể để đèn sáng vì chính bài thử. Một bài CHẠY KHÔ " +
         "(phân giải máy và mục tiêu rồi đánh giá cổng ghi mà KHÔNG ghi) là hình dạng được khuyến nghị và " +
         "CHƯA được xây.",
+      // 🔴 Closeout round (I-3) — xem chú thích tương ứng trong en.ts. Câu cũ nói bộ đếm “Mất” là "chỗ
+      // duy nhất", một lời nói quá hướng người dùng: cảnh báo bị đẩy khỏi hàng đợi đầy KHÔNG hề tới kênh
+      // nào, nên không bộ đếm “Mất” nào nhúc nhích cho nó. Bản EN và VI phải sửa cùng lúc — Đợt B đã ra
+      // một Critical vì bản VI bị bỏ lại trong khi bản EN đã sửa.
       noDeliveryGuarantee:
         "KHÔNG kênh nào có bảo đảm gửi tới nơi và không có hàng đợi gửi lại: kênh hỏng thì thông báo " +
-        "MẤT. Bộ đếm “Mất” của từng kênh là chỗ duy nhất việc đó nhìn thấy được.",
+        "MẤT. Bộ đếm “Mất” của từng kênh cho biết chính kênh ĐÓ đã đánh rơi bao nhiêu — nhưng một cảnh " +
+        "báo bị đẩy khỏi hàng đợi đầy thì KHÔNG hề tới kênh nào, nên không bộ đếm “Mất” nào nhúc nhích " +
+        "cho nó. Trường hợp đó chỉ hiện ở mục “Cần chú ý” phía trên. Phải đọc cả hai.",
       networkNeeded:
         "Webhook và email cần mạng. Ở một triển khai thật sự ngoại tuyến chỉ còn báo tại chỗ và relay.",
       hmiNotAnnunciated:

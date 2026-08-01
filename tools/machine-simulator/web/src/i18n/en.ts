@@ -2299,6 +2299,14 @@ export const en: Dictionary = {
       effectKeepNone: "On save: still not set.",
       effectReplace: "On save: replaced with the value typed above.",
       effectClear: "🔴 On save: the stored value is DELETED. This cannot be undone.",
+      // 🔴 Closeout round (I-6). REPLACE with an empty box used to post "" — which the endpoint reads as
+      // DELETE — and answer 200 while this very field said "replaced with the value typed above". Save is
+      // now blocked, and the effect line says what would actually have happened rather than what was
+      // intended. Deleting a credential stays available, deliberately, as its own CLEAR mode.
+      effectReplaceEmpty:
+        "🔴 Nothing is typed. Saving now would DELETE the stored value, not replace it — so save is " +
+        "blocked. Type the new value, or pick “Clear” if deleting is what you want.",
+      replaceNeedsValue: "Type the new credential, or pick “Keep” / “Clear”.",
     },
     webhook: {
       title: "Webhook",
@@ -2512,9 +2520,19 @@ export const en: Dictionary = {
         "There is NO relay send test, deliberately — it could leave a beacon lit because of the test " +
         "itself. A DRY RUN (resolve the machine and target and evaluate the write gate WITHOUT writing) " +
         "is the recommended shape and is NOT built.",
+      // 🔴 Closeout round (I-3) — this used to end "…is the only place that becomes visible", which is a
+      // user-facing overclaim about a loss counter and the worst kind: it tells an operator that one
+      // number covers a class of failure that it does not cover. AlarmNotifier documents FIVE drop paths,
+      // and path 1 — eviction on a saturated lane under DropOldest — never reaches a channel at all, so no
+      // channel's "Lost" can ever move for it. It moves the notifier's own Dropped, which THIS SAME SCREEN
+      // already renders as a separate "Needs attention" line. An operator told "Lost is the only place"
+      // reads Lost == 0 as "nothing was lost" while a wedged channel silently evicts the oldest alarm
+      // edges — the exact condition the sentence is meant to warn about.
       noDeliveryGuarantee:
         "NO channel has a delivery guarantee and there is no retry queue: if a channel fails the " +
-        "notification is LOST. Each channel's “Lost” counter is the only place that becomes visible.",
+        "notification is LOST. Each channel's “Lost” counter shows what THAT channel dropped — but an " +
+        "alarm evicted from a full queue never reaches a channel at all, so no “Lost” counter moves for " +
+        "it. That case appears only under “Needs attention” above. Read both.",
       networkNeeded:
         "Webhook and e-mail need a network. In a genuinely offline deployment only local annunciation " +
         "and the relay work.",

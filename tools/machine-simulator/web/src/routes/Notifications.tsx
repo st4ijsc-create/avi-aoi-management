@@ -132,6 +132,29 @@ function toSecretUpdate(mode: SecretMode, value: string): SecretUpdate {
 }
 
 /**
+ * 🔴 Closeout round (I-6) — REPLACE with an empty box is not a save, and it must not be submitted.
+ *
+ * The chain that made it a silent credential deletion reported as a success:
+ * `toSecretUpdate("replace", "")` returns `""` → `secretField` sends `""` → the endpoint's
+ * `ApplySecretAsync` treats `""` as **DELETE** and answers 200 → this form shows "saved" while its own
+ * effect line said *"replaced with the value typed above"*. For a webhook signing secret the channel then
+ * posts **unsigned** from then on: a security property dropped silently, with a success message on top.
+ * Save was guarded only on an empty URL, and SMTP had no guard at all.
+ *
+ * 🔴 It is deliberately NOT fixed by mapping empty → `undefined`. That silently KEEPS the stored
+ * credential, which is a different lie told with the same success toast. And the server's
+ * `""`-means-delete contract is correct and stays exactly as it is — CLEAR is a real, wanted operation
+ * with its own mode and its own red effect line. The only wrong thing here was submitting an empty
+ * REPLACE at all, so it is blocked at the form.
+ *
+ * `.trim()` is for the GUARD only; the value itself is sent verbatim, because whitespace inside a
+ * credential can be significant. A box holding nothing but spaces is a typo, not a secret.
+ */
+function isEmptyReplace(mode: SecretMode, value: string): boolean {
+  return mode === "replace" && value.trim() === ""
+}
+
+/**
  * 🔴 A stored credential, as a control that cannot destroy it by accident.
  *
  * The obvious design — a password box that renders empty and posts whatever it contains — is precisely
@@ -164,6 +187,11 @@ function SecretInput({
 }) {
   const modes: SecretMode[] = hasStored ? ["keep", "replace", "clear"] : ["keep", "replace"]
 
+  // 🔴 Closeout round (I-6) — the effect line must never claim a replacement that would be a deletion.
+  // See `isEmptyReplace`. This is the sentence an operator reads before pressing Save, and it used to say
+  // "replaced with the value typed above" for a box with nothing typed in it.
+  const blocked = isEmptyReplace(mode, value)
+
   const effect =
     mode === "keep"
       ? hasStored
@@ -171,7 +199,9 @@ function SecretInput({
         : t("notifications.secret.effectKeepNone")
       : mode === "clear"
         ? t("notifications.secret.effectClear")
-        : t("notifications.secret.effectReplace")
+        : blocked
+          ? t("notifications.secret.effectReplaceEmpty")
+          : t("notifications.secret.effectReplace")
 
   return (
     <FormField label={label} labelEn={labelEn} hint={hint}>
@@ -211,7 +241,13 @@ function SecretInput({
         ) : null}
 
         <span
-          className={mode === "clear" ? "text-[11px] text-danger-text" : "text-[11px] text-text-muted"}
+          className={
+            mode === "clear"
+              ? "text-[11px] text-danger-text"
+              : blocked
+                ? "text-[11px] text-warn-text"
+                : "text-[11px] text-text-muted"
+          }
           data-testid={`${id}-effect`}
         >
           {effect}
@@ -471,6 +507,11 @@ function WebhookCard({ current, t, gloss }: { current?: NotificationChannelSumma
     setLoaded(true)
   }, [current, loaded, summary])
 
+  // 🔴 Closeout round (I-6) — see `isEmptyReplace`. Either credential being an empty REPLACE blocks the
+  // whole save, because the request carries both and one `""` deletes one of them.
+  const emptySecretReplace =
+    isEmptyReplace(signingMode, signingValue) || isEmptyReplace(tokenMode, tokenValue)
+
   function handleSave() {
     setError(null)
     save.mutate(
@@ -623,7 +664,7 @@ function WebhookCard({ current, t, gloss }: { current?: NotificationChannelSumma
           type="button"
           data-testid="webhook-save"
           onClick={handleSave}
-          disabled={save.isPending || url.trim() === ""}
+          disabled={save.isPending || url.trim() === "" || emptySecretReplace}
         >
           {save.isPending ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -636,6 +677,15 @@ function WebhookCard({ current, t, gloss }: { current?: NotificationChannelSumma
         {url.trim() === "" ? (
           <span className="text-[11px] text-warn-text" data-testid="webhook-url-required">
             {t("notifications.webhook.urlRequiredToSave")}
+          </span>
+        ) : null}
+        {/* 🔴 Closeout round (I-6). Two credentials on this card, either of which can be an empty
+            REPLACE — and an empty REPLACE would DELETE the one it claimed to replace, unsigning every
+            subsequent POST in the signing-secret case. Stated here as well as on the field, because the
+            field's own line is above the fold only when that field is the one in view. */}
+        {emptySecretReplace ? (
+          <span className="text-[11px] text-warn-text" data-testid="webhook-secret-required">
+            {t("notifications.secret.replaceNeedsValue")}
           </span>
         ) : null}
       </div>
@@ -683,6 +733,10 @@ function SmtpCard({ current, t, gloss }: { current?: NotificationChannelSummary;
     .split(/[,;\n]/)
     .map((r) => r.trim())
     .filter((r) => r.length > 0)
+
+  // 🔴 Closeout round (I-6) — SMTP had NO save guard at all, so an empty REPLACE here deleted the stored
+  // relay password and answered 200. See `isEmptyReplace`.
+  const emptySecretReplace = isEmptyReplace(passwordMode, passwordValue)
 
   function handleSave() {
     setError(null)
@@ -818,7 +872,12 @@ function SmtpCard({ current, t, gloss }: { current?: NotificationChannelSummary;
       <Separator />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" data-testid="smtp-save" onClick={handleSave} disabled={save.isPending}>
+        <Button
+          type="button"
+          data-testid="smtp-save"
+          onClick={handleSave}
+          disabled={save.isPending || emptySecretReplace}
+        >
           {save.isPending ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
           ) : (
@@ -827,6 +886,11 @@ function SmtpCard({ current, t, gloss }: { current?: NotificationChannelSummary;
           {t("notifications.action.save")}
         </Button>
         {current ? <DeleteChannelButton channel="Smtp" t={t} /> : null}
+        {emptySecretReplace ? (
+          <span className="text-[11px] text-warn-text" data-testid="smtp-secret-required">
+            {t("notifications.secret.replaceNeedsValue")}
+          </span>
+        ) : null}
       </div>
 
       {current ? <SendTestControl channel="Smtp" t={t} /> : null}

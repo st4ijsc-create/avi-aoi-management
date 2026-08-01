@@ -236,6 +236,72 @@ public sealed class AlarmStoreTests : IDisposable
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // 🔴 6b. Closeout round (I-4) — never-throws must survive a logError that ITSELF throws.
+    //
+    // The two tests above prove the never-throws contract holds when the DATABASE fails. They cannot see
+    // the hole that was in it, because their own logError delegate succeeds: the last statement of the
+    // catch that IMPLEMENTS never-throws was an unguarded `_logError?.Invoke(...)`, so a reporting failure
+    // escaped the very handler written to stop failures escaping. (NotifySafely wrapped the IDENTICAL call
+    // in its own try/catch, with a comment explaining why — the two sites disagreed.)
+    //
+    // 🔴 This is reachable in production, and specifically during shutdown. Program.cs binds logError to
+    // `sp.GetRequiredService<ILoggerFactory>()...` — a SERVICE RESOLUTION on the error path — which throws
+    // ObjectDisposedException once the root provider is disposed. That is also when alarms.db is most
+    // likely to be failing, so both halves arrive together rather than independently.
+    //
+    // Scope, stated honestly: PolicyResults.DenyAsync has no try/catch around RaiseAsync, so the escape
+    // surfaced there — but DenyAsync never performs the denied write, so the SAFETY GATE IS NOT BYPASSED.
+    // The action stayed refused; a SAFETY_BLOCKED 409 became a framework 500. Fail-closed, worse
+    // diagnostics.
+    //
+    // Both tests fail (the throw propagates out of RaiseAsync/ClearAsync) with ReportSafely's catch
+    // removed — which is the mutation, and is why they are written as two rather than one: the two catch
+    // blocks are separate statements and a fix applied to only one would still pass a single test.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The exact production shape: the report path throws the same exception type a disposed
+    /// root <c>IServiceProvider</c> throws from <c>GetRequiredService</c>.</summary>
+    private static Action<Exception, string> ThrowingLogError() =>
+        (_, _) => throw new ObjectDisposedException("IServiceProvider");
+
+    [Fact]
+    public async Task RaiseAsync_StillNeverThrows_WhenTheLogErrorDelegateItselfThrows()
+    {
+        var dir = NewTempDir();
+        var store = new AlarmStore(dir, logError: ThrowingLogError());
+
+        SqliteConnection.ClearAllPools();
+        Directory.Delete(dir, recursive: true);
+
+        // Both failures at once, which is the production case: the database is gone AND the reporter is
+        // dead. Must still not throw, and must still report the transition it could not make.
+        var transition = await store.RaiseAsync(NewRaise());
+
+        Assert.Equal(AlarmTransition.None, transition);
+    }
+
+    [Fact]
+    public async Task ClearAsync_StillNeverThrows_WhenTheLogErrorDelegateItselfThrows()
+    {
+        var dir = NewTempDir();
+        var raise = NewRaise();
+
+        // Raised while the store is healthy and the reporter is silent, so the failure below is genuinely
+        // the clear path's own and not left over from setup.
+        var seed = new AlarmStore(dir);
+        await seed.RaiseAsync(raise);
+
+        var store = new AlarmStore(dir, logError: ThrowingLogError());
+
+        SqliteConnection.ClearAllPools();
+        Directory.Delete(dir, recursive: true);
+
+        var transition = await store.ClearAsync(raise.Key);
+
+        Assert.Equal(AlarmTransition.None, transition);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // 7. ListActiveAsync ordering: priority severity desc (Critical first), then last-raised desc.
     // ─────────────────────────────────────────────────────────────────────
 

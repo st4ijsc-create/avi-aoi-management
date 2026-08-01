@@ -379,12 +379,37 @@ public sealed class AlarmNotifierWiringTests
             await store.RaiseAsync(new AlarmRaise(
                 AlarmSource.DriverHealth, "DOWN", AlarmPriority.Critical, "first", TargetId: "slot-7"));
 
+            // 🔴 Closeout round (B-1) — BOTH conditions are polled, and the reason is the property this very
+            // test exists to prove.
+            //
+            // This used to poll `relay.Messages.Count < 1` alone and then assert the WEBHOOK had been
+            // contacted with no poll at all. C-6 gave every channel its own queue and its own drain loop, so
+            // there is NO ordering relationship between "SMTP delivered" and "webhook started" — that
+            // independence IS the guarantee under test, and it is exactly what made the un-polled assert
+            // racy. The webhook side is additionally the slower one to arm: it decrypts a DPAPI-sealed
+            // secret and builds its `HttpClient` handler on first use, neither of which the SMTP path does.
+            //
+            // Measured, not assumed: on an IDLE machine, in isolation, the old form failed 1 run in 5 on
+            // `webhookReceiver.Requests.Count > 0` at ~617 ms — so this was never a load-only flake. A
+            // recording bug was ruled out separately: WebhookLoopbackServer enqueues the request BEFORE it
+            // consults the responder, so a black-holed hook is still recorded on arrival.
+            //
+            // The two-condition idiom is the one the composition tests in this file already use
+            // (`AConfiguredEmailChannel_ReallyReceivesAnAlarm_AlongsideTheWebhook` and
+            // `AConfiguredLocalAnnunciation_ReallyAnnunciates_AlongsideTheWebhookAndTheEmail`, which polls
+            // FOUR conditions); this now matches them.
             var firstDeadline = DateTimeOffset.UtcNow.AddSeconds(20);
-            while (relay.Messages.Count < 1 && DateTimeOffset.UtcNow < firstDeadline) await Task.Delay(10);
+            while ((relay.Messages.Count < 1 || webhookReceiver.Requests.Count < 1) &&
+                   DateTimeOffset.UtcNow < firstDeadline)
+            {
+                await Task.Delay(10);
+            }
+
             Assert.True(relay.Messages.Count >= 1, "the SMTP relay never received the FIRST alarm at all.");
 
             // Non-vacuity: the webhook channel really is wedged on the first notification by now, so the
-            // second one below is genuinely racing a held channel rather than an idle one.
+            // second one below is genuinely racing a held channel rather than an idle one. Now POLLED for
+            // above, so this is a real precondition rather than a bet on scheduler order.
             Assert.True(webhookReceiver.Requests.Count > 0, "the webhook receiver was never contacted.");
 
             var raisedAt = Stopwatch.StartNew();

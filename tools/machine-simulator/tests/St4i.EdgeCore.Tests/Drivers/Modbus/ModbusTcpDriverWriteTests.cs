@@ -148,32 +148,47 @@ public sealed class ModbusTcpDriverWriteTests
             catch { /* deadline firing, or listener.Stop() below — both expected teardown */ }
         });
 
-        const int boundMs = 300;
-        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-WRITE-TIMEOUT", readTimeoutMs: boundMs));
+        // 🔴 Closeout round (B-3) — the teardown is in a `finally`, and that placement is the whole fix.
+        //
+        // The cancel-rather-than-abandon mechanism above was already right; it was in the WRONG PLACE. It
+        // sat at the end of the test body, BELOW a timing assertion. A load-induced assertion failure
+        // therefore skipped it and stranded the live `TcpClient` exactly as the un-tokened version did —
+        // and a red test that also orphans a `testhost` poisons the NEXT build, which is trap 1 in
+        // `scripts/verify-suites.sh`, manufactured by the very failure this teardown was written for.
+        //
+        // The general form, worth stating once for the three sites in this file: A CANCEL THAT ONLY RUNS
+        // ON THE SUCCESS PATH IS AN ABANDON IN EVERY CASE THAT MATTERS.
+        try
+        {
+            const int boundMs = 300;
+            await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-WRITE-TIMEOUT", readTimeoutMs: boundMs));
 
-        var stopwatch = Stopwatch.StartNew();
-        var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
-        stopwatch.Stop();
+            var stopwatch = Stopwatch.StartNew();
+            var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
+            stopwatch.Stop();
 
-        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
-        Assert.Null(result.RejectionReason);
-        // Fix round 1 (review) — content, not just non-null: a vacuity class one level down from the one
-        // the brief warned about (Detail could be ANY non-null string and this assertion would still pass).
-        // This exact string is what Critical #2's NullReferenceException used to destroy — asserting it here
-        // is what would have caught that regression directly, without needing the mutation test below too.
-        Assert.Contains("write did not complete", result.Detail, StringComparison.Ordinal);
+            Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+            Assert.Null(result.RejectionReason);
+            // Fix round 1 (review) — content, not just non-null: a vacuity class one level down from the one
+            // the brief warned about (Detail could be ANY non-null string and this assertion would still pass).
+            // This exact string is what Critical #2's NullReferenceException used to destroy — asserting it here
+            // is what would have caught that regression directly, without needing the mutation test below too.
+            Assert.Contains("write did not complete", result.Detail, StringComparison.Ordinal);
 
-        // The load-bearing assertion this test exists to make: it GENUINELY waited out the bound rather
-        // than approximating/short-circuiting it. Retries are forced to 0 for a write (see the no-retry
-        // test below), so the wait is ~one WriteTimeout, not a multiple of it.
-        Assert.True(stopwatch.Elapsed >= TimeSpan.FromMilliseconds(boundMs - 50),
-            $"write returned after only {stopwatch.Elapsed} — too fast to have genuinely waited out a {boundMs}ms bound.");
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5),
-            $"write took {stopwatch.Elapsed} — unexpectedly slow for a single {boundMs}ms-bounded attempt with no retry.");
-
-        listener.Stop();
-        deadline.Cancel();
-        try { await acceptTask; } catch { /* teardown */ }
+            // The load-bearing assertion this test exists to make: it GENUINELY waited out the bound rather
+            // than approximating/short-circuiting it. Retries are forced to 0 for a write (see the no-retry
+            // test below), so the wait is ~one WriteTimeout, not a multiple of it.
+            Assert.True(stopwatch.Elapsed >= TimeSpan.FromMilliseconds(boundMs - 50),
+                $"write returned after only {stopwatch.Elapsed} — too fast to have genuinely waited out a {boundMs}ms bound.");
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5),
+                $"write took {stopwatch.Elapsed} — unexpectedly slow for a single {boundMs}ms-bounded attempt with no retry.");
+        }
+        finally
+        {
+            listener.Stop();
+            deadline.Cancel();
+            try { await acceptTask; } catch { /* teardown */ }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -201,30 +216,37 @@ public sealed class ModbusTcpDriverWriteTests
             catch { /* deadline firing, or listener.Stop() below — both expected teardown */ }
         });
 
-        // Deliberately a LONG bound (30s): if cancellation did NOT promptly unblock the in-flight write,
-        // this test would itself hang for ~30s rather than fail fast — the elapsed-time assertion below is
-        // the actual proof, not a guess dressed up as one.
-        await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-WRITE-CANCEL", readTimeoutMs: 30_000));
+        // 🔴 Closeout round (B-3) — teardown in a `finally`; see the first test in this file for why the
+        // placement, not the mechanism, was the defect.
+        try
+        {
+            // Deliberately a LONG bound (30s): if cancellation did NOT promptly unblock the in-flight write,
+            // this test would itself hang for ~30s rather than fail fast — the elapsed-time assertion below is
+            // the actual proof, not a guess dressed up as one.
+            await using var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-WRITE-CANCEL", readTimeoutMs: 30_000));
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
-        var stopwatch = Stopwatch.StartNew();
-        var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), cts.Token);
-        stopwatch.Stop();
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+            var stopwatch = Stopwatch.StartNew();
+            var result = await driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), cts.Token);
+            stopwatch.Stop();
 
-        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
-        // Fix round 1 (review) — content, not just non-null (the same vacuity class one level down from the
-        // brief's own warning): this is the exact string Critical #2's NullReferenceException replaced with
-        // a generic "unexpected failure: Object reference not set..." message — asserting the real content
-        // here is what would have caught that regression directly.
-        Assert.Contains("cancelled before a definitive response arrived", result.Detail, StringComparison.Ordinal);
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2),
-            $"cancellation took {stopwatch.Elapsed} to unblock a write bounded by a 30s WriteTimeout — " +
-            "ct.Register(DisposeConnection) should unblock it almost immediately (measured ~2ms on the read " +
-            "path), not wait out anywhere close to the full bound.");
-
-        listener.Stop();
-        deadline.Cancel();
-        try { await acceptTask; } catch { /* teardown */ }
+            Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+            // Fix round 1 (review) — content, not just non-null (the same vacuity class one level down from the
+            // brief's own warning): this is the exact string Critical #2's NullReferenceException replaced with
+            // a generic "unexpected failure: Object reference not set..." message — asserting the real content
+            // here is what would have caught that regression directly.
+            Assert.Contains("cancelled before a definitive response arrived", result.Detail, StringComparison.Ordinal);
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2),
+                $"cancellation took {stopwatch.Elapsed} to unblock a write bounded by a 30s WriteTimeout — " +
+                "ct.Register(DisposeConnection) should unblock it almost immediately (measured ~2ms on the read " +
+                "path), not wait out anywhere close to the full bound.");
+        }
+        finally
+        {
+            listener.Stop();
+            deadline.Cancel();
+            try { await acceptTask; } catch { /* teardown */ }
+        }
     }
 
     /// <summary>The class doc comment's own claim ("DisposeAsync deliberately does NOT acquire _ioLock —
@@ -253,36 +275,43 @@ public sealed class ModbusTcpDriverWriteTests
             catch { /* deadline firing, or listener.Stop() below — both expected teardown */ }
         });
 
-        // Deliberately a LONG bound (30s) — same reasoning as the cancellation test above: if DisposeAsync
-        // waited for this write, it would take ~30s, not merely be slow.
-        var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-WRITE-DISPOSE", readTimeoutMs: 30_000));
+        // 🔴 Closeout round (B-3) — teardown in a `finally`; see the first test in this file for why the
+        // placement, not the mechanism, was the defect.
+        try
+        {
+            // Deliberately a LONG bound (30s) — same reasoning as the cancellation test above: if DisposeAsync
+            // waited for this write, it would take ~30s, not merely be slow.
+            var driver = new ModbusTcpDriver("127.0.0.1", port, BuildWritableMap("PLC-WRITE-DISPOSE", readTimeoutMs: 30_000));
 
-        var writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
-        await Task.Delay(TimeSpan.FromMilliseconds(200)); // let the write genuinely start and reach the connect+I/O phase.
+            var writeTask = driver.WriteSetpointAsync(new SetpointWriteRequest("speed", 42.0), CancellationToken.None);
+            await Task.Delay(TimeSpan.FromMilliseconds(200)); // let the write genuinely start and reach the connect+I/O phase.
 
-        var stopwatch = Stopwatch.StartNew();
-        await driver.DisposeAsync();
-        stopwatch.Stop();
+            var stopwatch = Stopwatch.StartNew();
+            await driver.DisposeAsync();
+            stopwatch.Stop();
 
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2),
-            $"DisposeAsync took {stopwatch.Elapsed} while a write was still stuck mid-flight, bounded by a " +
-            "30s WriteTimeout — disposal must never wait on an in-flight write, not even boundedly.");
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2),
+                $"DisposeAsync took {stopwatch.Elapsed} while a write was still stuck mid-flight, bounded by a " +
+                "30s WriteTimeout — disposal must never wait on an in-flight write, not even boundedly.");
 
-        var completed = await Task.WhenAny(writeTask, Task.Delay(TimeSpan.FromSeconds(5)));
-        Assert.Same(writeTask, completed);
-        var result = await writeTask;
-        Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
-        // Fix round 1 (review) — content, not just the outcome enum. NOTE this write's own `ct` is
-        // CancellationToken.None (DisposeAsync(), not the write's token, is what tears the connection down),
-        // so `ct.IsCancellationRequested` is false throughout — this lands in the GENERIC failure catch, not
-        // the cancellation-shaped one, and must still produce the real message, not the outer backstop's
-        // generic "unexpected failure" (which is exactly what Critical #2's NullReferenceException produced
-        // instead, before this fix).
-        Assert.Contains("write did not complete", result.Detail, StringComparison.Ordinal);
-
-        listener.Stop();
-        deadline.Cancel();
-        try { await acceptTask; } catch { /* teardown */ }
+            var completed = await Task.WhenAny(writeTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.Same(writeTask, completed);
+            var result = await writeTask;
+            Assert.Equal(WriteOutcome.Indeterminate, result.Outcome);
+            // Fix round 1 (review) — content, not just the outcome enum. NOTE this write's own `ct` is
+            // CancellationToken.None (DisposeAsync(), not the write's token, is what tears the connection down),
+            // so `ct.IsCancellationRequested` is false throughout — this lands in the GENERIC failure catch, not
+            // the cancellation-shaped one, and must still produce the real message, not the outer backstop's
+            // generic "unexpected failure" (which is exactly what Critical #2's NullReferenceException produced
+            // instead, before this fix).
+            Assert.Contains("write did not complete", result.Detail, StringComparison.Ordinal);
+        }
+        finally
+        {
+            listener.Stop();
+            deadline.Cancel();
+            try { await acceptTask; } catch { /* teardown */ }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

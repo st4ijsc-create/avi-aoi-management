@@ -243,6 +243,84 @@ test("🔴 choosing CLEAR sends an empty string, and says out loud that it delet
   expect(sent.authHeaderName).toBe("X-Api-Key")
 })
 
+test("🔴 REPLACE with an empty box cannot be saved — it would DELETE the credential, not replace it", async ({
+  page,
+}) => {
+  // 🔴🔴 Closeout round (I-6) — credential trap #4, and the one with a security consequence.
+  //
+  // The chain: `toSecretUpdate("replace", "")` returned `""` → `secretField` sent `""` → the endpoint's
+  // `ApplySecretAsync` reads `""` as DELETE and answers 200 → the form showed the success toast while
+  // its own effect line said "replaced with the value typed above". For the SIGNING SECRET the channel
+  // then POSTs UNSIGNED from then on: a security property dropped silently, with a success message on
+  // top. Save was guarded only on an empty URL, and SMTP had no guard at all.
+  //
+  // 🔴 The fix is deliberately NOT `"" -> undefined`. That silently KEEPS the credential — a different
+  // lie told with the same toast — and the server's `""`-means-delete contract is correct and unchanged
+  // (CLEAR is a real operation with its own mode, asserted by the test above, which must keep passing).
+  await gotoNotifications(page)
+
+  // 🔴 The request must never be made at all. If the guard regresses, this route fires and the final
+  // assertion sees it — a stronger check than only looking at the button's disabled attribute, because a
+  // form could disable the button and still submit on Enter.
+  let sent: Record<string, unknown> | null = null
+  await page.route("**/v1/notifications/webhook", async (route) => {
+    sent = JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ saved: null, configStore: { available: true, readFailures: 0, writeFailures: 0, detail: "ok" } }),
+    })
+  })
+
+  // A URL is present, so the ONLY thing blocking the save is the empty REPLACE.
+  await page.locator("#webhook-url").fill("https://hooks.example.test/services/abc")
+  await expect(page.getByTestId("webhook-save")).toBeEnabled()
+
+  await page.getByTestId("webhook-signing-secret-mode-replace").click()
+  await expect(page.getByTestId("webhook-save")).toBeDisabled()
+  await expect(page.getByTestId("webhook-secret-required")).toBeVisible()
+
+  // 🔴 And the effect line no longer claims a replacement. This is the sentence the operator reads
+  // before pressing Save, and it used to say "replaced with the value typed above" for an empty box.
+  await expect(page.getByTestId("webhook-signing-secret-effect")).toContainText(
+    viDict.notifications.secret.effectReplaceEmpty,
+  )
+  expect(viDict.notifications.secret.effectReplaceEmpty).not.toEqual(
+    viDict.notifications.secret.effectReplace,
+  )
+
+  // Whitespace is not a credential either — and it is the one input that would otherwise sail past a
+  // `=== ""` guard and be STORED as a secret made of spaces.
+  await page.locator("#webhook-signing-secret").fill("   ")
+  await expect(page.getByTestId("webhook-save")).toBeDisabled()
+
+  // Typing a real value releases it, which is the other direction: the guard must not be a dead end.
+  await page.locator("#webhook-signing-secret").fill("s3cr3t")
+  await expect(page.getByTestId("webhook-save")).toBeEnabled()
+  await expect(page.getByTestId("webhook-secret-required")).toHaveCount(0)
+
+  // Back to empty, then confirm nothing was ever sent.
+  await page.locator("#webhook-signing-secret").fill("")
+  await expect(page.getByTestId("webhook-save")).toBeDisabled()
+  expect(sent).toBeNull()
+})
+
+test("🔴 the same empty-REPLACE guard covers SMTP, which had no save guard at all", async ({ page }) => {
+  // 🔴 Closeout round (I-6). The webhook card at least refused to save without a URL; the SMTP card had
+  // NO guard, so an empty REPLACE on the relay password deleted it and answered 200. Asserted
+  // separately because it is a separate card with its own Save control — a fix applied to one and not
+  // the other would pass the test above.
+  await gotoNotifications(page)
+
+  await expect(page.getByTestId("smtp-save")).toBeEnabled()
+  await page.getByTestId("smtp-password-mode-replace").click()
+  await expect(page.getByTestId("smtp-save")).toBeDisabled()
+  await expect(page.getByTestId("smtp-secret-required")).toBeVisible()
+
+  await page.locator("#smtp-password").fill("relay-pw")
+  await expect(page.getByTestId("smtp-save")).toBeEnabled()
+})
+
 test("the server's own error sentence reaches the operator verbatim", async ({ page }) => {
   await gotoNotifications(page)
 

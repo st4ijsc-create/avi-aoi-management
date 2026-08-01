@@ -726,16 +726,138 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
 
         var hub = new AlarmAnnunciationHub(listenerCapacity: 1024);
         using var listener = hub.Subscribe();
+
+        // ─────────────────────────────────────────────────────────────────
+        // 🔴 Closeout round (B-2) — the sweep is scaled to a MEASURED dispatch, and its two ends are
+        // CONSTRUCTED rather than sampled. Three separate defects, and only the third made it red.
+        //
+        // (a) THE SPAN WAS A CONSTANT, AND THE CONSTANT WAS TOO SMALL TO GRADE ANYTHING.
+        //     `CancelAfter(TimeSpan.FromTicks(i * 2000))` over 60 iterations spans 0 → 11.8 ms. Windows'
+        //     default timer resolution is ~15.6 ms, so the ENTIRE sweep fits inside one tick: every
+        //     iteration's cancel fired at the next tick boundary, at an offset decided by where the loop
+        //     happened to start relative to that boundary and not by `i` at all. The sweep was nominally
+        //     graded and actually uniform.
+        //
+        // (b) `CancelAfter` CANNOT GRADE A SUB-TICK WINDOW, SO WIDENING THE CONSTANT WOULD NOT FIX IT.
+        //     One dispatch here is a warm SQLite read plus a synchronous publish — on this machine well
+        //     under a tick. Any sweep narrow enough to straddle that dispatch is narrower than
+        //     `CancelAfter` can resolve. So the cancel now comes from a `Stopwatch` spin, whose resolution
+        //     is sub-microsecond; that is what makes the middle of the sweep genuinely land before, during
+        //     and after the dispatch instead of nominally doing so.
+        //
+        // (c) THE TWO NON-VACUITY GUARDS WERE THEREFORE SAMPLED, NOT PROVEN. `threw > 0` and
+        //     `threw < Iterations` are exactly the assertions an all-or-nothing outcome fails. So the two
+        //     ENDS of the sweep are now constructed: iteration 0 is cancelled BEFORE dispatch (a real
+        //     member of the sweep — "before the entry guard" is the first of the three places the doc
+        //     comment above names), and the last iteration is never cancelled at all (the completing
+        //     side). Both guards now hold by construction on any machine, at any load, and the graded
+        //     middle is what still does the actual racing.
+        //
+        // 🔴 MEASURED, on an idle machine, `threw` out of 60 across five consecutive runs:
+        //       old constant sweep .................... 4, 6, 5, 6, 4, 6   (margin of FOUR above zero)
+        //       measured sweep, no readiness handshake . 4, 4, 4, 4, 3     (scheduling latency, see below)
+        //       this version .......................... 17, 13, 15, 17, 16
+        //     The point of the last row is not that the number is bigger; it is that roughly a quarter of
+        //     the sweep now lands inside the dispatch INSTEAD OF BY LUCK, while the two guards no longer
+        //     depend on the number at all.
+        // ─────────────────────────────────────────────────────────────────
+
+        // One warm dispatch, timed on a throwaway channel and hub so it does not enter the accounting the
+        // invariant below checks. The store is already warm, which is the dominant cost of the read.
+        //
+        // 🔴 Timed IN THE SWEEP'S OWN HARNESS — with a live canceller task alongside it — and that detail
+        // is the whole difference between a graded sweep and a useless one. MEASURED on this machine: a
+        // dispatch in isolation costs 0.08 ms, but one iteration of the loop below costs 0.71 ms, ~8x
+        // more, because `Task.Run` scheduling and the spinning canceller contend with it. A sweep scaled
+        // to the 0.08 ms figure spans 0.33 ms and lands ENTIRELY BEFORE the dispatch finishes — 58 of 60
+        // iterations cancelled, which is barely better than the constant it replaced. Measuring the
+        // dispatch under the conditions it is actually raced in is what makes the number mean something.
+        TimeSpan dispatchCost;
+        {
+            var probeHub = new AlarmAnnunciationHub(listenerCapacity: 16);
+            using var probeListener = probeHub.Subscribe();
+            var probeChannel = NewChannel(store, probeHub);
+            await probeChannel.DispatchAsync(MakeJob(sequence: 0), CancellationToken.None); // JIT + first-touch
+
+            const int Probes = 5;
+            var probeClock = Stopwatch.StartNew();
+            for (var p = 0; p < Probes; p++)
+            {
+                using var probeCts = new CancellationTokenSource();
+                var stop = false;
+                // The same shape as the sweep's canceller, including the same dedicated thread and the same
+                // "already running" handshake, with a deadline it never reaches: it contends and it spins,
+                // but it never cancels, so this times a COMPLETING dispatch under exactly the conditions
+                // the sweep imposes.
+                var probeRunning = new SemaphoreSlim(0, 1);
+                var probeCanceller = new Thread(() =>
+                {
+                    probeRunning.Release();
+                    while (!Volatile.Read(ref stop)) Thread.SpinWait(20);
+                })
+                { IsBackground = true, Name = "b2-probe-canceller" };
+                probeCanceller.Start();
+                probeRunning.Wait();
+                await probeChannel.DispatchAsync(MakeJob(sequence: p), probeCts.Token);
+                Volatile.Write(ref stop, true);
+                probeCanceller.Join();
+            }
+
+            dispatchCost = TimeSpan.FromTicks(Math.Max(1, probeClock.Elapsed.Ticks / Probes));
+        }
+
         var channel = NewChannel(store, hub);
 
         const int Iterations = 60;
+        // 0 → 4x one dispatch, so the middle of the sweep straddles the real cost ON THIS MACHINE rather
+        // than on whichever machine a constant was once measured on.
+        var sweep = TimeSpan.FromTicks(dispatchCost.Ticks * 4);
         var threw = 0;
         for (var i = 0; i < Iterations; i++)
         {
             using var cts = new CancellationTokenSource();
-            // Straddles the whole dispatch: some iterations cancel before it starts, some during the store
-            // read, some after it has returned.
-            cts.CancelAfter(TimeSpan.FromTicks(i * 2000));
+            Thread? canceller = null;
+
+            if (i == 0)
+            {
+                // The cancelled end, by construction: already cancelled when DispatchAsync is entered.
+                cts.Cancel();
+            }
+            else if (i < Iterations - 1)
+            {
+                // The graded middle. A Stopwatch spin, not CancelAfter — see (b) above.
+                //
+                // 🔴 The canceller SIGNALS that it is already running before the dispatch is allowed to
+                // start, and that handshake is load-bearing. MEASURED: a canceller's first instruction
+                // does not execute for ~0.5 ms after it is handed off, which is several times the
+                // dispatch being raced — so without the handshake every "cancel at 0.1 ms" actually
+                // landed at ~0.6 ms, i.e. after the dispatch, and the sweep collapsed to one outcome
+                // again for a completely different reason than the timer tick did. With it, `threw`
+                // went from 4/60 to 13-17/60.
+                //
+                // 🔴 A DEDICATED THREAD, deliberately NOT `Task.Run`. This suite runs its tests in
+                // PARALLEL, and the handshake above makes the test block until the canceller is running:
+                // on the thread pool that is 59 waits on pool scheduling, and a saturated pool grows at
+                // roughly one thread per second. That turns a cheap test into an arbitrarily slow one
+                // exactly when the suite is busiest — the same "test coupled to machine load" defect
+                // class this whole fix is about, reintroduced by the fix. A dedicated thread cannot be
+                // starved by the pool, and is joined below so none outlives its iteration.
+                var cancelAt = TimeSpan.FromTicks(sweep.Ticks * i / (Iterations - 2));
+                var running = new SemaphoreSlim(0, 1);
+                canceller = new Thread(() =>
+                {
+                    running.Release();
+                    var clock = Stopwatch.StartNew();
+                    while (clock.Elapsed < cancelAt) Thread.SpinWait(20);
+                    cts.Cancel();
+                })
+                { IsBackground = true, Name = "b2-canceller" };
+                canceller.Start();
+                running.Wait();
+            }
+
+            // i == Iterations - 1: never cancelled. The completing end, by construction.
+
             try
             {
                 await channel.DispatchAsync(MakeJob(sequence: i), cts.Token);
@@ -751,6 +873,11 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
                 // same thing the drain loop actually tests.
                 Assert.True(cts.Token.IsCancellationRequested);
             }
+
+            // 🔴 Joined INSIDE the iteration, before `using var cts` disposes: a canceller still spinning
+            // would call Cancel() on a disposed source and die with an ObjectDisposedException on a
+            // background thread, where nothing would ever report it.
+            canceller?.Join();
         }
 
         var stats = channel.Stats;
@@ -759,10 +886,18 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
         // guards this test would pass for a sweep that never cancelled anything (or one that cancelled
         // everything), asserting an invariant over a case it never reached. `TheHubTolerates…` in this file
         // guards its own race the same way; this one was missing it.
-        Assert.True(threw > 0, "no iteration was cancelled — the sweep never reached the race at all.");
+        //
+        // 🔴 Closeout round (B-2): both are now satisfied by CONSTRUCTION (iteration 0 and iteration
+        // Iterations-1), so a failure here means the channel stopped honouring an already-cancelled token
+        // or started throwing on an uncancelled one — a real regression — rather than an unlucky sample.
+        Assert.True(threw > 0,
+            $"no iteration was cancelled, including iteration 0 whose token was ALREADY cancelled on entry " +
+            $"(one dispatch measured {dispatchCost.TotalMilliseconds:0.###}ms; sweep 0 → " +
+            $"{sweep.TotalMilliseconds:0.###}ms).");
         Assert.True(threw < Iterations,
-            $"every one of the {Iterations} iterations was cancelled — the sweep never reached the " +
-            "completing side, so the invariant was only checked against one outcome.");
+            $"every one of the {Iterations} iterations was cancelled, including the last one whose token is " +
+            $"NEVER cancelled (one dispatch measured {dispatchCost.TotalMilliseconds:0.###}ms; sweep 0 → " +
+            $"{sweep.TotalMilliseconds:0.###}ms).");
         // 🔴 The invariant. Every dispatch is accounted for exactly once, whichever side of the race it
         // fell on, and nothing was absorbed.
         Assert.Equal(Iterations, stats.Cancelled + stats.Announced + stats.Unheard + stats.Lost);
