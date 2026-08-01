@@ -1,7 +1,8 @@
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
-import { pullMachineConfig, resetEstop, resetMachineSetting, setFleetRunning } from "./support/engine"
+import { LIVE_CYCLES_MS } from "./support/deadlines"
+import { ENGINE_URL, applyScenario, pullMachineConfig, resetEstop, resetMachineSetting, resetScenarioToNormal, setFleetRunning } from "./support/engine"
 import { gotoHmi, gotoMachineDetailSettings } from "./support/screens"
 import { primeAppStorage, type Theme } from "./support/theme"
 import { vi as viDict } from "../src/i18n/vi"
@@ -19,6 +20,24 @@ async function chooseSelectOption(page: Page, comboboxName: string, optionLabel:
  * table (several parameters share values like "0" or a common unit). */
 function settingRow(page: Page, key: string): Locator {
   return page.locator(`[data-machine-setting-row="${key}"]`)
+}
+
+/**
+ * SCRW-01's fail rate over its most recent `window` cycles, straight off the engine.
+ *
+ * `minCycles` guards the "has the window actually refilled yet" case, and the sentinel for it is
+ * `NaN` on purpose: NaN satisfies NEITHER `toBeGreaterThan` nor `toBeLessThan`, so a window that has
+ * not filled yet keeps the poll going in both directions. Any finite sentinel would satisfy one of
+ * the two comparisons and make that assertion pass on an empty window — which is the shape the
+ * original inline copies each avoided separately (`? … : 0` for the greater-than, `? … : 1` for the
+ * less-than) and which merging them into one helper would otherwise reintroduce.
+ */
+async function recentFailRate(request: APIRequestContext, window: number, minCycles = 1): Promise<number> {
+  const res = await request.get(`${ENGINE_URL}/v1/machines/SCRW-01`)
+  const body = (await res.json()) as { cycleLog: { verdict: string }[] }
+  const recent = body.cycleLog.slice(-window)
+  if (recent.length < minCycles) return Number.NaN
+  return recent.filter((r) => r.verdict === "Fail").length / recent.length
 }
 
 /**
@@ -45,6 +64,9 @@ test.describe("Machine settings — HMI tab + machine detail panel", () => {
     await resetMachineSetting(request, "AOI-01", "matchThreshold", "product", "MODEL-A")
     await resetEstop(request)
     await setFleetRunning(request, true)
+    // Belt and braces for the one test below that raises `cycleRate` — a scenario knob left set would
+    // change the pace of every spec that runs after this file.
+    await resetScenarioToNormal(request)
   })
 
   test("tab rail: two tabs, arrow-key navigation moves both focus and selection", async ({ page }) => {
@@ -140,46 +162,53 @@ test.describe("Machine settings — HMI tab + machine detail panel", () => {
     page,
     request,
   }) => {
-    await gotoHmi(page, "SCRW-01")
-    await page.getByRole("tab", { name: viDict.hmi.tabs.settings }).click()
-    await settingRow(page, "torqueTolerance")
-      .getByRole("button", { name: /^Sửa/ })
-      .click()
-    await page.getByRole("spinbutton", { name: viDict.machineSettings.editDialog.valueLabel }).fill("0.02")
-    await page.getByRole("button", { name: viDict.machineSettings.editDialog.save }).click()
-    await expect(settingRow(page, "torqueTolerance")).toContainText(viDict.machineSettings.provenance.machine)
+    // 🔴 What this test costs, and why that cost is the engine's CLOCK rather than its behaviour.
+    //
+    // Both polls below are waiting for SCRW-01's rolling verdict window to refill: the first needs
+    // >3 of the last 20 cycles to fail, the second needs the failures to age out of the last 15. At
+    // SCRW-01's configured 0.8 s cycle that is ~4 and ~13 cycles — measured, in a full run,
+    // at 4 055 ms and 11 137 ms. (The brief for this task put it at "~28 s of irreducible engine
+    // time, 20 then 15 cycles at 0.8 s each"; that arithmetic assumes each window has to refill
+    // COMPLETELY, which neither threshold requires. The real total is 15.2 s, and the whole test
+    // measured 15 364 ms against the 45 s ceiling — it is not a benchmark and it does not need to
+    // live somewhere else.)
+    //
+    // 15 s of a 9-minute suite is not the problem. The problem is that the number is a statement
+    // about how fast the simulator ticks, not about whether tightening a tolerance raises the NG
+    // rate — so `cycleRate` is raised for the duration. `SimulatorBase.CycleRateMultiplier` DIVIDES
+    // the cycle interval and touches nothing else: the same verdicts, in the same proportions, sooner.
+    // (The shipped `sensor-drift` preset already runs the fleet at 5.0x, so this is an in-product,
+    // already-exercised setting.) The `finally` restores it, and the file's `afterEach` restores it
+    // again — belt and braces on a process-lifetime singleton every other spec shares.
+    await applyScenario(request, { cycleRate: 4.0 })
+    try {
+      await gotoHmi(page, "SCRW-01")
+      await page.getByRole("tab", { name: viDict.hmi.tabs.settings }).click()
+      await settingRow(page, "torqueTolerance")
+        .getByRole("button", { name: /^Sửa/ })
+        .click()
+      await page.getByRole("spinbutton", { name: viDict.machineSettings.editDialog.valueLabel }).fill("0.02")
+      await page.getByRole("button", { name: viDict.machineSettings.editDialog.save }).click()
+      await expect(settingRow(page, "torqueTolerance")).toContainText(viDict.machineSettings.provenance.machine)
 
-    // Poll the LIVE fleet's own cycle log (not the UI) so this assertion is about the simulated
-    // BEHAVIOUR (Task 3's own contract), not a UI-rendering nuance — the UI's own NG count is proven
-    // separately by the machine-detail/HMI screenshots taken during manual verification.
-    await expect
-      .poll(
-        async () => {
-          const res = await request.get(`${process.env.ENGINE_URL ?? "http://localhost:5199"}/v1/machines/SCRW-01`)
-          const body = (await res.json()) as { cycleLog: { verdict: string }[] }
-          const recent = body.cycleLog.slice(-20)
-          return recent.length > 0 ? recent.filter((r) => r.verdict === "Fail").length / recent.length : 0
-        },
-        { timeout: 20_000, intervals: [1000] }
-      )
-      .toBeGreaterThan(0.15)
+      // Poll the LIVE fleet's own cycle log (not the UI) so this assertion is about the simulated
+      // BEHAVIOUR (Task 3's own contract), not a UI-rendering nuance — the UI's own NG count is proven
+      // separately by the machine-detail/HMI screenshots taken during manual verification.
+      await expect
+        .poll(() => recentFailRate(request, 20), { timeout: LIVE_CYCLES_MS, intervals: [250] })
+        .toBeGreaterThan(0.15)
 
-    await settingRow(page, "torqueTolerance")
-      .getByRole("button", { name: /Đặt lại/ })
-      .click()
-    await expect(settingRow(page, "torqueTolerance")).toContainText(viDict.machineSettings.provenance.baseline)
+      await settingRow(page, "torqueTolerance")
+        .getByRole("button", { name: /Đặt lại/ })
+        .click()
+      await expect(settingRow(page, "torqueTolerance")).toContainText(viDict.machineSettings.provenance.baseline)
 
-    await expect
-      .poll(
-        async () => {
-          const res = await request.get(`${process.env.ENGINE_URL ?? "http://localhost:5199"}/v1/machines/SCRW-01`)
-          const body = (await res.json()) as { cycleLog: { verdict: string }[] }
-          const recent = body.cycleLog.slice(-15)
-          return recent.length >= 15 ? recent.filter((r) => r.verdict === "Fail").length / recent.length : 1
-        },
-        { timeout: 20_000, intervals: [1000] }
-      )
-      .toBeLessThan(0.15)
+      await expect
+        .poll(() => recentFailRate(request, 15, 15), { timeout: LIVE_CYCLES_MS, intervals: [250] })
+        .toBeLessThan(0.15)
+    } finally {
+      await resetScenarioToNormal(request)
+    }
   })
 
   test("IoT machine hides the product dimension entirely — no selector, no scope choice when editing", async ({ page }) => {

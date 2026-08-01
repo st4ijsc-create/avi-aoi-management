@@ -1,4 +1,6 @@
-import type { APIRequestContext } from "@playwright/test"
+import { expect, type APIRequestContext } from "@playwright/test"
+
+import { HISTORIAN_ROWS_MS } from "./deadlines"
 
 /**
  * Direct HTTP calls against `St4i.EngineApi` (bypassing the UI) so every spec can establish its own
@@ -43,6 +45,79 @@ export async function resetScenarioToNormal(request: APIRequestContext): Promise
 export async function applyScenarioPreset(request: APIRequestContext, name: string): Promise<void> {
   const res = await request.post(`${ENGINE_URL}/v1/scenario/preset`, { data: { name } })
   if (!res.ok()) throw new Error(`apply scenario preset "${name}" failed: ${res.status()}`)
+}
+
+/**
+ * Sets the shared scenario's raw knobs directly (`POST /v1/scenario {cycleRate,defectRate,faultRate,
+ * networkOutage}` — the same endpoint the Scenario screen's own sliders drive), for the cases where a
+ * named preset is not extreme enough to make a test cheap and deterministic.
+ *
+ * `cycleRate` is a MULTIPLIER on every simulator's cycle interval (`SimulatorBase.CycleRateMultiplier`
+ * divides the interval; the shipped `sensor-drift` preset already uses 5.0), so raising it makes the
+ * engine produce the same verdicts faster — it changes the CLOCK, never the behaviour. `defectRate`
+ * and `faultRate` are combined server-side into one injected-failure probability per reading
+ * (`ScenarioAwareDriver`: `1 - (1-defect)(1-fault)`).
+ *
+ * Anything that calls this MUST undo it — `resetScenarioToNormal` in a `finally` or an `afterEach`,
+ * both of which Playwright still runs when a test hits its own timeout (verified, task-2-report.md
+ * §2). This is a process-lifetime singleton shared with every other spec in the run.
+ */
+export async function applyScenario(
+  request: APIRequestContext,
+  scenario: { cycleRate?: number; defectRate?: number; faultRate?: number; networkOutage?: boolean }
+): Promise<void> {
+  const res = await request.post(`${ENGINE_URL}/v1/scenario`, {
+    data: { cycleRate: 1.0, defectRate: 0.0, faultRate: 0.0, networkOutage: false, ...scenario },
+  })
+  if (!res.ok()) throw new Error(`apply scenario ${JSON.stringify(scenario)} failed: ${res.status()}`)
+}
+
+/**
+ * Sets one machine operating-configuration parameter directly
+ * (`PUT /v1/machines/{code}/settings/{key}`) — the API half of `resetMachineSetting`, for specs that
+ * need a machine driven into a known operating regime without going through its edit dialog.
+ *
+ * The simulators read these on every cycle, so this is the deterministic way to make a rare outcome
+ * common: `AoiInspectorSim` calls a point NG whenever `matchScore < matchThreshold` with
+ * `matchScore ~ N(0.93, 0.05)`, so raising `matchThreshold` raises the per-point NG rate
+ * monotonically and by construction (see that sim's own header). Undo it with `resetMachineSetting`.
+ */
+export async function setMachineSetting(
+  request: APIRequestContext,
+  machineCode: string,
+  key: string,
+  value: number,
+  scope: "machine" | "product",
+  product?: string
+): Promise<void> {
+  const res = await request.put(
+    `${ENGINE_URL}/v1/machines/${encodeURIComponent(machineCode)}/settings/${encodeURIComponent(key)}`,
+    { data: product ? { value, scope, product } : { value, scope } }
+  )
+  if (!res.ok()) throw new Error(`set machine setting ${machineCode}/${key} = ${value} (${scope}) failed: ${res.status()}`)
+}
+
+/**
+ * Waits until the historian has real cycle rows on file — the precondition `/historian` and `/reports`
+ * both need before they can render anything at all.
+ *
+ * Lived as a BYTE-IDENTICAL copy in `15-historian.spec.ts` and `16-reports.spec.ts`, both called from
+ * a `beforeEach`, both declaring 30 000 ms. Two copies of a bound is two places to get it wrong and
+ * one of them to be missed; it belongs here beside the other "establish your own precondition"
+ * helpers. See `HISTORIAN_ROWS_MS` for what the bound is measured against.
+ */
+export async function waitForHistorianRows(request: APIRequestContext, minRows = 5): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const res = await request.get(`${ENGINE_URL}/v1/historian/results?limit=1`)
+        if (!res.ok()) return -1
+        const body = (await res.json()) as { total: number }
+        return body.total
+      },
+      { timeout: HISTORIAN_ROWS_MS, message: "waiting for the historian to record real cycle rows" }
+    )
+    .toBeGreaterThanOrEqual(minRows)
 }
 
 /** Resets the engine-stored `settings.language` back to Vietnamese — the Settings functional spec

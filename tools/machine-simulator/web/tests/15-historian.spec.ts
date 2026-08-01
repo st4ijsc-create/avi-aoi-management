@@ -1,7 +1,7 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
-import { ENGINE_URL, setFleetRunning } from "./support/engine"
+import { setFleetRunning, waitForHistorianRows } from "./support/engine"
 import { en } from "../src/i18n/en"
 import { vi as viDict } from "../src/i18n/vi"
 
@@ -16,26 +16,12 @@ import { vi as viDict } from "../src/i18n/vi"
  * specs ran before this one.
  */
 
-async function waitForHistorianRows(request: APIRequestContext, minRows = 5): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        const res = await request.get(`${ENGINE_URL}/v1/historian/results?limit=1`)
-        if (!res.ok()) return -1
-        const body = (await res.json()) as { total: number }
-        return body.total
-      },
-      { timeout: 30_000, message: "waiting for the historian to record real cycle rows" }
-    )
-    .toBeGreaterThanOrEqual(minRows)
-}
-
 async function gotoHistorian(page: Page): Promise<void> {
   await page.goto("/historian")
   await expect(page.getByRole("heading", { name: viDict.historian.title, level: 1 })).toBeVisible()
   await expect(page.getByRole("columnheader", { name: viDict.historian.table.serial })).toBeVisible()
   // Past the loading skeleton — a real row rendered once `useHistorianResults` resolved.
-  await expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator("tbody tr").first()).toBeVisible()
 }
 
 /** Same idiom `13-machine-settings.spec.ts` already established for the Base UI `Select` primitive
@@ -91,7 +77,7 @@ test.describe("historian — browse, filter, genealogy dialog, CSV export", () =
     await chooseSelectOption(page, viDict.historian.filters.verdict, viDict.cycleLogTable.verdict.pass)
 
     const verdictCells = page.locator("tbody tr td:nth-child(4)")
-    await expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator("tbody tr").first()).toBeVisible()
     const count = await verdictCells.count()
     expect(count).toBeGreaterThan(0)
     for (let i = 0; i < count; i++) {
@@ -202,9 +188,9 @@ test.describe("historian — browse, filter, genealogy dialog, CSV export", () =
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/historian")
     await expect(page.getByRole("heading", { name: en.historian.title, level: 1 })).toBeVisible()
-    await expect(page.getByRole("columnheader", { name: en.historian.table.serial })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("columnheader", { name: en.historian.table.serial })).toBeVisible()
     // Past the loading skeleton — a real row rendered once `useHistorianResults` resolved.
-    await expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator("tbody tr").first()).toBeVisible()
     await expect(page.getByRole("link", { name: en.historian.export.csv })).toBeVisible()
 
     // A leftover `t()` typo renders the raw dot-path string (e.g. "historian.table.serial") — this
