@@ -79,6 +79,60 @@ public sealed class StoreAndForwardRestartSurvivalTests
             throw new HttpRequestException("simulated offline server (WS-C-T5 capstone) — forces the SDK's real Enqueue-to-disk path, no real socket");
     }
 
+    /// <summary>
+    /// 🔴🔴 Đợt C closeout round, THIRD PASS — <b>the WAL file must never be read with
+    /// <see cref="File.ReadAllLines(string)"/>, and this is the only reader this test may use.</b>
+    ///
+    /// <para><b>The defect.</b> Captured live under load, as an <see cref="IOException"/> — "The process
+    /// cannot access the file '…SF-RESTART-….jsonl' because it is being used by another process" — thrown
+    /// out of <c>File.ReadAllLines</c>, NOT out of any assertion. <c>File.ReadAllLines</c> opens with
+    /// <see cref="FileShare.Read"/>, which permits other READERS but refuses to open at all while any
+    /// WRITE handle is live. The vendored SDK holds one regularly: <c>St4iDeviceClient.DrainQueue</c>
+    /// (examples/device-client/csharp/St4iDeviceClient.cs) ends with an UNCONDITIONAL
+    /// <c>File.WriteAllText(_queuePath, "")</c> — <c>FileMode.Create</c>/<see cref="FileAccess.Write"/>/
+    /// <see cref="FileShare.Read"/> — which runs on EVERY <c>FlushQueueAsync</c> call even when the queue
+    /// is empty and there is nothing to drain. So a running <see cref="WalFlushPump"/> opens this file for
+    /// writing once per tick, forever, and compose #1's own send path calls the same drain before every
+    /// reading it sends. Any test-side <c>File.ReadAllLines</c> that lands in one of those windows throws.
+    /// Nothing about the property under test is involved — the read simply cannot be performed that way.</para>
+    ///
+    /// <para><b>Why these share flags.</b> Verified with a standalone probe against a handle opened exactly
+    /// as <c>File.WriteAllText</c> opens one, not assumed from documentation: <c>File.ReadAllLines</c>
+    /// throws, and this <see cref="FileShare.ReadWrite"/><c>|</c><see cref="FileShare.Delete"/> open
+    /// succeeds. The two directions of the Win32 sharing check are what matter — our REQUESTED access
+    /// (<see cref="FileAccess.Read"/>) must be allowed by the SDK handle's share mode
+    /// (<see cref="FileShare.Read"/> — it is), and our share mode must allow the SDK handle's access
+    /// (<see cref="FileAccess.Write"/> — which <see cref="FileShare.Read"/> did not and
+    /// <see cref="FileShare.ReadWrite"/> does). <see cref="FileShare.Delete"/> additionally tolerates
+    /// <c>WalMaintenance.WriteAllLinesAtomic</c>'s rename-over-the-file, so a trim can never be blocked by
+    /// this test's reader either. Against every handle the SDK and WalMaintenance open, this cannot
+    /// produce a sharing violation in EITHER direction — so there is no retry here, and no bound to tune.</para>
+    ///
+    /// <para>A torn read (a line half-appended) is harmless at all three call sites: two of them only ask
+    /// whether any line is non-blank, and the third (<c>bufferedLines</c>, the only one whose content is
+    /// parsed) runs after compose #1 is stopped and before any pump exists, with no writer alive at all.</para>
+    /// </summary>
+    private static string[] ReadWalLines(string walFile)
+    {
+        if (!File.Exists(walFile)) return [];
+
+        try
+        {
+            using var stream = new FileStream(
+                walFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+
+            var lines = new List<string>();
+            while (reader.ReadLine() is { } line) lines.Add(line);
+            return lines.ToArray();
+        }
+        catch (FileNotFoundException)
+        {
+            // Raced a delete between File.Exists and the open — an empty backlog, same as not existing.
+            return [];
+        }
+    }
+
     /// <summary>The ST4I ingest path ONE buffered WAL line will be replayed to, read out of the vendored
     /// SDK's own queue-line shape — <c>{"kind":…,"path":…,"payload":…,"queuedAt":…}</c>, written by
     /// <c>St4iDeviceClient.Enqueue</c> and read back by its <c>FlushQueueAsync</c>
@@ -152,7 +206,11 @@ public sealed class StoreAndForwardRestartSurvivalTests
 
             // A few real cycles buffer real ProcessResult envelopes to the on-disk WAL file.
             await WaitUntilAsync(
-                () => File.Exists(walFile) && File.ReadAllLines(walFile).Any(l => l.Trim().Length > 0),
+                // ReadWalLines, never File.ReadAllLines — compose #1 is deliberately RUNNING here, so the
+                // SDK is appending to and truncating this exact file while this predicate polls it. That
+                // concurrent writer is the point of this leg of the test and cannot be removed; the read
+                // is what has to tolerate it. See ReadWalLines' own doc comment.
+                () => ReadWalLines(walFile).Any(l => l.Trim().Length > 0),
                 "the offline FleetHost to buffer at least one ProcessResult envelope to the on-disk WAL file");
 
             // WS-C-T4's ack-label fix, proven LIVE through the real pipeline (not just a synthetic ack):
@@ -171,7 +229,10 @@ public sealed class StoreAndForwardRestartSurvivalTests
             live1.Dispose();
         }
 
-        var bufferedLines = File.ReadAllLines(walFile).Where(l => l.Trim().Length > 0).ToArray();
+        // The only read in this test whose CONTENT is parsed (QueuedPath below), and the only one with no
+        // writer alive at all: compose #1 is stopped and disposed above, and compose #2's pump does not
+        // exist yet — so this is a settled file, never a torn one.
+        var bufferedLines = ReadWalLines(walFile).Where(l => l.Trim().Length > 0).ToArray();
         Assert.True(bufferedLines.Length > 0, "compose #1 should have buffered at least one record to the on-disk WAL before the simulated restart");
 
         // The backlog that ACTUALLY survived the restart, as the SDK itself will replay it: one ingest path
@@ -263,8 +324,21 @@ public sealed class StoreAndForwardRestartSurvivalTests
                 $"the pump's own idle timer to drain AND REPORT all {bufferedLines.Length} restart-surviving " +
                 "record(s) — an empty WAL file alone cannot say this, it is also true mid-drain (see above)");
 
+            // 🔴 THIRD PASS — STOP THE WRITER BEFORE READING WHAT IT WROTE. The drain is reported complete,
+            // so the pump has no work left; but `await using` would not dispose it until AFTER every
+            // assertion below, and an idle pump is NOT a quiet one — each 30 ms tick still calls
+            // FlushQueueAsync, whose DrainQueue opens this file for WRITING unconditionally (see
+            // ReadWalLines). That live write handle is what threw the IOException this pass fixes, out of
+            // the very next line. DisposeAsync cancels the loop AND awaits it, so once it returns no
+            // further tick can begin and every read below is against a file with no writer at all.
+            //
+            // This costs the test nothing: the drain already happened and was already counted — disposing
+            // the pump afterwards cannot un-prove it. `await using` still runs a second dispose at scope
+            // exit, which WalFlushPump.DisposeAsync makes idempotent by design (`if (_disposed) return`).
+            await pump.DisposeAsync();
+
             Assert.True(
-                File.ReadAllLines(walFile).All(l => l.Trim().Length == 0),
+                ReadWalLines(walFile).All(l => l.Trim().Length == 0),
                 "the WAL file must be empty once the pump has reported the full drain — anything left here is " +
                 "a record FlushQueueAsync re-enqueued because it could not deliver it");
             Assert.Equal(bufferedLines.Length, Volatile.Read(ref drainedTotal));
