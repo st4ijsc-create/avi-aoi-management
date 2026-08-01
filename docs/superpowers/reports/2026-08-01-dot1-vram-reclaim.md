@@ -73,7 +73,7 @@ Lệnh: `node scripts/ai-bench/bench.mjs --models deep --iters 1 --warmup 0` (mo
 
 Nạp **thành công 1 lần duy nhất** (`loaded in 41399.6ms`), không còn lỗi `cudaMalloc`. Sau khi bench thoát: VRAM về baseline (1.177 MiB, sai số đo trong khoảng nhiễu bình thường so với 1.178 MiB trước khi chạy), `tasklist` xác nhận **không còn `node.exe` treo**.
 
-Baseline JSON đầy đủ (không commit — nằm trong `.gitignore` của thư mục bench): `scripts/ai-bench/baselines/2026-08-01T14-21-51-546Z.json`.
+Baseline JSON đầy đủ (không commit — nằm trong `.gitignore` của thư mục bench): `scripts/ai-bench/baselines/2026-08-01T14-21-51-546Z.json`. ⚠ **File này đã bị xoá** trong dọn dẹp cuối review vòng 1 (M-6, cùng 3 file baseline tạm khác) — không còn truy được. Số liệu ở bảng trên đã được **xác nhận độc lập** trong review toàn nhánh cổng cuối (`.superpowers/sdd/2026-08-01-dot1-gianh-lai-vram/final-review.md` §5, mẫu 5 ô, lệch ≤0,2%).
 
 ### Mối lo / việc để lại cho task sau
 
@@ -93,7 +93,7 @@ loaded.embeddingContext = await loaded.model.createEmbeddingContext({
   batchSize: loaded.config.batchSize ?? 512,
 });
 ```
-`"auto"` cấp phát toàn bộ cửa sổ ngữ cảnh mà model nhúng hỗ trợ — bất kể chunk RAG thực tế dài bao nhiêu. Chunk RAG dài nhất trong `knowledge/chunks-stats.json` (`maxChunkChars=1800`) chỉ ~600 token. Model nhúng còn được `loadGgufModel()` nạp kèm một `context` **thường** (`createContext({ contextSize: GGUF_DEFAULT_CTX=4096, sequences: GGUF_SEQUENCES=4, ... })`, dòng ~662-668) mà nó **không bao giờ dùng để sinh chữ** — nên `"auto"` là trả tiền lần thứ hai cho một cửa sổ ngữ cảnh không tương xứng nhu cầu.
+`"auto"` cấp phát toàn bộ cửa sổ ngữ cảnh mà model nhúng hỗ trợ — bất kể chunk RAG thực tế dài bao nhiêu. Chunk RAG dài nhất trong `knowledge/chunks-stats.json` (`maxChunkChars=1800`) chỉ ~600 token. Model nhúng còn được `loadGgufModel()` nạp kèm một `context` **thường** (`createContext({ contextSize: GGUF_DEFAULT_CTX=4096, sequences: GGUF_SEQUENCES=4, ... })`, **`aiGgufEngine.ts:685-691`** — số dòng đã thống nhất ở review cổng cuối, xem m5) mà nó **không bao giờ dùng để sinh chữ** — nên `"auto"` là trả tiền lần thứ hai cho một cửa sổ ngữ cảnh không tương xứng nhu cầu.
 
 Tên hàm export thật đúng như mã mẫu trong brief: `generateEmbedding` (`aiGgufEngine.ts:2187`, gọi `getEmbeddingContext()` ở dòng 2204/2235).
 
@@ -219,7 +219,7 @@ So với 1024, 2048 chỉ tốn thêm **~120 MiB** (~2,9%) — vẫn giữ đư�
 
 ### Minor 2 — GHI NHẬN, KHÔNG SỬA trong task này: khoản "trả tiền hai lần" mới xử lý MỘT NỬA
 
-Task 2 chỉ sửa `embeddingContext` (dòng ~2271). **Context thường vẫn được tạo cho model nhúng** — `loadGgufModel()` (`aiGgufEngine.ts:672-677`) gọi `model.createContext({ contextSize: GGUF_DEFAULT_CTX=4096, sequences: GGUF_SEQUENCES=4, ... })` cho **MỌI** model được nạp qua đường này, kể cả model nhúng chỉ dùng cho `getEmbeddingFor()` chứ không bao giờ `session.prompt()`. Đây là khoản còn tồn, **không thuộc phạm vi Task 2** (Task 2 chỉ giao "Modify: `aiGgufEngine.ts:2235-2241`"), để lại cho đợt sau:
+Task 2 chỉ sửa `embeddingContext` (dòng ~2271). **Context thường vẫn được tạo cho model nhúng** — `loadGgufModel()` (`aiGgufEngine.ts:685-691`) gọi `model.createContext({ contextSize: GGUF_DEFAULT_CTX=4096, sequences: GGUF_SEQUENCES=4, ... })` cho **MỌI** model được nạp qua đường này, kể cả model nhúng chỉ dùng cho `getEmbeddingFor()` chứ không bao giờ `session.prompt()`. Đây là khoản còn tồn, **không thuộc phạm vi Task 2** (Task 2 chỉ giao "Modify: `aiGgufEngine.ts:2235-2241`"), để lại cho đợt sau:
 
 - Số đo thật ở trên (4.321-4.324 MiB) **đã bao gồm** cả context thường 4096 này — nếu đợt sau loại bỏ nó cho model nhúng (ví dụ: bỏ qua `createContext()` khi `purpose==="embed"` và model chỉ từng được dùng cho embedding), VRAM embedding có thể còn giảm thêm đáng kể.
 - Task 4 (cộng bảng roster VRAM toàn hệ) cần biết con số 4.321-4.324 MiB là "đã trừ được nửa vấn đề", không phải mức sàn tuyệt đối.
@@ -430,7 +430,7 @@ ISOOM_MATCH   = false
 
 **(a) Model nhúng — thiếu 2.030 MiB.** Đợt 0 ghi `embed = 5.664 MiB`. Nhưng `bench.mjs:321` tự gọi `createEmbeddingContext({contextSize:"auto"})` **hard-code, không import `aiGgufEngine.ts`**, và **không** gọi `model.createContext()` — trong khi `loadGgufModel()` sản xuất tạo **cả hai** context. Chi phí THẬT trước khi sửa: **7.694 MiB** (Task 2, §2).
 
-**(b) MỌI model text GGUF — thiếu ~1.350 MiB mỗi model.** Phát hiện MỚI ở Task 4. `bench.mjs:249` tạo context bằng `model.createContext({contextSize, batchSize:512, flashAttention:true})` — **không truyền `sequences`** (mặc định **1**) và `contextSize` suy từ độ dài prefill của bài đo. Đường sản xuất (`aiGgufEngine.ts:686-691`) tạo `contextSize = GGUF_DEFAULT_CTX = 4096` với `sequences = GGUF_SEQUENCES = 4`. Đo trực tiếp qua `warmModel()` sản xuất:
+**(b) MỌI model text GGUF — thiếu ~1.350 MiB mỗi model.** Phát hiện MỚI ở Task 4. `bench.mjs:249` tạo context bằng `model.createContext({contextSize, batchSize:512, flashAttention:true})` — **không truyền `sequences`** (mặc định **1**) và `contextSize` suy từ độ dài prefill của bài đo. Đường sản xuất (`aiGgufEngine.ts:685-691`) tạo `contextSize = GGUF_DEFAULT_CTX = 4096` với `sequences = GGUF_SEQUENCES = 4`. Đo trực tiếp qua `warmModel()` sản xuất:
 
 | Model | Đợt 0 (`bench.mjs`) | Đường SẢN XUẤT (Task 4) | Thiếu |
 |---|---|---|---|
@@ -469,7 +469,7 @@ ISOOM_MATCH   = false
 | Sidecar (`-np 1`) | ~1,9 GB | **~0 — tiền đề của kế hoạch SAI** (`kv_unified=true`) |
 | **Tổng** | **~6,4 GB** | **~3,37 GB — bằng khoảng MỘT NỬA kỳ vọng** |
 
-⚠ Con số 4.321 MiB **đã bao gồm** context thường (4096 × 4 sequences) mà `loadGgufModel()` vẫn tạo cho model nhúng dù nó không bao giờ sinh chữ (`aiGgufEngine.ts:686-691`, Minor 2 của Task 2). Task 2 mới xử lý **một nửa** khoản "trả tiền hai lần" ⇒ **còn dư địa cho đợt sau**, chưa phải mức sàn.
+⚠ Con số 4.321 MiB **đã bao gồm** context thường (4096 × 4 sequences) mà `loadGgufModel()` vẫn tạo cho model nhúng dù nó không bao giờ sinh chữ (`aiGgufEngine.ts:685-691`, Minor 2 của Task 2). Task 2 mới xử lý **một nửa** khoản "trả tiền hai lần" ⇒ **còn dư địa cho đợt sau**, chưa phải mức sàn.
 
 ### Bảng bốn case — cộng lại bằng số thật
 

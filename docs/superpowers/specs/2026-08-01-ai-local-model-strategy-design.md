@@ -10,7 +10,7 @@
 >
 > 1. **Bảng số đo nền của Đợt 0 SAI theo hai hướng, cộng lại thiếu ~3.400 MiB** — vì `scripts/ai-bench/bench.mjs` **không đi qua mã sản xuất**. Xem §2.
 > 2. **Đợt 1 giành lại 3.373 MiB**, không phải ~6,4 GB như §5 bước C kỳ vọng — sidecar `-np 1` giành lại **~0** (tiền đề sai, `kv_unified=true`).
-> 3. **Bước B (vá race) đã làm, nhưng app VẪN không nạp được 30B** vì một nguyên nhân **thứ ba** chưa truy được. Bước D vẫn bị chặn.
+> 3. **Bước B (vá race) đã làm, nhưng app VẪN không nạp được 30B ở đường boot mặc định** vì một nguyên nhân **thứ ba** — cơ chế chưa truy được, nhưng đã có **đường vòng đo được (2 lần)**. Bước D **chưa chốt được, nhưng không còn bị chặn cứng như trước** (xem §5).
 >
 > Các số **Đợt 0** được **giữ nguyên** ở dưới để không ghi đè lịch sử; số **Đợt 1** đứng cạnh và là số **phải dùng**.
 
@@ -89,9 +89,9 @@ Trần **32.607 MiB**. Cột "TRƯỚC Đợt 1" là **số thật đo bằng đ
 | Case | Đợt 0 công bố | **TRƯỚC Đợt 1** (thật) | **SAU Đợt 1** | Đổi kết luận? |
 |---|---|---|---|---|
 | **1** — một model xuyên suốt, lúc nghỉ | 24.562 (75,3%) | 27.971 (85,8%) | **24.598 (75,4%)** | không đổi — vốn đã vừa, nay rộng hơn |
-| **1** — khi vision thức | 32.383 (99,3%) | 35.792 (**109,8% ❌**) | **32.419 (99,4%)** | ★ **ĐỔI MỘT NỬA** — hết "không thể tồn tại", nhưng **dưới tải 33.476 = 102,7% VẪN VƯỢT TRẦN** |
+| **1** — khi vision thức | 32.383 (99,3%) | 35.792 (**109,8% ❌**) | **32.419 (99,4%)** | ★ **ĐỔI MỘT NỬA** — hết "không thể tồn tại", nhưng **dưới tải VẪN VƯỢT TRẦN**: model+vision đang sinh = 33.476 (102,7%); **cộng đỉnh nhất thời khi nhúng đồng thời (review cổng cuối, xem callout dưới §3) = ~34.195 (~104,9%)** |
 | **2** — đồng thời đủ bộ | 42.312 (130% ❌) | 47.065 (**144,3% ❌**) | **43.692 (134,0% ❌)** | **KHÔNG ĐỔI — vẫn KHÔNG KHẢ THI** |
-| **3** — thị giác thường trú | 32.383 (99,3%) | 35.792 (**109,8% ❌**) | **32.419 (99,4%)** | ★ **ĐỔI MỘT NỬA** — như Case 1 vision thức |
+| **3** — thị giác thường trú | 32.383 (99,3%) | 35.792 (**109,8% ❌**) | **32.419 (99,4%)** | ★ **ĐỔI MỘT NỬA** — như Case 1 vision thức, **dưới tải ~104,9%** (xem callout dưới §3) |
 | **4** — hybrid `balanced`, lúc nghỉ | 28.026 (86%) | 31.435 (96,4%) | **28.062 (86,1%)** | ★ **ĐỔI** — từ "sát trần, không còn chỗ sinh" thành "có biên thật" (2 model cùng sinh = 29.942, **91,8%**) |
 | **4** — `balanced` + vision thức | *(Đợt 0 không tính)* | 39.256 (**120,4% ❌**) | **35.883 (110,0% ❌)** | **KHÔNG ĐỔI — vẫn vượt trần** |
 
@@ -104,7 +104,7 @@ Thành phần cột "SAU Đợt 1":
 
 **Ba điều phải nói thẳng:**
 1. **Case 2 không phải "gần khả thi".** Riêng nền + hai model 30B đã là `1.200 + 19.077 + 19.094 = 39.371 MiB`, **vượt trần 6.764 MiB khi embedding bằng KHÔNG**. Khoản giành lại 3.373 MiB **không tới một nửa** chỗ thiếu.
-2. **99,4% của Case 1/3 không có nghĩa là "đã giải quyết".** Đó là lúc nghỉ. Có người dùng thật là **102,7%**.
+2. **99,4% của Case 1/3 không có nghĩa là "đã giải quyết".** Đó là lúc nghỉ. Có người dùng thật là **102,7%** (model+vision đang sinh); **cộng cả đỉnh nhất thời khi nhúng đồng thời (mới phát hiện ở review cổng cuối) thì ~104,9%** — vài giây, không phải rò vĩnh viễn (xem callout dưới §3).
 3. **Đợt 0 đã công bố một cấu hình VƯỢT TRẦN là "sát trần"**: Case 1 + vision công bố 32.383 (99,3%), số thật lúc đó là **35.792 (109,8%)**.
 
 ---
@@ -116,7 +116,7 @@ Thành phần cột "SAU Đợt 1":
 | **Cấu hình** | `GGUF_DEFAULT_MODEL` = `GGUF_CODE_MODEL` = Coder-30B · embedding · **không** model FIM riêng · vision bật khi cần |
 | **Lúc nghỉ** | ~~1.200 + 17.698 + 5.664 = 24.562 MiB (75,3%)~~ *(Đợt 0)* → **Đợt 1: 1.200 + 19.077 + 4.321 = 24.598 MiB (75,4%)** |
 | **Khi vision thức** | ~~32.383 MiB (99,3%)~~ *(Đợt 0 — số thật lúc đó là 35.792, **109,8%**)* → **Đợt 1: 32.419 MiB (99,4%)** |
-| **Dưới tải** | vision ngủ: **25.538 (78,3%) — vừa**. Vision thức: 32.419 + 940 + 117 = **33.476 (102,7%) — VẪN VƯỢT TRẦN** |
+| **Dưới tải** | vision ngủ: **25.538 (78,3%) — vừa**. Vision thức: 32.419 + 940 + 117 = **33.476 (102,7%) — VẪN VƯỢT TRẦN**. ⚠ Chưa tính đỉnh nhất thời khi nhúng đồng thời (review cổng cuối) — cộng riêng vào 32.419 cho **~34.195 (~104,9%)**, vài giây, không phải rò vĩnh viễn (xem callout dưới §3) |
 | **Đổi/quay lui** | **một dòng** `.env:120` |
 | **Điểm mạnh** | đơn giản nhất · KV cache rộng nhất khi vision ngủ · khớp ưu tiên "nghiêng code" |
 | **Điểm yếu** | **không có model general riêng** — chất lượng văn xuôi tiếng Việt phụ thuộc Coder-30B (**chờ chủ dự án chấm**) · 10 phút vision thức là 10 phút sát trần |
@@ -141,9 +141,10 @@ Thành phần cột "SAU Đợt 1":
 |---|---|
 | **Cấu hình** | vision **giữ thường trú** (`LLAMA_VISION_IDLE_TIMEOUT_MS` rất lớn) + Coder-30B + embedding |
 | **Lúc nghỉ** | ~~1.200 + 7.821 + 17.698 + 5.664 = 32.383 MiB (99,3%)~~ *(Đợt 0 — số thật lúc đó là **35.792, 109,8% ❌ đã vượt trần**)* → **Đợt 1: 1.200 + 7.821 + 19.077 + 4.321 = 32.419 MiB (99,4%)** |
-| **Dưới tải** | **33.476 (102,7%) — VẪN VƯỢT TRẦN.** Đợt 1 đưa case này từ "không thể tồn tại" về "tồn tại được lúc nghỉ", **không** đưa nó thành dùng được dưới tải |
+| **Dưới tải** | **33.476 (102,7%) — VẪN VƯỢT TRẦN**, và cộng đỉnh nhất thời khi nhúng đồng thời (review cổng cuối, xem callout dưới §3) ⇒ **~104,9%**. Đợt 1 đưa case này từ "không thể tồn tại" về "tồn tại được lúc nghỉ", **không** đưa nó thành dùng được dưới tải |
 | **Điểm mạnh** | ảnh xử lý **không phải chờ 40 giây khởi sidecar** mỗi lần nguội |
 | **Điểm yếu** | **không còn chỗ cho bất kỳ model nào khác** · sát trần liên tục · `evictLRU()` **không đuổi được** sidecar (khác tiến trình) ⇒ khi vượt, ~~nhánh `catch` **lặng lẽ nạp lại `gpuLayers:"auto"`** — tier âm thầm tụt tốc độ, dấu vết duy nhất là một dòng `console.warn`~~ ⚠ **SAI — Đợt 1 đã xác nhận nhánh `catch` đó là MÃ CHẾT** (xem dưới). Khi vượt, model **không nạp được** và **không có phương án dự phòng nào cả** |
+| **Hợp với** | khách nặng kiểm tra ảnh, gần như không dùng lập trình |
 
 ⚠ **ĐÍNH CHÍNH ĐỢT 1 — lưới an toàn mô tả ở dòng "Điểm yếu" KHÔNG TỒN TẠI.** Nhánh phục hồi `aiGgufEngine.ts:658-682` (gặp OOM → đuổi model rảnh → nạp lại `gpuLayers:"auto"`) **không bao giờ chạy**. Bắt được nguyên văn khi chạy `loadGgufModel()` trong chính tiến trình app đang lỗi:
 
@@ -154,7 +155,6 @@ err.message = "Failed to load model"        ⇒ ISOOM_MATCH = false
 `isOom` tìm `"out of memory"`/`"cudamalloc"`/`"failed to allocate"`/`"unable to allocate"` trong `err.message`, nhưng những chữ đó chỉ nằm ở **stderr của lớp C++ node-llama-cpp**. ⇒ `if (!isOom || ...) throw err` **luôn ném** ⇒ khối 672-682 chết.
 
 ⇒ Hệ **không** "âm thầm tụt xuống 2,9 tok/s" như tài liệu này từng mô tả — nó **hỏng hẳn và hỏng ồn ào**. Về vận hành **tệ hơn**, nhưng ít nhất **phát hiện được**. Chưa sửa mã (ngoài phạm vi Đợt 1) ⇒ nợ.
-| **Hợp với** | khách nặng kiểm tra ảnh, gần như không dùng lập trình |
 
 ### Case 4 — HYBRID THEO HỒ SƠ KHÁCH HÀNG ⭐ **khuyến nghị**
 
@@ -167,6 +167,36 @@ err.message = "Failed to load model"        ⇒ ISOOM_MATCH = false
 | **Điểm mạnh** | mỗi nhà máy có nhu cầu khác nhau — đây là **điểm bán hàng**, không phải chi phí · mỗi hồ sơ quay lui được độc lập |
 | **Điểm yếu** | phải **dựng cơ chế hồ sơ** (chưa có) · phải tài liệu hoá đánh đổi từng hồ sơ cho đội triển khai |
 | **Hợp với** | **sản phẩm bán cho nhiều khách** — đúng mô hình của dự án này |
+
+---
+
+> ## ⚠ CẬP NHẬT SAU REVIEW TOÀN NHÁNH — cổng cuối (2026-08-02), CHƯA VÁ
+>
+> Review độc lập trước khi push (`.superpowers/sdd/2026-08-01-dot1-gianh-lai-vram/final-review.md`) tìm thêm **hai race tiền tồn tại** — cùng lớp lỗi mà Task 1 (khoá in-flight `loadGgufModel()`) đã vá, còn sống ở hai chỗ khác **trong đúng file đó**. **Không do Đợt 1 gây ra**, **không chặn push** (không sửa mã đợt này), nhưng đổi số "dưới tải" ở §3 — xem sửa ở Case 1/3 phía trên.
+>
+> **IMPORTANT-1 — `getEmbeddingContext()` còn nguyên race Task 1 vừa vá, ăn ~52,7% khoản Đợt 1 giành lại.**
+> `aiGgufEngine.ts:2282-2287`, cách dòng Task 2 sửa đúng 3 dòng: kiểm `if (loaded.embeddingContext) return ...` rồi mới `await ... createEmbeddingContext()` — giữa hai bước có `await`. N lượt nhúng đồng thời tạo N context, gán đè, N−1 bản mồ côi. Tới được trong sản xuất: `.env:125 GGUF_MAX_CONCURRENCY=4`, 6 nơi gọi `generateEmbedding` do HTTP điều khiển.
+>
+> Đo được (4 lượt nhúng, `GGUF_MAX_CONCURRENCY=4`): tuần tự = **4.303 MiB** · đồng thời = **6.091 MiB** · chênh **+1.776 MiB**. Đó là **52,7% của toàn bộ 3.373 MiB Đợt 1 giành lại** — bốc hơi trong một cụm 4 truy vấn RAG cùng lúc.
+>
+> ⚠ **Phạm vi đúng — đừng thổi quá tay:** đây là **đỉnh nhất thời vài giây**, KHÔNG phải rò vĩnh viễn. Đo tiếp T+8s: VRAM về mức tuần tự (bản mồ côi được thu hồi), ổn định sau đó. Không do Đợt 1 gây ra — race đã có từ trước khi Task 2 sửa (Task 2 làm **NHẸ** nó, không tạo ra nó): trước Task 2 (`contextSize:"auto"`) mỗi bản mồ côi còn đắt hơn.
+>
+> ⇒ Bảng bốn case cột "dưới tải" thiếu hẳn số hạng này (chỉ cộng model đang sinh +470-940 và vision đang suy luận +117). Case 1/3: 32.419 + 1.776 = **~34.195 MiB (~104,9%)** — tệ hơn cả 102,7% mà tài liệu này gọi là "vượt trần". Đã cập nhật ở Case 1/3 phía trên.
+>
+> Test hiện có tạo cảm giác an toàn sai: `aiGgufEngine.test.ts:134` ("caches the embedding context — called once across multiple embeds") chỉ gọi **tuần tự**, không phủ đồng thời.
+>
+> Vá đề xuất (đợt sau, KHÔNG vá ở đợt này): nhớ `Promise` in-flight thay vì object, đúng khuôn `inFlightLoads` Task 1 đã dựng.
+>
+> **IMPORTANT-2 — `getLlama()` khởi tạo HAI backend llama.cpp — ứng viên cơ chế đầu tiên KIỂM ĐƯỢC cho "nguyên nhân thứ ba" (§5, §7).**
+> `getLlama()` (`aiGgufEngine.ts:296`): cùng khuôn kiểm-rồi-mới-gán (`if (llamaInstance) return llamaInstance` … `await initLlama(...)`). Khoá Task 1 khoá theo `modelId` ⇒ **KHÔNG phủ** — hai model KHÁC NHAU nạp đồng thời vẫn cùng vào `getLlama()`. Đo được: 2 model khác nhau nạp đồng thời ⇒ `INIT_COUNT=2` (`MODE=sequential ⇒ 1`, `MODE=concurrent ⇒ 2`, đếm dòng `llama.cpp engine initialized`). VRAM ở quy mô đo: 5.339 vs 5.346 — không tốn thêm đo được ở quy mô này.
+>
+> ⚠ **KHÔNG phát biểu đây là cơ chế của "nguyên nhân thứ ba"** — đó đúng là cái bẫy đã giết tiền đề Task 3. Ba điều ĐÃ đo: (a) race có thật, (b) chưa được vá, (c) nó nằm đúng chỗ hiện tượng xảy ra (boot app: RAG nạp model nhúng mốc 2s và warm 30B mốc 3s là hai `modelId` KHÁC NHAU ⇒ khoá Task 1 không áp dụng ⇒ hai `getLlama()`).
+>
+> **Phép thử rẻ nhất trong mọi giả thuyết đang có — đợt "nguyên nhân thứ ba" PHẢI chạy TRƯỚC khi thử bất kỳ đường vòng nào:**
+>
+> > `grep -c "llama.cpp engine initialized" <log boot>` — **2 dòng ⇒ ứng viên sống; 1 dòng ⇒ loại.**
+>
+> Chi tiết đầy đủ và nợ liên quan đã nâng bậc: `.superpowers/sdd/2026-08-01-dot1-gianh-lai-vram/progress.md` (mục "NỢ SAU CỔNG CUỐI").
 
 ---
 
@@ -230,7 +260,7 @@ Làm sai thứ tự là chọn trên nền cát.
 > - **A** (thành phần nắm ngân sách VRAM) — **chưa làm**, vẫn là nợ lớn nhất.
 > - **B** (vá race) — **ĐÃ LÀM** (Đợt 1 Task 1, khoá in-flight, đã nghiệm thu trên app thật: chỉ còn **1** lượt nạp thay vì 2). ⚠ **NHƯNG app ở đường boot mặc định VẪN không nạp được 30B** vì một nguyên nhân **thứ ba** khác hẳn race. **Phát biểu đúng phạm vi: không cấp phát nổi khối 16,7 GB nếu CUDA context được tạo SAU khi app boot xong.** Nếu CUDA context đã tồn tại **trước** khi app boot thì chính đường warm của app nạp 30B **thành công** (đo hai lần độc lập: `Model loaded in 16291ms` + `deep model warm OK`, VRAM 24.094 MiB). **Cơ chế CHƯA BIẾT** — đã loại trừ dung lượng VRAM thiết bị, trần commit Windows (+19,2/88,78 GB, dư >27 GB), mã nạp sản xuất, race. ⇒ **Có đường vòng đo được, chưa phải bản sửa.** Cần **một đợt riêng**.
 > - **C** (chỉnh buffer) — **ĐÃ LÀM một nửa**: embedding xong (3.373 MiB); sidecar `-np 1` giành lại **~0** vì tiền đề sai. Còn dư địa: context thường 4096×4 vẫn được tạo cho model nhúng.
-> - **D** (chốt roster) — **VẪN BỊ CHẶN**, giờ bởi nguyên nhân thứ ba ở bước B chứ không phải bởi race.
+> - **D** (chốt roster) — **chưa chốt được**, giờ bởi nguyên nhân thứ ba ở bước B chứ không phải bởi race — nhưng **không còn bị chặn cứng**: đã có đường vòng đo được (2 lần), cơ chế vẫn chưa biết.
 
 ---
 
