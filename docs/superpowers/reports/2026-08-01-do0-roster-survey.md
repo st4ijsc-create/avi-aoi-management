@@ -555,3 +555,137 @@ Bản đầy đủ (bảng tham số chọn khác default harness, JSON thô, m�
 ### Vòng sửa 1 (review)
 
 Reviewer xác nhận spec ✅ (TTFT đo thật khớp `bench.mjs:259-280`, mọi số khớp JSON đến từng ms, chạy lại độc lập ra 12.8ms so với 13.2ms báo cáo — cùng thứ tự độ lớn). Chất lượng cần sửa — 2 Important + 1 Minor, cả 3 đã xử lý, KHÔNG chạy lại model: (1) ngưỡng "300-500ms" được gắn nhãn rõ là **giả định của điều phối viên trong lệnh giao việc, không phải yêu cầu từ brief/spec, chưa có nguồn** — và câu "1/3-1/2 ngưỡng" (ghép mỗi kịch bản với đầu ngưỡng có lợi) sửa thành bảng nêu đủ 2 đầu, xấu nhất = 62.6% (đầu thấp), không phải 1/2; (2) "miễn phí nạp" và "rủi ro hàng đợi" viết lại thành MỘT đánh đổi có hai mặt (trỏ chung file = cùng lúc được lợi + chịu rủi ro), đào sâu thêm phát hiện `server/services/ggufConcurrency.ts` (semaphore toàn cục `GGUF_MAX_CONCURRENCY=4` + `sequences: GGUF_SEQUENCES` cho phép 4 chuỗi song song/model) — rủi ro "xếp hàng cứng" không đặc thù riêng việc share file, nhưng cạnh tranh GPU compute thật thì còn, CHƯA ĐO; (3) "dao động <10%" sửa vì sai với 1/4 hàng (153tok/1.5B = 17.4%). Chi tiết đầy đủ: `task-5-report.md` mục "Vòng sửa 1".
+
+---
+
+## §6 Toàn vẹn không gian nhúng (Task 6)
+
+**Câu hỏi:** hệ có đang dùng hai model nhúng khác nhau (kho RAG = Qwen3-Embedding-0.6B-f16,
+tìm-ảnh-theo-ảnh = mxbai-embed-large) mà phép canh KÍCH THƯỚC (`aiGgufEngine.ts:173`,
+`assertEmbeddingDim`, mặc định 1024) không đủ để phát hiện trộn nhầm (cả hai ra 1024 chiều)?
+**Chỉ đo và báo cáo — KHÔNG sửa**, kể cả chỗ sửa rõ ràng và dễ. Không đụng
+`knowledge/embeddings.jsonl`.
+
+### 0. Kiểm premise trước khi tin
+
+Brief mô tả tìm-ảnh-theo-ảnh "dùng mxbai-embed-large" — đọc `aiImageSearchRouter.ts:153`
+thật thì đó chỉ là comment của guard kích thước, không phải lệnh gọi hard-code. Model thật
+phụ thuộc `.env` `GGUF_EMBED_MODEL` (CÙNG biến RAG KB dùng) + cờ `IMAGE_EMBEDDING_DEFAULT`.
+Kiểm `.env` hiện tại:
+```bash
+grep -n "GGUF_EMBED_MODEL\|GGUF_EMBEDDING_MODEL\|GGUF_EMBED_DIM\|IMAGE_EMBEDDING_DEFAULT" .env
+# 144:GGUF_EMBEDDING_MODEL=Qwen3-Embedding-0.6B-f16.gguf
+# 147:GGUF_EMBED_MODEL=Qwen3-Embedding-0.6B-f16.gguf
+# 148:GGUF_EMBED_DIM=1024
+# 295:IMAGE_EMBEDDING_DEFAULT=onnx
+```
+**Premise brief đã lỗi thời:** hôm nay `GGUF_EMBED_MODEL` = CÙNG model với kho RAG (không
+phải mxbai), và `IMAGE_EMBEDDING_DEFAULT=onnx` + 1 model DINOv2 ONNX `ACTIVE` (xác nhận qua
+DB) khiến đường tìm-ảnh mặc định đi qua ONNX (384-dim, khác họ hoàn toàn), KHÔNG chạm nhánh
+mxbai/GGUF nào. Điều này KHÔNG làm bẫy biến mất — nó vẫn có thật ở tầng MÃ (mục 1) — chỉ là
+hôm nay không có dữ liệu thật nào đi qua nhánh đó để bị hỏng. Báo cáo dưới đây phân biệt rõ
+**"bẫy có thật trong code, đang ngủ (dormant)"** vs **"đang hoạt động, có dữ liệu thật"**.
+
+### 1. Truy vết mọi đường nhúng × mọi đường tìm
+
+```bash
+grep -rn "embedModelBasename\|GGUF_EMBED_MODEL\|GGUF_EMBEDDING_MODEL" server/ scripts/ --include=*.ts --include=*.mjs | grep -v test
+# → 80 dòng khớp
+```
+`server/services/ai/modelResolver.ts:172-174` (`embedModelBasename()`) là NGUỒN DUY NHẤT
+phân giải embedding cho `aiGgufEngine.generateEmbedding(s)` — chỉ đọc `GGUF_EMBED_MODEL`,
+**không có fallback nào sang `GGUF_EMBEDDING_MODEL`**. Biến còn lại chỉ được đọc ở đúng 1 chỗ
+khác (`aiGgufEngine.ts:762-770`, `configuredNonGenerativeBasenames()`) với vai trò khác hẳn:
+chặn `GGUF_DEFAULT_MODEL` vô tình trỏ vào model nhúng — không liên quan câu hỏi Task 6. Hai
+biến trùng giá trị hôm nay là **may mắn của lần sửa `.env` gần nhất, không được validation
+nào ép buộc**.
+
+Bảng đầy đủ 7 đường nhúng × 7 đường tìm (kho lưu, model, guard, số dòng DB thật) ở
+`task-6-report.md` mục 1b/1c. Tóm tắt: **3 ô cấu trúc KHÔNG có guard định danh** (chỉ nhiều
+nhất là guard kích thước, hoặc hoàn toàn không guard):
+
+| Ô lệch | Trạng thái hôm nay (đo qua DB) | Mức nguy cơ |
+|---|---|---|
+| KB Studio ingest (`kb_studio_chunks`, không cột lưu model đã nhúng) × KB Studio search (tái dùng vector câu hỏi đã nhúng, không kiểm phía corpus) | **ĐANG BẬT** (`KB_STUDIO_ENABLED=true`), có dữ liệu thật: 3 dòng, 1 corpus `so-tay-bao-tri-w2`, ingest trong 1 cửa sổ 27 giây (`SELECT corpus, count(*), min/max("createdAt") FROM kb_studio_chunks GROUP BY corpus` → 1 hàng) | **Cao nhất** — sống, chỉ chưa bị kích hoạt vì chưa có lần `.env` đổi giữa 2 lần ingest |
+| ops-KB pgvector mirror (`kb_chunks`, `server/services/kb/kbVectorStore.ts`) — `cosine()` tự viết dùng `Math.min(len)` TRUNCATE-COMPARE, tệ hơn cả canh kích thước | Dormant — `KB_PGVECTOR_ENABLED` không set trong `.env` → mặc định `false`; `SELECT count(*) FROM kb_chunks` → **0** | Thấp hôm nay, nhưng nếu bật lại mà không sửa trước thì không canh gì cả |
+| Image search text-of-image (`aiImageEmbedding.ts`, modelCode `TEXT_OF_IMAGE_MODEL_CODE` là hằng số cố định bất kể model GGUF thật; `searchByImage()` chỉ lọc `modelCode` cho nhánh `onnx`, KHÔNG cho nhánh này) | Dormant — `IMAGE_EMBEDDING_DEFAULT=onnx` + 1 model ONNX `ACTIVE` (`SELECT count(*) FROM ai_models WHERE "modelType"='embedding' AND status='ACTIVE' AND format='ONNX'` → 1) nên nhánh mặc định không tới đây; `ai_image_embeddings` hôm nay 990/990 dòng đều `modelCode='dinov2-small'`, `embeddingDim=384` | Thấp hôm nay, sống lại ngay nếu tắt/xoá model ONNX ACTIVE |
+
+**Q1×N1 (RAG KB ask ↔ RAG KB corpus) và Q2×N2 (Programming KB) CÓ guard định danh** —
+`aiLocalKnowledgeService.ts`'s `computeEmbedModelMatches()` (W0.3, doc 11) so ĐỊNH DANH
+(basename, đã chuẩn hoá quant suffix) giữa `embeddings-meta.json.model` (corpus) và
+`GGUF_EMBED_MODEL` (query runtime) — lệch thì fallback keyword-only + cảnh báo, KHÔNG âm
+thầm dùng vector sai không gian. `aiProgrammingKnowledgeService.ts` có bản sao gần như y hệt
+(rủi ro drift giữa 2 bản copy nếu 1 bên sửa mà quên bên kia — ghi ở "Mối lo").
+
+### 2. Probe cosine — script mới `scripts/ai-survey/embed-space-probe.mjs`
+
+Nhúng CÙNG một câu (*"Máy AOI phát hiện lỗi hàn thiếu tại vị trí chân linh kiện R12 trên bo
+mạch, cần kiểm tra lại trạm hàn sóng."*) bằng CẢ HAI model, `modelId` truyền TƯỜNG MINH (bỏ
+qua `.env`/`resolveEmbedModelBasename()` để phép đo không phụ thuộc giá trị `.env` hiện tại):
+```bash
+npx tsx scripts/ai-survey/embed-space-probe.mjs
+```
+Output (rút gọn):
+```
+[A] Qwen3-Embedding-0.6B-f16 → dim=1024, resolvedId="Qwen3-Embedding-0.6B-f16"
+[B] mxbai-embed-large-v1-f16 → dim=1024, resolvedId="mxbai-embed-large-v1-f16"
+
+Số chiều: A=1024  B=1024  → GIỐNG NHAU (canh kích thước sẽ CHO QUA)
+Cosine similarity(A, B) trên CÙNG một câu = 0.024282
+```
+**Số chiều bằng nhau (1024=1024, `assertEmbeddingDim` cho qua) nhưng cosine = 0.024282 —
+gần như trực giao (orthogonal), không phải "kém chính xác hơn" mà là "hai không gian không
+liên quan gì nhau".** Bằng chứng thực nghiệm trực tiếp, không suy diễn: bất kỳ đường nào so
+sánh vector Qwen3 với vector mxbai sẽ nhận điểm tương đồng ≈ nhiễu ngẫu nhiên, không có tín
+hiệu đáng tin, và không có lỗi/exception nào báo hiệu. Không có kết quả bất ngờ cần báo —
+khớp giả thuyết brief.
+
+VRAM/tiến trình: 1273 MiB trước → 1272 MiB sau (`nvidia-smi --query-gpu=memory.used...`),
+không `node.exe` treo (`tasklist | grep -i node.exe` rỗng cả trước lẫn sau). Script tự
+`unloadGgufModel()` cả hai model + `process.exit(0)`.
+
+### 3. Mốc an toàn cho đợt sau — `npm run kb:eval`
+
+```bash
+npm run kb:eval
+# recall@5 (cosine baseline): 151/151 = 1.000
+```
+25/25 domain đều `= 1.000`. Bằng chứng gián tiếp CỦNG CỐ mục 1 (Q1×N1 đang khớp không gian
+đúng — nếu lệch, W0.3 guard đã tự rơi keyword-only và recall không thể sạch 1.000). Đây là
+**mốc chốt**: đợt sửa embedder/guard sau này phải chạy lại đúng `npm run kb:eval` và so với
+`151/151 = 1.000` — số nào thấp hơn là hỏng truy hồi, không phải cải thiện đo lường. Kết quả
+ghi vào `knowledge/rag-eval-results.json` (đã có từ trước, lần chạy này chỉ cập nhật
+timestamp). VRAM/tiến trình sau `kb:eval`: 1271 MiB, không `node.exe` treo.
+
+### 4. Khuyến nghị (KHÔNG thực hiện)
+
+1. **Ưu tiên cao nhất — KB Studio (`kb_studio_chunks`)**: thêm cột `embedModel` (ghi lúc
+   ingest), rồi so định danh với `GGUF_EMBED_MODEL` hiện tại lúc query — tái dùng logic
+   `computeEmbedModelMatches()` đã có, lý tưởng là RÚT THÀNH HÀM DÙNG CHUNG thay vì thêm bản
+   sao thứ 3 (đang có 2 bản gần giống nhau ở Q1/Q2).
+2. **`kb/kbVectorStore.ts`'s `cosine()`** (dormant): bỏ truncate-compare trước khi có ý định
+   bật lại `KB_PGVECTOR_ENABLED`.
+3. **`aiImageEmbedding.ts` text-of-image path** (dormant): đổi `TEXT_OF_IMAGE_MODEL_CODE` từ
+   hằng số cố định sang phản ánh model GGUF thật đang chạy, và áp `modelCode` filter cho
+   nhánh này giống nhánh `onnx`.
+4. Cân nhắc hợp nhất/validate `GGUF_EMBED_MODEL` ↔ `GGUF_EMBEDDING_MODEL` (rủi ro thấp,
+   dễ tránh).
+5. Q1×N1/Q2×N2 (RAG/Programming KB) và Q5×N5 (image ONNX) đã có guard đủ tốt — không cần vá.
+
+Không mục nào ở trên được thực hiện — đúng ràng buộc "chỉ đo, không sửa".
+
+### Mối lo
+
+1. KB Studio là nguy cơ SỐNG (dữ liệu thật + tính năng đang bật), khác 2 ô còn lại (dormant
+   do cờ/điều kiện tắt) — ưu tiên khác nhau rõ rệt, không nên xếp ngang hàng.
+2. `computeEmbedModelMatches()` tồn tại 2 bản gần như y hệt (`aiLocalKnowledgeService.ts`,
+   `aiProgrammingKnowledgeService.ts`) — rủi ro drift nếu chỉ một bên được cập nhật, cùng lớp
+   bug "tam trùng lặp" mà `modelResolver.ts` (doc69 G2-5b) từng phải dọn ở lớp resolve model
+   thấp hơn.
+3. `GGUF_EMBED_MODEL`/`GGUF_EMBEDDING_MODEL` trùng giá trị hôm nay là may mắn, không phải
+   bảo đảm bằng validation.
+4. KHÔNG tái hiện được sự cố sống ở ô Q3×N3 (cần 2 lần ingest bằng 2 model khác nhau thật —
+   dựng dữ liệu giả cho KB Studio thật sẽ vượt ràng buộc "chỉ đo"); đánh giá "guard vắng mặt"
+   dựa trên đọc mã trực tiếp, không phải tái hiện — ranh giới này cần giữ rõ khi đọc báo cáo.
+
+Bản đầy đủ (bảng 7×7 đầy đủ, mọi lệnh + output nguyên văn): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-6-report.md` (không commit).
