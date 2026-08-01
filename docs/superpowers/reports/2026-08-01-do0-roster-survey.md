@@ -740,3 +740,183 @@ Không đụng mã sản xuất, không đụng `knowledge/embeddings.jsonl` —
 thêm 1 lệnh `kb:eval` có kiểm soát rồi khôi phục `rag-eval-results.json`, sửa văn bản báo cáo.
 
 Bản đầy đủ (bảng 7×7 đầy đủ, mọi lệnh + output nguyên văn, chi tiết vòng sửa 1): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-6-report.md` (không commit).
+
+---
+
+## §7 Tổng hợp và khuyến nghị (Task 7)
+
+**Mục này không tạo ra số mới.** Mọi con số đều truy được về §1-§6 hoặc sổ tiến độ của đợt. Chỗ nào là phép suy của tôi thì dán nhãn **[suy luận]**; chỗ nào chưa ai đo thì ghi thẳng **chưa đo**. Chất lượng tiếng Việt **không được chấm ở đây** — đó là việc của chủ dự án.
+
+### 7.0 Ba mức tin cậy — đừng trộn vào cùng một câu
+
+| Trục | Mức tin cậy | Vì sao |
+|---|---|---|
+| **VRAM · khả thi** | **CAO — quyết được bằng trục này** | Hai người đo độc lập ra số khớp **đến từng MiB** (§3: 4770 / 23283 / 1563). Delta của một model 30B dao động **<0,6%** qua 6 lượt, 2 file GGUF khác nhau, 2 mốc thời gian cách gần một tháng (§3 "Lệch so với baseline"). Có cả **đo trực tiếp**, không chỉ phép cộng: model thứ hai bị từ chối nguyên văn `Not enough VRAM to fit the model with the specified settings` (§3). |
+| **Tốc độ (tok/s)** | **CHỈ ĐỊNH HƯỚNG** | Tỉ lệ General/Coder ở roster C **dao động 3-30×** tuỳ độ dài output và có warmup hay không (sổ tiến độ, Task 3) — **không phải sai số cố định**. Chỉ nói được "chậm hơn một bậc độ lớn", **không đủ chính xác để cam kết SLA**. Thêm nữa máy đã đổi CPU+RAM giữa hai mốc baseline (§3), nên tok/s tuyệt đối không so ngang hàng với số cũ. |
+| **Lưu lượng — cột "bao nhiêu lượt"** | **KHÔNG DÙNG ĐƯỢC** để cân roster | 20/38 dòng là do chính agent gọi trong một phiên 20 phút; 13/16 dòng `report` là cron nền; tier `code`/`fim` **về nguyên tắc** không vào được bảng (§1). |
+| **Lưu lượng — cột "model nào phục vụ việc gì"** | TRUNG BÌNH-CAO | Cặp `task × model` là sự thật ghi lại từ đường chạy thật, **độc lập với việc gọi bao nhiêu lần**. Đây là phần duy nhất của trục lưu lượng còn dùng được. |
+
+### 7.1 Bảng quyết định — ba roster ứng viên + hiện trạng, trên mọi trục đã đo
+
+Định nghĩa roster (§3): **A** = một model 30B duy nhất (Coder) làm cả `deep` lẫn `code`. **B** = `deep` là Qwen3-4B, `code` là Coder-30B. **C** = giữ cả hai 30B, model General bị đẩy phần lớn sang RAM (`gpuLayers=8/48`).
+
+| Trục | Hiện trạng (2×30B) | A (Coder-30B dùng chung) | B (4B + Coder-30B) | C (General partial + Coder full) | Nguồn |
+|---|---|---|---|---|---|
+| **VRAM — cấu hình chính** | **36 667 MiB · vượt 4 060 MiB** ❌ | 29 717 MiB · dư 2 890 | 29 741 MiB · dư 2 866 | **23 283 MiB · 71,4% · dư 9 324** (đo trực tiếp 2 model cùng cư trú) | §3 "Xác nhận bằng đo lường" (cộng dồn từ `scripts/ai-bench/baselines/roster-*.json`) · ô C từ §3 "Roster C" (script import thẳng `loadGgufModel`) |
+| **VRAM — khi MỌI tier cùng thường trú [suy luận]** | 47 633 MiB — không khả thi | 29 717 (4 model) | 29 741 (4 model) | 30 685 (4 model) — hoặc **34 159 · vượt** nếu giữ thêm khe `fast` 4B (5 model) | Phép cộng của tôi, cùng phương pháp §3, trên chính các delta §3. `GGUF_MAX_LOADED_MODELS=4` (`.env:124`) chặn ở 4 model ⇒ model thứ 5 bị đuổi thay vì cộng thêm |
+| **So với ngưỡng đuổi LRU 90%** (= 29 346 MiB) **[suy luận, chưa đo]** | vượt xa | **91,1% — TRÊN ngưỡng** ⇒ engine đuổi LRU thay vì giữ đủ 4 model | **91,2% — TRÊN ngưỡng** | 2 model lớn: **71,4% — DƯỚI ngưỡng** (đã đo, §3) · đủ 4 model: 94,1% — trên | `GGUF_VRAM_GUARD_PCT=90` (`.env:131`) × các tổng ở hàng trên. §3 dùng đúng cách đọc này cho ô C |
+| **Hai bộ não 30B cùng thường trú được không?** | **❌ KHÔNG** — model #2 bị từ chối, có nguyên văn | không áp dụng (chỉ còn 1 model 30B) | không áp dụng | **✅ CÓ** — đo trực tiếp, cả hai cùng cư trú, không lỗi `cudaMalloc` | §3 `_double-load-probe.mjs` (3 người chạy độc lập, cùng kết quả) · ô C: §3 "Roster C" |
+| **Tốc độ khe "general"** | 277,4 tok/s decode @128 ‡ | 227,2-268,3 ‡ | 264,2 ‡ (model 4B) | **2,9 tok/s** ‡‡ — chậm hơn một bậc độ lớn | §3 bảng 3-roster (`npm run ai:bench`) · ô C: §3 `generateText()` |
+| **Tốc độ khe "code"** | 265,9 ‡ | 268,3 ‡ | 267,4 ‡ | 30,5 tok/s ‡‡ (và **không có tranh chấp GPU** khi hai model cùng cư trú — re-reviewer đo Coder 126,7 tok/s một mình vs **134,4** lúc co-resident) | §3 bảng 3-roster · sổ tiến độ Task 3 (đo lại độc lập) |
+| **TTFT gợi ý mã (FIM)** | Giữ 1.5B: 13,2 / 26,8 ms · trỏ sang Coder-30B: 39,5 / 76,6 ms | **giống hệt** — cả ba roster đều giữ Coder-30B thường trú | giống hệt | giống hệt (Coder chạy full GPU ở C) | §5 bảng TTFT (`bench.mjs`, mốc sự kiện thật `onTextChunk`, không suy từ tok/s) |
+| **Lưu lượng phục vụ được** | **Trục này không phân biệt được roster nào** — xem 7.4(b): tier code/fim về cấu trúc không vào được bảng, và 20/38 dòng là lưu lượng dựng | ← | ← | ← | §1 bảng Bước 3 + §1 "Phát hiện quan trọng" |
+| **Đổi được bằng MỘT dòng `.env`?** | (hiện trạng) | **✅ dòng 120** | **✅ dòng 120** | **❌ KHÔNG** — không tồn tại biến env nào cho `gpuLayers` (quét toàn repo: chỉ có `LLAMA_VISION_GPU_LAYERS` cho sidecar thị giác) ⇒ phải sửa mã đường boot | `grep -rniE "GGUF_GPU_LAYERS\|GPU_LAYERS" --include=*.ts --include=*.mjs server/ scripts/ .env` (chạy trong Task 7) |
+| **Sống được qua đường boot app hôm nay (race chưa vá)?** | **❌ 24 lượt / 0 thành công** | **❌ 21 lượt / 0 thành công** | **chưa đo** — **[suy luận]** nhiều khả năng SỐNG, vì model mặc định là 4B (delta 3 474 MiB), hai lượt nạp chồng nhau ≈ 7 GB vẫn vừa | **chưa đo qua boot app** (§3 đo bằng script import thẳng module, né cả hai racer bằng cấu trúc) | §2 bảng kết quả · ô B/C: suy luận của tôi từ delta §3 + cơ chế race §2 |
+
+‡ Số của `bench.mjs` (có warmup, tách riêng prefill/decode). ‡‡ Số của `generateText()` (gộp prefill+decode, **không warmup**). **Hai thang đo này không so trực tiếp được với nhau** — chỉ so trong cùng một thang (§3 đã cảnh báo). Trong bảng, hãy so cột-với-cột ở cùng ký hiệu, đừng so 265,9 ‡ với 30,5 ‡‡.
+
+**Kết luận không phụ thuộc bất kỳ điều gì còn chờ:** hiện trạng **không phải một lựa chọn có đánh đổi, nó là cấu hình không chạy được**. Hai model 30B riêng cần ~35,5-36,7 GB trên một cỗ máy có 32,6 GB — xác nhận bằng **ba nguồn độc lập**: phép cộng delta (§3), delta 17,7 GB × 2 = ~35,4 GB đo ở Task 2 qua đường race-free (sổ tiến độ Task 2), và phép nạp-chồng trực tiếp bị từ chối nguyên văn (§3).
+
+### 7.2 Trục tốc độ, nói bằng ngôn ngữ người dùng
+
+Roster C là roster duy nhất giữ được cả hai bộ não, và đây là cái giá của nó:
+
+| Việc | Roster A/B (full GPU) | Roster C (General đẩy sang RAM) |
+|---|---|---|
+| Một câu trả lời ngắn ~150 token | vài giây | ~52 giây |
+| Một đoạn phân tích ~500 token | ~16 giây *(lấy con số **dè dặt nhất** của cả đợt, 30,5 tok/s ở thang ‡‡)* | **~172 giây — gần 3 phút** |
+| Một báo cáo ca ~1 500 token | ~50 giây | **~8,6 phút** |
+
+Các số cột C là **phép nhân từ một điểm đo duy nhất 2,9 tok/s** (§3) — đúng để hình dung **bậc độ lớn**, **sai nếu dùng làm cam kết**: tỉ lệ chậm dao động 3-30× tuỳ độ dài output và warmup (sổ tiến độ Task 3). Câu đáng tin là: *ở roster C, model general trả lời chậm hơn một bậc độ lớn — khoảng cách là "vài giây" so với "vài phút", không phải "hơi chậm hơn"*.
+
+Một điểm **có lợi** cho C, cũng đã đo: khi hai model cùng cư trú, model code **không hề chậm đi** (126,7 → 134,4 tok/s) — **chỉ mình model general trả giá**.
+
+### 7.3 TTFT gợi ý mã — thay ngưỡng giả định bằng chuẩn có nguồn
+
+Ngưỡng "nửa giây / 300-500 ms" dùng ở §5 là **giả định của điều phối viên, không có nguồn nào** (§5 đã tự dán nhãn đúng). Tôi không dùng nó làm khung chính. Thay bằng một chuẩn **có nguồn**:
+
+> **Ba mốc thời gian phản hồi giao diện** — Miller (1968), Card/Robertson/Mackinlay (1991), phổ biến hoá bởi Jakob Nielsen (*Usability Engineering*, 1993; NN/g, "Response Times: The 3 Important Limits"):
+> **0,1 giây** = người dùng cảm thấy hệ thống phản ứng **tức thì** · **1 giây** = dòng suy nghĩ **không bị đứt** (đã thấy chậm nhưng chưa mất mạch) · **10 giây** = giới hạn giữ được chú ý.
+
+⚠ Đây là chuẩn giao diện **tổng quát**, **không phải chuẩn riêng cho gợi ý mã nội dòng (ghost-text)**, và **không được đo trên hệ này**. Một chuẩn có nguồn dành riêng cho ghost-text thì **tôi không biết** — nói thẳng là không biết, thay vì bịa một con số khác.
+
+Đối chiếu số §5 với ba mốc đó:
+
+| Kịch bản | Thời gian tới **ký tự đầu tiên** | Thời gian tới **gợi ý 32 token hoàn chỉnh** | Đọc theo chuẩn |
+|---|---|---|---|
+| Qwen2.5-Coder-1.5B (hiện tại), nhắc 153 tok | 13,2 ms | 83,8 ms | Cả hai mốc đều **trong vùng "tức thì" 0,1 s** |
+| 1.5B, nhắc 533 tok | 26,8 ms | 89,3 ms | như trên |
+| Qwen3-Coder-30B, nhắc 153 tok | 39,5 ms | 148,6 ms | Ký tự đầu **tức thì**; gợi ý trọn vẹn rơi vào vùng giữa 0,1 s và 1 s |
+| Qwen3-Coder-30B, nhắc 533 tok | **76,6 ms** (= 77% ngân sách 0,1 s) | 187,8 ms | như trên |
+
+**Đọc ra tiếng người:** đổi ghost-text sang Coder-30B thì **ký tự đầu vẫn xuất hiện tức thì** ở cả hai độ dài đã đo; thứ đổi là gợi ý **trọn vẹn** không còn "tức thì" nhưng vẫn **rất xa** mốc làm đứt mạch suy nghĩ (1 giây). Trên trục độ trễ thuần, **không có lý do bằng số để từ chối đổi**.
+
+⚠ Ba điều làm mọi số trên là **tốt nhất có thể (best-case)**: đo trên **GPU rảnh** (§5 mối lo 2), **không gồm** chi phí mạng/HTTP giữa trình soạn thảo và máy chủ (§5 mối lo 5), và **giả định model đã thường trú** — nếu nạp nguội, §3 đo đúng file này mất **40 969 ms**. Riêng ngân sách 0,1 s thì phần mạng/HTTP bỏ sót là đáng kể, không phải làm tròn.
+
+### 7.4 ⚠ Ba chỗ số liệu KHÔNG quyết được
+
+**(a) Chất lượng tiếng Việt — đang chờ chủ dự án chấm.** 4 cặp câu ẩn danh ở `docs/superpowers/reports/2026-08-01-do0-vi-ab.md`. Khảo sát này **không chấm và không đoán trước**. Hai điều nên biết **trước khi** chấm (đây là bối cảnh, không phải gợi ý kết quả):
+
+- §4 chỉ so **30B-Instruct vs 30B-Coder**. **Model 4B không có mặt trong phép so.** ⇒ Nếu kết quả chấm nghiêng về "cần một model general giỏi tiếng Việt", thì roster B **vẫn chưa có bằng chứng chất lượng nào** và phải qua một lượt chấm nữa trước khi chọn.
+- Prompt 1 (RCA) đang chấm thứ mà **sản xuất không bao giờ sinh ra bằng tiếng Việt**: `synthesize()` nhận tham số `lang` nhưng không hề dùng, cả hai model đều trả lời tiếng Anh (mục 7.8 #3). Nên cân trọng số Prompt 1 tương ứng; ba prompt còn lại đại diện đường chạy thật tốt hơn.
+
+**(b) Lưu lượng tier code/fim — đây là lỗ ĐO LƯỜNG, không phải lỗ NHU CẦU.** `aiProgrammingCopilot.ts` gọi thẳng engine, **không bao giờ** đi qua `aiGateway.ts` — nơi thực sự ghi bảng; 6 lượt gọi thật (có lượt sinh ra mã thật) ⇒ **0 dòng**. Bảng thứ hai `ai_model_metrics` cũng **0 dòng**, không có nguồn thay thế trong DB (§1). ⇒ **Không được đọc "code/fim = 0 lượt" thành "code/fim ít được dùng".** Hệ quả cho quyết định hôm nay rất cụ thể: **trục lẽ ra dùng để kiểm chứng — hoặc bác bỏ — ưu tiên "nghiêng code" của chủ dự án đang câm.** Ưu tiên đó vì thế vẫn phải giữ đúng vai trò đã thống nhất: **quy tắc phá hoà khi số liệu ngang nhau**, không phải bằng chứng.
+
+**(c) Điều trục lưu lượng CÓ nói được** (cột `task × model` đáng tin, dù cột số lượt thì không — xem 7.0): hôm nay model **general 30B chỉ phục vụ đúng hai việc: `report` (16 dòng) và `rca` (2 dòng)**; còn `chat` — trợ lý tri thức, mặt người dùng hỏi han nhiều nhất — **chạy bằng model 4B**, không phải 30B (§1 bảng Bước 3). Hai hệ quả:
+- Bỏ model general 30B **không đụng tới trợ lý tri thức**; nó đụng tới **báo cáo điều hành và RCA**.
+- Mà RCA thì **đang trả lời bằng tiếng Anh** (7.8 #3). ⇒ Phần lớn lập luận "giữ general vì tiếng Việt hay hơn" **dồn vào một mặt duy nhất: báo cáo điều hành**. Đây là bối cảnh quan trọng khi đọc §4.
+
+### 7.5 Khuyến nghị — dạng ĐIỀU KIỆN, chờ §4
+
+**Điều kiện áp cho mọi nhánh (không có ngoại lệ): vá race double-warm TRƯỚC khi đổi.** Không vá thì mọi roster có model 30B ở khe mặc định đều không nạp nổi qua đường boot app — đã đo **45/45 lượt lỗi** (§2), và mọi phép nghiệm thu sau khi đổi sẽ đo lỗi hạ tầng chứ không đo roster.
+
+- **NẾU §4 cho thấy tiếng Việt của Coder-30B chấp nhận được** (không tệ đi đáng kể ở văn bản dành cho người vận hành) ⇒ **chọn roster A.**
+  Lý do bằng số: một model 30B duy nhất, tổng 29 717 MiB **vừa** ngân sách (§3); **không phải trả giá tốc độ ở bất kỳ tier nào** (§3 bảng 3-roster); đổi và quay lui bằng **một dòng `.env`**; và trùng với ưu tiên "nghiêng code" của chủ dự án. Đây cũng là nhánh rẻ nhất về công sức kỹ thuật.
+
+- **NẾU §4 cho thấy chỉ model general viết tiếng Việt đủ tốt, và văn bản tiếng Việt cho người vận hành là thứ không nhân nhượng** ⇒ hai lựa chọn, theo thứ tự này:
+  1. **B trước** — 29 741 MiB, cũng **một dòng `.env`**, và **[suy luận]** là roster duy nhất nhiều khả năng sống qua boot app **ngay cả khi race chưa vá** (model mặc định là 4B, hai lượt nạp chồng ≈ 7 GB vẫn vừa). **Nhưng bắt buộc phải chấm 4B trước** — §4 chưa hề đo nó (7.4a).
+  2. **C sau cùng** — giữ được đúng cả hai bộ não, đã đo trực tiếp 23 283 MiB. Ba cái giá phải nhìn thẳng: **(i)** model general 2,9 tok/s ⇒ **~3 phút cho 500 token** (7.2); **(ii)** **không đổi được bằng `.env`** — không tồn tại biến `gpuLayers`, phải sửa mã đường boot ⇒ **mất luôn đường quay lui một dòng**; **(iii)** mới đo **đúng một điểm** `gpuLayers=8/48` trong khi còn dư ~9,3 GB VRAM — **rất có thể có điểm cân bằng tốt hơn nhiều**, nên nếu chọn C thì việc đầu tiên là **quét dải** `gpuLayers` (12 / 16 / 24), không phải chốt ở 8.
+
+- **NẾU §4 không phân biệt được rõ** (hai model ngang nhau, hoặc khác biệt không đáng kể với công việc thật) ⇒ **A**, đúng theo quy tắc phá hoà đã thống nhất từ đầu đợt.
+
+- **Trong mọi trường hợp: KHÔNG giữ hiện trạng.** Kết luận này **không chờ §4** — xem cuối 7.1.
+
+### 7.6 Việc phải làm khi đổi roster
+
+**Trước khi đổi**
+1. **Vá race double-warm** (7.8 #1) — nếu không, không có phép nghiệm thu nào sau đó có nghĩa.
+2. Sao lưu `.env` **thủ công**: `cp .env .env.backup`. ⚠ **`.env` KHÔNG được git track** ⇒ `git diff --stat .env` luôn rỗng bất kể nội dung thật, và `git checkout -- .env` **lỗi im lặng, không hoàn nguyên gì** (bài học §2 — chính kế hoạch của đợt này đã vấp).
+3. Ghi lại mốc truy hồi để so sau: `npm run kb:eval` → **151/151 = 1.000** (§6).
+
+**Đổi (roster A hoặc B — đúng một dòng)**
+```bash
+# .env dòng 120 — roster A:
+GGUF_DEFAULT_MODEL=Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf
+# .env dòng 120 — roster B:
+GGUF_DEFAULT_MODEL=Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf
+```
+`GGUF_CODE_MODEL` (dòng 654) và `GGUF_FIM_MODEL` (dòng 655) **không cần đụng** cho cả A lẫn B. Roster C **không làm được bằng `.env`** — xem 7.5.
+
+**Sau khi đổi — bốn chỗ ghim cứng tên model trong mã**
+
+4. **`server/services/aiModelCard.ts:71 / 90 / 108 / 126`** — bốn tên model **ghim cứng** trong `PORTFOLIO_CARDS`. Đây không phải chú thích: nó là **hồ sơ quản trị model** (dấu vết minh bạch kiểu EU-AI-Act, xem header file), được liệt kê ra giao diện và **ghi ngược vào `ai_models.metadata`** qua `seedPortfolioCards()`. Gỡ một model khỏi `.env` mà quên đây ⇒ **hệ khai báo một model không còn tồn tại**, còn model đang thật sự chạy thì **không có hồ sơ nào**.
+   ⚠ **Chỗ này đã lệch từ TRƯỚC Đợt 0**: catalog có card cho Instruct-30B / 4B / VL-8B / Embedding-0.6B / DINOv2, nhưng **không có card nào cho `Qwen3-Coder-30B` (đang là `GGUF_CODE_MODEL`) lẫn `Qwen2.5-Coder-1.5B` (đang là `GGUF_FIM_MODEL`)** — xác nhận: `grep -n "Coder" server/services/aiModelCard.ts` → **0 khớp**. Roster A và B đều biến Coder-30B thành model chính ⇒ **phải viết card cho nó**, không chỉ sửa tên card cũ.
+
+5. **Quét lại toàn repo** (lệnh đúng như brief giao):
+   ```bash
+   grep -rnE '"Qwen[0-9A-Za-z.-]*(30B|4B|8B|1\.5B|0\.6B)[^"]*"' --include=*.ts server/ client/ | grep -v test
+   ```
+   Kết quả chạy hôm nay: **5 khớp, trong đó chỉ 4 là ghim cứng thật** — `aiModelCard.ts:71/90/108/126`, cộng `server/services/aiCostModel.ts:17` (chỉ là ví dụ trong chú thích, vô hại).
+
+6. **Quét rộng hơn lệnh brief** (thêm `.tsx`/`.mjs`, thêm `scripts/`) tìm được **4 chỗ nữa** — không chặn roster A/B nhưng phải biết:
+   - `scripts/ai-kb/ingest-manuals.mjs:50` — `const EMBED_MODEL = "Qwen3-Embedding-0.6B-f16"` **ghim cứng, không đọc env**. Nếu sau này đổi `GGUF_EMBED_MODEL` mà quên đây, kho tri thức mới sẽ bị **đóng dấu sai tên model** — đúng loại lỗi mà §6 chứng minh là **không thể phát hiện được** (hai không gian nhúng cùng 1024 chiều, cosin 0,024).
+   - `scripts/ai-kb/embed-programming.mjs:35` và `scripts/ai-kb/eval-rag.mjs:215` — fallback `|| "Qwen3-…"` khi biến môi trường vắng: **lặng lẽ dùng model cũ thay vì báo lỗi**.
+   - `client/src/pages/AIBrainDashboard.tsx:78` — chữ hiển thị "Vision (Qwen2.5-VL)" trong khi `.env:142` là `Qwen3-VL-8B`: **màn hình đang nói sai tên model với người dùng, sai từ trước Đợt 0**.
+
+**Nghiệm thu sau khi đổi**
+7. `npm run kb:eval` — so với mốc **151/151**. Thấp hơn = hỏng truy hồi (§6 đã chứng minh phép đo này **nhạy thật**: ép sai embedder thì tụt còn 56/151).
+8. `nvidia-smi` sau khi hệ ổn định. ⚠ **[suy luận, chưa đo]** tổng của A (29 717) và B (29 741) nằm **trên** ngưỡng `GGUF_VRAM_GUARD_PCT=90` (= 29 346 MiB) ⇒ nhiều khả năng engine **đuổi LRU** thay vì giữ đủ bốn model; cái giá là một lần nạp lại (30B nguội đo được **40 969 ms**, §3). Nếu điều đó xảy ra thật, cân nhắc hạ `GGUF_MAX_LOADED_MODELS` xuống 3 để chọn **chủ động** model nào bị hy sinh, thay vì để LRU chọn hộ.
+
+**Quay lui — đúng một dòng**
+```bash
+# .env dòng 120 — trả về nguyên trạng, khởi động lại app là xong:
+GGUF_DEFAULT_MODEL=Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf
+```
+⚠ Nếu đã sửa `aiModelCard.ts` ở bước 4 thì phải hoàn tác **cả chỗ đó** — file ấy là **mã**, không phải cấu hình, nên một dòng `.env` không kéo nó về theo.
+
+### 7.7 Giới hạn của chính khảo sát này
+
+1. **Lưu lượng là DỰNG, không phải sản xuất.** 20/38 dòng do agent chủ động gọi trong một phiên ~20 phút; tỉ lệ giữa các tier là tỉ lệ **tôi chọn gọi**, không phải nhu cầu thật (§1).
+2. **Tier code/fim về nguyên tắc không đo được** bằng hạ tầng hiện có (7.4b) — trục đáng lẽ liên quan nhất tới ưu tiên "nghiêng code" thì không có dữ liệu.
+3. **Trục tốc độ chỉ định hướng** (7.0). Roster C chỉ đo **một điểm** `gpuLayers=8/48`; chưa quét dải nên **chưa biết điểm cân bằng tốt nhất của C**.
+4. **Máy đã nâng cấp phần cứng** (i7-12700KF/20 luồng/47,8 GB → i9-12900K/24 luồng/63,8 GB) giữa baseline 05/07 và nay ⇒ tok/s tuyệt đối **không so ngang hàng** với baseline cũ; VRAM thì so được (§3).
+5. **Cột "load ms" trong bảng §3 bị chi phối bởi cache của hệ điều hành**, không phải bởi roster: cùng một file, lần đọc đầu 40 969 ms, lần sau 8 828 ms (§3 M-1).
+6. **KV cache cho model 30B: KHÔNG đo được** — trọng số không nạp nổi qua đường app, phải đo thay bằng model 4B (§2). ⇒ Câu hỏi "còn dư bao nhiêu chỗ cho ngữ cảnh dài ở roster A/B/C" **chưa có số**.
+7. **Roster C chưa từng chạy qua đường boot app** (đo bằng script import thẳng module) ⇒ chưa biết nó có sống nổi qua khởi động thật hay không.
+8. **§4 không đo model 4B** ⇒ roster B chưa có bằng chứng chất lượng nào (7.4a).
+9. **§5 có n=5/kịch bản** — đủ thấy xu hướng, **không đủ tính p95**; và mọi số là best-case (GPU rảnh, không tải đồng thời, không tính mạng/HTTP).
+10. **Không đo kịch bản tải đồng thời thật** — mức chậm thêm khi ghost-text và sinh mã chạy cùng lúc trên một GPU **chưa đo** (§5).
+11. **Chỉ khảo sát các model đã có sẵn trên đĩa** (ràng buộc "không tải model mới"). Việc có model nào ra đời sau **05/2026** phù hợp hơn hay không — **agent không biết**, chủ dự án cần tự xác nhận trước khi chốt lâu dài.
+12. **Ngưỡng UX ở §5 là giả định không nguồn**; mục 7.3 đã thay bằng chuẩn có nguồn, nhưng chuẩn đó là chuẩn giao diện **tổng quát**, không phải chuẩn riêng cho gợi ý mã, và không đo trên hệ này.
+
+### 7.8 ⚠ Ngoài phạm vi — bốn thứ Đợt 0 tìm ra mà không ai cử nó đi tìm
+
+Đây có thể là phần giá trị nhất của cả đợt. **Cả bốn đều đã được xác minh độc lập (ít nhất hai người đọc mã / chạy lại). CHƯA CÁI NÀO ĐƯỢC VÁ** — đúng ràng buộc "đợt này chỉ đo".
+
+Tiêu chí xếp hạng: **(a)** đang xảy ra hôm nay hay chưa · **(b)** người dùng có tự phát hiện được không · **(c)** mức hại khi xảy ra. Chủ dự án hoàn toàn có thể xếp lại nếu đánh giá trọng số khác.
+
+**#1 — Race điều kiện double-warm khiến app không nạp nổi model 30B.** `aiGgufEngine.ts:1066-1098` và `aiLocalKnowledgeService.ts:2392-2418` là **hai nơi độc lập** cùng gọi `warmModel(GGUF_DEFAULT_MODEL)` lệch nhau 1 giây, trong khi `loadGgufModel()` **không có khoá** cho model đang nạp dở ⇒ hai lượt nạp cùng một file 17 GB đụng nhau ⇒ `cudaMalloc failed`. **Tái hiện 100% mọi lần boot mặc định** (45/45 lượt trong đợt này).
+> *Hậu quả cho người dùng thật:* **mỗi lần khởi động lại máy chủ, bộ não lớn không lên** — báo cáo điều hành, phân tích nguyên nhân gốc, hỏi đáp khó và sinh mã PLC đều hoặc lỗi, hoặc âm thầm rơi xuống model nhỏ; người dùng chỉ thấy "AI không trả lời" hoặc trả lời kém, **không thấy lý do**. Đây cũng chính là thứ đã làm hỏng phép đo evict của chính Đợt 0.
+
+**#2 — KB Studio: lỗ hổng kép, đang bật, có dữ liệu thật.** `kb_studio_chunks` **không có cột nào lưu định danh model đã nhúng** và truy vấn **không lọc theo model**; đã vậy nhánh dự phòng của `searchCorpus()` dùng hàm `cosine()` **cắt ngắn rồi so** (`Math.min(a.length, b.length)`) nên **không kiểm cả số chiều**. §6 đã đo: hai model nhúng khác nhau đều ra **1024 chiều** nhưng **cosin giữa chúng = 0,024** — gần như trực giao. Bug `cosine()` này có **bản song sinh giống byte-for-byte ở hai file tên gần trùng** (`server/services/kbVectorStore.ts:236-245` đang sống, `server/services/kb/kbVectorStore.ts:33-42` đang ngủ) — chính lượt điều tra đầu tiên của Đợt 0 đã sửa hụt vì đọc nhầm file.
+> *Hậu quả cho người dùng thật:* nếu kho từng được nhúng bằng một model rồi tìm bằng model khác, **ô tìm kiếm vẫn trả về kết quả trông hợp lệ nhưng thực chất là nhiễu ngẫu nhiên, không một cảnh báo nào** — kỹ thuật viên tra sổ tay bảo trì và nhận về đúng-hình-thức-sai-nội-dung. Xếp #2 vì **không ai phát hiện được**, và vì **chính hành động đổi model đang bàn ở đây là thứ kích hoạt nó**.
+
+**#3 — RCA copilot sinh câu tiếng Anh cho người vận hành Việt Nam.** `aiRcaCopilot.ts` — `synthesize(input, lang, ev)` **nhận tham số `lang` nhưng không hề tham chiếu nó trong thân hàm**; toàn bộ `sys` và `userPrompt` là tiếng Anh, không có nhánh ngôn ngữ nào. Trong lượt sinh thật của §4, **cả hai model đều trả lời tiếng Anh**.
+> *Hậu quả cho người dùng thật:* khi dây chuyền dừng, người vận hành mở phân tích nguyên nhân gốc ra và **đọc một đoạn tiếng Anh** — chậm xử lý, hoặc hiểu sai. Đang xảy ra ở **mọi lượt**. Đây là **cùng lớp lỗi mà Sprint 5 vừa dọn 48 khoá i18n**, nhưng nằm ở **tầng prompt** nên **không cổng kiểm nào của Sprint 5 chạm tới được**.
+
+**#4 — Toàn bộ đường sinh mã / gợi ý mã vô hình với hệ đo lường.** `aiProgrammingCopilot.ts` gọi thẳng engine (dòng 372/390/440/458/771/807), **không bao giờ** qua `aiGateway.ts` — nơi thực sự ghi `ai_gateway_metrics`. 6 lượt gọi thật, có lượt sinh ra mã thật ⇒ **0 dòng**; bảng thay thế `ai_model_metrics` cũng **0 dòng**.
+> *Hậu quả cho người dùng thật:* không hại trực tiếp, nhưng **mọi quyết định về model dành cho lập trình viên đều đang bay mù** — kể cả quyết định đang bàn trong chính báo cáo này (7.4b). Cùng lớp "đường giao hàng đứt" mà Sprint 5 đuổi ở tầng hiển thị, chỉ khác là ở **tầng quan sát**.
+
+**Không mục nào ở trên được vá trong Đợt 0** — đúng ràng buộc "chỉ đo, không sửa". Cả bốn đều nên thành đầu vào cho đợt kế tiếp, và **#1 là điều kiện tiên quyết của chính việc đổi roster** (7.5).
+
+Bản đầy đủ (bảng nguồn từng ô, output nguyên văn các lệnh quét, phép cộng chi tiết): `.superpowers/sdd/2026-08-01-do0-model-roster-survey/task-7-report.md` (không commit — `.superpowers/sdd/*` bị `.gitignore` chặn).
