@@ -6,13 +6,24 @@ import { vi as viDict } from "../../src/i18n/vi"
  * Shared "navigate + wait until actually ready" helpers for each of the 7 screens — used by both
  * `00-visual-and-a11y.spec.ts` (pristine baselines) and every functional spec, so both always wait
  * on the exact same real signals (never a fixed `waitForTimeout`) before asserting/screenshotting.
+ *
+ * 🔴 None of the waits below carries a `timeout:` of its own, and that is deliberate rather than an
+ * omission. Fifteen of them used to declare `{ timeout: 15_000 }`; a step-level measurement of a full
+ * run put the slowest of them at **596 ms over 137 calls** (`waitForEngineConnected`) and the rest at
+ * ≤ 600 ms. Fifteen copies of an unmeasured 15 000 were not per-site knowledge, they were
+ * `playwright.config.ts`'s `expect.timeout` written out fifteen times at a wrong value — and summed,
+ * they are a large part of why 45 tests declared more waiting than the per-test ceiling could ever
+ * let them spend. They now inherit that default, which is ONE decision with ONE measured
+ * justification (stated at the config), and which at 10 000 ms is a tightening of every one of them.
+ * A wait here that genuinely needs longer should import a named, measured bound from `./deadlines`
+ * rather than reintroduce a literal. `scripts/check-test-budgets.mjs` is the gate.
  */
 
 /** Waits for the TopBar's server-status dot to settle on "connected" — proof `GET /v1/health`
  * actually round-tripped, not just that the SPA shell mounted. Every screen inside `<Shell>` shares
  * this TopBar (`/tokens` is the one exception — it renders standalone, see `gotoTokens` below). */
 async function waitForEngineConnected(page: Page): Promise<void> {
-  await expect(page.getByText(viDict.shell.topBar.engineConnected)).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(viDict.shell.topBar.engineConnected)).toBeVisible()
 }
 
 export async function gotoDashboard(page: Page): Promise<void> {
@@ -33,7 +44,7 @@ export async function gotoMachines(page: Page): Promise<void> {
 
 export async function gotoMachineDetail(page: Page, code: string): Promise<void> {
   await page.goto(`/machines/${code}`)
-  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible()
   await waitForEngineConnected(page)
 }
 
@@ -44,9 +55,7 @@ export async function gotoMachineDetail(page: Page, code: string): Promise<void>
 export async function gotoMachineDetailConfig(page: Page, code: string): Promise<void> {
   await gotoMachineDetail(page, code)
   await page.getByRole("tab", { name: viDict.machineDetail.tabs.config }).click()
-  await expect(page.getByRole("heading", { name: viDict.configSyncPanel.products.title, level: 3 })).toBeVisible({
-    timeout: 15_000,
-  })
+  await expect(page.getByRole("heading", { name: viDict.configSyncPanel.products.title, level: 3 })).toBeVisible()
 }
 
 /** Machine detail, "Cài đặt/Settings" tab — Task 5's `MachineSettingsPanel`, same data source as the
@@ -56,9 +65,7 @@ export async function gotoMachineDetailConfig(page: Page, code: string): Promise
 export async function gotoMachineDetailSettings(page: Page, code: string): Promise<void> {
   await gotoMachineDetail(page, code)
   await page.getByRole("tab", { name: viDict.machineDetail.tabs.settings }).click()
-  await expect(page.getByRole("heading", { name: viDict.machineSettings.title, level: 3 })).toBeVisible({
-    timeout: 15_000,
-  })
+  await expect(page.getByRole("heading", { name: viDict.machineSettings.title, level: 3 })).toBeVisible()
 }
 
 /** Machine detail, "Control" tab — Task B-8's `MachineControlPanel` (writable setpoints/commands over
@@ -68,9 +75,7 @@ export async function gotoMachineDetailSettings(page: Page, code: string): Promi
 export async function gotoMachineDetailControl(page: Page, code: string): Promise<void> {
   await gotoMachineDetail(page, code)
   await page.getByRole("tab", { name: viDict.machineDetail.tabs.control }).click()
-  await expect(page.getByText(viDict.machineDetail.control.description).or(page.getByText(viDict.machineDetail.control.noCapability.title))).toBeVisible({
-    timeout: 15_000,
-  })
+  await expect(page.getByText(viDict.machineDetail.control.description).or(page.getByText(viDict.machineDetail.control.noCapability.title))).toBeVisible()
 }
 
 export async function gotoInspector(page: Page): Promise<void> {
@@ -96,7 +101,7 @@ export async function gotoProductConfig(page: Page): Promise<void> {
 
 export async function gotoProductConfigDetail(page: Page, code: string): Promise<void> {
   await page.goto(`/products/${code}`)
-  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible()
   await waitForEngineConnected(page)
   // Past the skeleton — the tab strip only renders once `useProduct(code)` has resolved at least once.
   await expect(page.getByRole("tab", { name: viDict.productConfigDetail.tabs.info })).toBeVisible()
@@ -109,7 +114,7 @@ export async function gotoProductConfigPoints(page: Page, code: string): Promise
   await page.getByRole("tab", { name: viDict.productConfigDetail.tabs.points }).click()
   await expect(page.getByRole("heading", { name: viDict.pointsEditor.title, level: 2 })).toBeVisible()
   // Past the skeleton — the canvas' labeled group only renders once `useProductPoints()` has resolved.
-  await expect(page.getByRole("group", { name: /Bản đồ điểm đo/ })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("group", { name: /Bản đồ điểm đo/ })).toBeVisible()
 }
 
 export async function gotoRecipeConfig(page: Page): Promise<void> {
@@ -122,7 +127,7 @@ export async function gotoRecipeConfig(page: Page): Promise<void> {
 
 export async function gotoRecipeConfigDetail(page: Page, code: string): Promise<void> {
   await page.goto(`/recipes/${code}`)
-  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible()
   await waitForEngineConnected(page)
   // Past the skeleton — the tab strip only renders once `useRecipe(code)` has resolved at least once.
   await expect(page.getByRole("tab", { name: viDict.recipeConfigDetail.tabs.recipe })).toBeVisible()
@@ -139,7 +144,7 @@ export async function gotoSettings(page: Page): Promise<void> {
   // being the `http://localhost:5000` placeholder; that default is now honestly blank ("no ecosystem
   // configured"), so a resolved-but-empty field is the CORRECT state to wait for, not a signal to
   // reject.
-  await expect(page.locator("#settings-server-url")).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator("#settings-server-url")).toBeVisible()
 }
 
 /** WS-D-D7 — `/users` (Admin-only account management). Waits past the roster query's own loading
@@ -180,7 +185,7 @@ export async function gotoConnectors(page: Page): Promise<void> {
   await page.goto("/connectors")
   await expect(page.getByRole("heading", { name: viDict.connectorConfig.title, level: 1 })).toBeVisible()
   await waitForEngineConnected(page)
-  await expect(page.getByText(viDict.connectorConfig.list.title)).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(viDict.connectorConfig.list.title)).toBeVisible()
 }
 
 /** GĐ3 EC-4 — `/site` (Operator-readable, no page-level role gate — only the Site-link Save control
@@ -191,7 +196,7 @@ export async function gotoSite(page: Page): Promise<void> {
   await page.goto("/site")
   await expect(page.getByRole("heading", { name: viDict.site.title, level: 1 })).toBeVisible()
   await waitForEngineConnected(page)
-  await expect(page.locator("#site-device-fingerprint")).toHaveValue(/\S/, { timeout: 15_000 })
+  await expect(page.locator("#site-device-fingerprint")).toHaveValue(/\S/)
 }
 
 /** GĐ3 sub-4 LC-4 — `/alarms` (Operator-readable, no page-level role gate — only the per-row Ack
@@ -213,9 +218,7 @@ export async function gotoLineControl(page: Page): Promise<void> {
   await page.goto("/line")
   await expect(page.getByRole("heading", { name: viDict.line.title, level: 1 })).toBeVisible()
   await waitForEngineConnected(page)
-  await expect(page.getByRole("heading", { name: viDict.line.status.title, level: 3 })).toBeVisible({
-    timeout: 15_000,
-  })
+  await expect(page.getByRole("heading", { name: viDict.line.status.title, level: 3 })).toBeVisible()
 }
 
 export async function gotoScenario(page: Page): Promise<void> {
@@ -227,9 +230,7 @@ export async function gotoScenario(page: Page): Promise<void> {
   // `level: 3` (not 2) — H3c moved this section into a `<Sheet>` panel (spec §4/§5), whose own title
   // always renders as `<h3>` (see `Sheet.tsx`), matching the level every other Sheet-titled heading
   // in this suite already asserts (e.g. `gotoMachineDetailConfig`'s `configSyncPanel.products.title`).
-  await expect(page.getByRole("heading", { name: viDict.scenario.presetsTitle, level: 3 })).toBeVisible({
-    timeout: 15_000,
-  })
+  await expect(page.getByRole("heading", { name: viDict.scenario.presetsTitle, level: 3 })).toBeVisible()
 }
 
 /** H2 — the HMI operator panel (`/hmi/:code`) also renders standalone, OUTSIDE `<Shell>` (its own
@@ -238,7 +239,7 @@ export async function gotoScenario(page: Page): Promise<void> {
  * loading/error states, so waiting on it is the equivalent "real data is in" signal. */
 export async function gotoHmi(page: Page, code: string): Promise<void> {
   await page.goto(`/hmi/${code}`)
-  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("heading", { name: code, level: 1 })).toBeVisible()
 }
 
 /**
@@ -270,5 +271,5 @@ export async function gotoNotifications(page: Page): Promise<void> {
   await page.goto("/notifications")
   await expect(page.getByRole("heading", { name: viDict.notifications.title, level: 1 })).toBeVisible()
   await waitForEngineConnected(page)
-  await expect(page.getByTestId("notification-card-webhook")).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId("notification-card-webhook")).toBeVisible()
 }

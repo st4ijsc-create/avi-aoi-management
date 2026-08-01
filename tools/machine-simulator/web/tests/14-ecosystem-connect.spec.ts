@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { SERVER_BOUNDED_OP_MS } from "./support/deadlines"
 import { ENGINE_URL, resetEcosystemMode } from "./support/engine"
 import { gotoDashboard, gotoMachines } from "./support/screens"
 import { primeAppStorage, type Theme } from "./support/theme"
@@ -104,7 +105,7 @@ test.describe("ecosystem connection status", () => {
     // The rest of the page still works — same KPI row, no content replaced.
     await expect(page.getByText(viDict.dashboard.kpi.machinesOnline)).toBeVisible()
 
-    await expect(ecosystemStatusText(page, viDict.ecosystemConnect.status.failed)).toBeVisible({ timeout: 15_000 })
+    await expect(ecosystemStatusText(page, viDict.ecosystemConnect.status.failed)).toBeVisible({ timeout: SERVER_BOUNDED_OP_MS })
     // Diagnosable without an extra click — auto-expanded, the server-url field is already visible.
     await expect(ecosystemToggle(page)).toHaveAttribute("aria-expanded", "true")
     await expect(page.getByLabel(viDict.settings.connection.serverUrlLabel)).toBeVisible()
@@ -123,7 +124,7 @@ test.describe("ecosystem connection status", () => {
     await gotoMachines(page)
     await expect(page.getByRole("columnheader", { name: viDict.machines.table.code })).toBeVisible()
 
-    await expect(ecosystemStatusText(page, viDict.ecosystemConnect.status.failed)).toBeVisible({ timeout: 15_000 })
+    await expect(ecosystemStatusText(page, viDict.ecosystemConnect.status.failed)).toBeVisible({ timeout: SERVER_BOUNDED_OP_MS })
     await expect(ecosystemToggle(page)).toHaveAttribute("aria-expanded", "true")
   })
 
@@ -141,7 +142,7 @@ test.describe("ecosystem connection status", () => {
     await page.getByLabel(viDict.settings.connection.serverUrlLabel).fill(ENGINE_URL)
     await page.getByRole("button", { name: viDict.ecosystemConnect.saveAndTestBtn }).click()
 
-    await expect(ecosystemStatusText(page, viDict.ecosystemConnect.status.connected)).toBeVisible({ timeout: 15_000 })
+    await expect(ecosystemStatusText(page, viDict.ecosystemConnect.status.connected)).toBeVisible({ timeout: SERVER_BOUNDED_OP_MS })
     // Still no blocking gate — the fleet content was visible the entire time.
     await expect(page.getByText(viDict.dashboard.kpi.machinesOnline)).toBeVisible()
   })
@@ -163,7 +164,7 @@ test.describe("ecosystem connection status", () => {
       await setLiveUnreachable(request)
       await primeAppStorage(page, { theme })
       await gotoDashboard(page)
-      await expect(ecosystemStatusText(page, viDict.ecosystemConnect.status.failed)).toBeVisible({ timeout: 15_000 })
+      await expect(ecosystemStatusText(page, viDict.ecosystemConnect.status.failed)).toBeVisible({ timeout: SERVER_BOUNDED_OP_MS })
       await expect(ecosystemToggle(page)).toHaveAttribute("aria-expanded", "true")
       await assertNoSeriousA11yViolations(page)
     })

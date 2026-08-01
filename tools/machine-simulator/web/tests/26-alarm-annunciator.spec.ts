@@ -1,6 +1,11 @@
 import { expect, test, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { LIVE_CYCLES_MS, PAST_SOUND_GATE_MS, TONE_SETTLE_MS } from "./support/deadlines"
+// 🔴 Imported, not copied. Both of these used to be hand-written literals here — `1_800` for
+// `SOUND_GATE_MS + 300` and `513` for `SEEN_LIMIT + 1` — and both go SILENTLY vacuous if the product
+// constant moves past them. See `src/lib/annunciator-timing.ts`'s header for both failure modes.
+import { SEEN_LIMIT } from "../src/lib/annunciator-timing"
 import { ENGINE_URL, resetEstop } from "./support/engine"
 import { gotoAlarmCenter } from "./support/screens"
 import { vi as viDict } from "../src/i18n/vi"
@@ -241,7 +246,7 @@ test.describe("alarm annunciator — the real SSE transport", () => {
     try {
       // Non-vacuity: the alarm really IS there, so "no annunciation" is about the channel rather than
       // about nothing having happened.
-      await expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 15_000 })
+      await expect(page.locator("tbody tr").first()).toBeVisible({ timeout: LIVE_CYCLES_MS })
       await expect(page.getByTestId("alarm-annunciator")).toHaveCount(0)
       await expect(page.getByTestId("annunciator-status")).toContainText(
         viDict.annunciator.status.notConfigured
@@ -394,10 +399,12 @@ test.describe("alarm annunciator — the in-page surface", () => {
       .poll(async () => (await readHarness(page)).audio.oscillatorStarts)
       .toBe(3) // one Critical tone
 
-    // Past the 1.5s gate — a real `waitForTimeout` because crossing that window IS the thing under test.
-    await page.waitForTimeout(1_800)
+    // Past the sound gate — a real `waitForTimeout` because crossing that window IS the thing under
+    // test, and DERIVED from the product constant rather than copied, so it stays past the gate if the
+    // gate moves.
+    await page.waitForTimeout(PAST_SOUND_GATE_MS)
     await push(page, "annunciation", { ...CRITICAL, edge: "Restored", instance: "second" })
-    await page.waitForTimeout(300)
+    await page.waitForTimeout(TONE_SETTLE_MS)
 
     expect(
       (await readHarness(page)).audio.oscillatorStarts,
@@ -410,11 +417,11 @@ test.describe("alarm annunciator — the in-page surface", () => {
    * 🔴 Review round 1 (M-6) — the de-duplication window must never collapse to zero.
    *
    * <p>The seen-set is capped, and the first version EMPTIED it at the cap — so an annunciation arriving
-   * in the instant after the 512th distinct sequence was re-announced even though it had been seen
+   * in the instant after the `SEEN_LIMIT`th distinct sequence was re-announced even though it had been seen
    * moments earlier. Rotating two generations instead means the youngest `SEEN_LIMIT` sequences are
    * always still remembered.</p>
    *
-   * <p>Driven at the real boundary: 513 distinct sequences (one past the cap, which forces exactly one
+   * <p>Driven at the real boundary: `SEEN_LIMIT + 1` distinct sequences (one past the cap, which forces exactly one
    * rotation), then the very FIRST sequence again, pushed after the sound gate so only de-duplication
    * can suppress it.</p>
    */
@@ -423,7 +430,7 @@ test.describe("alarm annunciator — the in-page surface", () => {
     await gotoAlarmCenter(page)
     await push(page, "ready", ARMED_READY)
 
-    // One burst, one round trip — 513 separate evaluate() calls would dominate the test's runtime.
+    // One burst, one round trip — SEEN_LIMIT + 1 separate evaluate() calls would dominate the test's runtime.
     await page.evaluate(
       ({ template, count }) => {
         const harness = (window as unknown as {
@@ -434,16 +441,16 @@ test.describe("alarm annunciator — the in-page surface", () => {
           source.emit("annunciation", { ...template, sequence: i, key: `K-${i}`, code: `C${i}` })
         }
       },
-      { template: CRITICAL, count: 513 }
+      { template: CRITICAL, count: SEEN_LIMIT + 1 }
     )
 
     // The burst is inside one sound gate, so exactly one tone: 3 pulses for Critical.
     await expect.poll(async () => (await readHarness(page)).audio.oscillatorStarts).toBe(3)
 
-    await page.waitForTimeout(1_800)
+    await page.waitForTimeout(PAST_SOUND_GATE_MS)
     // Sequence 1 is in the ROTATED-OUT generation. A single-generation cache has forgotten it by now.
     await push(page, "annunciation", { ...CRITICAL, sequence: 1, key: "K-1", code: "C1" })
-    await page.waitForTimeout(300)
+    await page.waitForTimeout(TONE_SETTLE_MS)
 
     expect(
       (await readHarness(page)).audio.oscillatorStarts,
@@ -463,7 +470,7 @@ test.describe("alarm annunciator — the in-page surface", () => {
       .poll(async () => (await readHarness(page)).audio.oscillatorStarts)
       .toBe(3)
 
-    await page.waitForTimeout(1_800)
+    await page.waitForTimeout(PAST_SOUND_GATE_MS)
     await push(page, "annunciation", {
       ...CRITICAL,
       sequence: 2,

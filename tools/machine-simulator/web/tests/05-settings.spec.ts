@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { SERVER_BOUNDED_OP_MS } from "./support/deadlines"
 import { resetSettingsLanguage } from "./support/engine"
 import { gotoSettings } from "./support/screens"
 import { en } from "../src/i18n/en"
@@ -47,12 +48,12 @@ test.describe("settings", () => {
     // — a 404 still proves the socket/TLS/DNS layer works, which is the actual thing being checked).
     await urlField.fill("http://localhost:5199")
     await checkButton.click()
-    await expect(page.getByText(/Kết nối được/)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/Kết nối được/)).toBeVisible({ timeout: SERVER_BOUNDED_OP_MS })
 
     // Unreachable: nothing listens on this port — a fast connection-refused, not the 5s timeout path.
     await urlField.fill("http://127.0.0.1:1")
     await checkButton.click()
-    await expect(page.getByText(viDict.settings.connection.unreachable)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(viDict.settings.connection.unreachable)).toBeVisible({ timeout: SERVER_BOUNDED_OP_MS })
   })
 
   test("language selector flips the whole app's live UI language immediately, without Save", async ({ page }) => {

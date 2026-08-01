@@ -518,6 +518,12 @@ public sealed class FleetHostMachineDriverResolutionTests
             ("modbus", fakeDriver, TestProfile("modbus")),
         };
 
+        // 🔴 backlog-test-deadlines — `writeTask` is hoisted out of the `try` so the `finally` can JOIN it.
+        // Every assertion between its launch and `await writeTask` used to be able to skip both
+        // `fakeDriver.ReleaseWrite()` and the join, leaving the task suspended on an empty semaphore that
+        // nothing in the process would ever release. `CancelPendingWaitsForTeardown()` is the seam that ends
+        // it; on the green path it runs after the write has already returned and is a no-op.
+        Task<(MachineDriverAvailability, SetpointWriteResult?)>? writeTask = null;
         host.Start();
         try
         {
@@ -525,7 +531,7 @@ public sealed class FleetHostMachineDriverResolutionTests
                 () => host.GetMachineDriverAvailability(code) == MachineDriverAvailability.Writable,
                 "the injected writable driver's slot to come up");
 
-            var writeTask = Task.Run(() => host.TryWriteSetpointAsync(
+            writeTask = Task.Run(() => host.TryWriteSetpointAsync(
                 code, new SetpointWriteRequest("speed", 42.0), CancellationToken.None));
 
             await WaitUntilAsync(() => fakeDriver.WriteStarted, "the fake driver's WriteSetpointAsync to actually begin executing");
@@ -565,6 +571,12 @@ public sealed class FleetHostMachineDriverResolutionTests
         }
         finally
         {
+            fakeDriver.CancelPendingWaitsForTeardown();
+            if (writeTask is not null)
+            {
+                try { await writeTask; } catch { /* teardown */ }
+            }
+
             host.AdditionalPipelinesForTests = null;
             host.Stop();
         }
@@ -589,6 +601,8 @@ public sealed class FleetHostMachineDriverResolutionTests
             ("modbus", fakeDriver, TestProfile("modbus")),
         };
 
+        // 🔴 backlog-test-deadlines — see the sibling Estop test above for why `writeTask` is hoisted.
+        Task<(MachineDriverAvailability, SetpointWriteResult?)>? writeTask = null;
         host.Start();
         try
         {
@@ -596,7 +610,7 @@ public sealed class FleetHostMachineDriverResolutionTests
                 () => host.GetMachineDriverAvailability(code) == MachineDriverAvailability.Writable,
                 "the injected writable driver's slot to come up");
 
-            var writeTask = Task.Run(() => host.TryWriteSetpointAsync(
+            writeTask = Task.Run(() => host.TryWriteSetpointAsync(
                 code, new SetpointWriteRequest("speed", 7.0), CancellationToken.None));
 
             await WaitUntilAsync(() => fakeDriver.WriteStarted, "the fake driver's WriteSetpointAsync to actually begin executing");
@@ -607,6 +621,22 @@ public sealed class FleetHostMachineDriverResolutionTests
             var restartStopwatch = Stopwatch.StartNew();
             Assert.True(host.RegisterMachine(NewFastSimulatedMachine("WRITE-RACE-RESTART-BYSTANDER-01")));
             restartStopwatch.Stop();
+
+            // 🔴 backlog-test-deadlines — `restartStopwatch` used to be started, stopped and NEVER READ, so the
+            // timing half of this test's own premise ("the restart is not delayed by the in-flight write") was
+            // asserted only by its sibling Estop test, one trigger away. It now says what it measures.
+            //
+            // The bound is NOT a new tunable: it is the 1 s floor the sibling Estop test already uses, and the
+            // measurement says the floor is what applies. RegisterMachine's restart under exactly this
+            // interleaving was measured at 1.9 ms / 2.8 ms / 3.0 ms across three runs (taken by asserting an
+            // impossible bound and reading the reported elapsed), so 4x the slowest observation is 12 ms —
+            // two orders of magnitude below the floor. What the bound discriminates is "did not wait for the
+            // write" from "waited for the write", and a restart that DID wait could not merely be slow: it
+            // would deadlock, because nothing releases the write's semaphore until ReleaseWrite() below.
+            Assert.True(
+                restartStopwatch.Elapsed < TimeSpan.FromSeconds(1),
+                $"RegisterMachine's restart took {restartStopwatch.Elapsed} while a setpoint write was still " +
+                "blocked mid-flight — a pipeline restart must never be delayed by an in-flight write.");
 
             Assert.True(fakeDriver.DisposeStartedTask.IsCompleted, "the restart must have disposed the OLD driver instance");
             Assert.False(writeTask.IsCompleted, "the write must still be genuinely in flight when the restart's dispose happens");
@@ -626,6 +656,12 @@ public sealed class FleetHostMachineDriverResolutionTests
         }
         finally
         {
+            fakeDriver.CancelPendingWaitsForTeardown();
+            if (writeTask is not null)
+            {
+                try { await writeTask; } catch { /* teardown */ }
+            }
+
             host.AdditionalPipelinesForTests = null;
             host.Stop();
         }
@@ -652,6 +688,8 @@ public sealed class FleetHostMachineDriverResolutionTests
             ("modbus", fakeDriver, TestProfile("modbus")),
         };
 
+        // 🔴 backlog-test-deadlines — see the Estop setpoint test above for why `commandTask` is hoisted.
+        Task<(MachineDriverAvailability, CommandResult?)>? commandTask = null;
         host.Start();
         try
         {
@@ -659,7 +697,7 @@ public sealed class FleetHostMachineDriverResolutionTests
                 () => host.GetMachineDriverAvailability(code) == MachineDriverAvailability.Writable,
                 "the injected writable driver's slot to come up");
 
-            var commandTask = Task.Run(() => host.TryInvokeCommandAsync(
+            commandTask = Task.Run(() => host.TryInvokeCommandAsync(
                 code, new CommandRequest("start-cycle"), CancellationToken.None));
 
             await WaitUntilAsync(() => fakeDriver.CommandStarted, "the fake driver's InvokeCommandAsync to actually begin executing");
@@ -691,6 +729,12 @@ public sealed class FleetHostMachineDriverResolutionTests
         }
         finally
         {
+            fakeDriver.CancelPendingWaitsForTeardown();
+            if (commandTask is not null)
+            {
+                try { await commandTask; } catch { /* teardown */ }
+            }
+
             host.AdditionalPipelinesForTests = null;
             host.Stop();
         }
@@ -712,6 +756,18 @@ public sealed class FleetHostMachineDriverResolutionTests
     {
         private readonly SemaphoreSlim _writeGate = new(0, 1);
         private readonly SemaphoreSlim _commandGate = new(0, 1);
+
+        /// <summary>🔴 backlog-test-deadlines — the teardown seam for the two gates below, and the ONLY thing
+        /// that can end a wait <see cref="ReleaseWrite"/>/<see cref="ReleaseCommand"/> never got to release.
+        ///
+        /// <para>The gates deliberately ignore the CALLER's token (that is the point: the write must stay
+        /// suspended while teardown races it), so before this existed a failed assertion anywhere between
+        /// launching the write and releasing it left the task suspended on an empty semaphore with nothing in
+        /// the process able to complete it — permanently, since <see cref="FleetHost.Stop"/> does not touch
+        /// this fake's gates. Cancelled ONLY from a test's own <c>finally</c>, never from
+        /// <see cref="DisposeAsync"/>: FleetHost disposes this driver as part of the very race under test, so
+        /// releasing the block there would destroy what the test measures.</para></summary>
+        private readonly CancellationTokenSource _teardown = new();
         private readonly TaskCompletionSource _writeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _commandStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _disposeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -754,6 +810,14 @@ public sealed class FleetHostMachineDriverResolutionTests
 
         public void ReleaseCommand() => _commandGate.Release();
 
+        /// <summary>Ends any wait still parked on either gate, so a test's <c>finally</c> can JOIN the task it
+        /// launched instead of abandoning it. Idempotent, and a no-op on the green path (by then the gate has
+        /// already been released and the operation has already returned).</summary>
+        public void CancelPendingWaitsForTeardown()
+        {
+            try { _teardown.Cancel(); } catch { /* teardown */ }
+        }
+
         public string Id => "fake-writable-test-driver";
 
         public string Kind => DriverKinds.Modbus;
@@ -785,7 +849,10 @@ public sealed class FleetHostMachineDriverResolutionTests
 
             if (BlockOnWrite)
             {
-                await _writeGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                // Still ignores the CALLER's `ct` on purpose — the write must stay suspended while teardown
+                // races it. `_teardown` is a test-harness seam only (see its own remarks); on the green path it
+                // is never signalled and this is a plain, genuinely-suspending WaitAsync.
+                await _writeGate.WaitAsync(_teardown.Token).ConfigureAwait(false);
             }
 
             if (_disposed)
@@ -805,7 +872,8 @@ public sealed class FleetHostMachineDriverResolutionTests
 
             if (BlockOnCommand)
             {
-                await _commandGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                // See WriteSetpointAsync's own remarks — the caller's `ct` is still deliberately ignored.
+                await _commandGate.WaitAsync(_teardown.Token).ConfigureAwait(false);
             }
 
             if (_disposed)

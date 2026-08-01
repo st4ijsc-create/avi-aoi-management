@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
-import { ENGINE_URL, setFleetRunning } from "./support/engine"
+import { ENGINE_URL, setFleetRunning, waitForHistorianRows } from "./support/engine"
 import { en } from "../src/i18n/en"
 import { vi as viDict } from "../src/i18n/vi"
 
@@ -24,20 +24,6 @@ import { vi as viDict } from "../src/i18n/vi"
  * depends on cross-session persistence to matter, but stays exactly as written since it is still the
  * correct, self-contained way to establish a precondition regardless of what an earlier run left.
  */
-
-async function waitForHistorianRows(request: APIRequestContext, minRows = 5): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        const res = await request.get(`${ENGINE_URL}/v1/historian/results?limit=1`)
-        if (!res.ok()) return -1
-        const body = (await res.json()) as { total: number }
-        return body.total
-      },
-      { timeout: 30_000, message: "waiting for the historian to record real cycle rows" }
-    )
-    .toBeGreaterThanOrEqual(minRows)
-}
 
 async function firstFleetMachine(request: APIRequestContext): Promise<string> {
   const res = await request.get(`${ENGINE_URL}/v1/fleet`)
@@ -63,7 +49,7 @@ async function gotoReports(page: Page): Promise<void> {
   // Past the Targets panel's own loading skeleton — a real numeric value only populates the Ideal
   // Cycle field once `useOeeSettings` has resolved at least once (same "wait on a real field value"
   // idiom `gotoSettings`'s own `#settings-server-url` wait uses).
-  await expect(page.locator("#reports-ideal-cycle")).toHaveValue(/\d/, { timeout: 15_000 })
+  await expect(page.locator("#reports-ideal-cycle")).toHaveValue(/\d/)
 }
 
 test.describe("reports — OEE tiles, honest 3-bucket loss chart, editable targets, PDF export", () => {
@@ -175,7 +161,7 @@ test.describe("reports — OEE tiles, honest 3-bucket loss chart, editable targe
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/reports")
     await expect(page.getByRole("heading", { name: en.reports.title, level: 1 })).toBeVisible()
-    await expect(page.locator("#reports-ideal-cycle")).toHaveValue(/\d/, { timeout: 15_000 })
+    await expect(page.locator("#reports-ideal-cycle")).toHaveValue(/\d/)
 
     await expect(page.getByText(en.reports.kpi.oee, { exact: true }).first()).toBeVisible()
     await expect(page.getByRole("link", { name: en.reports.export.pdf })).toBeVisible()

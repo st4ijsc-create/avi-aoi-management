@@ -54,6 +54,10 @@ internal sealed class WebhookLoopbackServer : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _loop;
     private readonly ConcurrentQueue<Captured> _requests = new();
+
+    /// <summary>Every per-connection handler this server has started, so <see cref="DisposeAsync"/> can JOIN
+    /// them rather than leave them racing its own <c>_cts.Dispose()</c>.</summary>
+    private readonly ConcurrentQueue<Task> _handlers = new();
     private readonly Func<int, ScriptedResponse?> _responder;
     private int _served;
 
@@ -112,7 +116,14 @@ internal sealed class WebhookLoopbackServer : IAsyncDisposable
                 return; // stopped, or torn down
             }
 
-            _ = Task.Run(() => HandleAsync(client, ct), CancellationToken.None);
+            // 🔴 backlog-test-deadlines — the handler is TRACKED, not fire-and-forget. `DisposeAsync` awaited
+            // only the accept loop, so a handler parked on `Task.Delay(Timeout.Infinite, ct)` (the "accept and
+            // go silent" script every timeout/budget/cancellation test uses) outlived the server object
+            // holding a live TcpClient, and `_cts.Dispose()` then ran while that handler still held a
+            // registration on the token. Bounded rather than permanent — cancellation does unwind it — but the
+            // unwinding raced teardown instead of being part of it.
+            var handler = Task.Run(() => HandleAsync(client, ct), CancellationToken.None);
+            _handlers.Enqueue(handler);
         }
     }
 
@@ -225,6 +236,16 @@ internal sealed class WebhookLoopbackServer : IAsyncDisposable
         try { await _cts.CancelAsync().ConfigureAwait(false); } catch { /* best-effort teardown */ }
         try { _listener.Stop(); } catch { /* best-effort teardown */ }
         try { await _loop.ConfigureAwait(false); } catch { /* best-effort teardown */ }
+
+        // 🔴 Join the per-connection handlers BEFORE disposing the CTS they hold a token registration on. Every
+        // await inside HandleAsync takes `ct`, which is already cancelled above, so this cannot hang: it waits
+        // for tasks that are already unwinding. Doing it here rather than not at all is what makes the accepted
+        // sockets closed BY teardown rather than shortly after it.
+        while (_handlers.TryDequeue(out var handler))
+        {
+            try { await handler.ConfigureAwait(false); } catch { /* best-effort teardown */ }
+        }
+
         _cts.Dispose();
     }
 }

@@ -20,16 +20,27 @@ public class MqttDriverTests {
 
     await Task.Delay(500); // let the driver connect + subscribe before we publish
 
-    using var pub = new MqttClientFactory().CreateMqttClient();
-    await pub.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("localhost", port).Build());
-    await pub.PublishStringAsync("st4i/ESP-01/telemetry", "{\"temperature\":31.4}");
+    // 🔴 backlog-test-deadlines — `readTask` is only joined on the success path. A throw from ConnectAsync or
+    // PublishStringAsync below returned from the method with the driver's managed-client TCP socket still
+    // enumerating, while `await using` tore `drv` and `broker` down underneath it. Bounded by the 8s `cts`,
+    // but it matters more here than elsewhere because this broker's listening port is HARD-CODED (18830):
+    // a stranded broker collides with the next run of this same test, unlike every other socket test in this
+    // tree, which binds port 0.
+    try {
+      using var pub = new MqttClientFactory().CreateMqttClient();
+      await pub.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("localhost", port).Build());
+      await pub.PublishStringAsync("st4i/ESP-01/telemetry", "{\"temperature\":31.4}");
 
-    var got = await readTask;
-    Assert.NotNull(got);
-    Assert.Equal(ReadingKind.Telemetry, got!.Kind);
-    Assert.Equal("ESP-01", got.SerialNumber);
-    Assert.Equal(DriverKinds.Mqtt, drv.Kind);
-    Assert.Equal(DriverHealthState.Connected, drv.Health);
+      var got = await readTask;
+      Assert.NotNull(got);
+      Assert.Equal(ReadingKind.Telemetry, got!.Kind);
+      Assert.Equal("ESP-01", got.SerialNumber);
+      Assert.Equal(DriverKinds.Mqtt, drv.Kind);
+      Assert.Equal(DriverHealthState.Connected, drv.Health);
+    } finally {
+      cts.Cancel();
+      try { await readTask; } catch { /* already surfaced above, or teardown */ }
+    }
   }
 
   [Fact] public async Task Mapper_returning_null_is_dropped_and_next_message_still_arrives() {
@@ -50,13 +61,19 @@ public class MqttDriverTests {
 
     await Task.Delay(500);
 
-    using var pub = new MqttClientFactory().CreateMqttClient();
-    await pub.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("localhost", port).Build());
-    await pub.PublishStringAsync("st4i/ESP-02/telemetry", "skip-me");
-    await pub.PublishStringAsync("st4i/ESP-02/telemetry", "{\"temperature\":1}");
+    // 🔴 backlog-test-deadlines — see the sibling test above; this broker's port is hard-coded too (18831).
+    try {
+      using var pub = new MqttClientFactory().CreateMqttClient();
+      await pub.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("localhost", port).Build());
+      await pub.PublishStringAsync("st4i/ESP-02/telemetry", "skip-me");
+      await pub.PublishStringAsync("st4i/ESP-02/telemetry", "{\"temperature\":1}");
 
-    var got = await readTask;
-    Assert.NotNull(got);
-    Assert.Equal("ESP-02", got!.SerialNumber);
+      var got = await readTask;
+      Assert.NotNull(got);
+      Assert.Equal("ESP-02", got!.SerialNumber);
+    } finally {
+      cts.Cancel();
+      try { await readTask; } catch { /* already surfaced above, or teardown */ }
+    }
   }
 }

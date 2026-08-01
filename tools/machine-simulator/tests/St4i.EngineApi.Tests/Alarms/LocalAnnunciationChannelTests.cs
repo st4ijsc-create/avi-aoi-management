@@ -798,9 +798,23 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
                 { IsBackground = true, Name = "b2-probe-canceller" };
                 probeCanceller.Start();
                 probeRunning.Wait();
-                await probeChannel.DispatchAsync(MakeJob(sequence: p), probeCts.Token);
-                Volatile.Write(ref stop, true);
-                probeCanceller.Join();
+
+                // 🔴 backlog-test-deadlines — stop-and-join in a `finally`. `stop` is the ONLY thing that ends
+                // this thread, and it was set on the line after the dispatch: a throw from DispatchAsync (an
+                // OperationCanceledException surfacing from the store's SQLite read is exactly what this suite
+                // exercises) left a DEDICATED OS THREAD hot-spinning `Thread.SpinWait(20)` at 100% of a core
+                // for the rest of the process. `IsBackground = true` means it dies at process exit, not at
+                // test exit. That is worse than a parked task: it defeats verify-suites' CPU heuristic in the
+                // OPPOSITE direction — a suite that is genuinely wedged never reads as flat.
+                try
+                {
+                    await probeChannel.DispatchAsync(MakeJob(sequence: p), probeCts.Token);
+                }
+                finally
+                {
+                    Volatile.Write(ref stop, true);
+                    probeCanceller.Join();
+                }
             }
 
             dispatchCost = TimeSpan.FromTicks(Math.Max(1, probeClock.Elapsed.Ticks / Probes));
@@ -873,11 +887,18 @@ public sealed class LocalAnnunciationChannelTests : IDisposable
                 // same thing the drain loop actually tests.
                 Assert.True(cts.Token.IsCancellationRequested);
             }
-
-            // 🔴 Joined INSIDE the iteration, before `using var cts` disposes: a canceller still spinning
-            // would call Cancel() on a disposed source and die with an ObjectDisposedException on a
-            // background thread, where nothing would ever report it.
-            canceller?.Join();
+            finally
+            {
+                // 🔴 Joined INSIDE the iteration, before `using var cts` disposes: a canceller still spinning
+                // would call Cancel() on a disposed source and die with an ObjectDisposedException on a
+                // background thread, where nothing would ever report it.
+                //
+                // 🔴 backlog-test-deadlines — and in a `finally`, because the `Assert.True` above is inside
+                // the catch and ABOVE this join. That assertion failing skipped the join and produced exactly
+                // the ObjectDisposedException-on-a-background-thread this comment says the placement exists to
+                // prevent — the guard was one block short of the failure it was written for.
+                canceller?.Join();
+            }
         }
 
         var stats = channel.Stats;

@@ -713,29 +713,39 @@ public sealed class AlarmNotifierTests : IDisposable
             logWarning: msg => { lock (warnings) warnings.Add(msg); },
             capacity: Capacity);
 
-        // Park the reader inside dispatch (job seq 1), so the channel below is genuinely untouched.
-        notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("prime")));
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-
-        for (var i = 0; i < Capacity + Extra; i++)
+        // 🔴 backlog-test-deadlines — `release.TrySetResult(); await notifier.DisposeAsync();` used to sit
+        // BELOW six assertions. The dispatch delegate above parks on `await release.Task`, a TCS only the
+        // success path ever completes, so a red assertion left the notifier's drain loop suspended forever
+        // and the notifier itself undisposed. Two sibling tests in this file (the per-channel-queue pair)
+        // already had exactly this `try`/`finally`; these two did not.
+        try
         {
-            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm($"key-{i}")));
+            // Park the reader inside dispatch (job seq 1), so the channel below is genuinely untouched.
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("prime")));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            for (var i = 0; i < Capacity + Extra; i++)
+            {
+                notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm($"key-{i}")));
+            }
+
+            var stats = notifier.Stats;
+            Assert.Equal(Extra, stats.Dropped);                    // every eviction counted...
+            Assert.Equal(1 + Capacity + Extra, stats.Enqueued);    // ...even though every write was ACCEPTED
+
+            // And reported as SATURATION — the opposite operational meaning from a shutdown drop.
+            Assert.Equal(Extra, warnings.Count);
+            Assert.All(warnings, msg =>
+            {
+                Assert.Contains("saturated", msg, StringComparison.Ordinal);
+                Assert.DoesNotContain("shutting down", msg, StringComparison.Ordinal);
+            });
         }
-
-        var stats = notifier.Stats;
-        Assert.Equal(Extra, stats.Dropped);                    // every eviction counted...
-        Assert.Equal(1 + Capacity + Extra, stats.Enqueued);    // ...even though every write was ACCEPTED
-
-        // And reported as SATURATION — the opposite operational meaning from a shutdown drop.
-        Assert.Equal(Extra, warnings.Count);
-        Assert.All(warnings, msg =>
+        finally
         {
-            Assert.Contains("saturated", msg, StringComparison.Ordinal);
-            Assert.DoesNotContain("shutting down", msg, StringComparison.Ordinal);
-        });
-
-        release.TrySetResult();
-        await notifier.DisposeAsync();
+            release.TrySetResult();
+            await notifier.DisposeAsync();
+        }
 
         // Oldest-first: the primed job (already out of the channel) plus the LAST `Capacity` writes.
         Assert.Equal(
@@ -840,15 +850,24 @@ public sealed class AlarmNotifierTests : IDisposable
             await Task.Delay(Timeout.Infinite, ct);
         });
 
-        notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("in-flight")));
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-
-        for (var i = 0; i < 4; i++)
+        // 🔴 backlog-test-deadlines — `entered.Task.WaitAsync(10s)` throwing left the notifier undisposed with
+        // its dispatch parked on `Task.Delay(Timeout.Infinite, ct)`, and `ct` is the notifier's OWN drain
+        // token, which only DisposeAsync ever signals — so the abandoned delegate would have waited forever.
+        try
         {
-            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm($"queued-{i}")));
+            notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm("in-flight")));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            for (var i = 0; i < 4; i++)
+            {
+                notifier.Notify(new AlarmTransition(AlarmTransitionKind.Raised, MakeAlarm($"queued-{i}")));
+            }
+        }
+        finally
+        {
+            await notifier.DisposeAsync(); // drains for 5s, then cancels
         }
 
-        await notifier.DisposeAsync(); // drains for 5s, then cancels
         var stats = notifier.Stats;
 
         Assert.Equal(5, stats.Enqueued);

@@ -180,9 +180,9 @@ test.describe("machine write — MachineDetail's Control tab (setpoints + comman
     // shared `gotoConnectors` helper.
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto(`/machines/${MACHINE_CODE}`)
-    await expect(page.getByRole("heading", { name: MACHINE_CODE, level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: MACHINE_CODE, level: 1 })).toBeVisible()
     await page.getByRole("tab", { name: en.machineDetail.tabs.control }).click()
-    await expect(page.getByText(en.machineDetail.control.description)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(en.machineDetail.control.description)).toBeVisible()
 
     await expect(page.getByRole("heading", { name: en.machineDetail.control.points.title, level: 3 })).toBeVisible()
     await expect(page.getByRole("heading", { name: en.machineDetail.control.commands.title, level: 3 })).toBeVisible()

@@ -201,7 +201,27 @@ echo "[2/3] Running ${#SUITES[@]} suites sequentially..."
 for entry in "${SUITES[@]}"; do
   proj="${entry%%:*}"; expected="${entry##*:}"; name=$(basename "$proj")
   log="$LOGDIR/$name.log"
-  dotnet test "$proj" --no-build --nologo -v q > "$log" 2>&1 &
+  # 🔴 TRAP 7(f): this ran at `-v q`, so the log this script hands you on a failure carried the
+  # failing test's NAME AND NOT ITS REASON — the one occasion the log exists to serve was the one
+  # occasion it was empty. Output goes to a FILE, never to a terminal, so the quiet was bought
+  # with nothing and cost the only thing the log is for.
+  #
+  # 🔴 TRAP 7(g) and 7(h) — I caused both while fixing 7(f), and they are the most instructive
+  # entries here because each looked correct until it was measured.
+  #   (g) My first fix was `-v n`. WRONG KNOB. `-v` sets MSBuild's verbosity; test results come
+  #       from the vstest LOGGER, which `-v` does not control. The run emitted a 170-line BUILD
+  #       log ending in "0 Error(s)" with no result line at all. This script's own "no Total
+  #       line" guard caught it and failed all five suites — correctly, on its author.
+  #   (h) My second fix was `--logger console;verbosity=detailed`. That DOES carry failure
+  #       messages, and it REPLACES the summary with a different format: `Total tests: 151`
+  #       instead of `Total: 151`, and no `Skipped:` line at all when nothing skipped. Every
+  #       parse below would have broken. Caught by comparing the two invocations side by side
+  #       rather than by reasoning about which flag sounded right.
+  # The trx logger is the answer: it writes full failure detail to a FILE and leaves vstest's
+  # console summary byte-for-byte untouched, which is exactly the two things needed at once.
+  # Verified by running both forms and diffing the last three lines.
+  dotnet test "$proj" --no-build --nologo -v q \
+    --logger "trx;LogFileName=$name.trx" > "$log" 2>&1 &
   test_pid=$!
 
   # Trap 6, and it is the GENERATOR of traps 1 and 4: a hung suite forces a kill, a
@@ -345,7 +365,13 @@ for entry in "${SUITES[@]}"; do
     note "$name: NO RESULT LINE"
     continue
   fi
-  [[ "${failed:-0}" != "0" ]] && FAILURES+=("$name: ${failed} failed")
+  # Point the reader at the trx, which carries the REASON. The console log carries only the
+  # NAME — that was trap 7(f), and a failure message you must re-run a whole suite to obtain
+  # is a failure message you do not have.
+  if [[ "${failed:-0}" != "0" ]]; then
+    trx=$(find "$proj/TestResults" -name "$name.trx" 2>/dev/null | head -1)
+    FAILURES+=("$name: ${failed} failed — reason in ${trx:-<no trx written>}")
+  fi
   [[ "${skipped:-0}" != "0" ]] && FAILURES+=("$name: ${skipped} skipped (this repo expects 0)")
   if [[ "$total" != "$expected" ]]; then
     FAILURES+=("$name: total ${total}, expected ${expected} -- discovery loss or an unjustified change")

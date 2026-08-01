@@ -118,7 +118,7 @@ test.describe("recipe config — list, search/filter, detail, create/edit/save/d
     await page.getByRole("tab", { name: viDict.recipeConfigDetail.tabs.sync }).click()
     await page.getByLabel(viDict.recipeConfigDetail.sync.machineLabel).selectOption("SCRW-01")
     await page.getByRole("button", { name: viDict.recipeConfigDetail.sync.checkBtn }).click()
-    await expect(page.getByText(viDict.recipeConfigDetail.sync.resultResolvedCode)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(viDict.recipeConfigDetail.sync.resultResolvedCode)).toBeVisible()
 
     await assertNoSeriousA11yViolations(page)
   })
@@ -148,7 +148,7 @@ test.describe("recipe config — list, search/filter, detail, create/edit/save/d
 
     // Open the new recipe and edit it.
     await page.getByRole("row", { name: THROWAWAY_CODE }).click()
-    await expect(page.getByRole("heading", { name: THROWAWAY_CODE, level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: THROWAWAY_CODE, level: 1 })).toBeVisible()
 
     const saveButton = page.getByRole("button", { name: viDict.recipeConfigDetail.info.save })
     await expect(saveButton).toBeDisabled()
@@ -207,14 +207,14 @@ test.describe("recipe config — list, search/filter, detail, create/edit/save/d
     const row = page.getByRole("row", { name: /SCREWDRIVE-M4/ })
     await row.focus()
     await row.press("Enter")
-    await expect(page.getByRole("heading", { name: "SCREWDRIVE-M4", level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "SCREWDRIVE-M4", level: 1 })).toBeVisible()
   })
 
   test("English strings render with no raw i18n keys leaking through", async ({ page }) => {
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/recipes")
     await expect(page.getByRole("heading", { name: en.recipeConfig.title, level: 1 })).toBeVisible()
-    await expect(page.getByRole("columnheader", { name: en.recipeConfig.table.code })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("columnheader", { name: en.recipeConfig.table.code })).toBeVisible()
     await expect(page.getByRole("cell", { name: "SCREWDRIVE-M4", exact: true })).toBeVisible()
     await expect(page.getByRole("table").getByText(en.recipeStatus.active)).toBeVisible()
 

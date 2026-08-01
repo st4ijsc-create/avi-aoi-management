@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { SERVER_BOUNDED_OP_MS } from "./support/deadlines"
 import { gotoConnectors } from "./support/screens"
 import { en } from "../src/i18n/en"
 import { vi as viDict } from "../src/i18n/vi"
@@ -49,7 +50,7 @@ test.describe("connectors — configured-connectors list + add-connector form", 
     await page.getByRole("button", { name: viDict.connectorConfig.form.test }).click()
     // Bounded — the server-side test endpoint never hangs past its own timeout (ConnectorEndpoints.
     // ConnectionTestTimeout), so this must resolve well before Playwright's own default action timeout.
-    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: SERVER_BOUNDED_OP_MS })
 
     await assertNoSeriousA11yViolations(page)
   })
@@ -58,7 +59,7 @@ test.describe("connectors — configured-connectors list + add-connector form", 
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/connectors")
     await expect(page.getByRole("heading", { name: en.connectorConfig.title, level: 1 })).toBeVisible()
-    await expect(page.getByText(en.connectorConfig.list.title)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(en.connectorConfig.list.title)).toBeVisible()
 
     await expect(page.getByText(/connectorConfig\.[a-zA-Z.]+/)).toHaveCount(0)
 

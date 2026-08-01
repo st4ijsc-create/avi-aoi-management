@@ -1,7 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
-import { applyScenarioPreset, pullMachineConfig, resetEstop, resetScenarioToNormal, setFleetRunning } from "./support/engine"
+import { LIVE_CYCLES_MS, POLL_RESYNC_MS } from "./support/deadlines"
+import { pullMachineConfig, resetEstop, resetMachineSetting, setFleetRunning, setMachineSetting } from "./support/engine"
 import { gotoHmi } from "./support/screens"
 import { primeAppStorage, type Theme } from "./support/theme"
 import { vi as viDict } from "../src/i18n/vi"
@@ -81,8 +82,8 @@ test.describe("HMI operator panel", () => {
 
   test("system log fills with live trace rows for this machine", async ({ page }) => {
     await gotoHmi(page, "AOI-01")
-    await expect(page.getByText(viDict.hmi.log.empty)).toHaveCount(0, { timeout: 15_000 })
-    await expect.poll(() => page.getByRole("listitem").count(), { timeout: 15_000 }).toBeGreaterThan(0)
+    await expect(page.getByText(viDict.hmi.log.empty)).toHaveCount(0)
+    await expect.poll(() => page.getByRole("listitem").count()).toBeGreaterThan(0)
   })
 
   test("AOI schematic plots real product measurement points", async ({ page }) => {
@@ -92,7 +93,7 @@ test.describe("HMI operator panel", () => {
     // Real `MeasurementPoint`s from the product config, plotted as circles carrying their own code
     // as an accessible `<title>` — not the engine's generic simulator point codes (see
     // `AoiSchematic.tsx`'s header comment on the positional-correspondence disclosure).
-    await expect.poll(() => schematic.locator("circle title").count(), { timeout: 15_000 }).toBeGreaterThan(0)
+    await expect.poll(() => schematic.locator("circle title").count()).toBeGreaterThan(0)
   })
 
   // WS3-T3 (visual-determinism-report.md) — the living twin's ACTUAL live behaviour (head/carriage
@@ -106,11 +107,32 @@ test.describe("HMI operator panel", () => {
     page,
     request,
   }) => {
-    // A high-defect preset (35%/point, vs. the ~5% default) makes an NG measurement land within a
-    // handful of AOI cycles instead of possibly dozens — reset back to "normal" below regardless of
-    // outcome, so nothing downstream (including a re-run against a reused dev server) inherits it,
-    // the same "undo your own precondition" discipline `06-scenario.spec.ts`'s own afterEach uses.
-    await applyScenarioPreset(request, "high-defect")
+    // 🔴 This used to apply the shipped `high-defect` preset, and the comment here used to say that
+    // gave "35%/point, vs. the ~5% default". **That was not what the preset did to this assertion —
+    // it did nothing to it at all.** The scenario's defect/fault knobs are applied by
+    // `ScenarioAwareDriver.Inject`, which wraps the driver and mutates `reading.Verdict` and
+    // `reading.Measurements` AFTER the simulator has produced them. The NG dot asserted below comes
+    // from `reading.Plan` (`MachineState.cs:184` stores it wholesale; `AoiSchematic.tsx` renders
+    // `step.result`), and `Inject` never touches `Plan`. So the injected failure changes the machine's
+    // verdict without ever changing a dot — the preset was inert here, and what the test was actually
+    // waiting on the whole time was `AoiInspectorSim`'s OWN per-point NG rate at the default
+    // `matchThreshold`.
+    //
+    // That rate is why this was the tightest deadline in the suite. `matchScore ~ N(0.93, 0.05)` and a
+    // point is NG when `matchScore < matchThreshold`, so at the 0.85 default P(NG) ≈ 0.055 per point,
+    // ≈ 0.36 per 8-point board, ≈ 2.8 AOI cycles (1.8 s each) expected — with a long tail. A measured
+    // run caught it at **15 295 ms against a 20 000 ms bound**: 1.3x, the tightest ratio anywhere in
+    // this suite, on the one wait whose duration was a random variable.
+    //
+    // Raising `matchThreshold` to its schema maximum (0.99) takes P(NG) to ≈ 0.885 per point, i.e.
+    // effectively certain on every single cycle — and it does so through the sim's own physics, so it
+    // lands in `Plan` where this assertion can see it. The wait stops being probabilistic. This
+    // weakens nothing: the property under test is "a real NG step result lights ITS OWN dot NG", and
+    // how often the sim produces one is the precondition, not the claim.
+    //
+    // Undone in a `finally` regardless of outcome — and Playwright does run this `finally` even when
+    // the test hits its own timeout (verified, task-2-report.md §2).
+    await setMachineSetting(request, "AOI-01", "matchThreshold", 0.99, "machine")
     try {
       // Head motion: `AutomationSchematic.tsx`'s carriage group (`.hmi-gantry-head`) is a plain SVG
       // `transform` attribute recomputed every `requestAnimationFrame` from the real cycle clock
@@ -121,17 +143,17 @@ test.describe("HMI operator panel", () => {
       await gotoHmi(page, "SCRW-01")
       const head = page.locator(".hmi-gantry-head")
       const initialTransform = await head.getAttribute("transform")
-      await expect.poll(() => head.getAttribute("transform"), { timeout: 10_000 }).not.toBe(initialTransform)
+      await expect.poll(() => head.getAttribute("transform")).not.toBe(initialTransform)
 
       // Per-point NG lighting: `AoiSchematic.tsx` gives each live step's dot an accessible `<title>`
       // of `"{code} — {ĐẠT|LỖI}"` once that step's real result is revealed — a real regression that
       // broke the plan→dot result wiring (miscoloring every dot the same tone, or never revealing a
-      // result at all) would leave this NG title unreachable even under a 35% defect rate.
+      // result at all) would leave this NG title unreachable even at a near-certain per-point NG rate.
       await gotoHmi(page, "AOI-01")
       const ngTitles = page.locator(".hmi-aoi-points-group circle title", { hasText: viDict.hmi.progress.ngLabel })
-      await expect.poll(() => ngTitles.count(), { timeout: 20_000 }).toBeGreaterThan(0)
+      await expect.poll(() => ngTitles.count(), { timeout: LIVE_CYCLES_MS }).toBeGreaterThan(0)
     } finally {
-      await resetScenarioToNormal(request)
+      await resetMachineSetting(request, "AOI-01", "matchThreshold", "machine")
     }
   })
 
@@ -197,7 +219,7 @@ test.describe("HMI operator panel", () => {
     // — reproduced live as an idle lamp reading "Chờ lệnh" while `isRunning: true` and cycles climbed
     // server-side. Now every ~1s poll is the source of truth, so this page must resync within a few
     // poll intervals with NO navigation/reload.
-    await expect(header.getByText(viDict.hmi.status.sub.idle)).toBeVisible({ timeout: 5_000 })
+    await expect(header.getByText(viDict.hmi.status.sub.idle)).toBeVisible({ timeout: POLL_RESYNC_MS })
     await expect(schematicGroup).not.toHaveClass(/hmi-schematic-run/)
     await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeEnabled()
     await expect(page.getByRole("button", { name: viDict.hmi.controls.pause })).toBeDisabled()
@@ -205,7 +227,7 @@ test.describe("HMI operator panel", () => {
     // And it resyncs back the other way too — started from elsewhere, this page follows without any
     // action of its own.
     await setFleetRunning(request, true)
-    await expect(header.getByText(viDict.hmi.status.sub.run)).toBeVisible({ timeout: 5_000 })
+    await expect(header.getByText(viDict.hmi.status.sub.run)).toBeVisible({ timeout: POLL_RESYNC_MS })
     await expect(schematicGroup).toHaveClass(/hmi-schematic-run/)
     await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeDisabled()
     await expect(page.getByRole("button", { name: viDict.hmi.controls.pause })).toBeEnabled()
@@ -228,7 +250,7 @@ test.describe("HMI operator panel", () => {
 
     // A full page reload — the pre-fix bug cleared client-only state here too.
     await page.reload()
-    await expect(page.getByRole("heading", { name: "AOI-01", level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "AOI-01", level: 1 })).toBeVisible()
     await expect(page.getByText(viDict.hmi.controls.estopBanner)).toBeVisible()
     await expect(page.getByRole("button", { name: viDict.hmi.controls.start })).toBeDisabled()
 

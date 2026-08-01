@@ -107,11 +107,30 @@ public sealed class DeviceIdentityProviderTests : IDisposable
             }
         });
 
-        var rotated = provider.Rotate();
-        cts.Cancel();
-        await readerTask;
+        // 🔴 backlog-test-deadlines — the cancel-and-join was already correctly placed ABOVE the final
+        // assertion (the reference shape), but `provider.Rotate()` is itself under test and can throw, and
+        // that path skipped both. `readerTask` is an un-throttled hot loop with no delay, so abandoning it
+        // leaves a thread-pool thread spinning at 100% for the rest of the run, reading a
+        // CancellationTokenSource that `using var cts` has already disposed underneath it.
+        //
+        // The `await readerTask` INSIDE the try is deliberately left un-caught: the reader's own
+        // `Assert.False(IsNullOrWhiteSpace(...))`/`Assert.NotNull(...)` are what prove the read was never
+        // torn, and swallowing them would make this test vacuous. The `finally` only re-runs the pair for
+        // the case where something above already threw, where that original exception is the diagnosis.
+        try
+        {
+            var rotated = provider.Rotate();
 
-        Assert.Equal(rotated.Fingerprint, provider.Current.Fingerprint);
+            cts.Cancel();
+            await readerTask;
+
+            Assert.Equal(rotated.Fingerprint, provider.Current.Fingerprint);
+        }
+        finally
+        {
+            cts.Cancel();
+            try { await readerTask; } catch { /* already surfaced above, or teardown */ }
+        }
     }
 
     // GĐ3 closeout WI-4 fix round 1 (Important #3 / concurrency Minor) — the regression test for the exact

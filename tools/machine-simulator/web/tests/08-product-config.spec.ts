@@ -140,9 +140,7 @@ test.describe("product config — list, search/filter, detail, create/edit/delet
       viDict.productConfigDetail.sync.driftState.drift,
       viDict.productConfigDetail.sync.driftState.unknown,
     ]
-    await expect(page.getByText(new RegExp(driftLabels.map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")))).toBeVisible({
-      timeout: 10_000,
-    })
+    await expect(page.getByText(new RegExp(driftLabels.map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")))).toBeVisible()
 
     await assertNoSeriousA11yViolations(page)
   })
@@ -179,7 +177,7 @@ test.describe("product config — list, search/filter, detail, create/edit/delet
 
     // Open the new product and edit a field.
     await page.getByRole("row", { name: THROWAWAY_CODE }).click()
-    await expect(page.getByRole("heading", { name: THROWAWAY_CODE, level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: THROWAWAY_CODE, level: 1 })).toBeVisible()
 
     const saveButton = page.getByRole("button", { name: viDict.productConfigDetail.info.save })
     await expect(saveButton).toBeDisabled()
@@ -217,14 +215,14 @@ test.describe("product config — list, search/filter, detail, create/edit/delet
     const row = page.getByRole("row", { name: /MODEL-B/ })
     await row.focus()
     await row.press("Enter")
-    await expect(page.getByRole("heading", { name: "MODEL-B", level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "MODEL-B", level: 1 })).toBeVisible()
   })
 
   test("English strings render with no raw i18n keys leaking through", async ({ page }) => {
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/products")
     await expect(page.getByRole("heading", { name: en.productConfig.title, level: 1 })).toBeVisible()
-    await expect(page.getByRole("columnheader", { name: en.productConfig.table.code })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("columnheader", { name: en.productConfig.table.code })).toBeVisible()
     await expect(page.getByRole("cell", { name: "MODEL-A", exact: true })).toBeVisible()
     // Scoped to the table — the lifecycle filter's own (hidden) <option> carries this same text.
     await expect(page.getByRole("table").getByText(en.lifecycleStatus.active)).toBeVisible()

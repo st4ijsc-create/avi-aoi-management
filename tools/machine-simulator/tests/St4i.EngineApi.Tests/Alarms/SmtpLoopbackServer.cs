@@ -93,6 +93,11 @@ internal sealed class SmtpLoopbackServer : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _loop;
     private readonly ConcurrentQueue<Received> _messages = new();
+
+    /// <summary>Every per-connection handler this relay has started, so <see cref="DisposeAsync"/> can JOIN
+    /// them rather than leave them racing its own <c>_cts.Dispose()</c>. See C-3's
+    /// <see cref="WebhookLoopbackServer"/> for the identical repair and its reasoning.</summary>
+    private readonly ConcurrentQueue<Task> _handlers = new();
     private readonly Func<int, SmtpScript?> _script;
     private int _connections;
 
@@ -147,7 +152,8 @@ internal sealed class SmtpLoopbackServer : IAsyncDisposable
             {
                 var client = await _listener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
                 var ordinal = Interlocked.Increment(ref _connections);
-                _ = Task.Run(() => ServeAsync(client, ordinal, ct), CancellationToken.None);
+                // 🔴 backlog-test-deadlines — tracked, not fire-and-forget; see `_handlers` and DisposeAsync.
+                _handlers.Enqueue(Task.Run(() => ServeAsync(client, ordinal, ct), CancellationToken.None));
             }
         }
         catch (OperationCanceledException) { /* teardown */ }
@@ -425,6 +431,15 @@ internal sealed class SmtpLoopbackServer : IAsyncDisposable
         try { await _cts.CancelAsync().ConfigureAwait(false); } catch { /* best-effort */ }
         try { _listener.Stop(); } catch { /* best-effort */ }
         try { await _loop.ConfigureAwait(false); } catch { /* best-effort */ }
+
+        // 🔴 Join the per-connection handlers before disposing the CTS they registered on. `ct` is already
+        // cancelled, and every await in ServeAsync/ConverseAsync takes it, so these tasks are already
+        // unwinding — this waits for them to finish unwinding rather than for them to start.
+        while (_handlers.TryDequeue(out var handler))
+        {
+            try { await handler.ConfigureAwait(false); } catch { /* best-effort */ }
+        }
+
         _cts.Dispose();
     }
 }

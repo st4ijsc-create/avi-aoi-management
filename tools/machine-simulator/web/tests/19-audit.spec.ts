@@ -34,7 +34,7 @@ test.describe("audit — admin hash-chained audit log viewer", () => {
     await page.getByLabel(viDict.audit.filters.actor).fill("demo-admin")
 
     // Past the loading skeleton — a real filtered row rendered once `useAudit(filter)` resolved.
-    await expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator("tbody tr").first()).toBeVisible()
 
     const actionCells = page.locator("tbody tr td:nth-child(4)")
     const count = await actionCells.count()
@@ -63,7 +63,7 @@ test.describe("audit — admin hash-chained audit log viewer", () => {
     await page.getByLabel(viDict.audit.filters.action).fill("scenario.preset")
 
     const firstRow = page.locator("tbody tr").first()
-    await expect(firstRow).toBeVisible({ timeout: 15_000 })
+    await expect(firstRow).toBeVisible()
 
     // "scenario.preset" always records a non-null new value (`ScenarioEndpoints.cs`'s own
     // `RecordAsync(..., null, new { scenario = applied, hotFolderStatus }, ...)`) — the "view detail"
@@ -88,7 +88,7 @@ test.describe("audit — admin hash-chained audit log viewer", () => {
     await page.getByRole("button", { name: viDict.audit.verify.button }).click()
 
     const banner = page.getByRole("status")
-    await expect(banner).toBeVisible({ timeout: 15_000 })
+    await expect(banner).toBeVisible()
     // "Chuỗi còn nguyên vẹn" — the `audit.verify.intact` string's own fixed prefix, before the
     // interpolated entry count (kept a substring match so this doesn't churn if the exact count does).
     await expect(banner).toContainText("Chuỗi còn nguyên vẹn")
@@ -104,7 +104,7 @@ test.describe("audit — admin hash-chained audit log viewer", () => {
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/audit")
     await expect(page.getByRole("heading", { name: en.audit.title, level: 1 })).toBeVisible()
-    await expect(page.getByRole("columnheader", { name: en.audit.table.seq })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("columnheader", { name: en.audit.table.seq })).toBeVisible()
     await expect(page.getByRole("button", { name: en.audit.verify.button })).toBeVisible()
 
     // A leftover `t()` typo renders the raw dot-path string (e.g. "audit.table.seq") — this regex is

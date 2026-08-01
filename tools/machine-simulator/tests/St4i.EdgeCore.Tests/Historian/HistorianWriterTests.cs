@@ -143,6 +143,12 @@ public sealed class HistorianWriterTests
 
         var task = writer.RecordRunEventFireAndForget("Estop");
 
+        // 🔴 backlog-test-deadlines — DELIBERATELY LEFT as a bounded abandon, and this note is here so the next
+        // sweep does not "fix" it into a hang. `task` takes no cancellation token and touches no socket, file
+        // handle or connection: the store is the in-memory fake above, so the only thing a lost WhenAny leaves
+        // behind is an unobserved in-memory Task. There is no seam to cancel, and awaiting it unconditionally
+        // in a `finally` would convert a red test into a wedged host — the exact trade this whole task exists
+        // to prevent, inverted. Same reasoning applies to the sibling DisposeAsync_DrainsQueuedRecords test.
         var winner = await Task.WhenAny(task, Task.Delay(PollTimeout));
         Assert.Same(task, winner);
         await task; // must complete WITHOUT throwing even though the store threw internally
@@ -203,13 +209,27 @@ public sealed class HistorianWriterTests
 
         var disposeTask = writer.DisposeAsync().AsTask();
 
-        // Release only now — DisposeAsync is already in flight, so whatever it drains from here on is
-        // genuinely happening DURING shutdown, not before.
-        store.Gate.SetResult();
+        // 🔴 backlog-test-deadlines — `Assert.Same(disposeTask, winner)` fires precisely when the WhenAny lost,
+        // i.e. precisely when `disposeTask` is still running, and it used to return from the test with the
+        // writer's flush loop still parked inside the gated store call. The gate IS the seam: releasing it in
+        // a `finally` lets the drain finish and the dispose complete, so the failure path joins instead of
+        // abandoning. On the green path the gate is already set by the line above and `TrySetResult` is a
+        // no-op, so the timing this test measures is untouched.
+        try
+        {
+            // Release only now — DisposeAsync is already in flight, so whatever it drains from here on is
+            // genuinely happening DURING shutdown, not before.
+            store.Gate.SetResult();
 
-        var winner = await Task.WhenAny(disposeTask, Task.Delay(PollTimeout));
-        Assert.Same(disposeTask, winner);
-        await disposeTask; // must not throw
+            var winner = await Task.WhenAny(disposeTask, Task.Delay(PollTimeout));
+            Assert.Same(disposeTask, winner);
+            await disposeTask; // must not throw
+        }
+        finally
+        {
+            store.Gate.TrySetResult();
+            try { await disposeTask; } catch { /* teardown */ }
+        }
 
         Assert.Equal(5, store.AppendedResultsSnapshot().Count(r => r.MachineCode == "DRAIN"));
     }
@@ -235,17 +255,33 @@ public sealed class HistorianWriterTests
 
         var sw = Stopwatch.StartNew();
         var disposeTask = writer.DisposeAsync().AsTask();
-        var winner = await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(20)));
-        sw.Stop();
 
-        Assert.Same(disposeTask, winner); // returned well before our 20s outer safety bound — did not hang forever
-        await disposeTask; // must not throw despite the underlying hang + cancellation
+        // 🔴 backlog-test-deadlines — the same repair as the gated-drain test above, and it matters more here:
+        // this store's gate is deliberately NEVER released, so if `Assert.Same` below failed (the SUT's own 5s
+        // hard-stop having regressed) the test returned with the flush loop parked inside a store call that by
+        // construction never returns. Releasing the gate in a `finally` is the only seam that can end it.
+        // Deliberately NOT released before the assertions: the property under test is that DisposeAsync
+        // unblocks a permanently-hung store BY CANCELLING IT, so the release must come strictly after the
+        // measurement or the test would be proving something weaker.
+        try
+        {
+            var winner = await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(20)));
+            sw.Stop();
 
-        // The internal drain-first wait is 5s before the hard-stop fallback kicks in, so this should land
-        // close to (a little over) 5s — comfortably inside a generous [4s, 15s) window that tolerates slow
-        // CI without silently passing for an unrelated reason (e.g. a 0ms return would indicate the gate
-        // somehow never blocked anything).
-        Assert.InRange(sw.Elapsed, TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(15));
+            Assert.Same(disposeTask, winner); // returned well before our 20s outer safety bound — did not hang forever
+            await disposeTask; // must not throw despite the underlying hang + cancellation
+
+            // The internal drain-first wait is 5s before the hard-stop fallback kicks in, so this should land
+            // close to (a little over) 5s — comfortably inside a generous [4s, 15s) window that tolerates slow
+            // CI without silently passing for an unrelated reason (e.g. a 0ms return would indicate the gate
+            // somehow never blocked anything).
+            Assert.InRange(sw.Elapsed, TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(15));
+        }
+        finally
+        {
+            store.Gate.TrySetResult();
+            try { await disposeTask; } catch { /* teardown */ }
+        }
     }
 
     /// <summary>Fix round 1 (MINOR, addressed): a call arriving after disposal must not touch the completed

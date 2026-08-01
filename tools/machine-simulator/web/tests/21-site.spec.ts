@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { SERVER_BOUNDED_OP_MS } from "./support/deadlines"
 import { gotoSite } from "./support/screens"
 import { en } from "../src/i18n/en"
 import { vi as viDict } from "../src/i18n/vi"
@@ -31,7 +32,7 @@ test.describe("site — device identity + Site-link form + bridge status", () =>
     await expect(page.locator("#site-device-fingerprint")).toHaveValue(/\S/)
 
     // The bridge-status badge — `bridgeState: "Disabled"` for a fresh demo profile with no Site link.
-    await expect(page.getByText(viDict.site.status.Disabled, { exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(viDict.site.status.Disabled, { exact: true })).toBeVisible()
 
     // demo-admin (Roles.Admin) satisfies this screen's Engineer+ Site-link gate, so the form + Save
     // control render (not the read-only host/port/enabled summary).
@@ -43,7 +44,7 @@ test.describe("site — device identity + Site-link form + bridge status", () =>
     // happy path here — `SiteDiscovery`'s own "NEVER throws" contract means a scan failure ALSO
     // surfaces as this same empty result, never an error, so this assertion covers both cases.
     await page.getByRole("button", { name: viDict.site.discover.button }).click()
-    await expect(page.getByText(viDict.site.discover.empty)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(viDict.site.discover.empty)).toBeVisible({ timeout: SERVER_BOUNDED_OP_MS })
 
     await assertNoSeriousA11yViolations(page)
   })
@@ -52,7 +53,7 @@ test.describe("site — device identity + Site-link form + bridge status", () =>
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/site")
     await expect(page.getByRole("heading", { name: en.site.title, level: 1 })).toBeVisible()
-    await expect(page.locator("#site-device-fingerprint")).toHaveValue(/\S/, { timeout: 15_000 })
+    await expect(page.locator("#site-device-fingerprint")).toHaveValue(/\S/)
 
     await expect(page.getByText(/site\.[a-zA-Z.]+/)).toHaveCount(0)
 

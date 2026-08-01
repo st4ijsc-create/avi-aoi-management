@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { assertNoSeriousA11yViolations } from "./support/a11y"
+import { LIVE_CYCLES_MS, REQUEST_ROUND_TRIP_MS, SERVER_BOUNDED_OP_MS } from "./support/deadlines"
 import { gotoOnboarding } from "./support/screens"
 import { en } from "../src/i18n/en"
 import { vi as viDict } from "../src/i18n/vi"
@@ -64,7 +65,9 @@ test.describe("onboarding — register → approve → claim → done → joins 
     // The value the browser actually POSTs — not just what the trigger displays — is the one thing a
     // free-text field could get subtly wrong. Captured before the click so the request is in flight by
     // the time this promise is awaited.
-    const registerRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/register") && req.method() === "POST")
+    const registerRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/register") && req.method() === "POST", {
+      timeout: REQUEST_ROUND_TRIP_MS,
+    })
     await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
     expect(JSON.parse((await registerRequest).postData() ?? "{}")).toMatchObject({ machineType: "AOI" })
 
@@ -132,7 +135,7 @@ test.describe("onboarding — register → approve → claim → done → joins 
     // does a fresh `page.goto`, which would only prove the ROUTE works, not that the wizard's own
     // button click (client-side navigation) actually lands there.
     await page.getByRole("button", { name: viDict.onboarding.done.viewMachine }).click()
-    await expect(page.getByRole("heading", { name: serial, level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: serial, level: 1 })).toBeVisible()
     await expect(page.getByText(viDict.machineDetail.notFoundState.title)).toHaveCount(0)
 
     // `OnboardingFleetJoin.Profiles["AOI"]` maps to `DeviceClass.AoiAvi` — the joined machine's own
@@ -148,7 +151,7 @@ test.describe("onboarding — register → approve → claim → done → joins 
     const cyclesValue = page
       .locator("p.text-xs.text-text-muted", { hasText: viDict.machineDetail.overview.cycles })
       .locator("xpath=following-sibling::p[1]")
-    await expect.poll(async () => Number(await cyclesValue.textContent()), { timeout: 20_000 }).toBeGreaterThan(0)
+    await expect.poll(async () => Number(await cyclesValue.textContent()), { timeout: LIVE_CYCLES_MS }).toBeGreaterThan(0)
   })
 
   /** Second concrete run of the dropdown — this time switching AWAY from the AOI default — proves the
@@ -166,20 +169,24 @@ test.describe("onboarding — register → approve → claim → done → joins 
     await page.getByRole("option", { name: viDict.onboarding.register.machineTypes.IOT_SENSOR }).click()
     await expect(typeSelect).toContainText(viDict.onboarding.register.machineTypes.IOT_SENSOR)
 
-    const registerRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/register") && req.method() === "POST")
+    const registerRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/register") && req.method() === "POST", {
+      timeout: REQUEST_ROUND_TRIP_MS,
+    })
     await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
     expect(JSON.parse((await registerRequest).postData() ?? "{}")).toMatchObject({ machineType: "IOT_SENSOR" })
 
     await page.getByRole("button", { name: viDict.onboarding.poll.approveBtn }).click()
 
-    const claimRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/claim") && req.method() === "POST")
+    const claimRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/claim") && req.method() === "POST", {
+      timeout: REQUEST_ROUND_TRIP_MS,
+    })
     await page.getByRole("button", { name: viDict.onboarding.claim.claimBtn }).click()
     expect(JSON.parse((await claimRequest).postData() ?? "{}")).toMatchObject({ machineType: "IOT_SENSOR" })
 
     await expect(page.getByText(viDict.onboarding.done.joinedFleet({ code: serial }))).toBeVisible()
 
     await page.getByRole("button", { name: viDict.onboarding.done.viewMachine }).click()
-    await expect(page.getByRole("heading", { name: serial, level: 1 })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: serial, level: 1 })).toBeVisible()
 
     // `OnboardingFleetJoin.Profiles["IOT_SENSOR"]` maps to `DeviceClass.Iot` — concrete, observable
     // proof a non-default type resolved to the right simulator instead of silently falling back to a
@@ -189,7 +196,7 @@ test.describe("onboarding — register → approve → claim → done → joins 
     const cyclesValue = page
       .locator("p.text-xs.text-text-muted", { hasText: viDict.machineDetail.overview.cycles })
       .locator("xpath=following-sibling::p[1]")
-    await expect.poll(async () => Number(await cyclesValue.textContent()), { timeout: 20_000 }).toBeGreaterThan(0)
+    await expect.poll(async () => Number(await cyclesValue.textContent()), { timeout: LIVE_CYCLES_MS }).toBeGreaterThan(0)
 
     await assertNoSeriousA11yViolations(page)
   })
@@ -245,7 +252,7 @@ test.describe("onboarding — register → approve → claim → done → joins 
     await page.addInitScript(() => window.localStorage.setItem("st4i-sim-language", "en"))
     await page.goto("/onboarding")
     await expect(page.getByRole("heading", { name: en.onboarding.title, level: 1 })).toBeVisible()
-    await expect(page.getByText(en.shell.topBar.engineConnected)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(en.shell.topBar.engineConnected)).toBeVisible()
     await expect(page.getByLabel(en.onboarding.register.serialLabel)).toBeVisible()
 
     await expect(page.getByLabel(en.onboarding.register.nameLabel)).toHaveValue(en.onboarding.register.defaultName)
@@ -302,7 +309,7 @@ test.describe("onboarding — register → approve → claim → done → joins 
     // this round-trips through `OnboardingService.LiveRegisterAsync`'s own catch block, not a mock.
     // Friendly (readable, explains what happened) and non-fatal: the wizard stays on step 0, no
     // uncaught exception, no blank screen.
-    await expect(page.getByText(/Register failed/)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/Register failed/)).toBeVisible({ timeout: SERVER_BOUNDED_OP_MS })
     await expect(page.getByLabel(viDict.onboarding.register.serialLabel)).toBeVisible()
 
     // The rest of this test is about the SHAPE of what the wizard sends, not about reaching a real
@@ -324,7 +331,9 @@ test.describe("onboarding — register → approve → claim → done → joins 
         body: JSON.stringify({ step: "Approved", machineCode: null, mkKey: null, isApproved: true, message: "Poll approval: approved (requiresClaim=true)" }),
       })
     })
-    const claimRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/claim") && req.method() === "POST")
+    const claimRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/claim") && req.method() === "POST", {
+      timeout: REQUEST_ROUND_TRIP_MS,
+    })
     await page.route("**/v1/onboarding/claim", async (route) => {
       await route.fulfill({
         status: 200,
@@ -433,7 +442,9 @@ test.describe("I-1 (prod-ui review) — Demo gated out of onboarding when ST4I_D
     // refuse an explicit `isDemo:true`, because the web layer never sends one on a flag-off deployment.
     const serial = `SIM-E2E-FLAGOFF-${Date.now()}`
     await page.getByLabel(viDict.onboarding.register.serialLabel).fill(serial)
-    const registerRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/register") && req.method() === "POST")
+    const registerRequest = page.waitForRequest((req) => req.url().includes("/v1/onboarding/register") && req.method() === "POST", {
+      timeout: REQUEST_ROUND_TRIP_MS,
+    })
     await page.getByRole("button", { name: viDict.onboarding.register.submit }).click()
     expect(JSON.parse((await registerRequest).postData() ?? "{}")).toMatchObject({ isDemo: false })
 

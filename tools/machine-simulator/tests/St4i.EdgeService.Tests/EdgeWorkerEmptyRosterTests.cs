@@ -45,10 +45,29 @@ public sealed class EdgeWorkerEmptyRosterTests
         await worker.StartAsync(CancellationToken.None);
         var executeTask = worker.ExecuteTask!;
 
-        var finished = await Task.WhenAny(executeTask, Task.Delay(NoHangTimeout));
-        Assert.True(ReferenceEquals(finished, executeTask), "EdgeWorker.ExecuteAsync hung with an empty roster instead of completing.");
+        // 🔴 backlog-test-deadlines — the assertion below fires exactly when the WhenAny lost, i.e. exactly
+        // when `executeTask` is STILL RUNNING, and it used to return from this helper leaving that task
+        // running with nothing able to end it. `BackgroundService.StopAsync` is the seam the Generic Host
+        // itself uses: it signals ExecuteAsync's own stopping token and then waits for the task. Calling it
+        // from a `finally` means the failure path CANCELS and joins instead of abandoning. On the green path
+        // `executeTask` has already completed and StopAsync returns immediately, so nothing changes there.
+        //
+        // The token handed to StopAsync is the SAME `NoHangTimeout` this helper already uses, not a new
+        // constant, and it is what stops the teardown becoming the hang it exists to prevent: StopAsync waits
+        // via `Task.WhenAny(_executeTask, Task.Delay(Infinite, cancellationToken))`, so passing
+        // CancellationToken.None here would wait FOREVER on a worker that ignored its stopping token.
+        using var stopDeadline = new CancellationTokenSource(NoHangTimeout);
+        try
+        {
+            var finished = await Task.WhenAny(executeTask, Task.Delay(NoHangTimeout));
+            Assert.True(ReferenceEquals(finished, executeTask), "EdgeWorker.ExecuteAsync hung with an empty roster instead of completing.");
 
-        await executeTask; // surface any exception instead of swallowing it
+            await executeTask; // surface any exception instead of swallowing it
+        }
+        finally
+        {
+            try { await worker.StopAsync(stopDeadline.Token); } catch { /* teardown */ }
+        }
     }
 
     [Fact]

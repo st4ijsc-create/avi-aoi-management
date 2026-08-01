@@ -51,61 +51,86 @@ public sealed class EstopLatchAndDetailGatingTests
     {
         var host = CreateHost();
 
+        // 🔴 backlog-test-deadlines — `host.Estop()` is this test's only teardown and it sat below an
+        // assertion, so a red `Assert.False(host.Snapshot().EstopEngaged)` (or a `WaitUntilAsync` deadline)
+        // left the fleet RUNNING for the rest of the process: one background task per roster machine
+        // enumerating SimulatedDriver.ReadAsync, plus their CTSs, the EventBus and an undisposed
+        // LiveTransport HttpClient. In-memory, but it burns CPU continuously — which is the "stopped but not
+        // idle" signature verify-suites' hang detector structurally cannot see. Two siblings in this same
+        // file already used try/finally; these three did not.
         host.Start();
-        await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online before E-STOP");
+        try
+        {
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online before E-STOP");
 
-        Assert.False(host.Snapshot().EstopEngaged);
+            Assert.False(host.Snapshot().EstopEngaged);
 
-        host.Estop();
+            host.Estop();
 
-        // A real stop, not a cosmetic flag — Estop() itself is the confirmation (C-3).
-        Assert.False(host.IsRunning);
-        var snapshot = host.Snapshot();
-        Assert.False(snapshot.IsRunning);
-        Assert.True(snapshot.EstopEngaged);
-        Assert.True(host.EstopEngaged);
+            // A real stop, not a cosmetic flag — Estop() itself is the confirmation (C-3).
+            Assert.False(host.IsRunning);
+            var snapshot = host.Snapshot();
+            Assert.False(snapshot.IsRunning);
+            Assert.True(snapshot.EstopEngaged);
+            Assert.True(host.EstopEngaged);
+        }
+        finally
+        {
+            host.Stop();
+        }
     }
 
     [Fact]
     public async Task Estop_ThenStart_IsRefusedByTheEngineWhileLatched()
     {
         var host = CreateHost();
+        // 🔴 backlog-test-deadlines — see the sibling test above for the mechanism.
         host.Start();
-        await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online before E-STOP");
+        try
+        {
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online before E-STOP");
 
-        host.Estop();
-        Assert.False(host.IsRunning);
+            host.Estop();
+            Assert.False(host.IsRunning);
 
-        // Defense in depth: even if a stale client (or a second panel that never saw the latch) calls
-        // Start directly, the engine itself must refuse while EstopEngaged — this is the server-side
-        // half of C-2 ("a second panel can restart a fleet that is latched-out").
-        host.Start();
-        Assert.False(host.IsRunning, "Start() must be a no-op while EstopEngaged, regardless of caller");
-        Assert.True(host.EstopEngaged);
+            // Defense in depth: even if a stale client (or a second panel that never saw the latch) calls
+            // Start directly, the engine itself must refuse while EstopEngaged — this is the server-side
+            // half of C-2 ("a second panel can restart a fleet that is latched-out").
+            host.Start();
+            Assert.False(host.IsRunning, "Start() must be a no-op while EstopEngaged, regardless of caller");
+            Assert.True(host.EstopEngaged);
+        }
+        finally
+        {
+            host.Stop();
+        }
     }
 
     [Fact]
     public async Task ResetEstop_ClearsTheLatch_ButDoesNotAutoRestartTheFleet()
     {
         var host = CreateHost();
-        host.Start();
-        await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online before E-STOP");
-
-        host.Estop();
-        Assert.True(host.EstopEngaged);
-
-        host.ResetEstop();
-
-        Assert.False(host.EstopEngaged);
-        Assert.False(host.Snapshot().EstopEngaged);
-        // Honest, explicit design (spec/C-2): RESET clears the fault but an operator must press START
-        // again — it must not silently resume production.
-        Assert.False(host.IsRunning, "ResetEstop must not itself restart the fleet");
-
-        // And Start() genuinely works again now that the latch is clear.
+        // 🔴 backlog-test-deadlines — see the first test in this file for the mechanism. Note the tail of
+        // this method ALREADY used try/finally around its second Start(); it was only the first Start() —
+        // the one with four assertions between it and `host.Estop()` — that had no cover.
         host.Start();
         try
         {
+            await WaitUntilAsync(() => host.Snapshot().Kpis.Online > 0, "fleet online before E-STOP");
+
+            host.Estop();
+            Assert.True(host.EstopEngaged);
+
+            host.ResetEstop();
+
+            Assert.False(host.EstopEngaged);
+            Assert.False(host.Snapshot().EstopEngaged);
+            // Honest, explicit design (spec/C-2): RESET clears the fault but an operator must press START
+            // again — it must not silently resume production.
+            Assert.False(host.IsRunning, "ResetEstop must not itself restart the fleet");
+
+            // And Start() genuinely works again now that the latch is clear.
+            host.Start();
             Assert.True(host.IsRunning);
         }
         finally
