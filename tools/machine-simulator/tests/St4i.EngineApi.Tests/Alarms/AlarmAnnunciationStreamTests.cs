@@ -123,6 +123,21 @@ public sealed class AlarmAnnunciationStreamTests
     /// <summary>One parsed SSE frame — the event name and its <c>data:</c> payload.</summary>
     private sealed record Frame(string Event, string Data);
 
+    /// <summary>
+    /// 🔴 The diagnostic wrapper around <see cref="ReadFrameAsync"/>. Every caller that needed a frame used to
+    /// write <c>(await ReadFrameAsync(...))!.Event</c> — a null-forgiving dereference of the exact value the
+    /// deadline returns — so a stream that went quiet reported a bare
+    /// <see cref="NullReferenceException"/> with no indication of WHICH read timed out, on a helper whose own
+    /// doc comment promises "fails as an assertion instead of as a test timeout". This restores that promise:
+    /// the failure names the frame that never arrived and the bound it waited out.
+    /// </summary>
+    private static async Task<Frame> ReadFrameOrFailAsync(StreamReader reader, TimeSpan timeout, string expected)
+    {
+        var frame = await ReadFrameAsync(reader, timeout);
+        Assert.True(frame is not null, $"timed out after {timeout} waiting for the {expected} frame — the stream produced nothing.");
+        return frame!;
+    }
+
     /// <summary>Reads SSE frames off a live response body. Returns <see langword="null"/> at the deadline
     /// rather than hanging, so a broken stream fails as an assertion instead of as a test timeout.</summary>
     private static async Task<Frame?> ReadFrameAsync(StreamReader reader, TimeSpan timeout)
@@ -343,7 +358,7 @@ public sealed class AlarmAnnunciationStreamTests
             "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
         await using var body = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(body);
-        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+        Assert.Equal("ready", (await ReadFrameOrFailAsync(reader, TimeSpan.FromSeconds(10), "ready")).Event);
 
         var frame = await ReadFrameAsync(reader, TimeSpan.FromSeconds(15));
         Assert.NotNull(frame);
@@ -395,9 +410,9 @@ public sealed class AlarmAnnunciationStreamTests
             "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
         await using var body = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(body);
-        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
-        var frame = await ReadFrameAsync(reader, TimeSpan.FromSeconds(15));
-        Assert.Equal("annunciation", frame!.Event);
+        Assert.Equal("ready", (await ReadFrameOrFailAsync(reader, TimeSpan.FromSeconds(10), "ready")).Event);
+        var frame = await ReadFrameOrFailAsync(reader, TimeSpan.FromSeconds(15), "annunciation");
+        Assert.Equal("annunciation", frame.Event);
         return JsonSerializer.Deserialize<AlarmAnnunciation>(frame.Data, JsonOptionsWithEnums)!;
     }
 
@@ -423,7 +438,7 @@ public sealed class AlarmAnnunciationStreamTests
             "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
         await using var body = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(body);
-        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+        Assert.Equal("ready", (await ReadFrameOrFailAsync(reader, TimeSpan.FromSeconds(10), "ready")).Event);
 
         var first = await ReadFrameAsync(reader, TimeSpan.FromSeconds(15));
         var admitted = JsonSerializer.Deserialize<AlarmAnnunciation>(first!.Data, JsonOptionsWithEnums);
@@ -453,7 +468,7 @@ public sealed class AlarmAnnunciationStreamTests
             "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
         await using var body = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(body);
-        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+        Assert.Equal("ready", (await ReadFrameOrFailAsync(reader, TimeSpan.FromSeconds(10), "ready")).Event);
 
         Assert.Null(await ReadFrameAsync(reader, TimeSpan.FromSeconds(3)));
     }
@@ -486,7 +501,7 @@ public sealed class AlarmAnnunciationStreamTests
             "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
         await using var body = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(body);
-        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+        Assert.Equal("ready", (await ReadFrameOrFailAsync(reader, TimeSpan.FromSeconds(10), "ready")).Event);
 
         var replayed = new List<AlarmAnnunciation>();
         while (await ReadFrameAsync(reader, TimeSpan.FromSeconds(3)) is { } frame)
@@ -536,7 +551,7 @@ public sealed class AlarmAnnunciationStreamTests
         // The ready frame is written and FLUSHED before the listener is registered, so seeing it is not
         // enough — wait for the registration itself, or the alarm below could race ahead of it and be
         // correctly counted Unheard.
-        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+        Assert.Equal("ready", (await ReadFrameOrFailAsync(reader, TimeSpan.FromSeconds(10), "ready")).Event);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
         while (hub.ListenerCount == 0 && DateTimeOffset.UtcNow < deadline) await Task.Delay(10);
         Assert.Equal(1, hub.ListenerCount);
@@ -582,7 +597,7 @@ public sealed class AlarmAnnunciationStreamTests
             "/v1/alarms/annunciations", HttpCompletionOption.ResponseHeadersRead);
         var body = await response.Content.ReadAsStreamAsync();
         var reader = new StreamReader(body);
-        Assert.Equal("ready", (await ReadFrameAsync(reader, TimeSpan.FromSeconds(10)))!.Event);
+        Assert.Equal("ready", (await ReadFrameOrFailAsync(reader, TimeSpan.FromSeconds(10), "ready")).Event);
 
         var attached = DateTimeOffset.UtcNow.AddSeconds(10);
         while (hub.ListenerCount == 0 && DateTimeOffset.UtcNow < attached) await Task.Delay(10);
@@ -626,7 +641,7 @@ public sealed class AlarmAnnunciationStreamTests
         var firstBody = await first.Content.ReadAsStreamAsync();
         var firstReader = new StreamReader(firstBody);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
-        Assert.Equal("ready", (await ReadFrameAsync(firstReader, TimeSpan.FromSeconds(10)))!.Event);
+        Assert.Equal("ready", (await ReadFrameOrFailAsync(firstReader, TimeSpan.FromSeconds(10), "ready")).Event);
 
         var attached = DateTimeOffset.UtcNow.AddSeconds(10);
         while (hub.ListenerCount == 0 && DateTimeOffset.UtcNow < attached) await Task.Delay(10);
